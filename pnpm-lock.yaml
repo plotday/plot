@@ -13,7 +13,7 @@ importers:
 
   .:
     devDependencies:
-      '@resupaflare/eslint-config-custom':
+      '@plot/eslint-config-custom':
         specifier: workspace:*
         version: link:libs/eslint-config-custom
       '@sentry/cli':
@@ -67,7 +67,7 @@ importers:
       '@remix-run/react':
         specifier: ^1.18.1
         version: 1.18.1(react-dom@18.2.0)(react@18.2.0)
-      '@resupaflare/db':
+      '@plot/db':
         specifier: workspace:^
         version: link:../../libs/db
       '@sentry/integrations':
@@ -113,7 +113,7 @@ importers:
       '@remix-run/dev':
         specifier: ^1.18.1
         version: 1.18.1(patch_hash=cjztwn7m6sjvuerhnab6gexrzq)(@types/node@20.4.2)
-      '@resupaflare/tsconfig':
+      '@plot/tsconfig':
         specifier: workspace:*
         version: link:../../libs/tsconfig
       '@types/node':
@@ -134,6 +134,19 @@ importers:
       postcss-simple-vars:
         specifier: ^7.0.1
         version: 7.0.1(postcss@8.4.26)
+
+  libs/cal:
+    dependencies:
+      '@worker-tools/json-fetch':
+        specifier: 2.1.0-pre.6
+        version: 2.1.0-pre.6
+    devDependencies:
+      '@plot/eslint-config-custom':
+        specifier: workspace:*
+        version: link:../eslint-config-custom
+      '@plot/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
 
   libs/db:
     dependencies:
@@ -163,9 +176,9 @@ importers:
 
   libs/tsconfig: {}
 
-  workers/worker:
+  workers/calendar-webhook:
     dependencies:
-      '@resupaflare/db':
+      '@plot/db':
         specifier: workspace:^
         version: link:../../libs/db
       '@supabase/supabase-js':
@@ -178,10 +191,32 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.20230419.0
         version: 4.20230419.0
-      '@resupaflare/eslint-config-custom':
+      '@plot/eslint-config-custom':
         specifier: workspace:*
         version: link:../../libs/eslint-config-custom
-      '@resupaflare/tsconfig':
+      '@plot/tsconfig':
+        specifier: workspace:*
+        version: link:../../libs/tsconfig
+
+  workers/worker:
+    dependencies:
+      '@plot/db':
+        specifier: workspace:^
+        version: link:../../libs/db
+      '@supabase/supabase-js':
+        specifier: ^2.26.0
+        version: 2.26.0
+      toucan-js:
+        specifier: ^3.1.0
+        version: 3.1.0
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.20230419.0
+        version: 4.20230419.0
+      '@plot/eslint-config-custom':
+        specifier: workspace:*
+        version: link:../../libs/eslint-config-custom
+      '@plot/tsconfig':
         specifier: workspace:*
         version: link:../../libs/tsconfig
 
@@ -3492,6 +3527,10 @@ packages:
 
   /@web3-storage/multipart-parser@1.0.0:
     resolution: {integrity: sha512-BEO6al7BYqcnfX15W2cnGR+Q566ACXAT9UQykORCWW80lmkpWsnEob6zJS1ZVBKsSJC8+7vJkHwlp+lXG1UCdw==}
+
+  /@worker-tools/json-fetch@2.1.0-pre.6:
+    resolution: {integrity: sha512-x4aqUMc3gZ9ISx2RUIQSFkflgsEfL6lBbeZpb9Wtzg8EjzifaBAGQPpT5sgEsgy5ZtitA7OQqQpVwnd9eau3bQ==}
+    dev: false
 
   /@zxing/text-encoding@0.9.0:
     resolution: {integrity: sha512-U/4aVJ2mxI0aDNI8Uq0wEhMgY+u4CNtEb0om3+y3+niDAsoTCOB33UF0sxpzqzdqXLqmvc+vZyAt4O8pPdfkwA==}

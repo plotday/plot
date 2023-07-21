@@ -5,5 +5,6 @@ module.exports = {
   rules: {
     "react-hooks/rules-of-hooks": "error",
     "react-hooks/exhaustive-deps": "warn",
+    "no-useless-constructor": "off",
   },
 };

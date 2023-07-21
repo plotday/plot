@@ -1,4 +1,4 @@
-name = "worker"
+name = "plot-sync"
 main = "src/index.ts"
 compatibility_date = "2023-07-10"
 

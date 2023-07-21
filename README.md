@@ -1,43 +1,10 @@
-# Remix + Supabase + Cloudflare starter
+# Plot
 
-A highly opinionated full-stack starter monorepo.
+## Stack
 
-- Package management: [pnpm](https://pnpm.io/)
-- Build system: [Turborepo](https://turbo.build/)
-- CI/CD: [GitHub Actions](https://github.com/features/actions)
-- Language: [Typescript](https://www.typescriptlang.org/)
-- Web: [Remix](https://remix.run/)
-- UI: [Mantine](https://mantine.dev/) (using [v7 alpha](https://v7.mantine.dev/getting-started) since the switch to static CSS works better with SSR)
-- DB: [Supabase](https://supabase.com/)
-- Hosting: [Cloudflare Pages](https://pages.cloudflare.com/)
-- Server runtime: [Cloudflare Workers](https://workers.cloudflare.com/)
+Based on [Resupaflare](https://github.com/PlotTech/resupaflare).
 
-## Getting started
-
-You'll likely want to duplicate this repo, rather than forking it:
-
-```bash
-# First, create a blank NEW_REPO on GitHub.
-
-# Make a bare clone
-git clone --bare https://github.com/PlotTech/resupaflare.git
-cd resupaflare.git
-git push --mirror https://github.com/USERNAME/NEW_REPO.git
-cd ..
-rm -rf resupaflare
-
-# Clone the new repo
-git clone https://github.com/USERNAME/NEW_REPO.git
-cd NEW_REPO
-git remote add resupaflare https://github.com/PlotTech/resupaflare.git
-git grep -l '@resupaflare' | xargs sed -i '' -e 's/@resupaflare/@NEW_SCOPE/g'
-git commit -am "Set package scope"
-git push origin master
-```
-
-## Updating
-
-To pull the latest changes from this repo into your new repo:
+To pull the latest changes from that repo:
 
 ```bash
 git pull resupaflare main

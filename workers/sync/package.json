@@ -1,5 +1,5 @@
 {
-  "name": "@resupaflare/worker",
+  "name": "@plot/sync",
   "version": "0.0.0",
   "private": true,
   "scripts": {

@@ -1,12 +1,12 @@
 import type { AppLoadContext } from "@remix-run/cloudflare";
-import type { Database } from "@resupaflare/db";
+import type { Database } from "@plot/db";
 import { createServerClient as createSupabaseClient } from "@supabase/auth-helpers-remix";
 
 import { getEnv } from "./env";
 
-export { safeQuery } from "@resupaflare/db";
+export { safeQuery } from "@plot/db";
 
-export type { Database } from "@resupaflare/db";
+export type { Database } from "@plot/db";
 
 export const cookieOptions = {
   name: "dda",

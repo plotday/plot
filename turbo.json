@@ -19,18 +19,18 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["@resupaflare/db#start"]
+      "dependsOn": ["@plot/db#start"]
     },
-    "@resupaflare/db#start": {
+    "@plot/db#start": {
       "persistent": false
     },
-    "@resupaflare/db#gen-types": {
-      "dependsOn": ["@resupaflare/db#start"]
+    "@plot/db#gen-types": {
+      "dependsOn": ["@plot/db#start"]
     },
-    "@resupaflare/db#gen-migration": {
-      "dependsOn": ["@resupaflare/db#start"]
+    "@plot/db#gen-migration": {
+      "dependsOn": ["@plot/db#start"]
     },
-    "@resupaflare/web#build": {
+    "@plot/web#build": {
       "outputs": [
         "build/**",
         "public/build/**",
