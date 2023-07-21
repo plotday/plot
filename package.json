@@ -28,7 +28,7 @@
     "wrangler": "^3.3.0"
   },
   "packageManager": "pnpm@8.6.6",
-  "name": "resupaflare",
+  "name": "@plot/plot",
   "pnpm": {
     "patchedDependencies": {
       "@remix-run/dev@1.18.1": "patches/@remix-run__dev@1.18.1.patch"
