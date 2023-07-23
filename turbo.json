@@ -19,18 +19,18 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["@plot/db#start"]
+      "dependsOn": ["@plotday/db#start"]
     },
-    "@plot/db#start": {
+    "@plotday/db#start": {
       "persistent": false
     },
-    "@plot/db#gen-types": {
-      "dependsOn": ["@plot/db#start"]
+    "@plotday/db#gen-types": {
+      "dependsOn": ["@plotday/db#start"]
     },
-    "@plot/db#gen-migration": {
-      "dependsOn": ["@plot/db#start"]
+    "@plotday/db#gen-migration": {
+      "dependsOn": ["@plotday/db#start"]
     },
-    "@plot/web#build": {
+    "@plotday/web#build": {
       "outputs": [
         "build/**",
         "public/build/**",

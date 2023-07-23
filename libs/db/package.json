@@ -1,5 +1,5 @@
 {
-  "name": "@plot/db",
+  "name": "@plotday/db",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "version": "0.0.0",

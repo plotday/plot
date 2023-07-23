@@ -25,7 +25,7 @@ import {
   useRevalidator,
   useRouteError,
 } from "@remix-run/react";
-import type { Database } from "@plot/db";
+import type { Database } from "@plotday/db";
 import type { User } from "@supabase/auth-helpers-remix";
 import { createBrowserClient } from "@supabase/auth-helpers-remix";
 import type { SupabaseClient } from "@supabase/supabase-js";

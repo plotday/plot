@@ -12,31 +12,31 @@ compatibility_date = "2023-07-10"
   vars = { ENV = "production" }
 
 [[env.production.queues.producers]]
-  queue = "queue-production"
+  queue = "plot-sync-production-queue"
   binding = "QUEUE"
 
 [[env.production.queues.consumers]]
-  queue = "queue-production"
+  queue = "plot-sync-production-queue"
 
 [env.staging]
   vars = { ENV = "staging" }
 
 [[env.staging.queues.producers]]
-  queue = "queue-staging"
+  queue = "plot-sync-staging-queue"
   binding = "QUEUE"
 
 [[env.staging.queues.consumers]]
-  queue = "queue-staging"
+  queue = "plot-sync-staging-queue"
 
 [env.development]
   vars = { ENV = "development" }
 
 [[env.development.queues.producers]]
-  queue = "queue-development"
+  queue = "plot-sync-development-queue"
   binding = "QUEUE"
 
 [[env.development.queues.consumers]]
-  queue = "queue-development"
+  queue = "plot-sync-development-queue"
 
 [placement]
   mode = "smart"

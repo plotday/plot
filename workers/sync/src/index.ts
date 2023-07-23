@@ -14,7 +14,6 @@
 type QueueMessage = {
   url: string;
   method: string;
-  headers: Record<string, string>;
 };
 
 export interface Env {
@@ -36,7 +35,6 @@ export default {
     await env.QUEUE.send({
       url: req.url,
       method: req.method,
-      headers: Object.fromEntries(req.headers),
     });
     return new Response("Sent message to the queue");
   },

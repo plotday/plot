@@ -13,7 +13,7 @@ importers:
 
   .:
     devDependencies:
-      '@plot/eslint-config-custom':
+      '@plotday/eslint-config-custom':
         specifier: workspace:*
         version: link:libs/eslint-config-custom
       '@sentry/cli':
@@ -55,7 +55,7 @@ importers:
       '@mantine/hooks':
         specifier: 7.0.0-alpha.18
         version: 7.0.0-alpha.18(react@18.2.0)
-      '@plot/db':
+      '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db
       '@remix-run/cloudflare':
@@ -110,7 +110,7 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^3.19.0
         version: 3.19.0
-      '@plot/tsconfig':
+      '@plotday/tsconfig':
         specifier: workspace:*
         version: link:../../libs/tsconfig
       '@remix-run/dev':
@@ -141,10 +141,10 @@ importers:
         specifier: 2.1.0-pre.6
         version: 2.1.0-pre.6
     devDependencies:
-      '@plot/eslint-config-custom':
+      '@plotday/eslint-config-custom':
         specifier: workspace:*
         version: link:../eslint-config-custom
-      '@plot/tsconfig':
+      '@plotday/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
 
@@ -178,7 +178,7 @@ importers:
 
   workers/calendar-webhook:
     dependencies:
-      '@plot/db':
+      '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db
       '@supabase/supabase-js':
@@ -191,16 +191,16 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.20230419.0
         version: 4.20230419.0
-      '@plot/eslint-config-custom':
+      '@plotday/eslint-config-custom':
         specifier: workspace:*
         version: link:../../libs/eslint-config-custom
-      '@plot/tsconfig':
+      '@plotday/tsconfig':
         specifier: workspace:*
         version: link:../../libs/tsconfig
 
   workers/sync:
     dependencies:
-      '@plot/db':
+      '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db
       '@supabase/supabase-js':
@@ -213,10 +213,10 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.20230419.0
         version: 4.20230419.0
-      '@plot/eslint-config-custom':
+      '@plotday/eslint-config-custom':
         specifier: workspace:*
         version: link:../../libs/eslint-config-custom
-      '@plot/tsconfig':
+      '@plotday/tsconfig':
         specifier: workspace:*
         version: link:../../libs/tsconfig
 

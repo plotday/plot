@@ -3,12 +3,12 @@
   "license": "MIT",
   "scripts": {
     "build": "turbo run build",
-    "build:web": "turbo run build --filter=@plot/web && ln -sfn apps/web/functions functions",
+    "build:web": "turbo run build --filter=@plotday/web && ln -sfn apps/web/functions functions",
     "deploy:workers": "turbo deploy --filter={./workers/*}",
     "deploy:workers:changed": "turbo deploy --filter={./workers/*}...[HEAD^1]",
     "dev": "turbo run dev",
     "gen-types": "turbo run gen-types",
-    "gen-migration": "pnpm --filter @plot/db run gen-migration",
+    "gen-migration": "pnpm --filter @plotday/db run gen-migration",
     "lint": "pnpm install --frozen-lockfile && turbo run lint",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
@@ -16,7 +16,7 @@
     "restart": "turbo run stop && turbo run start"
   },
   "devDependencies": {
-    "@plot/eslint-config-custom": "workspace:*",
+    "@plotday/eslint-config-custom": "workspace:*",
     "@sentry/cli": "^2.19.4",
     "@trivago/prettier-plugin-sort-imports": "^4.1.1",
     "@turbo/gen": "^1.9.7",
@@ -28,7 +28,7 @@
     "wrangler": "^3.3.0"
   },
   "packageManager": "pnpm@8.6.6",
-  "name": "@plot/plot",
+  "name": "@plotday/plot",
   "pnpm": {
     "patchedDependencies": {
       "@remix-run/dev@1.18.1": "patches/@remix-run__dev@1.18.1.patch"
