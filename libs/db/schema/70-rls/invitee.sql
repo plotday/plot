@@ -1,0 +1,2 @@
+ALTER TABLE "public"."invitee" ENABLE ROW LEVEL SECURITY;
+

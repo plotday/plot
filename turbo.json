@@ -1,18 +1,47 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": ["**/.env.*local"],
-  "globalEnv": ["NODE_ENV"],
+  "globalDependencies": [
+    ".env",
+    ".env.*",
+    ".env.*.*",
+    ".github/workflows/*",
+    "scripts/*"
+  ],
+  "globalEnv": [
+    "NODE_ENV",
+    "SENTRY_DSN",
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_KEY",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_OAUTH_SECRET",
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_OAUTH_SECRET",
+    "TEST_GOOGLE_ACCOUNT_ACCESS_TOKEN",
+    "TEST_GOOGLE_ACCOUNT_REFRESH_TOKEN",
+    "TEST_OUTLOOK_ACCOUNT_ACCESS_TOKEN",
+    "TEST_OUTLOOK_ACCOUNT_REFRESH_TOKEN"
+  ],
   "pipeline": {
+    "topo": {
+      "dependsOn": ["^topo"]
+    },
     "build": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "topo"],
       "outputs": ["build/**"]
     },
     "deploy": {
       "dependsOn": ["^build", "build"]
     },
+    "deploy:workers:changed": {
+      "dependsOn": ["^build", "build"]
+    },
     "lint": {},
-    "test": {},
+    "test": {
+      "dependsOn": ["@plotday/db#start"]
+    },
     "test:watch": {
+      "dependsOn": ["@plotday/db#start"],
       "cache": false,
       "persistent": true
     },
@@ -21,11 +50,18 @@
       "persistent": true,
       "dependsOn": ["@plotday/db#start"]
     },
+    "start": {
+      "cache": false
+    },
+    "stop": {
+      "cache": false
+    },
     "@plotday/db#start": {
       "persistent": false
     },
     "@plotday/db#gen-types": {
-      "dependsOn": ["@plotday/db#start"]
+      "dependsOn": ["@plotday/db#start"],
+      "cache": false
     },
     "@plotday/db#gen-migration": {
       "dependsOn": ["@plotday/db#start"]

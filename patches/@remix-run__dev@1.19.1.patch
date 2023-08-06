@@ -1,5 +1,5 @@
 diff --git a/dist/compiler/server/write.js b/dist/compiler/server/write.js
-index 56963c0c0d728f6697aba12d31a13411b825a5da..8620b85daf55d2d322d480f7eef19dcc51983de8 100644
+index b1591c1a5d0eb6bbb2cbb01a82f43f1ccea41b1b..b94ca4840bfd266cc38a5b5babfc374bb33d2b76 100644
 --- a/dist/compiler/server/write.js
 +++ b/dist/compiler/server/write.js
 @@ -42,7 +42,7 @@ async function write(config, outputFiles) {

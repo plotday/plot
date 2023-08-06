@@ -22,17 +22,19 @@ import {
   ScrollRestoration,
   isRouteErrorResponse,
   useLoaderData,
+  useOutletContext,
   useRevalidator,
   useRouteError,
 } from "@remix-run/react";
-import type { Database } from "@plotday/db";
-import type { User } from "@supabase/auth-helpers-remix";
+import type { SupabaseClient } from "@supabase/auth-helpers-remix";
 import { createBrowserClient } from "@supabase/auth-helpers-remix";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { useEffect, useMemo } from "react";
 
+import type { Database } from "@plotday/db";
+
+import { authCookieOptions, getUser } from "./auth";
 import { APP_NAME } from "./config";
-import { cookieOptions, createServerClient, getSupabaseEnv } from "./db";
+import { createServerClient } from "./db";
 import { getBrowserEnv, getEnv } from "./env";
 import {
   Sentry,
@@ -45,18 +47,18 @@ export const loader = async ({ context, request }: LoaderArgs) => {
   const env = getEnv(context);
   if (env.SENTRY_DSN) SentryServerInit(env.SENTRY_DSN, request);
 
-  const { response, supabase } = createServerClient(
-    getSupabaseEnv(context),
-    request
-  );
+  const { response, supabase } = createServerClient(request, context);
 
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (user && Sentry) Sentry.setUser({ id: user.id, email: user.email });
+  const user = await getUser(supabase);
+  if (user && Sentry) {
+    Sentry.setUser({
+      id: user.id.toString(),
+      ...(user.email ? { email: user.email } : {}),
+    });
+  }
 
   return json(
     {
@@ -68,11 +70,6 @@ export const loader = async ({ context, request }: LoaderArgs) => {
       headers: response.headers,
     }
   );
-};
-
-export type SupabaseOutletContext = {
-  supabase?: SupabaseClient<Database>;
-  user?: User;
 };
 
 export const meta: V2_MetaFunction = () => {
@@ -143,6 +140,12 @@ export function ErrorBoundary() {
   );
 }
 
+type Nullable<T> = { [K in keyof T]: T[K] | null };
+type ContextType = {
+  supabase?: SupabaseClient<Database>;
+  user?: Nullable<Partial<Database["public"]["Tables"]["user"]["Row"]>>;
+};
+
 export default function App() {
   const { env, user, session } = useLoaderData<typeof loader>();
 
@@ -153,13 +156,13 @@ export default function App() {
   const supabase = useMemo(() => {
     if (typeof document === "undefined") return null;
     try {
-      return createBrowserClient<Database>(
+      return createBrowserClient<Database, "public">(
         env.SUPABASE_URL,
         env.SUPABASE_ANON_KEY,
         {
           // @ts-ignore
           auth: { flowType: "pkce" },
-          cookieOptions,
+          cookieOptions: authCookieOptions,
         }
       );
     } catch (error) {
@@ -186,11 +189,24 @@ export default function App() {
     };
   }, [session?.access_token, supabase, revalidate]);
 
-  const context = useMemo(() => ({ supabase, user }), [supabase, user]);
+  const context: ContextType = useMemo(
+    () => ({ supabase: supabase || undefined, user: user || undefined }),
+    [supabase, user]
+  );
 
   return (
     <Page>
       <Outlet context={context} />
     </Page>
   );
+}
+
+export function useSupabase() {
+  const { supabase } = useOutletContext<ContextType>();
+  return supabase;
+}
+
+export function useUser() {
+  const { user } = useOutletContext<ContextType>();
+  return user;
 }

@@ -2,12 +2,6 @@ name = "plot-sync"
 main = "src/index.ts"
 compatibility_date = "2023-07-10"
 
-# Optional: Configure batching and retries: https://developers.cloudflare.com/queues/learning/batching-retries/
-# max_batch_size = 10
-# max_batch_timeout = 30
-# max_retries = 10
-# dead_letter_queue = "my-queue-dlq"
-
 [env.production]
   vars = { ENV = "production" }
 
@@ -15,8 +9,14 @@ compatibility_date = "2023-07-10"
   queue = "plot-sync-production-queue"
   binding = "QUEUE"
 
+[[env.production.queues.producers]]
+  queue = "plot-event-production-queue"
+  binding = "EVENT_QUEUE"
+
 [[env.production.queues.consumers]]
   queue = "plot-sync-production-queue"
+  max_batch_size = 1
+  max_retries = 5
 
 [env.staging]
   vars = { ENV = "staging" }
@@ -25,8 +25,14 @@ compatibility_date = "2023-07-10"
   queue = "plot-sync-staging-queue"
   binding = "QUEUE"
 
+[[env.staging.queues.producers]]
+  queue = "plot-event-staging-queue"
+  binding = "EVENT_QUEUE"
+
 [[env.staging.queues.consumers]]
   queue = "plot-sync-staging-queue"
+  max_batch_size = 1
+  max_retries = 5
 
 [env.development]
   vars = { ENV = "development" }
@@ -35,8 +41,23 @@ compatibility_date = "2023-07-10"
   queue = "plot-sync-development-queue"
   binding = "QUEUE"
 
+[[env.development.queues.producers]]
+  queue = "plot-event-development-queue"
+  binding = "EVENT_QUEUE"
+
 [[env.development.queues.consumers]]
   queue = "plot-sync-development-queue"
+  max_batch_size = 1
+  max_retries = 0
+
+[[env.development.queues.consumers]]
+  queue = "plot-event-development-queue"
+  max_batch_size = 10
+  max_batch_timeout = 3
+  max_retries = 0
 
 [placement]
   mode = "smart"
+
+[dev]
+  port = 8787

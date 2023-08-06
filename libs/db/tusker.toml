@@ -1,0 +1,9 @@
+[schema]
+filename = "schema/**/*.sql"
+
+[migrations]
+filename = "supabase/migrations/*.sql"
+
+[database]
+url = "postgresql://postgres:postgres@localhost:54322/postgres"
+schema = "public"

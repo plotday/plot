@@ -5,6 +5,7 @@ build
 /.cache
 /functions/\[\[path\]\].js
 /functions/\[\[path\]\].js.map
+/functions/metafile.*
 /bundled-functions
 /public/build
 .dev.vars

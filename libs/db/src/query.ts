@@ -1,4 +1,4 @@
-import { PostgrestError } from "@supabase/supabase-js";
+import type { PostgrestError } from "@supabase/supabase-js";
 
 export function safeQuery<T>({
   data,
@@ -8,8 +8,9 @@ export function safeQuery<T>({
   error: PostgrestError | null;
 }) {
   if (error) {
-    console.error(error);
-    const exception = new Error(error.message);
+    const exception = new Error(error.message || "Database error", {
+      cause: error,
+    });
     throw exception;
   }
   return data;

@@ -1,0 +1,2 @@
+ALTER TABLE "public"."contact" ENABLE ROW LEVEL SECURITY;
+

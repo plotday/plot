@@ -1,30 +1,42 @@
 import { Alert, Container, Paper, Stack, Text } from "@mantine/core";
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
-import { useLocation, useOutletContext } from "@remix-run/react";
+import { useSearchParams } from "@remix-run/react";
 import { IconAlertCircle } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
 import {
   GoogleLoginButton,
   MicrosoftLoginButton,
 } from "react-social-login-buttons";
 
-import { signInWithAzure, signInWithGoogle } from "../auth";
+import { getUser, signInWithAzure, signInWithGoogle } from "../auth";
 import { DEFAULT_PATH } from "../config";
-import { createServerClient, getSupabaseEnv } from "../db";
-import type { SupabaseOutletContext } from "../root";
+import { createServerClient } from "../db";
+import { useSupabase } from "../root";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
-  const { supabase } = createServerClient(getSupabaseEnv(context), request);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (user) return redirect(DEFAULT_PATH);
+  try {
+    const url = new URL(request.url);
+    if (url.searchParams.has("error")) return null;
+    const { supabase } = createServerClient(request, context);
+    const user = await getUser(supabase);
+    if (user) return redirect(DEFAULT_PATH);
+  } catch (error) {}
   return null;
 };
 
 export default function Login() {
-  const { supabase } = useOutletContext<SupabaseOutletContext>();
-  const params = new URLSearchParams(useLocation().search);
+  const supabase = useSupabase();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [error] = useState(searchParams.get("error"));
+
+  useEffect(() => {
+    if (searchParams.has("error")) {
+      searchParams.delete("error");
+      setSearchParams(searchParams);
+    }
+  });
+
   const googleLogin = async () => {
     if (!supabase) return;
     await signInWithGoogle(supabase, `${location.origin}/login/callback`);
@@ -47,13 +59,13 @@ export default function Login() {
             </MicrosoftLoginButton>
           </Stack>
         </Paper>
-        {params.has("error") && (
+        {error && (
           <Alert
             icon={<IconAlertCircle size="1rem" />}
             title="Sign in failed"
             color="red"
           >
-            <Text mt="md">{params.get("error")}</Text>
+            <Text mt="md">{error}</Text>
           </Alert>
         )}
       </Stack>

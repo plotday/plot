@@ -1,16 +1,38 @@
 #!/bin/bash
- 
-if [ ! -f ./env-vars ]; then
-  echo "Missing ./env-vars (one required variable name per line)"
-  exit 1
-fi
 
-if [ -z ${NODE_ENV} ]; then NODE_ENV=development; fi
+if [ -z ${NODE_ENV} ]; then
+  if [ -z ${DEPLOY_ENV} ]; then
+    NODE_ENV=development
+  else
+    NODE_ENV=$DEPLOY_ENV
+  fi
+fi
 
 ENV_PATH="$(dirname -- "${BASH_SOURCE[0]}")/.."
 
-ALL_VARS=$(cat $ENV_PATH/.env $ENV_PATH/.env.$NODE_ENV $ENV_PATH/.env.local $ENV_PATH/.env.$NODE_ENV.local 2> /dev/null | grep -v '^#')
+# ALL_VARS=$(cat $ENV_PATH/.env $ENV_PATH/.env.$NODE_ENV $ENV_PATH/.env.local $ENV_PATH/.env.$NODE_ENV.local 2> /dev/null | grep -v '^#')
 
-while IFS= read -r var_name; do
-  echo "$ALL_VARS" | grep -w "$var_name" | tail -1
-done < ./env-vars
+var_names=$@
+
+files=("$ENV_PATH/.env" "$ENV_PATH/.env.$NODE_ENV" "$ENV_PATH/.env.local" "$ENV_PATH/.env.$NODE_ENV.local")
+
+ALL_VARS=NODE_ENV=$NODE_ENV
+for file in "${files[@]}"; do
+    # Check if the file exists
+    if [ -f "$file" ]; then
+        # Read each line from the file and check for a match
+        while read -r line; do
+            # Extract the variable name from each line using parameter expansion
+            var_name="${line%=*}"
+
+            # Check if the variable name is in the list of names provided
+            if [[ " ${var_names[*]} " =~ " $var_name " ]]; then
+                # Print the matching line
+ALL_VARS="$line
+$ALL_VARS"
+            fi
+        done < "$file"
+    fi
+done
+
+echo "$ALL_VARS" | awk -F '=' '!seen[$1]++{ print }' | tac

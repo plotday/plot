@@ -40,7 +40,7 @@ export const SentryServerInit = (dsn: string, request?: Request) => {
 
 export const SentryClientInit = (
   dsn: string,
-  user?: { id?: string; email?: string } | null
+  user?: { id: number; email: string | null } | null
 ) => {
   if (Sentry) return;
   Sentry = ClientSentry;
@@ -73,7 +73,10 @@ export const SentryClientInit = (
     replaysOnErrorSampleRate: 1.0,
   });
   if (user?.id || user?.email) {
-    ClientSentry.setUser({ id: user?.id, email: user?.email });
+    ClientSentry.setUser({
+      id: user?.id?.toString?.(),
+      email: user?.email || undefined,
+    });
   }
 };
 

@@ -3,18 +3,29 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "version": "0.0.0",
+  "env_vars": "GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET",
   "private": true,
   "scripts": {
-    "start": "export $(../../scripts/gen-env) && supabase start",
-    "stop": "export $(../../scripts/gen-env) && supabase stop",
-    "gen-types": "export $(../../scripts/gen-env) && supabase gen types typescript --local > src/types.ts",
-    "gen-migration": "export $(../../scripts/gen-env) && supabase db diff | pg_format | supabase migration new",
+    "gen-env": "../../scripts/gen-env $npm_package_env_vars",
+    "start": "export $(pnpm --silent gen-env) && supabase start",
+    "stop": "export $(pnpm --silent gen-env) && supabase stop",
+    "status": "export $(pnpm --silent gen-env) && supabase status",
+    "gen-types": "export $(pnpm --silent gen-env) && supabase gen types typescript --local > src/types.ts",
+    "gen-migration": "pnpm --silent diff-schema | supabase migration new",
+    "diff-schema": "pnpm --silent tusker:copy && DIFF_TARGET=migrations pnpm --silent tusker:diff && pnpm --silent tusker:clean",
+    "diff": "DIFF_TARGET=database pnpm --silent tusker:diff",
+    "tusker:copy": "for file in schema/30-supabase/*.sql; do cp \"$file\" \"supabase/migrations/0000-$(basename \"$file\")\"; done",
+    "tusker:diff": "SQLALCHEMY_SILENCE_UBER_WARNING=1 tusker diff ${DIFF_TARGET} schema | pg_format",
+    "tusker:clean": "rm -f supabase/migrations/0000-*.sql",
+    "new-migration": "supabase migration new",
     "reset": "supabase db reset",
     "diff-remote": "supabase db diff --linked | supabase migration new init",
     "push": "supabase db push",
-    "dump-seed": "supabase db dump --data-only -f supabase/seed.sql"
+    "dump-seed": "supabase db dump --data-only -f supabase/seed.sql",
+    "test": "export $(pnpm --silent gen-env) && supabase db test"
   },
   "devDependencies": {
+    "@plotday/tsconfig": "workspace:^",
     "supabase": "^1.77.9"
   },
   "dependencies": {

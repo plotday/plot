@@ -18,6 +18,11 @@ jobs:
       SENTRY_ORG: ${{ vars.SENTRY_ORG }}
       SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
       DEPLOY_ENV: ${{ vars.DEPLOY_ENV }}
+      SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      CALENDAR_WEBHOOK_URL: ${{ vars.CALENDAR_WEBHOOK_URL }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
 
     steps:
       - name: Checkout

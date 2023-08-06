@@ -1,0 +1,6 @@
+CREATE SCHEMA IF NOT EXISTS "extensions";
+
+CREATE EXTENSION IF NOT EXISTS "pgtap" WITH SCHEMA "extensions";
+
+CREATE EXTENSION IF NOT EXISTS "plpgsql_check" WITH SCHEMA "extensions";
+

@@ -14,10 +14,25 @@ git push origin main
 ## Local setup
 
 1. [Install pnpm](https://pnpm.io/installation)
+1. [Install Tusker](https://github.com/bikeshedder/tusker)
 1. [Install pgFormatter](https://github.com/darold/pgFormatter) (on MacOS: `brew install pgformatter`)
 1. `pnpm install`
-1. Create `.env.development.local` and add the required variables from
-   `.env.development`
+1. Create `.env` files:
+   1. `.env.local`
+      1. `SENTRY_AUTH_TOKEN`
+      1. `CLOUDFLARE_API_TOKEN`
+   1. `.env.local.development`
+      1. `SUPABASE_ANON_KEY`
+      1. `SUPABASE_SERVICE_KEY`
+      1. `GOOGLE_CLIENT_ID`
+      1. `GOOGLE_OAUTH_SECRET`
+      1. `MICROSOFT_CLIENT_ID`
+      1. `MICROSOFT_OAUTH_SECRET`
+      1. `SENTRY_DSN`
+      1. `TEST_GOOGLE_ACCOUNT_ACCESS_TOKEN`
+      1. `TEST_GOOGLE_ACCOUNT_REFRESH_TOKEN`
+      1. `TEST_OUTLOOK_ACCOUNT_ACCESS_TOKEN`
+      1. `TEST_OUTLOOK_ACCOUNT_REFRESH_TOKEN`
 1. `pnpm dlx supabase link --project-ref PROJECT_ID`
 
 ## Local dev

@@ -1,0 +1,2 @@
+ALTER TABLE "public"."calendar" ENABLE ROW LEVEL SECURITY;
+

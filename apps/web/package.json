@@ -4,32 +4,37 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
+  "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN",
   "scripts": {
+    "gen-env": "../../scripts/gen-env $npm_package_env_vars",
     "set-version": "mkdir -p build && echo export const VERSION = \\\"$VERSION\\\" > build/version.ts",
     "build": "export VERSION=$CF_PAGES_COMMIT_SHA && pnpm run set-version && remix build --sourcemap && pnpm upload-source-map-server && pnpm upload-source-map-browser && pnpm delete-source-map",
-    "upload-source-map-server": "export $(../../scripts/gen-env) && wrangler pages functions build --outdir bundled-functions --sourcemap && sentry-cli sourcemaps inject bundled-functions && sentry-cli sourcemaps upload --release=$VERSION --dist=server bundled-functions && rm -rf bundled-functions",
-    "upload-source-map-browser": "export $(../../scripts/gen-env) && sentry-cli sourcemaps inject public && sentry-cli sourcemaps upload --release=$VERSION --dist=browser public",
+    "upload-source-map-server": "export $(pnpm --silent gen-env) && wrangler pages functions build --outdir bundled-functions --sourcemap && sentry-cli sourcemaps inject bundled-functions && sentry-cli sourcemaps upload --release=$VERSION --dist=server bundled-functions && rm -rf bundled-functions",
+    "upload-source-map-browser": "export $(pnpm --silent gen-env) && sentry-cli sourcemaps inject public && sentry-cli sourcemaps upload --release=$VERSION --dist=browser public",
     "delete-source-map": "find ./functions ./public/build -type f -name \"*.map\" -delete",
     "dev": "export VERSION=development && pnpm run set-version && pnpm run dev:config && pnpm run dev:start",
-    "dev:config": "../../scripts/gen-env > .dev.vars",
-    "dev:start": "export WORKERS_ENV=development && remix dev --no-restart -c \"npm run start\"",
-    "start": "wrangler pages dev --env $WORKERS_ENV --compatibility-date=2023-06-21 ./public",
+    "dev:config": "pnpm --silent gen-env > .dev.vars",
+    "dev:start": "export WORKERS_ENV=development && remix dev --no-restart -c \"pnpm run dev:wrangler\"",
+    "dev:wrangler": "wrangler pages dev --env $WORKERS_ENV --compatibility-date=2023-06-21 ./public",
     "lint": "export VERSION=lint && pnpm set-version && tsc && eslint ."
   },
   "dependencies": {
     "@cloudflare/pages-plugin-sentry": "^1.1.1",
     "@mantine/core": "7.0.0-alpha.18",
     "@mantine/hooks": "7.0.0-alpha.18",
-    "@remix-run/cloudflare": "^1.18.1",
-    "@remix-run/cloudflare-pages": "^1.18.1",
-    "@remix-run/css-bundle": "^1.18.1",
-    "@remix-run/react": "^1.18.1",
     "@plotday/db": "workspace:^",
+    "@plotday/worker-request": "workspace:^",
+    "@remix-run/cloudflare": "^1.19.1",
+    "@remix-run/cloudflare-pages": "^1.19.1",
+    "@remix-run/css-bundle": "^1.19.1",
+    "@remix-run/react": "^1.19.1",
+    "@remix-run/server-runtime": "^1.19.1",
     "@sentry/integrations": "^7.59.2",
     "@sentry/remix": "^7.59.2",
     "@supabase/auth-helpers-remix": "^0.2.1",
     "@supabase/supabase-js": "^2.26.0",
     "@tabler/icons-react": "^2.26.0",
+    "cookie": "^0.5.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "isbot": "^3.6.8",
     "react": "^18.2.0",
@@ -39,9 +44,9 @@
     "zod": "^3.21.4"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^3.19.0",
-    "@remix-run/dev": "^1.18.1",
     "@plotday/tsconfig": "workspace:*",
+    "@remix-run/dev": "^1.19.1",
+    "@types/cookie": "^0.5.1",
     "@types/node": "^20.4.2",
     "@types/react": "^18.0.35",
     "@types/react-dom": "^18.0.11",
@@ -50,6 +55,6 @@
     "postcss-simple-vars": "^7.0.1"
   },
   "engines": {
-    "node": ">=16.13.0"
+    "node": ">=18.12.0"
   }
 }
