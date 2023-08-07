@@ -141,7 +141,7 @@ export function ErrorBoundary() {
 }
 
 type Nullable<T> = { [K in keyof T]: T[K] | null };
-type ContextType = {
+export type ContextType = {
   supabase?: SupabaseClient<Database>;
   user?: Nullable<Partial<Database["public"]["Tables"]["user"]["Row"]>>;
 };
