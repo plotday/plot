@@ -42,6 +42,7 @@ import {
   SentryServerInit,
   captureRemixErrorBoundaryError,
 } from "./sentry";
+import { theme } from "./theme";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   const env = getEnv(context);
@@ -91,7 +92,7 @@ function Page({ children }: { children: React.ReactNode }) {
         <ColorSchemeScript />
       </head>
       <body>
-        <MantineProvider>
+        <MantineProvider theme={theme}>
           {children}
           <ScrollRestoration />
           <Scripts />

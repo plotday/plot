@@ -1,0 +1,20 @@
+.sliderTrack {
+  &:before {
+    background-color: var(--mantine-color-primary);
+  }
+}
+
+.grayText {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5));
+}
+
+.meetingText {
+  color: light-dark(
+    var(--mantine-color-orange-7),
+    var(--mantine-color-orange-4)
+  );
+}
+
+.nonMeetingText {
+  color: light-dark(var(--mantine-color-brand-7), var(--mantine-color-brand-3));
+}

@@ -1,12 +1,11 @@
 import {
   Anchor,
   AppShell,
+  Box,
   Button,
   Group,
-  Text,
-  Title,
+  Image,
   UnstyledButton,
-  useMantineColorScheme,
 } from "@mantine/core";
 import {
   Link,
@@ -19,19 +18,16 @@ import type { ReactNode } from "react";
 
 import { APP_NAME, DEFAULT_PATH } from "../config";
 import type { ContextType } from "../root";
+import classes from "./_public.module.css";
 
 function AppHeader({ menu }: { menu?: ReactNode }) {
-  const { colorScheme } = useMantineColorScheme();
   const location = useLocation();
   const { user } = useOutletContext<ContextType>();
   const routes = useMatches();
   const isPublic = routes.some((r) => r.id === "routes/_public");
-  const headerControl = routes
-    .filter((r) => r.handle?.headerControl)?.[0]
-    ?.handle?.headerControl?.();
 
   return (
-    <AppShell.Header p="xs">
+    <AppShell.Header p="xs" bg="brand.9">
       <Group
         mih={50}
         gap="md"
@@ -41,17 +37,10 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
       >
         <Group>
           {menu}
-          <UnstyledButton component={Link} to="/">
-            <Title
-              order={1}
-              size="h2"
-              color={colorScheme === "light" ? "violet.9" : "violet.3"}
-            >
-              {APP_NAME}
-            </Title>
+          <UnstyledButton component={Link} to="/" pt={6} pb={6}>
+            <Image src="/assets/plot.svg" alt={APP_NAME} height={24} />
           </UnstyledButton>
         </Group>
-        <Group>{headerControl}</Group>
         <Group>
           {user && isPublic && (
             <Button component={Link} to={DEFAULT_PATH}>
@@ -71,7 +60,7 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
 
 function AppFooter() {
   return (
-    <AppShell.Footer p="md">
+    <Box p="md" className={classes.footer}>
       <Group gap="md" justify="space-between">
         <Group>
           <Anchor component={Link} to={`/terms`}>
@@ -85,7 +74,7 @@ function AppFooter() {
           <Anchor href="mailto:team@plot.day">Contact Us</Anchor>
         </Group>
       </Group>
-    </AppShell.Footer>
+    </Box>
   );
 }
 
@@ -94,13 +83,11 @@ export default function Index() {
   return (
     <AppShell
       header={{ height: 60 }}
-      footer={{ height: 60 }}
       styles={{
         main: {
-          minHeight: "unset",
           paddingLeft: 0,
           paddingRight: 0,
-          paddingBottom: 60,
+          paddingBottom: 0,
         },
       }}
     >

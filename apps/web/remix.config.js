@@ -1,7 +1,7 @@
 /** @type {import('@remix-run/dev').AppConfig} */
 export default {
   devServerBroadcastDelay: 1000,
-  ignoredRouteFiles: ["**/.*"],
+  ignoredRouteFiles: ["**/.*", "**/*.css"],
   server: "./server.ts",
   serverBuildPath: "functions/[[path]].js",
   serverConditions: ["worker"],

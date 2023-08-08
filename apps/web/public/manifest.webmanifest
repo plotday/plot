@@ -1,0 +1,59 @@
+{
+  "developerURL": "https://plot.day/",
+  "name": "Plot",
+  "developerName": "Plot Technologies Inc",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "/assets/icon-48x48.png?v=ad43c848f9b94dbe88ba29fe5e776a65",
+      "type": "image/png",
+      "sizes": "48x48"
+    },
+    {
+      "src": "/assets/icon-72x72.png?v=ad43c848f9b94dbe88ba29fe5e776a65",
+      "sizes": "72x72",
+      "type": "image/png"
+    },
+    {
+      "sizes": "96x96",
+      "type": "image/png",
+      "src": "/assets/icon-96x96.png?v=ad43c848f9b94dbe88ba29fe5e776a65"
+    },
+    {
+      "src": "/assets/icon-144x144.png?v=ad43c848f9b94dbe88ba29fe5e776a65",
+      "sizes": "144x144",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/icon-192x192.png?v=ad43c848f9b94dbe88ba29fe5e776a65",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "sizes": "256x256",
+      "type": "image/png",
+      "src": "/assets/icon-256x256.png?v=ad43c848f9b94dbe88ba29fe5e776a65"
+    },
+    {
+      "src": "/assets/icon-384x384.png?v=ad43c848f9b94dbe88ba29fe5e776a65",
+      "type": "image/png",
+      "sizes": "384x384"
+    },
+    {
+      "sizes": "512x512",
+      "type": "image/png",
+      "src": "/assets/icon-512x512.png?v=ad43c848f9b94dbe88ba29fe5e776a65"
+    },
+    {
+      "sizes": "512x512",
+      "type": "image/png",
+      "src": "/assets/icon-512x512-maskable.png?v=ad43c848f9b94dbe88ba29fe5e776a65",
+      "purpose": "maskable"
+    }
+  ],
+  "short_name": "Plot",
+  "start_url": "/now",
+  "theme_color": "#243d31",
+  "background": "#243d31",
+  "background_color": "#243d31"
+}
