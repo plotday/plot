@@ -1,52 +1,21 @@
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
 
-import { completeSignIn, getUser, getUserMetadata } from "../auth";
+import { completeSignIn, getUser } from "../auth";
 import { DEFAULT_PATH } from "../config";
-import { createServerAdminClient, createServerClient, safeQuery } from "../db";
+import { createServerAdminClient, createServerClient } from "../db";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   let response: Response | undefined;
   try {
     let supabase;
     ({ supabase, response } = createServerClient(request, context));
-
     const session = await completeSignIn(request, supabase);
-
     const supabaseAdmin = createServerAdminClient(context);
-
     let user = await getUser(supabaseAdmin, session);
 
     if (!user) {
-      const {
-        id: userId,
-        email,
-        name,
-        provider,
-        avatar,
-      } = await getUserMetadata(session);
-      if (!userId) {
-        return redirect("/login");
-      }
-
-      user = safeQuery(
-        await supabaseAdmin
-          .from("user")
-          .insert({ email, name, avatar_url: avatar })
-          .select()
-          .maybeSingle()
-      );
-      if (!user) {
-        throw new Error("Could not create new user");
-      }
-      safeQuery(
-        await supabaseAdmin.from("account").insert({
-          user_id: user.id,
-          auth_user_id: userId,
-          email,
-          provider: provider === "google" ? "google" : "outlook",
-        })
-      );
+      return redirect("/sync");
     }
 
     return redirect(DEFAULT_PATH, {

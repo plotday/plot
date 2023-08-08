@@ -27,7 +27,7 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
   const isPublic = routes.some((r) => r.id === "routes/_public");
 
   return (
-    <AppShell.Header p="xs" bg="brand.9">
+    <AppShell.Header p="xs" className={classes.header}>
       <Group
         mih={50}
         gap="md"
@@ -38,7 +38,12 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
         <Group>
           {menu}
           <UnstyledButton component={Link} to="/" pt={6} pb={6}>
-            <Image src="/assets/plot.svg" alt={APP_NAME} height={24} />
+            <Image
+              src="/assets/plot.svg"
+              alt={APP_NAME}
+              height={24}
+              className={classes.logo}
+            />
           </UnstyledButton>
         </Group>
         <Group>
@@ -92,7 +97,7 @@ export default function Index() {
       }}
     >
       <AppHeader />
-      <AppShell.Main>
+      <AppShell.Main className={classes.main}>
         <Outlet context={ctx} />
       </AppShell.Main>
       <AppFooter />

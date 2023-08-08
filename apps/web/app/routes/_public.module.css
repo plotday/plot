@@ -1,4 +1,18 @@
+.logo {
+  @mixin light {
+    filter: invert(100%);
+  }
+}
+.header {
+  border-bottom: 0px;
+}
 .footer {
   border-top: 1px solid
     light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+}
+.main {
+  background-color: light-dark(
+    var(--mantine-color-gray-0),
+    var(--mantine-color-dark-7)
+  );
 }

@@ -1,8 +1,17 @@
-import { Alert, Container, Paper, Stack, Text } from "@mantine/core";
+import {
+  Alert,
+  Anchor,
+  Box,
+  Card,
+  Container,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
-import { useSearchParams } from "@remix-run/react";
-import { IconAlertCircle } from "@tabler/icons-react";
+import { Link, useSearchParams } from "@remix-run/react";
+import { IconAlertCircle, IconSunFilled } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import {
   GoogleLoginButton,
@@ -47,28 +56,45 @@ export default function Login() {
   };
 
   return (
-    <Container size="xs" p="sm">
-      <Stack mt="lg">
-        <Paper>
-          <Stack>
-            <GoogleLoginButton onClick={googleLogin}>
-              Sign in with Google
-            </GoogleLoginButton>
-            <MicrosoftLoginButton onClick={azureLogin}>
-              Sign in with Microsoft
-            </MicrosoftLoginButton>
-          </Stack>
-        </Paper>
-        {error && (
-          <Alert
-            icon={<IconAlertCircle size="1rem" />}
-            title="Sign in failed"
-            color="red"
-          >
-            <Text mt="md">{error}</Text>
-          </Alert>
-        )}
-      </Stack>
+    <Container size="xs" p="sm" mt="xl">
+      <Card>
+        <Stack>
+          <Title>
+            <Text c="yellow" span inherit style={{ verticalAlign: "middle" }}>
+              <IconSunFilled size={34} />
+            </Text>{" "}
+            <Text span inherit>
+              Good day!
+            </Text>
+          </Title>
+          <Box m="xl">
+            <Stack>
+              <GoogleLoginButton onClick={googleLogin}>
+                Sign in with Google
+              </GoogleLoginButton>
+              <MicrosoftLoginButton onClick={azureLogin}>
+                Sign in with Microsoft
+              </MicrosoftLoginButton>
+            </Stack>
+          </Box>
+          {error && (
+            <Alert
+              icon={<IconAlertCircle size="1rem" />}
+              title="Sign in failed"
+              color="red"
+            >
+              <Text mt="md">{error}</Text>
+            </Alert>
+          )}
+          <Text c="dimmed">
+            Need an account?{" "}
+            <Anchor component={Link} to={`/sync`}>
+              Get started here
+            </Anchor>
+            .
+          </Text>
+        </Stack>
+      </Card>
     </Container>
   );
 }

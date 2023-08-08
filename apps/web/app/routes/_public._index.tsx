@@ -25,7 +25,7 @@ export default function Index() {
 
   return (
     <Stack gap={0}>
-      <Container size="sm">
+      <Container size="sm" pt={36} pb={36}>
         <div className={classes.inner}>
           <div className={classes.content}>
             <Title order={2} className={classes.title} mb="xl">
