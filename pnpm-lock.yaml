@@ -58,6 +58,9 @@ importers:
       '@mantine/hooks':
         specifier: 7.0.0-alpha.21
         version: 7.0.0-alpha.21(react@18.2.0)
+      '@plotday/cal':
+        specifier: workspace:^
+        version: link:../../libs/cal
       '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db

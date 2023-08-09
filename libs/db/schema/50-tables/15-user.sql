@@ -3,7 +3,7 @@ CREATE TABLE "public"."user" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "email" text NOT NULL,
     "name" text NOT NULL,
-    "timezone" text,
+    "timezone" text NOT NULL DEFAULT 'America/New_York' ::text,
     "avatar_url" text
 );
 

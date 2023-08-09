@@ -1,9 +1,11 @@
-import { AppShell, Burger, UnstyledButton } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useCallback, useEffect } from "react";
+
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { json, redirect } from "@remix-run/cloudflare";
 import { Link, Outlet, useLocation, useOutletContext } from "@remix-run/react";
-import { useCallback } from "react";
+
+import { AppShell, Burger, Center, UnstyledButton } from "@mantine/core";
+import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 
 import { getUser, logout } from "../auth";
 import Logo from "../components/logo";
@@ -55,7 +57,7 @@ function AppNavbar() {
   }, [supabase]);
 
   return (
-    <AppShell.Navbar p="md">
+    <AppShell.Navbar>
       <AppShell.Section>
         <UnstyledButton component={Link} to="/" className={classes.control}>
           <Logo />
@@ -89,21 +91,30 @@ function AppNavbar() {
 
 export default function App() {
   const ctx = useOutletContext<ContextType>();
-  const [opened, { toggle }] = useDisclosure();
+  const [opened, { toggle, close }] = useDisclosure();
+  const mobile = useMediaQuery("(width < 48em)");
+
+  const location = useLocation();
+  useEffect(() => {
+    close();
+  }, [location, close]);
 
   return (
     <AppShell
       layout="alt"
-      navbar={{ width: 300, breakpoint: "sm", collapsed: { mobile: !opened } }}
+      navbar={{ width: 150, breakpoint: "sm", collapsed: { mobile: !opened } }}
+      footer={{ height: 32, collapsed: !mobile }}
       padding="md"
     >
-      <AppShell.Header>
-        <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-      </AppShell.Header>
+      <AppShell.Footer>
+        <Center>
+          <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+        </Center>
+      </AppShell.Footer>
 
       <AppNavbar />
 
-      <AppShell.Main>
+      <AppShell.Main className={classes.main}>
         <Outlet context={ctx} />
       </AppShell.Main>
     </AppShell>

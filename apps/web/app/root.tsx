@@ -1,11 +1,5 @@
-import {
-  ColorSchemeScript,
-  Container,
-  MantineProvider,
-  Text,
-  Title,
-} from "@mantine/core";
-import "@mantine/core/styles.css";
+import { useEffect, useMemo } from "react";
+
 import type {
   LinksFunction,
   LoaderArgs,
@@ -26,9 +20,18 @@ import {
   useRevalidator,
   useRouteError,
 } from "@remix-run/react";
+
 import type { SupabaseClient } from "@supabase/auth-helpers-remix";
 import { createBrowserClient } from "@supabase/auth-helpers-remix";
-import { useEffect, useMemo } from "react";
+
+import {
+  ColorSchemeScript,
+  Container,
+  MantineProvider,
+  Text,
+  Title,
+} from "@mantine/core";
+import "@mantine/core/styles.css";
 
 import type { Database } from "@plotday/db";
 
@@ -87,6 +90,37 @@ function Page({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+        <link
+          rel="icon"
+          type="image/png"
+          sizes="32x32"
+          href="/assets/favicon-32x32.png?v=20230809b"
+        />
+        <link
+          rel="icon"
+          type="image/png"
+          sizes="16x16"
+          href="/assets/favicon-16x16.png?v=20230809b"
+        />
+        <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+        <link rel="manifest" href="/site.webmanifest" />
+        <link
+          rel="apple-touch-icon"
+          sizes="180x180"
+          href="/assets/apple-touch-icon.png?v=20230809b"
+        />
+        <link
+          rel="mask-icon"
+          href="/assets/safari-pinned-tab.svg?v=20230809b"
+          color="#239870"
+        />
+        <link rel="shortcut icon" href="/favicon.ico?v=20230809b" />
+        <meta name="apple-mobile-web-app-title" content="Plot" />
+        <meta name="application-name" content="Plot" />
+        <meta name="msapplication-TileColor" content="#239870" />
+        <meta name="theme-color" content="#239870" />
+
         <Meta />
         <Links />
         <ColorSchemeScript />
@@ -210,4 +244,13 @@ export function useSupabase() {
 export function useUser() {
   const { user } = useOutletContext<ContextType>();
   return user;
+}
+
+export function useTz() {
+  const user = useUser();
+  const tz = user?.timezone;
+  if (!tz) {
+    throw new Error("Missing timezone");
+  }
+  return tz;
 }

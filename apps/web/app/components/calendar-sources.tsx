@@ -1,14 +1,17 @@
-import { Alert, Box, Stack, Text } from "@mantine/core";
-import { useSearchParams } from "@remix-run/react";
-import { IconAlertCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
+
+import { useSearchParams } from "@remix-run/react";
+
+import { Alert, Box, Stack, Text } from "@mantine/core";
+
+import { IconAlertCircle } from "@tabler/icons-react";
 import {
   GoogleLoginButton,
   MicrosoftLoginButton,
 } from "react-social-login-buttons";
 
-import { signInWithAzure, signInWithGoogle } from "../auth";
-import { useSupabase } from "../root";
+import { signInWithAzure, signInWithGoogle } from "app/auth";
+import { useSupabase } from "app/root";
 
 export default function CalendarSources() {
   const supabase = useSupabase();

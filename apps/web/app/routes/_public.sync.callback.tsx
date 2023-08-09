@@ -1,11 +1,11 @@
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
 
-import { completeSignIn, getUser, getUserMetadata } from "../auth";
-import { DEFAULT_PATH } from "../config";
-import { restoreAuthCookie } from "../cookies.server";
-import { createServerAdminClient, createServerClient, safeQuery } from "../db";
-import { getEnv } from "../env";
+import { completeSignIn, getUser, getUserMetadata } from "app/auth";
+import { DEFAULT_PATH } from "app/config";
+import { restoreAuthCookie } from "app/cookies.server";
+import { createServerAdminClient, createServerClient, safeQuery } from "app/db";
+import { getEnv } from "app/env";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   try {
@@ -37,7 +37,7 @@ export const loader = async ({ context, request }: LoaderArgs) => {
       credentials,
     } = await getUserMetadata(session);
     if (!userId) {
-      return redirect("/login");
+      throw new Error("Missing user metadata");
     }
 
     // Or create the user

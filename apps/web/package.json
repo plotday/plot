@@ -22,6 +22,7 @@
     "@cloudflare/pages-plugin-sentry": "^1.1.1",
     "@mantine/core": "7.0.0-alpha.21",
     "@mantine/hooks": "7.0.0-alpha.21",
+    "@plotday/cal": "workspace:^",
     "@plotday/db": "workspace:^",
     "@plotday/tz": "workspace:^",
     "@plotday/worker-request": "workspace:^",

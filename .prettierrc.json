@@ -1,5 +1,14 @@
 {
-  "importOrder": ["^@plotday/(.*)$", "^[./]"],
+  "importOrder": [
+    "^react$",
+    "@remix-run/.*",
+    "@supabase/.*",
+    "@mantine/.*",
+    "<THIRD_PARTY_MODULES>",
+    "^@plotday/(.*)$",
+    "^app/.*",
+    "^[./]"
+  ],
   "importOrderSeparation": true,
   "importOrderSortSpecifiers": true,
   "plugins": ["@trivago/prettier-plugin-sort-imports"]

@@ -380,7 +380,7 @@ export interface Database {
           email: string
           id: number
           name: string
-          timezone: string | null
+          timezone: string
         }
         Insert: {
           avatar_url?: string | null
@@ -388,7 +388,7 @@ export interface Database {
           email: string
           id?: number
           name: string
-          timezone?: string | null
+          timezone?: string
         }
         Update: {
           avatar_url?: string | null
@@ -396,7 +396,7 @@ export interface Database {
           email?: string
           id?: number
           name?: string
-          timezone?: string | null
+          timezone?: string
         }
         Relationships: []
       }

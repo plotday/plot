@@ -3,7 +3,7 @@
   "include": ["/*"],
   "exclude": [
     "/favicon.ico",
-    "/manifest.webmanifest",
+    "/site.webmanifest",
     "/browserconfig.xml",
     "/build/*",
     "/assets/*"

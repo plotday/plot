@@ -1,9 +1,9 @@
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
 
-import { completeSignIn, getUser } from "../auth";
-import { DEFAULT_PATH } from "../config";
-import { createServerAdminClient, createServerClient } from "../db";
+import { completeSignIn, getUser } from "app/auth";
+import { DEFAULT_PATH } from "app/config";
+import { createServerAdminClient, createServerClient } from "app/db";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   let response: Response | undefined;

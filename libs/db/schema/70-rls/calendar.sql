@@ -6,6 +6,5 @@ CREATE POLICY "Users can view their own calendars" ON "public"."calendar" AS per
             SELECT
                 account.id
             FROM
-                account
-            WHERE (account.auth_user_id = auth.uid ()))));
+                account)));
 

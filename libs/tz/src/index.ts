@@ -57,6 +57,18 @@ export function formatDate(date: Date, tz: string, format: string) {
   return formatInTimeZone(date, tz, format);
 }
 
+export const formatDay = (start: Date, tz: string) => {
+  return formatDate(start, tz, "cccc, MMMM d, yyyy");
+};
+
+export const formatTime = (start: Date, tz: string) => {
+  return `${formatDate(start, tz, "h:mm aaa")}`;
+};
+
+export const formatTimes = (start: Date, end: Date, tz: string) => {
+  return `${formatTime(start, tz)} - ${formatTime(end, tz)}`;
+};
+
 export const toTz = (date: Date, tz: string) => {
   return zonedTimeToUtc(date, tz);
 };

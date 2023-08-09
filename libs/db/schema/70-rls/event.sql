@@ -6,11 +6,5 @@ CREATE POLICY "Users can view their own events" ON "public"."event" AS permissiv
             SELECT
                 calendar.id
             FROM
-                calendar
-            WHERE (calendar.account_id IN (
-                SELECT
-                    account.id
-                FROM
-                    account
-                WHERE (account.auth_user_id = auth.uid ()))))));
+                calendar)));
 

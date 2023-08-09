@@ -1,0 +1,20 @@
+{
+    "name": "Plot",
+    "short_name": "Plot",
+    "icons": [
+        {
+            "src": "/android-chrome-192x192.png?v=20230809",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/android-chrome-512x512.png?v=20230809",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ],
+    "theme_color": "#239870",
+    "background_color": "#239870",
+    "start_url": "https://plot.day/prep",
+    "display": "standalone"
+}

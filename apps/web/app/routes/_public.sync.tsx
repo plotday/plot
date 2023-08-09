@@ -1,8 +1,7 @@
 import { Card, Container, Stack, Text, Title } from "@mantine/core";
 import { IconPlugConnected } from "@tabler/icons-react";
-
-import CalendarSources from "../components/calendar-sources";
-import Consent from "../components/consent";
+import CalendarSources from "app/components/calendar-sources";
+import Consent from "app/components/consent";
 
 export default function Sync() {
   return (
