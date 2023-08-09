@@ -28,7 +28,7 @@ export default function CalendarSources() {
   const googleLogin = async () => {
     if (!supabase) return;
     await signInWithGoogle(supabase, `${location.origin}/sync/callback`, [
-      "https://www.googleapis.com/auth/calendar.readonly",
+      "https://www.googleapis.com/auth/calendar",
     ]);
   };
   const outlookLogin = async () => {
