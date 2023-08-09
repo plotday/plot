@@ -4,7 +4,6 @@ import {
   Box,
   Button,
   Group,
-  Image,
   UnstyledButton,
 } from "@mantine/core";
 import {
@@ -16,7 +15,8 @@ import {
 } from "@remix-run/react";
 import type { ReactNode } from "react";
 
-import { APP_NAME, DEFAULT_PATH } from "../config";
+import Logo from "../components/logo";
+import { DEFAULT_PATH } from "../config";
 import type { ContextType } from "../root";
 import classes from "./_public.module.css";
 
@@ -38,12 +38,7 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
         <Group>
           {menu}
           <UnstyledButton component={Link} to="/" pt={6} pb={6}>
-            <Image
-              src="/assets/plot.svg"
-              alt={APP_NAME}
-              height={24}
-              className={classes.logo}
-            />
+            <Logo />
           </UnstyledButton>
         </Group>
         <Group>

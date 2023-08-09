@@ -16,7 +16,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "stop": "turbo run stop --force",
     "start": "turbo run start --force",
-    "restart": "echo ."
+    "restart": "echo .",
+    "update": "pnpm update --latest --recursive"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230724.0",
@@ -29,13 +30,13 @@
     "turbo": "latest",
     "typescript": "^5.1.6",
     "vitest": "^0.33.0",
-    "wrangler": "^3.3.0"
+    "wrangler": "^3.5.0"
   },
   "packageManager": "pnpm@8.6.6",
   "name": "@plotday/plot",
   "pnpm": {
     "patchedDependencies": {
-      "@remix-run/dev@1.19.1": "patches/@remix-run__dev@1.19.1.patch"
+      "@remix-run/dev@1.19.2": "patches/@remix-run__dev@1.19.2.patch"
     }
   }
 }

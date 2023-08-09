@@ -3,7 +3,7 @@
   "extends": "./base.json",
   "display": "Remix",
   "compilerOptions": {
-    "lib": ["DOM", "DOM.Iterable", "ES2019", "ES2022.error"],
+    "lib": ["DOM", "DOM.Iterable", "ES2021", "ES2022.error"],
     "types": ["@cloudflare/workers-types"],
     "jsx": "react-jsx",
     "resolveJsonModule": true,

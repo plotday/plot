@@ -25,34 +25,36 @@ export default function Index() {
 
   return (
     <Stack gap={0}>
-      <Container size="sm" pt={36} pb={36}>
-        <div className={classes.inner}>
-          <div className={classes.content}>
-            <Title order={2} className={classes.title} mb="xl">
-              <Highlight>Better </Highlight> than busy
-            </Title>
+      <Box pb="xl" className={classes.heroSection}>
+        <Container size="sm" pt={36} pb={36}>
+          <div className={classes.inner}>
+            <div className={classes.content}>
+              <Title order={2} className={classes.title} mb="xl">
+                <Highlight>Better </Highlight> than busy
+              </Title>
 
-            <Text>
-              Plot is a calendar that{" "}
-              <Highlight>reduces meeting overload</Highlight> so you can engage
-              well while making progress on what moves you forward.
-            </Text>
+              <Text>
+                Plot is a calendar that{" "}
+                <Highlight>reduces meeting overload</Highlight> so you can
+                engage well while making progress on what moves you forward.
+              </Text>
 
-            <Group mt={32}>
-              <Button
-                radius="xl"
-                size="md"
-                className={classes.control}
-                component="a"
-                href="/sync"
-              >
-                Get started
-              </Button>
-            </Group>
+              <Group mt={32}>
+                <Button
+                  radius="xl"
+                  size="md"
+                  className={classes.control}
+                  component="a"
+                  href="/sync"
+                >
+                  Get started
+                </Button>
+              </Group>
+            </div>
           </div>
-        </div>
-      </Container>
-      <Box pt="xl" pb="xl" mt="xl" mb={0} className={classes.graySection}>
+        </Container>
+      </Box>
+      <Box pt="xl" pb="xl" className={classes.graySection}>
         <Container size="xl">
           <Stack>
             <Title order={3} size="h1">

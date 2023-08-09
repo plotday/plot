@@ -38,3 +38,6 @@ ALTER TABLE "public"."event"
 
 ALTER TABLE "public"."event" validate CONSTRAINT "event_organizer_fkey";
 
+ALTER publication supabase_realtime
+    ADD TABLE public.event;
+

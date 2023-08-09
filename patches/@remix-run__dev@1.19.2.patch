@@ -1,0 +1,92 @@
+diff --git a/dist/compiler/server/write.js b/dist/compiler/server/write.js
+index 0314ddf35af81433199b0210a52cee641b563532..1957f6b651494da7e20318d157824ab87657f3a8 100644
+--- a/dist/compiler/server/write.js
++++ b/dist/compiler/server/write.js
+@@ -8,24 +8,32 @@
+  *
+  * @license MIT
+  */
+-'use strict';
++"use strict";
+ 
+-Object.defineProperty(exports, '__esModule', { value: true });
++Object.defineProperty(exports, "__esModule", { value: true });
+ 
+-var path = require('path');
+-var fse = require('fs-extra');
++var path = require("path");
++var fse = require("fs-extra");
+ 
+ function _interopNamespace(e) {
+   if (e && e.__esModule) return e;
+   var n = Object.create(null);
+   if (e) {
+     Object.keys(e).forEach(function (k) {
+-      if (k !== 'default') {
++      if (k !== "default") {
+         var d = Object.getOwnPropertyDescriptor(e, k);
+-        Object.defineProperty(n, k, d.get ? d : {
+-          enumerable: true,
+-          get: function () { return e[k]; }
+-        });
++        Object.defineProperty(
++          n,
++          k,
++          d.get
++            ? d
++            : {
++                enumerable: true,
++                get: function () {
++                  return e[k];
++                },
++              }
++        );
+       }
+     });
+   }
+@@ -33,16 +41,20 @@ function _interopNamespace(e) {
+   return Object.freeze(n);
+ }
+ 
+-var path__namespace = /*#__PURE__*/_interopNamespace(path);
+-var fse__namespace = /*#__PURE__*/_interopNamespace(fse);
++var path__namespace = /*#__PURE__*/ _interopNamespace(path);
++var fse__namespace = /*#__PURE__*/ _interopNamespace(fse);
+ 
+ async function write(config, outputFiles) {
+-  await fse__namespace.ensureDir(path__namespace.dirname(config.serverBuildPath));
++  await fse__namespace.ensureDir(
++    path__namespace.dirname(config.serverBuildPath)
++  );
+   for (let file of outputFiles) {
+     if (file.path.endsWith(".js") || file.path.endsWith(".mjs")) {
+       // fix sourceMappingURL to be relative to current path instead of /build
+-      let filename = file.path.substring(file.path.lastIndexOf(path__namespace.sep) + 1);
+-      let escapedFilename = filename.replace(/\./g, "\\.");
++      let filename = file.path.substring(
++        file.path.lastIndexOf(path__namespace.sep) + 1
++      );
++      let escapedFilename = filename.replace(/([.\[\]])/g, "\\$1");
+       let pattern = `(//# sourceMappingURL=)(.*)${escapedFilename}`;
+       let contents = Buffer.from(file.contents).toString("utf-8");
+       contents = contents.replace(new RegExp(pattern), `$1${filename}`);
+@@ -58,11 +70,17 @@ async function write(config, outputFiles) {
+       contents = contents.replace(/"route:/gm, '"');
+       await fse__namespace.writeFile(file.path, contents);
+     } else {
+-      let assetPath = path__namespace.join(config.assetsBuildDirectory, file.path.replace(path__namespace.dirname(config.serverBuildPath), ""));
++      let assetPath = path__namespace.join(
++        config.assetsBuildDirectory,
++        file.path.replace(path__namespace.dirname(config.serverBuildPath), "")
++      );
+ 
+       // Don't write CSS bundle from server build to browser assets directory,
+       // especially since the file name doesn't contain a content hash
+-      if (assetPath === path__namespace.join(config.assetsBuildDirectory, "index.css")) {
++      if (
++        assetPath ===
++        path__namespace.join(config.assetsBuildDirectory, "index.css")
++      ) {
+         break;
+       }
+       await fse__namespace.ensureDir(path__namespace.dirname(assetPath));

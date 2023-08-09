@@ -1,0 +1,5 @@
+.logo {
+  @mixin light {
+    filter: invert(100%);
+  }
+}

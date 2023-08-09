@@ -2,12 +2,12 @@ import type { AppLoadContext } from "@remix-run/cloudflare";
 import { createServerClient as createServerClientHelper } from "@supabase/auth-helpers-remix";
 import { createClient } from "@supabase/supabase-js";
 
-import type { Database } from "@plotday/db";
+import type { Database, SupabaseClient } from "@plotday/db";
 
 import { authCookieOptions } from "./auth";
 import { getEnv } from "./env";
 
-export type { Database } from "@plotday/db";
+export type { Database, SupabaseClient } from "@plotday/db";
 export { safeQuery } from "@plotday/db";
 
 export const createServerClient = (

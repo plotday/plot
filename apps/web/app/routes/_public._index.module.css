@@ -41,6 +41,13 @@
   flex: 1;
 }
 
+.heroSection {
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+}
+
 .graySection {
   background-color: light-dark(
     var(--mantine-color-gray-1),

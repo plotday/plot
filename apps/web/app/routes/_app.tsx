@@ -6,6 +6,7 @@ import { Link, Outlet, useLocation, useOutletContext } from "@remix-run/react";
 import { useCallback } from "react";
 
 import { getUser, logout } from "../auth";
+import Logo from "../components/logo";
 import { createServerClient } from "../db";
 import type { ContextType } from "../root";
 import classes from "./_app.module.css";
@@ -55,8 +56,22 @@ function AppNavbar() {
 
   return (
     <AppShell.Navbar p="md">
+      <AppShell.Section>
+        <UnstyledButton component={Link} to="/" className={classes.control}>
+          <Logo />
+        </UnstyledButton>
+      </AppShell.Section>
       <AppShell.Section grow>
-        <NavLink label="Now" to="/now" active={location.pathname === "/now"} />
+        <NavLink
+          label="Prep"
+          to="/prep"
+          active={location.pathname === "/prep"}
+        />
+        <NavLink
+          label="Review"
+          to="/review"
+          active={location.pathname === "/prep"}
+        />
       </AppShell.Section>
       <AppShell.Section>
         <NavLink
