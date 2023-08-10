@@ -1,14 +1,16 @@
-import type { Event } from "./event";
+import type { Event, EventResponse } from "./event";
 import {
   deleteWatch as deleteGoogleWatch,
   sync as googleSync,
   transform as googleTransform,
+  update as googleUpdate,
   watch as googleWatch,
 } from "./google";
 import {
   deleteWatch as deleteOutlookWatch,
   sync as outlookSync,
   transform as outlookTransform,
+  update as outlookUpdate,
   watch as outlookWatch,
 } from "./outlook";
 
@@ -172,5 +174,41 @@ export function transform(provider: CalendarProvider, event: RawEvent): Event {
       return outlookTransform(event);
     default:
       throw new Error(`Unknown provider: ${provider}`);
+  }
+}
+
+export type Update = Partial<Event> & {
+  response: {
+    email: string;
+    response: EventResponse;
+  };
+};
+
+export async function update(
+  config: CalendarConfig,
+  credentials: CalendarCredentials,
+  calendarId: string,
+  eventId: string,
+  changes: Update
+) {
+  switch (credentials.provider) {
+    case "google":
+      return await googleUpdate(
+        config,
+        credentials,
+        calendarId,
+        eventId,
+        changes
+      );
+    case "outlook":
+      return await outlookUpdate(
+        config,
+        credentials,
+        calendarId,
+        eventId,
+        changes
+      );
+    default:
+      throw new Error(`Unknown provider: ${credentials.provider}`);
   }
 }

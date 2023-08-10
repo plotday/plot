@@ -1,5 +1,6 @@
-import type { Queue } from "@cloudflare/workers-types";
 import type { AppLoadContext } from "@remix-run/cloudflare";
+
+import type { Queue } from "@cloudflare/workers-types";
 import * as z from "zod";
 
 import type { SyncRequest } from "@plotday/worker-request";
@@ -11,6 +12,11 @@ const environmentSchema = z.object({
   SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_KEY: z.string().min(1),
   SENTRY_DSN: z.string().optional(),
+
+  GOOGLE_CLIENT_ID: z.string().min(1),
+  GOOGLE_OAUTH_SECRET: z.string().min(1),
+  MICROSOFT_CLIENT_ID: z.string().min(1),
+  MICROSOFT_OAUTH_SECRET: z.string().min(1),
 
   SYNC_QUEUE: z
     .custom<SyncQueue>((data) => typeof data === "object")

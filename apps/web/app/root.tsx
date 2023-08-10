@@ -147,6 +147,8 @@ export function ErrorBoundary() {
   } else {
     captureRemixErrorBoundaryError(error);
     if (error instanceof Error) {
+      console.log("message", error.message);
+      console.log("stack", error.stack);
       if (error.stack) {
         message = error.stack;
       } else {
@@ -169,7 +171,9 @@ export function ErrorBoundary() {
     <Page>
       <Container mt="xl">
         <Title mb="md">{title}</Title>
-        <Text>{message}</Text>
+        {message?.split?.("\n").map((line, i) => (
+          <Text key={i}>{line}</Text>
+        ))}
       </Container>
     </Page>
   );

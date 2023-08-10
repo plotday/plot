@@ -7,10 +7,11 @@ import { Link, Outlet, useLocation, useOutletContext } from "@remix-run/react";
 import { AppShell, Burger, Center, UnstyledButton } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 
-import { getUser, logout } from "../auth";
-import Logo from "../components/logo";
-import { createServerClient } from "../db";
-import type { ContextType } from "../root";
+import { getUser, logout } from "app/auth";
+import Logo from "app/components/logo";
+import { createServerClient } from "app/db";
+import type { ContextType } from "app/root";
+
 import classes from "./_app.module.css";
 
 export const loader = async ({ context, request }: LoaderArgs) => {

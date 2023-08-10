@@ -60,39 +60,3 @@ export type Event = {
   locations: Location[];
   attachments: Attachment[];
 };
-
-//   private static HasConferencing(
-//     location?: string | null,
-//     description?: string | null
-//   ): boolean {
-//     const both = (location || "") + (description || "");
-//     return !!both.match(
-//       /(((zoom\.us)|(meet\.google\.com))\/)|(teams\.microsoft\.com\/meetup-join)/
-//     );
-//   }
-//
-//   public hasExternalAttendees(): boolean {
-//     const [_, internalDomain] = this._accountEmail.split("@");
-//     return this.invitee.some((a) => {
-//       const [_, domain] = a.email.split("@");
-//       return domain !== internalDomain;
-//     });
-//   }
-//
-// export class EventError extends Error {
-//   constructor(message: string, public event: any, cause?: any) {
-//     if (cause) {
-//       if (cause.message) {
-//         message += `: ${cause.message}`;
-//       }
-//       if (cause.detail) {
-//         message += `\n${cause.detail}`;
-//       }
-//       if (cause.where) {
-//         message += `\n${cause.where}`;
-//       }
-//     }
-//     super(message, { cause });
-//     this.name = "EventError";
-//   }
-// }

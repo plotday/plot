@@ -13,6 +13,7 @@ import type {
   Location,
   RawEvent,
   SyncState,
+  Update,
   WatchState,
 } from "./";
 import type { calendar_v3 } from "./google-types";
@@ -412,4 +413,30 @@ export function transform(rawEvent: RawEvent): Event {
     // TODO: add attachments
     attachments: [],
   };
+}
+
+export async function update(
+  config: CalendarConfig,
+  credentials: CalendarCredentials,
+  calendarId: string,
+  eventId: string,
+  changes: Update
+) {
+  const api = new GoogleApi(config, credentials);
+  let googleChanges = {} as GoogleEvent;
+  if (changes.response) {
+    googleChanges.attendeesOmitted = true;
+    googleChanges.attendees = [
+      {
+        email: changes.response.email,
+        responseStatus: changes.response.response,
+      },
+    ];
+  }
+  await api.call(
+    "PATCH",
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`,
+    undefined,
+    googleChanges
+  );
 }

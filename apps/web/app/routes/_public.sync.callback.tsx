@@ -8,14 +8,16 @@ import { createServerAdminClient, createServerClient, safeQuery } from "app/db";
 import { getEnv } from "app/env";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
+  let user = undefined;
   try {
     const env = getEnv(context);
 
     let response: Response | undefined;
     let supabase;
     ({ supabase, response } = createServerClient(request, context));
+    user = await getUser(supabase);
 
-    if (restoreAuthCookie(request, response)) {
+    if (!user && restoreAuthCookie(request, response)) {
       return redirect(request.url, {
         status: 303,
         headers: response.headers,
@@ -26,7 +28,9 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 
     // Load the user matching the auth user
     const supabaseAdmin = createServerAdminClient(context);
-    let user = await getUser(supabaseAdmin, session);
+    if (!user) {
+      user = await getUser(supabaseAdmin, session);
+    }
 
     const {
       id: userId,
@@ -75,7 +79,7 @@ export const loader = async ({ context, request }: LoaderArgs) => {
             provider: provider === "google" ? "google" : "outlook",
             credentials,
           },
-          { onConflict: "user_id, auth_user_id, provider" }
+          { onConflict: "auth_user_id" }
         )
         .select()
         .single()
@@ -97,7 +101,6 @@ export const loader = async ({ context, request }: LoaderArgs) => {
     console.error(error);
     // @ts-ignore
     console.error("Message", error?.message);
-    const params = new URLSearchParams();
     let message = "Server error";
     if (error instanceof Error && error.message) {
       message = error.message;
@@ -110,8 +113,9 @@ export const loader = async ({ context, request }: LoaderArgs) => {
       message = error.message;
     }
 
+    const params = new URLSearchParams();
     params.append("error", message);
-    return redirect(`/sync?${params.toString()}`, {
+    return redirect(`/${user ? "settings" : "sync"}?${params.toString()}`, {
       status: 303,
     });
   }

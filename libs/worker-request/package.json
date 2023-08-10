@@ -2,6 +2,7 @@
   "name": "@plotday/worker-request",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "sideEffects": false,
   "version": "0.0.0",
   "private": true,
   "scripts": {

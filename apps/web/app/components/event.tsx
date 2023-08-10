@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 
 import { useRevalidator } from "@remix-run/react";
 
@@ -7,9 +7,9 @@ import {
   Box,
   Button,
   Card,
+  Chip,
   Group,
   Pill,
-  SegmentedControl,
   Stack,
   Text,
   Title,
@@ -17,16 +17,123 @@ import {
 
 import { IconExternalLink } from "@tabler/icons-react";
 
-import { formatDay, formatTimes, toDate } from "@plotday/tz";
+import { formatDay, formatTimes, isSameDay, toDate } from "@plotday/tz";
 
-import type { Database, SupabaseClient } from "app/db";
+import type { SupabaseClient } from "app/db";
 import { safeQuery } from "app/db";
 import { useSupabase } from "app/root";
+import { useEventUpdater } from "app/routes/api.event";
 
-type EventResponse = Database["public"]["Enums"]["event_response"];
 type DbEvents = Awaited<ReturnType<typeof getEvents>>;
 type Flatten<Type> = Type extends Array<infer Item> ? Item : Type;
 type DbEvent = Flatten<DbEvents>;
+
+export class Event {
+  public static Hydrate(dbEvents: DbEvent[], tz: string) {
+    return dbEvents.map((e: DbEvent) => new Event(e, tz));
+  }
+
+  constructor(public dbEvent: DbEvent, public tz: string) {}
+
+  public get id() {
+    return this.dbEvent.id;
+  }
+
+  public get start() {
+    const dates = ((this.dbEvent.at as string) || "")
+      .replaceAll(/["[\]()]/g, "")
+      .split(",");
+    return toDate(dates[0], this.tz);
+  }
+
+  public get end() {
+    const dates = ((this.dbEvent.at as string) || "")
+      .replaceAll(/["[\]()]/g, "")
+      .split(",");
+    return toDate(dates[1], this.tz);
+  }
+
+  public get name() {
+    if (this.dbEvent.name) {
+      return this.dbEvent.name;
+    }
+    let title = "Untitled event";
+    if (this.invitees.length > 1) {
+      title = "Meeting";
+      const names = this.invitees
+        .filter((a) => !a.isSelf)
+        .map((a) => a.name || a.email);
+      switch (names.length) {
+        case 0:
+          break;
+        case 1:
+          title += ` with ${names[0]}`;
+          break;
+        case 2:
+          title += ` with ${names[0]} and ${names[1]}`;
+          break;
+        default:
+          title += ` with ${names.slice(0, 2).join(", ")}, and ${
+            names.length - 2
+          } other${names.length - 2 > 1 ? "s" : ""}`;
+          break;
+      }
+    }
+    return title;
+  }
+
+  public get description() {
+    return this.dbEvent.description;
+  }
+
+  // calendar owner's response
+  public get response() {
+    return this.invitees.find((invitee) => invitee.isSelf)?.response || null;
+  }
+
+  // email address associated with the calendar that owns this event
+  public get email() {
+    return this.invitees.find((invitee) => invitee.isSelf)?.email || null;
+  }
+
+  public get providerLink() {
+    return this.dbEvent.provider_link;
+  }
+
+  public get conferencingUrl() {
+    return this.dbEvent.conferencing_url;
+  }
+
+  public get invitees() {
+    return this.dbEvent.invitees.map((invitee) => ({
+      id: invitee.contact?.id,
+      name: invitee.contact?.name || invitee.contact?.email,
+      email: invitee.contact?.email,
+      // This assume contact_user_id is only set for the owner
+      isSelf: !!invitee.contact?.contact_user_id,
+      response: invitee.response,
+    }));
+  }
+}
+
+// export async function getCredentials(
+//   supabase: SupabaseClient,
+// ) {
+//   return safeQuery(
+//     await supabase
+//       .from("event")
+//       .select(
+//         "*,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id))"
+//       )
+//       .overlaps("at", during)
+//       .neq("status", "cancelled")
+//       .order("at", { ascending: forward })
+//       .limit(100)
+//   );
+//   // config: CalendarConfig,
+//   // credentials: CalendarCredentials,
+//   // calendarId: string,
+// }
 
 export async function getEvents(
   supabase: SupabaseClient,
@@ -51,21 +158,13 @@ export async function getEvents(
       .order("at", { ascending: forward })
       .limit(100)
   );
-  if (!events) return [];
+  type retType = NonNullable<typeof events>;
+  if (!events) return [] as retType;
 
-  // Add responses (probably convert this to a view)
-  return events
-    .filter((e) => !!e)
-    .map((event) => ({
-      ...event,
-      response:
-        // This assume contact_user_id is only set for the owner
-        event.invitees.find((invitee) => !!invitee.contact?.contact_user_id)
-          ?.response || null,
-    }));
+  return events.filter((e) => !!e) as retType;
 }
 
-export function Events({ events, tz }: { events: DbEvent[]; tz: string }) {
+export function EventList({ events, tz }: { events: Event[]; tz: string }) {
   const supabase = useSupabase();
   const revalidator = useRevalidator();
   useEffect(() => {
@@ -89,70 +188,75 @@ export function Events({ events, tz }: { events: DbEvent[]; tz: string }) {
     };
   }, [supabase, revalidator]);
 
+  let last: Date | undefined;
   return (
     <Stack>
-      {events.map((event) => (
-        <Event key={event.id} event={event} tz={tz} />
-      ))}
+      {events.map((event) => {
+        const isNewDay = !last || !isSameDay(last, event.start, event.tz);
+        last = event.start;
+        return (
+          <React.Fragment key={event.id}>
+            {isNewDay && <Title order={3}>{formatDay(event.start, tz)}</Title>}
+            <EventCard event={event} tz={tz} />
+          </React.Fragment>
+        );
+      })}
     </Stack>
   );
 }
 
-export default function Event({ event, tz }: { event: DbEvent; tz: string }) {
+export default function EventCard({ event, tz }: { event: Event; tz: string }) {
   const [response, setResponseState] = useState(event.response || undefined);
-  const setResponse = useCallback((response?: string) => {
-    console.log(response);
-    setResponseState(response as EventResponse);
-  }, []);
-  const dates = ((event.at as string) || "")
-    .replaceAll(/["[\]()]/g, "")
-    .split(",");
-  const start = toDate(dates[0], tz);
-  const end = toDate(dates[1], tz);
+  const updater = useEventUpdater();
+  const setResponse = useCallback(
+    (checked: boolean) => {
+      const response = checked ? "accepted" : "declined";
+      setResponseState(response);
+      const email = event.email;
+      if (!email) throw new Error("Missing calendar email");
+      updater(event.id, {
+        response: {
+          response,
+          email,
+        },
+      });
+    },
+    [event, updater]
+  );
   return (
     <Card withBorder>
       <Stack>
         <Title order={3}>
           {event.name}{" "}
-          {event.provider_link && (
-            <Anchor target="_blank" href={event.provider_link}>
+          {event.providerLink && (
+            <Anchor target="_blank" href={event.providerLink}>
               <IconExternalLink />
             </Anchor>
           )}
         </Title>
-        <Text>
-          {formatDay(start, tz)}, {formatTimes(start, end, tz)}
-        </Text>
+        <Text>{formatTimes(event.start, event.end, tz)}</Text>
         <Box>
-          <SegmentedControl
-            value={response}
-            onChange={setResponse}
-            data={[
-              { label: "Skip", value: "declined" },
-              { label: "Action", value: "tentative" },
-              { label: "Go", value: "accepted" },
-            ]}
-          />
+          <Chip checked={response === "accepted"} onChange={setResponse}>
+            Attend
+          </Chip>
         </Box>
         {event.invitees.length > 1 && (
-          <Text>
+          <Group gap="xs">
             {event.invitees.map((invitee) => (
-              <Pill key={invitee.contact?.id}>
-                {invitee.contact?.name || invitee.contact?.email}
-              </Pill>
+              <Pill key={invitee.id}>{invitee.name}</Pill>
             ))}
-          </Text>
+          </Group>
         )}
         {event.description && (
           <Box dangerouslySetInnerHTML={{ __html: event.description }} />
         )}
-        {event.conferencing_url && (
+        {event.conferencingUrl && (
           <Group>
             <Button
               variant="light"
               component="a"
               target="_blank"
-              href={event.conferencing_url}
+              href={event.conferencingUrl}
               fullWidth={false}
             >
               Join

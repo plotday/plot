@@ -2,6 +2,7 @@
   "name": "@plotday/cal",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "sideEffects": false,
   "version": "0.0.0",
   "private": true,
   "env_vars": "GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET TEST_GOOGLE_ACCOUNT_ACCESS_TOKEN TEST_GOOGLE_ACCOUNT_REFRESH_TOKEN TEST_OUTLOOK_ACCOUNT_ACCESS_TOKEN TEST_OUTLOOK_ACCOUNT_REFRESH_TOKEN",

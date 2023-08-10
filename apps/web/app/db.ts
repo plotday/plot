@@ -1,4 +1,5 @@
 import type { AppLoadContext } from "@remix-run/cloudflare";
+
 import { createServerClient as createServerClientHelper } from "@supabase/auth-helpers-remix";
 import { createClient } from "@supabase/supabase-js";
 
@@ -15,9 +16,10 @@ export const createServerClient = (
   context: AppLoadContext
 ) => {
   const response = new Response();
+  const env = getEnv(context);
   const supabase = createServerClientHelper<Database>(
-    getEnv(context).SUPABASE_URL,
-    getEnv(context).SUPABASE_ANON_KEY,
+    env.SUPABASE_URL,
+    env.SUPABASE_ANON_KEY,
     {
       request,
       response,
@@ -28,9 +30,10 @@ export const createServerClient = (
 };
 
 export const createServerAdminClient = (context: AppLoadContext) => {
+  const env = getEnv(context);
   const supabaseAdmin = createClient<Database>(
-    getEnv(context).SUPABASE_URL,
-    getEnv(context).SUPABASE_SERVICE_KEY,
+    env.SUPABASE_URL,
+    env.SUPABASE_SERVICE_KEY,
     {
       auth: {
         persistSession: false,

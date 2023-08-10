@@ -13,6 +13,7 @@ export default {
   serverNodeBuiltinsPolyfill: {
     modules: {},
   },
+  watchPaths: ["node_modules/@plotday/**/*"],
   postcss: true,
   future: {
     v2_dev: true,

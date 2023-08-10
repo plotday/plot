@@ -29,10 +29,5 @@ ALTER TABLE "public"."account"
 
 ALTER TABLE "public"."account" validate CONSTRAINT "account_user_id_fkey";
 
-CREATE UNIQUE INDEX account_user_provider_unique ON public.account USING btree (user_id, auth_user_id, provider);
-
-ALTER TABLE "public"."account"
-    ADD CONSTRAINT "account_user_provider_unique" UNIQUE USING INDEX "account_user_provider_unique";
-
 CREATE UNIQUE INDEX account_auth_user_id_key ON public.account USING btree (auth_user_id);
 

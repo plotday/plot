@@ -20,6 +20,7 @@ import type {
   LocationType,
   RawEvent,
   SyncState,
+  Update,
   WatchState,
 } from "./";
 
@@ -400,4 +401,14 @@ export function transform(rawEvent: RawEvent): Event {
     // TODO: add attachments
     attachments: [],
   };
+}
+
+export async function update(
+  _config: CalendarConfig,
+  _credentials: CalendarCredentials,
+  _calendarId: string,
+  _eventId: string,
+  _changes: Update
+) {
+  throw new Error("Not implemented");
 }
