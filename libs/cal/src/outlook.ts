@@ -404,11 +404,28 @@ export function transform(rawEvent: RawEvent): Event {
 }
 
 export async function update(
-  _config: CalendarConfig,
-  _credentials: CalendarCredentials,
-  _calendarId: string,
-  _eventId: string,
-  _changes: Update
+  config: CalendarConfig,
+  credentials: CalendarCredentials,
+  calendarId: string,
+  eventId: string,
+  changes: Update
 ) {
-  throw new Error("Not implemented");
+  const authProvider = new Auth(
+    config.outlookClientId,
+    config.outlookOauthSecret,
+    credentials
+  );
+  const client = Client.initWithMiddleware({ authProvider });
+
+  if (changes.response) {
+    await client
+      .api(
+        `/me/calendars/${calendarId}/events/${eventId}/${
+          changes.response.response === "accepted" ? "accept" : "decline"
+        }`
+      )
+      .post({});
+  } else {
+    throw new Error("Not implemented");
+  }
 }

@@ -38,7 +38,7 @@ import type { Database } from "@plotday/db";
 import { authCookieOptions, getUser } from "./auth";
 import { APP_NAME } from "./config";
 import { createServerClient } from "./db";
-import { getBrowserEnv, getEnv } from "./env";
+import { getBrowserEnv } from "./env";
 import {
   Sentry,
   SentryClientInit,
@@ -48,8 +48,9 @@ import {
 import { theme } from "./theme";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
-  const env = getEnv(context);
-  if (env.SENTRY_DSN) SentryServerInit(env.SENTRY_DSN, request);
+  // Can't use getEnv here since we don't want to fail if missing variables
+  const SENTRY_DSN = (context.env as any)?.SENTRY_DSN;
+  if (SENTRY_DSN) SentryServerInit(SENTRY_DSN, request);
 
   const { response, supabase } = createServerClient(request, context);
 
