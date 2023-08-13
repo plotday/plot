@@ -1,0 +1,90 @@
+import { Toucan } from "toucan-js";
+
+import { render } from "@plotday/email";
+import type { MailRequest } from "@plotday/worker-request";
+
+export interface Env {
+  readonly ENV?: string;
+  readonly RELEASE?: string;
+
+  readonly SENTRY_DSN: string;
+  readonly RESEND_API_KEY: string;
+
+  readonly QUEUE: Queue<MailRequest>;
+}
+
+async function resend(apiKey: string, request: MailRequest) {
+  const { html, text } = render("waitlist-welcome", {});
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      from: "Plot <info@xn--4bi.plot.day>",
+      reply_to: "Plot <info@plot.day>",
+      to: request.to,
+      subject: request.subject,
+      html,
+      text,
+    }),
+  });
+  if (response.status >= 400) {
+    const error = JSON.stringify(await response.json());
+    console.error(error);
+    throw new Error(error);
+  }
+}
+
+export default {
+  async fetch(req: Request, env: Env): Promise<Response> {
+    if (req.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+    if (env.ENV !== "development") {
+      return new Response("Forbidden", { status: 403 });
+    }
+    const body = (await req.json()) as
+      | MailRequest
+      | MessageSendRequest<MailRequest>[];
+    if (body instanceof Array) {
+      await env.QUEUE.sendBatch(body);
+    } else {
+      await env.QUEUE.send(body);
+    }
+
+    return new Response("Sync queued");
+  },
+
+  async queue(batch: MessageBatch<MailRequest>, env: Env): Promise<void> {
+    const Sentry = new Toucan({
+      dsn: env.SENTRY_DSN,
+      environment: env.ENV,
+      release: env.RELEASE,
+      dist: "mail",
+    });
+
+    try {
+      let messageNum = 1;
+      for (let message of batch.messages) {
+        try {
+          console.log(`Processing ${messageNum} of ${batch.messages.length}`);
+          await resend(env.RESEND_API_KEY, message.body);
+          message.ack();
+        } catch (e) {
+          console.error(e);
+          Sentry.withScope((scope) => {
+            scope.setExtra("email", message.body.to);
+            Sentry.captureException(e);
+          });
+          message.retry();
+        }
+        messageNum += 1;
+      }
+    } catch (e) {
+      console.error(e);
+      Sentry.captureException(e);
+    }
+  },
+};

@@ -9,7 +9,8 @@
     "lint": "tsc && eslint ."
   },
   "dependencies": {
-    "@plotday/cal": "workspace:^"
+    "@plotday/cal": "workspace:^",
+    "@plotday/email": "workspace:^"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",

@@ -1,3 +1,13 @@
+import type { ReactNode } from "react";
+
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useMatches,
+  useOutletContext,
+} from "@remix-run/react";
+
 import {
   Anchor,
   AppShell,
@@ -6,14 +16,6 @@ import {
   Group,
   UnstyledButton,
 } from "@mantine/core";
-import {
-  Link,
-  Outlet,
-  useLocation,
-  useMatches,
-  useOutletContext,
-} from "@remix-run/react";
-import type { ReactNode } from "react";
 
 import Logo from "../components/logo";
 import { DEFAULT_PATH } from "../config";
@@ -48,7 +50,7 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
             </Button>
           )}
           {!user && location.pathname !== "/login" && (
-            <Button component={Link} to="/login">
+            <Button variant="outline" component={Link} to="/login">
               Sign in
             </Button>
           )}
@@ -63,15 +65,15 @@ function AppFooter() {
     <Box p="md" className={classes.footer}>
       <Group gap="md" justify="space-between">
         <Group>
+          <Anchor href="mailto:team@plot.day">Contact Us</Anchor>
+        </Group>
+        <Group>
           <Anchor component={Link} to={`/terms`}>
             Terms of Service
           </Anchor>
           <Anchor component={Link} to={`/privacy`}>
             Privacy Policy
           </Anchor>
-        </Group>
-        <Group>
-          <Anchor href="mailto:team@plot.day">Contact Us</Anchor>
         </Group>
       </Group>
     </Box>

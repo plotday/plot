@@ -1,0 +1,27 @@
+{
+  "name": "@plotday/email",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "sideEffects": false,
+  "version": "0.0.0",
+  "private": true,
+  "env_vars": "",
+  "scripts": {
+    "gen-env": "../../scripts/gen-env $npm_package_env_vars",
+    "dev": "email dev -d src -p 8790",
+    "lint": "tsc && eslint ."
+  },
+  "dependencies": {
+    "@react-email/button": "^0.0.10",
+    "@react-email/html": "^0.0.4",
+    "@react-email/render": "^0.0.7",
+    "@react-email/text": "^0.0.5",
+    "react": "^18.2.0",
+    "react-email": "^1.9.4"
+  },
+  "devDependencies": {
+    "@plotday/eslint-config-custom": "workspace:*",
+    "@plotday/tsconfig": "workspace:*",
+    "@types/react": "^18.0.35"
+  }
+}

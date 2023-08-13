@@ -1,6 +1,7 @@
+import { Fragment } from "react";
+
 import { Box, Group, Slider, Stack, Text } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { Fragment } from "react";
 
 import classes from "./balance.module.css";
 
@@ -132,7 +133,7 @@ export function Balance({
         <Box
           w={`${(target / WEEKLY_HOURS) * 100}%`}
           pr={{ base: "sm", lg: "md" }}
-          display={target > 0 ? "block" : "none"}
+          display={target > 1 ? "block" : "none"}
         >
           <Activities
             color={classes.meetingText}
@@ -144,7 +145,7 @@ export function Balance({
           pl={{ base: "sm", lg: "md" }}
           ta="right"
           style={{ overflow: "hidden" }}
-          display={target < WEEKLY_HOURS ? "block" : "none"}
+          display={target < WEEKLY_HOURS - 1 ? "block" : "none"}
         >
           <Activities
             color={classes.nonMeetingText}

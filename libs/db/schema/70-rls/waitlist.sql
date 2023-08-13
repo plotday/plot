@@ -1,0 +1,2 @@
+ALTER TABLE "public"."waitlist" ENABLE ROW LEVEL SECURITY;
+

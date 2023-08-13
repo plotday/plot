@@ -1,20 +1,3 @@
-.inner {
-  display: "flex";
-  justify-content: "space-between";
-  padding-top: var(--mantine-spacing-xl);
-  padding-bottom: var(--mantine-spacing-xl);
-}
-
-.content {
-  max-width: "100%";
-  margin-right: 0;
-
-  @media (min-width: $mantine-breakpoint-md) {
-    max-width: rem(480);
-    margin-right: calc(var(--mantine-spacing-xl) * 3);
-  }
-}
-
 .title {
   color: light-dark(var(--mantine-color-black), var(--mantine-color-white));
   font-family: "Greycliff CF", var(--mantine-font-family);
@@ -23,7 +6,7 @@
   font-size: rem(28);
 
   @media (min-width: $mantine-breakpoint-xs) {
-    font-size: rem(44);
+    font-size: rem(60);
   }
 }
 

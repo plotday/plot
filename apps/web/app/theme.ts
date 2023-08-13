@@ -1,5 +1,5 @@
 import type { MantineThemeOverride } from "@mantine/core";
-import { createTheme } from "@mantine/core";
+import { Button, createTheme } from "@mantine/core";
 
 export const theme: MantineThemeOverride = createTheme({
   colors: {
@@ -34,5 +34,23 @@ export const theme: MantineThemeOverride = createTheme({
     from: "secondary",
     to: "brand",
     deg: 45,
+  },
+  components: {
+    Button: Button.extend({
+      vars: (_theme, props) => {
+        if (props.variant === "gradient") {
+          return {
+            root: {
+              "--button-bg":
+                "linear-gradient(45deg, var(--mantine-color-secondary-filled) 0%, var(--mantine-color-brand-filled) 50%, var(--mantine-color-secondary-filled) 100%)",
+              "--button-hover":
+                "linear-gradient(45deg, var(--mantine-color-brand-filled) 0%, var(--mantine-color-secondary-filled) 50%, var(--mantine-color-brand-filled) 100%)",
+            },
+          };
+        } else {
+          return { root: {} };
+        }
+      },
+    }),
   },
 });
