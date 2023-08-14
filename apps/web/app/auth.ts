@@ -82,13 +82,20 @@ export const logout = async (supabase: SupabaseClient) => {
   await supabase.auth.signOut();
 };
 
-export const getUser = async (supabase: SupabaseClient, session?: Session) => {
+export const getUserId = async (
+  supabase: SupabaseClient,
+  session?: Session
+) => {
   session =
     session || (await supabase.auth.getSession()).data.session || undefined;
   if (!session) {
     return null;
   }
-  const userId = session.user?.id;
+  return session.user?.id;
+};
+
+export const getUser = async (supabase: SupabaseClient, session?: Session) => {
+  const userId = await getUserId(supabase, session);
   if (!userId) {
     return null;
   }

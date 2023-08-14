@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
 
+import type { LoaderArgs } from "@remix-run/cloudflare";
+import { json, redirect } from "@remix-run/cloudflare";
 import {
   Link,
   Outlet,
+  useLoaderData,
   useLocation,
   useMatches,
   useOutletContext,
@@ -17,14 +20,26 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 
+import { getUser } from "app/auth";
+import { createServerClient } from "app/db";
+
 import Logo from "../components/logo";
 import { DEFAULT_PATH } from "../config";
 import type { ContextType } from "../root";
 import classes from "./_public.module.css";
 
+export const loader = async ({ context, request }: LoaderArgs) => {
+  let response: Response | undefined;
+  let supabase;
+  ({ supabase, response } = createServerClient(request, context));
+
+  let user = await getUser(supabase);
+  return json({ user }, { headers: response.headers });
+};
+
 function AppHeader({ menu }: { menu?: ReactNode }) {
+  const { user } = useLoaderData();
   const location = useLocation();
-  const { user } = useOutletContext<ContextType>();
   const routes = useMatches();
   const isPublic = routes.some((r) => r.id === "routes/_public");
 

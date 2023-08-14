@@ -4,7 +4,8 @@ CREATE TABLE "public"."user" (
     "email" text NOT NULL,
     "name" text NOT NULL,
     "timezone" text NOT NULL DEFAULT 'America/New_York' ::text,
-    "avatar_url" text
+    "avatar_url" text,
+    "invitation" text
 );
 
 CREATE UNIQUE INDEX user_email_key ON public."user" USING btree (email);

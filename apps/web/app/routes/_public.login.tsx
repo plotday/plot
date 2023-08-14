@@ -1,3 +1,9 @@
+import { useEffect, useState } from "react";
+
+import type { LoaderArgs } from "@remix-run/cloudflare";
+import { redirect } from "@remix-run/cloudflare";
+import { Link, useSearchParams } from "@remix-run/react";
+
 import {
   Alert,
   Anchor,
@@ -8,11 +14,8 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import type { LoaderArgs } from "@remix-run/cloudflare";
-import { redirect } from "@remix-run/cloudflare";
-import { Link, useSearchParams } from "@remix-run/react";
+
 import { IconAlertCircle, IconSunFilled } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
 import {
   GoogleLoginButton,
   MicrosoftLoginButton,

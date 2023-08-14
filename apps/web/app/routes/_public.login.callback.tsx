@@ -15,7 +15,9 @@ export const loader = async ({ context, request }: LoaderArgs) => {
     let user = await getUser(supabaseAdmin, session);
 
     if (!user) {
-      return redirect("/sync");
+      return redirect("/invitation", {
+        headers: response.headers,
+      });
     }
 
     return redirect(DEFAULT_PATH, {

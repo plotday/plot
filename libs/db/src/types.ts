@@ -281,6 +281,27 @@ export interface Database {
           }
         ]
       }
+      invitation: {
+        Row: {
+          code: string
+          created_at: string | null
+          id: number
+          remaining: number
+        }
+        Insert: {
+          code: string
+          created_at?: string | null
+          id?: number
+          remaining?: number
+        }
+        Update: {
+          code?: string
+          created_at?: string | null
+          id?: number
+          remaining?: number
+        }
+        Relationships: []
+      }
       invitee: {
         Row: {
           contact_id: number
@@ -379,6 +400,7 @@ export interface Database {
           created_at: string
           email: string
           id: number
+          invitation: string | null
           name: string
           timezone: string
         }
@@ -387,6 +409,7 @@ export interface Database {
           created_at?: string
           email: string
           id?: number
+          invitation?: string | null
           name: string
           timezone?: string
         }
@@ -395,8 +418,27 @@ export interface Database {
           created_at?: string
           email?: string
           id?: number
+          invitation?: string | null
           name?: string
           timezone?: string
+        }
+        Relationships: []
+      }
+      waitlist: {
+        Row: {
+          created_at: string | null
+          email: string
+          id: number
+        }
+        Insert: {
+          created_at?: string | null
+          email: string
+          id?: number
+        }
+        Update: {
+          created_at?: string | null
+          email?: string
+          id?: number
         }
         Relationships: []
       }
@@ -408,6 +450,15 @@ export interface Database {
       get_or_create_organization_id: {
         Args: {
           email: string
+        }
+        Returns: number
+      }
+      insert_user: {
+        Args: {
+          _name: string
+          _email: string
+          _avatar_url: string
+          _invitation: string
         }
         Returns: number
       }

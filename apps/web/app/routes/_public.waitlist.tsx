@@ -6,7 +6,7 @@ import { createServerAdminClient, safeQuery } from "app/db";
 
 export async function action({ request, context }: ActionArgs) {
   const body = await request.formData();
-  const email = body.get("email");
+  const email = body.get("email")?.toString();
   if (!email) return null;
 
   const supabaseAdmin = createServerAdminClient(context);

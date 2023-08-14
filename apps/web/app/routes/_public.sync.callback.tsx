@@ -3,21 +3,21 @@ import { redirect } from "@remix-run/cloudflare";
 
 import { completeSignIn, getUser, getUserMetadata } from "app/auth";
 import { DEFAULT_PATH } from "app/config";
-import { restoreAuthCookie } from "app/cookies.server";
+import { getCookie, restoreAuthCookie } from "app/cookies.server";
 import { createServerAdminClient, createServerClient, safeQuery } from "app/db";
 import { getEnv } from "app/env";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
-  let user = undefined;
+  let userId = undefined;
   try {
     const env = getEnv(context);
 
     let response: Response | undefined;
     let supabase;
     ({ supabase, response } = createServerClient(request, context));
-    user = await getUser(supabase);
+    userId = (await getUser(supabase))?.id;
 
-    if (!user && restoreAuthCookie(request, response)) {
+    if (!userId && restoreAuthCookie(request, response)) {
       return redirect(request.url, {
         status: 303,
         headers: response.headers,
@@ -28,33 +28,35 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 
     // Load the user matching the auth user
     const supabaseAdmin = createServerAdminClient(context);
-    if (!user) {
-      user = await getUser(supabaseAdmin, session);
+    if (!userId) {
+      userId = (await getUser(supabaseAdmin, session))?.id;
     }
 
     const {
-      id: userId,
+      id: authUserId,
       email,
       name,
       provider,
       avatar,
       credentials,
     } = await getUserMetadata(session);
-    if (!userId) {
+    if (!authUserId) {
       throw new Error("Missing user metadata");
     }
 
     // Or create the user
-    if (!user) {
-      user = safeQuery(
-        await supabaseAdmin
-          .from("user")
-          .insert({ email, name, avatar_url: avatar })
-          .select()
-          .maybeSingle()
+    if (!userId) {
+      const code = getCookie(request, "invitation");
+      userId = safeQuery(
+        await supabaseAdmin.rpc("insert_user", {
+          _name: name,
+          _email: email,
+          _avatar_url: avatar,
+          _invitation: code,
+        })
       );
-      if (!user) {
-        throw new Error("Could not create new user");
+      if (!userId) {
+        throw new Error("Could not create user");
       }
     }
 
@@ -63,7 +65,7 @@ export const loader = async ({ context, request }: LoaderArgs) => {
       await supabaseAdmin
         .from("contact")
         .upsert(
-          { email, name, user_id: user.id, contact_user_id: user.id },
+          { email, name, user_id: userId, contact_user_id: userId },
           { onConflict: "user_id,email" }
         )
     );
@@ -73,8 +75,8 @@ export const loader = async ({ context, request }: LoaderArgs) => {
         .from("account")
         .upsert(
           {
-            user_id: user.id,
-            auth_user_id: userId,
+            user_id: userId,
+            auth_user_id: authUserId,
             email,
             provider: provider === "google" ? "google" : "outlook",
             credentials,
@@ -115,7 +117,7 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 
     const params = new URLSearchParams();
     params.append("error", message);
-    return redirect(`/${user ? "settings" : "sync"}?${params.toString()}`, {
+    return redirect(`/${userId ? "settings" : "sync"}?${params.toString()}`, {
       status: 303,
     });
   }
