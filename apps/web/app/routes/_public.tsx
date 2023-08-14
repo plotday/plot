@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { LoaderArgs } from "@remix-run/cloudflare";
-import { json, redirect } from "@remix-run/cloudflare";
+import { json } from "@remix-run/cloudflare";
 import {
   Link,
   Outlet,
@@ -17,8 +17,11 @@ import {
   Box,
   Button,
   Group,
+  Text,
   UnstyledButton,
 } from "@mantine/core";
+
+import { IconBrandLinkedin, IconMail } from "@tabler/icons-react";
 
 import { getUser } from "app/auth";
 import { createServerClient } from "app/db";
@@ -80,7 +83,15 @@ function AppFooter() {
     <Box p="md" className={classes.footer}>
       <Group gap="md" justify="space-between">
         <Group>
-          <Anchor href="mailto:team@plot.day">Contact Us</Anchor>
+          <Anchor href="mailto:team@plot.day" title="Email">
+            <IconMail />
+          </Anchor>
+          <Anchor
+            href="https://linkedin.com/company/plot-tech/"
+            title="LinkedIn"
+          >
+            <IconBrandLinkedin />
+          </Anchor>
         </Group>
         <Group>
           <Anchor component={Link} to={`/terms`}>
