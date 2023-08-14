@@ -31,7 +31,5 @@ CREATE POLICY "internal_admin can access full waitlist" ON "public"."waitlist" A
     FOR ALL TO internal_admin
         USING (TRUE);
 
-DROP ROLE retool;
-
 GRANT ALL privileges ON ALL TABLES IN SCHEMA public TO internal_admin;
 
