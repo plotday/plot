@@ -1,0 +1,5 @@
+slug: view_waitlist
+name: View waitlist
+sql:
+  resource: plot
+  entrypoint: view_waitlist.sql

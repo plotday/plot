@@ -15,7 +15,8 @@ git push origin main
 
 1. [Install pnpm](https://pnpm.io/installation)
 1. [Install Tusker](https://github.com/bikeshedder/tusker)
-1. [Install pgFormatter](https://github.com/darold/pgFormatter) (on MacOS: `brew install pgformatter`)
+1. [Install pgFormatter](https://github.com/darold/pgFormatter) (`brew install pgformatter`)
+1. [Instal Airplane](https://docs.airplane.dev/platform/airplane-cli) (`brew install airplanedev/tap/airplane`)
 1. `pnpm install`
 1. Create `.env` files:
    1. `.env.local`
