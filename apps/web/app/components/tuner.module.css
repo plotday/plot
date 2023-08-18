@@ -1,0 +1,10 @@
+.fitContent {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.number {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}

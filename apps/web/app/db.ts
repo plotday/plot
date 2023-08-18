@@ -3,7 +3,7 @@ import type { AppLoadContext } from "@remix-run/cloudflare";
 import { createServerClient as createServerClientHelper } from "@supabase/auth-helpers-remix";
 import { createClient } from "@supabase/supabase-js";
 
-import type { Database, SupabaseClient } from "@plotday/db";
+import type { Database } from "@plotday/db";
 
 import { authCookieOptions } from "./auth";
 import { getEnv } from "./env";

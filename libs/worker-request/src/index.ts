@@ -14,6 +14,10 @@ export type EventSyncRequest = {
   rawEvent: RawEvent;
 };
 
+export type EventLabelRequest = {
+  eventId: number;
+};
+
 export type MailRequest = {
   to: string[];
   subject: string;

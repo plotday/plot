@@ -28,12 +28,12 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 };
 
 function NavLink({
-  label,
+  children,
   to,
   active,
   ...props
 }: {
-  label: string;
+  children: React.ReactNode;
   to: string;
   active: boolean;
 }) {
@@ -42,9 +42,10 @@ function NavLink({
       component={Link}
       to={to}
       className={classes.control}
+      c={active ? "brand" : undefined}
       {...props}
     >
-      {label}
+      {children}
     </UnstyledButton>
   );
 }
@@ -65,23 +66,20 @@ function AppNavbar() {
         </UnstyledButton>
       </AppShell.Section>
       <AppShell.Section grow>
-        <NavLink
-          label="Prep"
-          to="/prep"
-          active={location.pathname === "/prep"}
-        />
-        <NavLink
-          label="Review"
-          to="/review"
-          active={location.pathname === "/prep"}
-        />
+        <NavLink to="/prep" active={location.pathname === "/prep"}>
+          Prep
+        </NavLink>
+        <NavLink to="/review" active={location.pathname === "/review"}>
+          Review
+        </NavLink>
+        <NavLink to="/tune" active={location.pathname === "/tune"}>
+          Tune
+        </NavLink>
       </AppShell.Section>
       <AppShell.Section>
-        <NavLink
-          label="Settings"
-          to="/settings"
-          active={location.pathname === "/settings"}
-        />
+        <NavLink to="/settings" active={location.pathname === "/settings"}>
+          Settings
+        </NavLink>
         <UnstyledButton onClick={doLogout} className={classes.control}>
           Sign out
         </UnstyledButton>

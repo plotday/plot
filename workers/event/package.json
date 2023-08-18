@@ -3,16 +3,12 @@
   "version": "0.0.2",
   "private": true,
   "env_vars": "SUPABASE_URL SUPABASE_SERVICE_KEY SENTRY_DSN SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT CLOUDFLARE_API_TOKEN",
-  "deploy_vars": "RELEASE SENTRY_DSN SUPABASE_URL",
+  "deploy_vars": "SENTRY_DSN SUPABASE_URL",
   "scripts": {
-    "gen-env": "../../scripts/gen-env $npm_package_env_vars",
-    "deploy-vars": "../../scripts/deploy-vars $npm_package_deploy_vars",
-    "build": "wrangler deploy --env ${DEPLOY_ENV:-production} --dry-run --outdir build --node-compat true",
     "dev": "pnpm run dev:config && pnpm run dev:start",
-    "dev:config": "pnpm --silent gen-env > .dev.vars",
+    "dev:config": "../../scripts/gen-env $npm_package_env_vars > .dev.vars",
     "dev:start": "wrangler dev --env development",
-    "deploy": "export RELEASE=$GITHUB_SHA $(pnpm --silent gen-env) && pnpm build && pnpm source-map && wrangler deploy --var $(pnpm --silent deploy-vars) --env ${DEPLOY_ENV:-production} --no-bundle --node-compat false build/index.js",
-    "source-map": "export $(pnpm --silent gen-env) && sentry-cli sourcemaps inject build && sentry-cli sourcemaps upload --release=$RELEASE --dist=event-sync build",
+    "deploy": "../../scripts/deploy-worker",
     "lint": "tsc && eslint ."
   },
   "dependencies": {

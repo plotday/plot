@@ -64,7 +64,7 @@ function Waitlist() {
           leftSection={<IconMail size={16} />}
           maw="unset"
         />
-        <Button type="submit" variant="gradient">
+        <Button type="submit" variant="gradient" maw="unset">
           Join the waitlist
         </Button>
       </Group>

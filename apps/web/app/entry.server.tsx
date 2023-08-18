@@ -4,6 +4,7 @@ import type {
   EntryContext,
 } from "@remix-run/cloudflare";
 import { RemixServer } from "@remix-run/react";
+
 import isbot from "isbot";
 import { renderToReadableStream } from "react-dom/server";
 
@@ -39,10 +40,7 @@ export default async function handleRequest(
   });
 }
 
-export function handleError(
-  error: unknown,
-  { request }: DataFunctionArgs
-): void {
+export function handleError(error: unknown, _args: DataFunctionArgs): void {
   // if (isRouteErrorResponse(error)) {
   //   console.error(`${error.status} ${error.statusText}`);
   if (error instanceof Error) {

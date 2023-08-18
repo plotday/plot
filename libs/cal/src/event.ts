@@ -45,8 +45,8 @@ export type Event = {
   series?: string;
   name?: string;
   status: EventStatus;
-  startsAt: Date;
-  endsAt: Date;
+  startsAt?: Date;
+  endsAt?: Date;
   createdAt?: Date;
   providerLink?: string; // for editing in the provider client on the web
   summary?: string;

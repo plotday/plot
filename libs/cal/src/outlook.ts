@@ -23,6 +23,7 @@ import type {
   Update,
   WatchState,
 } from "./";
+import { normalizeName } from "./contact";
 
 function fromMsDate(date?: DateTimeTimeZone | null) {
   if (!date) return undefined;
@@ -123,7 +124,7 @@ export async function sync(
 
   const response = await client
     .api(
-      state?.nextToken ||
+      state?.nextToken ??
         `${
           state.calendarId === "primary"
             ? "/me"
@@ -163,6 +164,7 @@ export async function sync(
   state = {
     ...(state || {}),
     nextToken,
+    more: !!response["@odata.nextLink"],
   };
 
   return {
@@ -268,13 +270,7 @@ export function transform(rawEvent: RawEvent): Event {
   const id = rawEvent.id;
 
   const startsAt = fromMsDate(event.start);
-  if (!startsAt) {
-    throw new Error("Missing start");
-  }
   const endsAt = fromMsDate(event.end);
-  if (!endsAt) {
-    throw new Error("Missing end");
-  }
 
   let organizerEmail: string | undefined = undefined;
   let organizer: Contact | undefined;
@@ -282,7 +278,7 @@ export function transform(rawEvent: RawEvent): Event {
     organizerEmail = event.organizer?.emailAddress?.address?.toLowerCase?.();
     organizer = {
       email: organizerEmail,
-      name: event.organizer.emailAddress.name || undefined,
+      name: normalizeName(event.organizer.emailAddress.name),
     };
   }
 
@@ -297,7 +293,7 @@ export function transform(rawEvent: RawEvent): Event {
         ...ret,
         {
           email,
-          name: attendee.emailAddress?.name,
+          name: normalizeName(attendee.emailAddress?.name),
           response,
           isOptional: attendee.type === "optional",
         } as Invitee,
@@ -306,7 +302,7 @@ export function transform(rawEvent: RawEvent): Event {
   if (!organizerFound && organizerEmail) {
     invitees.push({
       email: organizerEmail,
-      name: event.organizer?.emailAddress?.name || undefined,
+      name: normalizeName(event.organizer?.emailAddress?.name),
       response: "accepted" as EventResponse,
     });
   }

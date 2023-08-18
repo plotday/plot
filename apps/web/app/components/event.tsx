@@ -1,6 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
-
-import { useRevalidator } from "@remix-run/react";
+import React, { useCallback, useState } from "react";
 
 import {
   Anchor,
@@ -17,195 +15,60 @@ import {
 
 import { IconExternalLink } from "@tabler/icons-react";
 
-import { formatDay, formatTimes, isSameDay, toDate } from "@plotday/tz";
+import type { Event } from "@plotday/db";
+import { formatDay, formatTimes, isSameDay } from "@plotday/tz";
 
-import type { SupabaseClient } from "app/db";
-import { safeQuery } from "app/db";
-import { useSupabase } from "app/root";
+import { useEventWatch } from "app/event";
 import { useEventUpdater } from "app/routes/api.event";
 
-type DbEvents = Awaited<ReturnType<typeof getEvents>>;
-type Flatten<Type> = Type extends Array<infer Item> ? Item : Type;
-type DbEvent = Flatten<DbEvents>;
-
-export class Event {
-  public static Hydrate(dbEvents: DbEvent[], tz: string) {
-    return dbEvents.map((e: DbEvent) => new Event(e, tz));
-  }
-
-  constructor(public dbEvent: DbEvent, public tz: string) {}
-
-  public get id() {
-    return this.dbEvent.id;
-  }
-
-  public get start() {
-    const dates = ((this.dbEvent.at as string) || "")
-      .replaceAll(/["[\]()]/g, "")
-      .split(",");
-    return toDate(dates[0], this.tz);
-  }
-
-  public get end() {
-    const dates = ((this.dbEvent.at as string) || "")
-      .replaceAll(/["[\]()]/g, "")
-      .split(",");
-    return toDate(dates[1], this.tz);
-  }
-
-  public get name() {
-    if (this.dbEvent.name) {
-      return this.dbEvent.name;
-    }
-    let title = "Untitled event";
-    if (this.invitees.length > 1) {
-      title = "Meeting";
-      const names = this.invitees
-        .filter((a) => !a.isSelf)
-        .map((a) => a.name || a.email);
-      switch (names.length) {
-        case 0:
-          break;
-        case 1:
-          title += ` with ${names[0]}`;
-          break;
-        case 2:
-          title += ` with ${names[0]} and ${names[1]}`;
-          break;
-        default:
-          title += ` with ${names.slice(0, 2).join(", ")}, and ${
-            names.length - 2
-          } other${names.length - 2 > 1 ? "s" : ""}`;
-          break;
-      }
-    }
-    return title;
-  }
-
-  public get description() {
-    return this.dbEvent.description;
-  }
-
-  // calendar owner's response
-  public get response() {
-    return this.invitees.find((invitee) => invitee.isSelf)?.response || null;
-  }
-
-  // email address associated with the calendar that owns this event
-  public get email() {
-    return this.invitees.find((invitee) => invitee.isSelf)?.email || null;
-  }
-
-  public get providerLink() {
-    return this.dbEvent.provider_link;
-  }
-
-  public get conferencingUrl() {
-    return this.dbEvent.conferencing_url;
-  }
-
-  public get invitees() {
-    return this.dbEvent.invitees.map((invitee) => ({
-      id: invitee.contact?.id,
-      name: invitee.contact?.name || invitee.contact?.email,
-      email: invitee.contact?.email,
-      // This assume contact_user_id is only set for the owner
-      isSelf: !!invitee.contact?.contact_user_id,
-      response: invitee.response,
-    }));
-  }
-}
-
-// export async function getCredentials(
-//   supabase: SupabaseClient,
-// ) {
-//   return safeQuery(
-//     await supabase
-//       .from("event")
-//       .select(
-//         "*,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id))"
-//       )
-//       .overlaps("at", during)
-//       .neq("status", "cancelled")
-//       .order("at", { ascending: forward })
-//       .limit(100)
-//   );
-//   // config: CalendarConfig,
-//   // credentials: CalendarCredentials,
-//   // calendarId: string,
-// }
-
-export async function getEvents(
-  supabase: SupabaseClient,
-  from: Date,
-  forward: boolean = true
-) {
-  let during;
-  if (forward) {
-    during = `[${from.toISOString()}, infinity)`;
-  } else {
-    during = `(-infinity, ${from.toISOString()}]`;
-  }
-
-  const events = safeQuery(
-    await supabase
-      .from("event")
-      .select(
-        "*,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id))"
-      )
-      .overlaps("at", during)
-      .neq("status", "cancelled")
-      .order("at", { ascending: forward })
-      .limit(100)
-  );
-  type retType = NonNullable<typeof events>;
-  if (!events) return [] as retType;
-
-  return events.filter((e) => !!e) as retType;
-}
-
-export function EventList({ events, tz }: { events: Event[]; tz: string }) {
-  const supabase = useSupabase();
-  const revalidator = useRevalidator();
-  useEffect(() => {
-    if (!supabase) return;
-    const channel = supabase
-      .channel("table-db-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "event",
-        },
-        (_payload) => {
-          revalidator.revalidate();
-        }
-      )
-      .subscribe();
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [supabase, revalidator]);
+export function EventList({ events }: { events: Event[] }) {
+  useEventWatch();
 
   let last: Date | undefined;
   return (
     <Stack>
-      {events.map((event) => {
-        const isNewDay = !last || !isSameDay(last, event.start, event.tz);
-        last = event.start;
-        return (
-          <React.Fragment key={event.id}>
-            {isNewDay && <Title order={3}>{formatDay(event.start, tz)}</Title>}
-            <EventCard event={event} tz={tz} />
-          </React.Fragment>
-        );
-      })}
+      {events
+        .reduce((acc, event) => {
+          if (event.isAllDay) {
+            if (acc.length === 0 || !Array.isArray(acc[acc.length - 1])) {
+              acc.push([]);
+            }
+            // @ts-ignore
+            acc[acc.length - 1].push(event);
+          } else {
+            acc.push(event);
+          }
+          return acc;
+        }, [] as (Event | Event[])[])
+        .map((event) => {
+          // @ts-ignore
+          let events: Event[] = [];
+          if (Array.isArray(event)) {
+            events = event;
+          }
+          const firstEvent: Event = Array.isArray(event) ? event[0] : event;
+          const isNewDay =
+            !last || !isSameDay(last, firstEvent.start, firstEvent.tz);
+          last = firstEvent.start;
+          return (
+            <React.Fragment key={firstEvent.id}>
+              {isNewDay && (
+                <Title order={3}>
+                  {formatDay(firstEvent.start, firstEvent.tz)}
+                </Title>
+              )}
+              {events.length > 0 && (
+                <Text fs="italic">{events.map((e) => e.name).join(", ")}</Text>
+              )}
+              {!firstEvent.isAllDay && <EventCard event={firstEvent} />}
+            </React.Fragment>
+          );
+        })}
     </Stack>
   );
 }
 
-export default function EventCard({ event, tz }: { event: Event; tz: string }) {
+export default function EventCard({ event }: { event: Event }) {
   const [response, setResponseState] = useState(event.response || undefined);
   const updater = useEventUpdater();
   const setResponse = useCallback(
@@ -234,7 +97,7 @@ export default function EventCard({ event, tz }: { event: Event; tz: string }) {
             </Anchor>
           )}
         </Title>
-        <Text>{formatTimes(event.start, event.end, tz)}</Text>
+        <Text>{formatTimes(event.start, event.end, event.tz)}</Text>
         <Box>
           <Chip checked={response === "accepted"} onChange={setResponse}>
             Attend
@@ -261,6 +124,13 @@ export default function EventCard({ event, tz }: { event: Event; tz: string }) {
             >
               Join
             </Button>
+          </Group>
+        )}
+        {event.labels.length > 0 && (
+          <Group gap="xs">
+            {event.labels.map((label) => (
+              <Pill key={label.id}>{label.name}</Pill>
+            ))}
           </Group>
         )}
       </Stack>

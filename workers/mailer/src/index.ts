@@ -6,6 +6,7 @@ import type { MailRequest } from "@plotday/worker-request";
 export interface Env {
   readonly ENV?: string;
   readonly RELEASE?: string;
+  readonly PACKAGE?: string;
 
   readonly SENTRY_DSN: string;
   readonly RESEND_API_KEY: string;
@@ -62,7 +63,7 @@ export default {
       dsn: env.SENTRY_DSN,
       environment: env.ENV,
       release: env.RELEASE,
-      dist: "mail",
+      dist: env.PACKAGE,
     });
 
     try {

@@ -5,6 +5,10 @@ compatibility_date = "2023-07-10"
 [env.production]
   vars = { ENV = "production" }
 
+[[env.production.queues.producers]]
+  queue = "plot-labeler-production-queue"
+  binding = "LABELER_QUEUE"
+
 [[env.production.queues.consumers]]
   queue = "plot-event-production-queue"
   max_batch_size = 20
@@ -20,6 +24,10 @@ compatibility_date = "2023-07-10"
   max_batch_timeout = 3
   max_retries = 3
 
+[[env.staging.queues.producers]]
+  queue = "plot-labeler-staging-queue"
+  binding = "LABELER_QUEUE"
+
 [env.development]
   vars = { ENV = "development" }
 
@@ -27,8 +35,18 @@ compatibility_date = "2023-07-10"
   queue = "plot-event-development-queue"
   binding = "QUEUE"
 
+[[env.development.queues.producers]]
+  queue = "plot-labeler-development-queue"
+  binding = "LABELER_QUEUE"
+
 [[env.development.queues.consumers]]
   queue = "plot-event-development-queue"
+  max_retries = 0
+  max_batch_size = 20
+  max_batch_timeout = 3
+
+[[env.development.queues.consumers]]
+  queue = "plot-labeler-development-queue"
   max_retries = 0
   max_batch_size = 20
   max_batch_timeout = 3

@@ -4,8 +4,8 @@ CREATE TABLE "public"."contact" (
     "user_id" bigint NOT NULL,
     "email" text,
     "name" text,
-    "organization_id" bigint,
-    "contact_user_id" bigint
+    "contact_user_id" bigint,
+    "domain_id" bigint
 );
 
 CREATE UNIQUE INDEX contact_pkey ON public.contact USING btree (id);
@@ -14,9 +14,9 @@ ALTER TABLE "public"."contact"
     ADD CONSTRAINT "contact_pkey" PRIMARY KEY USING INDEX "contact_pkey";
 
 ALTER TABLE "public"."contact"
-    ADD CONSTRAINT "contact_organization_id_fkey" FOREIGN KEY (organization_id) REFERENCES organization (id) ON DELETE SET NULL NOT valid;
+    ADD CONSTRAINT "contact_domain_id_fkey" FOREIGN KEY (domain_id) REFERENCES DOMAIN (id) ON DELETE SET NULL NOT valid;
 
-ALTER TABLE "public"."contact" validate CONSTRAINT "contact_organization_id_fkey";
+ALTER TABLE "public"."contact" validate CONSTRAINT "contact_domain_id_fkey";
 
 ALTER TABLE "public"."contact"
     ADD CONSTRAINT "contact_user_id_fkey" FOREIGN KEY (user_id) REFERENCES "user" (id) ON DELETE CASCADE NOT valid;

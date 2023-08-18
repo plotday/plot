@@ -18,8 +18,11 @@ BEGIN
     BEGIN
         INSERT INTO public.user (name, email, avatar_url, invitation)
             VALUES (_name, _email, _avatar_url, _invitation)
-        RETURNING
-            id INTO new_id;
+        ON CONFLICT (email)
+            DO UPDATE SET
+                name = EXCLUDED.name, avatar_url = EXCLUDED.avatar_url, invitation = EXCLUDED.invitation
+            RETURNING
+                id INTO new_id;
     EXCEPTION
         WHEN OTHERS THEN
             UPDATE

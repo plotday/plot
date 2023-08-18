@@ -42,3 +42,5 @@ export async function getCredentials(
     refresh_token: account.credentials.refresh_token,
   };
 }
+
+export { Event } from "./event";

@@ -69,6 +69,12 @@ export const formatTimes = (start: Date, end: Date, tz: string) => {
   return `${formatTime(start, tz)} - ${formatTime(end, tz)}`;
 };
 
+export const formatDuration = (length: number) => {
+  const hours = Math.floor(length / 60);
+  const minutes = Math.round(length) % 60;
+  return `${hours}:${String(minutes).padStart(2, "0")}`;
+};
+
 export const toTz = (date: Date, tz: string) => {
   return zonedTimeToUtc(date, tz);
 };

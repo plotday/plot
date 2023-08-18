@@ -5,10 +5,16 @@ CREATE TABLE "public"."domain" (
     "organization_id" bigint
 );
 
-ALTER TABLE "public"."domain" ENABLE ROW LEVEL SECURITY;
-
 CREATE UNIQUE INDEX domain_pkey ON public.domain USING btree (id);
 
 ALTER TABLE "public"."domain"
     ADD CONSTRAINT "domain_pkey" PRIMARY KEY USING INDEX "domain_pkey";
+
+ALTER TABLE "public"."domain"
+    ADD CONSTRAINT "domain_domain_unique" UNIQUE (DOMAIN);
+
+ALTER TABLE "public"."domain"
+    ADD CONSTRAINT "domain_organization_id_fkey" FOREIGN KEY (organization_id) REFERENCES organization (id) ON DELETE SET NULL NOT valid;
+
+ALTER TABLE "public"."domain" validate CONSTRAINT "domain_organization_id_fkey";
 

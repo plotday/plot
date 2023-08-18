@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION public.link_account_to_organization ()
+CREATE OR REPLACE FUNCTION public.link_account_to_domain ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -11,16 +11,16 @@ BEGIN
     UPDATE
         public.account
     SET
-        organization_id = (
+        domain_id = (
             SELECT
-                public.get_or_create_organization_id (NEW.email))
+                public.get_or_create_domain_id (NEW.email))
     WHERE
         id = NEW.id;
     RETURN NEW;
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.link_contact_to_organization ()
+CREATE OR REPLACE FUNCTION public.link_contact_to_domain ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -28,9 +28,9 @@ CREATE OR REPLACE FUNCTION public.link_contact_to_organization ()
     AS $function$
 BEGIN
     IF NEW.email IS NOT NULL THEN
-        NEW.organization_id = (
+        NEW.domain_id = (
             SELECT
-                public.get_or_create_organization_id (NEW.email));
+                public.get_or_create_domain_id (NEW.email));
     END IF;
     RETURN NEW;
 END
@@ -39,10 +39,10 @@ $function$;
 CREATE TRIGGER on_account_created
     AFTER INSERT ON public.account
     FOR EACH ROW
-    EXECUTE FUNCTION link_account_to_organization ();
+    EXECUTE FUNCTION link_account_to_domain ();
 
 CREATE TRIGGER on_contact_created
     BEFORE INSERT ON public.contact
     FOR EACH ROW
-    EXECUTE FUNCTION link_contact_to_organization ();
+    EXECUTE FUNCTION link_contact_to_domain ();
 

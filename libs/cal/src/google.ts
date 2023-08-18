@@ -16,6 +16,7 @@ import type {
   Update,
   WatchState,
 } from "./";
+import { normalizeName } from "./contact";
 import type { calendar_v3 } from "./google-types";
 
 type GoogleEvent = calendar_v3.Schema$Event;
@@ -173,6 +174,7 @@ export async function sync(
   state = {
     ...state,
     nextToken: data.nextPageToken || data.nextSyncToken,
+    more: !!data.nextPageToken,
   };
   const events = (data.items || []).map((event: any) => ({
     id: event.id,
@@ -262,21 +264,15 @@ export function transform(rawEvent: RawEvent): Event {
   const id = rawEvent.id;
 
   const startString = event.start?.dateTime || event.start?.date;
-  if (!startString) {
-    throw new Error("Missing start");
-  }
+  const startsAt = startString ? new Date(startString) : undefined;
   const endString = event.end?.dateTime || event.end?.date;
-  if (!endString) {
-    throw new Error("Missing end");
-  }
-  const startsAt = new Date(startString);
-  const endsAt = new Date(endString);
+  const endsAt = endString ? new Date(endString) : undefined;
 
   let organizer: Contact | undefined;
   if (event.organizer?.email) {
     organizer = {
       email: event.organizer.email,
-      name: event.organizer.displayName || undefined,
+      name: normalizeName(event.organizer.displayName),
     };
   }
 
@@ -289,7 +285,7 @@ export function transform(rawEvent: RawEvent): Event {
         ...ret,
         {
           email: attendee.email.toLowerCase(),
-          name: attendee.displayName || undefined,
+          name: normalizeName(attendee.displayName),
           response: transformResponse(attendee.responseStatus),
           isOptional: !!attendee.optional,
         },

@@ -17,7 +17,6 @@ import {
   Box,
   Button,
   Group,
-  Text,
   UnstyledButton,
 } from "@mantine/core";
 

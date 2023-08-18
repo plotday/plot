@@ -5,8 +5,8 @@ CREATE TABLE "public"."account" (
     "user_id" bigint NOT NULL,
     "credentials" jsonb,
     "provider" provider NOT NULL,
-    "organization_id" bigint,
-    "email" text
+    "email" text,
+    "domain_id" bigint
 );
 
 CREATE UNIQUE INDEX account_pkey ON public.account USING btree (id);
@@ -20,9 +20,9 @@ ALTER TABLE "public"."account"
 ALTER TABLE "public"."account" validate CONSTRAINT "account_auth_user_id_fkey";
 
 ALTER TABLE "public"."account"
-    ADD CONSTRAINT "account_organization_id_fkey" FOREIGN KEY (organization_id) REFERENCES organization (id) ON DELETE SET NULL NOT valid;
+    ADD CONSTRAINT "account_domain_id_fkey" FOREIGN KEY (domain_id) REFERENCES DOMAIN (id) ON DELETE SET NULL NOT valid;
 
-ALTER TABLE "public"."account" validate CONSTRAINT "account_organization_id_fkey";
+ALTER TABLE "public"."account" validate CONSTRAINT "account_domain_id_fkey";
 
 ALTER TABLE "public"."account"
     ADD CONSTRAINT "account_user_id_fkey" FOREIGN KEY (user_id) REFERENCES "user" (id) ON DELETE CASCADE NOT valid;

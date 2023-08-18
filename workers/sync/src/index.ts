@@ -11,6 +11,7 @@ import type { EventSyncRequest, SyncRequest } from "@plotday/worker-request";
 interface Env {
   readonly ENV?: string;
   readonly RELEASE?: string;
+  readonly PACKAGE?: string;
 
   readonly SUPABASE_URL: string;
   readonly SUPABASE_SERVICE_KEY: string;
@@ -121,7 +122,15 @@ async function runSync(
     sequence: (calendar.sequence || 1) + (full ? 1 : 0),
   };
   let batchBytes = 0;
-  let batch = [];
+  let batch: { body: EventSyncRequest }[] = [];
+  const sendBatch = async () => {
+    console.log(
+      `Sending batch of ${batch.length} events (${batchBytes} bytes)`
+    );
+    await env.EVENT_QUEUE.sendBatch(batch);
+    batch = [];
+    batchBytes = 0;
+  };
   do {
     let events;
     ({ events, state, credentials } = await sync(
@@ -130,6 +139,11 @@ async function runSync(
       state,
       numBatchesPerSync * maxBatchSize
     ));
+    console.log(
+      `Fetched ${events.length} events for ${state.calendarId} (${
+        state.more ? "more" : "no more"
+      })`
+    );
 
     if (!state.sequence) throw new Error("Sync state sequence unset");
 
@@ -143,16 +157,12 @@ async function runSync(
       batch.push({ body });
       batchBytes += JSON.stringify(body).length;
       if (batch.length >= maxBatchSize || batchBytes > maxBatchBytes) {
-        console.log(`Sending batch of ${batch.length} events`);
-        await env.EVENT_QUEUE.sendBatch(batch);
-        batch = [];
-        batchBytes = 0;
+        await sendBatch();
       }
     }
   } while (state.more);
   if (batch.length) {
-    console.log(`Sending batch of ${batch.length} events`);
-    await env.EVENT_QUEUE.sendBatch(batch);
+    await sendBatch();
   }
 
   safeQuery(
@@ -224,7 +234,7 @@ export default {
       dsn: env.SENTRY_DSN,
       environment: env.ENV,
       release: env.RELEASE,
-      dist: "sync",
+      dist: env.PACKAGE,
     });
 
     const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
@@ -263,7 +273,7 @@ export default {
         break;
 
       // This only happens in development, where wrangler limits require the
-      // consume to be in the same worker as the producer.
+      // consumer to be in the same worker as the producer.
       case "plot-event-development-queue":
         await fetch("http://127.0.0.1:8786/", {
           method: "POST",

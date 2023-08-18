@@ -30,7 +30,7 @@ export async function action({ request, context }: ActionArgs) {
       .eq("code", code)
       .maybeSingle()
   );
-  if (!match) return new Response("Invalid code", { status: 400 });
+  if (!match?.remaining) return new Response("Invalid code", { status: 400 });
 
   const response = new Response();
   saveCookie(response, "invitation", code);

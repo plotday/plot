@@ -1,4 +1,4 @@
-import { Box, Image } from "@mantine/core";
+import { Image } from "@mantine/core";
 
 import { APP_NAME } from "../config";
 import classes from "./logo.module.css";

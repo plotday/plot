@@ -11,6 +11,7 @@ type Calendar = Database["public"]["Tables"]["calendar"]["Row"];
 export interface Env {
   readonly ENV?: string;
   readonly RELEASE?: string;
+  readonly PACKAGE?: string;
 
   readonly SUPABASE_URL: string;
   readonly SUPABASE_SERVICE_KEY: string;
@@ -65,7 +66,7 @@ export default {
       request,
       environment: env.ENV,
       release: env.RELEASE,
-      dist: "calendar-webhook",
+      dist: env.PACKAGE,
     });
 
     try {

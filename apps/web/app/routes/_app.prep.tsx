@@ -1,17 +1,19 @@
 import type { LoaderArgs } from "@remix-run/cloudflare";
-import { json } from "@remix-run/cloudflare";
-import { useLoaderData } from "@remix-run/react";
 
-import { Event, EventList, getEvents } from "app/components/event";
+import { typedjson, useTypedLoaderData } from "remix-typedjson";
+
+import { Event } from "@plotday/db";
+
+import { EventList } from "app/components/event";
 import { createServerClient } from "app/db";
 import { useTz } from "app/root";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   const { response, supabase } = createServerClient(request, context);
 
-  const events = await getEvents(supabase, new Date());
+  const events = await Event.GetRange(supabase, new Date());
 
-  return json(
+  return typedjson(
     {
       events,
     },
@@ -20,8 +22,8 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 };
 
 export default function Prep() {
-  const { events: dbEvents } = useLoaderData();
+  const { events: dbEvents } = useTypedLoaderData<typeof loader>();
   const tz = useTz();
   const events = Event.Hydrate(dbEvents, tz);
-  return <EventList events={events} tz={tz} />;
+  return <EventList events={events} />;
 }

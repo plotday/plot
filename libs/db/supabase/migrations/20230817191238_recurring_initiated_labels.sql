@@ -1,16 +1,25 @@
-CREATE TYPE "public"."event_contact" AS (
-    "email" text,
-    "name" text
-);
+UPDATE
+    label
+SET
+    name = '1:1'
+WHERE
+    name = 'one-on-one';
 
-CREATE TYPE "public"."event_invitee" AS (
-    "contact" public.event_contact,
-    "response" event_response,
-    "is_optional" boolean
-);
+INSERT INTO label (name)
+    VALUES ('recurring'),
+    ('initiated'),
+    ('short-notice'),
+    ('xs'),
+    ('sm'),
+    ('md'),
+    ('lg'),
+    ('xl'),
+    ('internal');
 
-CREATE OR REPLACE FUNCTION public.upsert_event (_calendar_id bigint, _raw_event raw_event, _event event, _organizer public.event_contact, _invitees event_invitee[])
-    RETURNS void
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE FUNCTION public.upsert_event (_calendar_id bigint, _raw_event raw_event, _event event, _organizer event_contact, _invitees event_invitee[])
+    RETURNS bigint
     LANGUAGE plpgsql
     AS $function$
 DECLARE
@@ -44,8 +53,8 @@ BEGIN
                 id INTO _organizer_id;
     END IF;
     -- create or update event
-    INSERT INTO public.event (calendar_id, provider_id, series, name, status, at, attended, provider_link, summary, description, visibility, availability, conferencing_url, organizer)
-        VALUES (_event.calendar_id, _event.provider_id, _event.series, _event.name, _event.status, _event.at, _event.attended, _event.provider_link, _event.summary, _event.description, _event.visibility, _event.availability, _event.conferencing_url, _organizer_id)
+    INSERT INTO public.event (created_at, calendar_id, provider_id, series, name, status, at, attended, provider_link, summary, description, visibility, availability, conferencing_url, organizer)
+        VALUES (_event.created_at, _event.calendar_id, _event.provider_id, _event.series, _event.name, _event.status, _event.at, _event.attended, _event.provider_link, _event.summary, _event.description, _event.visibility, _event.availability, _event.conferencing_url, _organizer_id)
     ON CONFLICT (calendar_id, provider_id)
         DO UPDATE SET
             "sequence" = EXCLUDED.sequence + 1, series = EXCLUDED.series, name = EXCLUDED.name, status = EXCLUDED.status, at = EXCLUDED.at, attended = EXCLUDED.attended, provider_link = EXCLUDED.provider_link, summary = EXCLUDED.summary, description = EXCLUDED.description, visibility = EXCLUDED.visibility, availability = EXCLUDED.availability, conferencing_url = EXCLUDED.conferencing_url, organizer = EXCLUDED.organizer
@@ -70,6 +79,12 @@ BEGIN
     DELETE FROM invitee i
     WHERE i.event_id = _new_event.id
         AND "sequence" < _new_event.sequence;
+    RETURN _new_event.id;
 END;
 $function$;
+
+CREATE UNIQUE INDEX label_name_user_id_unique ON public.label USING btree (user_id, name) NULLS NOT DISTINCT;
+
+ALTER TABLE "public"."label"
+    ADD CONSTRAINT "label_name_user_id_unique" UNIQUE USING INDEX "label_name_user_id_unique";
 

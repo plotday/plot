@@ -39,19 +39,20 @@ export interface Database {
           auth_user_id: string
           created_at: string
           credentials: Json | null
+          domain_id: number | null
           email: string | null
           id: number
-          organization_id: number | null
           provider: Database["public"]["Enums"]["provider"]
           user_id: number
+          organization: unknown | null
         }
         Insert: {
           auth_user_id: string
           created_at?: string
           credentials?: Json | null
+          domain_id?: number | null
           email?: string | null
           id?: number
-          organization_id?: number | null
           provider: Database["public"]["Enums"]["provider"]
           user_id: number
         }
@@ -59,9 +60,9 @@ export interface Database {
           auth_user_id?: string
           created_at?: string
           credentials?: Json | null
+          domain_id?: number | null
           email?: string | null
           id?: number
-          organization_id?: number | null
           provider?: Database["public"]["Enums"]["provider"]
           user_id?: number
         }
@@ -73,9 +74,9 @@ export interface Database {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "account_organization_id_fkey"
-            columns: ["organization_id"]
-            referencedRelation: "organization"
+            foreignKeyName: "account_domain_id_fkey"
+            columns: ["domain_id"]
+            referencedRelation: "domain"
             referencedColumns: ["id"]
           },
           {
@@ -83,6 +84,12 @@ export interface Database {
             columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "event_x"
+            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -142,28 +149,29 @@ export interface Database {
         Row: {
           contact_user_id: number | null
           created_at: string
+          domain_id: number | null
           email: string | null
           id: number
           name: string | null
-          organization_id: number | null
           user_id: number
+          organization: unknown | null
         }
         Insert: {
           contact_user_id?: number | null
           created_at?: string
+          domain_id?: number | null
           email?: string | null
           id?: number
           name?: string | null
-          organization_id?: number | null
           user_id: number
         }
         Update: {
           contact_user_id?: number | null
           created_at?: string
+          domain_id?: number | null
           email?: string | null
           id?: number
           name?: string | null
-          organization_id?: number | null
           user_id?: number
         }
         Relationships: [
@@ -174,9 +182,15 @@ export interface Database {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "contact_organization_id_fkey"
-            columns: ["organization_id"]
-            referencedRelation: "organization"
+            foreignKeyName: "contact_contact_user_id_fkey"
+            columns: ["contact_user_id"]
+            referencedRelation: "event_x"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "contact_domain_id_fkey"
+            columns: ["domain_id"]
+            referencedRelation: "domain"
             referencedColumns: ["id"]
           },
           {
@@ -184,6 +198,12 @@ export interface Database {
             columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "event_x"
+            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -206,7 +226,14 @@ export interface Database {
           id?: number
           organization_id?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "domain_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       event: {
         Row: {
@@ -281,6 +308,49 @@ export interface Database {
           }
         ]
       }
+      event_label: {
+        Row: {
+          created_at: string | null
+          event_id: number | null
+          id: number
+          label_id: number
+          negate: boolean
+          priority: number
+          series: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          event_id?: number | null
+          id?: number
+          label_id: number
+          negate?: boolean
+          priority?: number
+          series?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          event_id?: number | null
+          id?: number
+          label_id?: number
+          negate?: boolean
+          priority?: number
+          series?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_label_event_id_fkey"
+            columns: ["event_id"]
+            referencedRelation: "event"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_label_label_id_fkey"
+            columns: ["label_id"]
+            referencedRelation: "label"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       invitation: {
         Row: {
           code: string
@@ -339,6 +409,40 @@ export interface Database {
             columns: ["event_id"]
             referencedRelation: "event"
             referencedColumns: ["id"]
+          }
+        ]
+      }
+      label: {
+        Row: {
+          created_at: string | null
+          id: number
+          name: string
+          user_id: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          name: string
+          user_id?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          name?: string
+          user_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "label_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "label_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "event_x"
+            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -444,10 +548,34 @@ export interface Database {
       }
     }
     Views: {
-      [_ in never]: never
+      event_x: {
+        Row: {
+          at: unknown | null
+          attendee_count: number | null
+          availability: Database["public"]["Enums"]["event_availability"] | null
+          calendar_id: number | null
+          conferencing_url: string | null
+          created_at: string | null
+          description: string | null
+          id: number | null
+          invitee_count: number | null
+          minutes: number | null
+          name: string | null
+          organizer: number | null
+          provider_id: string | null
+          provider_link: string | null
+          response: Database["public"]["Enums"]["event_response"] | null
+          series: string | null
+          status: Database["public"]["Enums"]["event_status"] | null
+          summary: string | null
+          user_id: number | null
+          visibility: Database["public"]["Enums"]["event_visibility"] | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      get_or_create_organization_id: {
+      get_or_create_domain_id: {
         Args: {
           email: string
         }
@@ -462,6 +590,19 @@ export interface Database {
         }
         Returns: number
       }
+      invitee: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          contact_id: number
+          created_at: string
+          event_id: number
+          is_optional: boolean
+          response: Database["public"]["Enums"]["event_response"] | null
+          sequence: number
+        }[]
+      }
       is_user_account: {
         Args: {
           auth_user_id: string
@@ -469,6 +610,51 @@ export interface Database {
         }
         Returns: boolean
       }
+      label: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          created_at: string | null
+          id: number
+          name: string
+          user_id: number | null
+        }[]
+      }
+      label_stats: {
+        Args: {
+          user_id: number
+          during: unknown
+        }
+        Returns: {
+          label_id: number
+          name: string
+          response: Database["public"]["Enums"]["event_response"]
+          event_count: number
+          minutes: number
+        }[]
+      }
+      organization:
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: {
+              created_at: string
+              id: number
+              name: string
+            }[]
+          }
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: {
+              created_at: string
+              id: number
+              name: string
+            }[]
+          }
       upsert_event: {
         Args: {
           _calendar_id: number
@@ -477,7 +663,7 @@ export interface Database {
           _organizer: Database["public"]["CompositeTypes"]["event_contact"]
           _invitees: Database["public"]["CompositeTypes"]["event_invitee"][]
         }
-        Returns: undefined
+        Returns: number
       }
     }
     Enums: {
