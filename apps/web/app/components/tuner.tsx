@@ -49,32 +49,34 @@ export function TunerList({
     .reduce((a, b) => Math.max(a, b), 0);
 
   return (
-    <Table>
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th>Type</Table.Th>
-          <Table.Th colSpan={2}>Load</Table.Th>
-          <Table.Th colSpan={2} className={classes.fitContent}>
-            Scheduled
-          </Table.Th>
-          <Table.Th colSpan={2} className={classes.fitContent}>
-            Pending
-          </Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {sortedStats.map((stats) => (
-          <Tuner
-            key={stats.id}
-            labelStats={stats}
-            previousStats={previousStats[stats.id]}
-            workingMinutes={workingMinutes}
-            previousWorkingMinutes={previousWorkingMinutes}
-            maxMinutes={maxMinutes}
-          />
-        ))}
-      </Table.Tbody>
-    </Table>
+    <Table.ScrollContainer minWidth={500}>
+      <Table>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Type</Table.Th>
+            <Table.Th colSpan={3}>Load</Table.Th>
+            <Table.Th colSpan={2} className={classes.fitContent}>
+              Scheduled
+            </Table.Th>
+            <Table.Th colSpan={2} className={classes.fitContent}>
+              Pending
+            </Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {sortedStats.map((stats) => (
+            <Tuner
+              key={stats.id}
+              labelStats={stats}
+              previousStats={previousStats[stats.id]}
+              workingMinutes={workingMinutes}
+              previousWorkingMinutes={previousWorkingMinutes}
+              maxMinutes={maxMinutes}
+            />
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
   );
 }
 
@@ -123,7 +125,7 @@ export function Tuner({
           </Text>
         )}
       </Table.Td>
-      <Table.Td>
+      <Table.Td miw="6rem">
         <Progress
           value={(minutes / totalMinutes) * 100}
           w={`${(totalMinutes / maxMinutes) * 100}%`}

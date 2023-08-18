@@ -1,6 +1,13 @@
+.sliderThumb {
+  border-color: var(--mantine-color-brand-5);
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-black)
+  );
+}
 .sliderTrack {
   &:before {
-    background-color: var(--mantine-color-primary);
+    background-color: var(--mantine-color-brand-5);
   }
 }
 

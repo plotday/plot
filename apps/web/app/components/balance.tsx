@@ -127,6 +127,7 @@ export function Balance({
         ]}
         classNames={{
           track: classes.sliderTrack,
+          thumb: classes.sliderThumb,
         }}
       />
       <Group mt="md" gap={0}>

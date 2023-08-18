@@ -3,12 +3,11 @@ SELECT
     u.id AS user_id,
     min(e.id) AS id,
     e.name,
-    (
-        CASE WHEN EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 THEN
-            tstzrange(timezone(u.timezone, timezone('UTC', lower(e.at))), timezone(u.timezone, timezone('UTC', upper(e.at))), '[)'::text)
-        ELSE
-            e.at
-        END) AS at,
+    CASE WHEN (EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= (((60 * 60) * 23))::numeric) THEN
+        tstzrange(timezone(u.timezone, timezone('UTC'::text, lower(e.at))), timezone(u.timezone, timezone('UTC'::text, upper(e.at))), '[)'::text)
+    ELSE
+        e.at
+    END AS at,
     min(e.calendar_id) AS calendar_id,
     min(e.provider_id) AS provider_id,
     min(e.series) AS series,
@@ -35,35 +34,4 @@ GROUP BY
     u.id,
     e.name,
     e.at;
-
-ALTER VIEW "public"."event_x" SET (security_invoker = TRUE);
-
--- Define a computed relation for PostgREST joins
--- https://postgrest.org/en/stable/references/api/resource_embedding.html#computed-relationships
-CREATE OR REPLACE FUNCTION public.invitee (event_x)
-    RETURNS SETOF invitee
-    LANGUAGE sql
-    STABLE
-    AS $function$
-    SELECT
-        *
-    FROM
-        invitee
-    WHERE
-        event_id = $1.id
-$function$;
-
-CREATE OR REPLACE FUNCTION public.label (event_x)
-    RETURNS SETOF label
-    LANGUAGE sql
-    STABLE
-    AS $function$
-    SELECT
-        label.*
-    FROM
-        label
-        JOIN event_label ON label.id = event_label.label_id
-    WHERE
-        event_label.event_id = $1.id
-$function$;
 

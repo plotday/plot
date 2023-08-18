@@ -1,13 +1,24 @@
+import { useCallback } from "react";
+
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
 import { useLoaderData } from "@remix-run/react";
 
-import { Box, Card, Container, Pill, Stack, Title } from "@mantine/core";
+import {
+  Box,
+  Button,
+  Card,
+  Container,
+  Pill,
+  Stack,
+  Title,
+} from "@mantine/core";
 
-import { getUser } from "app/auth";
+import { getUser, logout } from "app/auth";
 import CalendarSources from "app/components/calendar-sources";
 import { saveAuthCookie } from "app/cookies.server";
 import { createServerClient, safeQuery } from "app/db";
+import { useSupabase } from "app/root";
 
 export async function loader({ request, context }: LoaderArgs) {
   let response: Response | undefined;
@@ -39,6 +50,11 @@ export async function loader({ request, context }: LoaderArgs) {
 
 export default function Settings() {
   const { calendars } = useLoaderData();
+  const supabase = useSupabase();
+  const doLogout = useCallback(() => {
+    if (!supabase) return;
+    logout(supabase);
+  }, [supabase]);
   return (
     <Container size="xs" p="sm">
       <Card>
@@ -54,6 +70,11 @@ export default function Settings() {
           <CalendarSources />
         </Stack>
       </Card>
+      <Box mt="lg">
+        <Button onClick={doLogout} variant="outline" color="red">
+          Sign out
+        </Button>
+      </Box>
     </Container>
   );
 }

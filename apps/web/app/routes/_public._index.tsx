@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
 import type { V2_MetaFunction } from "@remix-run/react";
 import { Form } from "@remix-run/react";
@@ -7,8 +7,10 @@ import {
   Box,
   Button,
   Container,
+  Flex,
   Group,
   Input,
+  List,
   Stack,
   Text,
   Title,
@@ -72,23 +74,6 @@ function Waitlist() {
   );
 }
 
-function BulletPoint({
-  icon,
-  children,
-}: {
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Group gap="sm" wrap="nowrap">
-      <Box display="flex" c="secondary">
-        {icon}
-      </Box>
-      <Text>{children}</Text>
-    </Group>
-  );
-}
-
 export default function Index() {
   const [target, setTarget] = useState(16);
 
@@ -143,15 +128,35 @@ export default function Index() {
               A calendar that works for you
             </Title>
             <Stack gap="xs">
-              <BulletPoint icon={<IconShieldCheckered />}>
-                Find and protect time for what matters
-              </BulletPoint>
-              <BulletPoint icon={<IconCalendarCheck />}>
-                Always prepared, with 100% follow-through
-              </BulletPoint>
-              <BulletPoint icon={<IconScaleOutline />}>
-                Put meetings on a diet with clever alternatives
-              </BulletPoint>
+              <List center spacing="sm">
+                <List.Item
+                  icon={
+                    <Flex c="secondary">
+                      <IconShieldCheckered />
+                    </Flex>
+                  }
+                >
+                  Find and protect time for what matters
+                </List.Item>
+                <List.Item
+                  icon={
+                    <Flex c="secondary">
+                      <IconCalendarCheck />
+                    </Flex>
+                  }
+                >
+                  Always prepared, with 100% follow-through
+                </List.Item>
+                <List.Item
+                  icon={
+                    <Flex c="secondary">
+                      <IconScaleOutline />
+                    </Flex>
+                  }
+                >
+                  Put meetings on a diet with clever alternatives
+                </List.Item>
+              </List>
             </Stack>
             <Box mt="lg" mb="lg">
               <Waitlist />

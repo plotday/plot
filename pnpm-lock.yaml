@@ -55,14 +55,14 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1
       '@mantine/core':
-        specifier: 7.0.0-alpha.22
-        version: 7.0.0-alpha.22(@mantine/hooks@7.0.0-alpha.22)(@types/react@18.2.5)(react-dom@18.2.0)(react@18.2.0)
+        specifier: 7.0.0-beta.0
+        version: 7.0.0-beta.0(@mantine/hooks@7.0.0-beta.0)(@types/react@18.2.5)(react-dom@18.2.0)(react@18.2.0)
       '@mantine/dates':
-        specifier: 7.0.0-alpha.22
-        version: 7.0.0-alpha.22(@mantine/core@7.0.0-alpha.22)(@mantine/hooks@7.0.0-alpha.22)(dayjs@1.11.9)(react-dom@18.2.0)(react@18.2.0)
+        specifier: 7.0.0-beta.0
+        version: 7.0.0-beta.0(@mantine/core@7.0.0-beta.0)(@mantine/hooks@7.0.0-beta.0)(dayjs@1.11.9)(react-dom@18.2.0)(react@18.2.0)
       '@mantine/hooks':
-        specifier: 7.0.0-alpha.22
-        version: 7.0.0-alpha.22(react@18.2.0)
+        specifier: 7.0.0-beta.0
+        version: 7.0.0-beta.0(react@18.2.0)
       '@plotday/cal':
         specifier: workspace:^
         version: link:../../libs/cal
@@ -95,7 +95,7 @@ importers:
         version: 7.59.2
       '@sentry/remix':
         specifier: ^7.59.2
-        version: 7.59.2(@remix-run/node@1.19.2)(@remix-run/react@1.19.2)(react@18.2.0)
+        version: 7.59.2(@remix-run/node@1.19.3)(@remix-run/react@1.19.2)(react@18.2.0)
       '@supabase/auth-helpers-remix':
         specifier: ^0.2.1
         version: 0.2.1(@supabase/supabase-js@2.32.0)
@@ -103,8 +103,8 @@ importers:
         specifier: ^2.32.0
         version: 2.32.0
       '@tabler/icons-react':
-        specifier: ^2.26.0
-        version: 2.26.0(react@18.2.0)
+        specifier: ^2.30.0
+        version: 2.30.0(react@18.2.0)
       clsx:
         specifier: ^2.0.0
         version: 2.0.0
@@ -3114,15 +3114,15 @@ packages:
     resolution: {integrity: sha512-Lg3PnLp0QXpxwLIAuuJboLeRaIhrgJjeuh797QADg3xz8wGLugQOS5DpsE8A6i6Adgzf+bacllkKZG3J0tGfDw==}
     dev: true
 
-  /@mantine/core@7.0.0-alpha.22(@mantine/hooks@7.0.0-alpha.22)(@types/react@18.2.5)(react-dom@18.2.0)(react@18.2.0):
-    resolution: {integrity: sha512-QdzFRYnuaiiNommEniGN90Tl9cRh/OkXey7uZurVM3jb2z1+zkWCZ2UgC/FaLRZIkMjXZCzr2DEqxQ6UYBBnBw==}
+  /@mantine/core@7.0.0-beta.0(@mantine/hooks@7.0.0-beta.0)(@types/react@18.2.5)(react-dom@18.2.0)(react@18.2.0):
+    resolution: {integrity: sha512-JRn3zrVneVZ7bMeE4w0rbT4RaXvVsLz4Kg687zUKufgsZ0hEu4jG/wqy6P5t8ph7tGY0/vLmbpXxxcPMCOa9FA==}
     peerDependencies:
-      '@mantine/hooks': 7.0.0-alpha.22
+      '@mantine/hooks': 7.0.0-beta.0
       react: ^18.2.0
       react-dom: ^18.2.0
     dependencies:
       '@floating-ui/react': 0.24.8(react-dom@18.2.0)(react@18.2.0)
-      '@mantine/hooks': 7.0.0-alpha.22(react@18.2.0)
+      '@mantine/hooks': 7.0.0-beta.0(react@18.2.0)
       clsx: 2.0.0
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
@@ -3134,25 +3134,25 @@ packages:
       - '@types/react'
     dev: false
 
-  /@mantine/dates@7.0.0-alpha.22(@mantine/core@7.0.0-alpha.22)(@mantine/hooks@7.0.0-alpha.22)(dayjs@1.11.9)(react-dom@18.2.0)(react@18.2.0):
-    resolution: {integrity: sha512-o7ZzJKvzCcGHVmch5BTavQPAxvT1VqsImw/tLyMAhikRuqRHvO11jidQ9m6HGAzEJi/xF8/Eze2VBw9tUJ0vow==}
+  /@mantine/dates@7.0.0-beta.0(@mantine/core@7.0.0-beta.0)(@mantine/hooks@7.0.0-beta.0)(dayjs@1.11.9)(react-dom@18.2.0)(react@18.2.0):
+    resolution: {integrity: sha512-L70wJdJRu2wjsqwA/Y45qj2y6XRy0rlNls5z96YgDWrECl+Juq/fguTmQWHYwYCKDH/ualK2dqLci9rHJSXF9Q==}
     peerDependencies:
-      '@mantine/core': 7.0.0-alpha.22
-      '@mantine/hooks': 7.0.0-alpha.22
+      '@mantine/core': 7.0.0-beta.0
+      '@mantine/hooks': 7.0.0-beta.0
       dayjs: ^1.10.5
       react: ^18.2.0
       react-dom: ^18.2.0
     dependencies:
-      '@mantine/core': 7.0.0-alpha.22(@mantine/hooks@7.0.0-alpha.22)(@types/react@18.2.5)(react-dom@18.2.0)(react@18.2.0)
-      '@mantine/hooks': 7.0.0-alpha.22(react@18.2.0)
+      '@mantine/core': 7.0.0-beta.0(@mantine/hooks@7.0.0-beta.0)(@types/react@18.2.5)(react-dom@18.2.0)(react@18.2.0)
+      '@mantine/hooks': 7.0.0-beta.0(react@18.2.0)
       clsx: 2.0.0
       dayjs: 1.11.9
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
     dev: false
 
-  /@mantine/hooks@7.0.0-alpha.22(react@18.2.0):
-    resolution: {integrity: sha512-Vd3OhhaCd3Kbo4f6nQNB0ZzdYowbdIwEJBxPyBFCWW85SS3KCV7nq0cUy9MzdrSyKbCCepV6LMBmzkLePiGjQw==}
+  /@mantine/hooks@7.0.0-beta.0(react@18.2.0):
+    resolution: {integrity: sha512-1/9D6astxgD5W1cEPB+of7ETViCn2MPy4DR9URqdSld827OA1HeLh405HWwlQCvrWfpoiNqeMjo/a4gj+11d/w==}
     peerDependencies:
       react: ^18.2.0
     dependencies:
@@ -4130,12 +4130,12 @@ packages:
       - supports-color
     dev: false
 
-  /@remix-run/node@1.19.2:
-    resolution: {integrity: sha512-ceoDsnG4SQHxqV6aq6ZTxiBr90mnAsQBL3D7kfNswsgPS/d0gERV1hIC9svDW2NuDeMI/U1CXCM08XZYrqLfRQ==}
+  /@remix-run/node@1.19.3:
+    resolution: {integrity: sha512-z5qrVL65xLXIUpU4mkR4MKlMeKARLepgHAk4W5YY3IBXOreRqOGUC70POViYmY7x38c2Ia1NwqL80H+0h7jbMw==}
     engines: {node: '>=14.0.0'}
     dependencies:
-      '@remix-run/server-runtime': 1.19.2
-      '@remix-run/web-fetch': 4.3.6
+      '@remix-run/server-runtime': 1.19.3
+      '@remix-run/web-fetch': 4.3.7
       '@remix-run/web-file': 3.0.3
       '@remix-run/web-stream': 1.0.4
       '@web3-storage/multipart-parser': 1.0.0
@@ -4173,6 +4173,18 @@ packages:
       set-cookie-parser: 2.6.0
       source-map: 0.7.4
 
+  /@remix-run/server-runtime@1.19.3:
+    resolution: {integrity: sha512-KzQ+htUsKqpBgKE2tWo7kIIGy3MyHP58Io/itUPvV+weDjApwr9tQr9PZDPA3yAY6rAzLax7BU0NMSYCXWFY5A==}
+    engines: {node: '>=14.0.0'}
+    dependencies:
+      '@remix-run/router': 1.7.2
+      '@types/cookie': 0.4.1
+      '@web3-storage/multipart-parser': 1.0.0
+      cookie: 0.4.2
+      set-cookie-parser: 2.6.0
+      source-map: 0.7.4
+    dev: false
+
   /@remix-run/web-blob@3.0.5:
     resolution: {integrity: sha512-Mungj3erqCrq0+5zU/34NkeC2g+U7K6Uwa8uNiZgANvw0Wc64wKglk4MPQJZA0Y2tgPYXyrRn7uw4q75j6Hhww==}
     dependencies:
@@ -4180,8 +4192,8 @@ packages:
       web-encoding: 1.1.5
     dev: false
 
-  /@remix-run/web-fetch@4.3.6:
-    resolution: {integrity: sha512-ifadyJS+/7W6LhKyA8tIR9fBIPwLCFVpl1YCYg5i0ikykiXxE3IWtPVB1G51AJFghc1YgR7rq8BRJLsJeUbE5Q==}
+  /@remix-run/web-fetch@4.3.7:
+    resolution: {integrity: sha512-Ha6TuLiVHBbLuSNRgEQTz01pgG+bZVNogkKZt1cVi0asOuKISl0X2UgPLv+dWBqfcFvTi8CQvYUNuk5c89TcZw==}
     engines: {node: ^10.17 || >=12.3}
     dependencies:
       '@remix-run/web-blob': 3.0.5
@@ -4342,7 +4354,7 @@ packages:
       tslib: 2.6.1
     dev: false
 
-  /@sentry/remix@7.59.2(@remix-run/node@1.19.2)(@remix-run/react@1.19.2)(react@18.2.0):
+  /@sentry/remix@7.59.2(@remix-run/node@1.19.3)(@remix-run/react@1.19.2)(react@18.2.0):
     resolution: {integrity: sha512-w2SJg3QhBctyBfcHHmuUcDZkCfhgT8ea+iLZd9iUg9QckZlewd5vHYDSjWnbgmw4SS1aRxv4y8mpDNKjHqETFw==}
     engines: {node: '>=14'}
     hasBin: true
@@ -4351,7 +4363,7 @@ packages:
       '@remix-run/react': 1.x
       react: 16.x || 17.x || 18.x
     dependencies:
-      '@remix-run/node': 1.19.2
+      '@remix-run/node': 1.19.3
       '@remix-run/react': 1.19.2(react-dom@18.2.0)(react@18.2.0)
       '@sentry/cli': 2.2.0
       '@sentry/core': 7.59.2
@@ -4498,18 +4510,18 @@ packages:
       defer-to-connect: 2.0.1
     dev: true
 
-  /@tabler/icons-react@2.26.0(react@18.2.0):
-    resolution: {integrity: sha512-IRhaSfCIRy2uMcUHQxJBSrQWh7KcTFFpGGqvYf+5YITWgr7HD2ipuBCR9d5MYx9o6DqM/B+9kKaUU63JA+dt0A==}
+  /@tabler/icons-react@2.30.0(react@18.2.0):
+    resolution: {integrity: sha512-aYggXusHW133L4KujJkVf4GIIrjg7tIRHgNf/n37mnoHqMjwNP+PjmVdrBM1Z8Ywx9PKFRlrwM0eUMDcG+I4HA==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0
     dependencies:
-      '@tabler/icons': 2.26.0
+      '@tabler/icons': 2.30.0
       prop-types: 15.8.1
       react: 18.2.0
     dev: false
 
-  /@tabler/icons@2.26.0:
-    resolution: {integrity: sha512-fYUgqy2txHrFLxhO54lFbNCLdTIf0WtEwABdQ70fH/C6WvGDWpXSln7ntUwK1Z3MNtBkoyXUhtJgtue1yP8Gww==}
+  /@tabler/icons@2.30.0:
+    resolution: {integrity: sha512-tvtmkI4ALjKThVVORh++sB9JnkFY7eGInKxNy+Df7WVQiF7T85tlvGADzlgX4Ic+CK5MIUzZ0jhOlQ/RRlgXpg==}
     dev: false
 
   /@testing-library/dom@8.20.1:

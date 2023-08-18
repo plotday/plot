@@ -1,13 +1,20 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { json, redirect } from "@remix-run/cloudflare";
 import { Link, Outlet, useLocation, useOutletContext } from "@remix-run/react";
 
-import { AppShell, Burger, Center, UnstyledButton } from "@mantine/core";
+import { AppShell, Burger, Center, NavLink } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 
-import { getUser, logout } from "app/auth";
+import {
+  IconAdjustments,
+  IconArrowBigLeftLinesFilled,
+  IconArrowBigRightLinesFilled,
+  IconSettings,
+} from "@tabler/icons-react";
+
+import { getUser } from "app/auth";
 import Logo from "app/components/logo";
 import { createServerClient } from "app/db";
 import type { ContextType } from "app/root";
@@ -27,62 +34,45 @@ export const loader = async ({ context, request }: LoaderArgs) => {
   return json({}, { headers: response.headers });
 };
 
-function NavLink({
-  children,
-  to,
-  active,
-  ...props
-}: {
-  children: React.ReactNode;
-  to: string;
-  active: boolean;
-}) {
-  return (
-    <UnstyledButton
-      component={Link}
-      to={to}
-      className={classes.control}
-      c={active ? "brand" : undefined}
-      {...props}
-    >
-      {children}
-    </UnstyledButton>
-  );
-}
-
 function AppNavbar() {
   const location = useLocation();
-  const { supabase } = useOutletContext<ContextType>();
-  const doLogout = useCallback(() => {
-    if (!supabase) return;
-    logout(supabase);
-  }, [supabase]);
 
   return (
     <AppShell.Navbar>
       <AppShell.Section>
-        <UnstyledButton component={Link} to="/" className={classes.control}>
-          <Logo />
-        </UnstyledButton>
+        <NavLink component={Link} label={<Logo />} to="/" />
       </AppShell.Section>
       <AppShell.Section grow>
-        <NavLink to="/prep" active={location.pathname === "/prep"}>
-          Prep
-        </NavLink>
-        <NavLink to="/review" active={location.pathname === "/review"}>
-          Review
-        </NavLink>
-        <NavLink to="/tune" active={location.pathname === "/tune"}>
-          Tune
-        </NavLink>
+        <NavLink
+          component={Link}
+          label="Prep"
+          leftSection={<IconArrowBigRightLinesFilled />}
+          to="/prep"
+          active={location.pathname === "/prep"}
+        />
+        <NavLink
+          component={Link}
+          label="Review"
+          leftSection={<IconArrowBigLeftLinesFilled />}
+          to="/review"
+          active={location.pathname === "/review"}
+        />
+        <NavLink
+          component={Link}
+          label="Tune"
+          leftSection={<IconAdjustments />}
+          to="/tune"
+          active={location.pathname === "/tune"}
+        />
       </AppShell.Section>
       <AppShell.Section>
-        <NavLink to="/settings" active={location.pathname === "/settings"}>
-          Settings
-        </NavLink>
-        <UnstyledButton onClick={doLogout} className={classes.control}>
-          Sign out
-        </UnstyledButton>
+        <NavLink
+          component={Link}
+          label="Settings"
+          leftSection={<IconSettings />}
+          to="/settings"
+          active={location.pathname === "/settings"}
+        />
       </AppShell.Section>
     </AppShell.Navbar>
   );
