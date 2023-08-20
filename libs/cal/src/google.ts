@@ -134,17 +134,19 @@ export async function sync(
     "GET",
     `https://www.googleapis.com/calendar/v3/calendars/${state.calendarId}/events`,
     {
-      ...(state.more && state.nextToken
+      ...(state.nextToken && state.more
         ? {
             pageToken: state.nextToken,
           }
-        : !state.more && state.nextToken
+        : {}),
+      ...(state.nextToken && !state.more
         ? {
             syncToken: state.nextToken,
           }
         : {
             timeMin: toGoogleDate(state.min),
             timeMax: toGoogleDate(state.max),
+            orderBy: "startTime",
             singleEvents: true,
           }),
       ...(maxEvents ? { maxResults: maxEvents } : {}),

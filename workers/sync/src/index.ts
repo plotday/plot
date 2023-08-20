@@ -1,12 +1,16 @@
 import { jsonFetch as fetch } from "@worker-tools/json-fetch";
-import { add, startOfYear, subYears } from "date-fns";
+import { add, differenceInYears, startOfYear, sub, subYears } from "date-fns";
 import { Toucan } from "toucan-js";
 
 import type { CalendarConfig, SyncState, WatchState } from "@plotday/cal";
 import { sync, watch } from "@plotday/cal";
 import type { SupabaseClient } from "@plotday/db";
 import { createClient, getCredentials, safeQuery } from "@plotday/db";
-import type { EventSyncRequest, SyncRequest } from "@plotday/worker-request";
+import type {
+  EventSyncRequest,
+  SyncRequest,
+  SyncType,
+} from "@plotday/worker-request";
 
 interface Env {
   readonly ENV?: string;
@@ -31,7 +35,7 @@ async function runSync(
   supabase: SupabaseClient,
   accountId: number,
   providerCalendarId: string,
-  full: boolean
+  syncType: SyncType
 ) {
   const maxBatchSize = 50;
   const maxBatchBytes = 128_000;
@@ -48,7 +52,7 @@ async function runSync(
   let credentials = await getCredentials(supabase, accountId);
 
   async function updateWatch() {
-    if (!env.CALENDAR_WEBHOOK_URL) return null;
+    if (syncType === "partial" || !env.CALENDAR_WEBHOOK_URL) return null;
     console.log(`Updating watch (${accountId}:${providerCalendarId})`);
     let state: WatchState;
     ({ state, credentials } = await watch(
@@ -60,7 +64,7 @@ async function runSync(
   }
 
   // Create a new watch
-  let watchState = full ? await updateWatch() : null;
+  let watchState = syncType === "full" ? await updateWatch() : null;
 
   const calendar = safeQuery(
     await supabase
@@ -107,19 +111,41 @@ async function runSync(
     }
   }
 
+  if (
+    syncType === "incremental" &&
+    (!calendar.starts_at ||
+      !calendar.ends_at ||
+      !calendar.next_token ||
+      differenceInYears(new Date(), new Date(calendar.starts_at)) < 1)
+  ) {
+    syncType = "full";
+  }
+
+  let min, max;
+  switch (syncType) {
+    case "full":
+      min = startOfYear(subYears(new Date(), 1));
+      max = add(new Date(), { years: 1, months: 6 });
+      break;
+    case "incremental":
+      min = new Date(calendar.starts_at as string);
+      max = new Date(calendar.ends_at as string);
+      break;
+    case "partial":
+      min = sub(new Date(), { days: 3 });
+      max = add(new Date(), { days: 7 });
+      break;
+  }
   let state: SyncState = {
     calendarId: calendar.provider_id,
-    min:
-      !full && calendar.starts_at
-        ? new Date(calendar.starts_at)
-        : startOfYear(subYears(new Date(), 1)),
-    max:
-      !full && calendar.ends_at
-        ? new Date(calendar.ends_at)
-        : add(new Date(), { years: 1, months: 6 }),
-    nextToken: !full && calendar.next_token ? calendar.next_token : undefined,
-    more: !full && !!calendar.more,
-    sequence: (calendar.sequence || 1) + (full ? 1 : 0),
+    min,
+    max,
+    nextToken:
+      syncType === "incremental" && calendar.next_token
+        ? calendar.next_token
+        : undefined,
+    more: syncType === "incremental" && !!calendar.more,
+    sequence: (calendar.sequence || 1) + (syncType === "full" ? 1 : 0),
   };
   let batchBytes = 0;
   let batch: { body: EventSyncRequest }[] = [];
@@ -174,32 +200,36 @@ async function runSync(
       .eq("id", accountId)
       .single()
   );
-  safeQuery(
-    await supabase
-      .from("calendar")
-      .update({
-        starts_at: state.min.toISOString(),
-        ends_at: state.max.toISOString(),
-        more: state.more,
-        next_token: state.nextToken,
-        sequence: state.sequence,
-      })
-      .eq("id", calendar.id)
-  );
+  if (syncType !== "partial") {
+    safeQuery(
+      await supabase
+        .from("calendar")
+        .update({
+          starts_at: state.min.toISOString(),
+          ends_at: state.max.toISOString(),
+          more: state.more,
+          next_token: state.nextToken,
+          sequence: state.sequence,
+        })
+        .eq("id", calendar.id)
+    );
+  }
 
-  // Wait 30 seconds (for new events to sync) then delete events with older sequence numbers
-  await new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(null);
-    }, 30_000);
-  });
-  safeQuery(
-    await supabase
-      .from("raw_event")
-      .delete()
-      .eq("calendar_id", calendar.id)
-      .lt("sequence", state.sequence)
-  );
+  if (syncType === "full") {
+    // Wait 30 seconds (for new events to sync) then delete events with older sequence numbers
+    await new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(null);
+      }, 30_000);
+    });
+    safeQuery(
+      await supabase
+        .from("raw_event")
+        .delete()
+        .eq("calendar_id", calendar.id)
+        .lt("sequence", state.sequence)
+    );
+  }
 }
 
 export default {
@@ -216,11 +246,11 @@ export default {
       return new Response("Bad Request", { status: 400 });
     }
     const providerCalendarId = (body as any)?.providerCalendarId;
-    const full = (body as any)?.full;
+    const syncType = (body as any)?.syncType;
     await env.QUEUE.send({
       accountId,
       providerCalendarId,
-      full,
+      syncType,
     });
 
     return new Response("Sync queued");
@@ -247,10 +277,16 @@ export default {
             const accountId = message.body.accountId;
             const providerCalendarId =
               message.body.providerCalendarId || "primary";
-            const full = !!message.body.full;
-            console.log(`Starting sync (${accountId})`);
+            const syncType = message.body.syncType || "incremental";
+            console.log(`Starting ${syncType} sync (${accountId})`);
             try {
-              await runSync(env, supabase, accountId, providerCalendarId, full);
+              await runSync(
+                env,
+                supabase,
+                accountId,
+                providerCalendarId,
+                syncType
+              );
               console.log(`Sync complete (${accountId})`);
               message.ack();
             } catch (e) {

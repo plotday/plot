@@ -1,10 +1,11 @@
 import type { CalendarProvider, RawEvent } from "@plotday/cal";
 import type { EmailType } from "@plotday/email";
 
+export type SyncType = "full" | "incremental" | "partial";
 export type SyncRequest = {
   accountId: number;
   providerCalendarId?: string;
-  full?: boolean;
+  syncType?: SyncType;
 };
 
 export type EventSyncRequest = {

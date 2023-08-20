@@ -88,8 +88,12 @@ export const loader = async ({ context, request }: LoaderArgs) => {
     );
 
     if (account) {
-      // Start a full sync
-      await env.SYNC_QUEUE?.send?.({ accountId: account.id, full: true });
+      // Start a partial sync plus a full sync
+      await env.SYNC_QUEUE?.send?.({
+        accountId: account.id,
+        syncType: "partial",
+      });
+      await env.SYNC_QUEUE?.send?.({ accountId: account.id, syncType: "full" });
     }
 
     return redirect(DEFAULT_PATH, {

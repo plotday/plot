@@ -16,11 +16,7 @@
     "GOOGLE_CLIENT_ID",
     "GOOGLE_OAUTH_SECRET",
     "MICROSOFT_CLIENT_ID",
-    "MICROSOFT_OAUTH_SECRET",
-    "TEST_GOOGLE_ACCOUNT_ACCESS_TOKEN",
-    "TEST_GOOGLE_ACCOUNT_REFRESH_TOKEN",
-    "TEST_OUTLOOK_ACCOUNT_ACCESS_TOKEN",
-    "TEST_OUTLOOK_ACCOUNT_REFRESH_TOKEN"
+    "MICROSOFT_OAUTH_SECRET"
   ],
   "pipeline": {
     "topo": {
@@ -37,8 +33,17 @@
       "dependsOn": ["^build", "build"]
     },
     "lint": {},
-    "test": {
+    "test": {},
+    "@plotday/db#test": {
       "dependsOn": ["@plotday/db#start"]
+    },
+    "@plotday/cal#test": {
+      "env": [
+        "TEST_GOOGLE_ACCOUNT_ACCESS_TOKEN",
+        "TEST_GOOGLE_ACCOUNT_REFRESH_TOKEN",
+        "TEST_OUTLOOK_ACCOUNT_ACCESS_TOKEN",
+        "TEST_OUTLOOK_ACCOUNT_REFRESH_TOKEN"
+      ]
     },
     "test:watch": {
       "dependsOn": ["@plotday/db#start"],
