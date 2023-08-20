@@ -1,6 +1,6 @@
--- Synchronize this list with src/event.ts
---
--- When changing, copy this in to a manual migration (`pnpm new-migration`).
+ALTER TABLE "public"."label"
+    ADD COLUMN "description" text;
+
 INSERT INTO label (name, description)
     VALUES ('meeting', 'All meetings'),
     ('recruiting', 'Hiring-related meetings'),

@@ -1,3 +1,7 @@
+DROP FUNCTION IF EXISTS "public"."label_stats" (user_id bigint, during tstzrange);
+
+SET check_function_bodies = OFF;
+
 CREATE OR REPLACE FUNCTION public.label_stats (user_id bigint, during tstzrange)
     RETURNS TABLE (
         label_id bigint,

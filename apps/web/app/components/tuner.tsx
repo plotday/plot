@@ -1,4 +1,4 @@
-import { Badge, Progress, Table, Text } from "@mantine/core";
+import { Badge, Progress, Table, Text, Tooltip } from "@mantine/core";
 
 import { IconArrowDownLeft, IconArrowUpRight } from "@tabler/icons-react";
 
@@ -14,6 +14,7 @@ type Stats = {
 export type LabelStats = {
   id: number;
   name: string;
+  description?: string;
   accepted?: Stats;
   declined?: Stats;
   tentative?: Stats;
@@ -111,7 +112,11 @@ export function Tuner({
     : 0;
   return (
     <Table.Tr>
-      <Table.Td className={classes.fitContent}>{labelStats.name}</Table.Td>
+      <Table.Td className={classes.fitContent}>
+        <Tooltip label={labelStats.description}>
+          <Text>{labelStats.name}</Text>
+        </Tooltip>
+      </Table.Td>
       <Table.Td className={classes.number}>{round(load, 1)}%</Table.Td>
       <Table.Td className={classes.number}>
         {trend !== 0 && (

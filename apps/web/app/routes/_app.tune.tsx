@@ -34,10 +34,11 @@ async function getStats(
       })
     ) || []
   ).reduce((acc, cur) => {
-    const { name, response, label_id, ...rest } = cur;
+    const { name, description, response, label_id, ...rest } = cur;
     acc[label_id] ??= {} as LabelStats;
     acc[label_id].id = label_id;
     acc[label_id].name = name;
+    acc[label_id].description = description;
     acc[label_id][response] = rest;
     return acc;
   }, {} as Record<string, LabelStats>);

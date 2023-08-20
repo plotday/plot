@@ -415,18 +415,21 @@ export interface Database {
       label: {
         Row: {
           created_at: string | null
+          description: string | null
           id: number
           name: string
           user_id: number | null
         }
         Insert: {
           created_at?: string | null
+          description?: string | null
           id?: number
           name: string
           user_id?: number | null
         }
         Update: {
           created_at?: string | null
+          description?: string | null
           id?: number
           name?: string
           user_id?: number | null
@@ -575,6 +578,10 @@ export interface Database {
       }
     }
     Functions: {
+      all_views_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       get_or_create_domain_id: {
         Args: {
           email: string
@@ -606,7 +613,7 @@ export interface Database {
       is_user_account: {
         Args: {
           auth_user_id: string
-          account_id: number
+          user_id: number
         }
         Returns: boolean
       }
@@ -616,6 +623,7 @@ export interface Database {
         }
         Returns: {
           created_at: string | null
+          description: string | null
           id: number
           name: string
           user_id: number | null
@@ -629,6 +637,7 @@ export interface Database {
         Returns: {
           label_id: number
           name: string
+          description: string
           response: Database["public"]["Enums"]["event_response"]
           event_count: number
           minutes: number

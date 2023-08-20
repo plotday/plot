@@ -31,7 +31,8 @@
     "test:run": "supabase db lint"
   },
   "devDependencies": {
-    "@plotday/tsconfig": "workspace:^"
+    "@plotday/tsconfig": "workspace:^",
+    "supabase": "^1.83.7"
   },
   "dependencies": {
     "@plotday/tz": "workspace:^",

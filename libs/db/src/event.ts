@@ -14,22 +14,29 @@ namespace Event {
 // Syncrhonize this list with schema/85-data/50-label.sql
 export type Label =
   | "meeting"
-  | "project"
-  | "team"
-  | "recruiting"
   | "external"
   | "internal"
-  | "social"
   | "recurring"
   | "initiated"
   | "short-notice"
   | "1:1"
-  | "xs"
   | "sm"
   | "md"
   | "lg"
   | "xl"
-  | "xxl";
+  | "xxl"
+  | "¼h"
+  | "½h"
+  | "¾h"
+  | "1h"
+  | "1½h"
+  | "2h"
+  | "2½h"
+  | "3h"
+  | "½d"
+  | "¾d"
+  | "all-day"
+  | "speedy";
 
 const EVENT_QUERY =
   "*,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name))),labels:label(id,name)";
@@ -225,12 +232,10 @@ export class Event {
       return labels;
     }
     labels.push("meeting");
+
     const notice = this.notice;
     if (this.isOrganizer) {
       labels.push("initiated");
-    }
-    if (this.isRecurring) {
-      labels.push("recurring");
     }
     if (this.hasOnlyInternalInvitees) {
       labels.push("internal");
@@ -251,9 +256,45 @@ export class Event {
     } else {
       labels.push("xxl");
     }
+
+    if (this.isRecurring) {
+      labels.push("recurring");
+    }
     if (notice !== undefined && notice < 18 * 60) {
       labels.push("short-notice");
     }
+
+    if (this.duration <= 20) {
+      labels.push("¼h");
+    } else if (this.duration < 40) {
+      labels.push("½h");
+    } else if (this.duration < 50) {
+      labels.push("¾h");
+    } else if (this.duration < 75) {
+      labels.push("1h");
+    } else if (this.duration < 101) {
+      labels.push("1½h");
+    } else if (this.duration < 131) {
+      labels.push("2h");
+    } else if (this.duration < 161) {
+      labels.push("2½h");
+    } else if (this.duration <= 180) {
+      labels.push("3h");
+    } else if (this.duration <= 300) {
+      labels.push("½d");
+    } else if (this.duration <= 420) {
+      labels.push("¾d");
+    } else if (this.duration <= 420) {
+      labels.push("all-day");
+    }
+
+    if (
+      this.duration < 30 ||
+      (this.duration % 30 >= 10 && this.duration % 30 <= 15)
+    ) {
+      labels.push("speedy");
+    }
+
     return labels;
   }
 }
