@@ -6,6 +6,9 @@ import { formatDuration } from "@plotday/tz";
 
 import classes from "./tuner.module.css";
 
+// TODO: Make this configurable per user
+const CONTEXT_SWITCH_MINUTES = 15;
+
 type Stats = {
   event_count: number;
   minutes: number;
@@ -56,7 +59,9 @@ export function TunerList({
           <Table.Tr>
             <Table.Th>Type</Table.Th>
             <Table.Th colSpan={3}>
-              <Tooltip label="Percentage of working hours, with 10 minutes of context switching per meeting">
+              <Tooltip
+                label={`Percentage of working hours, with {CONTEXT_SWITCH_MINUTES} minutes of context switching per meeting`}
+              >
                 <Text>Load</Text>
               </Tooltip>
             </Table.Th>
@@ -109,7 +114,8 @@ export function Tuner({
   const totalMinutes = minutes + pendingMinutes;
   const count = labelStats.accepted?.event_count || 0;
   const pendingCount = labelStats.tentative?.event_count || 0;
-  const load = ((minutes + count * 15) / workingMinutes) * 100;
+  const load =
+    ((minutes + count * CONTEXT_SWITCH_MINUTES) / workingMinutes) * 100;
   const previousLoad = (previousMinutes / previousWorkingMinutes) * 100;
   const trend = previousLoad
     ? Math.round(((load - previousLoad) / previousLoad) * 100)

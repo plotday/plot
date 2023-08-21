@@ -501,6 +501,43 @@ export interface Database {
           }
         ]
       }
+      response: {
+        Row: {
+          created_at: string | null
+          id: number
+          provider_id: string
+          response: Database["public"]["Enums"]["event_response"]
+          user_id: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          provider_id: string
+          response: Database["public"]["Enums"]["event_response"]
+          user_id: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          provider_id?: string
+          response?: Database["public"]["Enums"]["event_response"]
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "response_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "response_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "event_x"
+            referencedColumns: ["user_id"]
+          }
+        ]
+      }
       user: {
         Row: {
           avatar_url: string | null
@@ -641,6 +678,22 @@ export interface Database {
           response: Database["public"]["Enums"]["event_response"]
           event_count: number
           minutes: number
+          impact_minutes: number
+        }[]
+      }
+      org_stats: {
+        Args: {
+          user_id: number
+          during: unknown
+        }
+        Returns: {
+          label_id: number
+          name: string
+          description: string
+          response: Database["public"]["Enums"]["event_response"]
+          event_count: number
+          minutes: number
+          impact_minutes: number
         }[]
       }
       organization:
