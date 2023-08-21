@@ -19,7 +19,7 @@ import type { Event } from "@plotday/db";
 import { formatDay, formatTimes, isSameDay } from "@plotday/tz";
 
 import { useEventWatch } from "app/event";
-import { useEventUpdater } from "app/routes/api.event";
+import { useEventResponder } from "app/routes/api.response";
 
 export function EventList({ events }: { events: Event[] }) {
   useEventWatch();
@@ -70,21 +70,16 @@ export function EventList({ events }: { events: Event[] }) {
 
 export default function EventCard({ event }: { event: Event }) {
   const [response, setResponseState] = useState(event.response || undefined);
-  const updater = useEventUpdater();
+  const responder = useEventResponder();
   const setResponse = useCallback(
     (checked: boolean) => {
       const response = checked ? "accepted" : "declined";
       setResponseState(response);
       const email = event.email;
       if (!email) throw new Error("Missing calendar email");
-      updater(event.id, {
-        response: {
-          response,
-          email,
-        },
-      });
+      responder(event.id, response, email, event.isOrganizer);
     },
-    [event, updater]
+    [event, responder]
   );
   return (
     <Card withBorder>

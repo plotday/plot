@@ -13,7 +13,6 @@ import type {
   Location,
   RawEvent,
   SyncState,
-  Update,
   WatchState,
 } from "./";
 import { normalizeName } from "./contact";
@@ -414,23 +413,40 @@ export function transform(rawEvent: RawEvent): Event {
 }
 
 export async function update(
+  _config: CalendarConfig,
+  _credentials: CalendarCredentials,
+  _calendarId: string,
+  _eventId: string,
+  _changes: Partial<Event>
+) {
+  throw new Error("Not implemented");
+  // const api = new GoogleApi(config, credentials);
+  // let googleChanges = {} as GoogleEvent;
+  // await api.call(
+  //   "PATCH",
+  //   `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`,
+  //   undefined,
+  //   googleChanges
+  // );
+}
+
+export async function respond(
   config: CalendarConfig,
   credentials: CalendarCredentials,
   calendarId: string,
   eventId: string,
-  changes: Update
+  response: EventResponse,
+  email: string
 ) {
   const api = new GoogleApi(config, credentials);
   let googleChanges = {} as GoogleEvent;
-  if (changes.response) {
-    googleChanges.attendeesOmitted = true;
-    googleChanges.attendees = [
-      {
-        email: changes.response.email,
-        responseStatus: changes.response.response,
-      },
-    ];
-  }
+  googleChanges.attendeesOmitted = true;
+  googleChanges.attendees = [
+    {
+      email,
+      responseStatus: response,
+    },
+  ];
   await api.call(
     "PATCH",
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`,

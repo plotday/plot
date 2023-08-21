@@ -20,7 +20,6 @@ import type {
   LocationType,
   RawEvent,
   SyncState,
-  Update,
   WatchState,
 } from "./";
 import { normalizeName } from "./contact";
@@ -400,11 +399,22 @@ export function transform(rawEvent: RawEvent): Event {
 }
 
 export async function update(
+  _config: CalendarConfig,
+  _credentials: CalendarCredentials,
+  _calendarId: string,
+  _eventId: string,
+  _changes: Partial<Event>
+) {
+  throw new Error("Not implemented");
+}
+
+export async function respond(
   config: CalendarConfig,
   credentials: CalendarCredentials,
   calendarId: string,
   eventId: string,
-  changes: Update
+  response: EventResponse,
+  isOrganizer: boolean
 ) {
   const authProvider = new Auth(
     config.outlookClientId,
@@ -413,15 +423,17 @@ export async function update(
   );
   const client = Client.initWithMiddleware({ authProvider });
 
-  if (changes.response) {
-    await client
-      .api(
-        `/me/calendars/${calendarId}/events/${eventId}/${
-          changes.response.response === "accepted" ? "accept" : "decline"
-        }`
-      )
-      .post({});
-  } else {
-    throw new Error("Not implemented");
-  }
+  // Outlook does not support organizer responses
+  if (isOrganizer) return;
+
+  // Outlook deletes declined events, so we only tentatively accept
+  console.log(response === "accepted" ? "accept" : "tentativelyAccept");
+  const r = await client
+    .api(
+      `/me/calendars/${calendarId}/events/${eventId}/${
+        response === "accepted" ? "accept" : "tentativelyAccept"
+      }`
+    )
+    .post({});
+  console.log(JSON.stringify(r));
 }

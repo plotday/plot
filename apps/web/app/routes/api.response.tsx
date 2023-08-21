@@ -3,40 +3,39 @@ import { useCallback } from "react";
 import type { ActionArgs } from "@remix-run/cloudflare";
 import { useFetcher } from "@remix-run/react";
 
-import type { CalendarConfig, Event } from "@plotday/cal";
-import { update } from "@plotday/cal";
+import type { CalendarConfig, EventResponse } from "@plotday/cal";
+import { respond } from "@plotday/cal";
 import { getCredentials } from "@plotday/db";
 
 import { getUser } from "app/auth";
 import { createServerClient, safeQuery } from "app/db";
 import { getEnv } from "app/env";
 
-type Changes = Partial<Event>;
-type UpdateBody = {
-  id: number;
-  changes: Omit<Changes, "startsAt" | "endsAt" | "createdAt"> & {
-    startsAt?: string;
-    endsAt?: string;
-  };
+type ResponseBody = {
+  eventId: number;
+  response: EventResponse;
+  email: string;
+  isOrganizer: boolean;
 };
 
-export function useEventUpdater() {
+export function useEventResponder() {
   const fetcher = useFetcher();
   return useCallback(
-    (id: number, changes: Changes) => {
-      const { startsAt, endsAt, ...otherChanges } = changes;
-      const serializableChanges = {
-        ...otherChanges,
-        ...(startsAt ? { startsAt: startsAt.toISOString() } : {}),
-        ...(endsAt ? { endsAt: endsAt.toISOString() } : {}),
-      };
+    (
+      eventId: number,
+      response: EventResponse,
+      email: string,
+      isOrganizer: boolean
+    ) => {
       const body = {
-        id,
-        changes: serializableChanges,
-      } as UpdateBody;
+        eventId,
+        response,
+        email,
+        isOrganizer,
+      } as ResponseBody;
       fetcher.submit(body, {
-        method: "patch",
-        action: "/api/event",
+        method: "put",
+        action: "/api/response",
         encType: "application/json",
       });
     },
@@ -45,9 +44,7 @@ export function useEventUpdater() {
 }
 
 export const action = async ({ request, context }: ActionArgs) => {
-  let response: Response | undefined;
-  let supabase;
-  ({ supabase, response } = createServerClient(request, context));
+  const { supabase, response } = createServerClient(request, context);
   let user = await getUser(supabase);
   if (!user) return new Response("Unauthorized", { status: 401 });
 
@@ -60,13 +57,13 @@ export const action = async ({ request, context }: ActionArgs) => {
   };
 
   switch (request.method) {
-    case "PATCH": {
-      const body: UpdateBody = await request.json();
+    case "PUT": {
+      const body: ResponseBody = await request.json();
       const event = safeQuery(
         await supabase
           .from("event")
           .select("provider_id,calendar(provider_id,account_id)")
-          .eq("id", body.id)
+          .eq("id", body.eventId)
           .maybeSingle()
       );
       if (!event?.calendar) return new Response("Not found", { status: 404 });
@@ -74,18 +71,26 @@ export const action = async ({ request, context }: ActionArgs) => {
         supabase,
         event.calendar.account_id
       );
-      const { startsAt, endsAt, ...otherChanges } = body.changes;
-      const deserializedChanges = {
-        ...otherChanges,
-        ...(startsAt ? { startsAt: new Date(startsAt) } : {}),
-        ...(endsAt ? { endsAt: new Date(endsAt) } : {}),
-      };
-      await update(
+      if (credentials.provider === "outlook" && body.response) {
+        safeQuery(
+          await supabase.from("response").upsert(
+            {
+              user_id: user.id,
+              provider_id: event.provider_id,
+              response: body.response,
+            },
+            { onConflict: "user_id,provider_id" }
+          )
+        );
+      }
+      await respond(
         calendarConfig,
         credentials,
         event.calendar.provider_id,
         event.provider_id,
-        deserializedChanges
+        body.response,
+        body.email,
+        body.isOrganizer
       );
       return new Response(null, {
         headers: response.headers,

@@ -139,7 +139,11 @@ export class Event {
 
   // calendar owner's response
   public get response() {
-    return this.invitees.find((invitee) => invitee.isSelf)?.response || null;
+    if (this.dbEvent.response) {
+      return this.dbEvent.response;
+    } else {
+      return this.invitees.find((invitee) => invitee.isSelf)?.response || null;
+    }
   }
 
   // email address associated with the calendar that owns this event

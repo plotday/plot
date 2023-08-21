@@ -21,16 +21,19 @@ SELECT
     min(e.availability) AS availability,
     min(e.conferencing_url) AS conferencing_url,
     min(e.organizer) AS organizer,
-    min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)) AS response,
-(round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
-count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response)) AS attendee_count,
+    COALESCE(min(er.response), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id))) AS response,
+    (round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
+    count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response)) AS attendee_count,
 count(DISTINCT i.contact_id) AS invitee_count
-FROM (((((event e
-                    JOIN calendar c ON (e.calendar_id = c.id))
-                JOIN account a ON (c.account_id = a.id))
-            JOIN "user" u ON (a.user_id = u.id))
-        JOIN invitee i ON (e.id = i.event_id))
-    JOIN contact ct ON (i.contact_id = ct.id))
+FROM
+    event e
+    JOIN calendar c ON (e.calendar_id = c.id)
+    JOIN account a ON (c.account_id = a.id)
+    JOIN "user" u ON (a.user_id = u.id)
+    LEFT OUTER JOIN response er ON (u.id = er.user_id
+            AND e.provider_id = er.provider_id)
+    JOIN invitee i ON (e.id = i.event_id)
+    JOIN contact ct ON (i.contact_id = ct.id)
 GROUP BY
     u.id,
     e.name,
