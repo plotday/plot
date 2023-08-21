@@ -6,6 +6,7 @@ import { Button, Card, Center, Group, Stack, Text } from "@mantine/core";
 
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import add from "date-fns/add";
+import differenceInBusinessDays from "date-fns/differenceInBusinessDays";
 import sub from "date-fns/sub";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
 
@@ -84,6 +85,10 @@ export default function Prep() {
   const tz = user?.timezone || "America/New_York";
   const month = formatDate(start, tz, "MMMM yyyy");
   const defaultStart = startOfMonth(new Date(), tz);
+  const workingMinutes =
+    differenceInBusinessDays(add(start, { months: 1 }), start) * 8 * 60;
+  const previousWorkingMinutes =
+    differenceInBusinessDays(start, sub(start, { months: 1 })) * 8 * 60;
 
   const move = (movement: number) => {
     const newStart = add(start, { months: movement });
@@ -126,8 +131,8 @@ export default function Prep() {
         <TunerList
           labelStats={stats}
           previousStats={previousStats}
-          workingMinutes={4.2 * 5 * 40 * 60}
-          previousWorkingMinutes={4.2 * 5 * 40 * 60}
+          workingMinutes={workingMinutes}
+          previousWorkingMinutes={previousWorkingMinutes}
         />
       </Card>
     </Stack>

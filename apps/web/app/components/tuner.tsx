@@ -55,7 +55,11 @@ export function TunerList({
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Type</Table.Th>
-            <Table.Th colSpan={3}>Load</Table.Th>
+            <Table.Th colSpan={3}>
+              <Tooltip label="Percentage of working hours, with 10 minutes of context switching per meeting">
+                <Text>Load</Text>
+              </Tooltip>
+            </Table.Th>
             <Table.Th colSpan={2} className={classes.fitContent}>
               Scheduled
             </Table.Th>
@@ -105,7 +109,7 @@ export function Tuner({
   const totalMinutes = minutes + pendingMinutes;
   const count = labelStats.accepted?.event_count || 0;
   const pendingCount = labelStats.tentative?.event_count || 0;
-  const load = (minutes / workingMinutes) * 100;
+  const load = ((minutes + count * 15) / workingMinutes) * 100;
   const previousLoad = (previousMinutes / previousWorkingMinutes) * 100;
   const trend = previousLoad
     ? Math.round(((load - previousLoad) / previousLoad) * 100)
