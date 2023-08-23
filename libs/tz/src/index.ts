@@ -70,8 +70,9 @@ export const formatTimes = (start: Date, end: Date, tz: string) => {
 };
 
 export const formatDuration = (length: number) => {
+  length = Math.round(length);
   const hours = Math.floor(length / 60);
-  const minutes = Math.round(length) % 60;
+  const minutes = Math.abs(length % 60);
   return `${hours}:${String(minutes).padStart(2, "0")}`;
 };
 

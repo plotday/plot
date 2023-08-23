@@ -45,7 +45,7 @@ import {
   SentryServerInit,
   captureRemixErrorBoundaryError,
 } from "./sentry";
-import { theme } from "./theme";
+import { resolver, theme } from "./theme";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   // Can't use getEnv here since we don't want to fail if missing variables
@@ -127,7 +127,7 @@ function Page({ children }: { children: React.ReactNode }) {
         <ColorSchemeScript />
       </head>
       <body>
-        <MantineProvider theme={theme}>
+        <MantineProvider theme={theme} cssVariablesResolver={resolver}>
           {children}
           <ScrollRestoration />
           <Scripts />

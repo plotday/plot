@@ -21,7 +21,7 @@ SELECT
     min(e.availability) AS availability,
     min(e.conferencing_url) AS conferencing_url,
     min(e.organizer) AS organizer,
-    COALESCE(min(er.response), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id))) AS response,
+    COALESCE(min(er.response), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative') AS response,
     (round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
     count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response)) AS attendee_count,
 count(DISTINCT i.contact_id) AS invitee_count

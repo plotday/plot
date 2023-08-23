@@ -417,21 +417,27 @@ export interface Database {
           created_at: string | null
           description: string | null
           id: number
-          name: string
+          name: string | null
+          order: number
+          tag: string
           user_id: number | null
         }
         Insert: {
           created_at?: string | null
           description?: string | null
           id?: number
-          name: string
+          name?: string | null
+          order: number
+          tag: string
           user_id?: number | null
         }
         Update: {
           created_at?: string | null
           description?: string | null
           id?: number
-          name?: string
+          name?: string | null
+          order?: number
+          tag?: string
           user_id?: number | null
         }
         Relationships: [
@@ -532,6 +538,52 @@ export interface Database {
           },
           {
             foreignKeyName: "response_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "event_x"
+            referencedColumns: ["user_id"]
+          }
+        ]
+      }
+      target: {
+        Row: {
+          created_at: string | null
+          id: number
+          label_id: number
+          org: boolean
+          target: number
+          user_id: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          label_id: number
+          org?: boolean
+          target: number
+          user_id: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          label_id?: number
+          org?: boolean
+          target?: number
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "target_label_id_fkey"
+            columns: ["label_id"]
+            referencedRelation: "label"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "target_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "target_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "event_x"
             referencedColumns: ["user_id"]
@@ -662,7 +714,9 @@ export interface Database {
           created_at: string | null
           description: string | null
           id: number
-          name: string
+          name: string | null
+          order: number
+          tag: string
           user_id: number | null
         }[]
       }
@@ -673,12 +727,13 @@ export interface Database {
         }
         Returns: {
           label_id: number
+          order: number
+          tag: string
           name: string
           description: string
           response: Database["public"]["Enums"]["event_response"]
           event_count: number
           minutes: number
-          impact_minutes: number
         }[]
       }
       org_stats: {
@@ -688,12 +743,13 @@ export interface Database {
         }
         Returns: {
           label_id: number
+          order: number
+          tag: string
           name: string
           description: string
           response: Database["public"]["Enums"]["event_response"]
           event_count: number
           minutes: number
-          impact_minutes: number
         }[]
       }
       organization:

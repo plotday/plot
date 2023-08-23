@@ -17,11 +17,14 @@
 
 .meetingText {
   color: light-dark(
-    var(--mantine-color-orange-7),
-    var(--mantine-color-orange-4)
+    var(--mantine-color-secondary-filled),
+    var(--mantine-color-secondary-filled)
   );
 }
 
 .nonMeetingText {
-  color: light-dark(var(--mantine-color-brand-7), var(--mantine-color-brand-3));
+  color: light-dark(
+    var(--mantine-color-brand-filled),
+    var(--mantine-color-brand-filled)
+  );
 }

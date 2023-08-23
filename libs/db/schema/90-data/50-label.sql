@@ -1,33 +1,32 @@
 -- Synchronize this list with src/event.ts
 --
 -- When changing, copy this in to a manual migration (`pnpm new-migration`).
-INSERT INTO label (name, description)
-    VALUES ('meeting', 'All meetings'),
-    ('recruiting', 'Hiring-related meetings'),
-    ('internal', 'Only contacts inside your company are invited'),
-    ('external', 'Contacts outside your company are invited'),
-    ('recurring', 'Multiple occurrences'),
-    ('initiated', 'Meetings you created'),
-    ('short-notice', 'Created less than 18 hours before starting'),
-    ('1:1', '2 invitess'),
-    ('sm', '3-4 invitess'),
-    ('md', '5-7 invitess'),
-    ('lg', '8-15 invitess'),
-    ('xl', '16-29 invitess'),
-    ('xxl', '30+ invitess'),
-    ('¼h', '≤20 minutes'),
-    ('½h', '20-39 minutes'),
-    ('¾h', '40-49 minutes'),
-    ('1h', '50-74 minutes'),
-    ('1½h', '75-100 minutes'),
-    ('2h', '101-130 minutes'),
-    ('2½h', '131-160 minutes'),
-    ('3h', '161-180 minutes'),
-    ('½d', '3-5 hours'),
-    ('¾d', '>5, <7 hours'),
-    ('all-day', '7+ hours'),
-    ('speedy', '10-15 minutes less than a 30-minute multiple, or less than 30 minutes in total')
-ON CONFLICT (name, user_id)
+INSERT INTO label (id, "order", tag, name, description)
+    VALUES (1, 10, '💼', 'All meetings', NULL),
+    (2, 100, '👥 1:1', NULL, '2 invitees'),
+    (3, 110, '👥 SM', NULL, '3-4 invitees'),
+    (4, 120, '👥 MD', NULL, '5-7 invitees'),
+    (5, 130, '👥 LG', NULL, '8-15 invitees'),
+    (6, 140, '👥 XL', NULL, '16-29 invitees'),
+    (7, 150, '👥 XXL', NULL, '30+ invitees'),
+    (8, 200, '🏢', 'Internal', 'Only invitees from your company'),
+    (9, 210, '🤝', 'External', 'Includes invitees from outside your company'),
+    (10, 300, '⏳ ¼h', NULL, '≤20 minutes'),
+    (11, 310, '⏳ ½h', NULL, '20-39 minutes'),
+    (12, 320, '⏳ ¾h', NULL, '40-49 minutes'),
+    (13, 330, '⏳ 1h', NULL, '50-74 minutes'),
+    (14, 340, '⏳ 1½h', NULL, '75-100 minutes'),
+    (15, 350, '⏳ 2h', NULL, '101-130 minutes'),
+    (16, 360, '⏳ 2½h', NULL, '131-160 minutes'),
+    (17, 370, '⏳ 3h', NULL, '161-180 minutes'),
+    (18, 380, '⏳ ½d', NULL, '3-5 hours (inclusive)'),
+    (19, 390, '⏳ ¾d', NULL, '5-7 hours (exclusive)'),
+    (20, 400, '⏳ 1d', 'All day', '7+ hours'),
+    (21, 500, '🔁', 'Recurring', NULL),
+    (22, 530, '🚨', 'Short notice', 'Created less than 18 hours before starting'),
+    (23, 560, '💨', 'Speedy', 'Shortened by 5-15 minutes from a 30-minute interval'),
+    (24, 600, '🫵', 'Initiated', 'Meetings you organize')
+ON CONFLICT (id)
     DO UPDATE SET
-        description = EXCLUDED.description;
+        name = EXCLUDED.name, tag = EXCLUDED.tag, "order" = EXCLUDED.order, description = EXCLUDED.description;
 

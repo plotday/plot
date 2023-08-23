@@ -105,7 +105,7 @@ export function Balance({
   return (
     <Stack>
       <Group justify="space-between">
-        <Text fz="xl" fw={700} c="orange">
+        <Text fz="xl" fw={700} c="secondary">
           Meetings
         </Text>
         <Text fz="xl" fw={700} c="brand">
@@ -113,7 +113,7 @@ export function Balance({
         </Text>
       </Group>
       <Slider
-        color="orange"
+        color="secondary"
         value={target}
         onChange={onChange}
         label={(value) => `${value} hours of meetings per week`}

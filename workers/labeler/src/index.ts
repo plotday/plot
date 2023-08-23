@@ -17,11 +17,7 @@ export interface Env {
   readonly QUEUE: Queue<EventLabelRequest>;
 }
 
-async function labelEvent(
-  supabase: SupabaseClient,
-  labels: Record<string, number>,
-  eventId: number
-) {
+async function labelEvent(supabase: SupabaseClient, eventId: number) {
   const dbEvent = await Event.Get(supabase, eventId);
   if (!dbEvent) {
     throw Error(`Event ${eventId} not found`);
@@ -29,19 +25,15 @@ async function labelEvent(
   // Timezone shouldn't affect labels
   const event = new Event(dbEvent, "America/New_York");
   const eventLabels = event.guessLabels();
-  const labelErrors: string[] = [];
+  const labelErrors: number[] = [];
   const labelsToAdd = [];
-  for (const label of eventLabels) {
-    if (!(label in labels)) {
-      labelErrors.push(label);
-    } else {
-      labelsToAdd.push({
-        event_id: eventId,
-        series: null,
-        label_id: labels[label],
-        priority: 10,
-      });
-    }
+  for (const label_id of eventLabels) {
+    labelsToAdd.push({
+      event_id: eventId,
+      series: null,
+      label_id,
+      priority: 10,
+    });
   }
 
   if (labelsToAdd.length > 0) {
@@ -87,25 +79,13 @@ export default {
     try {
       const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
-      const labels = (
-        safeQuery(
-          await supabase
-            .from("label")
-            .select("id,name")
-            .filter("user_id", "is", null)
-        ) || []
-      ).reduce((acc, label) => {
-        acc[label.name] = label.id;
-        return acc;
-      }, {} as Record<string, number>);
-
       let messageNum = 1;
       for (let message of batch.messages) {
         try {
           console.log(
             `Processing ${messageNum} of ${batch.messages.length} (${message.body.eventId})`
           );
-          await labelEvent(supabase, labels, message.body.eventId);
+          await labelEvent(supabase, message.body.eventId);
           message.ack();
         } catch (e) {
           console.error(e);

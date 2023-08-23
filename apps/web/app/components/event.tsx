@@ -11,6 +11,7 @@ import {
   Stack,
   Text,
   Title,
+  Tooltip,
 } from "@mantine/core";
 
 import { IconExternalLink } from "@tabler/icons-react";
@@ -124,7 +125,9 @@ export default function EventCard({ event }: { event: Event }) {
         {event.labels.length > 0 && (
           <Group gap="xs">
             {event.labels.map((label) => (
-              <Pill key={label.id}>{label.name}</Pill>
+              <Tooltip label={label.name ?? label.description} key={label.id}>
+                <Pill>{label.tag}</Pill>
+              </Tooltip>
             ))}
           </Group>
         )}

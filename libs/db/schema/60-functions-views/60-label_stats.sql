@@ -1,6 +1,8 @@
 CREATE OR REPLACE FUNCTION public.label_stats (user_id bigint, during tstzrange)
     RETURNS TABLE (
         label_id bigint,
+        "order" integer,
+        tag text,
         name text,
         description text,
         response event_response,
@@ -12,6 +14,8 @@ BEGIN
     RETURN query
     SELECT
         l.id AS label_id,
+        l.order AS "order",
+        l.tag AS tag,
         l.name AS name,
         l.description AS description,
         e.response,
@@ -35,6 +39,8 @@ $function$;
 CREATE OR REPLACE FUNCTION public.org_stats (user_id bigint, during tstzrange)
     RETURNS TABLE (
         label_id bigint,
+        "order" integer,
+        tag text,
         name text,
         description text,
         response event_response,
@@ -46,6 +52,8 @@ BEGIN
     RETURN query
     SELECT
         l.id AS label_id,
+        l.order AS "order",
+        l.tag AS tag,
         l.name AS name,
         l.description AS description,
         e.response,
@@ -61,7 +69,7 @@ BEGIN
         AND e.at && during
         AND c.contact_user_id = e.user_id
         AND e.status != 'cancelled'
-        AND l.name != 'initiated'
+        AND l.id != 24 -- initiated
     GROUP BY
         l.id,
         e.status,

@@ -1,6 +1,6 @@
-import type { LoaderArgs } from "@remix-run/cloudflare";
-import { redirect } from "@remix-run/cloudflare";
-import { useSearchParams } from "@remix-run/react";
+import type { ActionArgs, LoaderArgs } from "@remix-run/cloudflare";
+import { json, redirect } from "@remix-run/cloudflare";
+import { useFetcher, useSearchParams } from "@remix-run/react";
 
 import {
   Button,
@@ -18,16 +18,26 @@ import add from "date-fns/add";
 import differenceInBusinessDays from "date-fns/differenceInBusinessDays";
 import sub from "date-fns/sub";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
+import { promiseHash } from "remix-utils";
 
 import { formatDate, startOfMonth } from "@plotday/tz";
 
 import { getUser } from "app/auth";
-import type { LabelStats } from "app/components/tuner";
+import type { LabelStats, LabelStatsMap } from "app/components/tuner";
 import { TunerList } from "app/components/tuner";
 import type { SupabaseClient } from "app/db";
 import { createServerClient, safeQuery } from "app/db";
 import { useEventWatch } from "app/event";
 import { useUser } from "app/root";
+
+type Target = {
+  target: number | null;
+  org: boolean;
+};
+
+type TargetUpdate = {
+  [labelId: number]: Target;
+};
 
 async function getStats(
   supabase: SupabaseClient,
@@ -45,14 +55,37 @@ async function getStats(
       })
     ) || []
   ).reduce((acc, cur) => {
-    const { name, description, response, label_id, ...rest } = cur;
-    acc[label_id] ??= {} as LabelStats;
-    acc[label_id].id = label_id;
-    acc[label_id].name = name;
-    acc[label_id].description = description;
-    acc[label_id][response] = rest;
+    const { response, label_id, event_count, minutes, ...rest } = cur;
+    acc[label_id] = {
+      ...acc[label_id],
+      id: label_id,
+      ...rest,
+      [response]: { event_count, minutes },
+    } as LabelStats;
     return acc;
-  }, {} as Record<string, LabelStats>);
+  }, {} as LabelStatsMap);
+}
+
+async function getTargets(supabase: SupabaseClient, userId: number) {
+  return (
+    safeQuery(
+      await supabase.from("target").select("*").eq("user_id", userId)
+    ) || []
+  ).reduce(
+    (acc, cur) => {
+      const { label_id, target, org } = cur;
+      if (org) {
+        acc.orgTargets[label_id] = target;
+      } else {
+        acc.targets[label_id] = target;
+      }
+      return acc;
+    },
+    { targets: {}, orgTargets: {} } as {
+      targets: Record<number, number>;
+      orgTargets: Record<number, number>;
+    }
+  );
 }
 
 export const loader = async ({ context, request }: LoaderArgs) => {
@@ -75,31 +108,70 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 
   return typedjson(
     {
-      stats: await getStats(supabase, "label_stats", user.id, start, end),
-      previousStats: await getStats(
-        supabase,
-        "label_stats",
-        user.id,
-        prevStart,
-        start
-      ),
-      orgStats: await getStats(supabase, "org_stats", user.id, start, end),
-      previousOrgStats: await getStats(
-        supabase,
-        "org_stats",
-        user.id,
-        prevStart,
-        start
-      ),
+      ...(await promiseHash({
+        stats: getStats(supabase, "label_stats", user.id, start, end),
+        previousStats: getStats(
+          supabase,
+          "label_stats",
+          user.id,
+          prevStart,
+          start
+        ),
+        orgStats: getStats(supabase, "org_stats", user.id, start, end),
+        previousOrgStats: getStats(
+          supabase,
+          "org_stats",
+          user.id,
+          prevStart,
+          start
+        ),
+        targets: getTargets(supabase, user.id),
+      })),
       start,
     },
     { headers: response.headers }
   );
 };
 
-export default function Prep() {
+export async function action({ context, request }: ActionArgs) {
+  const { supabase } = createServerClient(request, context);
+  let user = await getUser(supabase);
+  if (!user?.id) throw redirect("/login");
+  const bodyParams = await request.formData();
+  if (typeof bodyParams.get("targets") === "string") {
+    const targets = JSON.parse(
+      bodyParams.get("targets") as string
+    ) as TargetUpdate;
+    for (const [labelId, target] of Object.entries(targets)) {
+      if (target.target !== null) {
+        safeQuery(
+          await supabase.from("target").upsert({
+            user_id: user.id,
+            label_id: parseInt(labelId),
+            target: target.target,
+            org: target.org,
+          })
+        );
+      } else {
+        safeQuery(
+          await supabase
+            .from("target")
+            .delete()
+            .eq("user_id", user.id)
+            .eq("label_id", parseInt(labelId))
+            .eq("org", target.org)
+        );
+      }
+    }
+  }
+  return json({});
+}
+
+export default function Tune() {
+  const fetcher = useFetcher();
+
   const [, setSearchParams] = useSearchParams();
-  const { stats, previousStats, orgStats, previousOrgStats, start } =
+  const { stats, previousStats, orgStats, previousOrgStats, start, targets } =
     useTypedLoaderData<typeof loader>();
   useEventWatch(start, add(start, { months: 1 }));
 
@@ -107,9 +179,9 @@ export default function Prep() {
   const tz = user?.timezone || "America/New_York";
   const month = formatDate(start, tz, "MMMM yyyy");
   const defaultStart = startOfMonth(new Date(), tz);
-  const workingMinutes =
+  const monthlyWorkingMinutes =
     differenceInBusinessDays(add(start, { months: 1 }), start) * 8 * 60;
-  const previousWorkingMinutes =
+  const previousMonthlyWorkingMinutes =
     differenceInBusinessDays(start, sub(start, { months: 1 })) * 8 * 60;
 
   const move = (movement: number) => {
@@ -122,6 +194,25 @@ export default function Prep() {
         month: formatDate(newStart, tz, "yyyy-MM"),
       };
     });
+  };
+
+  const onTargetChange = (
+    labelId: number,
+    target: number | null,
+    org: boolean
+  ) => {
+    const body: TargetUpdate = {
+      [labelId]: {
+        target,
+        org,
+      },
+    };
+    fetcher.submit(
+      {
+        targets: JSON.stringify(body),
+      },
+      { method: "put" }
+    );
   };
 
   return (
@@ -149,34 +240,42 @@ export default function Prep() {
           </Button>
         </Group>
       </Center>
-      <Title order={2}>
-        <Tooltip label="This is the personal impact of meeting on your time">
-          <Text span inherit>
-            Meeting load
-          </Text>
-        </Tooltip>
-      </Title>
       <Card>
+        <Title order={2} mb="md">
+          <Tooltip label="This is the personal impact of meeting on your time">
+            <Text span inherit>
+              Meeting load
+            </Text>
+          </Tooltip>
+        </Title>
         <TunerList
           labelStats={stats}
           previousStats={previousStats}
-          workingMinutes={workingMinutes}
-          previousWorkingMinutes={previousWorkingMinutes}
+          monthlyWorkingMinutes={monthlyWorkingMinutes}
+          previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
+          weeklyWorkingMinutes={40 * 60}
+          targets={targets.targets}
+          onTargetChange={onTargetChange}
+          org={false}
         />
       </Card>
-      <Title order={2} mt="xl">
-        <Tooltip label="This is the amount of meeting load the meetings you initiate have on the organization">
-          <Text span inherit>
-            Organizational impact
-          </Text>
-        </Tooltip>
-      </Title>
-      <Card>
+      <Card mt="xl">
+        <Title order={2} mb="md">
+          <Tooltip label="This is the amount of meeting load the meetings you initiate have on the organization">
+            <Text span inherit>
+              Organizational impact
+            </Text>
+          </Tooltip>
+        </Title>
         <TunerList
           labelStats={orgStats}
           previousStats={previousOrgStats}
-          workingMinutes={workingMinutes}
-          previousWorkingMinutes={previousWorkingMinutes}
+          monthlyWorkingMinutes={monthlyWorkingMinutes}
+          previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
+          weeklyWorkingMinutes={40 * 60}
+          targets={targets.orgTargets}
+          onTargetChange={onTargetChange}
+          org={true}
         />
       </Card>
     </Stack>

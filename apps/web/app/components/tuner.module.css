@@ -7,4 +7,59 @@
   width: 1%;
   white-space: nowrap;
   text-align: right;
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.primaryHeader {
+  th {
+    padding-top: 0;
+  }
+}
+.secondaryHeader {
+  border-bottom: 0;
+  th {
+    padding-bottom: 0;
+  }
+}
+.cellButton {
+  padding: var(--table-vertical-spacing) var(--mantine-spacing-xs);
+  line-height: var(--mantine-line-height);
+  border: 0;
+}
+.hourInput {
+  input {
+    text-align: right !important;
+  }
+}
+.badge {
+  min-width: 2.5rem;
+  text-align: center;
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height);
+  background-color: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-dark-7)
+  );
+  color: light-dark(var(--mantine-color-gray-9), var(--mantine-color-dark-0));
+  border-radius: var(--mantine-radius-lg);
+}
+.remainder {
+  background-color: light-dark(
+    color-mix(
+      in oklab,
+      var(--mantine-color-brand-5) 20%,
+      var(--mantine-color-white)
+    ),
+    color-mix(
+      in oklab,
+      var(--mantine-color-brand-5) 50%,
+      var(--mantine-color-black)
+    )
+  );
+}
+.pendingOver {
+  background-color: light-dark(
+    var(--mantine-color-gray-3),
+    var(--mantine-color-dark-7)
+  );
 }
