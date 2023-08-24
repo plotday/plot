@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  Badge,
+  Box,
   Button,
+  Flex,
   Group,
   Input,
   Modal,
@@ -90,10 +91,13 @@ export function TunerList({
       <Table>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th pl={0}>Balance</Table.Th>
-            <Table.Th colSpan={2} />
+            <Table.Th pl={0}></Table.Th>
+            <Table.Th>Balance</Table.Th>
             <Table.Th colSpan={3}>Scheduled</Table.Th>
-            <Table.Th colSpan={2}>Pending</Table.Th>
+            <Table.Th />
+            <Table.Th colSpan={2} ta="right">
+              Pending
+            </Table.Th>
             <Table.Th>Budget</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -275,7 +279,6 @@ export function Tuner({
   let badMinutes = 0;
   let goodPending = 0;
   let badPending = pendingMinutes;
-  let remainder = 0;
   if (targets[labelStats.id] !== undefined) {
     weeklyTargetMinutes = targets[labelStats.id];
     monthlyTargetMinutes = toMonthly(weeklyTargetMinutes);
@@ -283,12 +286,8 @@ export function Tuner({
     badMinutes = monthlyMinutes - goodMinutes;
     goodPending = Math.min(pendingMinutes, monthlyTargetMinutes - goodMinutes);
     badPending = pendingMinutes - goodPending;
-    remainder = monthlyTargetMinutes - goodMinutes - goodPending;
   }
-  const totalMinutes = Math.max(
-    monthlyMinutes + pendingMinutes,
-    monthlyTargetMinutes || 0
-  );
+  const scheduledMinutes = Math.max(monthlyMinutes, monthlyTargetMinutes || 0);
 
   const load = (monthlyMinutes / monthlyWorkingMinutes) * 100;
   const previousLoad = (previousMinutes / previousMonthlyWorkingMinutes) * 100;
@@ -336,32 +335,6 @@ export function Tuner({
             ? formatDuration(monthlyTargetMinutes - monthlyMinutes)
             : ""}
         </Table.Td>
-        <Table.Td miw="6rem">
-          <Progress.Root w={`${(totalMinutes / maxMinutes) * 100}%`} size="md">
-            <Progress.Section
-              value={(goodMinutes / totalMinutes) * 100}
-              color="brand"
-            />
-            <Progress.Section
-              value={(goodPending / totalMinutes) * 100}
-              className={classes.remainder}
-              striped
-            />
-            <Progress.Section
-              value={(remainder / totalMinutes) * 100}
-              className={classes.remainder}
-            />
-            <Progress.Section
-              value={(badMinutes / totalMinutes) * 100}
-              color="secondary"
-            />
-            <Progress.Section
-              value={(badPending / totalMinutes) * 100}
-              className={classes.pendingOver}
-              striped
-            />
-          </Progress.Root>
-        </Table.Td>
         <Table.Td
           className={classes.number}
           c={badMinutes ? "secondary" : "dimmed"}
@@ -385,6 +358,56 @@ export function Tuner({
             </Text>
           )}
         </Table.Td>
+        <Table.Td miw="6rem">
+          <Group gap={0} wrap="nowrap">
+            <Progress.Root
+              w={`${(scheduledMinutes / maxMinutes) * 100}%`}
+              size="md"
+            >
+              <Progress.Section value={0} color="brand" />
+              {goodMinutes / scheduledMinutes > 0 && (
+                <Progress.Section
+                  value={(goodMinutes / scheduledMinutes) * 100}
+                  color="brand"
+                />
+              )}
+              {badMinutes / scheduledMinutes > 0 && (
+                <Progress.Section
+                  value={(badMinutes / scheduledMinutes) * 100}
+                  color="secondary"
+                />
+              )}
+            </Progress.Root>
+            <Box
+              ml="xs"
+              mr="xs"
+              w={`${
+                ((maxMinutes - scheduledMinutes - pendingMinutes) /
+                  maxMinutes) *
+                100
+              }%`}
+            />
+            <Progress.Root
+              w={`${(pendingMinutes / maxMinutes) * 100}%`}
+              size="md"
+              dir="rtl"
+            >
+              <Progress.Section value={0} color="brand" />
+              {goodPending / pendingMinutes > 0 && (
+                <Progress.Section
+                  value={(goodPending / pendingMinutes) * 100}
+                  color="brand"
+                />
+              )}
+              {badPending / pendingMinutes > 0 && (
+                <Progress.Section
+                  value={(badPending / pendingMinutes) * 100}
+                  color="secondary"
+                />
+              )}
+            </Progress.Root>
+          </Group>
+        </Table.Td>
         <Table.Td
           className={classes.number}
           c={
@@ -406,6 +429,7 @@ export function Tuner({
           {weeklyTargetMinutes === undefined && (
             <Button
               onClick={open}
+              variant="subtle"
               size="xs"
               fullWidth
               className={classes.cellButton}
@@ -423,6 +447,7 @@ export function Tuner({
             monthlyTargetMinutes !== undefined && (
               <Button
                 onClick={open}
+                variant="subtle"
                 size="xs"
                 fz="sm"
                 fw="normal"

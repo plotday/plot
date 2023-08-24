@@ -43,23 +43,3 @@
   color: light-dark(var(--mantine-color-gray-9), var(--mantine-color-dark-0));
   border-radius: var(--mantine-radius-lg);
 }
-.remainder {
-  background-color: light-dark(
-    color-mix(
-      in oklab,
-      var(--mantine-color-brand-5) 20%,
-      var(--mantine-color-white)
-    ),
-    color-mix(
-      in oklab,
-      var(--mantine-color-brand-5) 50%,
-      var(--mantine-color-black)
-    )
-  );
-}
-.pendingOver {
-  background-color: light-dark(
-    var(--mantine-color-gray-3),
-    var(--mantine-color-dark-7)
-  );
-}
