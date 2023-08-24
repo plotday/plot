@@ -30,7 +30,7 @@ import { APP_NAME } from "app/config";
 export const meta: V2_MetaFunction = () => {
   return [
     {
-      title: `${APP_NAME} | A calendar for those who want to be better than busy`,
+      title: `${APP_NAME} | A calendar for being better than busy`,
     },
     {
       name: "description",

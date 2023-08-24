@@ -1,6 +1,8 @@
--- Synchronize this list with src/event.ts
---
--- When changing, copy this in to a manual migration (`pnpm new-migration`).
+ALTER TABLE "public"."label"
+    DROP CONSTRAINT "label_user_id_tag_unique";
+
+DROP INDEX IF EXISTS "public"."label_user_id_tag_unique";
+
 INSERT INTO label (id, "order", tag, name, description)
     VALUES (1, 10, '💼', 'All meetings', NULL),
     (2, 100, '👥', '1:1', '2 invitees'),
@@ -25,8 +27,19 @@ INSERT INTO label (id, "order", tag, name, description)
     (21, 500, '🔁', 'Recurring', NULL),
     (22, 530, '🚨', 'Short notice', 'Created less than 18 hours before starting'),
     (23, 560, '💨', 'Speedy', 'Shortened by 5-15 minutes from a 30-minute interval'),
-    (24, 600, '✋', 'Initiated', 'Meetings you organize')
+    (24, 600, '🫵', 'Initiated', 'Meetings you organize')
 ON CONFLICT (id)
     DO UPDATE SET
         name = EXCLUDED.name, tag = EXCLUDED.tag, "order" = EXCLUDED.order, description = EXCLUDED.description;
+
+CREATE UNIQUE INDEX label_user_id_name_unique ON public.label USING btree (user_id, name) NULLS NOT DISTINCT;
+
+ALTER TABLE "public"."label"
+    ADD CONSTRAINT "label_user_id_name_unique" UNIQUE USING INDEX "label_user_id_name_unique";
+
+ALTER TABLE "public"."label"
+    ALTER COLUMN "name" SET NOT NULL;
+
+ALTER TABLE "public"."label"
+    ALTER COLUMN "tag" DROP NOT NULL;
 

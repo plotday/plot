@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Box,
   Button,
-  Flex,
   Group,
   Input,
   Modal,
@@ -20,7 +19,6 @@ import {
   IconArrowDownLeft,
   IconArrowUpRight,
   IconEdit,
-  IconTrash,
 } from "@tabler/icons-react";
 
 import { formatDuration } from "@plotday/tz";
@@ -69,9 +67,7 @@ export function TunerList({
   ) => void;
   org: boolean;
 }) {
-  const sortedStats = Object.values(labelStats).sort(
-    (a, b) => (b.accepted?.minutes || 0) - (a.accepted?.minutes || 0)
-  );
+  const sortedStats = Object.values(labelStats);
 
   const maxMinutes = sortedStats.reduce(
     (m, stats) =>
@@ -86,19 +82,25 @@ export function TunerList({
     )
   );
 
+  const hasTargets = Object.values(targets).some(
+    (target) => target !== undefined
+  );
+  const hasPending = Object.values(labelStats).some(
+    (stats) => !!stats.tentative?.minutes
+  );
+
   return (
     <Table.ScrollContainer minWidth={500}>
       <Table>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th pl={0}></Table.Th>
-            <Table.Th>Balance</Table.Th>
-            <Table.Th colSpan={3}>Scheduled</Table.Th>
-            <Table.Th />
-            <Table.Th colSpan={2} ta="right">
-              Pending
-            </Table.Th>
+            <Table.Th pl={0}>Type</Table.Th>
             <Table.Th>Budget</Table.Th>
+            <Table.Th>{hasTargets ? "Balance" : ""}</Table.Th>
+            <Table.Th>Scheduled</Table.Th>
+            <Table.Th ta="right">{hasPending ? "Pending" : ""}</Table.Th>
+            <Table.Th colSpan={3}>Scheduled</Table.Th>
+            <Table.Th colSpan={2}>Pending</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -123,33 +125,29 @@ export function TunerList({
 }
 
 function TargetModal({
-  labelStats,
+  labelName,
   onTargetChange,
-  org,
   opened,
   close,
   targetMinutes,
-  weeklyMinutes,
+  defaultTarget,
+  weeklyToMonthly,
 }: {
-  labelStats: LabelStats;
-  onTargetChange: (
-    labelId: number,
-    target: number | null,
-    org: boolean
-  ) => void;
-  org: boolean;
+  labelName: string;
+  onTargetChange: (target: number | null) => void;
   opened: boolean;
   close: () => void;
   targetMinutes?: number;
-  weeklyMinutes: number;
+  defaultTarget: number;
+  weeklyToMonthly: (minutes: number) => number;
 }) {
   const defaultHours = Math.floor(
-    (targetMinutes !== undefined ? targetMinutes : weeklyMinutes) / 60
+    (targetMinutes !== undefined ? targetMinutes : defaultTarget) / 60
   );
   const defaultMinutes =
     (targetMinutes !== undefined
       ? targetMinutes
-      : Math.floor(weeklyMinutes / 15) * 15) % 60;
+      : Math.floor(defaultTarget / 15) * 15) % 60;
 
   const [hours, setHours] = useState<number>(defaultHours);
   const [minutes, setMinutes] = useState<number>(defaultMinutes);
@@ -167,8 +165,13 @@ function TargetModal({
       setHours((h) => h + 1);
       setMinutes(0);
     } else if (value < 0) {
-      setHours((h) => h - 1);
-      setMinutes(60 + value);
+      setHours((h) => {
+        if (h > 0) {
+          setMinutes(60 + value);
+          return h - 1;
+        }
+        return h;
+      });
     } else {
       setMinutes(value);
     }
@@ -176,61 +179,64 @@ function TargetModal({
 
   const updateTarget = useCallback(() => {
     const total = hours * 60 + minutes;
-    onTargetChange(labelStats.id, total, org);
+    onTargetChange(total);
     close();
-  }, [hours, minutes, close, org, labelStats, onTargetChange]);
+  }, [hours, minutes, close, onTargetChange]);
   const clearTarget = useCallback(() => {
-    onTargetChange(labelStats.id, null, org);
+    onTargetChange(null);
     close();
-  }, [close, org, labelStats, onTargetChange]);
+  }, [close, onTargetChange]);
 
   return (
-    <Modal
-      opened={opened}
-      onClose={close}
-      title={`Budget for ${labelStats.tag} ${labelStats.name ?? ""}`}
-    >
+    <Modal opened={opened} onClose={close} title={`Budget for ${labelName}`}>
       <Stack gap="lg">
-        <Input.Wrapper label="Hours per week">
-          <Group gap="xs">
-            <NumberInput
-              data-autofocus
-              placeholder="HH"
-              ta="right"
-              w="4.5rem"
-              value={hours}
-              onChange={onHourChange}
-              allowNegative={false}
-              allowDecimal={false}
-              className={classes.hourInput}
-            />
-            <Text>:</Text>
-            <NumberInput
-              placeholder="MM"
-              w="4.5rem"
-              prefix={minutes < 10 ? "0" : ""}
-              value={minutes}
-              onChange={onMinuteChange}
-              allowNegative={false}
-              allowDecimal={false}
-              allowLeadingZeros
-              min={-15}
-              max={60}
-              step={15}
-            />
-            {targetMinutes !== undefined && (
-              <Button
-                onClick={clearTarget}
-                variant="subtle"
-                c="secondary"
-                title="Clear budget"
-              >
-                <IconTrash stroke={1} />
-              </Button>
-            )}
-          </Group>
-        </Input.Wrapper>
-        <Button onClick={updateTarget}>Set budget</Button>
+        <Group gap="lg">
+          <Input.Wrapper label="Hours per week">
+            <Group gap="xs">
+              <NumberInput
+                data-autofocus
+                placeholder="HH"
+                ta="right"
+                w="4.5rem"
+                value={hours}
+                onChange={onHourChange}
+                allowNegative={false}
+                allowDecimal={false}
+                className={classes.hourInput}
+              />
+              <Text>:</Text>
+              <NumberInput
+                placeholder="MM"
+                w="4.5rem"
+                prefix={minutes < 10 ? "0" : ""}
+                value={minutes}
+                onChange={onMinuteChange}
+                allowNegative={false}
+                allowDecimal={false}
+                allowLeadingZeros
+                min={-15}
+                max={60}
+                step={15}
+              />
+            </Group>
+          </Input.Wrapper>
+          <Stack gap={0}>
+            <Text fz="sm" fw={500}>
+              Hours this month
+            </Text>
+            <Text ff="monospace" h="2rem" lh="2rem">
+              {formatDuration(weeklyToMonthly(hours * 60 + minutes))}
+            </Text>
+          </Stack>
+        </Group>
+        <Stack gap="xs">
+          <Button onClick={updateTarget}>Set budget</Button>
+          {targetMinutes !== undefined && (
+            <Button onClick={clearTarget} variant="subtle" c="secondary">
+              Remove budget
+            </Button>
+          )}
+        </Stack>
       </Stack>
     </Modal>
   );
@@ -277,8 +283,8 @@ export function Tuner({
   let monthlyTargetMinutes: number | undefined = undefined;
   let goodMinutes = monthlyMinutes;
   let badMinutes = 0;
-  let goodPending = 0;
-  let badPending = pendingMinutes;
+  let goodPending = pendingMinutes;
+  let badPending = 0;
   if (targets[labelStats.id] !== undefined) {
     weeklyTargetMinutes = targets[labelStats.id];
     monthlyTargetMinutes = toMonthly(weeklyTargetMinutes);
@@ -300,11 +306,13 @@ export function Tuner({
   return (
     <>
       <TargetModal
-        weeklyMinutes={weeklyMinutes}
+        labelName={labelStats.name || "Untitled"}
+        onTargetChange={(target: number | null) =>
+          onTargetChange(labelStats.id, target, org)
+        }
+        defaultTarget={weeklyMinutes}
+        weeklyToMonthly={toMonthly}
         {...{
-          labelStats,
-          onTargetChange,
-          org,
           opened,
           close,
           targetMinutes: weeklyTargetMinutes,
@@ -321,6 +329,45 @@ export function Tuner({
             </Text>
           </Tooltip>
         </Table.Td>
+        <Table.Td className={classes.number} pt={0} pb={0} pr={0}>
+          {weeklyTargetMinutes === undefined && (
+            <Button
+              onClick={open}
+              variant="subtle"
+              size="xs"
+              fullWidth
+              className={classes.cellButton}
+              styles={{
+                inner: {
+                  justifyContent: "flex-end",
+                },
+              }}
+              title="Set budget"
+            >
+              <IconEdit size="1rem" />
+            </Button>
+          )}
+          {weeklyTargetMinutes !== undefined &&
+            monthlyTargetMinutes !== undefined && (
+              <Button
+                onClick={open}
+                variant="subtle"
+                size="xs"
+                fz="sm"
+                fw="normal"
+                fullWidth
+                className={classes.cellButton}
+                styles={{
+                  inner: {
+                    justifyContent: "flex-end",
+                  },
+                }}
+                title="Edit budget"
+              >
+                {formatDuration(monthlyTargetMinutes).padStart(5, " ")}
+              </Button>
+            )}
+        </Table.Td>
         <Table.Td
           className={classes.number}
           c={
@@ -335,30 +382,7 @@ export function Tuner({
             ? formatDuration(monthlyTargetMinutes - monthlyMinutes)
             : ""}
         </Table.Td>
-        <Table.Td
-          className={classes.number}
-          c={badMinutes ? "secondary" : "dimmed"}
-        >
-          <Text inherit miw="2.8rem" ta="right">
-            {monthlyMinutes ? formatDuration(monthlyMinutes) : ""}
-          </Text>
-        </Table.Td>
-        <Table.Td className={classes.fitContent} pl={0}>
-          <Text className={classes.badge}>{count ? count : ""}</Text>
-        </Table.Td>
-        <Table.Td className={classes.fitContent} pl={0}>
-          {trend !== 0 && (
-            <Text inherit fz="xs" c={trend > 0 ? "secondary" : "brand"}>
-              {trend > 0 ? (
-                <IconArrowUpRight size="1em" />
-              ) : (
-                <IconArrowDownLeft size="1em" />
-              )}
-              {Math.abs(trend)}%
-            </Text>
-          )}
-        </Table.Td>
-        <Table.Td miw="6rem">
+        <Table.Td miw="6rem" colSpan={2}>
           <Group gap={0} wrap="nowrap">
             <Progress.Root
               w={`${(scheduledMinutes / maxMinutes) * 100}%`}
@@ -410,6 +434,29 @@ export function Tuner({
         </Table.Td>
         <Table.Td
           className={classes.number}
+          c={badMinutes ? "secondary" : "dimmed"}
+        >
+          <Text inherit miw="2.8rem" ta="right">
+            {monthlyMinutes ? formatDuration(monthlyMinutes) : ""}
+          </Text>
+        </Table.Td>
+        <Table.Td className={classes.fitContent} pl={0}>
+          {trend !== 0 && (
+            <Text inherit fz="xs" c={trend > 0 ? "secondary" : "brand"}>
+              {trend > 0 ? (
+                <IconArrowUpRight size="1em" />
+              ) : (
+                <IconArrowDownLeft size="1em" />
+              )}
+              {Math.abs(trend)}%
+            </Text>
+          )}
+        </Table.Td>
+        <Table.Td className={classes.fitContent} pl={0}>
+          <Text className={classes.badge}>{count ? count : ""}</Text>
+        </Table.Td>
+        <Table.Td
+          className={classes.number}
           c={
             weeklyTargetMinutes !== undefined && badPending
               ? "secondary"
@@ -424,45 +471,6 @@ export function Tuner({
           <Text className={classes.badge}>
             {pendingCount ? pendingCount : ""}
           </Text>
-        </Table.Td>
-        <Table.Td className={classes.number} pt={0} pb={0} pr={0}>
-          {weeklyTargetMinutes === undefined && (
-            <Button
-              onClick={open}
-              variant="subtle"
-              size="xs"
-              fullWidth
-              className={classes.cellButton}
-              styles={{
-                inner: {
-                  justifyContent: "flex-end",
-                },
-              }}
-              title="Set budget"
-            >
-              <IconEdit size="1rem" />
-            </Button>
-          )}
-          {weeklyTargetMinutes !== undefined &&
-            monthlyTargetMinutes !== undefined && (
-              <Button
-                onClick={open}
-                variant="subtle"
-                size="xs"
-                fz="sm"
-                fw="normal"
-                fullWidth
-                className={classes.cellButton}
-                styles={{
-                  inner: {
-                    justifyContent: "flex-end",
-                  },
-                }}
-                title="Edit budget"
-              >
-                {formatDuration(monthlyTargetMinutes).padStart(5, " ")}
-              </Button>
-            )}
         </Table.Td>
       </Table.Tr>
     </>

@@ -286,8 +286,11 @@ export function transform(rawEvent: RawEvent): Event {
     event.attendees?.reduce?.((ret, attendee) => {
       const email = attendee.emailAddress?.address?.toLowerCase();
       if (!email || attendee.type === "resource") return ret;
-      if (email === organizerEmail) organizerFound = true;
-      const response = transformResponse(attendee.status?.response);
+      const isOrganizer = email === organizerEmail;
+      if (isOrganizer) organizerFound = true;
+      const response = isOrganizer
+        ? "accepted"
+        : transformResponse(attendee.status?.response);
       return [
         ...ret,
         {
