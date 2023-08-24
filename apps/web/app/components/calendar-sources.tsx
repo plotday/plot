@@ -11,7 +11,7 @@ import {
 } from "react-social-login-buttons";
 
 import { signInWithAzure, signInWithGoogle } from "app/auth";
-import { useSupabase } from "app/root";
+import { useSupabase } from "app/hooks";
 
 export default function CalendarSources() {
   const supabase = useSupabase();

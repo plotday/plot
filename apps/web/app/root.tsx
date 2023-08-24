@@ -16,12 +16,10 @@ import {
   ScrollRestoration,
   isRouteErrorResponse,
   useLoaderData,
-  useOutletContext,
   useRevalidator,
   useRouteError,
 } from "@remix-run/react";
 
-import type { SupabaseClient } from "@supabase/auth-helpers-remix";
 import { createBrowserClient } from "@supabase/auth-helpers-remix";
 
 import {
@@ -35,16 +33,18 @@ import "@mantine/core/styles.css";
 
 import type { Database } from "@plotday/db";
 
+import type { ContextType } from "app/hooks";
+import {
+  Sentry as SentryClient,
+  SentryClientInit,
+  captureRemixErrorBoundaryError,
+} from "app/sentry";
+import { Sentry as SentryServer, SentryServerInit } from "app/sentry.server";
+
 import { authCookieOptions, getUser } from "./auth";
 import { APP_NAME } from "./config";
 import { createServerClient } from "./db";
 import { getBrowserEnv } from "./env";
-import {
-  Sentry,
-  SentryClientInit,
-  SentryServerInit,
-  captureRemixErrorBoundaryError,
-} from "./sentry";
 import { resolver, theme } from "./theme";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
@@ -58,8 +58,8 @@ export const loader = async ({ context, request }: LoaderArgs) => {
     data: { session },
   } = await supabase.auth.getSession();
   const user = await getUser(supabase);
-  if (user && Sentry) {
-    Sentry.setUser({
+  if (user && SentryServer) {
+    SentryServer.setUser({
       id: user.id.toString(),
       ...(user.email ? { email: user.email } : {}),
     });
@@ -180,16 +180,10 @@ export function ErrorBoundary() {
   );
 }
 
-type Nullable<T> = { [K in keyof T]: T[K] | null };
-export type ContextType = {
-  supabase?: SupabaseClient<Database>;
-  user?: Nullable<Partial<Database["public"]["Tables"]["user"]["Row"]>>;
-};
-
 export default function App() {
   const { env, user, session } = useLoaderData<typeof loader>();
 
-  if (!Sentry && env.SENTRY_DSN) {
+  if (!SentryServer && !SentryClient && env.SENTRY_DSN) {
     SentryClientInit(env.SENTRY_DSN, user);
   }
 
@@ -239,23 +233,4 @@ export default function App() {
       <Outlet context={context} />
     </Page>
   );
-}
-
-export function useSupabase() {
-  const { supabase } = useOutletContext<ContextType>();
-  return supabase;
-}
-
-export function useUser() {
-  const { user } = useOutletContext<ContextType>();
-  return user;
-}
-
-export function useTz() {
-  const user = useUser();
-  const tz = user?.timezone;
-  if (!tz) {
-    throw new Error("Missing timezone");
-  }
-  return tz;
 }

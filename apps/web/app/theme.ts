@@ -100,6 +100,9 @@ export const resolver: CSSVariablesResolver = (theme) => ({
     "--mantine-color-secondary-background": theme.colors.secondary[1],
     "--mantine-color-secondary-hover": theme.colors.secondary[2],
     "--mantine-color-secondary-filled-foreground": theme.colors.secondary[9],
+    "--mantine-color-gray-background": theme.colors.gray[1],
+    "--mantine-color-gray-hover": theme.colors.gray[2],
+    "--mantine-color-gray-filled-foreground": theme.colors.gray[9],
   },
   dark: {
     "--mantine-color-brand-background": theme.colors.brand[8],
@@ -108,5 +111,8 @@ export const resolver: CSSVariablesResolver = (theme) => ({
     "--mantine-color-secondary-background": theme.colors.secondary[8],
     "--mantine-color-secondary-hover": theme.colors.secondary[7],
     "--mantine-color-secondary-filled-foreground": theme.white,
+    "--mantine-color-gray-background": theme.colors.gray[8],
+    "--mantine-color-gray-hover": theme.colors.gray[7],
+    "--mantine-color-gray-filled-foreground": theme.white,
   },
 });

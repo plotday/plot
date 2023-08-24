@@ -2,12 +2,13 @@ import React, { useCallback, useState } from "react";
 
 import {
   Anchor,
+  Badge,
   Box,
   Button,
   Card,
   Chip,
   Group,
-  Pill,
+  Paper,
   Stack,
   Text,
   Title,
@@ -16,6 +17,7 @@ import {
 
 import { IconExternalLink } from "@tabler/icons-react";
 
+import type { EventResponse } from "@plotday/cal";
 import type { Event } from "@plotday/db";
 import { formatDay, formatTimes, isSameDay } from "@plotday/tz";
 
@@ -54,9 +56,11 @@ export function EventList({ events }: { events: Event[] }) {
           return (
             <React.Fragment key={firstEvent.id}>
               {isNewDay && (
-                <Title order={3}>
-                  {formatDay(firstEvent.start, firstEvent.tz)}
-                </Title>
+                <Paper style={{ position: "sticky", top: 0, zIndex: 99 }}>
+                  <Title order={3}>
+                    {formatDay(firstEvent.start, firstEvent.tz)}
+                  </Title>
+                </Paper>
               )}
               {events.length > 0 && (
                 <Text fs="italic">{events.map((e) => e.name).join(", ")}</Text>
@@ -67,6 +71,17 @@ export function EventList({ events }: { events: Event[] }) {
         })}
     </Stack>
   );
+}
+
+function responseColour(response: EventResponse | null) {
+  switch (response) {
+    case "accepted":
+      return "var(--mantine-color-brand-filled)";
+    case "declined":
+      return "var(--mantine-color-secondary-filled)";
+    default:
+      return undefined;
+  }
 }
 
 export default function EventCard({ event }: { event: Event }) {
@@ -101,9 +116,19 @@ export default function EventCard({ event }: { event: Event }) {
         </Box>
         {event.invitees.length > 1 && (
           <Group gap="xs">
-            {event.invitees.map((invitee) => (
-              <Pill key={invitee.id}>{invitee.name}</Pill>
-            ))}
+            {event.invitees.map(
+              (invitee) =>
+                !invitee.isSelf && (
+                  <Badge
+                    key={invitee.id}
+                    color="gray"
+                    tt="unset"
+                    style={{ borderColor: responseColour(invitee.response) }}
+                  >
+                    {invitee.name}
+                  </Badge>
+                )
+            )}
           </Group>
         )}
         {event.description && (
@@ -126,7 +151,9 @@ export default function EventCard({ event }: { event: Event }) {
           <Group gap="xs">
             {event.labels.map((label) => (
               <Tooltip label={label.name ?? label.description} key={label.id}>
-                <Pill>{label.tag}</Pill>
+                <Badge color="gray" tt="unset">
+                  {label.tag}
+                </Badge>
               </Tooltip>
             ))}
           </Group>

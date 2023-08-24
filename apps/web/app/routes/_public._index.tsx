@@ -22,11 +22,10 @@ import {
   IconScaleOutline,
   IconShieldCheckered,
 } from "@tabler/icons-react";
+import classes from "css/_public._index.module.css";
 
 import { Balance } from "app/components/balance";
 import { APP_NAME } from "app/config";
-
-import classes from "./_public._index.module.css";
 
 export const meta: V2_MetaFunction = () => {
   return [

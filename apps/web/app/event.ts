@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 import { useRevalidator } from "@remix-run/react";
 
-import { useSupabase } from "./root";
+import { useSupabase } from "app/hooks";
 
 export function useEventWatch(_start?: Date, _end?: Date) {
   const supabase = useSupabase();

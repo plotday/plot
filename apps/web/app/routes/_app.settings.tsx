@@ -18,7 +18,7 @@ import { getUser, logout } from "app/auth";
 import CalendarSources from "app/components/calendar-sources";
 import { saveAuthCookie } from "app/cookies.server";
 import { createServerClient, safeQuery } from "app/db";
-import { useSupabase } from "app/root";
+import { useSupabase } from "app/hooks";
 
 export async function loader({ request, context }: LoaderArgs) {
   let response: Response | undefined;

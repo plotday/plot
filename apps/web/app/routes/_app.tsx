@@ -13,13 +13,12 @@ import {
   IconArrowBigRightLinesFilled,
   IconSettings,
 } from "@tabler/icons-react";
+import classes from "css/_app.module.css";
 
 import { getUser } from "app/auth";
 import Logo from "app/components/logo";
 import { createServerClient } from "app/db";
-import type { ContextType } from "app/root";
-
-import classes from "./_app.module.css";
+import type { ContextType } from "app/hooks";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   let response: Response | undefined;

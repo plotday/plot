@@ -8,7 +8,7 @@
   "scripts": {
     "gen-env": "../../scripts/gen-env $npm_package_env_vars",
     "set-version": "mkdir -p build && echo export const VERSION = \\\"$VERSION\\\" > build/version.ts",
-    "build": "export VERSION=$CF_PAGES_COMMIT_SHA && pnpm run set-version && remix build --sourcemap && pnpm upload-source-map-server && pnpm upload-source-map-browser && pnpm delete-source-map",
+    "build": "export VERSION=${CF_PAGES_COMMIT_SHA:-dev} && pnpm run set-version && remix build --sourcemap && pnpm upload-source-map-server && pnpm upload-source-map-browser && pnpm delete-source-map",
     "upload-source-map-server": "export $(pnpm --silent gen-env) && wrangler pages functions build --outdir bundled-functions --sourcemap && sentry-cli sourcemaps inject bundled-functions && sentry-cli sourcemaps upload --release=$VERSION --dist=server bundled-functions && rm -rf bundled-functions",
     "upload-source-map-browser": "export $(pnpm --silent gen-env) && sentry-cli sourcemaps inject public && sentry-cli sourcemaps upload --release=$VERSION --dist=browser public",
     "delete-source-map": "find ./functions ./public/build -type f -name \"*.map\" -delete",

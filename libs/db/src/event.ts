@@ -72,6 +72,7 @@ export class Event {
         .overlaps("at", during)
         .neq("status", "cancelled")
         .order("at", { ascending: forward })
+        .order("response", { foreignTable: "invitee" })
         .limit(100)
     );
     type retType = NonNullable<typeof events>;

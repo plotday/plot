@@ -28,7 +28,7 @@ import { TunerList } from "app/components/tuner";
 import type { SupabaseClient } from "app/db";
 import { createServerClient, safeQuery } from "app/db";
 import { useEventWatch } from "app/event";
-import { useUser } from "app/root";
+import { useUser } from "app/hooks";
 
 type Target = {
   target: number | null;

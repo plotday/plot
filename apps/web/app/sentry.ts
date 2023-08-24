@@ -1,42 +1,13 @@
+import { useEffect } from "react";
+
 import { useLocation, useMatches } from "@remix-run/react";
-import { RewriteFrames } from "@sentry/integrations";
+
 import * as ClientSentry from "@sentry/remix";
 import { captureRemixErrorBoundaryError as clientCaptureRemixErrorBoundaryError } from "@sentry/remix";
-import { useEffect } from "react";
-import { Toucan } from "toucan-js";
 
 import { VERSION } from "./config";
 
-export let Sentry: Toucan | typeof ClientSentry | undefined;
-
-export const SentryServerOptions = {
-  requestDataOptions: {
-    allowedSearchParams: true,
-    allowedIps: true,
-  },
-  environment: process.env.NODE_ENV,
-  release: VERSION,
-  dist: "server",
-  integrations: [
-    new RewriteFrames({
-      iteratee: (frame) => {
-        if (!frame.filename) return frame;
-        frame.filename = "index.js";
-        return frame;
-      },
-    }),
-  ],
-};
-
-export const SentryServerInit = (dsn: string, request?: Request) => {
-  if (Sentry) return;
-  // @ts-ignore
-  Sentry = new Toucan({
-    dsn,
-    ...SentryServerOptions,
-    request,
-  });
-};
+export let Sentry: typeof ClientSentry | undefined;
 
 export const SentryClientInit = (
   dsn: string,

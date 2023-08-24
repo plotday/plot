@@ -21,14 +21,14 @@ import {
 } from "@mantine/core";
 
 import { IconBrandLinkedin, IconMail } from "@tabler/icons-react";
+import classes from "css/_public.module.css";
 
 import { getUser } from "app/auth";
 import { createServerClient } from "app/db";
+import type { ContextType } from "app/hooks";
 
 import Logo from "../components/logo";
 import { DEFAULT_PATH } from "../config";
-import type { ContextType } from "../root";
-import classes from "./_public.module.css";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   let response: Response | undefined;

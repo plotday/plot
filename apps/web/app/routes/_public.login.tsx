@@ -21,10 +21,11 @@ import {
   MicrosoftLoginButton,
 } from "react-social-login-buttons";
 
+import { useSupabase } from "app/hooks";
+
 import { getUser, signInWithAzure, signInWithGoogle } from "../auth";
 import { DEFAULT_PATH } from "../config";
 import { createServerClient } from "../db";
-import { useSupabase } from "../root";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   try {

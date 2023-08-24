@@ -6,7 +6,7 @@ import { Event } from "@plotday/db";
 
 import { EventList } from "app/components/event";
 import { createServerClient } from "app/db";
-import { useTz } from "app/root";
+import { useTz } from "app/hooks";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   const { response, supabase } = createServerClient(request, context);
