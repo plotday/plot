@@ -145,7 +145,6 @@ export async function sync(
         : {
             timeMin: toGoogleDate(state.min),
             timeMax: toGoogleDate(state.max),
-            orderBy: "startTime",
             singleEvents: true,
           }),
       ...(maxEvents ? { maxResults: maxEvents } : {}),
