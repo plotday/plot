@@ -98,12 +98,16 @@ export interface Database {
           account_id: number
           created_at: string
           ends_at: string | null
+          full_sync_at: string | null
+          full_sync_started_at: string | null
           id: number
           more: boolean | null
           next_token: string | null
           provider_id: string
           sequence: number
           starts_at: string | null
+          sync_error: string | null
+          synced_at: string | null
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -112,12 +116,16 @@ export interface Database {
           account_id: number
           created_at?: string
           ends_at?: string | null
+          full_sync_at?: string | null
+          full_sync_started_at?: string | null
           id?: number
           more?: boolean | null
           next_token?: string | null
           provider_id: string
           sequence?: number
           starts_at?: string | null
+          sync_error?: string | null
+          synced_at?: string | null
           watch_expires_at?: string | null
           watch_id?: string | null
           watch_secret?: string | null
@@ -126,12 +134,16 @@ export interface Database {
           account_id?: number
           created_at?: string
           ends_at?: string | null
+          full_sync_at?: string | null
+          full_sync_started_at?: string | null
           id?: number
           more?: boolean | null
           next_token?: string | null
           provider_id?: string
           sequence?: number
           starts_at?: string | null
+          sync_error?: string | null
+          synced_at?: string | null
           watch_expires_at?: string | null
           watch_id?: string | null
           watch_secret?: string | null
@@ -417,27 +429,27 @@ export interface Database {
           created_at: string | null
           description: string | null
           id: number
-          name: string | null
+          name: string
           order: number
-          tag: string
+          tag: string | null
           user_id: number | null
         }
         Insert: {
           created_at?: string | null
           description?: string | null
           id?: number
-          name?: string | null
+          name: string
           order: number
-          tag: string
+          tag?: string | null
           user_id?: number | null
         }
         Update: {
           created_at?: string | null
           description?: string | null
           id?: number
-          name?: string | null
+          name?: string
           order?: number
-          tag?: string
+          tag?: string | null
           user_id?: number | null
         }
         Relationships: [
@@ -665,6 +677,40 @@ export interface Database {
         }
         Relationships: []
       }
+      invitation_admin: {
+        Row: {
+          code: string | null
+          created_at: string | null
+          id: number | null
+          remaining: number | null
+          uses: number | null
+        }
+        Relationships: []
+      }
+      sync_admin: {
+        Row: {
+          account_id: number | null
+          calendar_provider_id: string | null
+          email: string | null
+          error: string | null
+          event_count: number | null
+          first_synced_at: string | null
+          full_sync_at: string | null
+          provider: Database["public"]["Enums"]["provider"] | null
+          sync_seconds: number | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
+      waitlist_admin: {
+        Row: {
+          account_created_at: string | null
+          created_at: string | null
+          email: string | null
+          id: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       all_views_secure: {
@@ -714,9 +760,9 @@ export interface Database {
           created_at: string | null
           description: string | null
           id: number
-          name: string | null
+          name: string
           order: number
-          tag: string
+          tag: string | null
           user_id: number | null
         }[]
       }

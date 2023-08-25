@@ -1,0 +1,9 @@
+slug: delete_invitation
+name: Delete invitation
+parameters:
+- slug: id
+  name: Invitation ID
+  type: integer
+sql:
+  resource: plot
+  entrypoint: delete_invitation.sql

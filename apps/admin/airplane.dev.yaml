@@ -10,5 +10,9 @@ resources:
       slug: plot
       ssl: disable
       username: internal_admin
+    - baseURL: http://127.0.0.1:8787
+      kind: rest
+      name: Sync API
+      slug: sync_api
 configVars: {}
 envVars: {}

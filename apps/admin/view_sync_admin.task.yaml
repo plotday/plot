@@ -1,0 +1,5 @@
+slug: view_sync_admin
+name: View sync admin
+sql:
+  resource: plot
+  entrypoint: view_sync_admin.sql

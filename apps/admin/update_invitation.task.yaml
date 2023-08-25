@@ -1,0 +1,12 @@
+slug: update_invitation
+name: Update invitation
+parameters:
+- slug: remaining
+  name: Remaining uses
+  type: integer
+- slug: id
+  name: Invitation ID
+  type: integer
+sql:
+  resource: plot
+  entrypoint: update_invitation.sql

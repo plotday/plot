@@ -1,0 +1,1 @@
+SELECT * from public.sync_admin;

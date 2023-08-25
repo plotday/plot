@@ -1,4 +1,6 @@
-CREATE OR REPLACE VIEW "public"."event_x" AS
+CREATE OR REPLACE VIEW "public"."event_x" WITH ( security_invoker = TRUE)
+-- for formatting
+AS
 SELECT
     u.id AS user_id,
     min(e.id) AS id,

@@ -1,4 +1,4 @@
 SELECT
   *
 from
-  waitlist;
+  waitlist_admin;

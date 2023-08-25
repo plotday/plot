@@ -65,159 +65,185 @@ async function runSync(
     return state;
   }
 
-  // Create a new watch
-  let watchState = syncType === "full" ? await updateWatch() : null;
+  let state: SyncState | undefined;
+  let calendar;
+  try {
+    // Create a new watch
+    let watchState = syncType === "full" ? await updateWatch() : null;
 
-  const calendar = safeQuery(
-    await supabase
-      .from("calendar")
-      .upsert(
-        {
-          account_id: accountId,
-          provider_id: providerCalendarId,
-          ...(watchState
-            ? {
-                watch_id: watchState.watchId,
-                provider_id: watchState.calendarId,
-                watch_secret: watchState.secret,
-                watch_expires_at: watchState.expiry.toISOString(),
-              }
-            : {}),
-        },
-        { onConflict: "account_id, provider_id" }
-      )
-      .select()
-      .single()
-  );
-  if (!calendar) throw new Error("Could not create calendar");
+    calendar = safeQuery(
+      await supabase
+        .from("calendar")
+        .upsert(
+          {
+            account_id: accountId,
+            provider_id: providerCalendarId,
+            ...(syncType === "full"
+              ? { full_sync_started_at: new Date().toISOString() }
+              : {}),
+            ...(watchState
+              ? {
+                  watch_id: watchState.watchId,
+                  provider_id: watchState.calendarId,
+                  watch_secret: watchState.secret,
+                  watch_expires_at: watchState.expiry.toISOString(),
+                }
+              : {}),
+          },
+          { onConflict: "account_id, provider_id" }
+        )
+        .select()
+        .single()
+    );
+    if (!calendar) throw new Error("Could not create calendar");
 
-  // Update a missing or expired watch
-  if (
-    !calendar.watch_id ||
-    !calendar.watch_expires_at ||
-    new Date(calendar.watch_expires_at) < new Date()
-  ) {
-    watchState = await updateWatch();
-    if (watchState) {
+    // Update a missing or expired watch
+    if (
+      !calendar.watch_id ||
+      !calendar.watch_expires_at ||
+      new Date(calendar.watch_expires_at) < new Date()
+    ) {
+      watchState = await updateWatch();
+      if (watchState) {
+        safeQuery(
+          await supabase
+            .from("calendar")
+            .update({
+              watch_id: watchState.watchId,
+              provider_id: watchState.calendarId,
+              watch_secret: watchState.secret,
+              watch_expires_at: watchState.expiry.toISOString(),
+            })
+            .eq("id", calendar.id)
+        );
+      }
+    }
+
+    if (
+      syncType === "incremental" &&
+      (!calendar.starts_at ||
+        !calendar.ends_at ||
+        !calendar.next_token ||
+        differenceInYears(new Date(), new Date(calendar.starts_at)) < 1)
+    ) {
+      syncType = "full";
+    }
+
+    let min, max;
+    switch (syncType) {
+      case "full":
+        min = startOfYear(subYears(new Date(), 1));
+        max = add(new Date(), { years: 1, months: 6 });
+        break;
+      case "incremental":
+        min = new Date(calendar.starts_at as string);
+        max = new Date(calendar.ends_at as string);
+        break;
+      case "partial":
+        min = sub(new Date(), { days: 3 });
+        max = add(new Date(), { days: 7 });
+        break;
+    }
+    state = {
+      calendarId: calendar.provider_id,
+      min,
+      max,
+      nextToken:
+        syncType === "incremental" && calendar.next_token
+          ? calendar.next_token
+          : undefined,
+      more: syncType === "incremental" && !!calendar.more,
+      sequence: (calendar.sequence || 1) + (syncType === "full" ? 1 : 0),
+    };
+    let batchBytes = 0;
+    let batch: { body: EventSyncRequest }[] = [];
+    const sendBatch = async () => {
+      console.log(
+        `Sending batch of ${batch.length} events (${batchBytes} bytes)`
+      );
+      await env.EVENT_QUEUE.sendBatch(batch);
+      batch = [];
+      batchBytes = 0;
+    };
+    do {
+      let events;
+      ({ events, state, credentials } = await sync(
+        calendarConfig,
+        credentials,
+        state,
+        numBatchesPerSync * maxBatchSize
+      ));
+      console.log(
+        `Fetched ${events.length} events for ${state.calendarId} (${
+          state.more ? "more" : "no more"
+        })`
+      );
+
+      if (!state.sequence) throw new Error("Sync state sequence unset");
+
+      for (let i = 0; i < events.length; i += 1) {
+        const body = {
+          provider: credentials.provider,
+          calendarId: calendar.id,
+          sequence: state.sequence,
+          rawEvent: events[i],
+        };
+        batch.push({ body });
+        batchBytes += JSON.stringify(body).length;
+        if (batch.length >= maxBatchSize || batchBytes > maxBatchBytes) {
+          await sendBatch();
+        }
+      }
+    } while (state.more);
+    if (batch.length) {
+      await sendBatch();
+    }
+
+    safeQuery(
+      await supabase
+        .from("account")
+        .update({
+          credentials,
+        })
+        .eq("id", accountId)
+        .single()
+    );
+    if (syncType !== "partial") {
       safeQuery(
         await supabase
           .from("calendar")
           .update({
-            watch_id: watchState.watchId,
-            provider_id: watchState.calendarId,
-            watch_secret: watchState.secret,
-            watch_expires_at: watchState.expiry.toISOString(),
+            starts_at: state.min.toISOString(),
+            ends_at: state.max.toISOString(),
+            more: state.more,
+            next_token: state.nextToken,
+            sequence: state.sequence,
+            sync_error: null,
+            ...(syncType === "full"
+              ? { full_sync_at: new Date().toISOString() }
+              : {}),
+            ...(syncType === "incremental"
+              ? { synced_at: new Date().toISOString() }
+              : {}),
           })
           .eq("id", calendar.id)
       );
     }
-  }
-
-  if (
-    syncType === "incremental" &&
-    (!calendar.starts_at ||
-      !calendar.ends_at ||
-      !calendar.next_token ||
-      differenceInYears(new Date(), new Date(calendar.starts_at)) < 1)
-  ) {
-    syncType = "full";
-  }
-
-  let min, max;
-  switch (syncType) {
-    case "full":
-      min = startOfYear(subYears(new Date(), 1));
-      max = add(new Date(), { years: 1, months: 6 });
-      break;
-    case "incremental":
-      min = new Date(calendar.starts_at as string);
-      max = new Date(calendar.ends_at as string);
-      break;
-    case "partial":
-      min = sub(new Date(), { days: 3 });
-      max = add(new Date(), { days: 7 });
-      break;
-  }
-  let state: SyncState = {
-    calendarId: calendar.provider_id,
-    min,
-    max,
-    nextToken:
-      syncType === "incremental" && calendar.next_token
-        ? calendar.next_token
-        : undefined,
-    more: syncType === "incremental" && !!calendar.more,
-    sequence: (calendar.sequence || 1) + (syncType === "full" ? 1 : 0),
-  };
-  let batchBytes = 0;
-  let batch: { body: EventSyncRequest }[] = [];
-  const sendBatch = async () => {
-    console.log(
-      `Sending batch of ${batch.length} events (${batchBytes} bytes)`
-    );
-    await env.EVENT_QUEUE.sendBatch(batch);
-    batch = [];
-    batchBytes = 0;
-  };
-  do {
-    let events;
-    ({ events, state, credentials } = await sync(
-      calendarConfig,
-      credentials,
-      state,
-      numBatchesPerSync * maxBatchSize
-    ));
-    console.log(
-      `Fetched ${events.length} events for ${state.calendarId} (${
-        state.more ? "more" : "no more"
-      })`
-    );
-
-    if (!state.sequence) throw new Error("Sync state sequence unset");
-
-    for (let i = 0; i < events.length; i += 1) {
-      const body = {
-        provider: credentials.provider,
-        calendarId: calendar.id,
-        sequence: state.sequence,
-        rawEvent: events[i],
-      };
-      batch.push({ body });
-      batchBytes += JSON.stringify(body).length;
-      if (batch.length >= maxBatchSize || batchBytes > maxBatchBytes) {
-        await sendBatch();
-      }
+  } catch (error) {
+    if (calendar && error instanceof Error) {
+      safeQuery(
+        await supabase
+          .from("calendar")
+          .update({
+            sync_error: error.message,
+          })
+          .eq("id", calendar.id)
+      );
     }
-  } while (state.more);
-  if (batch.length) {
-    await sendBatch();
+    throw error;
   }
 
-  safeQuery(
-    await supabase
-      .from("account")
-      .update({
-        credentials,
-      })
-      .eq("id", accountId)
-      .single()
-  );
-  if (syncType !== "partial") {
-    safeQuery(
-      await supabase
-        .from("calendar")
-        .update({
-          starts_at: state.min.toISOString(),
-          ends_at: state.max.toISOString(),
-          more: state.more,
-          next_token: state.nextToken,
-          sequence: state.sequence,
-        })
-        .eq("id", calendar.id)
-    );
-  }
-
-  if (syncType === "full") {
+  if (state && syncType === "full") {
     // Wait 30 seconds (for new events to sync) then delete events with older sequence numbers
     await new Promise((resolve) => {
       setTimeout(() => {

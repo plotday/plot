@@ -74,11 +74,11 @@ jobs:
         with:
           version: latest
 
-      - name: Start supabase
-        run: pnpm --filter @plotday/db test:setup
-
       - name: Lint
         run: pnpm lint
+
+      - name: Start supabase
+        run: pnpm --filter @plotday/db test:setup
 
       - name: Run tests
         run: pnpm test

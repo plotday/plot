@@ -1,0 +1,1 @@
+INSERT INTO invitation (code, remaining) VALUES ('{{params.code}}', '{{params.remaining}}');

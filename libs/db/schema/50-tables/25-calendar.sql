@@ -10,7 +10,11 @@ CREATE TABLE "public"."calendar" (
     "watch_id" text,
     "watch_secret" text,
     "watch_expires_at" timestamp with time zone,
-    "sequence" numeric NOT NULL DEFAULT '1' ::numeric
+    "sequence" numeric NOT NULL DEFAULT '1' ::numeric,
+    "full_sync_at" timestamp with time zone,
+    "synced_at" timestamp with time zone,
+    "sync_error" text,
+    "full_sync_started_at" timestamp with time zone
 );
 
 CREATE UNIQUE INDEX calendar_pkey ON public.calendar USING btree (id);

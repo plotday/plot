@@ -1,0 +1,13 @@
+slug: create_invitation
+name: Create invitation
+parameters:
+- slug: code
+  name: Code
+  type: shorttext
+- slug: remaining
+  name: Remaining uses
+  type: integer
+  default: 1.0
+sql:
+  resource: plot
+  entrypoint: create_invitation.sql

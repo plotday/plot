@@ -1,0 +1,1 @@
+UPDATE invitation SET remaining = {{params.remaining}} WHERE id = {{params.id}};
