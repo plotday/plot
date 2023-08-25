@@ -17,6 +17,8 @@ interface Env {
   readonly RELEASE?: string;
   readonly PACKAGE?: string;
 
+  readonly API_KEY: string;
+
   readonly SUPABASE_URL: string;
   readonly SUPABASE_SERVICE_KEY: string;
   readonly SENTRY_DSN: string;
@@ -237,7 +239,13 @@ export default {
     if (req.method !== "POST") {
       return new Response("Method Not Allowed", { status: 405 });
     }
-    if (env.ENV !== "development") {
+    const apiKey = req.headers.get("Authorization");
+    if (
+      env.ENV !== "development" &&
+      apiKey &&
+      env.API_KEY &&
+      !apiKey.endsWith(env.API_KEY)
+    ) {
       return new Response("Forbidden", { status: 403 });
     }
     const body = await req.json();
