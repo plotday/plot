@@ -43,12 +43,12 @@ export default function CalendarSources() {
     <Stack>
       <Box w={280}>
         <GoogleLoginButton onClick={googleLogin}>
-          Add a Google calendar
+          Sign in with Google
         </GoogleLoginButton>
       </Box>
       <Box w={280}>
         <MicrosoftLoginButton onClick={outlookLogin}>
-          Add an Outlook calendar
+          Sign in with Microsoft
         </MicrosoftLoginButton>
       </Box>
       {error && (

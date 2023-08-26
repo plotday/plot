@@ -4,15 +4,7 @@ import type { LoaderArgs } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
 import { useLoaderData } from "@remix-run/react";
 
-import {
-  Box,
-  Button,
-  Card,
-  Container,
-  Pill,
-  Stack,
-  Title,
-} from "@mantine/core";
+import { Box, Button, Card, Container, Stack, Title } from "@mantine/core";
 
 import { getUser, logout } from "app/auth";
 import CalendarSources from "app/components/calendar-sources";
@@ -59,14 +51,15 @@ export default function Settings() {
     <Container size="xs" p="sm">
       <Card>
         <Stack>
-          <Title order={2}>Calendars</Title>
+          {calendars.length > 0 && <Title order={2}>Active calendars</Title>}
           {calendars.map((calendar: any) => (
             <Box key={calendar.id}>
-              <Pill size="lg">
+              <Card withBorder>
                 {calendar.account.email} - {calendar.provider_id}
-              </Pill>
+              </Card>
             </Box>
           ))}
+          <Title order={2}>Add a calendar</Title>
           <CalendarSources />
         </Stack>
       </Card>

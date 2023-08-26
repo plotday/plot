@@ -40,8 +40,8 @@ export default function Sync() {
             </Text>
           </Title>
           <Text>
-            Plot works with your existing calendars. Simply start by adding your
-            main work calendar. You can always add more later.
+            Plot works with your existing calendars. Simply sign in with your
+            primary calendar provider. You can always add more later.
           </Text>
           <CalendarSources />
           <Consent />
