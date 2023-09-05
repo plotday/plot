@@ -14,7 +14,7 @@ SELECT
     ELSE
         'waitlisted'
     END AS "status",
-    array_agg(a.email) FILTER (WHERE a.email IS NOT NULL) AS sync_accounts,
+    array_agg(DISTINCT a.email) FILTER (WHERE a.email IS NOT NULL) AS sync_accounts,
     min(w.sync_error) AS sync_error,
     min(w.provider) AS provider,
     min(u.invitation) AS invitation,
