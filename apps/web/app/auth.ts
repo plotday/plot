@@ -82,7 +82,7 @@ export const signIn = async (
   let providerParams = [] as Record<string, any>;
   switch (provider) {
     case "outlook":
-      baseScopes = ["openid", "email", "user.read", "blow.up"];
+      baseScopes = ["openid", "email", "user.read"];
       break;
     case "google":
       providerParams = {
