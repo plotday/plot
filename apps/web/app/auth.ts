@@ -157,7 +157,9 @@ export const getUserMetadata = async (session: Session) => {
   return {
     id: session.user?.id,
     provider:
-      session.user?.app_metadata?.provider === "google" ? "google" : "outlook",
+      session.user?.app_metadata?.provider === "google"
+        ? "google"
+        : ("outlook" as CalendarProvider),
     email: session.user?.user_metadata?.email?.toLowerCase() || null,
     name: session.user?.user_metadata?.name || null,
     avatar: session.user?.user_metadata?.avatar_url || null,

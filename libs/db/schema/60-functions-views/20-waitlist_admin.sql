@@ -1,5 +1,3 @@
-DROP VIEW "public"."waitlist_admin";
-
 CREATE OR REPLACE VIEW "public"."waitlist_admin" WITH ( security_invoker = FALSE)
 -- for formatting
 AS

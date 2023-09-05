@@ -637,18 +637,40 @@ export interface Database {
           created_at: string | null
           email: string
           id: number
+          provider: Database["public"]["Enums"]["provider"] | null
+          sync_error: string | null
+          user_id: number | null
         }
         Insert: {
           created_at?: string | null
           email: string
           id?: number
+          provider?: Database["public"]["Enums"]["provider"] | null
+          sync_error?: string | null
+          user_id?: number | null
         }
         Update: {
           created_at?: string | null
           email?: string
           id?: number
+          provider?: Database["public"]["Enums"]["provider"] | null
+          sync_error?: string | null
+          user_id?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "waitlist_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "event_x"
+            referencedColumns: ["user_id"]
+          }
+        ]
       }
     }
     Views: {
@@ -704,10 +726,15 @@ export interface Database {
       }
       waitlist_admin: {
         Row: {
-          account_created_at: string | null
           created_at: string | null
           email: string | null
+          event_count: number | null
           id: number | null
+          invitation: string | null
+          provider: Database["public"]["Enums"]["provider"] | null
+          status: string | null
+          sync_accounts: string[] | null
+          sync_error: string | null
         }
         Relationships: []
       }

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 
 import { useSearchParams } from "@remix-run/react";
 
-import { Alert, Box, Stack, Text } from "@mantine/core";
+import { Alert, Anchor, Box, Collapse, Stack, Text } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 
 import { IconAlertCircle } from "@tabler/icons-react";
 import {
@@ -30,6 +31,8 @@ export default function CalendarSources({
       setSearchParams(searchParams);
     }
   });
+
+  const [showError, { toggle: toggleError }] = useDisclosure(false);
 
   const login = async (provider: CalendarProvider) => {
     if (!supabase) return;
@@ -74,7 +77,13 @@ export default function CalendarSources({
           title="Sign in failed"
           color="red"
         >
-          <Text mt="md">{error}</Text>
+          <Stack mt="md">
+            <Text>Access was not granted to your calendar.</Text>
+            {!showError && <Anchor onClick={toggleError}>Show more</Anchor>}
+            <Collapse in={showError}>
+              <Text>{error}</Text>
+            </Collapse>
+          </Stack>
         </Alert>
       )}
       <Box w={280}>

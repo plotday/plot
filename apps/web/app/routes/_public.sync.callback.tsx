@@ -1,6 +1,8 @@
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
 
+import type { Database } from "@plotday/db";
+
 import { completeSignIn, getUser, getUserMetadata } from "app/auth";
 import { DEFAULT_PATH } from "app/config";
 import { restoreAuthCookie } from "app/cookies.server";
@@ -8,12 +10,27 @@ import { createServerAdminClient, createServerClient, safeQuery } from "app/db";
 import { getEnv } from "app/env";
 import { Sentry } from "app/sentry.server";
 
+function toProvider(
+  provider: string | null
+): Database["public"]["Enums"]["provider"] {
+  switch (provider) {
+    default:
+    case "google":
+      return "google";
+    case "outlook":
+      return "outlook";
+  }
+}
+
 export const loader = async ({ context, request }: LoaderArgs) => {
   let userId: number | null = null;
   // Supabase appends an extra query string
   const url = new URL(request.url.replace("&%3F", "&"));
   const fromUrl = url.searchParams.get("from") || "/sync";
   const toUrl = url.searchParams.get("to") || DEFAULT_PATH;
+  const email = url.searchParams.get("email");
+  let provider = toProvider(url.searchParams.get("provider"));
+
   const supabaseAdmin = createServerAdminClient(context);
 
   try {
@@ -42,13 +59,14 @@ export const loader = async ({ context, request }: LoaderArgs) => {
       id: authUserId,
       email,
       name,
-      provider,
       avatar,
       credentials,
+      provider: metadataProvider,
     } = await getUserMetadata(session);
     if (!authUserId) {
       throw new Error("Missing user metadata");
     }
+    provider = metadataProvider;
 
     // Or create the user
     if (!userId) {
@@ -86,8 +104,6 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 
     // Link waitlist to user
     try {
-      const email = url.searchParams.get("email");
-      const provider = url.searchParams.get("provider");
       if (email) {
         safeQuery(
           await supabaseAdmin
@@ -121,7 +137,7 @@ export const loader = async ({ context, request }: LoaderArgs) => {
             user_id: userId,
             auth_user_id: authUserId,
             email,
-            provider: provider === "google" ? "google" : "outlook",
+            provider,
             credentials,
           },
           { onConflict: "auth_user_id" }
@@ -152,7 +168,6 @@ export const loader = async ({ context, request }: LoaderArgs) => {
     Sentry?.withScope?.((scope) => {
       const user = userId ?? url.searchParams.get("email");
       scope.setExtra("user", user);
-      const provider = url.searchParams.get("provider");
       if (provider) {
         scope.setExtra("provider", provider);
       }
@@ -173,8 +188,6 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 
     // Log error to waitlist
     try {
-      const email = url.searchParams.get("email");
-      const provider = url.searchParams.get("provider");
       if (email) {
         safeQuery(
           await supabaseAdmin
