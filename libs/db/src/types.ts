@@ -698,7 +698,7 @@ export interface Database {
           full_sync_at: string | null
           provider: Database["public"]["Enums"]["provider"] | null
           sync_seconds: number | null
-          updated_at: string | null
+          synced_at: string | null
         }
         Relationships: []
       }

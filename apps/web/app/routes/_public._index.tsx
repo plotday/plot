@@ -1,24 +1,11 @@
 import { useState } from "react";
 
 import type { V2_MetaFunction } from "@remix-run/react";
-import { Form } from "@remix-run/react";
 
-import {
-  Box,
-  Button,
-  Container,
-  Flex,
-  Group,
-  Input,
-  List,
-  Stack,
-  Text,
-  Title,
-} from "@mantine/core";
+import { Box, Container, Flex, List, Stack, Text, Title } from "@mantine/core";
 
 import {
   IconCalendarCheck,
-  IconMail,
   IconScaleOutline,
   IconShieldCheckered,
 } from "@tabler/icons-react";
@@ -26,6 +13,8 @@ import classes from "css/_public._index.module.css";
 
 import { Balance } from "app/components/balance";
 import { APP_NAME } from "app/config";
+
+import { WaitlistForm } from "./_public.waitlist";
 
 export const meta: V2_MetaFunction = () => {
   return [
@@ -53,26 +42,6 @@ export const meta: V2_MetaFunction = () => {
   ];
 };
 
-function Waitlist() {
-  return (
-    <Form method="post" action="/waitlist">
-      <Group grow>
-        <Input
-          name="email"
-          type="email"
-          placeholder="Your work email"
-          required
-          leftSection={<IconMail size={16} />}
-          maw="unset"
-        />
-        <Button type="submit" variant="gradient" maw="unset">
-          Join the waitlist
-        </Button>
-      </Group>
-    </Form>
-  );
-}
-
 export default function Index() {
   const [target, setTarget] = useState(16);
 
@@ -97,7 +66,7 @@ export default function Index() {
               forward.
             </Text>
             <Stack>
-              <Waitlist />
+              <WaitlistForm />
               <Text c="dimmed" fz="xs">
                 We're currently onboarding early adopters personally to ensure
                 we deliver on the level of transformation we intend.
@@ -158,7 +127,7 @@ export default function Index() {
               </List>
             </Stack>
             <Box mt="lg" mb="lg">
-              <Waitlist />
+              <WaitlistForm />
             </Box>
           </Stack>
         </Container>

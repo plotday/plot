@@ -1,4 +1,3 @@
-import { jsonFetch as fetch } from "@worker-tools/json-fetch";
 import { add, differenceInYears, startOfYear, sub, subYears } from "date-fns";
 import { Toucan } from "toucan-js";
 
@@ -28,7 +27,7 @@ interface Env {
   readonly MICROSOFT_OAUTH_SECRET: string;
   readonly CALENDAR_WEBHOOK_URL: string;
 
-  readonly QUEUE: Queue<SyncRequest>;
+  readonly SYNC_QUEUE: Queue<SyncRequest>;
   readonly EVENT_QUEUE: Queue<EventSyncRequest>;
 }
 
@@ -78,8 +77,12 @@ async function runSync(
           {
             account_id: accountId,
             provider_id: providerCalendarId,
+            sync_error: null,
             ...(syncType === "full"
-              ? { full_sync_started_at: new Date().toISOString() }
+              ? {
+                  full_sync_started_at: new Date().toISOString(),
+                  full_sync_at: null,
+                }
               : {}),
             ...(watchState
               ? {
@@ -218,16 +221,18 @@ async function runSync(
             more: state.more,
             next_token: state.nextToken,
             sequence: state.sequence,
-            sync_error: null,
-            ...(syncType === "full"
-              ? { full_sync_at: new Date().toISOString() }
-              : {}),
-            ...(syncType === "incremental"
-              ? { synced_at: new Date().toISOString() }
-              : {}),
+            synced_at: new Date().toISOString(),
           })
           .eq("id", calendar.id)
       );
+    }
+    if (syncType === "full") {
+      await env.EVENT_QUEUE.send({
+        provider: credentials.provider,
+        calendarId: calendar.id,
+        sequence: state.sequence,
+        fullSyncComplete: true,
+      });
     }
   } catch (error) {
     if (calendar && error instanceof Error) {
@@ -281,7 +286,7 @@ export default {
     }
     const providerCalendarId = (body as any)?.providerCalendarId;
     const syncType = (body as any)?.syncType;
-    await env.QUEUE.send({
+    await env.SYNC_QUEUE.send({
       accountId,
       providerCalendarId,
       syncType,
@@ -303,56 +308,33 @@ export default {
 
     const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
-    switch (batch.queue) {
-      default:
-        for (const m of batch.messages) {
-          try {
-            const message = m as Message<SyncRequest>;
-            const accountId = message.body.accountId;
-            const providerCalendarId =
-              message.body.providerCalendarId || "primary";
-            const syncType = message.body.syncType || "incremental";
-            console.log(`Starting ${syncType} sync (${accountId})`);
-            try {
-              await runSync(
-                env,
-                supabase,
-                accountId,
-                providerCalendarId,
-                syncType
-              );
-              console.log(`Sync complete (${accountId})`);
-              message.ack();
-            } catch (e) {
-              console.error(e);
-              Sentry.withScope((scope) => {
-                scope.setExtra("account-id", accountId);
-                scope.setExtra("provider-calendar-id", providerCalendarId);
-                Sentry.captureException(e);
-              });
-              message.retry();
-            }
-          } catch (e) {
-            console.error(e);
+    for (const m of batch.messages) {
+      try {
+        const message = m as Message<SyncRequest>;
+        const accountId = message.body.accountId;
+        const providerCalendarId = message.body.providerCalendarId || "primary";
+        const syncType = message.body.syncType || "incremental";
+        console.log(`Starting ${syncType} sync (${accountId})`);
+        try {
+          await runSync(env, supabase, accountId, providerCalendarId, syncType);
+          console.log(`Sync complete (${accountId})`);
+          message.ack();
+        } catch (e) {
+          console.error(e);
+          Sentry.withScope((scope) => {
+            scope.setExtra("account-id", accountId);
+            scope.setExtra("provider-calendar-id", providerCalendarId);
             Sentry.captureException(e);
-            // It's a failure, but it will never succeed because the parameters
-            // are wrong.
-            m.ack();
-          }
+          });
+          message.retry();
         }
-        break;
-
-      // This only happens in development, where wrangler limits require the
-      // consumer to be in the same worker as the producer.
-      case "plot-event-development-queue":
-        await fetch("http://127.0.0.1:8786/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(batch.messages),
-        });
-        break;
+      } catch (e) {
+        console.error(e);
+        Sentry.captureException(e);
+        // It's a failure, but it will never succeed because the parameters
+        // are wrong.
+        m.ack();
+      }
     }
   },
 };

@@ -1,13 +1,12 @@
 {
   "name": "@plotday/labeler",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "version": "0.0.0",
   "private": true,
   "env_vars": "SUPABASE_URL SUPABASE_SERVICE_KEY SENTRY_DSN SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT CLOUDFLARE_API_TOKEN",
   "deploy_vars": "SENTRY_DSN SUPABASE_URL",
   "scripts": {
-    "dev": "pnpm run dev:config && pnpm run dev:start",
-    "dev:config": "../../scripts/gen-env $npm_package_env_vars > .dev.vars",
-    "dev:start": "wrangler dev --env development",
     "deploy": "../../scripts/deploy-worker",
     "lint": "tsc && eslint ."
   },

@@ -13,8 +13,6 @@ export interface Env {
   readonly SUPABASE_URL: string;
   readonly SUPABASE_SERVICE_KEY: string;
   readonly SENTRY_DSN: string;
-
-  readonly QUEUE: Queue<EventLabelRequest>;
 }
 
 async function labelEvent(supabase: SupabaseClient, eventId: number) {
@@ -49,25 +47,6 @@ async function labelEvent(supabase: SupabaseClient, eventId: number) {
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    if (req.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
-    if (env.ENV !== "development") {
-      return new Response("Forbidden", { status: 403 });
-    }
-    const body = (await req.json()) as
-      | EventLabelRequest
-      | MessageSendRequest<EventLabelRequest>[];
-    if (body instanceof Array) {
-      await env.QUEUE.sendBatch(body);
-    } else {
-      await env.QUEUE.send(body);
-    }
-
-    return new Response("Labeling queued");
-  },
-
   async queue(batch: MessageBatch<EventLabelRequest>, env: Env): Promise<void> {
     const Sentry = new Toucan({
       dsn: env.SENTRY_DSN,

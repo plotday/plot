@@ -20,3 +20,6 @@ coverage
 
 # Cloudflare
 /functions
+
+# react-email
+.react-email

@@ -3,19 +3,26 @@ import { redirect } from "@remix-run/cloudflare";
 
 import { completeSignIn, getUser, getUserMetadata } from "app/auth";
 import { DEFAULT_PATH } from "app/config";
-import { getCookie, restoreAuthCookie } from "app/cookies.server";
+import { restoreAuthCookie } from "app/cookies.server";
 import { createServerAdminClient, createServerClient, safeQuery } from "app/db";
 import { getEnv } from "app/env";
+import { Sentry } from "app/sentry.server";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
-  let userId = undefined;
+  let userId: number | null = null;
+  // Supabase appends an extra query string
+  const url = new URL(request.url.replace("&%3F", "&"));
+  const fromUrl = url.searchParams.get("from") || "/sync";
+  const toUrl = url.searchParams.get("to") || DEFAULT_PATH;
+  const supabaseAdmin = createServerAdminClient(context);
+
   try {
     const env = getEnv(context);
 
     let response: Response | undefined;
     let supabase;
     ({ supabase, response } = createServerClient(request, context));
-    userId = (await getUser(supabase))?.id;
+    userId = (await getUser(supabase))?.id || null;
 
     if (!userId && restoreAuthCookie(request, response)) {
       return redirect(request.url, {
@@ -27,9 +34,8 @@ export const loader = async ({ context, request }: LoaderArgs) => {
     const session = await completeSignIn(request, supabase);
 
     // Load the user matching the auth user
-    const supabaseAdmin = createServerAdminClient(context);
     if (!userId) {
-      userId = (await getUser(supabaseAdmin, session))?.id;
+      userId = (await getUser(supabaseAdmin, session))?.id || null;
     }
 
     const {
@@ -46,18 +52,55 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 
     // Or create the user
     if (!userId) {
-      const code = getCookie(request, "invitation");
-      userId = safeQuery(
-        await supabaseAdmin.rpc("insert_user", {
-          _name: name,
-          _email: email,
-          _avatar_url: avatar,
-          _invitation: code,
-        })
-      );
+      const code = url.searchParams.get("invitation");
+      if (code) {
+        userId = safeQuery(
+          await supabaseAdmin.rpc("insert_user", {
+            _name: name,
+            _email: email,
+            _avatar_url: avatar,
+            _invitation: code,
+          })
+        );
+      } else {
+        userId =
+          safeQuery(
+            await supabaseAdmin
+              .from("user")
+              .upsert(
+                {
+                  name,
+                  email,
+                  avatar_url: avatar,
+                },
+                { onConflict: "email" }
+              )
+              .select("id")
+              .maybeSingle()
+          )?.id || null;
+      }
       if (!userId) {
         throw new Error("Could not create user");
       }
+    }
+
+    // Link waitlist to user
+    try {
+      const email = url.searchParams.get("email");
+      const provider = url.searchParams.get("provider");
+      if (email) {
+        safeQuery(
+          await supabaseAdmin
+            .from("waitlist")
+            .upsert(
+              { email, provider, user_id: userId, sync_error: null },
+              { onConflict: "email" }
+            )
+        );
+      }
+    } catch (error) {
+      console.error(error);
+      Sentry?.captureException?.(error);
     }
 
     // Create or link a contact for the user
@@ -96,7 +139,7 @@ export const loader = async ({ context, request }: LoaderArgs) => {
       await env.SYNC_QUEUE?.send?.({ accountId: account.id, syncType: "full" });
     }
 
-    return redirect(DEFAULT_PATH, {
+    return redirect(toUrl, {
       status: 303,
       headers: response.headers,
     });
@@ -105,23 +148,49 @@ export const loader = async ({ context, request }: LoaderArgs) => {
     if (error instanceof Response) throw error;
 
     console.error(error);
-    // @ts-ignore
-    console.error("Message", error?.message);
-    let message = "Server error";
+
+    Sentry?.withScope?.((scope) => {
+      const user = userId ?? url.searchParams.get("email");
+      scope.setExtra("user", user);
+      const provider = url.searchParams.get("provider");
+      if (provider) {
+        scope.setExtra("provider", provider);
+      }
+      Sentry?.captureException?.(error);
+    });
+
+    let sync_error = "Server error";
     if (error instanceof Error && error.message) {
-      message = error.message;
+      sync_error = error.message;
     } else if (
       error instanceof Object &&
       "message" in error &&
       typeof error.message === "string" &&
       error.message
     ) {
-      message = error.message;
+      sync_error = error.message;
     }
 
-    const params = new URLSearchParams();
-    params.append("error", message);
-    return redirect(`/${userId ? "settings" : "sync"}?${params.toString()}`, {
+    // Log error to waitlist
+    try {
+      const email = url.searchParams.get("email");
+      const provider = url.searchParams.get("provider");
+      if (email) {
+        safeQuery(
+          await supabaseAdmin
+            .from("waitlist")
+            .upsert({ email, provider, sync_error }, { onConflict: "email" })
+        );
+      }
+    } catch (error) {
+      console.error(error);
+      Sentry?.captureException?.(error);
+    }
+
+    const [fromPath, fromQuery] = fromUrl.split("?");
+    const params = new URLSearchParams(fromQuery);
+    params.append("error", sync_error);
+    return redirect(`${fromPath}?${params.toString()}`, {
       status: 303,
     });
   }

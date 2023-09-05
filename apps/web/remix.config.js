@@ -13,7 +13,11 @@ export default {
   serverNodeBuiltinsPolyfill: {
     modules: {},
   },
-  watchPaths: ["node_modules/@plotday/**/*"],
+  watchPaths: [
+    "./node_modules/@plotday/db/src/**",
+    "./node_modules/@plotday/cal/src/**",
+    "./node_modules/@plotday/worker-request/src/**",
+  ],
   postcss: true,
   future: {
     v2_dev: true,

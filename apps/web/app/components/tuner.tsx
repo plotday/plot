@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  Box,
   Button,
   Group,
   Input,
@@ -85,9 +84,6 @@ export function TunerList({
   const hasTargets = Object.values(targets).some(
     (target) => target !== undefined
   );
-  const hasPending = Object.values(labelStats).some(
-    (stats) => !!stats.tentative?.minutes
-  );
 
   return (
     <Table.ScrollContainer minWidth={500}>
@@ -97,8 +93,38 @@ export function TunerList({
             <Table.Th pl={0}>Type</Table.Th>
             <Table.Th>Budget</Table.Th>
             <Table.Th>{hasTargets ? "Balance" : ""}</Table.Th>
-            <Table.Th>Scheduled</Table.Th>
-            <Table.Th ta="right">{hasPending ? "Pending" : ""}</Table.Th>
+            <Table.Th>
+              <Progress.Root w="100%" size="xl">
+                <Progress.Section value={20} color="brand">
+                  <Progress.Label c="var(--mantine-color-default)">
+                    scheduled
+                  </Progress.Label>
+                </Progress.Section>
+                <Progress.Section value={20} color="secondary">
+                  <Progress.Label c="var(--mantine-color-default)">
+                    over budget
+                  </Progress.Label>
+                </Progress.Section>
+                <Progress.Section value={20} className={classes.pending}>
+                  <Progress.Label c="var(--mantine-color-text)">
+                    pending
+                  </Progress.Label>
+                </Progress.Section>
+                <Progress.Section
+                  value={20}
+                  className={classes.pendingOverBudget}
+                >
+                  <Progress.Label c="var(--mantine-color-text)">
+                    over budget
+                  </Progress.Label>
+                </Progress.Section>
+                <Progress.Section value={20} className={classes.budget}>
+                  <Progress.Label c="var(--mantine-color-text)">
+                    budget
+                  </Progress.Label>
+                </Progress.Section>
+              </Progress.Root>
+            </Table.Th>
             <Table.Th colSpan={3}>Scheduled</Table.Th>
             <Table.Th colSpan={2}>Pending</Table.Th>
           </Table.Tr>
@@ -293,7 +319,10 @@ export function Tuner({
     goodPending = Math.min(pendingMinutes, monthlyTargetMinutes - goodMinutes);
     badPending = pendingMinutes - goodPending;
   }
-  const scheduledMinutes = Math.max(monthlyMinutes, monthlyTargetMinutes || 0);
+  const totalMinutes = Math.max(
+    monthlyMinutes + pendingMinutes,
+    monthlyTargetMinutes || 0
+  );
 
   const load = (monthlyMinutes / monthlyWorkingMinutes) * 100;
   const previousLoad = (previousMinutes / previousMonthlyWorkingMinutes) * 100;
@@ -382,51 +411,36 @@ export function Tuner({
             ? formatDuration(monthlyTargetMinutes - monthlyMinutes)
             : ""}
         </Table.Td>
-        <Table.Td miw="6rem" colSpan={2}>
+        <Table.Td miw="6rem">
           <Group gap={0} wrap="nowrap">
             <Progress.Root
-              w={`${(scheduledMinutes / maxMinutes) * 100}%`}
+              w={`${(totalMinutes / maxMinutes) * 100}%`}
               size="md"
             >
               <Progress.Section value={0} color="brand" />
-              {goodMinutes / scheduledMinutes > 0 && (
+              {goodMinutes > 0 && (
                 <Progress.Section
-                  value={(goodMinutes / scheduledMinutes) * 100}
+                  value={(goodMinutes / totalMinutes) * 100}
                   color="brand"
                 />
               )}
-              {badMinutes / scheduledMinutes > 0 && (
+              {badMinutes > 0 && (
                 <Progress.Section
-                  value={(badMinutes / scheduledMinutes) * 100}
+                  value={(badMinutes / totalMinutes) * 100}
                   color="secondary"
                 />
               )}
-            </Progress.Root>
-            <Box
-              ml="xs"
-              mr="xs"
-              w={`${
-                ((maxMinutes - scheduledMinutes - pendingMinutes) /
-                  maxMinutes) *
-                100
-              }%`}
-            />
-            <Progress.Root
-              w={`${(pendingMinutes / maxMinutes) * 100}%`}
-              size="md"
-              dir="rtl"
-            >
               <Progress.Section value={0} color="brand" />
-              {goodPending / pendingMinutes > 0 && (
+              {goodPending > 0 && (
                 <Progress.Section
-                  value={(goodPending / pendingMinutes) * 100}
-                  color="brand"
+                  value={(goodPending / totalMinutes) * 100}
+                  className={classes.pending}
                 />
               )}
-              {badPending / pendingMinutes > 0 && (
+              {badPending > 0 && (
                 <Progress.Section
-                  value={(badPending / pendingMinutes) * 100}
-                  color="secondary"
+                  value={(badPending / totalMinutes) * 100}
+                  className={classes.pendingOverBudget}
                 />
               )}
             </Progress.Root>

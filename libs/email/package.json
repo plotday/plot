@@ -7,8 +7,7 @@
   "private": true,
   "env_vars": "",
   "scripts": {
-    "gen-env": "../../scripts/gen-env $npm_package_env_vars",
-    "dev": "email dev -d src -p 8790",
+    "dev": "cd ../.. && pnpm dev:email",
     "lint": "tsc && eslint ."
   },
   "dependencies": {
@@ -16,8 +15,7 @@
     "@react-email/html": "^0.0.4",
     "@react-email/render": "^0.0.7",
     "@react-email/text": "^0.0.5",
-    "react": "^18.2.0",
-    "react-email": "^1.9.4"
+    "react": "^18.2.0"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",

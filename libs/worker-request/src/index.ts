@@ -12,7 +12,8 @@ export type EventSyncRequest = {
   provider: CalendarProvider;
   calendarId: number;
   sequence: number;
-  rawEvent: RawEvent;
+  rawEvent?: RawEvent;
+  fullSyncComplete?: boolean;
 };
 
 export type EventLabelRequest = {

@@ -27,15 +27,21 @@ export function getCookie(request: Request, name: string) {
 
 export function saveAuthCookie(request: Request, response: Response) {
   const auth = parseCookie(request.headers.get("Cookie") || "");
-  response.headers.append(
-    "Set-Cookie",
-    serializeCookie("sa", auth.pa, tempCookieOptions)
-  );
+  if (auth.pa?.length) {
+    response.headers.append(
+      "Set-Cookie",
+      serializeCookie("sa", auth.pa, tempCookieOptions)
+    );
+  }
 }
 
 export function restoreAuthCookie(request: Request, response: Response) {
   const auth = parseCookie(request.headers.get("Cookie") || "");
   if (auth.sa?.length) {
+    response.headers.append(
+      "Set-Cookie",
+      serializeCookie("sa", "", tempCookieOptions)
+    );
     if (auth.sa !== auth.pa) {
       response.headers.append(
         "Set-Cookie",
@@ -43,10 +49,6 @@ export function restoreAuthCookie(request: Request, response: Response) {
       );
       return true;
     }
-    response.headers.append(
-      "Set-Cookie",
-      serializeCookie("sa", "", tempCookieOptions)
-    );
   }
   return false;
 }

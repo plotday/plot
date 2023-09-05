@@ -7,7 +7,7 @@ compatibility_date = "2023-07-10"
 
 [[env.production.queues.producers]]
   queue = "plot-sync-production-queue"
-  binding = "QUEUE"
+  binding = "SYNC_QUEUE"
 
 [[env.production.queues.producers]]
   queue = "plot-event-production-queue"
@@ -23,7 +23,7 @@ compatibility_date = "2023-07-10"
 
 [[env.staging.queues.producers]]
   queue = "plot-sync-staging-queue"
-  binding = "QUEUE"
+  binding = "SYNC_QUEUE"
 
 [[env.staging.queues.producers]]
   queue = "plot-event-staging-queue"
@@ -34,30 +34,5 @@ compatibility_date = "2023-07-10"
   max_batch_size = 1
   max_retries = 5
 
-[env.development]
-  vars = { ENV = "development" }
-
-[[env.development.queues.producers]]
-  queue = "plot-sync-development-queue"
-  binding = "QUEUE"
-
-[[env.development.queues.producers]]
-  queue = "plot-event-development-queue"
-  binding = "EVENT_QUEUE"
-
-[[env.development.queues.consumers]]
-  queue = "plot-sync-development-queue"
-  max_batch_size = 1
-  max_retries = 0
-
-[[env.development.queues.consumers]]
-  queue = "plot-event-development-queue"
-  max_batch_size = 10
-  max_batch_timeout = 3
-  max_retries = 0
-
 [placement]
   mode = "smart"
-
-[dev]
-  port = 8787

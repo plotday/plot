@@ -61,12 +61,12 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           </UnstyledButton>
         </Group>
         <Group>
-          {user && isPublic && (
+          {user?.invitation && isPublic && (
             <Button component={Link} to={DEFAULT_PATH}>
               Go to app
             </Button>
           )}
-          {!user && location.pathname !== "/login" && (
+          {!user?.invitation && location.pathname !== "/login" && (
             <Button variant="outline" component={Link} to="/login">
               Sign in
             </Button>

@@ -8,9 +8,10 @@ SELECT
     c.provider_id AS calendar_provider_id,
     c.created_at AS first_synced_at,
     c.full_sync_at AS full_sync_at,
-    c.synced_at AS updated_at,
+    c.synced_at AS synced_at,
     c.sync_error AS error,
-    CASE WHEN c.full_sync_at IS NULL THEN
+    CASE WHEN c.full_sync_at IS NULL
+        OR c.sync_error IS NOT NULL THEN
         NULL
     ELSE
         ROUND(EXTRACT(EPOCH FROM (COALESCE(c.full_sync_at, NOW()) - c.full_sync_started_at)))

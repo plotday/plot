@@ -22,7 +22,6 @@ export interface Env {
   readonly SUPABASE_SERVICE_KEY: string;
   readonly SENTRY_DSN: string;
 
-  readonly QUEUE: Queue<EventSyncRequest>;
   readonly LABELER_QUEUE: Queue<EventLabelRequest>;
 }
 
@@ -79,25 +78,6 @@ function eventToDb(
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    if (req.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
-    if (env.ENV !== "development") {
-      return new Response("Forbidden", { status: 403 });
-    }
-    const body = (await req.json()) as
-      | EventSyncRequest
-      | MessageSendRequest<EventSyncRequest>[];
-    if (body instanceof Array) {
-      await env.QUEUE.sendBatch(body);
-    } else {
-      await env.QUEUE.send(body);
-    }
-
-    return new Response("Sync queued");
-  },
-
   async queue(batch: MessageBatch<EventSyncRequest>, env: Env): Promise<void> {
     const Sentry = new Toucan({
       dsn: env.SENTRY_DSN,
@@ -109,70 +89,70 @@ export default {
     try {
       const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
-      switch (batch.queue) {
-        default:
-          let messageNum = 1;
-          for (let message of batch.messages) {
-            try {
-              console.log(
-                `Processing ${messageNum} of ${batch.messages.length} (${message.body.calendarId})`
-              );
-              const event = transform(
-                message.body.provider,
-                message.body.rawEvent
-              );
-              // TODO: handle working locations
-              if (eventType(event) !== "event") continue;
-              const db = eventToDb(message.body.calendarId, event);
-              const eventId = safeQuery(
-                await supabase.rpc("upsert_event", {
-                  _calendar_id: message.body.calendarId,
-                  _raw_event: {
-                    calendar_id: message.body.calendarId,
-                    provider_id: message.body.rawEvent.id,
-                    event: message.body.rawEvent.data,
-                    sequence: message.body.sequence,
-                  },
-                  _event: db.event,
-                  _organizer: db.organizer as DbContact,
-                  _invitees: db.invitees,
-                })
-              );
-              if (eventId) {
-                console.log(`Sending ${eventId} to labeler`);
-                await env.LABELER_QUEUE.send({
-                  eventId: eventId,
-                });
-              }
-              message.ack();
-            } catch (e) {
-              console.error(e);
-              console.log(
-                "Raw event",
-                JSON.stringify(message.body.rawEvent.data)
-              );
-              Sentry.withScope((scope) => {
-                scope.setExtra("event", message.body.rawEvent.data);
-                scope.setExtra("calendar-id", message.body.calendarId);
-                Sentry.captureException(e);
+      let messageNum = 1;
+      for (let message of batch.messages) {
+        try {
+          if (message.body.rawEvent) {
+            console.log(
+              `Processing ${messageNum} of ${batch.messages.length} (${message.body.calendarId})`
+            );
+            const event = transform(
+              message.body.provider,
+              message.body.rawEvent
+            );
+            // TODO: handle working locations
+            if (eventType(event) !== "event") continue;
+            const db = eventToDb(message.body.calendarId, event);
+            const eventId = safeQuery(
+              await supabase.rpc("upsert_event", {
+                _calendar_id: message.body.calendarId,
+                _raw_event: {
+                  calendar_id: message.body.calendarId,
+                  provider_id: message.body.rawEvent.id,
+                  event: message.body.rawEvent.data,
+                  sequence: message.body.sequence,
+                },
+                _event: db.event,
+                _organizer: db.organizer as DbContact,
+                _invitees: db.invitees,
+              })
+            );
+            if (eventId) {
+              console.log(`Sending ${eventId} to labeler`);
+              await env.LABELER_QUEUE.send({
+                eventId: eventId,
               });
-              message.retry();
             }
-            messageNum += 1;
           }
-          break;
-
-        // This only happens in development, where wrangler limits require the
-        // consumer to be in the same worker as the producer.
-        case "plot-labeler-development-queue":
-          await fetch("http://127.0.0.1:8783/", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(batch.messages),
+          if (message.body.fullSyncComplete) {
+            safeQuery(
+              await supabase
+                .from("calendar")
+                .update({
+                  full_sync_at: new Date().toISOString(),
+                })
+                .eq("id", message.body.calendarId)
+            );
+          }
+          message.ack();
+        } catch (e) {
+          console.error(e);
+          if (message.body.rawEvent) {
+            console.log(
+              "Raw event",
+              JSON.stringify(message.body.rawEvent.data)
+            );
+          }
+          Sentry.withScope((scope) => {
+            if (message.body.rawEvent) {
+              scope.setExtra("event", message.body.rawEvent.data);
+            }
+            scope.setExtra("calendar-id", message.body.calendarId);
+            Sentry.captureException(e);
           });
-          break;
+          message.retry();
+        }
+        messageNum += 1;
       }
     } catch (e) {
       console.error(e);

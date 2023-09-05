@@ -7,6 +7,9 @@ import { createServerAdminClient, createServerClient } from "app/db";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   let response: Response | undefined;
+  const url = new URL(request.url);
+  const fromUrl = url.searchParams.get("from") || "/login";
+  const toUrl = url.searchParams.get("to") || DEFAULT_PATH;
   try {
     let supabase;
     ({ supabase, response } = createServerClient(request, context));
@@ -20,7 +23,7 @@ export const loader = async ({ context, request }: LoaderArgs) => {
       });
     }
 
-    return redirect(DEFAULT_PATH, {
+    return redirect(toUrl, {
       status: 303,
       headers: response.headers,
     });
@@ -29,7 +32,6 @@ export const loader = async ({ context, request }: LoaderArgs) => {
     if (error instanceof Response) throw error;
 
     console.error(error);
-    const params = new URLSearchParams();
     let message = "Server error";
     if (error instanceof Error) {
       message = error.message;
@@ -41,10 +43,11 @@ export const loader = async ({ context, request }: LoaderArgs) => {
       message = error.message;
     }
 
+    const newUrl = new URL(`${url.protocol}${url.host}${fromUrl}`);
+    const params = new URLSearchParams(newUrl.search.substring(1));
     params.append("error", message);
-    return redirect(`/login?${params.toString()}`, {
+    return redirect(`${newUrl.pathname}?${params.toString()}`, {
       status: 303,
-      headers: response?.headers ?? {},
     });
   }
 };

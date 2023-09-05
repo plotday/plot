@@ -1,4 +1,6 @@
-import type { Session, SupabaseClient } from "@supabase/supabase-js";
+import type { Provider, Session, SupabaseClient } from "@supabase/supabase-js";
+
+import type { CalendarProvider } from "@plotday/cal";
 
 import { safeQuery } from "./db";
 
@@ -20,12 +22,13 @@ export const completeSignIn = async (
   request: Request,
   supabase: SupabaseClient
 ) => {
-  const url = new URL(request.url);
+  // Supabase appends an extra query string
+  const url = new URL(request.url.replace("&%3F", "&"));
   if (url.searchParams.has("error")) {
     if (url.searchParams.get("error_description")) {
       throw Error(url.searchParams.get("error_description") as string);
     } else {
-      throw Error(`Auth provider error (${url.searchParams.get("error")})`);
+      throw Error(`Calendar provider error (${url.searchParams.get("error")})`);
     }
   }
   const code = url.searchParams.get("code");
@@ -42,78 +45,112 @@ export const completeSignIn = async (
   return session;
 };
 
-export const signInWithGoogle = async (
+export const signIn = async (
   supabase: SupabaseClient,
-  redirectTo: string,
-  additionalScopes?: string[]
+  provider: CalendarProvider,
+  callbackUrl: string,
+  redirectUrl?: string,
+  additionalScopes?: string[],
+  additionalParams?: Record<string, string>
 ) => {
-  await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo,
-      scopes: (additionalScopes || []).join(" "),
-      queryParams: {
+  let supabaseProvider: Provider;
+  switch (provider) {
+    case "google":
+      supabaseProvider = "google";
+      break;
+    case "outlook":
+      supabaseProvider = "azure";
+      break;
+  }
+
+  const currentUrl = `${location.pathname}${location.search}`;
+  redirectUrl ??= currentUrl;
+  const params = new URLSearchParams({
+    from: currentUrl,
+    to: redirectUrl,
+  });
+  if (additionalParams) {
+    for (const [key, value] of Object.entries(additionalParams)) {
+      params.append(key, value);
+    }
+  }
+  // Supabase appends an extra query string, so we append a & to avoid
+  // concatenating with the last param
+  const redirectTo = `${location.origin}${callbackUrl}?${params}&`;
+
+  let baseScopes = [] as string[];
+  let providerParams = [] as Record<string, any>;
+  switch (provider) {
+    case "outlook":
+      baseScopes = ["openid", "email", "user.read", "blow.up"];
+      break;
+    case "google":
+      providerParams = {
         access_type: additionalScopes ? "offline" : "online",
         prompt: (additionalScopes ? ["select_account", "consent"] : []).join(
           " "
         ),
-      },
+      };
+      break;
+  }
+
+  await supabase.auth.signInWithOAuth({
+    provider: supabaseProvider,
+    options: {
+      redirectTo,
+      scopes: baseScopes.concat(additionalScopes || []).join(" "),
+      queryParams: providerParams,
     },
   });
 };
-
-export async function signInWithAzure(
-  supabase: SupabaseClient,
-  redirectTo: string,
-  additionalScopes?: string[]
-) {
-  await supabase.auth.signInWithOAuth({
-    provider: "azure",
-    options: {
-      redirectTo,
-      scopes: ["openid", "email", "user.read"]
-        .concat(additionalScopes || [])
-        .join(" "),
-    },
-  });
-}
 
 export const logout = async (supabase: SupabaseClient) => {
   await supabase.auth.signOut();
 };
 
-export const getUserId = async (
+export const getAuthUserId = async (
   supabase: SupabaseClient,
   session?: Session
 ) => {
-  session =
-    session || (await supabase.auth.getSession()).data.session || undefined;
+  session ??= (await supabase.auth.getSession()).data.session || undefined;
   if (!session) {
     return null;
   }
   return session.user?.id;
 };
 
+export const isSignedIn = async (
+  supabase: SupabaseClient,
+  session?: Session
+) => {
+  const user = await getUser(supabase, session);
+  return !!user?.invitation;
+};
+
 export const getUser = async (supabase: SupabaseClient, session?: Session) => {
-  const userId = await getUserId(supabase, session);
+  const userId = await getAuthUserId(supabase, session);
   if (!userId) {
     return null;
   }
 
-  // Typescript somehow confuses this as returning an array rather than an object,
-  // so we need to specify the type explicitly
-  return (safeQuery(
+  const user = safeQuery(
     await supabase
       .from("account")
-      .select("user( id, email, name, timezone )")
+      .select("user( id, email, name, timezone, invitation )")
       .eq("auth_user_id", userId)
       .maybeSingle()
-  )?.user || null) as {
+  )?.user;
+  if (!user) return null;
+
+  // Typescript somehow confuses this as returning an array rather than an object,
+  // so we need to specify the type explicitly
+  return user as any as {
     id: number;
     email: string;
-    name: string;
+    name: string | null;
     timezone: string | null;
-  } | null;
+    invitation: string | null;
+  };
 };
 
 export const getUserMetadata = async (session: Session) => {

@@ -23,7 +23,7 @@ import {
 
 import { useSupabase } from "app/hooks";
 
-import { getUser, signInWithAzure, signInWithGoogle } from "../auth";
+import { getUser, signIn } from "../auth";
 import { DEFAULT_PATH } from "../config";
 import { createServerClient } from "../db";
 
@@ -33,7 +33,13 @@ export const loader = async ({ context, request }: LoaderArgs) => {
     if (url.searchParams.has("error")) return null;
     const { supabase } = createServerClient(request, context);
     const user = await getUser(supabase);
-    if (user) return redirect(DEFAULT_PATH);
+    if (user) {
+      if (user.invitation) {
+        return redirect(DEFAULT_PATH);
+      } else {
+        return redirect("/waitlist");
+      }
+    }
   } catch (error) {}
   return null;
 };
@@ -52,11 +58,11 @@ export default function Login() {
 
   const googleLogin = async () => {
     if (!supabase) return;
-    await signInWithGoogle(supabase, `${location.origin}/login/callback`);
+    await signIn(supabase, "google", "/login/callback", DEFAULT_PATH);
   };
   const azureLogin = async () => {
     if (!supabase) return;
-    await signInWithAzure(supabase, `${location.origin}/login/callback`);
+    await signIn(supabase, "outlook", "/login/callback", DEFAULT_PATH);
   };
 
   return (

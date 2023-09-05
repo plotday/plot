@@ -1,0 +1,22 @@
+{
+  "name": "@plotday/dev-worker",
+  "version": "0.0.4",
+  "private": true,
+  "env_vars": "SUPABASE_URL SUPABASE_SERVICE_KEY SENTRY_DSN SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT CLOUDFLARE_API_TOKEN GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET CALENDAR_WEBHOOK_URL",
+  "scripts": {
+    "dev": "pnpm run dev:config && pnpm run dev:start",
+    "dev:config": "../../scripts/gen-env $npm_package_env_vars > .dev.vars",
+    "dev:start": "wrangler dev --env development",
+    "lint": "tsc && eslint ."
+  },
+  "dependencies": {
+    "@plotday/event-sync": "workspace:^",
+    "@plotday/labeler": "workspace:^",
+    "@plotday/sync": "workspace:^",
+    "@plotday/worker-request": "workspace:^"
+  },
+  "devDependencies": {
+    "@plotday/eslint-config-custom": "workspace:*",
+    "@plotday/tsconfig": "workspace:*"
+  }
+}

@@ -2,4 +2,3 @@ packages:
   - "apps/*"
   - "workers/*"
   - "libs/*"
-  - "libs/email/.react-email"

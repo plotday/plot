@@ -10,10 +10,16 @@ import {
   MicrosoftLoginButton,
 } from "react-social-login-buttons";
 
-import { signInWithAzure, signInWithGoogle } from "app/auth";
+import type { CalendarProvider } from "@plotday/cal";
+
+import { signIn } from "app/auth";
 import { useSupabase } from "app/hooks";
 
-export default function CalendarSources() {
+export default function CalendarSources({
+  redirectTo,
+}: {
+  redirectTo?: string;
+}) {
   const supabase = useSupabase();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -25,32 +31,43 @@ export default function CalendarSources() {
     }
   });
 
-  const googleLogin = async () => {
+  const login = async (provider: CalendarProvider) => {
     if (!supabase) return;
-    await signInWithGoogle(supabase, `${location.origin}/sync/callback`, [
-      "https://www.googleapis.com/auth/calendar",
-    ]);
-  };
-  const outlookLogin = async () => {
-    if (!supabase) return;
-    await signInWithAzure(supabase, `${location.origin}/sync/callback`, [
-      "calendars.readwrite",
-      "offline_access",
-    ]);
+
+    let scopes;
+    switch (provider) {
+      case "google":
+        scopes = ["https://www.googleapis.com/auth/calendar"];
+        break;
+      case "outlook":
+        scopes = ["calendars.readwrite", "offline_access"];
+        break;
+    }
+
+    let params = {
+      provider,
+    } as Record<string, string>;
+    const email = searchParams.get("email");
+    if (email) {
+      params.email = email;
+    }
+    const invitation = searchParams.get("invitation");
+    if (invitation) {
+      params.invitation = invitation;
+    }
+
+    await signIn(
+      supabase,
+      provider,
+      "/sync/callback",
+      redirectTo,
+      scopes,
+      params
+    );
   };
 
   return (
     <Stack>
-      <Box w={280}>
-        <GoogleLoginButton onClick={googleLogin}>
-          Sign in with Google
-        </GoogleLoginButton>
-      </Box>
-      <Box w={280}>
-        <MicrosoftLoginButton onClick={outlookLogin}>
-          Sign in with Microsoft
-        </MicrosoftLoginButton>
-      </Box>
       {error && (
         <Alert
           icon={<IconAlertCircle size="1rem" />}
@@ -60,6 +77,16 @@ export default function CalendarSources() {
           <Text mt="md">{error}</Text>
         </Alert>
       )}
+      <Box w={280}>
+        <GoogleLoginButton onClick={() => login("google")}>
+          Sign in with Google
+        </GoogleLoginButton>
+      </Box>
+      <Box w={280}>
+        <MicrosoftLoginButton onClick={() => login("outlook")}>
+          Sign in with Microsoft
+        </MicrosoftLoginButton>
+      </Box>
     </Stack>
   );
 }

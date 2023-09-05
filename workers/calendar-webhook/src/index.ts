@@ -21,7 +21,7 @@ export interface Env {
   readonly MICROSOFT_CLIENT_ID: string;
   readonly MICROSOFT_OAUTH_SECRET: string;
 
-  readonly QUEUE: Queue<SyncRequest>;
+  readonly SYNC_QUEUE: Queue<SyncRequest>;
 }
 
 let Sentry: Toucan | null = null;
@@ -135,9 +135,10 @@ async function queueSync(
     return;
   }
 
-  await env.QUEUE.send({
+  await env.SYNC_QUEUE.send({
     accountId,
     providerCalendarId: calendar.provider_id || undefined,
+    syncType: "incremental",
   });
 
   return;

@@ -43,3 +43,21 @@
   color: light-dark(var(--mantine-color-gray-9), var(--mantine-color-dark-0));
   border-radius: var(--mantine-radius-lg);
 }
+.pending {
+  background-color: light-dark(
+    var(--mantine-color-brand-0),
+    var(--mantine-color-brand-9)
+  );
+}
+.pendingOverBudget {
+  background-color: light-dark(
+    var(--mantine-color-secondary-0),
+    var(--mantine-color-secondary-9)
+  );
+}
+.budget {
+  background-color: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-dark-4)
+  );
+}

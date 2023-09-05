@@ -1,3 +1,5 @@
+SET check_function_bodies = OFF;
+
 CREATE OR REPLACE FUNCTION public.insert_user (_name text, _email text, _avatar_url text, _invitation text)
     RETURNS integer
     LANGUAGE plpgsql
