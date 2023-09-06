@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 
-import type { LoaderArgs } from "@remix-run/cloudflare";
-import { redirect } from "@remix-run/cloudflare";
 import { Link, useSearchParams } from "@remix-run/react";
 
 import {
@@ -23,26 +21,8 @@ import {
 
 import { useSupabase } from "app/hooks";
 
-import { getUser, signIn } from "../auth";
+import { signIn } from "../auth";
 import { DEFAULT_PATH } from "../config";
-import { createServerClient } from "../db";
-
-export const loader = async ({ context, request }: LoaderArgs) => {
-  try {
-    const url = new URL(request.url);
-    if (url.searchParams.has("error")) return null;
-    const { supabase } = createServerClient(request, context);
-    const user = await getUser(supabase);
-    if (user) {
-      if (user.invitation) {
-        return redirect(DEFAULT_PATH);
-      } else {
-        return redirect("/waitlist");
-      }
-    }
-  } catch (error) {}
-  return null;
-};
 
 export default function Login() {
   const supabase = useSupabase();

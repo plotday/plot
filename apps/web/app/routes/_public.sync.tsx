@@ -23,7 +23,6 @@ async function requireInvitation(request: Request, context: AppLoadContext) {
       .eq("code", invitation)
       .maybeSingle()
   );
-  console.log("match", match);
   if (!match?.remaining)
     throw redirect(`/waitlist?invitation=${invitation}&error=invalid`);
 }

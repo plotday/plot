@@ -1,7 +1,7 @@
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
 
-import { completeSignIn, getUser } from "app/auth";
+import { completeSignIn, getUser, getUserMetadata } from "app/auth";
 import { DEFAULT_PATH } from "app/config";
 import { createServerAdminClient, createServerClient } from "app/db";
 
@@ -9,18 +9,16 @@ export const loader = async ({ context, request }: LoaderArgs) => {
   let response: Response | undefined;
   const url = new URL(request.url);
   const fromUrl = url.searchParams.get("from") || "/login";
-  const toUrl = url.searchParams.get("to") || DEFAULT_PATH;
+  let toUrl = url.searchParams.get("to") || DEFAULT_PATH;
   try {
     let supabase;
     ({ supabase, response } = createServerClient(request, context));
     const session = await completeSignIn(request, supabase);
     const supabaseAdmin = createServerAdminClient(context);
     let user = await getUser(supabaseAdmin, session);
-
-    if (!user) {
-      return redirect("/invitation", {
-        headers: response.headers,
-      });
+    if (!user?.invitation) {
+      const { email } = await getUserMetadata(session);
+      toUrl = "/waitlist?email=" + encodeURIComponent(email);
     }
 
     return redirect(toUrl, {

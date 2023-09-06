@@ -21,6 +21,9 @@ const Waitlist = () => {
             check_url: `https://plot.day/check?email=${encodeURIComponent(
               d.email
             )}`,
+            invite_url: `https://plot.day/sync?email=${encodeURIComponent(
+              d.email
+            )}&invitation=letsdothis`,
           }))
         }
         columns={[
@@ -51,6 +54,13 @@ const Waitlist = () => {
           {
             label: "Check Link",
             accessor: "check_url",
+            type: "string",
+            width: 100,
+            Component: TableLink,
+          },
+          {
+            label: "Invite Link",
+            accessor: "invite_url",
             type: "string",
             width: 100,
             Component: TableLink,

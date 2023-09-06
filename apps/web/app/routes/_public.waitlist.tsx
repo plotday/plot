@@ -38,12 +38,15 @@ export async function action({ request, context }: ActionArgs) {
 }
 
 export function WaitlistForm() {
+  const [searchParams] = useSearchParams();
+  const email = searchParams.get("email") || "";
   return (
     <Form method="post" action="/waitlist">
       <Group grow>
         <TextInput
           name="email"
           type="email"
+          defaultValue={email}
           placeholder="Your work email"
           required
           leftSection={<IconMail size={16} />}
@@ -100,7 +103,14 @@ export default function Waitlist() {
         <Card>
           <Stack>
             <Text>If you have an invitation code, please enter it here.</Text>
-            <form method="get" action="/sync">
+            <Form method="get" action="/sync">
+              {searchParams.get("email") && (
+                <input
+                  type="hidden"
+                  name="email"
+                  value={searchParams.get("email")!}
+                />
+              )}
               <Group grow align="start">
                 <TextInput
                   name="invitation"
@@ -120,7 +130,7 @@ export default function Waitlist() {
                   Use invitation
                 </Button>
               </Group>
-            </form>
+            </Form>
           </Stack>
         </Card>
       </Stack>
