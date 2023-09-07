@@ -254,25 +254,29 @@ export default function EventCard({
                 label: (
                   <Center>
                     <IconPlayerPlayFilled size="1em" />
-                    <Box ml={3}>Attend</Box>
+                    <Box ml={3}>{review ? "Attended" : "Attend"}</Box>
                   </Center>
                 ),
                 value: "accepted",
               },
-              {
-                label: (
-                  <Center>
-                    <IconPlayerPauseFilled size="1em" />
-                    <Box ml={3}>Only if needed</Box>
-                  </Center>
-                ),
-                value: "tentative",
-              },
+              ...(review
+                ? []
+                : [
+                    {
+                      label: (
+                        <Center>
+                          <IconPlayerPauseFilled size="1em" />
+                          <Box ml={3}>Only if needed</Box>
+                        </Center>
+                      ),
+                      value: "tentative",
+                    },
+                  ]),
               {
                 label: (
                   <Center>
                     <IconPlayerStopFilled size="1em" />
-                    <Box ml={3}>Skip</Box>
+                    <Box ml={3}>{review ? "Skipped" : "Skip"}</Box>
                   </Center>
                 ),
                 value: "declined",

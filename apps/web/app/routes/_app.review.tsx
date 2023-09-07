@@ -25,5 +25,5 @@ export default function Review() {
   let { events: dbEvents } = useTypedLoaderData<typeof loader>();
   const tz = useTz();
   const events = Event.Hydrate(dbEvents, tz);
-  return <EventList events={events} />;
+  return <EventList events={events} review />;
 }
