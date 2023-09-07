@@ -524,21 +524,27 @@ export interface Database {
           created_at: string | null
           id: number
           provider_id: string
-          response: Database["public"]["Enums"]["event_response"]
+          ready: boolean
+          response: Database["public"]["Enums"]["event_response"] | null
+          reviewed: boolean
           user_id: number
         }
         Insert: {
           created_at?: string | null
           id?: number
           provider_id: string
-          response: Database["public"]["Enums"]["event_response"]
+          ready?: boolean
+          response?: Database["public"]["Enums"]["event_response"] | null
+          reviewed?: boolean
           user_id: number
         }
         Update: {
           created_at?: string | null
           id?: number
           provider_id?: string
-          response?: Database["public"]["Enums"]["event_response"]
+          ready?: boolean
+          response?: Database["public"]["Enums"]["event_response"] | null
+          reviewed?: boolean
           user_id?: number
         }
         Relationships: [
@@ -690,7 +696,9 @@ export interface Database {
           organizer: number | null
           provider_id: string | null
           provider_link: string | null
+          ready: boolean | null
           response: Database["public"]["Enums"]["event_response"] | null
+          reviewed: boolean | null
           series: string | null
           status: Database["public"]["Enums"]["event_status"] | null
           summary: string | null

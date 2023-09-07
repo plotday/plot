@@ -5,6 +5,8 @@ import { toDate } from "@plotday/tz";
 import type { SupabaseClient } from "./";
 import { safeQuery } from "./";
 
+export type ConferencingProvider = "zoom" | "meet" | "teams" | "other";
+
 namespace Event {
   type Flatten<Type> = Type extends Array<infer Item> ? Item : Type;
   export type DbEvents = Awaited<ReturnType<typeof Event.GetRange>>;
@@ -153,12 +155,30 @@ export class Event {
     return this.invitees.find((invitee) => invitee.isSelf)?.email || null;
   }
 
+  public get providerId() {
+    return this.dbEvent.provider_id;
+  }
+
   public get providerLink() {
     return this.dbEvent.provider_link;
   }
 
   public get conferencingUrl() {
     return this.dbEvent.conferencing_url;
+  }
+
+  public get conferencingProvider(): ConferencingProvider | null {
+    const url = this.dbEvent.conferencing_url;
+    if (!url) return null;
+    if (url.includes("zoom.us")) {
+      return "zoom";
+    } else if (url.includes("meet.google.com")) {
+      return "meet";
+    } else if (url.includes("teams.microsoft.com")) {
+      return "teams";
+    } else {
+      return "other";
+    }
   }
 
   private get self() {
@@ -227,6 +247,14 @@ export class Event {
 
   public get hasOnlyInternalInvitees() {
     return this.invitees.every((i) => i.isInternal);
+  }
+
+  public get isReady() {
+    return !!this.dbEvent.ready;
+  }
+
+  public get isReviewed() {
+    return !!this.dbEvent.reviewed;
   }
 
   public guessLabels() {

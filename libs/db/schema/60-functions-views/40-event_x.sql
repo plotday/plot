@@ -26,7 +26,9 @@ SELECT
     COALESCE(min(er.response), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative') AS response,
     (round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
     count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response)) AS attendee_count,
-count(DISTINCT i.contact_id) AS invitee_count
+count(DISTINCT i.contact_id) AS invitee_count,
+bool_or(er.ready) AS ready,
+bool_or(er.reviewed) AS reviewed
 FROM
     event e
     JOIN calendar c ON (e.calendar_id = c.id)
@@ -40,8 +42,6 @@ GROUP BY
     u.id,
     e.name,
     e.at;
-
-ALTER VIEW "public"."event_x" SET (security_invoker = TRUE);
 
 -- Define a computed relation for PostgREST joins
 -- https://postgrest.org/en/stable/references/api/resource_embedding.html#computed-relationships

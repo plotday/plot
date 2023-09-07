@@ -43,4 +43,5 @@ export async function getCredentials(
   };
 }
 
+export type { ConferencingProvider } from "./event";
 export { Event } from "./event";
