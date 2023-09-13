@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   Anchor,
@@ -30,11 +30,12 @@ import {
 
 import type { EventResponse } from "@plotday/cal";
 import type { ConferencingProvider, Event } from "@plotday/db";
-import { formatDay, formatTimes, isSameDay } from "@plotday/tz";
+import { formatDate, formatDay, formatDuration, formatTime } from "@plotday/tz";
 
 import { useEventWatch } from "app/event";
 import { useEventReadyResponder } from "app/routes/api.event.ready";
 import { useEventResponder } from "app/routes/api.response";
+import type { DailyLabelStats } from "app/target";
 
 function conferencingProviderName(provider: ConferencingProvider) {
   switch (provider) {
@@ -86,107 +87,139 @@ function AttendeeIcon({ response }: { response: EventResponse | null }) {
 
 export function EventList({
   events,
+  targets,
+  expenditures,
   review,
 }: {
   events: Event[];
+  targets: {
+    targets: Record<number, number>;
+    orgTargets: Record<number, number>;
+  };
+  expenditures: DailyLabelStats;
   review?: boolean;
 }) {
   useEventWatch();
 
-  let last: Date | undefined;
-  return (
-    <Box display="grid" style={{ gridTemplateColumns: "5.5rem 1fr" }}>
-      {events
-        .reduce((acc, event) => {
-          if (event.isAllDay) {
-            if (acc.length === 0 || !Array.isArray(acc[acc.length - 1])) {
-              acc.push([]);
+  const groupedEvents = useMemo(() => {
+    const balances = {} as Record<number, number>;
+    const expenditureIterator = Object.keys(expenditures)[Symbol.iterator]();
+    let nextExpenditureDate = expenditureIterator
+      ? expenditureIterator.next().value
+      : null;
+    return events.reduce(
+      (acc, event) => {
+        const date = formatDay(event.start, event.tz);
+        acc[date] ??= {
+          allDay: [],
+          regular: [],
+        };
+        if (event.isAllDay) {
+          acc[date].allDay.push(event);
+        } else {
+          while (
+            nextExpenditureDate &&
+            nextExpenditureDate <=
+              formatDate(event.start, event.tz, "yyyy-MM-dd")
+          ) {
+            for (const stats of Object.values(
+              expenditures[nextExpenditureDate]
+            )) {
+              if (
+                targets.targets[stats.id] !== undefined &&
+                stats.accepted?.minutes !== undefined
+              ) {
+                balances[stats.id] =
+                  targets.targets[stats.id] * 4 -
+                  (stats.accepted?.minutes ?? 0);
+              }
             }
-            // @ts-ignore
-            acc[acc.length - 1].push(event);
-          } else {
-            acc.push(event);
+            nextExpenditureDate = expenditureIterator
+              ? expenditureIterator.next().value
+              : null;
           }
-          return acc;
-        }, [] as (Event | Event[])[])
-        .map((event) => {
-          // @ts-ignore
-          let events: Event[] = [];
-          if (Array.isArray(event)) {
-            events = event;
-          }
-          const firstEvent: Event = Array.isArray(event) ? event[0] : event;
-          const isNewDay =
-            !last || !isSameDay(last, firstEvent.start, firstEvent.tz);
-          last = firstEvent.start;
-          return (
-            <React.Fragment key={firstEvent.id}>
-              {isNewDay && (
-                <Paper
-                  bg="var(--mantine-color-background)"
-                  h="3rem"
-                  style={{
-                    position: "sticky",
-                    top: 0,
-                    zIndex: 99,
-                    gridColumn: "1 / span 2",
-                  }}
-                >
-                  <Title fw="normal" order={3}>
-                    {formatDay(firstEvent.start, firstEvent.tz)}
-                  </Title>
-                </Paper>
-              )}
-              {events.length > 0 && (
-                <Paper
-                  bg="var(--mantine-color-background)"
-                  mb="lg"
-                  style={{
-                    gridColumn: "1 / span 2",
-                    zIndex: 98,
-                  }}
-                >
-                  <Text fs="italic">
-                    {events.map((e) => e.name).join(", ")}
-                  </Text>
-                </Paper>
-              )}
-              {!firstEvent.isAllDay && (
-                <>
-                  <Paper
-                    bg="var(--mantine-color-background)"
-                    w="6rem"
-                    pr="xs"
-                    style={{
-                      position: "sticky",
-                      top: "3rem",
-                      alignSelf: "start",
-                      flexGrow: 0,
-                    }}
-                  >
-                    <Text size="sm">
-                      {formatTimes(
-                        firstEvent.start,
-                        firstEvent.end,
-                        firstEvent.tz
-                      )}
-                    </Text>
-                  </Paper>
-                  <EventCard event={firstEvent} review={review} />
-                </>
-              )}
-            </React.Fragment>
-          );
-        })}
+          const labelBalances = event.labels.reduce((acc, label) => {
+            acc[label.id] = balances[label.id] ?? 0;
+            return acc;
+          }, {} as Record<number, number>);
+          acc[date].regular.push({ event, balances: labelBalances });
+        }
+        return acc;
+      },
+      {} as Record<
+        string,
+        {
+          allDay: Event[];
+          regular: {
+            event: Event;
+            balances: Record<number, number>;
+          }[];
+        }
+      >
+    );
+  }, [events, expenditures, targets]);
+
+  return (
+    <Box
+      display="grid"
+      mt="-1rem"
+      style={{ gridTemplateColumns: "5.5rem 1fr" }}
+    >
+      {Object.keys(groupedEvents).map((day) => {
+        return (
+          <React.Fragment key={day}>
+            <Paper
+              bg="var(--mantine-color-background)"
+              h="4rem"
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 99,
+                gridColumn: "1 / span 2",
+              }}
+            >
+              <Title fw="normal" order={3} pt="md">
+                {day}
+              </Title>
+            </Paper>
+
+            {groupedEvents[day].allDay.length > 0 && (
+              <Paper
+                bg="var(--mantine-color-background)"
+                mb="lg"
+                style={{
+                  gridColumn: "1 / span 2",
+                  zIndex: 98,
+                }}
+              >
+                <Text fs="italic">
+                  {groupedEvents[day].allDay.map((e) => e.name).join(", ")}
+                </Text>
+              </Paper>
+            )}
+
+            {groupedEvents[day].regular.map((event) => (
+              <EventCard
+                key={event.event.id}
+                event={event.event}
+                balances={event.balances}
+                review={review}
+              />
+            ))}
+          </React.Fragment>
+        );
+      })}
     </Box>
   );
 }
 
 export default function EventCard({
   event,
+  balances,
   review,
 }: {
   event: Event;
+  balances: Record<number, number>;
   review?: boolean;
 }) {
   const [response, setResponseState] = useState(event.response || undefined);
@@ -200,6 +233,9 @@ export default function EventCard({
     },
     [event, responder]
   );
+  useEffect(() => {
+    setResponseState(event.response || undefined);
+  }, [event.response]);
   const [ready, setReady] = useState(review ? event.isReviewed : event.isReady);
   const eventReadyResponder = useEventReadyResponder();
   const updateReady = (ready: boolean) => {
@@ -212,127 +248,169 @@ export default function EventCard({
       );
     }
   };
-  return (
-    <Card
-      withBorder
-      mb="lg"
-      display="grid"
-      style={{
-        flexGrow: 1,
-        gridTemplateColumns: "2.2rem repeat(auto-fit, minmax(12rem, 1fr))",
-        rowGap: "1rem",
-        borderColor: ready
-          ? response === "accepted"
-            ? "var(--mantine-color-brand-border)"
-            : undefined
-          : "var(--mantine-color-secondary-border)",
-      }}
-    >
-      <Checkbox
-        radius="xl"
-        size="md"
-        checked={ready}
-        color={response === "accepted" ? "brand" : "gray"}
-        styles={{
-          input: {
-            borderColor: ready
-              ? undefined
-              : "var(--mantine-color-secondary-filled)",
-          },
-        }}
-        onChange={(event) => updateReady(event.currentTarget.checked)}
-      />
-      <Stack>
-        <Title order={4} fw={response === "accepted" ? "bold" : "normal"}>
-          {event.name}
-        </Title>
-        <Box>
-          <SegmentedControl
-            size="xs"
-            data={[
-              {
-                label: (
-                  <Center>
-                    <IconPlayerPlayFilled size="1em" />
-                    <Box ml={3}>{review ? "Attended" : "Attend"}</Box>
-                  </Center>
-                ),
-                value: "accepted",
-              },
-              ...(review
-                ? []
-                : [
-                    {
-                      label: (
-                        <Center>
-                          <IconPlayerPauseFilled size="1em" />
-                          <Box ml={3}>Only if needed</Box>
-                        </Center>
-                      ),
-                      value: "tentative",
-                    },
-                  ]),
-              {
-                label: (
-                  <Center>
-                    <IconPlayerStopFilled size="1em" />
-                    <Box ml={3}>{review ? "Skipped" : "Skip"}</Box>
-                  </Center>
-                ),
-                value: "declined",
-              },
-            ]}
-            value={response}
-            onChange={setResponse}
-          />
-        </Box>
-        {event.labels.length > 0 && (
-          <Group gap="xs">
-            {event.labels.map((label) => (
-              <Badge key={label.id} color="gray" fw={500} tt="unset">
-                {label.tag} {label.name}
-              </Badge>
-            ))}
-          </Group>
-        )}
-      </Stack>
-      <Stack gap="xs">
-        {event.conferencingUrl && (
-          <Group gap="xs">
-            <ConferencingIcon
-              provider={event.conferencingProvider || "other"}
-            />
-            <Anchor
-              variant="light"
-              component="a"
-              target="_blank"
-              href={event.conferencingUrl}
-            >
-              {conferencingProviderName(event.conferencingProvider || "other")}
-            </Anchor>
-          </Group>
-        )}
 
-        {event.providerLink && (
-          <Group gap="xs">
-            <IconExternalLink size="1em" />
-            <Anchor target="_blank" href={event.providerLink}>
-              View on calendar
-            </Anchor>
-          </Group>
-        )}
-      </Stack>
-      <Stack gap="xs">
-        {event.invitees.map(
-          (invitee) =>
-            !invitee.isSelf && (
-              <Group key={invitee.id} wrap="nowrap" gap="xs">
-                <AttendeeIcon response={invitee.response} />
-                <Text truncate>{invitee.name}</Text>
-              </Group>
-            )
-        )}
-      </Stack>
-    </Card>
+  return (
+    <>
+      <Paper
+        bg="var(--mantine-color-background)"
+        style={{
+          position: "sticky",
+          top: "4rem",
+          alignSelf: "start",
+          flexGrow: 0,
+        }}
+      >
+        <Stack>
+          <Card style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}>
+            <Center>
+              <Checkbox
+                radius="xl"
+                size="md"
+                checked={ready}
+                color={
+                  response === "accepted"
+                    ? "brand"
+                    : "var(--mantine-color-neutral)"
+                }
+                styles={{
+                  input: {
+                    borderColor: ready
+                      ? undefined
+                      : "var(--mantine-color-secondary-filled)",
+                  },
+                }}
+                onChange={(event) => updateReady(event.currentTarget.checked)}
+              />
+            </Center>
+          </Card>
+          <Text size="sm" ta="right" mr="sm">
+            {formatTime(event.start, event.tz)}
+            <br />
+            &ndash; {formatTime(event.end, event.tz)}
+          </Text>
+        </Stack>
+      </Paper>
+      <Card
+        display="grid"
+        style={{
+          flexGrow: 1,
+          gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))",
+          rowGap: "1rem",
+          borderTopLeftRadius: 0,
+          borderColor: ready
+            ? response === "accepted"
+              ? "var(--mantine-color-brand-border)"
+              : undefined
+            : "var(--mantine-color-secondary-border)",
+        }}
+      >
+        <Stack>
+          <Title order={4} fw={response === "accepted" ? "bold" : "normal"}>
+            {event.name}
+          </Title>
+          <Box>
+            <SegmentedControl
+              size="xs"
+              data={[
+                {
+                  label: (
+                    <Center>
+                      <IconPlayerPlayFilled size="1em" />
+                      <Box ml={3}>{review ? "Attended" : "Attend"}</Box>
+                    </Center>
+                  ),
+                  value: "accepted",
+                },
+                ...(review
+                  ? []
+                  : [
+                      {
+                        label: (
+                          <Center>
+                            <IconPlayerPauseFilled size="1em" />
+                            <Box ml={3}>Only if needed</Box>
+                          </Center>
+                        ),
+                        value: "tentative",
+                      },
+                    ]),
+                {
+                  label: (
+                    <Center>
+                      <IconPlayerStopFilled size="1em" />
+                      <Box ml={3}>{review ? "Skipped" : "Skip"}</Box>
+                    </Center>
+                  ),
+                  value: "declined",
+                },
+              ]}
+              value={response}
+              onChange={setResponse}
+            />
+          </Box>
+          {event.labels.length > 0 && (
+            <Group gap="xs">
+              {event.labels.map((label) => {
+                const balance = balances[label.id];
+                return (
+                  <Badge
+                    key={label.id}
+                    color={
+                      balance ? (balance < 0 ? "secondary" : "brand") : "gray"
+                    }
+                    fw={500}
+                    tt="unset"
+                  >
+                    {label.tag} {label.name}
+                    {balance ? ` (${formatDuration(balance)})` : null}
+                  </Badge>
+                );
+              })}
+            </Group>
+          )}
+        </Stack>
+        <Stack gap="xs">
+          {event.conferencingUrl && (
+            <Group gap="xs">
+              <ConferencingIcon
+                provider={event.conferencingProvider || "other"}
+              />
+              <Anchor
+                variant="light"
+                component="a"
+                target="_blank"
+                href={event.conferencingUrl}
+              >
+                {conferencingProviderName(
+                  event.conferencingProvider || "other"
+                )}
+              </Anchor>
+            </Group>
+          )}
+
+          {event.providerLink && (
+            <Group gap="xs">
+              <IconExternalLink size="1em" />
+              <Anchor target="_blank" href={event.providerLink}>
+                View on calendar
+              </Anchor>
+            </Group>
+          )}
+        </Stack>
+        <Stack gap="xs">
+          {event.invitees.map(
+            (invitee) =>
+              !invitee.isSelf && (
+                <Group key={invitee.id} wrap="nowrap" gap="xs">
+                  <AttendeeIcon response={invitee.response} />
+                  <Text truncate>{invitee.name}</Text>
+                </Group>
+              )
+          )}
+        </Stack>
+      </Card>
+      <Paper pt="lg" style={{ zIndex: 98 }} />
+      <Paper />
+    </>
   );
 }

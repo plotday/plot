@@ -29,6 +29,7 @@ import type { SupabaseClient } from "app/db";
 import { createServerClient, safeQuery } from "app/db";
 import { useEventWatch } from "app/event";
 import { useUser } from "app/hooks";
+import { getTargets } from "app/target";
 
 type Target = {
   target: number | null;
@@ -39,53 +40,50 @@ type TargetUpdate = {
   [labelId: number]: Target;
 };
 
+type MonthlyLabelStats = {
+  [month: string]: LabelStatsMap;
+};
+
 async function getStats(
   supabase: SupabaseClient,
-  statFn: "label_stats" | "org_stats",
   userId: number,
-  start: Date,
-  end: Date
+  tz: string,
+  months: Date[]
 ) {
-  const during = `[${start.toISOString()}, ${end.toISOString()})`;
+  const dates = months.map((month) => formatDate(month, tz, "yyyy-MM-01"));
   return (
     safeQuery(
-      await supabase.rpc(statFn, {
-        user_id: userId,
-        during,
-      })
+      await supabase
+        .from("expenditure_monthly")
+        .select("*,label(tag,name)")
+        .eq("user_id", userId)
+        .in("month", dates)
     ) || []
   ).reduce((acc, cur) => {
-    const { response, label_id, event_count, minutes, ...rest } = cur;
-    acc[label_id] = {
-      ...acc[label_id],
+    let {
+      user_id: _user_id,
+      month,
+      response,
+      label_id,
+      label,
+      event_count,
+      minutes,
+      org_event_count,
+      org_minutes,
+      ...rest
+    } = cur;
+    if (!month || !label_id || !response) return acc;
+    month = month.replace("-01", "");
+    acc[month] ??= {};
+    acc[month][label_id] = {
+      ...acc[month][label_id],
       id: label_id,
+      ...label,
       ...rest,
-      [response]: { event_count, minutes },
+      [response]: { event_count, minutes, org_minutes, org_event_count },
     } as LabelStats;
     return acc;
-  }, {} as LabelStatsMap);
-}
-
-async function getTargets(supabase: SupabaseClient, userId: number) {
-  return (
-    safeQuery(
-      await supabase.from("target").select("*").eq("user_id", userId)
-    ) || []
-  ).reduce(
-    (acc, cur) => {
-      const { label_id, target, org } = cur;
-      if (org) {
-        acc.orgTargets[label_id] = target;
-      } else {
-        acc.targets[label_id] = target;
-      }
-      return acc;
-    },
-    { targets: {}, orgTargets: {} } as {
-      targets: Record<number, number>;
-      orgTargets: Record<number, number>;
-    }
-  );
+  }, {} as MonthlyLabelStats);
 }
 
 export const loader = async ({ context, request }: LoaderArgs) => {
@@ -96,38 +94,23 @@ export const loader = async ({ context, request }: LoaderArgs) => {
   const tz = user.timezone || "America/New_York";
   const params = new URL(request.url).searchParams;
   const startParam = params.get("month");
-  let start;
+  let month;
   if (startParam) {
-    start = add(new Date(startParam), { days: 7 });
+    month = add(new Date(startParam), { days: 7 });
   } else {
-    start = new Date();
+    month = new Date();
   }
-  start = startOfMonth(start, tz);
-  const end = add(start, { months: 1 });
-  const prevStart = sub(start, { months: 1 });
+  month = startOfMonth(month, tz);
+  const previousMonth = sub(month, { months: 1 });
 
   return typedjson(
     {
       ...(await promiseHash({
-        stats: getStats(supabase, "label_stats", user.id, start, end),
-        previousStats: getStats(
-          supabase,
-          "label_stats",
-          user.id,
-          prevStart,
-          start
-        ),
-        orgStats: getStats(supabase, "org_stats", user.id, start, end),
-        previousOrgStats: getStats(
-          supabase,
-          "org_stats",
-          user.id,
-          prevStart,
-          start
-        ),
+        stats: getStats(supabase, user.id, tz, [previousMonth, month]),
         targets: getTargets(supabase, user.id),
       })),
-      start,
+      month,
+      previousMonth,
     },
     { headers: response.headers }
   );
@@ -171,24 +154,27 @@ export default function Tune() {
   const fetcher = useFetcher();
 
   const [, setSearchParams] = useSearchParams();
-  const { stats, previousStats, orgStats, previousOrgStats, start, targets } =
+  const { stats, month, previousMonth, targets } =
     useTypedLoaderData<typeof loader>();
-  useEventWatch(start, add(start, { months: 1 }));
+  useEventWatch(month, add(month, { months: 1 }));
 
   const user = useUser();
   const tz = user?.timezone || "America/New_York";
-  const month = formatDate(start, tz, "MMMM yyyy");
-  const defaultStart = startOfMonth(new Date(), tz);
+  const monthTitle = formatDate(month, tz, "MMMM yyyy");
+  const defaultMonth = startOfMonth(new Date(), tz);
   const monthlyWorkingMinutes =
-    differenceInBusinessDays(add(start, { months: 1 }), start) * 8 * 60;
+    differenceInBusinessDays(add(month, { months: 1 }), month) * 8 * 60;
   const previousMonthlyWorkingMinutes =
-    differenceInBusinessDays(start, sub(start, { months: 1 })) * 8 * 60;
+    differenceInBusinessDays(month, sub(month, { months: 1 })) * 8 * 60;
+
+  const monthKey = formatDate(month, tz, "yyyy-MM");
+  const previousMonthKey = formatDate(previousMonth, tz, "yyyy-MM");
 
   const move = (movement: number) => {
-    const newStart = add(start, { months: movement });
+    const newStart = add(month, { months: movement });
     setSearchParams((p) => {
       const { month: _month, ...other } = Object.fromEntries(p.entries());
-      if (newStart.getTime() === defaultStart.getTime()) return other;
+      if (newStart.getTime() === defaultMonth.getTime()) return other;
       return {
         ...other,
         month: formatDate(newStart, tz, "yyyy-MM"),
@@ -228,7 +214,7 @@ export default function Tune() {
             <IconChevronLeft />
           </Button>
           <Text w="8em" ta="center">
-            {month}
+            {monthTitle}
           </Text>
           <Button
             variant="subtle"
@@ -249,8 +235,8 @@ export default function Tune() {
           </Tooltip>
         </Title>
         <TunerList
-          labelStats={stats}
-          previousStats={previousStats}
+          labelStats={stats[monthKey]}
+          previousStats={stats[previousMonthKey]}
           monthlyWorkingMinutes={monthlyWorkingMinutes}
           previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
           weeklyWorkingMinutes={40 * 60}
@@ -268,8 +254,8 @@ export default function Tune() {
           </Tooltip>
         </Title>
         <TunerList
-          labelStats={orgStats}
-          previousStats={previousOrgStats}
+          labelStats={stats[monthKey]}
+          previousStats={stats[previousMonthKey]}
           monthlyWorkingMinutes={monthlyWorkingMinutes}
           previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
           weeklyWorkingMinutes={40 * 60}

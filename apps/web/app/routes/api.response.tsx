@@ -71,7 +71,7 @@ export const action = async ({ request, context }: ActionArgs) => {
         supabase,
         event.calendar.account_id
       );
-      if (credentials.provider === "outlook" && body.response) {
+      if (body.response) {
         safeQuery(
           await supabase.from("response").upsert(
             {

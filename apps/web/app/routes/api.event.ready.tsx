@@ -39,7 +39,6 @@ export const action = async ({ request, context }: ActionArgs) => {
   switch (request.method) {
     case "PATCH": {
       const body: ApiBody = await request.json();
-      console.log("body", user.id, body);
       const event = safeQuery(
         await supabase
           .from("response")

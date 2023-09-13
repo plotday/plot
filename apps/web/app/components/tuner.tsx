@@ -27,6 +27,8 @@ import classes from "./tuner.module.css";
 type Stats = {
   event_count: number;
   minutes: number;
+  org_event_count: number;
+  org_minutes: number | null;
 };
 
 export type LabelStats = {
@@ -67,12 +69,14 @@ export function TunerList({
   org: boolean;
 }) {
   const sortedStats = Object.values(labelStats);
+  const minutesKey = org ? "org_minutes" : "minutes";
 
   const maxMinutes = sortedStats.reduce(
     (m, stats) =>
       Math.max(
         m,
-        (stats.accepted?.minutes || 0) + (stats.tentative?.minutes || 0)
+        (stats.accepted?.[minutesKey] || 0) +
+          (stats.tentative?.[minutesKey] || 0)
       ),
     Object.values(targets).reduce(
       (m, target) =>
@@ -130,20 +134,25 @@ export function TunerList({
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {sortedStats.map((stats) => (
-            <Tuner
-              key={stats.id}
-              labelStats={stats}
-              previousStats={previousStats[stats.id]}
-              monthlyWorkingMinutes={monthlyWorkingMinutes}
-              previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
-              weeklyWorkingMinutes={weeklyWorkingMinutes}
-              maxMinutes={maxMinutes}
-              targets={targets}
-              onTargetChange={onTargetChange}
-              org={org}
-            />
-          ))}
+          {sortedStats
+            .filter(
+              (stats) =>
+                stats.accepted?.[minutesKey] || stats.tentative?.[minutesKey]
+            )
+            .map((stats) => (
+              <Tuner
+                key={stats.id}
+                labelStats={stats}
+                previousStats={previousStats[stats.id]}
+                monthlyWorkingMinutes={monthlyWorkingMinutes}
+                previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
+                weeklyWorkingMinutes={weeklyWorkingMinutes}
+                maxMinutes={maxMinutes}
+                targets={targets}
+                onTargetChange={onTargetChange}
+                org={org}
+              />
+            ))}
         </Table.Tbody>
       </Table>
     </Table.ScrollContainer>
@@ -293,17 +302,20 @@ export function Tuner({
   ) => void;
   org: boolean;
 }) {
+  const minutesKey = org ? "org_minutes" : "minutes";
+  const countKey = org ? "org_event_count" : "event_count";
+
   const toWeekly = (min: number) =>
     (min / monthlyWorkingMinutes) * weeklyWorkingMinutes;
   const toMonthly = (min: number) =>
     (min / weeklyWorkingMinutes) * monthlyWorkingMinutes;
 
-  const monthlyMinutes = labelStats.accepted?.minutes || 0;
+  const monthlyMinutes = labelStats.accepted?.[minutesKey] || 0;
   const weeklyMinutes = toWeekly(monthlyMinutes);
-  const previousMinutes = previousStats?.accepted?.minutes || 0;
-  const pendingMinutes = labelStats.tentative?.minutes || 0;
-  const count = labelStats.accepted?.event_count || 0;
-  const pendingCount = labelStats.tentative?.event_count || 0;
+  const previousMinutes = previousStats?.accepted?.[minutesKey] || 0;
+  const pendingMinutes = labelStats.tentative?.[minutesKey] || 0;
+  const count = labelStats.accepted?.[countKey] || 0;
+  const pendingCount = labelStats.tentative?.[countKey] || 0;
 
   let weeklyTargetMinutes: number | undefined = undefined;
   let monthlyTargetMinutes: number | undefined = undefined;

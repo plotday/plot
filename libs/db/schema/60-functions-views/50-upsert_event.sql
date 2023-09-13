@@ -17,8 +17,10 @@ DECLARE
     _user_id bigint;
     _new_event record;
     _contact_id bigint;
+    _contact_user_id bigint;
     _invitee event_invitee;
     _organizer_id bigint DEFAULT 343;
+    _user_response event_response;
 BEGIN
     -- get _user_id
     SELECT
@@ -76,7 +78,10 @@ BEGIN
             DO UPDATE SET
                 name = COALESCE(contact.name, EXCLUDED.name)
             RETURNING
-                id INTO _contact_id;
+                id, contact_user_id INTO _contact_id, _contact_user_id;
+        IF _contact_user_id = _user_id THEN
+            _user_response = _invitee.response;
+        END IF;
         INSERT INTO public.invitee (event_id, contact_id, response, "sequence", is_optional)
             VALUES (_new_event.id, _contact_id, _invitee.response, _new_event.sequence, _invitee.is_optional)
         ON CONFLICT (event_id, contact_id)
@@ -88,6 +93,16 @@ BEGIN
     WHERE i.event_id = _new_event.id
         AND "sequence" < _new_event.sequence;
     RETURN _new_event.id;
+    -- delete owner response except overrides
+    UPDATE
+        response
+    SET
+        response = NULL
+    WHERE
+        user_id = _user_id
+        AND provider_id = _raw_event.provider_id
+        AND (response = 'accepted'
+            OR _user_response != 'tentative');
 END;
 $function$;
 

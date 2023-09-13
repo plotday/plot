@@ -1,0 +1,113 @@
+DROP FUNCTION IF EXISTS "public"."label_stats" (user_id bigint, during tstzrange);
+
+DROP FUNCTION IF EXISTS "public"."org_stats" (user_id bigint, during tstzrange);
+
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE VIEW "public"."event_x" AS
+SELECT
+    u.id AS user_id,
+    min(e.id) AS id,
+    e.name,
+    CASE WHEN (EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= (((60 * 60) * 23))::numeric) THEN
+        tstzrange(timezone(u.timezone, timezone('UTC'::text, lower(e.at))), timezone(u.timezone, timezone('UTC'::text, upper(e.at))), '[)'::text)
+    ELSE
+        e.at
+    END AS at,
+    min(e.calendar_id) AS calendar_id,
+    min(e.provider_id) AS provider_id,
+    min(e.series) AS series,
+    min(e.created_at) AS created_at,
+    min(e.status) AS status,
+    min(e.provider_link) AS provider_link,
+    min(e.summary) AS summary,
+    min(e.description) AS description,
+    min(e.visibility) AS visibility,
+    min(e.availability) AS availability,
+    min(e.conferencing_url) AS conferencing_url,
+    min(e.organizer) AS organizer,
+    COALESCE(min(er.response), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative'::event_response) AS response,
+    (round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
+    count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response)) AS attendee_count,
+count(DISTINCT i.contact_id) AS invitee_count,
+bool_or(er.ready) AS ready,
+bool_or(er.reviewed) AS reviewed,
+(timezone(u.timezone, timezone('UTC'::text, lower(e.at))))::date AS day,
+COALESCE((u.id = min(ct.contact_user_id) FILTER (WHERE (ct.id = e.organizer))), FALSE) AS initiated
+FROM ((((((event e
+                        JOIN calendar c ON (e.calendar_id = c.id))
+                    JOIN account a ON (c.account_id = a.id))
+                JOIN "user" u ON (a.user_id = u.id))
+            LEFT JOIN response er ON (((u.id = er.user_id)
+                        AND (e.provider_id = er.provider_id))))
+        JOIN invitee i ON (e.id = i.event_id))
+    JOIN contact ct ON (i.contact_id = ct.id))
+GROUP BY
+    u.id,
+    e.name,
+    e.at;
+
+CREATE OR REPLACE VIEW "public"."expenditure" AS
+SELECT
+    e.user_id,
+    e.day,
+    el.label_id,
+    e.response,
+    (count(*))::integer AS event_count,
+    (sum(e.minutes))::integer AS minutes,
+    (count(*) FILTER (WHERE (e.initiated
+            AND (el.label_id <> 24))))::integer AS org_event_count,
+(sum(e.minutes * e.invitee_count) FILTER (WHERE (e.initiated
+        AND (el.label_id <> 24))))::integer AS org_minutes
+FROM (event_x e
+    JOIN event_label el ON (e.id = el.event_id))
+WHERE (e.status <> 'cancelled'::event_status)
+GROUP BY
+    e.user_id,
+    e.day,
+    el.label_id,
+    e.response;
+
+CREATE OR REPLACE VIEW "public"."expenditure_monthly" AS
+SELECT
+    e.user_id,
+    (date_trunc('month'::text, (e.day)::timestamp with time zone))::date AS month,
+    e.label_id,
+    e.response,
+    sum(e.event_count) AS event_count,
+    sum(e.minutes) AS minutes,
+    sum(e.org_event_count) AS org_event_count,
+    sum(e.org_minutes) AS org_minutes
+FROM
+    expenditure e
+GROUP BY
+    e.user_id,
+    ((date_trunc('month'::text, (e.day)::timestamp with time zone))::date),
+    e.label_id,
+    e.response;
+
+CREATE OR REPLACE FUNCTION public.label (expenditure_monthly)
+    RETURNS SETOF label
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        *
+    FROM
+        label
+    WHERE
+        id = $1.label_id
+$function$;
+
+ALTER VIEW "public"."invitation_admin" SET (security_invoker = FALSE);
+
+ALTER VIEW "public"."event_x" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."waitlist_admin" SET (security_invoker = FALSE);
+
+ALTER VIEW expenditure SET (security_invoker = TRUE);
+
+ALTER VIEW expenditure_monthly SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."sync_admin" SET (security_invoker = FALSE);
+

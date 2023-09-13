@@ -42,7 +42,7 @@ export const Label = {
 } as const;
 
 const EVENT_QUERY =
-  "*,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name))),labels:label(id,order,tag,name,description)";
+  "id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,conferencing_url,organizer,response,ready,reviewed,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name))),labels:label(id,order,tag,name,description)";
 
 export class Event {
   public static async Get(supabase: SupabaseClient, eventId: number) {
@@ -75,7 +75,7 @@ export class Event {
         .neq("status", "cancelled")
         .order("at", { ascending: forward })
         .order("response", { foreignTable: "invitee" })
-        .limit(100)
+        .limit(80)
     );
     type retType = NonNullable<typeof events>;
     if (!events) return [] as retType;
@@ -137,9 +137,9 @@ export class Event {
     return title;
   }
 
-  public get description() {
-    return this.dbEvent.description;
-  }
+  // public get description() {
+  //   return this.dbEvent.description;
+  // }
 
   // calendar owner's response
   public get response() {

@@ -28,7 +28,9 @@ SELECT
     count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response)) AS attendee_count,
 count(DISTINCT i.contact_id) AS invitee_count,
 bool_or(er.ready) AS ready,
-bool_or(er.reviewed) AS reviewed
+bool_or(er.reviewed) AS reviewed,
+timezone(u.timezone, timezone('UTC', lower(e.at)))::date AS day,
+COALESCE(u.id = min(ct.contact_user_id) FILTER (WHERE ct.id = e.organizer), FALSE) AS initiated
 FROM
     event e
     JOIN calendar c ON (e.calendar_id = c.id)

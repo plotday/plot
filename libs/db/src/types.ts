@@ -90,6 +90,18 @@ export interface Database {
             columns: ["user_id"]
             referencedRelation: "event_x"
             referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "account_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "account_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure_monthly"
+            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -200,6 +212,18 @@ export interface Database {
             referencedColumns: ["user_id"]
           },
           {
+            foreignKeyName: "contact_contact_user_id_fkey"
+            columns: ["contact_user_id"]
+            referencedRelation: "expenditure"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "contact_contact_user_id_fkey"
+            columns: ["contact_user_id"]
+            referencedRelation: "expenditure_monthly"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "contact_domain_id_fkey"
             columns: ["domain_id"]
             referencedRelation: "domain"
@@ -215,6 +239,18 @@ export interface Database {
             foreignKeyName: "contact_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "event_x"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "contact_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "contact_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure_monthly"
             referencedColumns: ["user_id"]
           }
         ]
@@ -464,6 +500,18 @@ export interface Database {
             columns: ["user_id"]
             referencedRelation: "event_x"
             referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "label_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "label_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure_monthly"
+            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -559,6 +607,18 @@ export interface Database {
             columns: ["user_id"]
             referencedRelation: "event_x"
             referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "response_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "response_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure_monthly"
+            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -604,6 +664,18 @@ export interface Database {
             foreignKeyName: "target_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "event_x"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "target_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "target_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure_monthly"
             referencedColumns: ["user_id"]
           }
         ]
@@ -675,6 +747,18 @@ export interface Database {
             columns: ["user_id"]
             referencedRelation: "event_x"
             referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "waitlist_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "waitlist_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "expenditure_monthly"
+            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -688,8 +772,10 @@ export interface Database {
           calendar_id: number | null
           conferencing_url: string | null
           created_at: string | null
+          day: string | null
           description: string | null
           id: number | null
+          initiated: boolean | null
           invitee_count: number | null
           minutes: number | null
           name: string | null
@@ -704,6 +790,59 @@ export interface Database {
           summary: string | null
           user_id: number | null
           visibility: Database["public"]["Enums"]["event_visibility"] | null
+        }
+        Relationships: []
+      }
+      expenditure: {
+        Row: {
+          day: string | null
+          event_count: number | null
+          label_id: number | null
+          minutes: number | null
+          org_event_count: number | null
+          org_minutes: number | null
+          response: Database["public"]["Enums"]["event_response"] | null
+          user_id: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_label_label_id_fkey"
+            columns: ["label_id"]
+            referencedRelation: "label"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      expenditure_monthly: {
+        Row: {
+          event_count: number | null
+          label_id: number | null
+          minutes: number | null
+          month: string | null
+          org_event_count: number | null
+          org_minutes: number | null
+          response: Database["public"]["Enums"]["event_response"] | null
+          user_id: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_label_label_id_fkey"
+            columns: ["label_id"]
+            referencedRelation: "label"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      expenditure_rolling: {
+        Row: {
+          day: string | null
+          event_count: number | null
+          label_id: number | null
+          minutes: number | null
+          org_event_count: number | null
+          org_minutes: number | null
+          response: Database["public"]["Enums"]["event_response"] | null
+          user_id: number | null
         }
         Relationships: []
       }
@@ -787,52 +926,35 @@ export interface Database {
         }
         Returns: boolean
       }
-      label: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          created_at: string | null
-          description: string | null
-          id: number
-          name: string
-          order: number
-          tag: string | null
-          user_id: number | null
-        }[]
-      }
-      label_stats: {
-        Args: {
-          user_id: number
-          during: unknown
-        }
-        Returns: {
-          label_id: number
-          order: number
-          tag: string
-          name: string
-          description: string
-          response: Database["public"]["Enums"]["event_response"]
-          event_count: number
-          minutes: number
-        }[]
-      }
-      org_stats: {
-        Args: {
-          user_id: number
-          during: unknown
-        }
-        Returns: {
-          label_id: number
-          order: number
-          tag: string
-          name: string
-          description: string
-          response: Database["public"]["Enums"]["event_response"]
-          event_count: number
-          minutes: number
-        }[]
-      }
+      label:
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: {
+              created_at: string | null
+              description: string | null
+              id: number
+              name: string
+              order: number
+              tag: string | null
+              user_id: number | null
+            }[]
+          }
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: {
+              created_at: string | null
+              description: string | null
+              id: number
+              name: string
+              order: number
+              tag: string | null
+              user_id: number | null
+            }[]
+          }
       organization:
         | {
             Args: {
