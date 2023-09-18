@@ -71,7 +71,8 @@ function eventToDb(
         email: invitee.email as string,
         name: invitee.name as string as string,
       },
-      response: invitee.response as EventResponse,
+      // The generated types are missing the null value
+      response: (invitee.response || null) as NonNullable<EventResponse>,
       is_optional: !!invitee.isOptional,
     })),
   };
