@@ -4,6 +4,7 @@ import {
   utcToZonedTime,
   zonedTimeToUtc,
 } from "date-fns-tz";
+import differenceInMinutes from "date-fns/differenceInMinutes";
 import _eachDayOfInterval from "date-fns/eachDayOfInterval";
 import _endOfDay from "date-fns/endOfDay";
 import _endOfMonth from "date-fns/endOfMonth";
@@ -69,11 +70,27 @@ export const formatTimes = (start: Date, end: Date, tz: string) => {
   return `${formatTime(start, tz)} - ${formatTime(end, tz)}`;
 };
 
-export const formatDuration = (length: number) => {
+export const formatDuration = (
+  length: number,
+  alwaysMinutes: boolean = false
+) => {
   length = Math.round(length);
   const hours = Math.floor(length / 60);
   const minutes = Math.abs(length % 60);
-  return `${hours}:${String(minutes).padStart(2, "0")}`;
+  const showMinutes = minutes > 0 || alwaysMinutes;
+  return (
+    (hours ? `${hours}h ` : "") +
+    (hours && showMinutes ? " " : "") +
+    (showMinutes ? `${String(minutes).padStart(hours ? 2 : 0, "0")}m` : "")
+  );
+};
+
+export const formatDifference = (
+  start: Date,
+  end: Date,
+  alwaysMinutes: boolean = false
+) => {
+  return formatDuration(differenceInMinutes(end, start), alwaysMinutes);
 };
 
 export const toTz = (date: Date, tz: string) => {

@@ -1,3 +1,5 @@
+import { redirect } from "@remix-run/cloudflare";
+
 import type { Provider, Session, SupabaseClient } from "@supabase/supabase-js";
 
 import type { CalendarProvider } from "@plotday/cal";
@@ -125,6 +127,15 @@ export const isSignedIn = async (
 ) => {
   const user = await getUser(supabase, session);
   return !!user?.invitation;
+};
+
+export const requireAuth = async (
+  supabase: SupabaseClient,
+  session?: Session
+) => {
+  const user = await getUser(supabase, session);
+  if (!user?.id) throw redirect("/login");
+  return user;
 };
 
 export const getUser = async (supabase: SupabaseClient, session?: Session) => {

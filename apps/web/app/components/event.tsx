@@ -1,41 +1,53 @@
+import type { ReactNode } from "react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   Anchor,
+  Avatar,
   Badge,
   Box,
   Card,
   Center,
   Checkbox,
+  Combobox,
   Group,
+  InputBase,
   Paper,
-  SegmentedControl,
   Stack,
   Text,
   Title,
+  Tooltip,
+  useCombobox,
 } from "@mantine/core";
 
 import {
   IconBrandMicrosoftTeams,
   IconBrandZoom,
-  IconExternalLink,
-  IconPlayerPauseFilled,
-  IconPlayerPlayFilled,
-  IconPlayerStopFilled,
-  IconUser,
-  IconUserCheck,
-  IconUserX,
+  IconClipboardList,
   IconVideo,
 } from "@tabler/icons-react";
 
-import type { EventResponse } from "@plotday/cal";
-import type { ConferencingProvider, Event } from "@plotday/db";
-import { formatDate, formatDay, formatDuration, formatTime } from "@plotday/tz";
+import type {
+  Attendance,
+  ConferencingProvider,
+  Event,
+  Invitee,
+  Label,
+} from "@plotday/db";
+import {
+  formatDate,
+  formatDay,
+  formatDifference,
+  formatDuration,
+  formatTime,
+} from "@plotday/tz";
 
 import { useEventWatch } from "app/event";
 import { useEventReadyResponder } from "app/routes/api.event.ready";
 import { useEventResponder } from "app/routes/api.response";
 import type { DailyLabelStats } from "app/target";
+
+import classes from "./event.module.css";
 
 function conferencingProviderName(provider: ConferencingProvider) {
   switch (provider) {
@@ -51,38 +63,18 @@ function conferencingProviderName(provider: ConferencingProvider) {
 }
 
 function ConferencingIcon({ provider }: { provider: ConferencingProvider }) {
+  const name = conferencingProviderName(provider);
+  let icon;
   switch (provider) {
     case "zoom":
-      return <IconBrandZoom size="1em" />;
+      icon = <IconBrandZoom size="1em" />;
     case "teams":
-      return <IconBrandMicrosoftTeams size="1em" />;
+      icon = <IconBrandMicrosoftTeams size="1em" />;
     case "meet":
     default:
-      return <IconVideo size="1em" />;
+      icon = <IconVideo size="1em" />;
   }
-}
-
-function AttendeeIcon({ response }: { response: EventResponse | null }) {
-  switch (response) {
-    case "accepted":
-      return (
-        <Text c="brand" lh={0}>
-          <IconUserCheck size="1em" />
-        </Text>
-      );
-    case "declined":
-      return (
-        <Text c="secondary" lh={0}>
-          <IconUserX size="1em" />
-        </Text>
-      );
-    default:
-      return (
-        <Text lh={0}>
-          <IconUser size="1em" />
-        </Text>
-      );
-  }
+  return <Tooltip label={name}>{icon}</Tooltip>;
 }
 
 export function EventList({
@@ -90,6 +82,7 @@ export function EventList({
   targets,
   expenditures,
   review,
+  showDone,
 }: {
   events: Event[];
   targets: {
@@ -98,7 +91,9 @@ export function EventList({
   };
   expenditures: DailyLabelStats;
   review?: boolean;
+  showDone?: boolean;
 }) {
+  showDone = showDone ?? true;
   useEventWatch();
 
   const groupedEvents = useMemo(() => {
@@ -116,6 +111,8 @@ export function EventList({
         };
         if (event.isAllDay) {
           acc[date].allDay.push(event);
+        } else if (!showDone && event.isDone(review)) {
+          // skip
         } else {
           while (
             nextExpenditureDate &&
@@ -157,19 +154,17 @@ export function EventList({
         }
       >
     );
-  }, [events, expenditures, targets]);
+  }, [events, expenditures, targets, review, showDone]);
 
   return (
-    <Box
-      display="grid"
-      mt="-1rem"
-      style={{ gridTemplateColumns: "5.5rem 1fr" }}
-    >
+    <Box mt="-1rem">
       {Object.keys(groupedEvents).map((day) => {
+        let previousEvent: Event | null = null;
         return (
           <React.Fragment key={day}>
             <Paper
               bg="var(--mantine-color-background)"
+              radius={0}
               h="4rem"
               style={{
                 position: "sticky",
@@ -183,29 +178,27 @@ export function EventList({
               </Title>
             </Paper>
 
-            {groupedEvents[day].allDay.length > 0 && (
-              <Paper
-                bg="var(--mantine-color-background)"
-                mb="lg"
-                style={{
-                  gridColumn: "1 / span 2",
-                  zIndex: 98,
-                }}
-              >
-                <Text fs="italic">
-                  {groupedEvents[day].allDay.map((e) => e.name).join(", ")}
-                </Text>
-              </Paper>
-            )}
+            <AllDayCard events={groupedEvents[day].allDay} />
 
-            {groupedEvents[day].regular.map((event) => (
-              <EventCard
-                key={event.event.id}
-                event={event.event}
-                balances={event.balances}
-                review={review}
-              />
-            ))}
+            <Box pt="0.5rem">
+              {groupedEvents[day].regular.map((event) => {
+                const before = previousEvent;
+                previousEvent = event.event;
+                return (
+                  <React.Fragment key={event.event.id}>
+                    {showDone && (
+                      <BreakCard before={before} after={event.event} />
+                    )}
+                    <EventCard
+                      event={event.event}
+                      balances={event.balances}
+                      review={review}
+                    />
+                  </React.Fragment>
+                );
+              })}
+              {showDone && <BreakCard before={previousEvent} after={null} />}
+            </Box>
           </React.Fragment>
         );
       })}
@@ -213,7 +206,235 @@ export function EventList({
   );
 }
 
-export default function EventCard({
+function TimeCard({
+  start,
+  end,
+  tz,
+  children,
+}: {
+  start: Date;
+  end?: Date;
+  tz: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <Box display="grid" style={{ gridTemplateColumns: "5rem 1fr" }}>
+      <Stack
+        gap="xs"
+        mt="calc(var(--mantine-font-size-sm) * var(--mantine-line-height-sm) * -0.5)"
+        mr="sm"
+      >
+        <Text size="sm" ta="right">
+          {formatTime(start, tz)}
+        </Text>
+        {end && (
+          <Text size="sm" ta="right" c="dimmed">
+            {formatDifference(start, end)}
+          </Text>
+        )}
+      </Stack>
+      {children && (
+        <Card radius={0} className={classes.timeCardMain}>
+          {children}
+        </Card>
+      )}
+    </Box>
+  );
+}
+
+function AllDayCard({ events }: { events: Event[] }) {
+  if (events.length === 0) return null;
+  return (
+    <Paper
+      bg="var(--mantine-color-background)"
+      mb="lg"
+      style={{
+        gridColumn: "1 / span 2",
+        zIndex: 98,
+      }}
+    >
+      <Text fs="italic">{events.map((e) => e.name).join(", ")}</Text>
+    </Paper>
+  );
+}
+
+function BreakCard({
+  before,
+  after,
+}: {
+  before: Event | null;
+  after: Event | null;
+}) {
+  if (before && !after) {
+    return <TimeCard start={before.end} tz={before.tz} />;
+  }
+  if (!before || !after || after.start.getTime() <= before.end.getTime())
+    return null;
+  return (
+    <TimeCard start={before.end} end={after.start} tz={(before || after).tz}>
+      <Box>
+        <Text c="dimmed" fs="italic">
+          Open time
+        </Text>
+      </Box>
+    </TimeCard>
+  );
+}
+
+function Select({
+  value,
+  onChange,
+  options,
+}: {
+  value?: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: ReactNode }[];
+}) {
+  const combobox = useCombobox({
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  });
+
+  const selectedOption = options.find((item) => item.value === value);
+
+  return (
+    <Combobox
+      store={combobox}
+      onOptionSubmit={(val) => {
+        onChange(val);
+        combobox.closeDropdown();
+      }}
+      variant="filled"
+    >
+      <Combobox.Target>
+        <InputBase
+          component="button"
+          pointer
+          rightSection={<Combobox.Chevron />}
+          onClick={() => combobox.toggleDropdown()}
+          rightSectionPointerEvents="none"
+          multiline
+          variant="filled"
+          w="8rem"
+        >
+          {selectedOption ? (
+            selectedOption.label
+          ) : (
+            <Text inherit c="secondary" fw="bold">
+              Triage
+            </Text>
+          )}
+        </InputBase>
+      </Combobox.Target>
+
+      <Combobox.Dropdown>
+        <Combobox.Options>
+          {options.map((item) => (
+            <Combobox.Option value={item.value} key={item.value}>
+              {item.label}
+            </Combobox.Option>
+          ))}
+        </Combobox.Options>
+      </Combobox.Dropdown>
+    </Combobox>
+  );
+}
+
+function initials(name: string) {
+  let names;
+  if (name.includes("@")) {
+    names = name.toUpperCase().split("@")[0].split(".");
+  } else {
+    names = name.toUpperCase().split(" ");
+  }
+  let initials = names[0][0];
+  if (names.length > 1) {
+    initials += names[names.length - 1][0];
+  }
+  return initials;
+}
+
+function KeyPerson({
+  invitees,
+  organizer,
+}: {
+  invitees: Invitee[];
+  organizer?: Invitee;
+}) {
+  const others = invitees.filter((i) => !i.isSelf);
+  if (!others.length) {
+    return (
+      <Avatar alt="Task">
+        <IconClipboardList color="var(--mantine-color-dimmed)" />
+      </Avatar>
+    );
+  }
+  let p = null;
+  if (others.length === 1) {
+    p = others[0];
+  } else {
+    p = invitees.find((i) => i.email === organizer?.email) || {
+      ...organizer,
+      response: "accepted",
+    };
+  }
+  return (
+    <Tooltip key={p.email} label={p.name || p.email || undefined} withArrow>
+      <Avatar
+        alt={p.name || undefined}
+        color={
+          p.response === "accepted"
+            ? "brand"
+            : p.response === "declined"
+            ? "secondary.7"
+            : undefined
+        }
+      >
+        {initials(p.name || p.email || "?")}
+      </Avatar>
+    </Tooltip>
+  );
+}
+
+function InviteeSummary({
+  invitees,
+  organizer,
+}: {
+  invitees: Invitee[];
+  organizer?: Invitee;
+}) {
+  const others = invitees.filter(
+    (i) => !i.isSelf && i.email !== organizer?.email
+  );
+  if (others.length <= 1) return null;
+  return (
+    <Tooltip.Group>
+      <Avatar.Group>
+        {others.map((invitee) => (
+          <Tooltip
+            key={invitee.id}
+            label={invitee.name || invitee.email || undefined}
+            withArrow
+          >
+            <Avatar
+              alt={invitee.name || undefined}
+              color={
+                invitee.response === "accepted"
+                  ? "brand"
+                  : invitee.response === "declined"
+                  ? "secondary.7"
+                  : undefined
+              }
+            >
+              {initials(invitee.name || invitee.email || "?")}
+            </Avatar>
+          </Tooltip>
+        ))}
+      </Avatar.Group>
+    </Tooltip.Group>
+  );
+}
+
+function EventCard({
   event,
   balances,
   review,
@@ -222,20 +443,20 @@ export default function EventCard({
   balances: Record<number, number>;
   review?: boolean;
 }) {
-  const [response, setResponseState] = useState(event.response || undefined);
+  const [attendance, setAttendanceState] = useState(event.attendance);
   const responder = useEventResponder();
-  const setResponse = useCallback(
-    (response: EventResponse) => {
-      setResponseState(response);
+  const setAttendance = useCallback(
+    (attendance: string) => {
+      setAttendanceState(attendance as Attendance);
       const email = event.email;
       if (!email) throw new Error("Missing calendar email");
-      responder(event.id, response, email, event.isOrganizer);
+      responder(event.id, attendance as Attendance, email, event.isOrganizer);
     },
     [event, responder]
   );
   useEffect(() => {
-    setResponseState(event.response || undefined);
-  }, [event.response]);
+    setAttendanceState(event.attendance);
+  }, [event.attendance]);
   const [ready, setReady] = useState(review ? event.isReviewed : event.isReady);
   const eventReadyResponder = useEventReadyResponder();
   const updateReady = (ready: boolean) => {
@@ -250,167 +471,118 @@ export default function EventCard({
   };
 
   return (
-    <>
-      <Paper
-        bg="var(--mantine-color-background)"
-        style={{
-          position: "sticky",
-          top: "4rem",
-          alignSelf: "start",
-          flexGrow: 0,
-        }}
-      >
-        <Stack>
-          <Card style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}>
-            <Center>
-              <Checkbox
-                radius="xl"
-                size="md"
-                checked={ready}
-                color={
-                  response === "accepted"
-                    ? "brand"
-                    : "var(--mantine-color-neutral)"
-                }
-                styles={{
-                  input: {
-                    borderColor: ready
-                      ? undefined
-                      : "var(--mantine-color-secondary-filled)",
-                  },
-                }}
-                onChange={(event) => updateReady(event.currentTarget.checked)}
-              />
-            </Center>
-          </Card>
-          <Text size="sm" ta="right" mr="sm">
-            {formatTime(event.start, event.tz)}
-            <br />
-            &ndash; {formatTime(event.end, event.tz)}
-          </Text>
-        </Stack>
-      </Paper>
-      <Card
+    <TimeCard start={event.start} end={event.end} tz={event.tz}>
+      <Box
         display="grid"
         style={{
-          flexGrow: 1,
-          gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))",
-          rowGap: "1rem",
-          borderTopLeftRadius: 0,
-          borderColor: ready
-            ? response === "accepted"
-              ? "var(--mantine-color-brand-border)"
-              : undefined
-            : "var(--mantine-color-secondary-border)",
+          gridTemplateColumns: "min-content 1fr",
+          columnGap: "var(--mantine-spacing-md)",
+          rowGap: "var(--mantine-spacing-md)",
         }}
       >
-        <Stack>
-          <Title order={4} fw={response === "accepted" ? "bold" : "normal"}>
-            {event.name}
-          </Title>
-          <Box>
-            <SegmentedControl
-              size="xs"
-              data={[
-                {
-                  label: (
-                    <Center>
-                      <IconPlayerPlayFilled size="1em" />
-                      <Box ml={3}>{review ? "Attended" : "Attend"}</Box>
-                    </Center>
-                  ),
-                  value: "accepted",
-                },
-                ...(review
-                  ? []
-                  : [
-                      {
-                        label: (
-                          <Center>
-                            <IconPlayerPauseFilled size="1em" />
-                            <Box ml={3}>Only if needed</Box>
-                          </Center>
-                        ),
-                        value: "tentative",
-                      },
-                    ]),
-                {
-                  label: (
-                    <Center>
-                      <IconPlayerStopFilled size="1em" />
-                      <Box ml={3}>{review ? "Skipped" : "Skip"}</Box>
-                    </Center>
-                  ),
-                  value: "declined",
-                },
-              ]}
-              value={response}
-              onChange={setResponse}
-            />
-          </Box>
-          {event.labels.length > 0 && (
-            <Group gap="xs">
-              {event.labels.map((label) => {
-                const balance = balances[label.id];
-                return (
-                  <Badge
-                    key={label.id}
-                    color={
-                      balance ? (balance < 0 ? "secondary" : "brand") : "gray"
-                    }
-                    fw={500}
-                    tt="unset"
-                  >
-                    {label.tag} {label.name}
-                    {balance ? ` (${formatDuration(balance)})` : null}
-                  </Badge>
-                );
-              })}
-            </Group>
-          )}
-        </Stack>
-        <Stack gap="xs">
-          {event.conferencingUrl && (
-            <Group gap="xs">
-              <ConferencingIcon
-                provider={event.conferencingProvider || "other"}
-              />
-              <Anchor
-                variant="light"
-                component="a"
-                target="_blank"
-                href={event.conferencingUrl}
-              >
-                {conferencingProviderName(
-                  event.conferencingProvider || "other"
-                )}
-              </Anchor>
-            </Group>
-          )}
-
-          {event.providerLink && (
-            <Group gap="xs">
-              <IconExternalLink size="1em" />
-              <Anchor target="_blank" href={event.providerLink}>
-                View on calendar
-              </Anchor>
-            </Group>
-          )}
-        </Stack>
-        <Stack gap="xs">
-          {event.invitees.map(
-            (invitee) =>
-              !invitee.isSelf && (
-                <Group key={invitee.id} wrap="nowrap" gap="xs">
-                  <AttendeeIcon response={invitee.response} />
-                  <Text truncate>{invitee.name}</Text>
+        <Center>
+          <KeyPerson invitees={event.invitees} organizer={event.organizer} />
+        </Center>
+        <Group>
+          <Stack gap={0}>
+            <Text fw={attendance === "attend" ? "bold" : "normal"}>
+              {event.name}
+            </Text>
+            {event.conferencing && (
+              <Anchor href={event.conferencing.url} target="_blank">
+                <Group gap="xs" align="center">
+                  <ConferencingIcon provider={event.conferencing.provider} />
+                  <Text fz="xs" c="dimmed" lh={0}>
+                    {conferencingProviderName(event.conferencing.provider)}
+                  </Text>
                 </Group>
-              )
-          )}
-        </Stack>
-      </Card>
-      <Paper pt="lg" style={{ zIndex: 98 }} />
-      <Paper />
-    </>
+              </Anchor>
+            )}
+          </Stack>
+          <InviteeSummary
+            invitees={event.invitees}
+            organizer={event.organizer}
+          />
+        </Group>
+
+        <Center>
+          <Checkbox
+            radius="xl"
+            lh="lg"
+            checked={ready}
+            disabled={attendance === null}
+            color={
+              attendance === null
+                ? undefined
+                : attendance === "attend"
+                ? "brand"
+                : "var(--mantine-color-neutral)"
+            }
+            styles={{
+              input: {
+                ...(attendance !== null && !ready
+                  ? { borderColor: "var(--mantine-color-secondary-filled)" }
+                  : {}),
+              },
+            }}
+            onChange={(event) => updateReady(event.currentTarget.checked)}
+          />
+        </Center>
+        <Group>
+          <Select
+            options={[
+              { value: "attend", label: review ? "Attended" : "Attend" },
+              ...(review
+                ? []
+                : [{ value: "if-possible", label: "If possible" }]),
+              { value: "skip", label: review ? "Skipped" : "Skip" },
+            ]}
+            value={attendance || undefined}
+            onChange={setAttendance}
+          />
+        </Group>
+
+        {event.labels.length > 0 && (
+          <>
+            <Box />
+            <Labels
+              labels={event.labels}
+              balances={balances}
+              attendance={event.attendance}
+            />
+          </>
+        )}
+      </Box>
+    </TimeCard>
+  );
+}
+
+function Labels({
+  labels,
+  balances,
+  attendance,
+}: {
+  labels: Label[];
+  balances: Record<number, number>;
+  attendance: Attendance;
+}) {
+  if (!labels.length) return null;
+  return (
+    <Group>
+      {labels.map((label) => {
+        const balance = balances[label.id];
+        return (
+          <Badge
+            key={label.id}
+            color={attendance !== "skip" && balance < 0 ? "secondary" : "gray"}
+            fw={500}
+            tt="unset"
+          >
+            {label.tag} {label.name}
+            {balance ? ` (${formatDuration(balance)})` : null}
+          </Badge>
+        );
+      })}
+    </Group>
   );
 }

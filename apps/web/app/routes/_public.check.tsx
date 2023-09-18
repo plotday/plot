@@ -1,7 +1,7 @@
 import type { LoaderArgs } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
 import type { V2_MetaFunction } from "@remix-run/react";
-import { useLoaderData, useSearchParams } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 
 import { Alert, Card, Container, Stack, Text, Title } from "@mantine/core";
 

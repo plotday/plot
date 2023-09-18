@@ -405,7 +405,7 @@ export function Tuner({
                 }}
                 title="Edit budget"
               >
-                {formatDuration(monthlyTargetMinutes).padStart(5, " ")}
+                {formatDuration(monthlyTargetMinutes, true)}
               </Button>
             )}
         </Table.Td>
@@ -420,7 +420,7 @@ export function Tuner({
           miw="5rem"
         >
           {monthlyTargetMinutes !== undefined
-            ? formatDuration(monthlyTargetMinutes - monthlyMinutes)
+            ? formatDuration(monthlyTargetMinutes - monthlyMinutes, true)
             : ""}
         </Table.Td>
         <Table.Td miw="6rem">
@@ -463,7 +463,7 @@ export function Tuner({
           c={badMinutes ? "secondary" : "dimmed"}
         >
           <Text inherit miw="2.8rem" ta="right">
-            {monthlyMinutes ? formatDuration(monthlyMinutes) : ""}
+            {monthlyMinutes ? formatDuration(monthlyMinutes, true) : ""}
           </Text>
         </Table.Td>
         <Table.Td className={classes.fitContent} pl={0}>
@@ -490,7 +490,7 @@ export function Tuner({
           }
         >
           <Text inherit miw="2.8rem" ta="right">
-            {pendingMinutes ? formatDuration(pendingMinutes) : ""}
+            {pendingMinutes ? formatDuration(pendingMinutes, true) : ""}
           </Text>
         </Table.Td>
         <Table.Td className={classes.fitContent} pl={0}>

@@ -569,29 +569,29 @@ export interface Database {
       }
       response: {
         Row: {
+          attendance: Database["public"]["Enums"]["event_attendance"] | null
           created_at: string | null
           id: number
           provider_id: string
           ready: boolean
-          response: Database["public"]["Enums"]["event_response"] | null
           reviewed: boolean
           user_id: number
         }
         Insert: {
+          attendance?: Database["public"]["Enums"]["event_attendance"] | null
           created_at?: string | null
           id?: number
           provider_id: string
           ready?: boolean
-          response?: Database["public"]["Enums"]["event_response"] | null
           reviewed?: boolean
           user_id: number
         }
         Update: {
+          attendance?: Database["public"]["Enums"]["event_attendance"] | null
           created_at?: string | null
           id?: number
           provider_id?: string
           ready?: boolean
-          response?: Database["public"]["Enums"]["event_response"] | null
           reviewed?: boolean
           user_id?: number
         }
@@ -767,6 +767,7 @@ export interface Database {
       event_x: {
         Row: {
           at: unknown | null
+          attendance: Database["public"]["Enums"]["event_attendance"] | null
           attendee_count: number | null
           availability: Database["public"]["Enums"]["event_availability"] | null
           calendar_id: number | null
@@ -891,6 +892,14 @@ export interface Database {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
+      calc_attendance: {
+        Args: {
+          attendance: Database["public"]["Enums"]["event_attendance"]
+          response: Database["public"]["Enums"]["event_response"]
+          invitee_count: number
+        }
+        Returns: Database["public"]["Enums"]["event_attendance"]
+      }
       get_or_create_domain_id: {
         Args: {
           email: string
@@ -988,6 +997,7 @@ export interface Database {
       }
     }
     Enums: {
+      event_attendance: "attend" | "if-possible" | "skip"
       event_availability: "busy" | "away" | "focus" | "free"
       event_response: "accepted" | "declined" | "tentative"
       event_status: "confirmed" | "cancelled" | "tentative"

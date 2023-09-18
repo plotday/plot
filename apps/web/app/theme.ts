@@ -4,11 +4,14 @@ import type {
   VariantColorsResolver,
 } from "@mantine/core";
 import {
+  Anchor,
   Button,
   createTheme,
   defaultVariantColorsResolver,
   parseThemeColor,
 } from "@mantine/core";
+
+import classes from "./theme.module.css";
 
 const variantColorResolver: VariantColorsResolver = (input) => {
   const defaultResolvedColors = defaultVariantColorsResolver(input);
@@ -71,6 +74,7 @@ export const theme: MantineThemeOverride = createTheme({
   },
   variantColorResolver,
   components: {
+    Anchor: Anchor.extend({ classNames: classes }),
     Button: Button.extend({
       vars: (_theme, props) => {
         if (props.variant === "gradient") {

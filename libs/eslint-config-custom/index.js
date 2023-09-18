@@ -14,5 +14,11 @@ module.exports = {
         caughtErrorsIgnorePattern: "^_",
       },
     ],
+    "jsx-a11y/anchor-has-content": [
+      2,
+      {
+        components: ["Anchor"],
+      },
+    ],
   },
 };

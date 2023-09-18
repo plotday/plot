@@ -5,6 +5,7 @@ import { useFetcher } from "@remix-run/react";
 
 import type { CalendarConfig, EventResponse } from "@plotday/cal";
 import { respond } from "@plotday/cal";
+import type { Attendance } from "@plotday/db";
 import { getCredentials } from "@plotday/db";
 
 import { getUser } from "app/auth";
@@ -13,7 +14,7 @@ import { getEnv } from "app/env";
 
 type ResponseBody = {
   eventId: number;
-  response: EventResponse;
+  attendance: Attendance;
   email: string;
   isOrganizer: boolean;
 };
@@ -23,13 +24,13 @@ export function useEventResponder() {
   return useCallback(
     (
       eventId: number,
-      response: EventResponse,
+      attendance: Attendance,
       email: string,
       isOrganizer: boolean
     ) => {
       const body = {
         eventId,
-        response,
+        attendance,
         email,
         isOrganizer,
       } as ResponseBody;
@@ -44,7 +45,7 @@ export function useEventResponder() {
 }
 
 export const action = async ({ request, context }: ActionArgs) => {
-  const { supabase, response } = createServerClient(request, context);
+  const { supabase } = createServerClient(request, context);
   let user = await getUser(supabase);
   if (!user) return new Response("Unauthorized", { status: 401 });
 
@@ -71,29 +72,61 @@ export const action = async ({ request, context }: ActionArgs) => {
         supabase,
         event.calendar.account_id
       );
-      if (body.response) {
-        safeQuery(
-          await supabase.from("response").upsert(
-            {
-              user_id: user.id,
-              provider_id: event.provider_id,
-              response: body.response,
-            },
-            { onConflict: "user_id,provider_id" }
-          )
-        );
+      let response: EventResponse;
+      switch (body.attendance) {
+        case "attend":
+          response = "accepted";
+          break;
+        case "skip":
+          response = "declined";
+          break;
+        default:
+        case "if-possible":
+          response = "tentative";
+          break;
       }
+
+      const contactIds = safeQuery(
+        await supabase
+          .from("contact")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("contact_user_id", user.id)
+      )?.map((c) => c.id);
+      if (!contactIds)
+        return new Response("Contact not found", { status: 404 });
+
+      safeQuery(
+        await supabase.from("response").upsert(
+          {
+            user_id: user.id,
+            provider_id: event.provider_id,
+            attendance: body.attendance,
+          },
+          { onConflict: "user_id,provider_id" }
+        )
+      );
+
+      safeQuery(
+        await supabase
+          .from("invitee")
+          .update({
+            response,
+          })
+          .eq("event_id", body.eventId)
+          .in("contact_id", contactIds)
+      );
+
       await respond(
         calendarConfig,
         credentials,
         event.calendar.provider_id,
         event.provider_id,
-        body.response,
+        response,
         body.email,
         body.isOrganizer
       );
       return new Response(null, {
-        headers: response.headers,
         status: 200,
       });
     }

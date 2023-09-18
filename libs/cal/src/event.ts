@@ -1,6 +1,6 @@
 export type EventStatus = "confirmed" | "cancelled" | "tentative";
 
-export type EventResponse = "accepted" | "declined" | "tentative";
+export type EventResponse = "accepted" | "declined" | "tentative" | null;
 
 export type CommonVisibility = "normal" | "private" | "confidential";
 export type GoogleVisibility = CommonVisibility | "public";

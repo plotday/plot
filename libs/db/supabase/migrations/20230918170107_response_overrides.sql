@@ -1,15 +1,6 @@
-CREATE TYPE "public"."event_contact" AS (
-    "email" text,
-    "name" text
-);
+SET check_function_bodies = OFF;
 
-CREATE TYPE "public"."event_invitee" AS (
-    "contact" public.event_contact,
-    "response" event_response,
-    "is_optional" boolean
-);
-
-CREATE OR REPLACE FUNCTION public.upsert_event (_calendar_id bigint, _raw_event raw_event, _event event, _organizer public.event_contact, _invitees event_invitee[])
+CREATE OR REPLACE FUNCTION public.upsert_event (_calendar_id bigint, _raw_event raw_event, _event event, _organizer event_contact, _invitees event_invitee[])
     RETURNS bigint
     LANGUAGE plpgsql
     AS $function$
@@ -91,3 +82,10 @@ BEGIN
 END;
 $function$;
 
+ALTER VIEW "public"."invitation_admin" SET ( security_invoker = FALSE);
+ALTER VIEW "public"."event_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."waitlist_admin" SET ( security_invoker = FALSE);
+ALTER VIEW expenditure SET ( security_invoker = TRUE);
+ALTER VIEW expenditure_monthly SET ( security_invoker = TRUE);
+ALTER VIEW expenditure_rolling SET ( security_invoker = TRUE);
+ALTER VIEW "public"."sync_admin" SET ( security_invoker = FALSE);

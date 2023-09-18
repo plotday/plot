@@ -43,5 +43,12 @@ export async function getCredentials(
   };
 }
 
-export type { ConferencingProvider } from "./event";
+export type {
+  Invitee,
+  Invitees,
+  Label,
+  Labels,
+  ConferencingProvider,
+  Attendance,
+} from "./event";
 export { Event } from "./event";

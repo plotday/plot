@@ -248,9 +248,7 @@ export async function deleteWatch(
   return authProvider.credentials;
 }
 
-function transformResponse(
-  response: string | null | undefined
-): EventResponse | null {
+function transformResponse(response: string | null | undefined): EventResponse {
   switch (response) {
     case "organizer":
     case "accepted":

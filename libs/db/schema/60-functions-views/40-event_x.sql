@@ -1,3 +1,27 @@
+CREATE OR REPLACE FUNCTION "public"."calc_attendance" (attendance public.event_attendance, response public.event_response, invitee_count integer)
+    RETURNS event_attendance
+    LANGUAGE plpgsql
+    AS $function$
+BEGIN
+    IF response = 'declined'::event_response THEN
+        RETURN 'skip'::event_attendance;
+    END IF;
+    IF invitee_count < 2 AND response = 'accepted' THEN
+        RETURN 'attend'::event_attendance;
+    END IF;
+    IF attendance IS NULL THEN
+        RETURN NULL;
+    END IF;
+    IF response = 'accepted'::event_response THEN
+        RETURN 'attend'::event_attendance;
+    END IF;
+    IF attendance = 'attend'::event_attendance AND response = 'tentative'::event_response THEN
+        RETURN 'skip'::event_attendance;
+    END IF;
+    RETURN attendance;
+END;
+$function$;
+
 CREATE OR REPLACE VIEW "public"."event_x" WITH ( security_invoker = TRUE)
 -- for formatting
 AS
@@ -23,10 +47,11 @@ SELECT
     min(e.availability) AS availability,
     min(e.conferencing_url) AS conferencing_url,
     min(e.organizer) AS organizer,
-    COALESCE(min(er.response), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative') AS response,
+    COALESCE(min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative') AS response,
+    calc_attendance (min(er.attendance), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), count(DISTINCT i.contact_id)::integer) AS attendance,
     (round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
-    count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response)) AS attendee_count,
-count(DISTINCT i.contact_id) AS invitee_count,
+    count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response))::integer AS attendee_count,
+count(DISTINCT i.contact_id)::integer AS invitee_count,
 bool_or(er.ready) AS ready,
 bool_or(er.reviewed) AS reviewed,
 timezone(u.timezone, timezone('UTC', lower(e.at)))::date AS day,

@@ -11,6 +11,8 @@ import {
   IconAdjustments,
   IconArrowBigLeftLinesFilled,
   IconArrowBigRightLinesFilled,
+  IconCalendar,
+  IconInbox,
   IconSettings,
 } from "@tabler/icons-react";
 import classes from "css/_app.module.css";
@@ -41,6 +43,20 @@ function AppNavbar() {
         <NavLink component={Link} label={<Logo />} to="/" />
       </AppShell.Section>
       <AppShell.Section grow>
+        <NavLink
+          component={Link}
+          label="Agenda"
+          leftSection={<IconCalendar />}
+          to="/agenda"
+          active={location.pathname === "/agenda"}
+        />
+        <NavLink
+          component={Link}
+          label="Triage"
+          leftSection={<IconInbox />}
+          to="/triage"
+          active={location.pathname === "/triage"}
+        />
         <NavLink
           component={Link}
           label="Prep"

@@ -124,10 +124,14 @@ function Page({ children }: { children: React.ReactNode }) {
 
         <Meta />
         <Links />
-        <ColorSchemeScript />
+        <ColorSchemeScript defaultColorScheme="auto" />
       </head>
       <body>
-        <MantineProvider theme={theme} cssVariablesResolver={resolver}>
+        <MantineProvider
+          theme={theme}
+          cssVariablesResolver={resolver}
+          defaultColorScheme="auto"
+        >
           {children}
           <ScrollRestoration />
           <Scripts />

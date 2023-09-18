@@ -4,14 +4,16 @@ import { toDate } from "@plotday/tz";
 
 import type { SupabaseClient } from "./";
 import { safeQuery } from "./";
+import type { Database } from "./types";
 
 export type ConferencingProvider = "zoom" | "meet" | "teams" | "other";
 
-namespace Event {
-  type Flatten<Type> = Type extends Array<infer Item> ? Item : Type;
-  export type DbEvents = Awaited<ReturnType<typeof Event.GetRange>>;
-  export type DbEvent = Flatten<DbEvents>;
-}
+type Flatten<Type> = Type extends Array<infer Item> ? Item : Type;
+
+type DbEvents = Awaited<ReturnType<typeof Event.GetRange>>;
+type DbEvent = Flatten<DbEvents>;
+
+export type Attendance = Database["public"]["Enums"]["event_attendance"] | null;
 
 // Syncrhonize this list with schema/85-data/50-label.sql
 export const Label = {
@@ -42,7 +44,7 @@ export const Label = {
 } as const;
 
 const EVENT_QUERY =
-  "id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,conferencing_url,organizer,response,ready,reviewed,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name))),labels:label(id,order,tag,name,description)";
+  "id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,conferencing_url,organizer,attendance,ready,reviewed,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name))),labels:label(id,order,tag,name,description)";
 
 export class Event {
   public static async Get(supabase: SupabaseClient, eventId: number) {
@@ -58,7 +60,10 @@ export class Event {
   public static async GetRange(
     supabase: SupabaseClient,
     from: Date,
-    forward: boolean = true
+    forward: boolean = true,
+    filters: {
+      attendance?: Attendance[];
+    } = {}
   ) {
     let during: string;
     if (forward) {
@@ -67,27 +72,32 @@ export class Event {
       during = `(-infinity, ${from.toISOString()}]`;
     }
 
-    const events = safeQuery(
-      await supabase
-        .from("event_x")
-        .select(EVENT_QUERY)
-        .overlaps("at", during)
-        .neq("status", "cancelled")
-        .order("at", { ascending: forward })
-        .order("response", { foreignTable: "invitee" })
-        .limit(80)
-    );
+    let eventsQuery = supabase
+      .from("event_x")
+      .select(EVENT_QUERY)
+      .overlaps("at", during)
+      .neq("status", "cancelled");
+
+    if (filters.attendance) {
+      eventsQuery = eventsQuery.is("attendance", null);
+    }
+
+    eventsQuery = eventsQuery
+      .order("at", { ascending: forward })
+      .order("response", { foreignTable: "invitee" })
+      .limit(80);
+    const events = safeQuery(await eventsQuery);
     type retType = NonNullable<typeof events>;
     if (!events) return [] as retType;
 
     return events.filter((e) => !!e) as retType;
   }
 
-  public static Hydrate(dbEvents: Event.DbEvent[], tz: string) {
-    return dbEvents.map((e: Event.DbEvent) => new Event(e, tz));
+  public static Hydrate(dbEvents: DbEvent[], tz: string) {
+    return dbEvents.map((e: DbEvent) => new Event(e, tz));
   }
 
-  constructor(public dbEvent: Event.DbEvent, public tz: string) {}
+  constructor(public dbEvent: DbEvent, public tz: string) {}
 
   public get id() {
     if (!this.dbEvent.id) throw Error("Event has no id");
@@ -142,12 +152,8 @@ export class Event {
   // }
 
   // calendar owner's response
-  public get response() {
-    if (this.dbEvent.response) {
-      return this.dbEvent.response;
-    } else {
-      return this.invitees.find((invitee) => invitee.isSelf)?.response || null;
-    }
+  public get attendance() {
+    return this.dbEvent.attendance;
   }
 
   // email address associated with the calendar that owns this event
@@ -163,22 +169,21 @@ export class Event {
     return this.dbEvent.provider_link;
   }
 
-  public get conferencingUrl() {
-    return this.dbEvent.conferencing_url;
-  }
-
-  public get conferencingProvider(): ConferencingProvider | null {
+  public get conferencing() {
     const url = this.dbEvent.conferencing_url;
     if (!url) return null;
+    let provider: ConferencingProvider = "other";
     if (url.includes("zoom.us")) {
-      return "zoom";
+      provider = "zoom";
     } else if (url.includes("meet.google.com")) {
-      return "meet";
+      provider = "meet";
     } else if (url.includes("teams.microsoft.com")) {
-      return "teams";
-    } else {
-      return "other";
+      provider = "teams";
     }
+    return {
+      url,
+      provider,
+    };
   }
 
   private get self() {
@@ -188,15 +193,17 @@ export class Event {
   }
 
   public get organizer() {
-    return this.dbEvent.invitees.filter(
+    const organizer = this.dbEvent.invitees.filter(
       (invitee) => invitee.contact?.id === this.dbEvent.organizer
     )[0];
+    if (!organizer) return undefined;
+    return this.toInvitee(organizer);
   }
 
-  public get invitees() {
+  private toInvitee(invitee: DbEvent["invitees"][number]) {
     // @ts-ignore Type inference is failing for organziation
     const selfOrg = this.self?.contact?.organization?.id;
-    return this.dbEvent.invitees.map((invitee) => ({
+    return {
       id: invitee.contact?.id,
       name: invitee.contact?.name || invitee.contact?.email,
       email: invitee.contact?.email,
@@ -207,7 +214,11 @@ export class Event {
       // @ts-ignore Type inference is failing for organziation
       isInternal: selfOrg && invitee.contact?.organization?.id === selfOrg,
       response: invitee.response,
-    }));
+    };
+  }
+
+  public get invitees() {
+    return this.dbEvent.invitees.map((i) => this.toInvitee(i));
   }
 
   public get labels() {
@@ -255,6 +266,10 @@ export class Event {
 
   public get isReviewed() {
     return !!this.dbEvent.reviewed;
+  }
+
+  public isDone(review: boolean = false) {
+    return review ? this.isReviewed : this.isReady;
   }
 
   public guessLabels() {
@@ -332,3 +347,11 @@ export class Event {
     return labels;
   }
 }
+
+type ArrayElement<T> = T extends (infer E)[] ? E : never;
+
+export type Invitees = Event["invitees"];
+export type Invitee = ArrayElement<Invitees>;
+
+export type Labels = Event["labels"];
+export type Label = ArrayElement<Labels>;

@@ -36,3 +36,9 @@ CREATE TYPE "public"."location_type" AS enum (
     'other'
 );
 
+CREATE TYPE "public"."event_attendance" AS enum (
+    'attend',
+    'if-possible',
+    'skip'
+);
+

@@ -16,6 +16,7 @@ export default {
   watchPaths: [
     "./node_modules/@plotday/db/src/**",
     "./node_modules/@plotday/cal/src/**",
+    "./node_modules/@plotday/tz/src/**",
     "./node_modules/@plotday/worker-request/src/**",
   ],
   postcss: true,

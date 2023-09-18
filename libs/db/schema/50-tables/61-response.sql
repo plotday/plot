@@ -3,9 +3,9 @@ CREATE TABLE "public"."response" (
     "created_at" timestamp with time zone DEFAULT now(),
     "user_id" bigint NOT NULL,
     "provider_id" text NOT NULL,
-    "response" event_response,
     "ready" boolean DEFAULT FALSE NOT NULL,
-    "reviewed" boolean DEFAULT FALSE NOT NULL
+    "reviewed" boolean DEFAULT FALSE NOT NULL,
+    "attendance" public.event_attendance
 );
 
 CREATE UNIQUE INDEX response_pkey ON public.response USING btree (id);

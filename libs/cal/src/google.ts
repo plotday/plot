@@ -244,9 +244,7 @@ export async function deleteWatch(
   return api.credentials;
 }
 
-function transformResponse(
-  response: string | null | undefined
-): EventResponse | undefined {
+function transformResponse(response: string | null | undefined): EventResponse {
   switch (response) {
     case "accepted":
       return "accepted";
@@ -255,7 +253,7 @@ function transformResponse(
     case "tentative":
       return "tentative";
     default:
-      return undefined;
+      return null;
   }
 }
 

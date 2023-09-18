@@ -1,0 +1,8 @@
+.root {
+  &[data-variant="subtle"] {
+    color: var(--mantine-color-text);
+    &:hover {
+      color: var(--mantine-color-brand-filled);
+    }
+  }
+}
