@@ -17,7 +17,9 @@ export const loader = async ({ context, request }: LoaderArgs) => {
   return typedjson(
     {
       ...(await promiseHash({
-        events: Event.GetRange(supabase, new Date(), false),
+        events: Event.GetRange(supabase, new Date(), false, {
+          reviewed: false,
+        }),
       })),
     },
     { headers: response.headers }
@@ -27,7 +29,6 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 export const handle: { eventFilter: EventFilter } = {
   eventFilter: {
     review: true,
-    showDone: false,
   },
 };
 

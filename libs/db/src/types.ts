@@ -123,6 +123,7 @@ export interface Database {
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
+          accounts: unknown | null
         }
         Insert: {
           account_id: number
@@ -888,6 +889,21 @@ export interface Database {
       }
     }
     Functions: {
+      accounts: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          auth_user_id: string
+          created_at: string
+          credentials: Json | null
+          domain_id: number | null
+          email: string | null
+          id: number
+          provider: Database["public"]["Enums"]["provider"]
+          user_id: number
+        }[]
+      }
       all_views_secure: {
         Args: Record<PropertyKey, never>
         Returns: boolean
@@ -899,6 +915,29 @@ export interface Database {
           invitee_count: number
         }
         Returns: Database["public"]["Enums"]["event_attendance"]
+      }
+      calendars: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          account_id: number
+          created_at: string
+          ends_at: string | null
+          full_sync_at: string | null
+          full_sync_started_at: string | null
+          id: number
+          more: boolean | null
+          next_token: string | null
+          provider_id: string
+          sequence: number
+          starts_at: string | null
+          sync_error: string | null
+          synced_at: string | null
+          watch_expires_at: string | null
+          watch_id: string | null
+          watch_secret: string | null
+        }[]
       }
       get_or_create_domain_id: {
         Args: {

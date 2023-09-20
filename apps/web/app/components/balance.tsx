@@ -103,7 +103,7 @@ export function Balance({
   onChange: (value: number) => void;
 }) {
   return (
-    <Stack>
+    <Stack gap="md">
       <Group justify="space-between">
         <Text fz="xl" fw={700} c="secondary">
           Meetings

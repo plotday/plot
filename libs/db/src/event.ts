@@ -46,6 +46,10 @@ export const Label = {
 const EVENT_QUERY =
   "id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,conferencing_url,organizer,attendance,ready,reviewed,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name))),labels:label(id,order,tag,name,description)";
 
+type PostgrestQueryBuilder = ReturnType<
+  ReturnType<SupabaseClient["from"]>["select"]
+>;
+
 export class Event {
   public static async Get(supabase: SupabaseClient, eventId: number) {
     return safeQuery(
@@ -57,32 +61,58 @@ export class Event {
     );
   }
 
+  private static AddFilters<T extends PostgrestQueryBuilder>(
+    query: T,
+    from: Date | "-infinity",
+    to: Date | "infinity",
+    filters: {
+      attendance?: Attendance[];
+      ready?: boolean;
+      reviewed?: boolean;
+    }
+  ) {
+    const during = `[${from instanceof Date ? from.toISOString() : from}, ${
+      to instanceof Date ? to.toISOString() : to
+    })`;
+
+    query = query.overlaps("at", during).neq("status", "cancelled");
+
+    if (filters.attendance) {
+      const nonNull = filters.attendance
+        .filter((f) => f !== null)
+        .map((f) => `"${f}"`)
+        .join(",");
+      const isNull = filters.attendance.filter((f) => f === null);
+      query = query.or(
+        `attendance.in.(${nonNull}), ${isNull ? "attendance.is.null" : "false"}`
+      );
+    }
+    if (filters.ready !== undefined) {
+      query = query.eq("ready", filters.ready);
+    }
+    if (filters.reviewed !== undefined) {
+      query = query.eq("reviewed", filters.reviewed);
+    }
+
+    return query;
+  }
+
   public static async GetRange(
     supabase: SupabaseClient,
-    from: Date,
+    from: Date = new Date(),
     forward: boolean = true,
     filters: {
       attendance?: Attendance[];
+      ready?: boolean;
+      reviewed?: boolean;
     } = {}
   ) {
-    let during: string;
-    if (forward) {
-      during = `[${from.toISOString()}, infinity)`;
-    } else {
-      during = `(-infinity, ${from.toISOString()}]`;
-    }
-
-    let eventsQuery = supabase
-      .from("event_x")
-      .select(EVENT_QUERY)
-      .overlaps("at", during)
-      .neq("status", "cancelled");
-
-    if (filters.attendance) {
-      eventsQuery = eventsQuery.is("attendance", null);
-    }
-
-    eventsQuery = eventsQuery
+    const eventsQuery = Event.AddFilters(
+      supabase.from("event_x").select(EVENT_QUERY),
+      forward ? from : "-infinity",
+      forward ? "infinity" : from,
+      filters
+    )
       .order("at", { ascending: forward })
       .order("response", { foreignTable: "invitee" })
       .limit(80);
@@ -91,6 +121,25 @@ export class Event {
     if (!events) return [] as retType;
 
     return events.filter((e) => !!e) as retType;
+  }
+
+  public static async GetCount(
+    supabase: SupabaseClient,
+    from: Date | "-infinity",
+    to: Date | "infinity",
+    filters: {
+      attendance?: Attendance[];
+      ready?: boolean;
+      reviewed?: boolean;
+    }
+  ) {
+    const eventsQuery = Event.AddFilters(
+      supabase.from("event_x").select("*", { count: "estimated", head: true }),
+      from,
+      to,
+      filters
+    );
+    return (await eventsQuery).count;
   }
 
   public static Hydrate(dbEvents: DbEvent[], tz: string) {
@@ -268,8 +317,10 @@ export class Event {
     return !!this.dbEvent.reviewed;
   }
 
-  public isDone(review: boolean = false) {
-    return review ? this.isReviewed : this.isReady;
+  public isDone(review: boolean) {
+    return (
+      this.attendance !== null && (review ? this.isReviewed : this.isReady)
+    );
   }
 
   public guessLabels() {

@@ -131,6 +131,9 @@ importers:
       '@tabler/icons-react':
         specifier: ^2.30.0
         version: 2.30.0(react@18.2.0)
+      classnames:
+        specifier: ^2.3.2
+        version: 2.3.2
       clsx:
         specifier: ^2.0.0
         version: 2.0.0
@@ -6419,6 +6422,10 @@ packages:
 
   /clamp@1.0.1:
     resolution: {integrity: sha512-kgMuFyE78OC6Dyu3Dy7vcx4uy97EIbVxJB/B0eJ3bUNAkwdNcxYzgKltnyADiYwsR7SEqkkUPsEUT//OVS6XMA==}
+    dev: false
+
+  /classnames@2.3.2:
+    resolution: {integrity: sha512-CSbhY4cFEJRe6/GQzIk5qXZ4Jeg5pcsP7b5peFSDpffpe1cqjASH/n9UTjBwOp6XpMSTwQ8Za2K5V02ueA7Tmw==}
     dev: false
 
   /clean-stack@2.2.0:

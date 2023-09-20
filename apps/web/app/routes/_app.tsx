@@ -1,10 +1,15 @@
 import { useEffect } from "react";
 
 import type { LoaderArgs } from "@remix-run/cloudflare";
-import { json, redirect } from "@remix-run/cloudflare";
-import { Link, Outlet, useLocation, useOutletContext } from "@remix-run/react";
+import {
+  Link,
+  Outlet,
+  useLoaderData,
+  useLocation,
+  useOutletContext,
+} from "@remix-run/react";
 
-import { AppShell, Burger, Center, NavLink } from "@mantine/core";
+import { AppShell, Badge, Burger, Center, NavLink } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 
 import {
@@ -16,8 +21,14 @@ import {
   IconSettings,
 } from "@tabler/icons-react";
 import classes from "css/_app.module.css";
+import add from "date-fns/add";
+import { typedjson } from "remix-typedjson";
+import { promiseHash } from "remix-utils";
 
-import { isSignedIn } from "app/auth";
+import { Event } from "@plotday/db";
+import type { Attendance } from "@plotday/db";
+
+import { requireAuth } from "app/auth";
 import Logo from "app/components/logo";
 import { createServerClient } from "app/db";
 import type { ContextType } from "app/hooks";
@@ -27,15 +38,44 @@ export const loader = async ({ context, request }: LoaderArgs) => {
   let supabase;
   ({ supabase, response } = createServerClient(request, context));
 
-  if (!(await isSignedIn(supabase))) {
-    return redirect("/login");
-  }
+  await requireAuth(supabase);
 
-  return json({}, { headers: response.headers });
+  return typedjson(
+    {
+      counts: await promiseHash({
+        triage: Event.GetCount(
+          supabase,
+          new Date(),
+          add(new Date(), { days: 7 }),
+          {
+            attendance: [null as Attendance],
+          }
+        ),
+        prep: Event.GetCount(
+          supabase,
+          new Date(),
+          add(new Date(), { days: 2 }),
+          {
+            ready: false,
+          }
+        ),
+        review: Event.GetCount(supabase, "-infinity", new Date(), {
+          reviewed: false,
+        }),
+      }),
+    },
+    { headers: response.headers }
+  );
 };
+
+function Count({ count }: { count: number }) {
+  if (count === 0) return null;
+  return <Badge color="secondary">{count > 99 ? "99+" : count}</Badge>;
+}
 
 function AppNavbar() {
   const location = useLocation();
+  const { counts } = useLoaderData();
 
   return (
     <AppShell.Navbar>
@@ -56,6 +96,7 @@ function AppNavbar() {
           leftSection={<IconInbox />}
           to="/triage"
           active={location.pathname === "/triage"}
+          rightSection={<Count count={counts.triage} />}
         />
         <NavLink
           component={Link}
@@ -63,6 +104,7 @@ function AppNavbar() {
           leftSection={<IconArrowBigRightLinesFilled />}
           to="/prep"
           active={location.pathname === "/prep"}
+          rightSection={<Count count={counts.prep} />}
         />
         <NavLink
           component={Link}
@@ -70,6 +112,7 @@ function AppNavbar() {
           leftSection={<IconArrowBigLeftLinesFilled />}
           to="/review"
           active={location.pathname === "/review"}
+          rightSection={<Count count={counts.review} />}
         />
         <NavLink
           component={Link}
@@ -105,7 +148,7 @@ export default function App() {
   return (
     <AppShell
       layout="alt"
-      navbar={{ width: 150, breakpoint: "sm", collapsed: { mobile: !opened } }}
+      navbar={{ width: 170, breakpoint: "sm", collapsed: { mobile: !opened } }}
       footer={{ height: 32, collapsed: !mobile }}
       padding="md"
     >

@@ -30,8 +30,6 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 export const handle: { eventFilter: EventFilter } = {
   eventFilter: {
     review: false,
-    showDone: false,
-    responses: [null],
   },
 };
 

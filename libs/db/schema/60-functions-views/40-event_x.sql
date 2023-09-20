@@ -52,8 +52,8 @@ SELECT
     (round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
     count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response))::integer AS attendee_count,
 count(DISTINCT i.contact_id)::integer AS invitee_count,
-bool_or(er.ready) AS ready,
-bool_or(er.reviewed) AS reviewed,
+COALESCE(bool_or(er.ready), FALSE) AS ready,
+COALESCE(bool_or(er.reviewed), FALSE) AS reviewed,
 timezone(u.timezone, timezone('UTC', lower(e.at)))::date AS day,
 COALESCE(u.id = min(ct.contact_user_id) FILTER (WHERE ct.id = e.organizer), FALSE) AS initiated
 FROM
@@ -97,5 +97,31 @@ CREATE OR REPLACE FUNCTION public.label (event_x)
         JOIN event_label ON label.id = event_label.label_id
     WHERE
         event_label.event_id = $1.id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.calendars (event_x)
+    RETURNS SETOF calendar
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT
+        calendar.*
+    FROM
+        calendar
+    WHERE
+        calendar.id = $1.calendar_id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.accounts (calendar)
+    RETURNS SETOF account
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT
+        account.*
+    FROM
+        account
+    WHERE
+        account.id = $1.account_id
 $function$;
 

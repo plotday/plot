@@ -65,7 +65,7 @@ export default function Index() {
               so you can engage well while making progress on what moves you
               forward.
             </Text>
-            <Stack>
+            <Stack gap="md">
               <WaitlistForm />
               <Text c="dimmed" fz="xs">
                 We're currently onboarding early adopters personally to ensure
@@ -77,7 +77,7 @@ export default function Index() {
       </Box>
       <Box pt="xl" pb="xl" className={classes.graySection}>
         <Container size="xl">
-          <Stack>
+          <Stack gap="md">
             <Title order={3} size="h1">
               What is your{" "}
               <Text span inherit variant="gradient">
@@ -91,7 +91,7 @@ export default function Index() {
       </Box>
       <Box pt="xl" pb="xl" className={classes.punchSection}>
         <Container size="xs">
-          <Stack>
+          <Stack gap="md">
             <Title order={3} size="h1">
               A calendar that works for you
             </Title>
