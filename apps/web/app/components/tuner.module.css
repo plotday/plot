@@ -7,7 +7,6 @@
   width: 1%;
   white-space: nowrap;
   text-align: right;
-  font-family: var(--mantine-font-family-monospace);
 }
 
 .primaryHeader {

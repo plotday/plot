@@ -1,6 +1,3 @@
--- Synchronize this list with src/event.ts
---
--- When changing, copy this in to a manual migration (`pnpm new-migration`).
 INSERT INTO label (id, "order", tag, name, description)
     VALUES (1, 10, '💼', 'Meeting', NULL),
     (2, 100, '👥', '1:1', '2 invitees'),

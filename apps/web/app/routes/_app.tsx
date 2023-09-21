@@ -92,10 +92,10 @@ function AppNavbar() {
         />
         <NavLink
           component={Link}
-          label="Triage"
+          label="Inbox"
           leftSection={<IconInbox />}
-          to="/triage"
-          active={location.pathname === "/triage"}
+          to="/inbox"
+          active={location.pathname === "/inbox"}
           rightSection={<Count count={counts.triage} />}
         />
         <NavLink

@@ -1,5 +1,5 @@
 import type { ChangeEvent, ReactNode } from "react";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   Anchor,
@@ -423,7 +423,7 @@ function KeyPerson({
   );
 }
 
-function InviteeSummary({
+const InviteeSummary = memo(function InviteeSummary({
   invitees,
   organizer,
 }: {
@@ -464,9 +464,9 @@ function InviteeSummary({
       </Avatar.Group>
     </Tooltip.Group>
   );
-}
+});
 
-function Labels({
+const Labels = memo(function Labels({
   labels,
   balances,
   attendance,
@@ -494,7 +494,7 @@ function Labels({
       })}
     </Group>
   );
-}
+});
 
 function EventCard({
   event,

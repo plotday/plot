@@ -1,5 +1,4 @@
 import type { LoaderArgs } from "@remix-run/cloudflare";
-import { redirect } from "@remix-run/cloudflare";
 
 import { typedjson } from "remix-typedjson";
 import { promiseHash } from "remix-utils";
@@ -7,15 +6,14 @@ import { promiseHash } from "remix-utils";
 import type { Attendance } from "@plotday/db";
 import { Event } from "@plotday/db";
 
-import { getUser } from "app/auth";
+import { requireAuth } from "app/auth";
 import { createServerClient } from "app/db";
 
 import type { EventFilter } from "./_app._events";
 
 export const loader = async ({ context, request }: LoaderArgs) => {
   const { response, supabase } = createServerClient(request, context);
-  let user = await getUser(supabase);
-  if (!user?.id) throw redirect("/login");
+  await requireAuth(supabase);
 
   const url = new URL(request.url);
   const showSkipped = url.searchParams.get("skipped") === "true";

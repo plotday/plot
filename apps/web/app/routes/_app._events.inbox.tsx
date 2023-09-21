@@ -33,6 +33,6 @@ export const handle: { eventFilter: EventFilter } = {
   },
 };
 
-export default function Triage() {
+export default function Inbox() {
   return null;
 }
