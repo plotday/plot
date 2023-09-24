@@ -387,10 +387,13 @@ function KeyPerson({
     if (others.length === 1) {
       p = others[0];
     } else if (others.length > 1) {
-      p = invitees.find((i) => i.email === organizer?.email) || {
-        ...organizer,
-        response: "accepted",
-      };
+      p =
+        invitees.find((i) => i.email === organizer?.email) ?? organizer
+          ? {
+              ...organizer,
+              response: "accepted",
+            }
+          : undefined;
     }
     return p;
   }, [organizer, invitees]);
@@ -400,11 +403,7 @@ function KeyPerson({
   );
 
   if (!p) {
-    return (
-      <Avatar alt="Task">
-        <IconClipboardList color="var(--mantine-color-dimmed)" />
-      </Avatar>
-    );
+    return <Avatar>?</Avatar>;
   }
   return (
     <Tooltip key={p.email} label={p.name || p.email || undefined} withArrow>
@@ -553,7 +552,13 @@ function EventCard({
         }}
       >
         <Center>
-          <KeyPerson invitees={event.invitees} organizer={event.organizer} />
+          {event.type === "task" ? (
+            <Avatar alt="Task">
+              <IconClipboardList color="var(--mantine-color-dimmed)" />
+            </Avatar>
+          ) : (
+            <KeyPerson invitees={event.invitees} organizer={event.organizer} />
+          )}
         </Center>
         <Group>
           <Stack gap={0}>

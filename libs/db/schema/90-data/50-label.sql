@@ -1,6 +1,5 @@
--- Synchronize this list with src/event.ts
---
 -- When changing, copy this in to a manual migration (`pnpm new-migration`).
+-- Synchronize this list with schema/60-functions-views/55-event_label.sql
 INSERT INTO label (id, "order", tag, name, description)
     VALUES (1, 10, '💼', 'Meeting', NULL),
     (2, 100, '👥', '1:1', '2 invitees'),

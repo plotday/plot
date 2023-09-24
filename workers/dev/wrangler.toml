@@ -13,10 +13,6 @@ compatibility_date = "2023-07-10"
   queue = "plot-event-development-queue"
   binding = "EVENT_QUEUE"
 
-[[env.development.queues.producers]]
-  queue = "plot-labeler-development-queue"
-  binding = "LABELER_QUEUE"
-
 [[env.development.queues.consumers]]
   queue = "plot-sync-development-queue"
   max_batch_size = 1
@@ -27,12 +23,6 @@ compatibility_date = "2023-07-10"
   max_batch_size = 10
   max_batch_timeout = 3
   max_retries = 0
-
-[[env.development.queues.consumers]]
-  queue = "plot-labeler-development-queue"
-  max_retries = 0
-  max_batch_size = 20
-  max_batch_timeout = 3
 
 [dev]
   port = 8780

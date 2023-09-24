@@ -16,10 +16,6 @@ export type EventSyncRequest = {
   fullSyncComplete?: boolean;
 };
 
-export type EventLabelRequest = {
-  eventId: number;
-};
-
 export type MailRequest = {
   to: string[];
   subject: string;

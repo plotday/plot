@@ -42,8 +42,7 @@ FROM (
         FROM
             event_x
         WHERE
-            minutes < 60 * 23
-            AND invitee_count > 1
+            type = 'meeting'
             AND status != 'cancelled'
             AND response = 'accepted'
         UNION (

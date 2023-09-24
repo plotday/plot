@@ -361,9 +361,6 @@ importers:
       '@plotday/event-sync':
         specifier: workspace:^
         version: link:../event
-      '@plotday/labeler':
-        specifier: workspace:^
-        version: link:../labeler
       '@plotday/sync':
         specifier: workspace:^
         version: link:../sync
@@ -383,28 +380,6 @@ importers:
       '@plotday/cal':
         specifier: workspace:^
         version: link:../../libs/cal
-      '@plotday/db':
-        specifier: workspace:^
-        version: link:../../libs/db
-      '@plotday/worker-request':
-        specifier: workspace:^
-        version: link:../../libs/worker-request
-      '@supabase/supabase-js':
-        specifier: ^2.32.0
-        version: 2.32.0
-      toucan-js:
-        specifier: ^3.1.0
-        version: 3.1.0
-    devDependencies:
-      '@plotday/eslint-config-custom':
-        specifier: workspace:*
-        version: link:../../libs/eslint-config-custom
-      '@plotday/tsconfig':
-        specifier: workspace:*
-        version: link:../../libs/tsconfig
-
-  workers/labeler:
-    dependencies:
       '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db

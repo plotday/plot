@@ -4,10 +4,7 @@ import type { Event, EventResponse } from "@plotday/cal";
 import { transform } from "@plotday/cal";
 import type { Database } from "@plotday/db";
 import { createClient, safeQuery } from "@plotday/db";
-import type {
-  EventLabelRequest,
-  EventSyncRequest,
-} from "@plotday/worker-request";
+import type { EventSyncRequest } from "@plotday/worker-request";
 
 type DbEvent = Database["public"]["Tables"]["event"]["Insert"];
 type DbContact = Database["public"]["CompositeTypes"]["event_contact"];
@@ -21,8 +18,6 @@ export interface Env {
   readonly SUPABASE_URL: string;
   readonly SUPABASE_SERVICE_KEY: string;
   readonly SENTRY_DSN: string;
-
-  readonly LABELER_QUEUE: Queue<EventLabelRequest>;
 }
 
 function eventType(event: Event): "event" | "working_location" {
@@ -104,7 +99,7 @@ export default {
             // TODO: handle working locations
             if (eventType(event) !== "event") continue;
             const db = eventToDb(message.body.calendarId, event);
-            const eventId = safeQuery(
+            safeQuery(
               await supabase.rpc("upsert_event", {
                 _calendar_id: message.body.calendarId,
                 _raw_event: {
@@ -118,12 +113,6 @@ export default {
                 _invitees: db.invitees,
               })
             );
-            if (eventId) {
-              console.log(`Sending ${eventId} to labeler`);
-              await env.LABELER_QUEUE.send({
-                eventId: eventId,
-              });
-            }
           }
           if (message.body.fullSyncComplete) {
             safeQuery(

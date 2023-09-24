@@ -15,36 +15,8 @@ type DbEvent = Flatten<DbEvents>;
 
 export type Attendance = Database["public"]["Enums"]["event_attendance"] | null;
 
-// Syncrhonize this list with schema/85-data/50-label.sql
-export const Label = {
-  meeting: 1,
-  one_on_one: 2,
-  sm: 3,
-  md: 4,
-  lg: 5,
-  xl: 6,
-  xxl: 7,
-  internal: 8,
-  external: 9,
-  l_0_25h: 10,
-  l_0_5h: 11,
-  l_0_75h: 12,
-  l_1h: 13,
-  l_1_5h: 14,
-  l_2h: 15,
-  l_2_5h: 16,
-  l_3h: 17,
-  l_0_5d: 18,
-  l_0_75d: 19,
-  l_1d: 20,
-  recurring: 21,
-  short_notice: 22,
-  speedy: 23,
-  initiated: 24,
-} as const;
-
 const EVENT_QUERY =
-  "id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,conferencing_url,organizer,attendance,ready,reviewed,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name))),labels:label(id,order,tag,name,description)";
+  "id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer,attendance,ready,reviewed,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name))),labels:label(id,order,tag,name,description)";
 
 type PostgrestQueryBuilder = ReturnType<
   ReturnType<SupabaseClient["from"]>["select"]
@@ -317,85 +289,14 @@ export class Event {
     return !!this.dbEvent.reviewed;
   }
 
+  public get type() {
+    return this.dbEvent.type;
+  }
+
   public isDone(review: boolean) {
     return (
       this.attendance !== null && (review ? this.isReviewed : this.isReady)
     );
-  }
-
-  public guessLabels() {
-    const labels: number[] = [];
-    if (this.isAllDay) {
-      return labels;
-    }
-    if (this.invitees.length <= 1) {
-      return labels;
-    }
-    labels.push(Label.meeting);
-
-    const notice = this.notice;
-    if (this.isOrganizer) {
-      labels.push(Label.initiated);
-    }
-    if (this.hasOnlyInternalInvitees) {
-      labels.push(Label.internal);
-    }
-    if (this.hasExternalInvitees) {
-      labels.push(Label.external);
-    }
-    if (this.invitees.length == 2) {
-      labels.push(Label.one_on_one);
-    } else if (this.invitees.length <= 4) {
-      labels.push(Label.sm);
-    } else if (this.invitees.length <= 7) {
-      labels.push(Label.md);
-    } else if (this.invitees.length <= 15) {
-      labels.push(Label.lg);
-    } else if (this.invitees.length <= 30) {
-      labels.push(Label.xl);
-    } else {
-      labels.push(Label.xxl);
-    }
-
-    if (this.isRecurring) {
-      labels.push(Label.recurring);
-    }
-    if (notice !== undefined && notice < 18 * 60) {
-      labels.push(Label.short_notice);
-    }
-
-    if (this.duration <= 20) {
-      labels.push(Label.l_0_25h);
-    } else if (this.duration < 40) {
-      labels.push(Label.l_0_5h);
-    } else if (this.duration < 50) {
-      labels.push(Label.l_0_75h);
-    } else if (this.duration < 75) {
-      labels.push(Label.l_1h);
-    } else if (this.duration < 101) {
-      labels.push(Label.l_1_5h);
-    } else if (this.duration < 131) {
-      labels.push(Label.l_2h);
-    } else if (this.duration < 161) {
-      labels.push(Label.l_2_5h);
-    } else if (this.duration <= 180) {
-      labels.push(Label.l_3h);
-    } else if (this.duration <= 300) {
-      labels.push(Label.l_0_5d);
-    } else if (this.duration <= 420) {
-      labels.push(Label.l_0_75d);
-    } else if (this.duration <= 420) {
-      labels.push(Label.l_1d);
-    }
-
-    if (
-      this.duration < 30 ||
-      (this.duration % 30 >= 10 && this.duration % 30 <= 15)
-    ) {
-      labels.push(Label.speedy);
-    }
-
-    return labels;
   }
 }
 

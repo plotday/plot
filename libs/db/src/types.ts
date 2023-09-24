@@ -357,7 +357,7 @@ export interface Database {
           }
         ]
       }
-      event_label: {
+      event_label_override: {
         Row: {
           created_at: string | null
           event_id: number | null
@@ -765,8 +765,16 @@ export interface Database {
       }
     }
     Views: {
+      event_label: {
+        Row: {
+          event_id: number | null
+          label_id: number | null
+        }
+        Relationships: []
+      }
       event_x: {
         Row: {
+          all_day: boolean | null
           at: unknown | null
           attendance: Database["public"]["Enums"]["event_attendance"] | null
           attendee_count: number | null
@@ -778,6 +786,7 @@ export interface Database {
           description: string | null
           id: number | null
           initiated: boolean | null
+          internal: Database["public"]["Enums"]["event_internal"] | null
           invitee_count: number | null
           minutes: number | null
           name: string | null
@@ -790,6 +799,7 @@ export interface Database {
           series: string | null
           status: Database["public"]["Enums"]["event_status"] | null
           summary: string | null
+          type: Database["public"]["Enums"]["event_type"] | null
           user_id: number | null
           visibility: Database["public"]["Enums"]["event_visibility"] | null
         }
@@ -806,14 +816,7 @@ export interface Database {
           org_minutes: number | null
           user_id: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "event_label_label_id_fkey"
-            columns: ["label_id"]
-            referencedRelation: "label"
-            referencedColumns: ["id"]
-          }
-        ]
+        Relationships: []
       }
       expenditure_monthly: {
         Row: {
@@ -826,14 +829,7 @@ export interface Database {
           org_minutes: number | null
           user_id: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "event_label_label_id_fkey"
-            columns: ["label_id"]
-            referencedRelation: "label"
-            referencedColumns: ["id"]
-          }
-        ]
+        Relationships: []
       }
       expenditure_rolling: {
         Row: {
@@ -944,6 +940,22 @@ export interface Database {
         }
         Returns: Database["public"]["Enums"]["event_attendance"]
       }
+      calc_event_type: {
+        Args: {
+          at: unknown
+          availability: Database["public"]["Enums"]["event_availability"]
+          response: Database["public"]["Enums"]["event_response"]
+          invitee_count: number
+        }
+        Returns: Database["public"]["Enums"]["event_type"]
+      }
+      calc_internal: {
+        Args: {
+          user_domain: number
+          domains: number[]
+        }
+        Returns: Database["public"]["Enums"]["event_internal"]
+      }
       calendars: {
         Args: {
           "": unknown
@@ -966,6 +978,12 @@ export interface Database {
           watch_id: string | null
           watch_secret: string | null
         }[]
+      }
+      event_label_matches: {
+        Args: {
+          e: unknown
+        }
+        Returns: number[]
       }
       extract_minutes: {
         Args: {
@@ -1080,8 +1098,10 @@ export interface Database {
     Enums: {
       event_attendance: "attend" | "if-possible" | "skip"
       event_availability: "busy" | "away" | "focus" | "free"
+      event_internal: "internal" | "external"
       event_response: "accepted" | "declined" | "tentative"
       event_status: "confirmed" | "cancelled" | "tentative"
+      event_type: "meeting" | "task" | "note"
       event_visibility:
         | "normal"
         | "private"

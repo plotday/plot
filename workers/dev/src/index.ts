@@ -1,11 +1,6 @@
 import eventWorker from "@plotday/event-sync";
-import labelWorker from "@plotday/labeler";
 import syncWorker from "@plotday/sync";
-import type {
-  EventLabelRequest,
-  EventSyncRequest,
-  SyncRequest,
-} from "@plotday/worker-request";
+import type { EventSyncRequest, SyncRequest } from "@plotday/worker-request";
 
 interface Env {
   readonly ENV?: string;
@@ -25,7 +20,6 @@ interface Env {
 
   readonly SYNC_QUEUE: Queue<SyncRequest>;
   readonly EVENT_QUEUE: Queue<EventSyncRequest>;
-  readonly LABELER_QUEUE: Queue<EventLabelRequest>;
 }
 
 export default {
@@ -41,10 +35,6 @@ export default {
 
       case "plot-event-development-queue":
         await eventWorker.queue(batch as MessageBatch<EventSyncRequest>, env);
-        break;
-
-      case "plot-labeler-development-queue":
-        await labelWorker.queue(batch as MessageBatch<EventLabelRequest>, env);
         break;
 
       default:

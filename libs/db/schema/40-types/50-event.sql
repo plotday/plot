@@ -42,3 +42,9 @@ CREATE TYPE "public"."event_attendance" AS enum (
     'skip'
 );
 
+CREATE TYPE "public"."event_type" AS enum (
+    'meeting',
+    'task',
+    'note'
+);
+

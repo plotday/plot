@@ -3,22 +3,59 @@ CREATE OR REPLACE FUNCTION "public"."calc_attendance" (attendance public.event_a
     LANGUAGE plpgsql
     AS $function$
 BEGIN
-    IF response = 'declined'::event_response THEN
-        RETURN 'skip'::event_attendance;
-    END IF;
-    IF response = 'accepted' AND (invitee_count < 2 OR "start" < CURRENT_TIMESTAMP) THEN
-        RETURN 'attend'::event_attendance;
-    END IF;
-    IF attendance IS NULL THEN
-        RETURN NULL;
-    END IF;
-    IF response = 'accepted'::event_response THEN
-        RETURN 'attend'::event_attendance;
-    END IF;
-    IF attendance = 'attend'::event_attendance AND response = 'tentative'::event_response THEN
-        RETURN 'skip'::event_attendance;
-    END IF;
-    RETURN attendance;
+    RETURN CASE WHEN response = 'declined'::event_response THEN
+        'skip'::event_attendance
+    WHEN response = 'accepted'
+        AND (invitee_count < 2
+            OR "start" < CURRENT_TIMESTAMP) THEN
+        'attend'::event_attendance
+    WHEN attendance IS NULL THEN
+        NULL
+    WHEN response = 'accepted'::event_response THEN
+        'attend'::event_attendance
+    WHEN attendance = 'attend'::event_attendance
+        AND response = 'tentative'::event_response THEN
+        'skip'::event_attendance
+    ELSE
+        attendance
+    END;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION "public"."calc_event_type" (at tstzrange, availability event_availability, response event_response, invitee_count integer)
+    RETURNS event_type
+    LANGUAGE plpgsql
+    AS $function$
+BEGIN
+    RETURN CASE WHEN EXTRACT(epoch FROM (upper(at) - lower(at))) >= 60 * 60 * 23 THEN
+        'note'::event_type
+    WHEN invitee_count > 1
+        AND (availability = 'busy'
+            OR response = 'declined') THEN
+        'meeting'::event_type
+    ELSE
+        'task'::event_type
+    END;
+END;
+$function$;
+
+CREATE TYPE "public"."event_internal" AS enum (
+    'internal',
+    'external'
+);
+
+CREATE OR REPLACE FUNCTION "public"."calc_internal" (user_domain bigint, domains bigint[])
+    RETURNS event_internal
+    LANGUAGE plpgsql
+    AS $function$
+BEGIN
+    RETURN CASE WHEN user_domain IS NULL THEN
+        NULL
+    WHEN ARRAY[user_domain] = domains THEN
+        'internal'::event_internal
+    ELSE
+        'external'::event_internal
+    END;
 END;
 $function$;
 
@@ -64,7 +101,10 @@ CASE WHEN EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 THEN
 ELSE
     (lower(e.at) at time zone u.timezone)::date
 END AS day,
-COALESCE(u.id = min(ct.contact_user_id) FILTER (WHERE ct.id = e.organizer), FALSE) AS initiated
+COALESCE(u.id = min(ct.contact_user_id) FILTER (WHERE ct.id = e.organizer), FALSE) AS initiated,
+EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 AS all_day,
+calc_event_type (e.at, min(e.availability), COALESCE(min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative'), count(DISTINCT i.contact_id)::integer) AS type,
+calc_internal (min(ct.domain_id) FILTER (WHERE (ct.contact_user_id = u.id)), array_agg(DISTINCT ct.domain_id)) AS internal
 FROM
     event e
     JOIN calendar c ON (e.calendar_id = c.id)
@@ -92,20 +132,6 @@ CREATE OR REPLACE FUNCTION public.invitee (event_x)
         invitee
     WHERE
         event_id = $1.id
-$function$;
-
-CREATE OR REPLACE FUNCTION public.label (event_x)
-    RETURNS SETOF label
-    LANGUAGE sql
-    STABLE
-    AS $function$
-    SELECT
-        label.*
-    FROM
-        label
-        JOIN event_label ON label.id = event_label.label_id
-    WHERE
-        event_label.event_id = $1.id
 $function$;
 
 CREATE OR REPLACE FUNCTION public.calendars (event_x)
