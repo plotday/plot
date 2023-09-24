@@ -7,6 +7,7 @@ import {
   Card,
   Center,
   Group,
+  Paper,
   Stack,
   Text,
   Title,
@@ -23,6 +24,7 @@ import { promiseHash } from "remix-utils";
 import { formatDate, startOfMonth } from "@plotday/tz";
 
 import { getUser } from "app/auth";
+import { Gauge } from "app/components/gauge";
 import type { LabelStats, LabelStatsMap } from "app/components/tuner";
 import { TunerList } from "app/components/tuner";
 import type { SupabaseClient } from "app/db";
@@ -44,7 +46,7 @@ type MonthlyLabelStats = {
   [month: string]: LabelStatsMap;
 };
 
-async function getStats(
+async function getLabelStats(
   supabase: SupabaseClient,
   userId: number,
   tz: string,
@@ -63,7 +65,7 @@ async function getStats(
     let {
       user_id: _user_id,
       month,
-      response,
+      attendance,
       label_id,
       label,
       event_count,
@@ -72,7 +74,7 @@ async function getStats(
       org_minutes,
       ...rest
     } = cur;
-    if (!month || !label_id || !response) return acc;
+    if (!month || !label_id) return acc;
     month = month.replace("-01", "");
     acc[month] ??= {};
     acc[month][label_id] = {
@@ -80,10 +82,36 @@ async function getStats(
       id: label_id,
       ...label,
       ...rest,
-      [response]: { event_count, minutes, org_minutes, org_event_count },
+      [attendance === "attend" || attendance === "skip"
+        ? attendance
+        : "pending"]: { event_count, minutes, org_minutes, org_event_count },
     } as LabelStats;
     return acc;
   }, {} as MonthlyLabelStats);
+}
+
+async function getGapStats(
+  supabase: SupabaseClient,
+  userId: number,
+  tz: string,
+  months: Date[]
+) {
+  const dates = months.map((month) => formatDate(month, tz, "yyyy-MM-01"));
+  return (
+    safeQuery(
+      await supabase
+        .from("gap_monthly")
+        .select("*")
+        .eq("user_id", userId)
+        .in("month", dates)
+    ) || []
+  ).reduce((acc, cur) => {
+    let { month, user_id: _user_id, ...rest } = cur;
+    if (!month) return acc;
+    month = month.replace("-01", "");
+    acc[month] = rest;
+    return acc;
+  }, {} as Record<any, any>);
 }
 
 export const loader = async ({ context, request }: LoaderArgs) => {
@@ -106,7 +134,8 @@ export const loader = async ({ context, request }: LoaderArgs) => {
   return typedjson(
     {
       ...(await promiseHash({
-        stats: getStats(supabase, user.id, tz, [previousMonth, month]),
+        stats: getLabelStats(supabase, user.id, tz, [previousMonth, month]),
+        gaps: getGapStats(supabase, user.id, tz, [previousMonth, month]),
         targets: getTargets(supabase, user.id),
       })),
       month,
@@ -154,7 +183,7 @@ export default function Tune() {
   const fetcher = useFetcher();
 
   const [, setSearchParams] = useSearchParams();
-  const { stats, month, previousMonth, targets } =
+  const { stats, gaps, month, previousMonth, targets } =
     useTypedLoaderData<typeof loader>();
   useEventWatch(month, add(month, { months: 1 }));
 
@@ -166,6 +195,7 @@ export default function Tune() {
     differenceInBusinessDays(add(month, { months: 1 }), month) * 8 * 60;
   const previousMonthlyWorkingMinutes =
     differenceInBusinessDays(month, sub(month, { months: 1 })) * 8 * 60;
+  const weeklyWorkingMinutes = 40 * 60;
 
   const monthKey = formatDate(month, tz, "yyyy-MM");
   const previousMonthKey = formatDate(previousMonth, tz, "yyyy-MM");
@@ -202,68 +232,93 @@ export default function Tune() {
   };
 
   return (
-    <Stack>
-      <Center>
-        <Group gap={0}>
-          <Button
-            variant="subtle"
-            onClick={() => {
-              move(-1);
-            }}
-          >
-            <IconChevronLeft />
-          </Button>
-          <Text w="8em" ta="center">
-            {monthTitle}
-          </Text>
-          <Button
-            variant="subtle"
-            onClick={() => {
-              move(1);
-            }}
-          >
-            <IconChevronRight />
-          </Button>
-        </Group>
-      </Center>
-      <Card>
-        <Title order={2} mb="md">
-          <Tooltip label="This is the personal impact of meeting on your time">
-            <Text span inherit>
-              Meeting load
+    <>
+      <Paper
+        mt="-1rem"
+        pt="1rem"
+        pb="1rem"
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 99,
+        }}
+      >
+        <Center>
+          <Group gap={0}>
+            <Button
+              variant="subtle"
+              onClick={() => {
+                move(-1);
+              }}
+            >
+              <IconChevronLeft />
+            </Button>
+            <Text w="8em" ta="center">
+              {monthTitle}
             </Text>
-          </Tooltip>
-        </Title>
-        <TunerList
-          labelStats={stats[monthKey]}
-          previousStats={stats[previousMonthKey]}
-          monthlyWorkingMinutes={monthlyWorkingMinutes}
-          previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
-          weeklyWorkingMinutes={40 * 60}
-          targets={targets.targets}
-          onTargetChange={onTargetChange}
-          org={false}
-        />
-      </Card>
-      <Card mt="xl">
-        <Title order={2} mb="md">
-          <Tooltip label="This is the amount of meeting load the meetings you initiate have on the organization">
-            <Text span inherit>
-              Organizational impact
-            </Text>
-          </Tooltip>
-        </Title>
-        <TunerList
-          labelStats={stats[monthKey]}
-          previousStats={stats[previousMonthKey]}
-          monthlyWorkingMinutes={monthlyWorkingMinutes}
-          previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
-          weeklyWorkingMinutes={40 * 60}
-          targets={targets.orgTargets}
-          onTargetChange={onTargetChange}
-          org={true}
-        />
-      </Card>
-    </Stack>
+            <Button
+              variant="subtle"
+              onClick={() => {
+                move(1);
+              }}
+            >
+              <IconChevronRight />
+            </Button>
+          </Group>
+        </Center>
+      </Paper>
+      <Stack>
+        <Card w="fit-content">
+          <Gauge
+            label="Focus"
+            description="Time during working hours you have an hour or more of uninterrupted time"
+            actual={(gaps[monthKey].focus / monthlyWorkingMinutes) * 100}
+            previousActual={
+              (gaps[previousMonthKey].focus / previousMonthlyWorkingMinutes) *
+              100
+            }
+            weeklyWorkingMinutes={weeklyWorkingMinutes}
+          />
+        </Card>
+        <Card>
+          <Title order={2} mb="md">
+            <Tooltip label="Time you spend in meetings">
+              <Text span inherit>
+                Personal meeting load
+              </Text>
+            </Tooltip>
+          </Title>
+          <TunerList
+            labelStats={stats[monthKey]}
+            previousStats={stats[previousMonthKey]}
+            monthlyWorkingMinutes={monthlyWorkingMinutes}
+            previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
+            weeklyWorkingMinutes={weeklyWorkingMinutes}
+            targets={targets.targets}
+            onTargetChange={onTargetChange}
+            org={false}
+          />
+        </Card>
+        <Card mt="xl">
+          <Title order={2} mb="md">
+            <Tooltip label="Time the organization spends in meeting that you organize">
+              <Text span inherit>
+                Organizational meeting load
+              </Text>
+            </Tooltip>
+          </Title>
+          <TunerList
+            labelStats={stats[monthKey]}
+            previousStats={stats[previousMonthKey]}
+            monthlyWorkingMinutes={monthlyWorkingMinutes}
+            previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
+            weeklyWorkingMinutes={40 * 60}
+            targets={targets.orgTargets}
+            onTargetChange={onTargetChange}
+            org={true}
+          />
+        </Card>
+      </Stack>
+    </>
   );
 }

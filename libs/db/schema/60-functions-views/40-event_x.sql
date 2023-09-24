@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION "public"."calc_attendance" (attendance public.event_attendance, response public.event_response, invitee_count integer)
+CREATE OR REPLACE FUNCTION "public"."calc_attendance" (attendance public.event_attendance, response public.event_response, invitee_count integer, "start" timestamp with time zone)
     RETURNS event_attendance
     LANGUAGE plpgsql
     AS $function$
@@ -6,7 +6,7 @@ BEGIN
     IF response = 'declined'::event_response THEN
         RETURN 'skip'::event_attendance;
     END IF;
-    IF invitee_count < 2 AND response = 'accepted' THEN
+    IF response = 'accepted' AND (invitee_count < 2 OR "start" < CURRENT_TIMESTAMP) THEN
         RETURN 'attend'::event_attendance;
     END IF;
     IF attendance IS NULL THEN
@@ -22,6 +22,11 @@ BEGIN
 END;
 $function$;
 
+-- When changing the event_x structure:
+-- DROP FUNCTION public.calendars (event_x);
+-- DROP FUNCTION public.label (event_x);
+-- DROP FUNCTION public.invitee (event_x);
+-- DROP VIEW event_x;
 CREATE OR REPLACE VIEW "public"."event_x" WITH ( security_invoker = TRUE)
 -- for formatting
 AS
@@ -48,13 +53,17 @@ SELECT
     min(e.conferencing_url) AS conferencing_url,
     min(e.organizer) AS organizer,
     COALESCE(min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative') AS response,
-    calc_attendance (min(er.attendance), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), count(DISTINCT i.contact_id)::integer) AS attendance,
+    calc_attendance (min(er.attendance), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), count(DISTINCT i.contact_id)::integer, lower(at)) AS attendance,
     (round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
     count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response))::integer AS attendee_count,
 count(DISTINCT i.contact_id)::integer AS invitee_count,
 COALESCE(bool_or(er.ready), FALSE) AS ready,
 COALESCE(bool_or(er.reviewed), FALSE) AS reviewed,
-timezone(u.timezone, timezone('UTC', lower(e.at)))::date AS day,
+CASE WHEN EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 THEN
+    timezone(u.timezone, timezone('UTC', lower(e.at)))::date
+ELSE
+    (lower(e.at) at time zone u.timezone)::date
+END AS day,
 COALESCE(u.id = min(ct.contact_user_id) FILTER (WHERE ct.id = e.organizer), FALSE) AS initiated
 FROM
     event e

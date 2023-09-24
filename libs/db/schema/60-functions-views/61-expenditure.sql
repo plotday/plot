@@ -1,11 +1,11 @@
-CREATE VIEW expenditure WITH ( security_invoker = TRUE)
+CREATE OR REPLACE VIEW expenditure WITH ( security_invoker = TRUE)
 -- for formatting
 AS
 SELECT
     e."user_id",
     e."day",
     el."label_id",
-    e.response,
+    e.attendance,
     count(*)::integer AS event_count,
     sum(e.minutes)::integer AS minutes,
     -- exclude "initiated" label
@@ -22,16 +22,16 @@ GROUP BY
     e.user_id,
     e.day,
     el."label_id",
-    e.response;
+    e.attendance;
 
-CREATE VIEW expenditure_monthly WITH ( security_invoker = TRUE)
+CREATE OR REPLACE VIEW expenditure_monthly WITH ( security_invoker = TRUE)
 -- for formatting
 AS
 SELECT
     user_id,
     date_trunc('month', "day")::date AS "month",
     label_id,
-    response,
+    attendance,
     sum(event_count) AS event_count,
     sum(minutes) AS minutes,
     sum(org_event_count) AS org_event_count,
@@ -42,7 +42,7 @@ GROUP BY
     user_id,
     "month",
     label_id,
-    response;
+    attendance;
 
 -- Define a computed relation for PostgREST joins
 -- https://postgrest.org/en/stable/references/api/resource_embedding.html#computed-relationships
@@ -59,14 +59,14 @@ CREATE OR REPLACE FUNCTION public.label (expenditure_monthly)
         id = $1.label_id
 $function$;
 
-CREATE VIEW expenditure_rolling WITH ( security_invoker = TRUE)
+CREATE OR REPLACE VIEW expenditure_rolling WITH ( security_invoker = TRUE)
 -- for formatting
 AS
 SELECT
     COALESCE(expenditure.user_id, expenditure_expiries.user_id) AS user_id,
     COALESCE(expenditure.day, expenditure_expiries.day) AS day,
     COALESCE(expenditure.label_id, expenditure_expiries.label_id) AS label_id,
-    COALESCE(expenditure.response, expenditure_expiries.response) AS response,
+    COALESCE(expenditure.attendance, expenditure_expiries.attendance) AS attendance,
     SUM(COALESCE(expenditure.event_count, 0)) OVER w AS event_count,
     SUM(COALESCE(expenditure.minutes, 0)) OVER w AS minutes,
     SUM(COALESCE(expenditure.org_event_count, 0)) OVER w AS org_event_count,
@@ -77,15 +77,15 @@ FROM
     SELECT
         user_id, (day + INTERVAL '28 days')::date AS day,
         label_id,
-        response
+        attendance
     FROM
         expenditure) AS expenditure_expiries ON expenditure.user_id = expenditure_expiries.user_id
         AND expenditure.day = expenditure_expiries.day
         AND expenditure.label_id = expenditure_expiries.label_id
-        AND expenditure.response = expenditure_expiries.response
+        AND expenditure.attendance = expenditure_expiries.attendance
 WINDOW w AS (PARTITION BY COALESCE(expenditure.user_id, expenditure_expiries.user_id),
     COALESCE(expenditure.label_id, expenditure_expiries.label_id),
-    COALESCE(expenditure.response, expenditure_expiries.response)
+    COALESCE(expenditure.attendance, expenditure_expiries.attendance)
 ORDER BY
     COALESCE(expenditure.day, expenditure_expiries.day)
     RANGE BETWEEN '27 days' PRECEDING AND CURRENT ROW)

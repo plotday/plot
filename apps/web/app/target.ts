@@ -50,7 +50,7 @@ export async function getExpenditures(
     let {
       user_id: _user_id,
       day,
-      response,
+      attendance,
       label_id,
       event_count,
       minutes,
@@ -58,13 +58,18 @@ export async function getExpenditures(
       org_minutes,
       ...rest
     } = cur;
-    if (!day || !label_id || !response) return acc;
+    if (!day || !label_id) return acc;
     acc[day] ??= {};
     acc[day][label_id] = {
       ...acc[day][label_id],
       id: label_id,
       ...rest,
-      [response]: { event_count, minutes, org_minutes, org_event_count },
+      [attendance ?? "pending"]: {
+        event_count,
+        minutes,
+        org_minutes,
+        org_event_count,
+      },
     } as LabelStats;
     return acc;
   }, {} as DailyLabelStats);

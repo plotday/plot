@@ -797,13 +797,13 @@ export interface Database {
       }
       expenditure: {
         Row: {
+          attendance: Database["public"]["Enums"]["event_attendance"] | null
           day: string | null
           event_count: number | null
           label_id: number | null
           minutes: number | null
           org_event_count: number | null
           org_minutes: number | null
-          response: Database["public"]["Enums"]["event_response"] | null
           user_id: number | null
         }
         Relationships: [
@@ -817,13 +817,13 @@ export interface Database {
       }
       expenditure_monthly: {
         Row: {
+          attendance: Database["public"]["Enums"]["event_attendance"] | null
           event_count: number | null
           label_id: number | null
           minutes: number | null
           month: string | null
           org_event_count: number | null
           org_minutes: number | null
-          response: Database["public"]["Enums"]["event_response"] | null
           user_id: number | null
         }
         Relationships: [
@@ -837,13 +837,40 @@ export interface Database {
       }
       expenditure_rolling: {
         Row: {
+          attendance: Database["public"]["Enums"]["event_attendance"] | null
           day: string | null
           event_count: number | null
           label_id: number | null
           minutes: number | null
           org_event_count: number | null
           org_minutes: number | null
-          response: Database["public"]["Enums"]["event_response"] | null
+          user_id: number | null
+        }
+        Relationships: []
+      }
+      gap: {
+        Row: {
+          at: unknown | null
+          day: string | null
+          minutes: number | null
+          user_id: number | null
+        }
+        Relationships: []
+      }
+      gap_daily: {
+        Row: {
+          day: string | null
+          focus: number | null
+          total: number | null
+          user_id: number | null
+        }
+        Relationships: []
+      }
+      gap_monthly: {
+        Row: {
+          focus: number | null
+          month: string | null
+          total: number | null
           user_id: number | null
         }
         Relationships: []
@@ -913,6 +940,7 @@ export interface Database {
           attendance: Database["public"]["Enums"]["event_attendance"]
           response: Database["public"]["Enums"]["event_response"]
           invitee_count: number
+          start: string
         }
         Returns: Database["public"]["Enums"]["event_attendance"]
       }
@@ -938,6 +966,12 @@ export interface Database {
           watch_id: string | null
           watch_secret: string | null
         }[]
+      }
+      extract_minutes: {
+        Args: {
+          r: unknown
+        }
+        Returns: number
       }
       get_or_create_domain_id: {
         Args: {
@@ -1033,6 +1067,14 @@ export interface Database {
           _invitees: Database["public"]["CompositeTypes"]["event_invitee"][]
         }
         Returns: number
+      }
+      work_day_end: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      work_day_start: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
     }
     Enums: {

@@ -121,11 +121,10 @@ export function EventList({
             )) {
               if (
                 targets.targets[stats.id] !== undefined &&
-                stats.accepted?.minutes !== undefined
+                stats.attend?.minutes !== undefined
               ) {
                 balances[stats.id] =
-                  targets.targets[stats.id] * 4 -
-                  (stats.accepted?.minutes ?? 0);
+                  targets.targets[stats.id] * 4 - (stats.attend?.minutes ?? 0);
               }
             }
             nextExpenditureDate = expenditureIterator
@@ -288,7 +287,7 @@ function BreakCard({
   );
 }
 
-function Select({
+function SelectAttendance({
   value,
   onChange,
   options,
@@ -348,11 +347,13 @@ function Select({
 
       <Combobox.Dropdown>
         <Combobox.Options>
-          {options.map((item) => (
-            <Combobox.Option value={item.value} key={item.value}>
-              {item.label}
-            </Combobox.Option>
-          ))}
+          {options
+            .filter((item) => item.value !== value)
+            .map((item) => (
+              <Combobox.Option value={item.value} key={item.value}>
+                {item.label}
+              </Combobox.Option>
+            ))}
         </Combobox.Options>
       </Combobox.Dropdown>
     </Combobox>
@@ -509,7 +510,7 @@ function EventCard({
   const responder = useEventResponder();
   const setAttendance = useCallback(
     (attendance: string) => {
-      setAttendanceState(attendance as Attendance);
+      setAttendanceState((attendance || null) as Attendance);
       const email = event.email;
       if (!email) throw new Error("Missing calendar email");
       responder(event.id, attendance as Attendance, email, event.isOrganizer);
@@ -593,13 +594,13 @@ function EventCard({
           />
         </Center>
         <Group>
-          <Select
+          <SelectAttendance
             options={[
               { value: "attend", label: review ? "Attended" : "Attend" },
-              ...(review
-                ? []
-                : [{ value: "if-possible", label: "If possible" }]),
               { value: "skip", label: review ? "Skipped" : "Skip" },
+              ...(review || attendance === null
+                ? []
+                : [{ value: "", label: "Undecided" }]),
             ]}
             value={attendance || undefined}
             onChange={setAttendance}

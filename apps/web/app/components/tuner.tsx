@@ -36,9 +36,9 @@ export type LabelStats = {
   tag: string;
   name?: string;
   description?: string;
-  accepted?: Stats;
-  declined?: Stats;
-  tentative?: Stats;
+  attend?: Stats;
+  skip?: Stats;
+  pending?: Stats;
 };
 
 export type LabelStatsMap = {
@@ -75,8 +75,7 @@ export function TunerList({
     (m, stats) =>
       Math.max(
         m,
-        (stats.accepted?.[minutesKey] || 0) +
-          (stats.tentative?.[minutesKey] || 0)
+        (stats.attend?.[minutesKey] || 0) + (stats.pending?.[minutesKey] || 0)
       ),
     Object.values(targets).reduce(
       (m, target) =>
@@ -99,32 +98,36 @@ export function TunerList({
             <Table.Th>{hasTargets ? "Balance" : ""}</Table.Th>
             <Table.Th>
               <Progress.Root w="100%" size="xl">
-                <Progress.Section value={20} color="brand">
+                <Progress.Section value={14} color="brand">
                   <Progress.Label c="var(--mantine-color-default)">
                     scheduled
                   </Progress.Label>
                 </Progress.Section>
-                <Progress.Section value={20} color="secondary">
-                  <Progress.Label c="var(--mantine-color-default)">
-                    over budget
-                  </Progress.Label>
-                </Progress.Section>
-                <Progress.Section value={20} className={classes.pending}>
-                  <Progress.Label c="var(--mantine-color-text)">
+                <Progress.Section
+                  value={14}
+                  className={classes.pending}
+                  lh="unset"
+                >
+                  <Progress.Label c="var(--mantine-color-text)" lh="unset">
                     pending
                   </Progress.Label>
                 </Progress.Section>
-                <Progress.Section
-                  value={20}
-                  className={classes.pendingOverBudget}
-                >
-                  <Progress.Label c="var(--mantine-color-text)">
-                    over budget
+                <Progress.Section value={24} color="secondary">
+                  <Progress.Label c="var(--mantine-color-default)" lh="unset">
+                    scheduled over budget
                   </Progress.Label>
                 </Progress.Section>
-                <Progress.Section value={20} className={classes.budget}>
-                  <Progress.Label c="var(--mantine-color-text)">
-                    budget
+                <Progress.Section
+                  value={24}
+                  className={classes.pendingOverBudget}
+                >
+                  <Progress.Label c="var(--mantine-color-text)" lh="unset">
+                    pending over budget
+                  </Progress.Label>
+                </Progress.Section>
+                <Progress.Section value={24} className={classes.budget}>
+                  <Progress.Label c="var(--mantine-color-text)" lh="unset">
+                    remaining budget
                   </Progress.Label>
                 </Progress.Section>
               </Progress.Root>
@@ -137,7 +140,7 @@ export function TunerList({
           {sortedStats
             .filter(
               (stats) =>
-                stats.accepted?.[minutesKey] || stats.tentative?.[minutesKey]
+                stats.attend?.[minutesKey] || stats.pending?.[minutesKey]
             )
             .map((stats) => (
               <Tuner
@@ -148,7 +151,7 @@ export function TunerList({
                 previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
                 weeklyWorkingMinutes={weeklyWorkingMinutes}
                 maxMinutes={maxMinutes}
-                targets={targets}
+                target={targets[stats.id]}
                 onTargetChange={onTargetChange}
                 org={org}
               />
@@ -284,7 +287,7 @@ export function Tuner({
   previousMonthlyWorkingMinutes,
   weeklyWorkingMinutes,
   maxMinutes,
-  targets,
+  target,
   onTargetChange,
   org,
 }: {
@@ -294,7 +297,7 @@ export function Tuner({
   previousMonthlyWorkingMinutes: number;
   weeklyWorkingMinutes: number;
   maxMinutes: number;
-  targets: Record<number, number>;
+  target?: number;
   onTargetChange: (
     labelId: number,
     target: number | null,
@@ -310,12 +313,12 @@ export function Tuner({
   const toMonthly = (min: number) =>
     (min / weeklyWorkingMinutes) * monthlyWorkingMinutes;
 
-  const monthlyMinutes = labelStats.accepted?.[minutesKey] || 0;
+  const monthlyMinutes = labelStats.attend?.[minutesKey] || 0;
   const weeklyMinutes = toWeekly(monthlyMinutes);
-  const previousMinutes = previousStats?.accepted?.[minutesKey] || 0;
-  const pendingMinutes = labelStats.tentative?.[minutesKey] || 0;
-  const count = labelStats.accepted?.[countKey] || 0;
-  const pendingCount = labelStats.tentative?.[countKey] || 0;
+  const previousMinutes = previousStats?.attend?.[minutesKey] || 0;
+  const pendingMinutes = labelStats.pending?.[minutesKey] || 0;
+  const count = labelStats.attend?.[countKey] || 0;
+  const pendingCount = labelStats.pending?.[countKey] || 0;
 
   let weeklyTargetMinutes: number | undefined = undefined;
   let monthlyTargetMinutes: number | undefined = undefined;
@@ -323,8 +326,8 @@ export function Tuner({
   let badMinutes = 0;
   let goodPending = pendingMinutes;
   let badPending = 0;
-  if (targets[labelStats.id] !== undefined) {
-    weeklyTargetMinutes = targets[labelStats.id];
+  if (target !== undefined) {
+    weeklyTargetMinutes = target;
     monthlyTargetMinutes = toMonthly(weeklyTargetMinutes);
     goodMinutes = Math.min(monthlyMinutes, monthlyTargetMinutes);
     badMinutes = monthlyMinutes - goodMinutes;
@@ -466,16 +469,21 @@ export function Tuner({
             {monthlyMinutes ? formatDuration(monthlyMinutes, true) : ""}
           </Text>
         </Table.Td>
-        <Table.Td className={classes.fitContent} pl={0}>
+        <Table.Td className={classes.number} pl={0}>
           {trend !== 0 && (
-            <Text inherit fz="xs" c={trend > 0 ? "secondary" : "brand"}>
+            <Group
+              wrap="nowrap"
+              gap={0}
+              c={trend > 0 ? "secondary" : "brand"}
+              justify="end"
+            >
               {trend > 0 ? (
                 <IconArrowUpRight size="1em" />
               ) : (
                 <IconArrowDownLeft size="1em" />
               )}
-              {Math.abs(trend)}%
-            </Text>
+              <Text inherit>{Math.abs(trend)}%</Text>
+            </Group>
           )}
         </Table.Td>
         <Table.Td className={classes.fitContent} pl={0}>
