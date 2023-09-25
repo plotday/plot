@@ -134,8 +134,8 @@ CREATE OR REPLACE FUNCTION public.invitee (event_x)
         event_id = $1.id
 $function$;
 
-CREATE OR REPLACE FUNCTION public.calendars (event_x)
-    RETURNS SETOF calendar
+CREATE OR REPLACE FUNCTION public.calendar (event_x)
+    RETURNS SETOF calendar ROWS 1
     LANGUAGE sql
     STABLE
     AS $function$
@@ -147,8 +147,8 @@ CREATE OR REPLACE FUNCTION public.calendars (event_x)
         calendar.id = $1.calendar_id
 $function$;
 
-CREATE OR REPLACE FUNCTION public.accounts (calendar)
-    RETURNS SETOF account
+CREATE OR REPLACE FUNCTION public.account (calendar)
+    RETURNS SETOF account ROWS 1
     LANGUAGE sql
     STABLE
     AS $function$

@@ -19,6 +19,7 @@ import { getUser } from "app/auth";
 import { EventList } from "app/components/event";
 import { createServerClient } from "app/db";
 import { useTz } from "app/hooks";
+import { getLabels } from "app/labels";
 import { getExpenditures, getTargets } from "app/target";
 
 export type EventFilter = {
@@ -44,6 +45,7 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
       ...(await promiseHash({
         targets: getTargets(supabase, user.id),
         expenditures: getExpenditures(supabase, user.id, tz, start, end),
+        labels: getLabels(supabase, user.id),
       })),
     },
     { headers: response.headers }
@@ -66,9 +68,12 @@ export default function Events() {
         ?.events as DbEvent[]) ?? [],
     [matches]
   );
-  const { targets, expenditures } = useTypedLoaderData<typeof loader>();
+  const { targets, expenditures, labels } = useTypedLoaderData<typeof loader>();
   const tz = useTz();
-  const events = useMemo(() => Event.Hydrate(dbEvents, tz), [dbEvents, tz]);
+  const events = useMemo(
+    () => Event.Hydrate(dbEvents, tz, labels),
+    [dbEvents, tz, labels]
+  );
 
   const [params, setParams] = useSearchParams();
 

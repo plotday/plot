@@ -6,7 +6,7 @@ import type { Database } from "@plotday/db";
 import { completeSignIn, getUser, getUserMetadata } from "app/auth";
 import { DEFAULT_PATH } from "app/config";
 import { restoreAuthCookie } from "app/cookies.server";
-import { createServerAdminClient, createServerClient, safeQuery } from "app/db";
+import { createServerAdminClient, createServerClient } from "app/db";
 import { getEnv } from "app/env";
 import { Sentry } from "app/sentry.server";
 
@@ -72,17 +72,19 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
     if (!userId) {
       const code = url.searchParams.get("invitation");
       if (code) {
-        userId = safeQuery(
-          await supabaseAdmin.rpc("insert_user", {
-            _name: name,
-            _email: email,
-            _avatar_url: avatar,
-            _invitation: code,
-          })
-        );
+        userId = (
+          await supabaseAdmin
+            .rpc("insert_user", {
+              _name: name,
+              _email: email,
+              _avatar_url: avatar,
+              _invitation: code,
+            })
+            .throwOnError()
+        ).data;
       } else {
         userId =
-          safeQuery(
+          (
             await supabaseAdmin
               .from("user")
               .upsert(
@@ -95,7 +97,8 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
               )
               .select("id")
               .maybeSingle()
-          )?.id || null;
+              .throwOnError()
+          ).data?.id || null;
       }
       if (!userId) {
         throw new Error("Could not create user");
@@ -105,14 +108,13 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
     // Link waitlist to user
     try {
       if (email) {
-        safeQuery(
-          await supabaseAdmin
-            .from("waitlist")
-            .upsert(
-              { email, provider, user_id: userId, sync_error: null },
-              { onConflict: "email" }
-            )
-        );
+        await supabaseAdmin
+          .from("waitlist")
+          .upsert(
+            { email, provider, user_id: userId, sync_error: null },
+            { onConflict: "email" }
+          )
+          .throwOnError();
       }
     } catch (error) {
       console.error(error);
@@ -120,16 +122,15 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
     }
 
     // Create or link a contact for the user
-    safeQuery(
-      await supabaseAdmin
-        .from("contact")
-        .upsert(
-          { email, name, user_id: userId, contact_user_id: userId },
-          { onConflict: "user_id,email" }
-        )
-    );
+    await supabaseAdmin
+      .from("contact")
+      .upsert(
+        { email, name, user_id: userId, contact_user_id: userId },
+        { onConflict: "user_id,email" }
+      )
+      .throwOnError();
 
-    const account = safeQuery(
+    const account = (
       await supabaseAdmin
         .from("account")
         .upsert(
@@ -144,7 +145,8 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
         )
         .select()
         .single()
-    );
+        .throwOnError()
+    ).data;
 
     if (account) {
       // Start a partial sync plus a full sync
@@ -189,11 +191,10 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
     // Log error to waitlist
     try {
       if (email) {
-        safeQuery(
-          await supabaseAdmin
-            .from("waitlist")
-            .upsert({ email, provider, sync_error }, { onConflict: "email" })
-        );
+        await supabaseAdmin
+          .from("waitlist")
+          .upsert({ email, provider, sync_error }, { onConflict: "email" })
+          .throwOnError();
       }
     } catch (error) {
       console.error(error);

@@ -12,12 +12,12 @@ import type { EventFilter } from "./_app._events";
 
 export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   const { response, supabase } = createServerClient(request, context);
-  await requireAuth(supabase);
+  const user = await requireAuth(supabase);
 
   return typedjson(
     {
       ...(await promiseHash({
-        events: Event.GetRange(supabase, new Date(), true, {
+        events: Event.GetRange(supabase, user.id, new Date(), true, {
           ready: false,
         }),
       })),

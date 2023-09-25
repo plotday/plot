@@ -32,13 +32,14 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   let supabase;
   ({ supabase, response } = createServerClient(request, context));
 
-  await requireAuth(supabase);
+  const user = await requireAuth(supabase);
 
   return typedjson(
     {
       counts: await promiseHash({
         triage: Event.GetCount(
           supabase,
+          user.id,
           new Date(),
           add(new Date(), { days: 7 }),
           {
@@ -47,13 +48,14 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
         ),
         prep: Event.GetCount(
           supabase,
+          user.id,
           new Date(),
           add(new Date(), { days: 2 }),
           {
             ready: false,
           }
         ),
-        review: Event.GetCount(supabase, "-infinity", new Date(), {
+        review: Event.GetCount(supabase, user.id, "-infinity", new Date(), {
           reviewed: false,
         }),
       }),

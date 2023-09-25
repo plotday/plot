@@ -3,20 +3,35 @@ import differenceInMinutes from "date-fns/differenceInMinutes";
 import { toDate } from "@plotday/tz";
 
 import type { SupabaseClient } from "./";
-import { safeQuery } from "./";
 import type { Database } from "./types";
+
+export type Label = {
+  id: number;
+  tag: string | null;
+  name: string;
+  description: string | null;
+  order: number;
+};
+
+export type LabelMap = {
+  [id: number]: Label;
+};
 
 export type ConferencingProvider = "zoom" | "meet" | "teams" | "other";
 
-type Flatten<Type> = Type extends Array<infer Item> ? Item : Type;
-
-export type DbEvents = Awaited<ReturnType<typeof Event.GetRange>>;
-export type DbEvent = Flatten<DbEvents>;
+export type DbEvent = NonNullable<Awaited<ReturnType<typeof Event.Get>>>;
+export type DbEvents = DbEvent[];
 
 export type Attendance = Database["public"]["Enums"]["event_attendance"] | null;
 
+type ArrayElement<T> = T extends (infer E)[] ? E : never;
+
+export type Invitees = Event["invitees"];
+export type Invitee = ArrayElement<Invitees>;
+
+const EVENT_USER_QUERY = "user_id";
 const EVENT_QUERY =
-  "id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer,attendance,ready,reviewed,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name))),labels:label(id,order,tag,name,description)";
+  "user_id,id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer,attendance,ready,reviewed,labels,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name)))";
 
 type PostgrestQueryBuilder = ReturnType<
   ReturnType<SupabaseClient["from"]>["select"]
@@ -24,17 +39,19 @@ type PostgrestQueryBuilder = ReturnType<
 
 export class Event {
   public static async Get(supabase: SupabaseClient, eventId: number) {
-    return safeQuery(
+    return (
       await supabase
-        .from("event_x")
+        .from("event_x2")
         .select(EVENT_QUERY)
         .eq("id", eventId)
         .maybeSingle()
-    );
+        .throwOnError()
+    ).data;
   }
 
   private static AddFilters<T extends PostgrestQueryBuilder>(
     query: T,
+    userId: number,
     from: Date | "-infinity",
     to: Date | "infinity",
     filters: {
@@ -47,6 +64,7 @@ export class Event {
       to instanceof Date ? to.toISOString() : to
     })`;
 
+    query = query.eq("user_id", userId);
     query = query.overlaps("at", during).neq("status", "cancelled");
 
     if (filters.attendance) {
@@ -71,6 +89,7 @@ export class Event {
 
   public static async GetRange(
     supabase: SupabaseClient,
+    userId: number,
     from: Date = new Date(),
     forward: boolean = true,
     filters: {
@@ -80,7 +99,8 @@ export class Event {
     } = {}
   ) {
     const eventsQuery = Event.AddFilters(
-      supabase.from("event_x").select(EVENT_QUERY),
+      supabase.from("event_x2").select(`${EVENT_QUERY},${EVENT_USER_QUERY}`),
+      userId,
       forward ? from : "-infinity",
       forward ? "infinity" : from,
       filters
@@ -88,7 +108,7 @@ export class Event {
       .order("at", { ascending: forward })
       .order("response", { foreignTable: "invitee" })
       .limit(80);
-    const events = safeQuery(await eventsQuery);
+    const events = (await eventsQuery.throwOnError()).data;
     type retType = NonNullable<typeof events>;
     if (!events) return [] as retType;
 
@@ -97,6 +117,7 @@ export class Event {
 
   public static async GetCount(
     supabase: SupabaseClient,
+    userId: number,
     from: Date | "-infinity",
     to: Date | "infinity",
     filters: {
@@ -106,7 +127,10 @@ export class Event {
     }
   ) {
     const eventsQuery = Event.AddFilters(
-      supabase.from("event_x").select("*", { count: "estimated", head: true }),
+      supabase
+        .from("event_x")
+        .select(`*,${EVENT_USER_QUERY}`, { count: "estimated", head: true }),
+      userId,
       from,
       to,
       filters
@@ -114,11 +138,15 @@ export class Event {
     return (await eventsQuery).count;
   }
 
-  public static Hydrate(dbEvents: DbEvent[], tz: string) {
-    return dbEvents.map((e: DbEvent) => new Event(e, tz));
+  public static Hydrate(dbEvents: DbEvent[], tz: string, labels: LabelMap) {
+    return dbEvents.map((e: DbEvent) => new Event(e, tz, labels));
   }
 
-  constructor(public dbEvent: DbEvent, public tz: string) {}
+  constructor(
+    public dbEvent: DbEvent,
+    public tz: string,
+    private _labels: LabelMap
+  ) {}
 
   public get id() {
     if (!this.dbEvent.id) throw Error("Event has no id");
@@ -243,7 +271,7 @@ export class Event {
   }
 
   public get labels() {
-    return this.dbEvent.labels;
+    return this.dbEvent.labels?.map((l) => this._labels[l]) ?? [];
   }
 
   public get duration() {
@@ -299,11 +327,3 @@ export class Event {
     );
   }
 }
-
-type ArrayElement<T> = T extends (infer E)[] ? E : never;
-
-export type Invitees = Event["invitees"];
-export type Invitee = ArrayElement<Invitees>;
-
-export type Labels = Event["labels"];
-export type Label = ArrayElement<Labels>;

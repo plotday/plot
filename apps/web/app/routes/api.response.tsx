@@ -9,7 +9,7 @@ import type { Attendance } from "@plotday/db";
 import { getCredentials } from "@plotday/db";
 
 import { getUser } from "app/auth";
-import { createServerClient, safeQuery } from "app/db";
+import { createServerClient } from "app/db";
 import { getEnv } from "app/env";
 
 type ResponseBody = {
@@ -60,13 +60,14 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
   switch (request.method) {
     case "PUT": {
       const body: ResponseBody = await request.json();
-      const event = safeQuery(
+      const event = (
         await supabase
           .from("event")
           .select("provider_id,calendar(provider_id,account_id)")
           .eq("id", body.eventId)
           .maybeSingle()
-      );
+          .throwOnError()
+      ).data;
       if (!event?.calendar) return new Response("Not found", { status: 404 });
       let credentials = await getCredentials(
         supabase,
@@ -86,18 +87,20 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
           break;
       }
 
-      const contactIds = safeQuery(
+      const contactIds = (
         await supabase
           .from("contact")
           .select("id")
           .eq("user_id", user.id)
           .eq("contact_user_id", user.id)
-      )?.map((c) => c.id);
+          .throwOnError()
+      ).data?.map((c) => c.id);
       if (!contactIds)
         return new Response("Contact not found", { status: 404 });
 
-      safeQuery(
-        await supabase.from("response").upsert(
+      await supabase
+        .from("response")
+        .upsert(
           {
             user_id: user.id,
             provider_id: event.provider_id,
@@ -105,17 +108,16 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
           },
           { onConflict: "user_id,provider_id" }
         )
-      );
+        .throwOnError();
 
-      safeQuery(
-        await supabase
-          .from("invitee")
-          .update({
-            response,
-          })
-          .eq("event_id", body.eventId)
-          .in("contact_id", contactIds)
-      );
+      await supabase
+        .from("invitee")
+        .update({
+          response,
+        })
+        .eq("event_id", body.eventId)
+        .in("contact_id", contactIds)
+        .throwOnError();
 
       await respond(
         calendarConfig,

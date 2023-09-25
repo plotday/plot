@@ -4,8 +4,6 @@ import type { Provider, Session, SupabaseClient } from "@supabase/supabase-js";
 
 import type { CalendarProvider } from "@plotday/cal";
 
-import { safeQuery } from "./db";
-
 export const authCookieOptions = {
   name: "pa",
   maxAge: 60 * 60 * 24 * 365, // 1 year
@@ -144,13 +142,14 @@ export const getUser = async (supabase: SupabaseClient, session?: Session) => {
     return null;
   }
 
-  const user = safeQuery(
+  const user = (
     await supabase
       .from("account")
       .select("user( id, email, name, timezone, invitation )")
       .eq("auth_user_id", userId)
       .maybeSingle()
-  )?.user;
+      .throwOnError()
+  ).data?.user;
   if (!user) return null;
 
   // Typescript somehow confuses this as returning an array rather than an object,

@@ -31,6 +31,9 @@ importers:
       eslint:
         specifier: ^8.38.0
         version: 8.38.0
+      husky:
+        specifier: ^8.0.0
+        version: 8.0.3
       prettier:
         specifier: ^2.5.1
         version: 2.8.8
@@ -103,10 +106,10 @@ importers:
         version: link:../../libs/worker-request
       '@remix-run/cloudflare':
         specifier: ^2.0.1
-        version: 2.0.1(@cloudflare/workers-types@4.20230914.0)(typescript@5.2.2)
+        version: 2.0.1(@cloudflare/workers-types@4.20230922.0)(typescript@5.2.2)
       '@remix-run/cloudflare-pages':
         specifier: ^2.0.1
-        version: 2.0.1(@cloudflare/workers-types@4.20230914.0)(typescript@5.2.2)
+        version: 2.0.1(@cloudflare/workers-types@4.20230922.0)(typescript@5.2.2)
       '@remix-run/css-bundle':
         specifier: ^2.0.1
         version: 2.0.1
@@ -124,10 +127,10 @@ importers:
         version: 7.70.0(@remix-run/node@2.0.1)(@remix-run/react@2.0.1)(react@18.2.0)
       '@supabase/auth-helpers-remix':
         specifier: ^0.2.2
-        version: 0.2.2(@supabase/supabase-js@2.32.0)
+        version: 0.2.2(@supabase/supabase-js@2.36.0)
       '@supabase/supabase-js':
-        specifier: ^2.32.0
-        version: 2.32.0
+        specifier: ^2.36.0
+        version: 2.36.0
       '@tabler/icons-react':
         specifier: ^2.30.0
         version: 2.30.0(react@18.2.0)
@@ -233,8 +236,8 @@ importers:
         specifier: workspace:^
         version: link:../tz
       '@supabase/supabase-js':
-        specifier: ^2.32.0
-        version: 2.32.0
+        specifier: ^2.36.0
+        version: 2.36.0
       date-fns:
         specifier: ^2.30.0
         version: 2.30.0
@@ -343,8 +346,8 @@ importers:
         specifier: workspace:^
         version: link:../../libs/worker-request
       '@supabase/supabase-js':
-        specifier: ^2.32.0
-        version: 2.32.0
+        specifier: ^2.36.0
+        version: 2.36.0
       toucan-js:
         specifier: ^3.3.0
         version: 3.3.0
@@ -387,8 +390,8 @@ importers:
         specifier: workspace:^
         version: link:../../libs/worker-request
       '@supabase/supabase-js':
-        specifier: ^2.32.0
-        version: 2.32.0
+        specifier: ^2.36.0
+        version: 2.36.0
       toucan-js:
         specifier: ^3.3.0
         version: 3.3.0
@@ -431,8 +434,8 @@ importers:
         specifier: workspace:^
         version: link:../../libs/worker-request
       '@supabase/supabase-js':
-        specifier: ^2.32.0
-        version: 2.32.0
+        specifier: ^2.36.0
+        version: 2.36.0
       '@worker-tools/json-fetch':
         specifier: 2.1.0-pre.6
         version: 2.1.0-pre.6
@@ -1266,8 +1269,8 @@ packages:
     resolution: {integrity: sha512-WuFlsai21oJhRMBHdkM0saIuK1Faitp/GXWj31Zlbe3cCtPNlwYtX5WkojDNWWAxX47LMHBF9wv7wrytNLabYA==}
     dev: true
 
-  /@cloudflare/workers-types@4.20230914.0:
-    resolution: {integrity: sha512-OVeN4lFVu1O0PJGZ2d0FwpK8lelFcr33qYOgCh77ErEYmEBO4adwnIxcIsdQbFbhF0ffN6joiVcljD4zakdaeQ==}
+  /@cloudflare/workers-types@4.20230922.0:
+    resolution: {integrity: sha512-0N3fg4uv9pS7PXMVYmEmEGs1P1yzMIsqym0sO//o2IjtZhsf7RwOozJtdazDAL0fBIWsl1PRX7BmKe92RV+5qw==}
     dev: false
 
   /@codemirror/autocomplete@6.9.0(@codemirror/language@6.8.0)(@codemirror/state@6.2.1)(@codemirror/view@6.16.0)(@lezer/common@1.0.4):
@@ -3616,7 +3619,7 @@ packages:
       react: 18.2.0
     dev: false
 
-  /@remix-run/cloudflare-pages@2.0.1(@cloudflare/workers-types@4.20230914.0)(typescript@5.2.2):
+  /@remix-run/cloudflare-pages@2.0.1(@cloudflare/workers-types@4.20230922.0)(typescript@5.2.2):
     resolution: {integrity: sha512-9iA3OraUBMSXUBrlvOmWJ02zfaRffUJX7IbKIJJ3IJu+/jdgJ1j7Tv/eMuoOdFQZwkpVno3jJyYrCBh46cdexw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
@@ -3626,12 +3629,12 @@ packages:
       typescript:
         optional: true
     dependencies:
-      '@cloudflare/workers-types': 4.20230914.0
-      '@remix-run/cloudflare': 2.0.1(@cloudflare/workers-types@4.20230914.0)(typescript@5.2.2)
+      '@cloudflare/workers-types': 4.20230922.0
+      '@remix-run/cloudflare': 2.0.1(@cloudflare/workers-types@4.20230922.0)(typescript@5.2.2)
       typescript: 5.2.2
     dev: false
 
-  /@remix-run/cloudflare@2.0.1(@cloudflare/workers-types@4.20230914.0)(typescript@5.2.2):
+  /@remix-run/cloudflare@2.0.1(@cloudflare/workers-types@4.20230922.0)(typescript@5.2.2):
     resolution: {integrity: sha512-BEFyGKROde7uNDUhTzCz8f4bq9NP3C1iaJx7eUOJj0eOuFT76NLEws6teh9BHztj/e8ysaPLqFJjdFKcG6Y3ag==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
@@ -3642,7 +3645,7 @@ packages:
         optional: true
     dependencies:
       '@cloudflare/kv-asset-handler': 0.1.3
-      '@cloudflare/workers-types': 4.20230914.0
+      '@cloudflare/workers-types': 4.20230922.0
       '@remix-run/server-runtime': 2.0.1(typescript@5.2.2)
       typescript: 5.2.2
     dev: false
@@ -4032,77 +4035,75 @@ packages:
     resolution: {integrity: sha512-+Fj43pSMwJs4KRrH/938Uf+uAELIgVBmQzg/q1YG10djyfA3TnrU8N8XzqCh/okZdszqBQTZf96idMfE5lnwTA==}
     dev: true
 
-  /@supabase/auth-helpers-remix@0.2.2(@supabase/supabase-js@2.32.0):
+  /@supabase/auth-helpers-remix@0.2.2(@supabase/supabase-js@2.36.0):
     resolution: {integrity: sha512-30/J8Pgc8uvqh8GrTD4kZr4z1CYtj8RROUGvUpp8JgwofsGZDmnLuSavBNQ8RuaRnH+eierb+ivlsVSQZj+ubA==}
     peerDependencies:
       '@supabase/supabase-js': ^2.19.0
     dependencies:
-      '@supabase/auth-helpers-shared': 0.5.0(@supabase/supabase-js@2.32.0)
-      '@supabase/supabase-js': 2.32.0
+      '@supabase/auth-helpers-shared': 0.5.0(@supabase/supabase-js@2.36.0)
+      '@supabase/supabase-js': 2.36.0
     dev: false
 
-  /@supabase/auth-helpers-shared@0.5.0(@supabase/supabase-js@2.32.0):
+  /@supabase/auth-helpers-shared@0.5.0(@supabase/supabase-js@2.36.0):
     resolution: {integrity: sha512-kioUeYDBZ89cfqOTZFOLEFIO7kGczL0XJYZdVv/bKt5efXqhiY14NbzgGWiMvvD9o9Iluo0+YEV2tG3ZZ5W06A==}
     peerDependencies:
       '@supabase/supabase-js': ^2.19.0
     dependencies:
-      '@supabase/supabase-js': 2.32.0
+      '@supabase/supabase-js': 2.36.0
       jose: 4.14.6
     dev: false
 
-  /@supabase/functions-js@2.1.2:
-    resolution: {integrity: sha512-QCR6pwJs9exCl37bmpMisUd6mf+0SUBJ6mUpiAjEkSJ/+xW8TCuO14bvkWHADd5hElJK9MxNlMQXxSA4DRz9nQ==}
+  /@supabase/functions-js@2.1.5:
+    resolution: {integrity: sha512-BNzC5XhCzzCaggJ8s53DP+WeHHGT/NfTsx2wUSSGKR2/ikLFQTBCDzMvGz/PxYMqRko/LwncQtKXGOYp1PkPaw==}
     dependencies:
-      cross-fetch: 3.1.8
-    transitivePeerDependencies:
-      - encoding
+      '@supabase/node-fetch': 2.6.14
     dev: false
 
-  /@supabase/gotrue-js@2.46.1:
-    resolution: {integrity: sha512-tebFX3XvPqEJKHOVgkXTN20g9iUhLx6tebIYQvTggYTrqOT2af8oTpSBdgYzbwJ291G6P6CSpR6KY0cT9ade5A==}
+  /@supabase/gotrue-js@2.54.0:
+    resolution: {integrity: sha512-JjtbchtPbpgK0O8NIMIvKLk7HHv0kd23L3UO5a398nczCcBkI0IvmbPtbS4Xs5AUIuJ+JHtV6siOZR1ha5EzQw==}
     dependencies:
-      cross-fetch: 3.1.8
-    transitivePeerDependencies:
-      - encoding
+      '@supabase/node-fetch': 2.6.14
     dev: false
 
-  /@supabase/postgrest-js@1.8.0:
-    resolution: {integrity: sha512-R6leDIC92NgjyG2/tCRJ42rWN7+fZY6ulTEE+c00tcnghn6cX4IYUlnTNMtrdfYC2JYNOTyM+rWj63Wdhr7Zig==}
+  /@supabase/node-fetch@2.6.14:
+    resolution: {integrity: sha512-w/Tsd22e/5fAeoxqQ4P2MX6EyF+iM6rc9kmlMVFkHuG0rAltt2TLhFbDJfemnHbtvnazWaRfy5KnFU/SYT37dQ==}
+    engines: {node: 4.x || >=6.0.0}
     dependencies:
-      cross-fetch: 3.1.8
-    transitivePeerDependencies:
-      - encoding
+      whatwg-url: 5.0.0
     dev: false
 
-  /@supabase/realtime-js@2.7.3:
-    resolution: {integrity: sha512-c7TzL81sx2kqyxsxcDduJcHL9KJdCOoKimGP6lQSqiZKX42ATlBZpWbyy9KFGFBjAP4nyopMf5JhPi2ZH9jyNw==}
+  /@supabase/postgrest-js@1.8.4:
+    resolution: {integrity: sha512-ELjpvhb04wILUiJz9zIsTSwaz9LQNlX+Ig5/LgXQ7k68qQI6NqHVn+ISRNt53DngUIyOnLHjeqqIRHBZ7zpgGA==}
     dependencies:
-      '@types/phoenix': 1.6.0
-      '@types/websocket': 1.0.5
+      '@supabase/node-fetch': 2.6.14
+    dev: false
+
+  /@supabase/realtime-js@2.7.4:
+    resolution: {integrity: sha512-FzSzs1k9ruh/uds5AJ95Nc3beiMCCIhougExJ3O98CX1LMLAKUKFy5FivKLvcNhXnNfUEL0XUfGMb4UH2J7alg==}
+    dependencies:
+      '@types/phoenix': 1.6.2
+      '@types/websocket': 1.0.6
       websocket: 1.0.34
     transitivePeerDependencies:
       - supports-color
     dev: false
 
-  /@supabase/storage-js@2.5.1:
-    resolution: {integrity: sha512-nkR0fQA9ScAtIKA3vNoPEqbZv1k5B5HVRYEvRWdlP6mUpFphM9TwPL2jZ/ztNGMTG5xT6SrHr+H7Ykz8qzbhjw==}
+  /@supabase/storage-js@2.5.4:
+    resolution: {integrity: sha512-yspHD19I9uQUgfTh0J94+/r/g6hnhdQmw6Y7OWqr/EbnL6uvicGV1i1UDkkmeUHqfF9Mbt2sLtuxRycYyKv2ew==}
     dependencies:
-      cross-fetch: 3.1.8
-    transitivePeerDependencies:
-      - encoding
+      '@supabase/node-fetch': 2.6.14
     dev: false
 
-  /@supabase/supabase-js@2.32.0:
-    resolution: {integrity: sha512-1ShFhuOI5Du7604nlCelBsRD61daXk2O0qwjumoz35bqrYThnSPPtpJqZOHw6Mg6o7mLjIInYLh/DBlh8UvzRg==}
+  /@supabase/supabase-js@2.36.0:
+    resolution: {integrity: sha512-K9ze4BpQrOZsmYUvF2j9FfIkTfxR4K8GJx6F6DTOfJ8fZg4JSNjfzlGvhCVDwiV4w1NRrmEQ/F89THNt3eXXhg==}
     dependencies:
-      '@supabase/functions-js': 2.1.2
-      '@supabase/gotrue-js': 2.46.1
-      '@supabase/postgrest-js': 1.8.0
-      '@supabase/realtime-js': 2.7.3
-      '@supabase/storage-js': 2.5.1
-      cross-fetch: 3.1.8
+      '@supabase/functions-js': 2.1.5
+      '@supabase/gotrue-js': 2.54.0
+      '@supabase/node-fetch': 2.6.14
+      '@supabase/postgrest-js': 1.8.4
+      '@supabase/realtime-js': 2.7.4
+      '@supabase/storage-js': 2.5.4
     transitivePeerDependencies:
-      - encoding
       - supports-color
     dev: false
 
@@ -4345,10 +4346,10 @@ packages:
 
   /@types/node@20.4.2:
     resolution: {integrity: sha512-Dd0BYtWgnWJKwO1jkmTrzofjK2QXXcai0dmtzvIBhcA+RsG5h8R3xlyta0kGOZRNfL9GuRtb1knmPEhQrePCEw==}
-    dev: true
 
   /@types/node@20.4.9:
     resolution: {integrity: sha512-8e2HYcg7ohnTUbHk8focoklEQYvemQmu9M/f43DZVx43kHn0tE3BY/6gSDxS7k0SprtS0NHvj+L80cGLnoOUcQ==}
+    dev: true
 
   /@types/node@20.6.5:
     resolution: {integrity: sha512-2qGq5LAOTh9izcc0+F+dToFigBWiK1phKPt7rNhOqJSr35y8rlIBjDwGtFSgAI6MGIhjwOVNSQZVdJsZJ2uR1w==}
@@ -4366,8 +4367,8 @@ packages:
     resolution: {integrity: sha512-//oorEZjL6sbPcKUaCdIGlIUeH26mgzimjBB77G6XRgnDl/L5wOnpyBGRe/Mmf5CVW3PwEBE1NjiMZ/ssFh4wA==}
     dev: false
 
-  /@types/phoenix@1.6.0:
-    resolution: {integrity: sha512-qwfpsHmFuhAS/dVd4uBIraMxRd56vwBUYQGZ6GpXnFuM2XMRFJbIyruFKKlW2daQliuYZwe0qfn/UjFCDKic5g==}
+  /@types/phoenix@1.6.2:
+    resolution: {integrity: sha512-I3mm7x5XIi+5NsIY3nfreY+H4PmQdyBwJ84SiUSOxSg1axwEPNmkKWYVm56y+emDpPPUL3cPzrLcgRWSd9gI7g==}
     dev: false
 
   /@types/prop-types@15.7.5:
@@ -4419,10 +4420,10 @@ packages:
   /@types/unist@2.0.8:
     resolution: {integrity: sha512-d0XxK3YTObnWVp6rZuev3c49+j4Lo8g4L1ZRm9z5L0xpoZycUPshHgczK5gsUMaZOstjVYYi09p5gYvUtfChYw==}
 
-  /@types/websocket@1.0.5:
-    resolution: {integrity: sha512-NbsqiNX9CnEfC1Z0Vf4mE1SgAJ07JnRYcNex7AJ9zAVzmiGHmjKFEk7O4TJIsgv2B1sLEb6owKFZrACwdYngsQ==}
+  /@types/websocket@1.0.6:
+    resolution: {integrity: sha512-JXkliwz93B2cMWOI1ukElQBPN88vMg3CruvW4KVSKpflt3NyNCJImnhIuB/f97rG7kakqRJGFiwkA895Kn02Dg==}
     dependencies:
-      '@types/node': 20.4.9
+      '@types/node': 20.4.2
     dev: false
 
   /@typescript-eslint/eslint-plugin@5.62.0(@typescript-eslint/parser@5.62.0)(eslint@8.45.0)(typescript@5.2.2):
@@ -5305,7 +5306,7 @@ packages:
     engines: {node: '>=6.14.2'}
     requiresBuild: true
     dependencies:
-      node-gyp-build: 4.6.0
+      node-gyp-build: 4.6.1
     dev: false
 
   /builtins@5.0.1:
@@ -8251,6 +8252,12 @@ packages:
       decamelize: 6.0.0
     dev: false
 
+  /husky@8.0.3:
+    resolution: {integrity: sha512-+dQSyqPh4x1hlO1swXBiNb2HzTDN1I2IGLQx1GrBuiqFJfoMrnZWwVmatvSiO+Iz8fBUnf+lekwNo4c2LlXItg==}
+    engines: {node: '>=14'}
+    hasBin: true
+    dev: true
+
   /iconv-lite@0.4.24:
     resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
     engines: {node: '>=0.10.0'}
@@ -9916,8 +9923,8 @@ packages:
     engines: {node: '>= 6.13.0'}
     dev: true
 
-  /node-gyp-build@4.6.0:
-    resolution: {integrity: sha512-NTZVKn9IylLwUzaKjkas1e4u2DLNcV4rdYagA4PWdPwW87Bi7z+BznyKSRwS/761tV/lzCGXplWsiaMjLqP2zQ==}
+  /node-gyp-build@4.6.1:
+    resolution: {integrity: sha512-24vnklJmyRS8ViBNI8KbtK/r/DmXQMRiOMXTNz2nrTnAYUwjmEEbnnpB/+kt+yWRv73bPsSPRFddrcIbAxSiMQ==}
     hasBin: true
     dev: false
 
@@ -13316,7 +13323,7 @@ packages:
     engines: {node: '>=6.14.2'}
     requiresBuild: true
     dependencies:
-      node-gyp-build: 4.6.0
+      node-gyp-build: 4.6.1
     dev: false
 
   /util-deprecate@1.0.2:

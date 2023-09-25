@@ -22,3 +22,5 @@ ALTER TABLE "public"."invitee"
 
 ALTER TABLE "public"."invitee" validate CONSTRAINT "invitee_event_id_fkey";
 
+CREATE INDEX invitee_event_id_idx ON public.invitee USING btree (event_id);
+

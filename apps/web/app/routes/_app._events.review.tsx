@@ -12,7 +12,7 @@ import type { EventFilter } from "./_app._events";
 
 export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   const { response, supabase } = createServerClient(request, context);
-  await requireAuth(supabase);
+  const user = await requireAuth(supabase);
 
   const url = new URL(request.url);
   const showReviewed = url.searchParams.get("reviewed") === "true";
@@ -22,6 +22,7 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
       ...(await promiseHash({
         events: Event.GetRange(
           supabase,
+          user.id,
           new Date(),
           false,
           showReviewed

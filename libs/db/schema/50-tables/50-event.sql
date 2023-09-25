@@ -41,3 +41,5 @@ ALTER TABLE "public"."event" validate CONSTRAINT "event_organizer_fkey";
 ALTER publication supabase_realtime
     ADD TABLE public.event;
 
+CREATE INDEX event_at_idx ON event USING spgist (at);
+

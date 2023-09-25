@@ -10,7 +10,7 @@ import { useTypedLoaderData } from "remix-typedjson";
 import { getUser, logout } from "app/auth";
 import CalendarSources from "app/components/calendar-sources";
 import { saveAuthCookie } from "app/cookies.server";
-import { createServerClient, safeQuery } from "app/db";
+import { createServerClient } from "app/db";
 import { useSupabase } from "app/hooks";
 
 export async function loader({ request, context }: LoaderFunctionArgs) {
@@ -23,11 +23,12 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
     return null;
   }
 
-  const calendars = safeQuery(
+  const calendars = (
     await supabase
       .from("calendar")
       .select("id,provider_id,account(provider,email)")
-  );
+      .throwOnError()
+  ).data;
 
   saveAuthCookie(request, response);
 

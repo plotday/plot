@@ -4,7 +4,7 @@ import type { ActionFunctionArgs } from "@remix-run/cloudflare";
 import { useFetcher } from "@remix-run/react";
 
 import { getUser } from "app/auth";
-import { createServerClient, safeQuery } from "app/db";
+import { createServerClient } from "app/db";
 
 type ApiBody = {
   providerId: string;
@@ -39,7 +39,7 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
   switch (request.method) {
     case "PATCH": {
       const body: ApiBody = await request.json();
-      const event = safeQuery(
+      const event = (
         await supabase
           .from("response")
           .upsert(
@@ -53,7 +53,8 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
           )
           .eq("provider_id", body.providerId)
           .select()
-      );
+          .throwOnError()
+      ).data;
       return new Response(JSON.stringify(event), {
         headers: response.headers,
         status: 200,

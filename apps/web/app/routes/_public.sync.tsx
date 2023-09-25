@@ -8,7 +8,7 @@ import { IconPlugConnected } from "@tabler/icons-react";
 import CalendarSources from "app/components/calendar-sources";
 import Consent from "app/components/consent";
 import { DEFAULT_PATH } from "app/config";
-import { createServerAdminClient, safeQuery } from "app/db";
+import { createServerAdminClient } from "app/db";
 
 async function requireInvitation(request: Request, context: AppLoadContext) {
   const url = new URL(request.url);
@@ -16,13 +16,14 @@ async function requireInvitation(request: Request, context: AppLoadContext) {
   if (!invitation) throw redirect("/waitlist");
 
   const supabaseAdmin = createServerAdminClient(context);
-  const match = safeQuery(
+  const match = (
     await supabaseAdmin
       .from("invitation")
       .select()
       .eq("code", invitation)
       .maybeSingle()
-  );
+      .throwOnError()
+  ).data;
   if (!match?.remaining)
     throw redirect(`/waitlist?invitation=${invitation}&error=invalid`);
 }

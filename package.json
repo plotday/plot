@@ -14,14 +14,16 @@
     "diff-schema-db": "pnpm --filter @plotday/db run diff-schema-db",
     "gen-migration": "pnpm --filter @plotday/db run gen-migration",
     "new-migration": "pnpm --filter @plotday/db run new-migration",
-    "lint": "pnpm install --frozen-lockfile && turbo run lint",
+    "lint": "turbo run lint",
+    "pre-commit": "pnpm install --frozen-lockfile && turbo run lint && turbo run pre-commit",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "stop": "turbo run stop --force",
     "start": "turbo run start --force",
     "restart": "echo .",
-    "update": "pnpm update --latest --recursive"
+    "update": "pnpm update --latest --recursive",
+    "prepare": "husky install"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230724.0",
@@ -35,7 +37,8 @@
     "turbo": "^1.10.14",
     "typescript": "^5.1.6",
     "vitest": "^0.33.0",
-    "wrangler": "^3.7.0"
+    "wrangler": "^3.7.0",
+    "husky": "^8.0.0"
   },
   "packageManager": "pnpm@8.6.6",
   "name": "@plotday/plot",

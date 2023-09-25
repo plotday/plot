@@ -13,7 +13,7 @@ import type { EventFilter } from "./_app._events";
 
 export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   const { response, supabase } = createServerClient(request, context);
-  await requireAuth(supabase);
+  const user = await requireAuth(supabase);
 
   const url = new URL(request.url);
   const showSkipped = url.searchParams.get("skipped") === "true";
@@ -21,7 +21,7 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   return typedjson(
     {
       ...(await promiseHash({
-        events: Event.GetRange(supabase, new Date(), true, {
+        events: Event.GetRange(supabase, user.id, new Date(), true, {
           attendance: [
             "attend",
             "if-possible",

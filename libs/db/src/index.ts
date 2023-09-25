@@ -1,11 +1,9 @@
 import type { SupabaseClient as _SupabaseClient } from "@supabase/supabase-js";
 import { createClient as supabaseCreateClient } from "@supabase/supabase-js";
 
-import { safeQuery } from "./query";
 import type { Database } from "./types";
 
 export type { Database } from "./types";
-export { safeQuery } from "./query";
 export type SupabaseClient = _SupabaseClient<Database>;
 
 // Create a non-session client.
@@ -22,9 +20,14 @@ export async function getCredentials(
   supabase: SupabaseClient,
   accountId: number
 ) {
-  const account = safeQuery(
-    await supabase.from("account").select().eq("id", accountId).maybeSingle()
-  );
+  const account = (
+    await supabase
+      .from("account")
+      .select()
+      .eq("id", accountId)
+      .maybeSingle()
+      .throwOnError()
+  ).data;
   if (!account) throw new Error(`Account ${accountId} not found`);
   if (
     !account.credentials ||
@@ -47,7 +50,6 @@ export type {
   Invitee,
   Invitees,
   Label,
-  Labels,
   ConferencingProvider,
   Attendance,
   DbEvents,

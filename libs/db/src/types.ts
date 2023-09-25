@@ -123,7 +123,7 @@ export interface Database {
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
-          accounts: unknown | null
+          account: unknown | null
         }
         Insert: {
           account_id: number
@@ -805,6 +805,40 @@ export interface Database {
         }
         Relationships: []
       }
+      event_x2: {
+        Row: {
+          all_day: boolean | null
+          at: unknown | null
+          attendance: Database["public"]["Enums"]["event_attendance"] | null
+          attendee_count: number | null
+          availability: Database["public"]["Enums"]["event_availability"] | null
+          calendar_id: number | null
+          conferencing_url: string | null
+          created_at: string | null
+          day: string | null
+          description: string | null
+          id: number | null
+          initiated: boolean | null
+          internal: Database["public"]["Enums"]["event_internal"] | null
+          invitee_count: number | null
+          labels: number[] | null
+          minutes: number | null
+          name: string | null
+          organizer: number | null
+          provider_id: string | null
+          provider_link: string | null
+          ready: boolean | null
+          response: Database["public"]["Enums"]["event_response"] | null
+          reviewed: boolean | null
+          series: string | null
+          status: Database["public"]["Enums"]["event_status"] | null
+          summary: string | null
+          type: Database["public"]["Enums"]["event_type"] | null
+          user_id: number | null
+          visibility: Database["public"]["Enums"]["event_visibility"] | null
+        }
+        Relationships: []
+      }
       expenditure: {
         Row: {
           attendance: Database["public"]["Enums"]["event_attendance"] | null
@@ -912,7 +946,7 @@ export interface Database {
       }
     }
     Functions: {
-      accounts: {
+      account: {
         Args: {
           "": unknown
         }
@@ -956,7 +990,7 @@ export interface Database {
         }
         Returns: Database["public"]["Enums"]["event_internal"]
       }
-      calendars: {
+      calendar: {
         Args: {
           "": unknown
         }
@@ -1006,19 +1040,33 @@ export interface Database {
         }
         Returns: number
       }
-      invitee: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          contact_id: number
-          created_at: string
-          event_id: number
-          is_optional: boolean
-          response: Database["public"]["Enums"]["event_response"] | null
-          sequence: number
-        }[]
-      }
+      invitee:
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: {
+              contact_id: number
+              created_at: string
+              event_id: number
+              is_optional: boolean
+              response: Database["public"]["Enums"]["event_response"] | null
+              sequence: number
+            }[]
+          }
+        | {
+            Args: {
+              "": unknown
+            }
+            Returns: {
+              contact_id: number
+              created_at: string
+              event_id: number
+              is_optional: boolean
+              response: Database["public"]["Enums"]["event_response"] | null
+              sequence: number
+            }[]
+          }
       is_user_account: {
         Args: {
           auth_user_id: string
@@ -1026,35 +1074,20 @@ export interface Database {
         }
         Returns: boolean
       }
-      label:
-        | {
-            Args: {
-              "": unknown
-            }
-            Returns: {
-              created_at: string | null
-              description: string | null
-              id: number
-              name: string
-              order: number
-              tag: string | null
-              user_id: number | null
-            }[]
-          }
-        | {
-            Args: {
-              "": unknown
-            }
-            Returns: {
-              created_at: string | null
-              description: string | null
-              id: number
-              name: string
-              order: number
-              tag: string | null
-              user_id: number | null
-            }[]
-          }
+      label: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          created_at: string | null
+          description: string | null
+          id: number
+          name: string
+          order: number
+          tag: string | null
+          user_id: number | null
+        }[]
+      }
       organization:
         | {
             Args: {

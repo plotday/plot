@@ -79,6 +79,7 @@
         "functions/\\[path\\].js",
         "functions/\\[path\\].js.map"
       ]
-    }
+    },
+    "pre-commit": {}
   }
 }

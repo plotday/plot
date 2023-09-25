@@ -8,7 +8,7 @@ import { update } from "@plotday/cal";
 import { getCredentials } from "@plotday/db";
 
 import { getUser } from "app/auth";
-import { createServerClient, safeQuery } from "app/db";
+import { createServerClient } from "app/db";
 import { getEnv } from "app/env";
 
 type Changes = Partial<Event>;
@@ -62,13 +62,14 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
   switch (request.method) {
     case "PATCH": {
       const body: UpdateBody = await request.json();
-      const event = safeQuery(
+      const event = (
         await supabase
           .from("event")
           .select("provider_id,calendar(provider_id,account_id)")
           .eq("id", body.id)
           .maybeSingle()
-      );
+          .throwOnError()
+      ).data;
       if (!event?.calendar) return new Response("Not found", { status: 404 });
       let credentials = await getCredentials(
         supabase,

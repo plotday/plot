@@ -9,7 +9,6 @@ import { authCookieOptions } from "./auth";
 import { getEnv } from "./env";
 
 export type { Database, SupabaseClient } from "@plotday/db";
-export { safeQuery } from "@plotday/db";
 
 export const createServerClient = (
   request: Request,

@@ -1,8 +1,46 @@
-CREATE OR REPLACE FUNCTION event_label_matches (e event_x)
+DROP FUNCTION IF EXISTS "public"."accounts" (calendar);
+
+DROP FUNCTION IF EXISTS "public"."calendars" (event_x);
+
+DROP FUNCTION IF EXISTS "public"."label" (event_x);
+
+CREATE INDEX event_at_idx ON public.event USING spgist (at);
+
+CREATE INDEX invitee_event_id_idx ON public.invitee USING btree (event_id);
+
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE FUNCTION public.account (calendar)
+    RETURNS SETOF account
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        account.*
+    FROM
+        account
+    WHERE
+        account.id = $1.account_id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.calendar (event_x)
+    RETURNS SETOF calendar
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        calendar.*
+    FROM
+        calendar
+    WHERE
+        calendar.id = $1.calendar_id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.event_label_matches (e event_x)
     RETURNS SETOF bigint
     LANGUAGE plpgsql
     STABLE
-    AS $$
+    AS $function$
 BEGIN
     IF e.type <> 'meeting' THEN
         RETURN;
@@ -73,26 +111,14 @@ BEGIN
     --     provider_id = e.provider_id;
     RETURN;
 END;
-$$;
+$function$;
 
-CREATE OR REPLACE VIEW "public"."event_label" WITH ( security_invoker = TRUE)
--- for formatting
-AS
-SELECT
-    e.id AS event_id,
-    l AS label_id
-FROM
-    event_x e
-    CROSS JOIN LATERAL event_label_matches (e) AS l;
-
-CREATE OR REPLACE VIEW "public"."event_x2" WITH ( security_invoker = TRUE)
--- for formatting
-AS
+CREATE OR REPLACE VIEW "public"."event_x2" AS
 SELECT
     min(e.user_id) AS user_id,
     min(e.id) AS id,
     min(e.name) AS name,
-    tstzrange(min(lower(e.at)), min(upper(e.at)), '[)') AS at,
+    tstzrange(min(lower(e.at)), min(upper(e.at)), '[)'::text) AS at,
     min(e.calendar_id) AS calendar_id,
     min(e.provider_id) AS provider_id,
     min(e.series) AS series,
@@ -117,10 +143,9 @@ SELECT
     bool_or(e.all_day) AS all_day,
     min(e.type) AS type,
     min(e.internal) AS internal,
-    array_agg(l::integer) AS labels
-FROM
-    event_x e
-    CROSS JOIN LATERAL event_label_matches (e) AS l
+    array_agg((l.l)::integer) AS labels
+FROM (event_x e
+    CROSS JOIN LATERAL event_label_matches (e.*) l (l))
 GROUP BY
     e.id;
 
@@ -136,4 +161,28 @@ CREATE OR REPLACE FUNCTION public.invitee (event_x2)
     WHERE
         event_id = $1.id
 $function$;
+
+ALTER VIEW gap SET (security_invoker = TRUE);
+
+ALTER VIEW gap_monthly SET (security_invoker = TRUE);
+
+ALTER VIEW gap_daily SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."invitation_admin" SET (security_invoker = FALSE);
+
+ALTER VIEW "public"."event_x" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."event_label" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."event_x2" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."waitlist_admin" SET (security_invoker = FALSE);
+
+ALTER VIEW expenditure SET (security_invoker = TRUE);
+
+ALTER VIEW expenditure_monthly SET (security_invoker = TRUE);
+
+ALTER VIEW expenditure_rolling SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."sync_admin" SET (security_invoker = FALSE);
 

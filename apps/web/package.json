@@ -35,7 +35,7 @@
     "@sentry/integrations": "^7.70.0",
     "@sentry/remix": "^7.70.0",
     "@supabase/auth-helpers-remix": "^0.2.2",
-    "@supabase/supabase-js": "^2.32.0",
+    "@supabase/supabase-js": "^2.36.0",
     "@tabler/icons-react": "^2.30.0",
     "classnames": "^2.3.2",
     "clsx": "^2.0.0",
