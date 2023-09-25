@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 
-import type { LoaderArgs } from "@remix-run/cloudflare";
+import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
+import type { UIMatch } from "@remix-run/react";
 import { useMatches, useSearchParams } from "@remix-run/react";
 
 import { ActionIcon, Box, Popover, Portal, Stack, Switch } from "@mantine/core";
@@ -9,8 +10,9 @@ import { ActionIcon, Box, Popover, Portal, Stack, Switch } from "@mantine/core";
 import { IconAdjustments } from "@tabler/icons-react";
 import add from "date-fns/add";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
-import { promiseHash } from "remix-utils";
+import { promiseHash } from "remix-utils/promise";
 
+import type { DbEvent } from "@plotday/db";
 import { Event } from "@plotday/db";
 
 import { getUser } from "app/auth";
@@ -28,7 +30,7 @@ export type EventFilter = {
   }[];
 };
 
-export const loader = async ({ context, request }: LoaderArgs) => {
+export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   const { response, supabase } = createServerClient(request, context);
   let user = await getUser(supabase);
   if (!user?.id) throw redirect("/login");
@@ -49,15 +51,19 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 };
 
 export default function Events() {
-  const matches = useMatches();
-  const filter = (matches.find(
-    (match) => match.handle && "eventFilter" in match.handle
-  )?.handle?.eventFilter ?? {}) as EventFilter;
+  const matches = useMatches() as UIMatch<
+    { events: DbEvent[] },
+    { eventFilter: EventFilter }
+  >[];
+
+  const filter =
+    matches.find((match) => !!match.handle && "eventFilter" in match.handle)
+      ?.handle?.eventFilter ?? {};
 
   const dbEvents = useMemo(
     () =>
-      matches.find((match) => match.data && "events" in match.data)?.data
-        ?.events ?? [],
+      (matches.find((match) => !!match.data && "events" in match.data)?.data
+        ?.events as DbEvent[]) ?? [],
     [matches]
   );
   const { targets, expenditures } = useTypedLoaderData<typeof loader>();

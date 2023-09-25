@@ -10,8 +10,8 @@ export type ConferencingProvider = "zoom" | "meet" | "teams" | "other";
 
 type Flatten<Type> = Type extends Array<infer Item> ? Item : Type;
 
-type DbEvents = Awaited<ReturnType<typeof Event.GetRange>>;
-type DbEvent = Flatten<DbEvents>;
+export type DbEvents = Awaited<ReturnType<typeof Event.GetRange>>;
+export type DbEvent = Flatten<DbEvents>;
 
 export type Attendance = Database["public"]["Enums"]["event_attendance"] | null;
 

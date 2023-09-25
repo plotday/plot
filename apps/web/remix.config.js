@@ -11,7 +11,9 @@ export default {
   serverModuleFormat: "esm",
   serverPlatform: "neutral",
   serverNodeBuiltinsPolyfill: {
-    modules: {},
+    modules: {
+      process: true,
+    },
   },
   watchPaths: [
     "./node_modules/@plotday/db/src/**",
@@ -20,12 +22,5 @@ export default {
     "./node_modules/@plotday/worker-request/src/**",
   ],
   postcss: true,
-  future: {
-    v2_dev: true,
-    v2_errorBoundary: true,
-    v2_headers: true,
-    v2_meta: true,
-    v2_normalizeFormMethod: true,
-    v2_routeConvention: true,
-  },
+  future: {},
 };

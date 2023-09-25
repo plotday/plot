@@ -50,5 +50,7 @@ export type {
   Labels,
   ConferencingProvider,
   Attendance,
+  DbEvents,
+  DbEvent,
 } from "./event";
 export { Event } from "./event";

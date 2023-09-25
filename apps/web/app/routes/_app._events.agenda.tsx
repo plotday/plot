@@ -1,7 +1,7 @@
-import type { LoaderArgs } from "@remix-run/cloudflare";
+import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 
 import { typedjson } from "remix-typedjson";
-import { promiseHash } from "remix-utils";
+import { promiseHash } from "remix-utils/promise";
 
 import type { Attendance } from "@plotday/db";
 import { Event } from "@plotday/db";
@@ -11,7 +11,7 @@ import { createServerClient } from "app/db";
 
 import type { EventFilter } from "./_app._events";
 
-export const loader = async ({ context, request }: LoaderArgs) => {
+export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   const { response, supabase } = createServerClient(request, context);
   await requireAuth(supabase);
 

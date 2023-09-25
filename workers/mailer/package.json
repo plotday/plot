@@ -14,7 +14,7 @@
   "dependencies": {
     "@plotday/email": "workspace:^",
     "@plotday/worker-request": "workspace:^",
-    "toucan-js": "^3.1.0"
+    "toucan-js": "^3.3.0"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",

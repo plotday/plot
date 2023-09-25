@@ -6,6 +6,7 @@ build
 /functions/\[\[path\]\].js
 /functions/\[\[path\]\].js.map
 /functions/metafile.*
+/functions/version.txt
 /bundled-functions
 /public/build
 .dev.vars

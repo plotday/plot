@@ -1,4 +1,4 @@
-import type { AppLoadContext, LoaderArgs } from "@remix-run/cloudflare";
+import type { AppLoadContext, LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
 
 import { Card, Container, Stack, Text, Title } from "@mantine/core";
@@ -27,7 +27,7 @@ async function requireInvitation(request: Request, context: AppLoadContext) {
     throw redirect(`/waitlist?invitation=${invitation}&error=invalid`);
 }
 
-export const loader = async ({ context, request }: LoaderArgs) => {
+export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   await requireInvitation(request, context);
   return null;
 };

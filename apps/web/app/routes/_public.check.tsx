@@ -1,11 +1,11 @@
-import type { LoaderArgs } from "@remix-run/cloudflare";
+import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
-import type { V2_MetaFunction } from "@remix-run/react";
-import { useLoaderData } from "@remix-run/react";
+import type { MetaFunction } from "@remix-run/react";
 
 import { Alert, Card, Container, Stack, Text, Title } from "@mantine/core";
 
 import { IconConfetti } from "@tabler/icons-react";
+import { useTypedLoaderData } from "remix-typedjson";
 
 import { getUser } from "app/auth";
 import CalendarSources from "app/components/calendar-sources";
@@ -14,7 +14,7 @@ import { APP_NAME } from "app/config";
 import { saveAuthCookie } from "app/cookies.server";
 import { createServerClient, safeQuery } from "app/db";
 
-export async function loader({ request, context }: LoaderArgs) {
+export async function loader({ request, context }: LoaderFunctionArgs) {
   let response: Response | undefined;
   let supabase;
   ({ supabase, response } = createServerClient(request, context));
@@ -39,7 +39,7 @@ export async function loader({ request, context }: LoaderArgs) {
   );
 }
 
-export const meta: V2_MetaFunction = () => {
+export const meta: MetaFunction = () => {
   return [
     {
       title: `${APP_NAME} | Calendar check`,
@@ -48,7 +48,7 @@ export const meta: V2_MetaFunction = () => {
 };
 
 export default function Check() {
-  const { accounts } = useLoaderData();
+  const { accounts } = useTypedLoaderData();
   const success = !!accounts?.length;
   return (
     <Container size="sm" p="sm" mt="xl">

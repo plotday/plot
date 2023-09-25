@@ -1,11 +1,11 @@
-import type { LoaderArgs } from "@remix-run/cloudflare";
+import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
 
 import { completeSignIn, getUser, getUserMetadata } from "app/auth";
 import { DEFAULT_PATH } from "app/config";
 import { createServerAdminClient, createServerClient } from "app/db";
 
-export const loader = async ({ context, request }: LoaderArgs) => {
+export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   let response: Response | undefined;
   const url = new URL(request.url);
   const fromUrl = url.searchParams.get("from") || "/login";

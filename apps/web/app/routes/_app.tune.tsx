@@ -1,4 +1,7 @@
-import type { ActionArgs, LoaderArgs } from "@remix-run/cloudflare";
+import type {
+  ActionFunctionArgs,
+  LoaderFunctionArgs,
+} from "@remix-run/cloudflare";
 import { json, redirect } from "@remix-run/cloudflare";
 import { useFetcher, useSearchParams } from "@remix-run/react";
 
@@ -19,7 +22,7 @@ import add from "date-fns/add";
 import differenceInBusinessDays from "date-fns/differenceInBusinessDays";
 import sub from "date-fns/sub";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
-import { promiseHash } from "remix-utils";
+import { promiseHash } from "remix-utils/promise";
 
 import { formatDate, startOfMonth } from "@plotday/tz";
 
@@ -114,7 +117,7 @@ async function getGapStats(
   }, {} as Record<any, any>);
 }
 
-export const loader = async ({ context, request }: LoaderArgs) => {
+export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   const { response, supabase } = createServerClient(request, context);
   let user = await getUser(supabase);
   if (!user?.id) throw redirect("/login");
@@ -145,7 +148,7 @@ export const loader = async ({ context, request }: LoaderArgs) => {
   );
 };
 
-export async function action({ context, request }: ActionArgs) {
+export async function action({ context, request }: ActionFunctionArgs) {
   const { supabase } = createServerClient(request, context);
   let user = await getUser(supabase);
   if (!user?.id) throw redirect("/login");

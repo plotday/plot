@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-import type { ActionArgs } from "@remix-run/cloudflare";
+import type { ActionFunctionArgs } from "@remix-run/cloudflare";
 import { useFetcher } from "@remix-run/react";
 
 import { getUser } from "app/auth";
@@ -31,7 +31,7 @@ export function useEventReadyResponder() {
   );
 }
 
-export const action = async ({ request, context }: ActionArgs) => {
+export const action = async ({ request, context }: ActionFunctionArgs) => {
   const { supabase, response } = createServerClient(request, context);
   let user = await getUser(supabase);
   if (!user) return new Response("Unauthorized", { status: 401 });

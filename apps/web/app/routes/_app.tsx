@@ -1,13 +1,7 @@
 import { useEffect } from "react";
 
-import type { LoaderArgs } from "@remix-run/cloudflare";
-import {
-  Link,
-  Outlet,
-  useLoaderData,
-  useLocation,
-  useOutletContext,
-} from "@remix-run/react";
+import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
+import { Link, Outlet, useLocation, useOutletContext } from "@remix-run/react";
 
 import { AppShell, Badge, Burger, Center, NavLink } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
@@ -22,8 +16,8 @@ import {
 } from "@tabler/icons-react";
 import classes from "css/_app.module.css";
 import add from "date-fns/add";
-import { typedjson } from "remix-typedjson";
-import { promiseHash } from "remix-utils";
+import { typedjson, useTypedLoaderData } from "remix-typedjson";
+import { promiseHash } from "remix-utils/promise";
 
 import { Event } from "@plotday/db";
 import type { Attendance } from "@plotday/db";
@@ -33,7 +27,7 @@ import Logo from "app/components/logo";
 import { createServerClient } from "app/db";
 import type { ContextType } from "app/hooks";
 
-export const loader = async ({ context, request }: LoaderArgs) => {
+export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   let response: Response | undefined;
   let supabase;
   ({ supabase, response } = createServerClient(request, context));
@@ -75,7 +69,7 @@ function Count({ count }: { count: number }) {
 
 function AppNavbar() {
   const location = useLocation();
-  const { counts } = useLoaderData();
+  const { counts } = useTypedLoaderData();
 
   return (
     <AppShell.Navbar>

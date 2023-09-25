@@ -1,4 +1,4 @@
-import type { LoaderArgs } from "@remix-run/cloudflare";
+import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { redirect } from "@remix-run/cloudflare";
 
 import type { Database } from "@plotday/db";
@@ -22,7 +22,7 @@ function toProvider(
   }
 }
 
-export const loader = async ({ context, request }: LoaderArgs) => {
+export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   let userId: number | null = null;
   // Supabase appends an extra query string
   const url = new URL(request.url.replace("&%3F", "&"));

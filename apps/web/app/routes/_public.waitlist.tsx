@@ -1,8 +1,8 @@
 import { useState } from "react";
 
-import type { ActionArgs } from "@remix-run/cloudflare";
+import type { ActionFunctionArgs } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
-import { Form, useActionData, useSearchParams } from "@remix-run/react";
+import { Form, useSearchParams } from "@remix-run/react";
 
 import {
   Anchor,
@@ -17,10 +17,11 @@ import {
 } from "@mantine/core";
 
 import { IconMail } from "@tabler/icons-react";
+import { useTypedActionData } from "remix-typedjson";
 
 import { createServerAdminClient, safeQuery } from "app/db";
 
-export async function action({ request, context }: ActionArgs) {
+export async function action({ request, context }: ActionFunctionArgs) {
   const body = await request.formData();
   const email = body.get("email")?.toString();
   if (!email) return null;
@@ -63,7 +64,7 @@ export function WaitlistForm() {
 export default function Waitlist() {
   const [searchParams] = useSearchParams();
   const [hasError, setHasError] = useState(searchParams.has("error"));
-  const email = useActionData()?.email;
+  const email = useTypedActionData()?.email;
 
   return (
     <Container size="xs" p="sm" mt="xl">

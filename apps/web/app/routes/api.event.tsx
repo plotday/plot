@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-import type { ActionArgs } from "@remix-run/cloudflare";
+import type { ActionFunctionArgs } from "@remix-run/cloudflare";
 import { useFetcher } from "@remix-run/react";
 
 import type { CalendarConfig, Event } from "@plotday/cal";
@@ -44,7 +44,7 @@ export function useEventUpdater() {
   );
 }
 
-export const action = async ({ request, context }: ActionArgs) => {
+export const action = async ({ request, context }: ActionFunctionArgs) => {
   let response: Response | undefined;
   let supabase;
   ({ supabase, response } = createServerClient(request, context));

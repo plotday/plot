@@ -1,11 +1,10 @@
 import type { ReactNode } from "react";
 
-import type { LoaderArgs } from "@remix-run/cloudflare";
+import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
 import {
   Link,
   Outlet,
-  useLoaderData,
   useLocation,
   useMatches,
   useOutletContext,
@@ -22,6 +21,7 @@ import {
 
 import { IconBrandLinkedin, IconMail } from "@tabler/icons-react";
 import classes from "css/_public.module.css";
+import { useTypedLoaderData } from "remix-typedjson";
 
 import { getUser } from "app/auth";
 import { createServerClient } from "app/db";
@@ -30,7 +30,7 @@ import type { ContextType } from "app/hooks";
 import Logo from "../components/logo";
 import { DEFAULT_PATH } from "../config";
 
-export const loader = async ({ context, request }: LoaderArgs) => {
+export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   let response: Response | undefined;
   let supabase;
   ({ supabase, response } = createServerClient(request, context));
@@ -40,7 +40,7 @@ export const loader = async ({ context, request }: LoaderArgs) => {
 };
 
 function AppHeader({ menu }: { menu?: ReactNode }) {
-  const { user } = useLoaderData();
+  const { user } = useTypedLoaderData();
   const location = useLocation();
   const routes = useMatches();
   const isPublic = routes.some((r) => r.id === "routes/_public");

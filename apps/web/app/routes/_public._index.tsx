@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { V2_MetaFunction } from "@remix-run/react";
+import type { MetaFunction } from "@remix-run/react";
 
 import { Box, Container, Flex, List, Stack, Text, Title } from "@mantine/core";
 
@@ -16,7 +16,7 @@ import { APP_NAME } from "app/config";
 
 import { WaitlistForm } from "./_public.waitlist";
 
-export const meta: V2_MetaFunction = () => {
+export const meta: MetaFunction = () => {
   return [
     {
       title: `${APP_NAME} | A calendar for being better than busy`,

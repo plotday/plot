@@ -2,8 +2,8 @@ import { useEffect, useMemo } from "react";
 
 import type {
   LinksFunction,
-  LoaderArgs,
-  V2_MetaFunction,
+  LoaderFunctionArgs,
+  MetaFunction,
 } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
 import { cssBundleHref } from "@remix-run/css-bundle";
@@ -47,7 +47,7 @@ import { createServerClient } from "./db";
 import { getBrowserEnv } from "./env";
 import { resolver, theme } from "./theme";
 
-export const loader = async ({ context, request }: LoaderArgs) => {
+export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   // Can't use getEnv here since we don't want to fail if missing variables
   const SENTRY_DSN = (context.env as any)?.SENTRY_DSN;
   if (SENTRY_DSN) SentryServerInit(SENTRY_DSN, request);
@@ -77,7 +77,7 @@ export const loader = async ({ context, request }: LoaderArgs) => {
   );
 };
 
-export const meta: V2_MetaFunction = () => {
+export const meta: MetaFunction = () => {
   return [{ title: APP_NAME }];
 };
 
