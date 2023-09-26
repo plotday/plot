@@ -1,4 +1,4 @@
-import { AppLoadContext } from "@remix-run/cloudflare";
+import type { AppLoadContext } from "@remix-run/cloudflare";
 
 import { RewriteFrames } from "@sentry/integrations";
 import { Toucan } from "toucan-js";
@@ -20,6 +20,7 @@ export const SentryServerOptions = {
       iteratee: (frame) => {
         if (!frame.filename) return frame;
         frame.filename = "index.js";
+        frame.abs_path = "/index.js";
         return frame;
       },
     }),

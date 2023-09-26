@@ -3,7 +3,16 @@ import { useEffect } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { Link, Outlet, useLocation, useOutletContext } from "@remix-run/react";
 
-import { AppShell, Badge, Burger, Center, NavLink } from "@mantine/core";
+import {
+  Anchor,
+  AppShell,
+  Badge,
+  Burger,
+  Center,
+  Container,
+  NavLink,
+  Text,
+} from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 
 import {
@@ -24,7 +33,9 @@ import type { Attendance } from "@plotday/db";
 
 import { requireAuth } from "app/auth";
 import Logo from "app/components/logo";
+import { DEFAULT_PATH } from "app/config";
 import { createServerClient } from "app/db";
+import { ErrorPage } from "app/error";
 import type { ContextType } from "app/hooks";
 
 export const loader = async ({ context, request }: LoaderFunctionArgs) => {
@@ -63,6 +74,18 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
     { headers: response.headers }
   );
 };
+
+export function ErrorBoundary() {
+  return (
+    <Container mt="xl">
+      <ErrorPage>
+        <Text>
+          Please <Anchor href={DEFAULT_PATH}>give it another try</Anchor>.
+        </Text>
+      </ErrorPage>
+    </Container>
+  );
+}
 
 function Count({ count }: { count: number }) {
   if (count === 0) return null;

@@ -45,13 +45,13 @@ export function handleError(
   error: unknown,
   { request, context }: DataFunctionArgs
 ): void {
+  console.error(error);
   SentryServerInit(context, request);
   // if (isRouteErrorResponse(error)) {
   //   console.error(`${error.status} ${error.statusText}`);
   if (!request.signal.aborted && error instanceof Error) {
     // TODO: Once Sentry supports Cloudflare Workers (replacing Toucan):
     // Sentry.captureRemixServerException(error, "remix.server", request);
-    console.error(error);
     Sentry?.captureException?.(error);
   }
 }

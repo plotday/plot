@@ -3,7 +3,7 @@ import { Toucan } from "toucan-js";
 import type { CalendarConfig, OutlookChangeNotification } from "@plotday/cal";
 import { deleteWatch, watch } from "@plotday/cal";
 import type { Database } from "@plotday/db";
-import { createClient, getCredentials } from "@plotday/db";
+import { createClient, getCredentials, safeQuery } from "@plotday/db";
 import type { SyncRequest } from "@plotday/worker-request";
 
 type Calendar = Database["public"]["Tables"]["calendar"]["Row"];
@@ -100,14 +100,13 @@ async function queueSync(
   const calendarConfig = getCalendarConfig(env);
 
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
-  const calendar = (
+  const calendar = safeQuery(
     await supabase
       .from("calendar")
       .select()
       .eq("watch_id", watchId)
       .maybeSingle()
-      .throwOnError()
-  ).data;
+  );
   if (!calendar) throw new Error(`Calendar for watch ${watchId} not found`);
 
   const accountId = calendar.account_id;
@@ -122,11 +121,12 @@ async function queueSync(
       resourceId
     ));
     if (credentialsChanged) {
-      await supabase
-        .from("account")
-        .update({ credentials })
-        .eq("id", accountId)
-        .throwOnError();
+      safeQuery(
+        await supabase
+          .from("account")
+          .update({ credentials })
+          .eq("id", accountId)
+      );
     }
     return;
   }
@@ -191,36 +191,34 @@ async function renewWatch(env: Env, calendar: Calendar) {
       : undefined
   ));
   if (credentialsChanged) {
-    await supabase
-      .from("account")
-      .update({ credentials })
-      .eq("id", accountId)
-      .throwOnError();
+    safeQuery(
+      await supabase.from("account").update({ credentials }).eq("id", accountId)
+    );
   }
 
-  await supabase
-    .from("calendar")
-    .update({
-      watch_id: state.watchId,
-      provider_id: state.calendarId,
-      watch_secret: state.secret,
-      watch_expires_at: state.expiry.toISOString(),
-    })
-    .eq("id", calendar.id)
-    .throwOnError();
+  safeQuery(
+    await supabase
+      .from("calendar")
+      .update({
+        watch_id: state.watchId,
+        provider_id: state.calendarId,
+        watch_secret: state.secret,
+        watch_expires_at: state.expiry.toISOString(),
+      })
+      .eq("id", calendar.id)
+  );
   return;
 }
 
 async function renewWatchById(env: Env, watchId: string) {
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
-  const calendar = (
+  const calendar = safeQuery(
     await supabase
       .from("calendar")
       .select()
       .eq("watch_id", watchId)
       .maybeSingle()
-      .throwOnError()
-  ).data;
+  );
   if (!calendar) throw new Error(`Calendar for watch ${watchId} not found`);
   await renewWatch(env, calendar);
 }
@@ -285,7 +283,7 @@ async function handleOutlook(request: Request, env: Env) {
 async function renewWatches(env: Env) {
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
   const calendars =
-    (
+    safeQuery(
       await supabase
         .from("calendar")
         .select()
@@ -293,8 +291,7 @@ async function renewWatches(env: Env) {
           "watch_expires_at",
           new Date(Date.now() + 60 * 60 * 1000).toISOString()
         )
-        .throwOnError()
-    ).data || [];
+    ) || [];
   for (const calendar of calendars) {
     try {
       await renewWatch(env, calendar);

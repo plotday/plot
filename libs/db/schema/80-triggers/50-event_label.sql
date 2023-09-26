@@ -98,3 +98,18 @@ CREATE TRIGGER event_update_trigger
     FOR EACH ROW
     EXECUTE FUNCTION update_event_labels ();
 
+CREATE OR REPLACE FUNCTION update_all_event_labels ()
+    RETURNS void
+    AS $$
+BEGIN
+    DELETE FROM event_label;
+    INSERT INTO event_label (event_id, label_id)
+    SELECT
+        id AS event_id,
+        unnest(event_label_ids (e)) AS label_id
+    FROM
+        event_x e;
+END;
+$$
+LANGUAGE plpgsql;
+

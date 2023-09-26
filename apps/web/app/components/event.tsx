@@ -512,7 +512,12 @@ function EventCard({
       setAttendanceState((attendance || null) as Attendance);
       const email = event.email;
       if (!email) throw new Error("Missing calendar email");
-      responder(event.id, attendance as Attendance, email, event.isOrganizer);
+      responder(
+        event.id,
+        (attendance || null) as Attendance,
+        email,
+        event.isOrganizer
+      );
     },
     [event, responder]
   );

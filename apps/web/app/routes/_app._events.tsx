@@ -18,6 +18,7 @@ import { Event } from "@plotday/db";
 import { getUser } from "app/auth";
 import { EventList } from "app/components/event";
 import { createServerClient } from "app/db";
+import { ErrorPage } from "app/error";
 import { useTz } from "app/hooks";
 import { getLabels } from "app/labels";
 import { getExpenditures, getTargets } from "app/target";
@@ -51,6 +52,10 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
     { headers: response.headers }
   );
 };
+
+export function ErrorBoundary() {
+  return <ErrorPage />;
+}
 
 export default function Events() {
   const matches = useMatches() as UIMatch<

@@ -31,7 +31,8 @@ import { Gauge } from "app/components/gauge";
 import type { LabelStats, LabelStatsMap } from "app/components/tuner";
 import { TunerList } from "app/components/tuner";
 import type { SupabaseClient } from "app/db";
-import { createServerClient } from "app/db";
+import { createServerClient, safeQuery } from "app/db";
+import { ErrorPage } from "app/error";
 import { useEventWatch } from "app/event";
 import { useUser } from "app/hooks";
 import { getTargets } from "app/target";
@@ -57,41 +58,45 @@ async function getLabelStats(
 ) {
   const dates = months.map((month) => formatDate(month, tz, "yyyy-MM-01"));
   return (
-    (
+    safeQuery(
       await supabase
         .from("expenditure_monthly")
         .select("*,label(tag,name)")
         .eq("user_id", userId)
         .in("month", dates)
-        .throwOnError()
-    ).data || []
-  ).reduce((acc, cur) => {
-    let {
-      user_id: _user_id,
-      month,
-      attendance,
-      label_id,
-      label,
-      event_count,
-      minutes,
-      org_event_count,
-      org_minutes,
-      ...rest
-    } = cur;
-    if (!month || !label_id) return acc;
-    month = month.replace("-01", "");
-    acc[month] ??= {};
-    acc[month][label_id] = {
-      ...acc[month][label_id],
-      id: label_id,
-      ...label,
-      ...rest,
-      [attendance === "attend" || attendance === "skip"
-        ? attendance
-        : "pending"]: { event_count, minutes, org_minutes, org_event_count },
-    } as LabelStats;
-    return acc;
-  }, {} as MonthlyLabelStats);
+    ) || []
+  ).reduce(
+    (acc, cur) => {
+      let {
+        user_id: _user_id,
+        month,
+        attendance,
+        label_id,
+        label,
+        event_count,
+        minutes,
+        org_event_count,
+        org_minutes,
+        ...rest
+      } = cur;
+      if (!month || !label_id) return acc;
+      month = month.replace("-01", "");
+      acc[month][label_id] = {
+        ...acc[month][label_id],
+        id: label_id,
+        ...label,
+        ...rest,
+        [attendance === "attend" || attendance === "skip"
+          ? attendance
+          : "pending"]: { event_count, minutes, org_minutes, org_event_count },
+      } as LabelStats;
+      return acc;
+    },
+    dates.reduce((acc, month) => {
+      acc[month.replace("-01", "")] = {};
+      return acc;
+    }, {} as MonthlyLabelStats)
+  );
 }
 
 async function getGapStats(
@@ -102,14 +107,13 @@ async function getGapStats(
 ) {
   const dates = months.map((month) => formatDate(month, tz, "yyyy-MM-01"));
   return (
-    (
+    safeQuery(
       await supabase
         .from("gap_monthly")
         .select("*")
         .eq("user_id", userId)
         .in("month", dates)
-        .throwOnError()
-    ).data || []
+    ) || []
   ).reduce((acc, cur) => {
     let { month, user_id: _user_id, ...rest } = cur;
     if (!month) return acc;
@@ -161,27 +165,31 @@ export async function action({ context, request }: ActionFunctionArgs) {
     ) as TargetUpdate;
     for (const [labelId, target] of Object.entries(targets)) {
       if (target.target !== null) {
-        await supabase
-          .from("target")
-          .upsert({
+        safeQuery(
+          await supabase.from("target").upsert({
             user_id: user.id,
             label_id: parseInt(labelId),
             target: target.target,
             org: target.org,
           })
-          .throwOnError();
+        );
       } else {
-        await supabase
-          .from("target")
-          .delete()
-          .eq("user_id", user.id)
-          .eq("label_id", parseInt(labelId))
-          .eq("org", target.org)
-          .throwOnError();
+        safeQuery(
+          await supabase
+            .from("target")
+            .delete()
+            .eq("user_id", user.id)
+            .eq("label_id", parseInt(labelId))
+            .eq("org", target.org)
+        );
       }
     }
   }
   return json({});
+}
+
+export function ErrorBoundary() {
+  return <ErrorPage />;
 }
 
 export default function Tune() {
@@ -272,7 +280,7 @@ export default function Tune() {
           </Group>
         </Center>
       </Paper>
-      <Stack>
+      <Stack gap="xl">
         <Card w="fit-content">
           <Gauge
             label="Focus"
@@ -304,7 +312,7 @@ export default function Tune() {
             org={false}
           />
         </Card>
-        <Card mt="xl">
+        <Card>
           <Title order={2} mb="md">
             <Tooltip label="Time the organization spends in meeting that you organize">
               <Text span inherit>

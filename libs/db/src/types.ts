@@ -1069,6 +1069,10 @@ export interface Database {
               name: string
             }[]
           }
+      update_all_event_labels: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       upsert_event: {
         Args: {
           _calendar_id: number

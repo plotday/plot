@@ -3,7 +3,7 @@ import { Toucan } from "toucan-js";
 import type { Event, EventResponse } from "@plotday/cal";
 import { transform } from "@plotday/cal";
 import type { Database } from "@plotday/db";
-import { createClient } from "@plotday/db";
+import { createClient, safeQuery } from "@plotday/db";
 import type { EventSyncRequest } from "@plotday/worker-request";
 
 type DbEvent = Database["public"]["Tables"]["event"]["Insert"];
@@ -99,8 +99,8 @@ export default {
             // TODO: handle working locations
             if (eventType(event) !== "event") continue;
             const db = eventToDb(message.body.calendarId, event);
-            await supabase
-              .rpc("upsert_event", {
+            safeQuery(
+              await supabase.rpc("upsert_event", {
                 _calendar_id: message.body.calendarId,
                 _raw_event: {
                   calendar_id: message.body.calendarId,
@@ -112,16 +112,17 @@ export default {
                 _organizer: db.organizer as DbContact,
                 _invitees: db.invitees,
               })
-              .throwOnError();
+            );
           }
           if (message.body.fullSyncComplete) {
-            await supabase
-              .from("calendar")
-              .update({
-                full_sync_at: new Date().toISOString(),
-              })
-              .eq("id", message.body.calendarId)
-              .throwOnError();
+            safeQuery(
+              await supabase
+                .from("calendar")
+                .update({
+                  full_sync_at: new Date().toISOString(),
+                })
+                .eq("id", message.body.calendarId)
+            );
           }
           message.ack();
         } catch (e) {

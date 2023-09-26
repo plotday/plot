@@ -1,6 +1,7 @@
 import type { SupabaseClient as _SupabaseClient } from "@supabase/supabase-js";
 import { createClient as supabaseCreateClient } from "@supabase/supabase-js";
 
+import { safeQuery } from "./query";
 import type { Database } from "./types";
 
 export type { Database } from "./types";
@@ -20,14 +21,9 @@ export async function getCredentials(
   supabase: SupabaseClient,
   accountId: number
 ) {
-  const account = (
-    await supabase
-      .from("account")
-      .select()
-      .eq("id", accountId)
-      .maybeSingle()
-      .throwOnError()
-  ).data;
+  const account = safeQuery(
+    await supabase.from("account").select().eq("id", accountId).maybeSingle()
+  );
   if (!account) throw new Error(`Account ${accountId} not found`);
   if (
     !account.credentials ||
@@ -56,3 +52,5 @@ export type {
   DbEvent,
 } from "./event";
 export { Event } from "./event";
+
+export { safeQuery } from "./query";

@@ -19,7 +19,7 @@ import {
 import { IconMail } from "@tabler/icons-react";
 import { useTypedActionData } from "remix-typedjson";
 
-import { createServerAdminClient } from "app/db";
+import { createServerAdminClient, safeQuery } from "app/db";
 
 export async function action({ request, context }: ActionFunctionArgs) {
   const body = await request.formData();
@@ -27,10 +27,11 @@ export async function action({ request, context }: ActionFunctionArgs) {
   if (!email) return null;
 
   const supabaseAdmin = createServerAdminClient(context);
-  await supabaseAdmin
-    .from("waitlist")
-    .upsert({ email }, { onConflict: "email", ignoreDuplicates: true })
-    .throwOnError();
+  safeQuery(
+    await supabaseAdmin
+      .from("waitlist")
+      .upsert({ email }, { onConflict: "email", ignoreDuplicates: true })
+  );
 
   return json({
     email,

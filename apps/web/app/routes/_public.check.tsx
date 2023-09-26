@@ -12,7 +12,7 @@ import CalendarSources from "app/components/calendar-sources";
 import Consent from "app/components/consent";
 import { APP_NAME } from "app/config";
 import { saveAuthCookie } from "app/cookies.server";
-import { createServerClient } from "app/db";
+import { createServerClient, safeQuery } from "app/db";
 
 export async function loader({ request, context }: LoaderFunctionArgs) {
   let response: Response | undefined;
@@ -22,9 +22,9 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
   let user = await getUser(supabase);
   let accounts = null;
   if (user) {
-    accounts = (
-      await supabase.from("account").select("id,provider,email").throwOnError()
-    ).data;
+    accounts = safeQuery(
+      await supabase.from("account").select("id,provider,email")
+    );
   }
 
   saveAuthCookie(request, response);

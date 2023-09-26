@@ -14,35 +14,30 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-  isRouteErrorResponse,
   useLoaderData,
   useRevalidator,
-  useRouteError,
 } from "@remix-run/react";
 
 import { createBrowserClient } from "@supabase/auth-helpers-remix";
 
 import {
+  Anchor,
   ColorSchemeScript,
   Container,
   MantineProvider,
   Text,
-  Title,
 } from "@mantine/core";
 import "@mantine/core/styles.css";
 
 import type { Database } from "@plotday/db";
 
+import { APP_NAME } from "app/config";
+import { ErrorPage } from "app/error";
 import type { ContextType } from "app/hooks";
-import {
-  Sentry as SentryClient,
-  SentryClientInit,
-  captureRemixErrorBoundaryError,
-} from "app/sentry";
+import { Sentry as SentryClient, SentryClientInit } from "app/sentry";
 import { Sentry as SentryServer } from "app/sentry.server";
 
 import { authCookieOptions, getUser } from "./auth";
-import { APP_NAME } from "./config";
 import { createServerClient } from "./db";
 import { getBrowserEnv } from "./env";
 import { resolver, theme } from "./theme";
@@ -133,42 +128,14 @@ function Page({ children }: { children: React.ReactNode }) {
 }
 
 export function ErrorBoundary() {
-  const error = useRouteError();
-
-  let title = "Something went wrong";
-  let message;
-  if (isRouteErrorResponse(error)) {
-    title = "Page not found";
-  } else {
-    captureRemixErrorBoundaryError(error);
-    if (error instanceof Error) {
-      console.log("message", error.message);
-      console.log("stack", error.stack);
-      if (error.stack) {
-        message = error.stack;
-      } else {
-        message = error.message;
-      }
-    } else if (typeof error === "string") {
-      message = error;
-    } else if (
-      error &&
-      typeof error === "object" &&
-      "message" in error &&
-      typeof error.message === "string"
-    ) {
-      message = error.message;
-    } else {
-      message = "Unknown error";
-    }
-  }
   return (
     <Page>
       <Container mt="xl">
-        <Title mb="md">{title}</Title>
-        {message?.split?.("\n").map((line, i) => (
-          <Text key={i}>{line}</Text>
-        ))}
+        <ErrorPage>
+          <Text>
+            Please <Anchor href="/">give it another try</Anchor>.
+          </Text>
+        </ErrorPage>
       </Container>
     </Page>
   );

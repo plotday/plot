@@ -88,6 +88,10 @@ export function TunerList({
     (target) => target !== undefined
   );
 
+  if (Object.keys(labelStats).length === 0) {
+    return <Text>No data</Text>;
+  }
+
   return (
     <Table.ScrollContainer minWidth={500}>
       <Table>

@@ -3,6 +3,7 @@ import differenceInMinutes from "date-fns/differenceInMinutes";
 import { toDate } from "@plotday/tz";
 
 import type { SupabaseClient } from "./";
+import { safeQuery } from "./query";
 import type { Database } from "./types";
 
 export type Label = {
@@ -39,14 +40,13 @@ type PostgrestQueryBuilder = ReturnType<
 
 export class Event {
   public static async Get(supabase: SupabaseClient, eventId: number) {
-    return (
+    return safeQuery(
       await supabase
         .from("event_x")
         .select(EVENT_QUERY)
         .eq("id", eventId)
         .maybeSingle()
-        .throwOnError()
-    ).data;
+    );
   }
 
   private static AddFilters<T extends PostgrestQueryBuilder>(
@@ -108,7 +108,7 @@ export class Event {
       .order("at", { ascending: forward })
       .order("response", { foreignTable: "invitee" })
       .limit(80);
-    const events = (await eventsQuery.throwOnError()).data;
+    const events = safeQuery(await eventsQuery);
     type retType = NonNullable<typeof events>;
     if (!events) return [] as retType;
 

@@ -4,7 +4,7 @@ import { Toucan } from "toucan-js";
 import type { CalendarConfig, SyncState, WatchState } from "@plotday/cal";
 import { sync, watch } from "@plotday/cal";
 import type { SupabaseClient } from "@plotday/db";
-import { createClient, getCredentials } from "@plotday/db";
+import { createClient, getCredentials, safeQuery } from "@plotday/db";
 import type {
   EventSyncRequest,
   SyncRequest,
@@ -70,7 +70,7 @@ async function runSync(
     // Create a new watch
     let watchState = syncType === "full" ? await updateWatch() : null;
 
-    calendar = (
+    calendar = safeQuery(
       await supabase
         .from("calendar")
         .upsert(
@@ -97,8 +97,7 @@ async function runSync(
         )
         .select()
         .single()
-        .throwOnError()
-    ).data;
+    );
     if (!calendar) throw new Error("Could not create calendar");
 
     // Update a missing or expired watch
@@ -109,16 +108,17 @@ async function runSync(
     ) {
       watchState = await updateWatch();
       if (watchState) {
-        await supabase
-          .from("calendar")
-          .update({
-            watch_id: watchState.watchId,
-            provider_id: watchState.calendarId,
-            watch_secret: watchState.secret,
-            watch_expires_at: watchState.expiry.toISOString(),
-          })
-          .eq("id", calendar.id)
-          .throwOnError();
+        safeQuery(
+          await supabase
+            .from("calendar")
+            .update({
+              watch_id: watchState.watchId,
+              provider_id: watchState.calendarId,
+              watch_secret: watchState.secret,
+              watch_expires_at: watchState.expiry.toISOString(),
+            })
+            .eq("id", calendar.id)
+        );
       }
     }
 
@@ -202,27 +202,29 @@ async function runSync(
       await sendBatch();
     }
 
-    await supabase
-      .from("account")
-      .update({
-        credentials,
-      })
-      .eq("id", accountId)
-      .single()
-      .throwOnError();
-    if (syncType !== "partial") {
+    safeQuery(
       await supabase
-        .from("calendar")
+        .from("account")
         .update({
-          starts_at: state.min.toISOString(),
-          ends_at: state.max.toISOString(),
-          more: state.more,
-          next_token: state.nextToken,
-          sequence: state.sequence,
-          synced_at: new Date().toISOString(),
+          credentials,
         })
-        .eq("id", calendar.id)
-        .throwOnError();
+        .eq("id", accountId)
+        .single()
+    );
+    if (syncType !== "partial") {
+      safeQuery(
+        await supabase
+          .from("calendar")
+          .update({
+            starts_at: state.min.toISOString(),
+            ends_at: state.max.toISOString(),
+            more: state.more,
+            next_token: state.nextToken,
+            sequence: state.sequence,
+            synced_at: new Date().toISOString(),
+          })
+          .eq("id", calendar.id)
+      );
     }
     if (syncType === "full") {
       await env.EVENT_QUEUE.send({
@@ -234,13 +236,14 @@ async function runSync(
     }
   } catch (error) {
     if (calendar && error instanceof Error) {
-      await supabase
-        .from("calendar")
-        .update({
-          sync_error: error.message,
-        })
-        .eq("id", calendar.id)
-        .throwOnError();
+      safeQuery(
+        await supabase
+          .from("calendar")
+          .update({
+            sync_error: error.message,
+          })
+          .eq("id", calendar.id)
+      );
     }
     throw error;
   }
@@ -252,12 +255,13 @@ async function runSync(
         resolve(null);
       }, 30_000);
     });
-    await supabase
-      .from("raw_event")
-      .delete()
-      .eq("calendar_id", calendar.id)
-      .lt("sequence", state.sequence)
-      .throwOnError();
+    safeQuery(
+      await supabase
+        .from("raw_event")
+        .delete()
+        .eq("calendar_id", calendar.id)
+        .lt("sequence", state.sequence)
+    );
   }
 }
 

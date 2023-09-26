@@ -19,7 +19,6 @@
     "lint": "export VERSION=lint && pnpm set-version && tsc && eslint ."
   },
   "dependencies": {
-    "@cloudflare/pages-plugin-sentry": "^1.1.1",
     "@mantine/core": "7.0.0",
     "@mantine/dates": "7.0.0",
     "@mantine/hooks": "7.0.0",

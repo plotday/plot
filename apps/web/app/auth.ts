@@ -4,6 +4,7 @@ import type { Provider, Session, SupabaseClient } from "@supabase/supabase-js";
 
 import type { CalendarProvider } from "@plotday/cal";
 
+import { safeQuery } from "app/db";
 import { Sentry as SentryServer } from "app/sentry.server";
 
 export const authCookieOptions = {
@@ -144,14 +145,13 @@ export const getUser = async (supabase: SupabaseClient, session?: Session) => {
     return null;
   }
 
-  const user = (
+  const user = safeQuery(
     await supabase
       .from("account")
       .select("user( id, email, name, timezone, invitation )")
       .eq("auth_user_id", userId)
       .maybeSingle()
-      .throwOnError()
-  ).data?.user;
+  )?.user;
   if (!user) return null;
 
   // Typescript somehow confuses this as returning an array rather than an object,

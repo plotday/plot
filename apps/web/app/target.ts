@@ -2,6 +2,7 @@ import { formatDate } from "@plotday/tz";
 
 import type { LabelStats, LabelStatsMap } from "app/components/tuner";
 import type { SupabaseClient } from "app/db";
+import { safeQuery } from "app/db";
 
 export type DailyLabelStats = {
   [day: string]: LabelStatsMap;
@@ -9,13 +10,9 @@ export type DailyLabelStats = {
 
 export async function getTargets(supabase: SupabaseClient, userId: number) {
   return (
-    (
-      await supabase
-        .from("target")
-        .select("*")
-        .eq("user_id", userId)
-        .throwOnError()
-    ).data || []
+    safeQuery(
+      await supabase.from("target").select("*").eq("user_id", userId)
+    ) || []
   ).reduce(
     (acc, cur) => {
       const { label_id, target, org } = cur;
@@ -41,15 +38,14 @@ export async function getExpenditures(
   end: Date
 ) {
   return (
-    (
+    safeQuery(
       await supabase
         .from("expenditure_rolling")
         .select("*")
         .eq("user_id", userId)
         .gte("day", formatDate(start, tz, "yyyy-MM-dd"))
         .lte("day", formatDate(end, tz, "yyyy-MM-dd"))
-        .throwOnError()
-    ).data || []
+    ) || []
   ).reduce((acc, cur) => {
     let {
       user_id: _user_id,
