@@ -357,7 +357,7 @@ export interface Database {
           }
         ]
       }
-      event_label_override: {
+      event_label: {
         Row: {
           created_at: string | null
           event_id: number | null
@@ -765,47 +765,7 @@ export interface Database {
       }
     }
     Views: {
-      event_label: {
-        Row: {
-          event_id: number | null
-          label_id: number | null
-        }
-        Relationships: []
-      }
       event_x: {
-        Row: {
-          all_day: boolean | null
-          at: unknown | null
-          attendance: Database["public"]["Enums"]["event_attendance"] | null
-          attendee_count: number | null
-          availability: Database["public"]["Enums"]["event_availability"] | null
-          calendar_id: number | null
-          conferencing_url: string | null
-          created_at: string | null
-          day: string | null
-          description: string | null
-          id: number | null
-          initiated: boolean | null
-          internal: Database["public"]["Enums"]["event_internal"] | null
-          invitee_count: number | null
-          minutes: number | null
-          name: string | null
-          organizer: number | null
-          provider_id: string | null
-          provider_link: string | null
-          ready: boolean | null
-          response: Database["public"]["Enums"]["event_response"] | null
-          reviewed: boolean | null
-          series: string | null
-          status: Database["public"]["Enums"]["event_status"] | null
-          summary: string | null
-          type: Database["public"]["Enums"]["event_type"] | null
-          user_id: number | null
-          visibility: Database["public"]["Enums"]["event_visibility"] | null
-        }
-        Relationships: []
-      }
-      event_x2: {
         Row: {
           all_day: boolean | null
           at: unknown | null
@@ -850,7 +810,14 @@ export interface Database {
           org_minutes: number | null
           user_id: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "event_label_label_id_fkey"
+            columns: ["label_id"]
+            referencedRelation: "label"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       expenditure_monthly: {
         Row: {
@@ -863,7 +830,14 @@ export interface Database {
           org_minutes: number | null
           user_id: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "event_label_label_id_fkey"
+            columns: ["label_id"]
+            referencedRelation: "label"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       expenditure_rolling: {
         Row: {
@@ -1013,11 +987,11 @@ export interface Database {
           watch_secret: string | null
         }[]
       }
-      event_label_matches: {
+      event_label_ids: {
         Args: {
           e: unknown
         }
-        Returns: number[]
+        Returns: unknown
       }
       extract_minutes: {
         Args: {
@@ -1040,33 +1014,19 @@ export interface Database {
         }
         Returns: number
       }
-      invitee:
-        | {
-            Args: {
-              "": unknown
-            }
-            Returns: {
-              contact_id: number
-              created_at: string
-              event_id: number
-              is_optional: boolean
-              response: Database["public"]["Enums"]["event_response"] | null
-              sequence: number
-            }[]
-          }
-        | {
-            Args: {
-              "": unknown
-            }
-            Returns: {
-              contact_id: number
-              created_at: string
-              event_id: number
-              is_optional: boolean
-              response: Database["public"]["Enums"]["event_response"] | null
-              sequence: number
-            }[]
-          }
+      invitee: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          contact_id: number
+          created_at: string
+          event_id: number
+          is_optional: boolean
+          response: Database["public"]["Enums"]["event_response"] | null
+          sequence: number
+        }[]
+      }
       is_user_account: {
         Args: {
           auth_user_id: string

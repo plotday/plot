@@ -1,3 +1,5 @@
+import { AppLoadContext } from "@remix-run/cloudflare";
+
 import { RewriteFrames } from "@sentry/integrations";
 import { Toucan } from "toucan-js";
 
@@ -24,8 +26,13 @@ export const SentryServerOptions = {
   ],
 };
 
-export const SentryServerInit = (dsn: string, request?: Request) => {
+export const SentryServerInit = (
+  context: AppLoadContext,
+  request?: Request
+) => {
   if (Sentry) return;
+  const dsn = (context.env as any)?.SENTRY_DSN;
+  if (!dsn) return;
   // @ts-ignore
   Sentry = new Toucan({
     dsn,

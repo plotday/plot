@@ -32,7 +32,7 @@
     "test:setup": "supabase start -x gotrue,realtime,storage-api,imgproxy,inbucket,studio,edge-runtime",
     "test:lint": "supabase db lint",
     "pre-commit": "pnpm pre-commit:migrations && pnpm pre-commit:types",
-    "pre-commit:migrations": "[[ $(pnpm --silent diff-schema-migrations) ]] && exit 1 || exit 0",
+    "pre-commit:migrations": "pnpm --silent diff-schema-migrations | tee /dev/tty | (! grep -q .)",
     "pre-commit:types": "export $(pnpm --silent gen-env) && supabase gen types typescript --local | diff src/types.ts -",
     "test:run": "supabase db test"
   },

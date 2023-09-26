@@ -8,15 +8,16 @@ import { RemixServer } from "@remix-run/react";
 import isbot from "isbot";
 import { renderToReadableStream } from "react-dom/server";
 
-import { Sentry } from "./sentry.server";
+import { Sentry, SentryServerInit } from "./sentry.server";
 
 export default async function handleRequest(
   request: Request,
   responseStatusCode: number,
   responseHeaders: Headers,
   remixContext: EntryContext,
-  _loadContext: AppLoadContext
+  context: AppLoadContext
 ) {
+  SentryServerInit(context, request);
   const body = await renderToReadableStream(
     <RemixServer context={remixContext} url={request.url} />,
     {
@@ -40,14 +41,17 @@ export default async function handleRequest(
   });
 }
 
-export function handleError(error: unknown, _args: DataFunctionArgs): void {
+export function handleError(
+  error: unknown,
+  { request, context }: DataFunctionArgs
+): void {
+  SentryServerInit(context, request);
   // if (isRouteErrorResponse(error)) {
   //   console.error(`${error.status} ${error.statusText}`);
-  if (error instanceof Error) {
+  if (!request.signal.aborted && error instanceof Error) {
     // TODO: Once Sentry supports Cloudflare Workers (replacing Toucan):
     // Sentry.captureRemixServerException(error, "remix.server", request);
-    console.log("Unhandled error", Sentry);
-    Sentry?.captureException?.(error);
     console.error(error);
+    Sentry?.captureException?.(error);
   }
 }

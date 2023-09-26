@@ -39,7 +39,7 @@ import {
   SentryClientInit,
   captureRemixErrorBoundaryError,
 } from "app/sentry";
-import { Sentry as SentryServer, SentryServerInit } from "app/sentry.server";
+import { Sentry as SentryServer } from "app/sentry.server";
 
 import { authCookieOptions, getUser } from "./auth";
 import { APP_NAME } from "./config";
@@ -48,22 +48,12 @@ import { getBrowserEnv } from "./env";
 import { resolver, theme } from "./theme";
 
 export const loader = async ({ context, request }: LoaderFunctionArgs) => {
-  // Can't use getEnv here since we don't want to fail if missing variables
-  const SENTRY_DSN = (context.env as any)?.SENTRY_DSN;
-  if (SENTRY_DSN) SentryServerInit(SENTRY_DSN, request);
-
   const { response, supabase } = createServerClient(request, context);
 
   const {
     data: { session },
   } = await supabase.auth.getSession();
   const user = await getUser(supabase);
-  if (user && SentryServer) {
-    SentryServer.setUser({
-      id: user.id.toString(),
-      ...(user.email ? { email: user.email } : {}),
-    });
-  }
 
   return json(
     {

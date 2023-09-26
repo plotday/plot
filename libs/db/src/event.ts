@@ -41,7 +41,7 @@ export class Event {
   public static async Get(supabase: SupabaseClient, eventId: number) {
     return (
       await supabase
-        .from("event_x2")
+        .from("event_x")
         .select(EVENT_QUERY)
         .eq("id", eventId)
         .maybeSingle()
@@ -99,7 +99,7 @@ export class Event {
     } = {}
   ) {
     const eventsQuery = Event.AddFilters(
-      supabase.from("event_x2").select(`${EVENT_QUERY},${EVENT_USER_QUERY}`),
+      supabase.from("event_x").select(`${EVENT_QUERY},${EVENT_USER_QUERY}`),
       userId,
       forward ? from : "-infinity",
       forward ? "infinity" : from,
@@ -271,7 +271,14 @@ export class Event {
   }
 
   public get labels() {
-    return this.dbEvent.labels?.map((l) => this._labels[l]) ?? [];
+    return (
+      this.dbEvent.labels?.map((l) => {
+        if (!(l in this._labels)) {
+          throw Error(`Label ${l} not found (${this.dbEvent.id})`);
+        }
+        return this._labels[l];
+      }) ?? []
+    );
   }
 
   public get duration() {

@@ -79,7 +79,7 @@ export const formatDuration = (
   const minutes = Math.abs(length % 60);
   const showMinutes = minutes > 0 || alwaysMinutes;
   return (
-    (hours ? `${hours}h ` : "") +
+    (hours ? `${hours}h` : "") +
     (hours && showMinutes ? " " : "") +
     (showMinutes ? `${String(minutes).padStart(hours ? 2 : 0, "0")}m` : "")
   );

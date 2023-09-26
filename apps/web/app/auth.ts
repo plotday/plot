@@ -4,6 +4,8 @@ import type { Provider, Session, SupabaseClient } from "@supabase/supabase-js";
 
 import type { CalendarProvider } from "@plotday/cal";
 
+import { Sentry as SentryServer } from "app/sentry.server";
+
 export const authCookieOptions = {
   name: "pa",
   maxAge: 60 * 60 * 24 * 365, // 1 year
@@ -154,13 +156,22 @@ export const getUser = async (supabase: SupabaseClient, session?: Session) => {
 
   // Typescript somehow confuses this as returning an array rather than an object,
   // so we need to specify the type explicitly
-  return user as any as {
+  const typedUser = user as any as {
     id: number;
     email: string;
     name: string | null;
     timezone: string | null;
     invitation: string | null;
   };
+
+  if (SentryServer) {
+    SentryServer.setUser({
+      id: typedUser.id.toString(),
+      ...(typedUser.email ? { email: typedUser.email } : {}),
+    });
+  }
+
+  return typedUser;
 };
 
 export const getUserMetadata = async (session: Session) => {
