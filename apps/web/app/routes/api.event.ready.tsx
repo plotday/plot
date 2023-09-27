@@ -46,8 +46,12 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
             {
               user_id: user.id,
               provider_id: body.providerId,
-              ...(body.ready !== undefined && { ready: body.ready }),
-              ...(body.reviewed !== undefined && { reviewed: body.reviewed }),
+              ...(body.ready !== undefined && {
+                ready: body.ready ? new Date().toISOString() : null,
+              }),
+              ...(body.reviewed !== undefined && {
+                reviewed: body.reviewed ? new Date().toISOString() : null,
+              }),
             },
             { onConflict: "user_id,provider_id" }
           )

@@ -20,7 +20,7 @@ export function Gauge({
 }: {
   label: string;
   description: string;
-  weeklyWorkingMinutes: number;
+  weeklyWorkingMinutes?: number;
   actual: number;
   previousActual: number;
   target?: number;
@@ -43,9 +43,11 @@ export function Gauge({
             </Text>
           </Tooltip>
         </Title>
-        <Text miw="10rem">
-          {formatDuration((actual / 100) * weeklyWorkingMinutes)} per week
-        </Text>
+        {weeklyWorkingMinutes && (
+          <Text miw="10rem">
+            {formatDuration((actual / 100) * weeklyWorkingMinutes)} per week
+          </Text>
+        )}
       </Stack>
       <RingProgress
         label={

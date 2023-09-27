@@ -3,8 +3,8 @@ CREATE TABLE "public"."response" (
     "created_at" timestamp with time zone DEFAULT now(),
     "user_id" bigint NOT NULL,
     "provider_id" text NOT NULL,
-    "ready" boolean DEFAULT FALSE NOT NULL,
-    "reviewed" boolean DEFAULT FALSE NOT NULL,
+    "ready" timestamp with time zone,
+    "reviewed" timestamp with time zone,
     "attendance" public.event_attendance
 );
 

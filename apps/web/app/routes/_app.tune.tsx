@@ -24,7 +24,7 @@ import sub from "date-fns/sub";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
 import { promiseHash } from "remix-utils/promise";
 
-import { formatDate, startOfMonth } from "@plotday/tz";
+import { formatDate, formatDuration, startOfMonth } from "@plotday/tz";
 
 import { getUser } from "app/auth";
 import { Gauge } from "app/components/gauge";
@@ -123,6 +123,30 @@ async function getGapStats(
   }, {} as Record<any, any>);
 }
 
+async function getPrepStats(
+  supabase: SupabaseClient,
+  userId: number,
+  tz: string,
+  months: Date[]
+) {
+  const dates = months.map((month) => formatDate(month, tz, "yyyy-MM-01"));
+  return (
+    safeQuery(
+      await supabase
+        .from("prep_monthly")
+        .select("*")
+        .eq("user_id", userId)
+        .in("month", dates)
+    ) || []
+  ).reduce((acc, cur) => {
+    let { month, user_id: _user_id, ...rest } = cur;
+    if (!month) return acc;
+    month = month.replace("-01", "");
+    acc[month] = rest;
+    return acc;
+  }, {} as Record<any, any>);
+}
+
 export const loader = async ({ context, request }: LoaderFunctionArgs) => {
   const { response, supabase } = createServerClient(request, context);
   let user = await getUser(supabase);
@@ -145,6 +169,7 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
       ...(await promiseHash({
         stats: getLabelStats(supabase, user.id, tz, [previousMonth, month]),
         gaps: getGapStats(supabase, user.id, tz, [previousMonth, month]),
+        prep: getPrepStats(supabase, user.id, tz, [previousMonth, month]),
         targets: getTargets(supabase, user.id),
       })),
       month,
@@ -196,7 +221,7 @@ export default function Tune() {
   const fetcher = useFetcher();
 
   const [, setSearchParams] = useSearchParams();
-  const { stats, gaps, month, previousMonth, targets } =
+  const { stats, gaps, prep, month, previousMonth, targets } =
     useTypedLoaderData<typeof loader>();
   useEventWatch(month, add(month, { months: 1 }));
 
@@ -281,18 +306,47 @@ export default function Tune() {
         </Center>
       </Paper>
       <Stack gap="xl">
-        <Card w="fit-content">
-          <Gauge
-            label="Focus"
-            description="Time during working hours you have an hour or more of uninterrupted time"
-            actual={(gaps[monthKey].focus / monthlyWorkingMinutes) * 100}
-            previousActual={
-              (gaps[previousMonthKey].focus / previousMonthlyWorkingMinutes) *
-              100
-            }
-            weeklyWorkingMinutes={weeklyWorkingMinutes}
-          />
-        </Card>
+        <Group>
+          <Card>
+            <Gauge
+              label="Focus"
+              description="Time during working hours you have an hour or more of uninterrupted time"
+              actual={(gaps[monthKey].focus / monthlyWorkingMinutes) * 100}
+              previousActual={
+                (gaps[previousMonthKey].focus / previousMonthlyWorkingMinutes) *
+                100
+              }
+              weeklyWorkingMinutes={weeklyWorkingMinutes}
+            />
+          </Card>
+          <Card>
+            <Gauge
+              label="Prep"
+              description="Ratio of meetings where you are prepared before they start"
+              actual={
+                (prep[monthKey].past_ready_count / prep[monthKey].past_count) *
+                100
+              }
+              previousActual={
+                (prep[previousMonthKey].past_ready_count /
+                  prep[previousMonthKey].past_count) *
+                100
+              }
+            />
+          </Card>
+          <Card style={{ alignSelf: "stretch", justifyContent: "center" }}>
+            <Stack>
+              <Title order={2}>
+                <Tooltip label="Average time to review past meetings">
+                  <Text span inherit>
+                    Review
+                  </Text>
+                </Tooltip>
+              </Title>
+              <Text>{formatDuration(prep[monthKey].review_time)}</Text>
+            </Stack>
+          </Card>
+        </Group>
         <Card>
           <Title order={2} mb="md">
             <Tooltip label="Time you spend in meetings">

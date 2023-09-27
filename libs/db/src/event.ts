@@ -77,11 +77,15 @@ export class Event {
         `attendance.in.(${nonNull}), ${isNull ? "attendance.is.null" : "false"}`
       );
     }
-    if (filters.ready !== undefined) {
-      query = query.eq("ready", filters.ready);
+    if (filters.ready === true) {
+      query = query.not("ready", "is", null);
+    } else if (filters.ready === false) {
+      query = query.is("ready", null);
     }
-    if (filters.reviewed !== undefined) {
-      query = query.eq("reviewed", filters.reviewed);
+    if (filters.reviewed === true) {
+      query = query.not("reviewed", "is", null);
+    } else if (filters.reviewed === false) {
+      query = query.is("reviewed", null);
     }
 
     return query;

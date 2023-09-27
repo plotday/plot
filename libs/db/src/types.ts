@@ -102,6 +102,12 @@ export interface Database {
             columns: ["user_id"]
             referencedRelation: "expenditure_monthly"
             referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "account_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "prep_monthly"
+            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -225,6 +231,12 @@ export interface Database {
             referencedColumns: ["user_id"]
           },
           {
+            foreignKeyName: "contact_contact_user_id_fkey"
+            columns: ["contact_user_id"]
+            referencedRelation: "prep_monthly"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "contact_domain_id_fkey"
             columns: ["domain_id"]
             referencedRelation: "domain"
@@ -252,6 +264,12 @@ export interface Database {
             foreignKeyName: "contact_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "expenditure_monthly"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "contact_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "prep_monthly"
             referencedColumns: ["user_id"]
           }
         ]
@@ -513,6 +531,12 @@ export interface Database {
             columns: ["user_id"]
             referencedRelation: "expenditure_monthly"
             referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "label_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "prep_monthly"
+            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -574,8 +598,8 @@ export interface Database {
           created_at: string | null
           id: number
           provider_id: string
-          ready: boolean
-          reviewed: boolean
+          ready: string | null
+          reviewed: string | null
           user_id: number
         }
         Insert: {
@@ -583,8 +607,8 @@ export interface Database {
           created_at?: string | null
           id?: number
           provider_id: string
-          ready?: boolean
-          reviewed?: boolean
+          ready?: string | null
+          reviewed?: string | null
           user_id: number
         }
         Update: {
@@ -592,8 +616,8 @@ export interface Database {
           created_at?: string | null
           id?: number
           provider_id?: string
-          ready?: boolean
-          reviewed?: boolean
+          ready?: string | null
+          reviewed?: string | null
           user_id?: number
         }
         Relationships: [
@@ -619,6 +643,12 @@ export interface Database {
             foreignKeyName: "response_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "expenditure_monthly"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "response_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "prep_monthly"
             referencedColumns: ["user_id"]
           }
         ]
@@ -677,6 +707,12 @@ export interface Database {
             foreignKeyName: "target_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "expenditure_monthly"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "target_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "prep_monthly"
             referencedColumns: ["user_id"]
           }
         ]
@@ -760,6 +796,12 @@ export interface Database {
             columns: ["user_id"]
             referencedRelation: "expenditure_monthly"
             referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "waitlist_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "prep_monthly"
+            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -787,9 +829,9 @@ export interface Database {
           organizer: number | null
           provider_id: string | null
           provider_link: string | null
-          ready: boolean | null
+          ready: string | null
           response: Database["public"]["Enums"]["event_response"] | null
-          reviewed: boolean | null
+          reviewed: string | null
           series: string | null
           status: Database["public"]["Enums"]["event_status"] | null
           summary: string | null
@@ -886,6 +928,17 @@ export interface Database {
           id: number | null
           remaining: number | null
           uses: number | null
+        }
+        Relationships: []
+      }
+      prep_monthly: {
+        Row: {
+          month: string | null
+          past_count: number | null
+          past_ready_count: number | null
+          past_reviewed_count: number | null
+          review_time: number | null
+          user_id: number | null
         }
         Relationships: []
       }

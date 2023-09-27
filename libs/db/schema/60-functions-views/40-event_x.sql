@@ -89,8 +89,8 @@ SELECT
     (round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
     count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response))::integer AS attendee_count,
 count(DISTINCT i.contact_id)::integer AS invitee_count,
-COALESCE(bool_or(er.ready), FALSE) AS ready,
-COALESCE(bool_or(er.reviewed), FALSE) AS reviewed,
+min(er.ready) AS ready,
+min(er.reviewed) AS reviewed,
 CASE WHEN EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 THEN
     timezone(u.timezone, timezone('UTC', lower(e.at)))::date
 ELSE
