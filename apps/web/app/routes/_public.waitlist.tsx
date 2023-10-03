@@ -114,14 +114,7 @@ export default function Waitlist() {
         <Card>
           <Stack>
             <Text>If you have an invitation code, please enter it here.</Text>
-            <Form method="get" action="/sync">
-              {searchParams.get("email") && (
-                <input
-                  type="hidden"
-                  name="email"
-                  value={searchParams.get("email")!}
-                />
-              )}
+            <Form method="get" action="/login" reloadDocument>
               <Group grow align="start">
                 <TextInput
                   name="invitation"
