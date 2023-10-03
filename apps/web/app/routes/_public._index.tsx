@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { redirect } from "@remix-run/cloudflare";
 import type { MetaFunction } from "@remix-run/react";
 
 import { Box, Container, Flex, List, Stack, Text, Title } from "@mantine/core";
@@ -12,7 +13,8 @@ import {
 import classes from "css/_public._index.module.css";
 
 import { Balance } from "app/components/balance";
-import { APP_NAME } from "app/config";
+import { APP_NAME, DEFAULT_PATH } from "app/config";
+import { publicLoader } from "app/util";
 
 import { WaitlistForm } from "./_public.waitlist";
 
@@ -41,6 +43,13 @@ export const meta: MetaFunction = () => {
     },
   ];
 };
+
+export const loader = publicLoader(async ({ request, user }) => {
+  if (request.headers.get("referer") === null && user !== null) {
+    return redirect(DEFAULT_PATH);
+  }
+  return null;
+});
 
 export default function Index() {
   const [target, setTarget] = useState(16);

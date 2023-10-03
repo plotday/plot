@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@plotday/db";
 
 import { authCookieOptions } from "./auth";
-import { getEnv } from "./env";
+import { getEnv } from "./env.server";
 
 export type { Database, SupabaseClient } from "@plotday/db";
 export { safeQuery } from "@plotday/db";

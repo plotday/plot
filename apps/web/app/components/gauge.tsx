@@ -21,17 +21,18 @@ export function Gauge({
   label: string;
   description: string;
   weeklyWorkingMinutes?: number;
-  actual: number;
-  previousActual: number;
+  actual: number | null;
+  previousActual: number | null;
   target?: number;
   onTargetChange?: (target: number | null) => void;
 }) {
-  actual = Math.round(actual);
-  previousActual = Math.round(previousActual);
+  actual = actual !== null ? Math.round(actual) : null;
+  previousActual = previousActual !== null ? Math.round(previousActual) : null;
 
-  const trend = previousActual
-    ? Math.round(((actual - previousActual) / previousActual) * 100)
-    : 0;
+  const trend =
+    actual && previousActual
+      ? Math.round(((actual - previousActual) / previousActual) * 100)
+      : 0;
 
   return (
     <Group>
@@ -43,7 +44,7 @@ export function Gauge({
             </Text>
           </Tooltip>
         </Title>
-        {weeklyWorkingMinutes && (
+        {actual !== null && weeklyWorkingMinutes && (
           <Text miw="10rem">
             {formatDuration((actual / 100) * weeklyWorkingMinutes)} per week
           </Text>
@@ -53,7 +54,7 @@ export function Gauge({
         label={
           <Stack gap={0}>
             <Text c="brand" fw={700} ta="center" size="xl">
-              {actual}%
+              {actual !== null ? `${actual}%` : "–"}
             </Text>
             {trend !== 0 && (
               <Group
@@ -74,7 +75,7 @@ export function Gauge({
             )}
           </Stack>
         }
-        sections={[{ value: actual, color: "brand" }]}
+        sections={[{ value: actual ?? 0, color: "brand" }]}
       />
     </Group>
   );

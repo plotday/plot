@@ -6,7 +6,7 @@ export default function Terms() {
       <Title order={1} mb="lg">
         Privacy Policy
       </Title>
-      <TypographyStylesProvider>
+      <TypographyStylesProvider p={0}>
         <p>
           Our mission is to serve people and teams doing great things.
           Protecting the privacy of individuals and organizations is critical to

@@ -13,6 +13,8 @@ export default {
   serverNodeBuiltinsPolyfill: {
     modules: {
       process: true,
+      http: "empty",
+      https: "empty",
     },
   },
   watchPaths: [
@@ -20,6 +22,7 @@ export default {
     "./node_modules/@plotday/cal/src/**",
     "./node_modules/@plotday/tz/src/**",
     "./node_modules/@plotday/worker-request/src/**",
+    "./node_modules/@plotday/tracker/src/**",
   ],
   postcss: true,
   future: {},

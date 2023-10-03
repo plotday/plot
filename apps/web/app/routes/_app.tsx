@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 
-import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { Link, Outlet, useLocation, useOutletContext } from "@remix-run/react";
 
 import {
@@ -31,20 +30,14 @@ import { promiseHash } from "remix-utils/promise";
 import { Event } from "@plotday/db";
 import type { Attendance } from "@plotday/db";
 
-import { requireAuth } from "app/auth";
 import Logo from "app/components/logo";
 import { DEFAULT_PATH } from "app/config";
-import { createServerClient } from "app/db";
 import { ErrorPage } from "app/error";
+import { EventOptimistProvider } from "app/event";
 import type { ContextType } from "app/hooks";
+import { privateLoader } from "app/util";
 
-export const loader = async ({ context, request }: LoaderFunctionArgs) => {
-  let response: Response | undefined;
-  let supabase;
-  ({ supabase, response } = createServerClient(request, context));
-
-  const user = await requireAuth(supabase);
-
+export const loader = privateLoader(async ({ user, supabase, response }) => {
   return typedjson(
     {
       counts: await promiseHash({
@@ -73,7 +66,7 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
     },
     { headers: response.headers }
   );
-};
+});
 
 export function ErrorBoundary() {
   return (
@@ -165,23 +158,34 @@ export default function App() {
   }, [location, close]);
 
   return (
-    <AppShell
-      layout="alt"
-      navbar={{ width: 170, breakpoint: "sm", collapsed: { mobile: !opened } }}
-      footer={{ height: 32, collapsed: !mobile }}
-      padding="md"
-    >
-      <AppShell.Footer>
-        <Center>
-          <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-        </Center>
-      </AppShell.Footer>
+    <EventOptimistProvider>
+      <AppShell
+        layout="alt"
+        navbar={{
+          width: 170,
+          breakpoint: "sm",
+          collapsed: { mobile: !opened },
+        }}
+        footer={{ height: 32, collapsed: !mobile }}
+        padding="md"
+      >
+        <AppShell.Footer>
+          <Center>
+            <Burger
+              opened={opened}
+              onClick={toggle}
+              hiddenFrom="sm"
+              size="sm"
+            />
+          </Center>
+        </AppShell.Footer>
 
-      <AppNavbar />
+        <AppNavbar />
 
-      <AppShell.Main className={classes.main}>
-        <Outlet context={ctx} />
-      </AppShell.Main>
-    </AppShell>
+        <AppShell.Main className={classes.main}>
+          <Outlet context={ctx} />
+        </AppShell.Main>
+      </AppShell>
+    </EventOptimistProvider>
   );
 }

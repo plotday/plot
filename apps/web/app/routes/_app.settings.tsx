@@ -1,28 +1,19 @@
 import { useCallback } from "react";
 
-import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
 
 import { Box, Button, Card, Container, Stack, Title } from "@mantine/core";
 
 import { useTypedLoaderData } from "remix-typedjson";
 
-import { getUser, logout } from "app/auth";
+import { logout } from "app/auth";
 import CalendarSources from "app/components/calendar-sources";
 import { saveAuthCookie } from "app/cookies.server";
-import { createServerClient, safeQuery } from "app/db";
+import { safeQuery } from "app/db";
 import { useSupabase } from "app/hooks";
+import { privateLoader } from "app/util";
 
-export async function loader({ request, context }: LoaderFunctionArgs) {
-  let response: Response | undefined;
-  let supabase;
-  ({ supabase, response } = createServerClient(request, context));
-
-  let user = await getUser(supabase);
-  if (!user) {
-    return null;
-  }
-
+export const loader = privateLoader(async ({ request, response, supabase }) => {
   const calendars = safeQuery(
     await supabase
       .from("calendar")
@@ -39,7 +30,7 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
       headers: response.headers,
     }
   );
-}
+});
 
 export default function Settings() {
   const { calendars } = useTypedLoaderData();

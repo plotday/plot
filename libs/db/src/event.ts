@@ -1,8 +1,7 @@
 import differenceInMinutes from "date-fns/differenceInMinutes";
 
-import { toDate } from "@plotday/tz";
-
 import type { SupabaseClient } from "./";
+import { parseDateRange } from "./";
 import { safeQuery } from "./query";
 import type { Database } from "./types";
 
@@ -158,17 +157,11 @@ export class Event {
   }
 
   public get start() {
-    const dates = ((this.dbEvent.at as string) || "")
-      .replaceAll(/["[\]()]/g, "")
-      .split(",");
-    return toDate(dates[0], this.tz);
+    return parseDateRange((this.dbEvent.at as string) || "", this.tz)[0];
   }
 
   public get end() {
-    const dates = ((this.dbEvent.at as string) || "")
-      .replaceAll(/["[\]()]/g, "")
-      .split(",");
-    return toDate(dates[1], this.tz);
+    return parseDateRange((this.dbEvent.at as string) || "", this.tz)[1];
   }
 
   public get name() {

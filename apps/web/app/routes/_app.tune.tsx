@@ -1,8 +1,4 @@
-import type {
-  ActionFunctionArgs,
-  LoaderFunctionArgs,
-} from "@remix-run/cloudflare";
-import { json, redirect } from "@remix-run/cloudflare";
+import { json } from "@remix-run/cloudflare";
 import { useFetcher, useSearchParams } from "@remix-run/react";
 
 import {
@@ -26,16 +22,16 @@ import { promiseHash } from "remix-utils/promise";
 
 import { formatDate, formatDuration, startOfMonth } from "@plotday/tz";
 
-import { getUser } from "app/auth";
 import { Gauge } from "app/components/gauge";
 import type { LabelStats, LabelStatsMap } from "app/components/tuner";
 import { TunerList } from "app/components/tuner";
 import type { SupabaseClient } from "app/db";
-import { createServerClient, safeQuery } from "app/db";
+import { safeQuery } from "app/db";
 import { ErrorPage } from "app/error";
 import { useEventWatch } from "app/event";
 import { useUser } from "app/hooks";
 import { getTargets } from "app/target";
+import { privateAction, privateLoader } from "app/util";
 
 type Target = {
   target: number | null;
@@ -106,21 +102,30 @@ async function getGapStats(
   months: Date[]
 ) {
   const dates = months.map((month) => formatDate(month, tz, "yyyy-MM-01"));
-  return (
+  const gap =
     safeQuery(
       await supabase
         .from("gap_monthly")
         .select("*")
         .eq("user_id", userId)
         .in("month", dates)
-    ) || []
-  ).reduce((acc, cur) => {
-    let { month, user_id: _user_id, ...rest } = cur;
-    if (!month) return acc;
-    month = month.replace("-01", "");
-    acc[month] = rest;
-    return acc;
-  }, {} as Record<any, any>);
+    ) || [];
+  return gap.reduce(
+    (acc, cur) => {
+      let { month, user_id: _user_id, ...rest } = cur;
+      if (!month) return acc;
+      month = month.replace("-01", "");
+      acc[month] = rest;
+      return acc;
+    },
+    dates.reduce((acc, month) => {
+      acc[month.replace("-01", "")] = {
+        focus: 0,
+        total: 0,
+      };
+      return acc;
+    }, {} as Record<string, Omit<(typeof gap)[number], "month" | "user_id">>)
+  );
 }
 
 async function getPrepStats(
@@ -130,88 +135,99 @@ async function getPrepStats(
   months: Date[]
 ) {
   const dates = months.map((month) => formatDate(month, tz, "yyyy-MM-01"));
-  return (
+  const prep =
     safeQuery(
       await supabase
         .from("prep_monthly")
         .select("*")
         .eq("user_id", userId)
         .in("month", dates)
-    ) || []
-  ).reduce((acc, cur) => {
-    let { month, user_id: _user_id, ...rest } = cur;
-    if (!month) return acc;
-    month = month.replace("-01", "");
-    acc[month] = rest;
-    return acc;
-  }, {} as Record<any, any>);
+    ) || [];
+  return prep.reduce(
+    (acc, cur) => {
+      let { month, user_id: _user_id, ...rest } = cur;
+      if (!month) return acc;
+      month = month.replace("-01", "");
+      acc[month] = rest;
+      return acc;
+    },
+    dates.reduce((acc, month) => {
+      acc[month.replace("-01", "")] = {
+        past_count: 0,
+        past_ready_count: 0,
+        past_reviewed_count: 0,
+        review_time: 0,
+      };
+      return acc;
+    }, {} as Record<string, Omit<(typeof prep)[number], "month" | "user_id">>)
+  );
 }
 
-export const loader = async ({ context, request }: LoaderFunctionArgs) => {
-  const { response, supabase } = createServerClient(request, context);
-  let user = await getUser(supabase);
-  if (!user?.id) throw redirect("/login");
+export const loader = privateLoader(
+  async ({ request, response, user, supabase }) => {
+    const tz = user.timezone || "America/New_York";
+    const params = new URL(request.url).searchParams;
+    const startParam = params.get("month");
+    let month;
+    if (startParam) {
+      month = add(new Date(startParam), { days: 7 });
+    } else {
+      month = new Date();
+    }
+    month = startOfMonth(month, tz);
+    const previousMonth = sub(month, { months: 1 });
 
-  const tz = user.timezone || "America/New_York";
-  const params = new URL(request.url).searchParams;
-  const startParam = params.get("month");
-  let month;
-  if (startParam) {
-    month = add(new Date(startParam), { days: 7 });
-  } else {
-    month = new Date();
+    return typedjson(
+      {
+        ...(await promiseHash({
+          stats: getLabelStats(supabase, user.id, tz, [previousMonth, month]),
+          gaps: getGapStats(supabase, user.id, tz, [previousMonth, month]),
+          prep: getPrepStats(supabase, user.id, tz, [previousMonth, month]),
+          targets: getTargets(supabase, user.id),
+        })),
+        month,
+        previousMonth,
+      },
+      { headers: response.headers }
+    );
   }
-  month = startOfMonth(month, tz);
-  const previousMonth = sub(month, { months: 1 });
+);
 
-  return typedjson(
-    {
-      ...(await promiseHash({
-        stats: getLabelStats(supabase, user.id, tz, [previousMonth, month]),
-        gaps: getGapStats(supabase, user.id, tz, [previousMonth, month]),
-        prep: getPrepStats(supabase, user.id, tz, [previousMonth, month]),
-        targets: getTargets(supabase, user.id),
-      })),
-      month,
-      previousMonth,
-    },
-    { headers: response.headers }
-  );
-};
-
-export async function action({ context, request }: ActionFunctionArgs) {
-  const { supabase } = createServerClient(request, context);
-  let user = await getUser(supabase);
-  if (!user?.id) throw redirect("/login");
-  const bodyParams = await request.formData();
-  if (typeof bodyParams.get("targets") === "string") {
-    const targets = JSON.parse(
-      bodyParams.get("targets") as string
-    ) as TargetUpdate;
-    for (const [labelId, target] of Object.entries(targets)) {
-      if (target.target !== null) {
-        safeQuery(
-          await supabase.from("target").upsert({
-            user_id: user.id,
-            label_id: parseInt(labelId),
-            target: target.target,
-            org: target.org,
-          })
-        );
-      } else {
-        safeQuery(
-          await supabase
-            .from("target")
-            .delete()
-            .eq("user_id", user.id)
-            .eq("label_id", parseInt(labelId))
-            .eq("org", target.org)
-        );
+export const action = privateAction(
+  async ({ request, supabase, user, env }) => {
+    const bodyParams = await request.formData();
+    if (typeof bodyParams.get("targets") === "string") {
+      const targets = JSON.parse(
+        bodyParams.get("targets") as string
+      ) as TargetUpdate;
+      for (const [labelId, target] of Object.entries(targets)) {
+        if (target.target !== null) {
+          safeQuery(
+            await supabase.from("target").upsert({
+              user_id: user.id,
+              label_id: parseInt(labelId),
+              target: target.target,
+              org: target.org,
+            })
+          );
+          env.tracker.goalSet(user.id.toString(), {
+            Category: labelId,
+          });
+        } else {
+          safeQuery(
+            await supabase
+              .from("target")
+              .delete()
+              .eq("user_id", user.id)
+              .eq("label_id", parseInt(labelId))
+              .eq("org", target.org)
+          );
+        }
       }
     }
+    return json({});
   }
-  return json({});
-}
+);
 
 export function ErrorBoundary() {
   return <ErrorPage />;
@@ -237,6 +253,8 @@ export default function Tune() {
 
   const monthKey = formatDate(month, tz, "yyyy-MM");
   const previousMonthKey = formatDate(previousMonth, tz, "yyyy-MM");
+  const focus = gaps[monthKey].focus;
+  const previousFocus = gaps[previousMonthKey].focus;
 
   const move = (movement: number) => {
     const newStart = add(month, { months: movement });
@@ -311,10 +329,11 @@ export default function Tune() {
             <Gauge
               label="Focus"
               description="Time during working hours you have an hour or more of uninterrupted time"
-              actual={(gaps[monthKey].focus / monthlyWorkingMinutes) * 100}
+              actual={focus ? (focus / monthlyWorkingMinutes) * 100 : null}
               previousActual={
-                (gaps[previousMonthKey].focus / previousMonthlyWorkingMinutes) *
-                100
+                previousFocus
+                  ? (previousFocus / previousMonthlyWorkingMinutes) * 100
+                  : null
               }
               weeklyWorkingMinutes={weeklyWorkingMinutes}
             />
@@ -324,13 +343,18 @@ export default function Tune() {
               label="Prep"
               description="Ratio of meetings where you are prepared before they start"
               actual={
-                (prep[monthKey].past_ready_count / prep[monthKey].past_count) *
-                100
+                prep[monthKey].past_count
+                  ? ((prep[monthKey].past_ready_count ?? 0) /
+                      (prep[monthKey].past_count ?? 0)) *
+                    100
+                  : 0
               }
               previousActual={
-                (prep[previousMonthKey].past_ready_count /
-                  prep[previousMonthKey].past_count) *
-                100
+                prep[previousMonthKey].past_count
+                  ? ((prep[previousMonthKey].past_ready_count ?? 0) /
+                      (prep[previousMonthKey].past_count ?? 0)) *
+                    100
+                  : 0
               }
             />
           </Card>
@@ -343,7 +367,13 @@ export default function Tune() {
                   </Text>
                 </Tooltip>
               </Title>
-              <Text>{formatDuration(prep[monthKey].review_time)}</Text>
+              <Text>
+                {prep[monthKey].review_time ? (
+                  formatDuration(prep[monthKey].review_time ?? 0)
+                ) : (
+                  <>&mdash;</>
+                )}
+              </Text>
             </Stack>
           </Card>
         </Group>

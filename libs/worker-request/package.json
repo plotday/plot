@@ -6,6 +6,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "ver": "tsc --version",
     "lint": "tsc && eslint ."
   },
   "dependencies": {

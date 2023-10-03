@@ -9,7 +9,7 @@ import { VERSION } from "./config";
 
 export let Sentry: typeof ClientSentry | undefined;
 
-export const SentryClientInit = (
+export const init = (
   dsn: string,
   user?: { id: number; email: string | null } | null
 ) => {

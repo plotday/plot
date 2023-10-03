@@ -1,10 +1,6 @@
 import { useEffect, useMemo } from "react";
 
-import type {
-  LinksFunction,
-  LoaderFunctionArgs,
-  MetaFunction,
-} from "@remix-run/cloudflare";
+import type { LinksFunction, MetaFunction } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
 import { cssBundleHref } from "@remix-run/css-bundle";
 import {
@@ -34,33 +30,31 @@ import type { Database } from "@plotday/db";
 import { APP_NAME } from "app/config";
 import { ErrorPage } from "app/error";
 import type { ContextType } from "app/hooks";
-import { Sentry as SentryClient, SentryClientInit } from "app/sentry";
-import { Sentry as SentryServer } from "app/sentry.server";
+import { init as sentryInit } from "app/sentry.client";
+import { publicLoader } from "app/util";
 
-import { authCookieOptions, getUser } from "./auth";
-import { createServerClient } from "./db";
-import { getBrowserEnv } from "./env";
+import { authCookieOptions } from "./auth";
+import { getBrowserEnv } from "./env.server";
 import { resolver, theme } from "./theme";
 
-export const loader = async ({ context, request }: LoaderFunctionArgs) => {
-  const { response, supabase } = createServerClient(request, context);
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const user = await getUser(supabase);
-
-  return json(
-    {
-      env: getBrowserEnv(context),
-      session,
-      user,
-    },
-    {
-      headers: response.headers,
-    }
-  );
-};
+export const loader = publicLoader(
+  async ({ context, user, waitlistedUser, response, supabase }) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    return json(
+      {
+        env: getBrowserEnv(context),
+        session,
+        user,
+        waitlistedUser,
+      },
+      {
+        headers: response.headers,
+      }
+    );
+  }
+);
 
 export const meta: MetaFunction = () => {
   return [{ title: APP_NAME }];
@@ -142,10 +136,10 @@ export function ErrorBoundary() {
 }
 
 export default function App() {
-  const { env, user, session } = useLoaderData<typeof loader>();
+  const { env, user, waitlistedUser, session } = useLoaderData<typeof loader>();
 
-  if (!SentryServer && !SentryClient && env.SENTRY_DSN) {
-    SentryClientInit(env.SENTRY_DSN, user);
+  if (sentryInit && env.SENTRY_DSN && user) {
+    sentryInit(env.SENTRY_DSN, user);
   }
 
   const supabase = useMemo(() => {
@@ -185,8 +179,12 @@ export default function App() {
   }, [session?.access_token, supabase, revalidate]);
 
   const context: ContextType = useMemo(
-    () => ({ supabase: supabase || undefined, user: user || undefined }),
-    [supabase, user]
+    () => ({
+      supabase: supabase ?? undefined,
+      user: user ?? undefined,
+      waitlistedUser: waitlistedUser ?? undefined,
+    }),
+    [supabase, user, waitlistedUser]
   );
 
   return (

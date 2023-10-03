@@ -1,5 +1,5 @@
 import type { ChangeEvent, ReactNode } from "react";
-import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useMemo } from "react";
 
 import {
   Anchor,
@@ -82,6 +82,7 @@ export function EventList({
   expenditures,
   review,
   showGaps,
+  filter,
 }: {
   events: Event[];
   targets: {
@@ -91,6 +92,7 @@ export function EventList({
   expenditures: DailyLabelStats;
   review?: boolean;
   showGaps?: boolean;
+  filter?: (event: Event) => boolean;
 }) {
   showGaps = showGaps ?? false;
   useEventWatch();
@@ -207,21 +209,23 @@ function TimeCard({
   end,
   tz,
   alert,
+  dimmed,
   children,
 }: {
   start: Date;
   end?: Date;
   tz: string;
   alert?: boolean;
+  dimmed?: boolean;
   children?: React.ReactNode;
 }) {
   return (
-    <Box display="grid" style={{ gridTemplateColumns: "5rem 4px 1fr" }}>
+    <Box display="grid" style={{ gridTemplateColumns: "5rem 2px 1fr" }}>
       <Stack gap="xs" pr="xs">
         <Text
           size="sm"
           ta="right"
-          mt="calc(var(--mantine-font-size-sm) * var(--mantine-line-height-sm) * -0.5)"
+          mt="calc(var(--mantine-font-size-sm) * var(--mantine-line-height-sm) * -0.5 - 1px)"
         >
           {formatTime(start, tz)}
         </Text>
@@ -232,19 +236,36 @@ function TimeCard({
         )}
       </Stack>
       <Box
-        w="4px"
-        bg={children ? (alert ? "secondary" : "brand") : undefined}
+        w="2px"
+        h={children ? undefined : 0}
+        bg={
+          alert === undefined
+            ? "var(--mantine-color-default-border)"
+            : alert
+            ? "secondary"
+            : "brand"
+        }
+        style={
+          alert === undefined
+            ? {}
+            : {
+                borderTop: "1px solid var(--mantine-color-background)",
+                borderBottom: "1px solid var(--mantine-color-background)",
+              }
+        }
       />
-      {children && (
-        <Card
-          radius={0}
-          style={{
-            borderBottom: "1px solid var(--mantine-color-default-border)",
-          }}
-        >
-          {children}
-        </Card>
-      )}
+      <Card
+        radius={0}
+        style={{
+          borderTop: "1px solid var(--mantine-color-background)",
+          borderBottom: "1px solid var(--mantine-color-background)",
+        }}
+        bg={dimmed ? "var(--mantine-color-background)" : undefined}
+        p={children ? undefined : 0}
+        h={children ? undefined : 0}
+      >
+        {children}
+      </Card>
     </Box>
   );
 }
@@ -279,10 +300,14 @@ function BreakCard({
     return null;
   }
   return (
-    <TimeCard start={before.end} end={after.start} tz={(before || after).tz}>
-      <Text c="dimmed" fs="italic" lh="1.8rem">
-        Open time
-      </Text>
+    <TimeCard
+      start={before.end}
+      end={after.start}
+      tz={(before || after).tz}
+      alert={false}
+      dimmed
+    >
+      <Box mih="2rem" />
     </TimeCard>
   );
 }
@@ -505,34 +530,22 @@ function EventCard({
   balances: Record<number, number>;
   review?: boolean;
 }) {
-  const [attendance, setAttendanceState] = useState(event.attendance);
-  const responder = useEventResponder();
+  const eventResponder = useEventResponder(event);
+  const eventReadyResponder = useEventReadyResponder(event);
+
   const setAttendance = useCallback(
     (attendance: string) => {
-      setAttendanceState((attendance || null) as Attendance);
-      const email = event.email;
-      if (!email) throw new Error("Missing calendar email");
-      responder(
-        event.id,
-        (attendance || null) as Attendance,
-        email,
-        event.isOrganizer
-      );
+      eventResponder((attendance || null) as Attendance);
     },
-    [event, responder]
+    [eventResponder]
   );
-  useEffect(() => {
-    setAttendanceState(event.attendance);
-  }, [event.attendance]);
-  const [ready, setReady] = useState(event.isDone(!!review));
-  const eventReadyResponder = useEventReadyResponder();
+
+  const ready = event.isDone(!!review);
   const updateReady = useCallback(
     (clickEvent: ChangeEvent<HTMLInputElement>) => {
       const ready = clickEvent.currentTarget.checked;
-      setReady(ready);
       if (event.providerId) {
         eventReadyResponder(
-          event.providerId,
           review ? undefined : ready,
           review ? ready : undefined
         );
@@ -567,7 +580,7 @@ function EventCard({
         </Center>
         <Group>
           <Stack gap={0}>
-            <Text fw={attendance === "skip" ? "normal" : "bold"}>
+            <Text fw={event.attendance === "skip" ? "normal" : "bold"}>
               {event.name}
             </Text>
             {event.conferencing && (
@@ -592,10 +605,10 @@ function EventCard({
             radius="xl"
             lh="lg"
             checked={ready}
-            disabled={attendance === null}
+            disabled={event.attendance === null}
             styles={{
               input: {
-                ...(attendance !== null && !ready
+                ...(event.attendance !== null && !ready
                   ? { borderColor: "var(--mantine-color-brand-outline)" }
                   : {}),
               },
@@ -608,11 +621,11 @@ function EventCard({
             options={[
               { value: "attend", label: review ? "Attended" : "Attend" },
               { value: "skip", label: review ? "Skipped" : "Skip" },
-              ...(review || attendance === null
+              ...(review || event.attendance === null
                 ? []
                 : [{ value: "", label: "Undecided" }]),
             ]}
-            value={attendance || undefined}
+            value={event.attendance || undefined}
             onChange={setAttendance}
           />
         </Group>

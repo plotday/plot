@@ -1,7 +1,5 @@
 import { useMemo } from "react";
 
-import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
-import { redirect } from "@remix-run/cloudflare";
 import type { UIMatch } from "@remix-run/react";
 import { useMatches, useSearchParams } from "@remix-run/react";
 
@@ -15,27 +13,25 @@ import { promiseHash } from "remix-utils/promise";
 import type { DbEvent } from "@plotday/db";
 import { Event } from "@plotday/db";
 
-import { getUser } from "app/auth";
 import { EventList } from "app/components/event";
-import { createServerClient } from "app/db";
 import { ErrorPage } from "app/error";
+import { useEventOptimist } from "app/event";
 import { useTz } from "app/hooks";
 import { getLabels } from "app/labels";
 import { getExpenditures, getTargets } from "app/target";
+import { privateLoader } from "app/util";
 
 export type EventFilter = {
   review?: boolean;
   showGaps?: boolean;
+  match?: (event: DbEvent) => boolean;
   config?: {
     name: string;
     label: string;
   }[];
 };
 
-export const loader = async ({ context, request }: LoaderFunctionArgs) => {
-  const { response, supabase } = createServerClient(request, context);
-  let user = await getUser(supabase);
-  if (!user?.id) throw redirect("/login");
+export const loader = privateLoader(async ({ supabase, response, user }) => {
   const tz = user.timezone || "America/New_York";
 
   const start = new Date();
@@ -51,7 +47,7 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
     },
     { headers: response.headers }
   );
-};
+});
 
 export function ErrorBoundary() {
   return <ErrorPage />;
@@ -63,16 +59,26 @@ export default function Events() {
     { eventFilter: EventFilter }
   >[];
 
-  const filter =
-    matches.find((match) => !!match.handle && "eventFilter" in match.handle)
-      ?.handle?.eventFilter ?? {};
-
-  const dbEvents = useMemo(
+  const filter = useMemo(
     () =>
-      (matches.find((match) => !!match.data && "events" in match.data)?.data
-        ?.events as DbEvent[]) ?? [],
+      matches.find((match) => !!match.handle && "eventFilter" in match.handle)
+        ?.handle?.eventFilter ?? {},
     [matches]
   );
+
+  const { overrides } = useEventOptimist();
+  const dbEvents = useMemo(() => {
+    return (
+      (
+        matches.find((match) => !!match.data && "events" in match.data)?.data
+          ?.events as DbEvent[]
+      )
+        .map((e) =>
+          e.id && e.id in overrides ? { ...e, ...overrides[e.id] } : e
+        )
+        .filter((e) => filter.match?.(e) ?? true) ?? []
+    );
+  }, [matches, overrides, filter]);
   const { targets, expenditures, labels } = useTypedLoaderData<typeof loader>();
   const tz = useTz();
   const events = useMemo(
@@ -123,6 +129,7 @@ export default function Events() {
         events={events}
         targets={targets}
         expenditures={expenditures}
+        filter={(e) => e.attendance === null}
       />
     </>
   );

@@ -1,11 +1,12 @@
-import { redirect } from "@remix-run/cloudflare";
-
 import type { Provider, Session, SupabaseClient } from "@supabase/supabase-js";
 
 import type { CalendarProvider } from "@plotday/cal";
 
+import type { Database } from "app/db";
 import { safeQuery } from "app/db";
-import { Sentry as SentryServer } from "app/sentry.server";
+import type { Environment } from "app/env.server";
+
+export type User = Database["public"]["Tables"]["user"]["Row"];
 
 export const authCookieOptions = {
   name: "pa",
@@ -18,7 +19,7 @@ export const authCookieOptions = {
 
 // Process an Oauth callback and create a session
 //
-// NOTE: The session is not set for the current request, so functions get rely
+// NOTE: The session is not set for the current request, so functions that rely
 // on getting the session or using RLS will fail. Use the returned session or
 // redirect to a new request.
 export const completeSignIn = async (
@@ -44,6 +45,8 @@ export const completeSignIn = async (
   if (!session) {
     throw Error("No session");
   }
+
+  await supabase.auth.setSession(session);
 
   return session;
 };
@@ -122,24 +125,11 @@ export const getAuthUserId = async (
   return session.user?.id;
 };
 
-export const isSignedIn = async (
+export const getUser = async (
   supabase: SupabaseClient,
+  env: Environment,
   session?: Session
 ) => {
-  const user = await getUser(supabase, session);
-  return !!user?.invitation;
-};
-
-export const requireAuth = async (
-  supabase: SupabaseClient,
-  session?: Session
-) => {
-  const user = await getUser(supabase, session);
-  if (!user?.id) throw redirect("/login");
-  return user;
-};
-
-export const getUser = async (supabase: SupabaseClient, session?: Session) => {
   const userId = await getAuthUserId(supabase, session);
   if (!userId) {
     return null;
@@ -148,30 +138,22 @@ export const getUser = async (supabase: SupabaseClient, session?: Session) => {
   const user = safeQuery(
     await supabase
       .from("account")
-      .select("user( id, email, name, timezone, invitation )")
+      .select("user(id, email, name, timezone, activated_at)")
       .eq("auth_user_id", userId)
       .maybeSingle()
-  )?.user;
+    // Typescript somehow confuses this as returning an array rather than an object,
+    // so we need to specify the type explicitly
+  )?.user as any as User | null;
   if (!user) return null;
 
-  // Typescript somehow confuses this as returning an array rather than an object,
-  // so we need to specify the type explicitly
-  const typedUser = user as any as {
-    id: number;
-    email: string;
-    name: string | null;
-    timezone: string | null;
-    invitation: string | null;
-  };
+  env.sentry.setUser({
+    id: user.id.toString(),
+    ...(user.email ? { email: user.email } : {}),
+  });
 
-  if (SentryServer) {
-    SentryServer.setUser({
-      id: typedUser.id.toString(),
-      ...(typedUser.email ? { email: typedUser.email } : {}),
-    });
-  }
+  env.tracker.identify(user.id.toString());
 
-  return typedUser;
+  return user;
 };
 
 export const getUserMetadata = async (session: Session) => {
@@ -190,3 +172,112 @@ export const getUserMetadata = async (session: Session) => {
     },
   };
 };
+
+export async function addAccount(
+  user: User | null,
+  session: Session,
+  env: Environment,
+  supabaseAdmin: SupabaseClient
+) {
+  let {
+    id: authUserId,
+    name,
+    email,
+    avatar,
+    provider,
+    credentials,
+  } = await getUserMetadata(session);
+
+  if (!user) {
+    user = safeQuery(
+      await supabaseAdmin
+        .from("user")
+        .upsert(
+          {
+            name,
+            email,
+            avatar_url: avatar,
+          },
+          { onConflict: "email" }
+        )
+        .select()
+        .single()
+    );
+    if (!user) {
+      throw Error("Failed to create user");
+    }
+    env.tracker.identify(user.id.toString(), {
+      Email: email,
+      Name: name,
+    });
+    env.tracker.accountWaitlisted(user.id.toString());
+  }
+
+  if (credentials.refresh_token) {
+    env.tracker.accountAdded(user.id.toString(), {
+      Provider: provider,
+    });
+  }
+
+  const account = safeQuery(
+    await supabaseAdmin
+      .from("account")
+      .upsert(
+        {
+          user_id: user.id,
+          auth_user_id: authUserId,
+          email,
+          provider,
+          ...(credentials.refresh_token ? { credentials } : {}),
+        },
+        { onConflict: "auth_user_id" }
+      )
+      .select()
+      .single()
+  );
+  if (!account) {
+    throw Error("Failed to create account");
+  }
+
+  return { user, account };
+}
+
+export async function activateAccount(
+  user: User,
+  invitation: string,
+  env: Environment,
+  supabaseAdmin: SupabaseClient
+) {
+  if (user.activated_at) return;
+  safeQuery(
+    await supabaseAdmin.rpc("redeem_invitation", {
+      _user_id: user.id,
+      _invitation: invitation,
+    })
+  );
+  env.tracker.accountActivated(user.id.toString(), {
+    "Invitation Code": invitation,
+  });
+  // Create or link a contact for the user
+  safeQuery(
+    await supabaseAdmin.from("contact").upsert(
+      {
+        email: user.email,
+        name: user.name,
+        user_id: user.id,
+        contact_user_id: user.id,
+      },
+      { onConflict: "user_id,email" }
+    )
+  );
+}
+
+export async function getAccounts(supabase: SupabaseClient, userId: number) {
+  return safeQuery(
+    await supabase
+      .from("account")
+      .select("id,provider,email")
+      .eq("user_id", userId)
+      .not("credentials", "is", "null")
+  );
+}

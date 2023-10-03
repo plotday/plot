@@ -23,7 +23,8 @@
     "start": "turbo run start --force",
     "restart": "echo .",
     "update": "pnpm update --latest --recursive",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "tracker:pull": "pnpm --filter @plotday/tracker tracker:pull"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230724.0",
@@ -38,7 +39,7 @@
     "turbo": "^1.10.14",
     "typescript": "^5.1.6",
     "vitest": "^0.33.0",
-    "wrangler": "^3.10.0"
+    "wrangler": "^3.10.1"
   },
   "packageManager": "pnpm@8.6.6",
   "name": "@plotday/plot",

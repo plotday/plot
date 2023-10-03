@@ -3,7 +3,7 @@ import { isRouteErrorResponse, useRouteError } from "@remix-run/react";
 import { Stack, Text, Title } from "@mantine/core";
 import "@mantine/core/styles.css";
 
-import { captureRemixErrorBoundaryError } from "app/sentry";
+import { captureRemixErrorBoundaryError } from "app/sentry.client";
 
 export function ErrorPage({ children }: { children?: React.ReactNode }) {
   const error = useRouteError();
@@ -14,7 +14,7 @@ export function ErrorPage({ children }: { children?: React.ReactNode }) {
   if (isRouteErrorResponse(error)) {
     title = "Page not found";
   } else {
-    captureRemixErrorBoundaryError(error);
+    captureRemixErrorBoundaryError?.(error);
     if (error instanceof Error) {
       message = error.message;
     } else if (typeof error === "string") {

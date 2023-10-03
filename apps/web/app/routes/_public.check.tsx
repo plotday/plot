@@ -1,4 +1,3 @@
-import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
 import type { MetaFunction } from "@remix-run/react";
 
@@ -7,37 +6,33 @@ import { Alert, Card, Container, Stack, Text, Title } from "@mantine/core";
 import { IconConfetti } from "@tabler/icons-react";
 import { useTypedLoaderData } from "remix-typedjson";
 
-import { getUser } from "app/auth";
+import { getAccounts } from "app/auth";
 import CalendarSources from "app/components/calendar-sources";
 import Consent from "app/components/consent";
 import { APP_NAME } from "app/config";
 import { saveAuthCookie } from "app/cookies.server";
-import { createServerClient, safeQuery } from "app/db";
+import { publicLoader } from "app/util";
 
-export async function loader({ request, context }: LoaderFunctionArgs) {
-  let response: Response | undefined;
-  let supabase;
-  ({ supabase, response } = createServerClient(request, context));
+export const loader = publicLoader(
+  async ({ request, user, waitlistedUser, supabase, response }) => {
+    let accounts = null;
+    user ??= waitlistedUser;
+    if (user) {
+      accounts = await getAccounts(supabase, user.id);
+    }
 
-  let user = await getUser(supabase);
-  let accounts = null;
-  if (user) {
-    accounts = safeQuery(
-      await supabase.from("account").select("id,provider,email")
+    saveAuthCookie(request, response);
+
+    return json(
+      {
+        accounts,
+      },
+      {
+        headers: response.headers,
+      }
     );
   }
-
-  saveAuthCookie(request, response);
-
-  return json(
-    {
-      accounts,
-    },
-    {
-      headers: response.headers,
-    }
-  );
-}
+);
 
 export const meta: MetaFunction = () => {
   return [

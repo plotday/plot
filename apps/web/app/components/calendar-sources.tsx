@@ -50,9 +50,9 @@ export default function CalendarSources({
     let params = {
       provider,
     } as Record<string, string>;
-    const email = searchParams.get("email");
-    if (email) {
-      params.email = email;
+    const uid = searchParams.get("uid");
+    if (uid) {
+      params.uid = uid;
     }
     const invitation = searchParams.get("invitation");
     if (invitation) {

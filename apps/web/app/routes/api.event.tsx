@@ -1,15 +1,13 @@
 import { useCallback } from "react";
 
-import type { ActionFunctionArgs } from "@remix-run/cloudflare";
 import { useFetcher } from "@remix-run/react";
 
 import type { CalendarConfig, Event } from "@plotday/cal";
 import { update } from "@plotday/cal";
 import { getCredentials } from "@plotday/db";
 
-import { getUser } from "app/auth";
-import { createServerClient, safeQuery } from "app/db";
-import { getEnv } from "app/env";
+import { safeQuery } from "app/db";
+import { privateAction } from "app/util";
 
 type Changes = Partial<Event>;
 type UpdateBody = {
@@ -44,55 +42,50 @@ export function useEventUpdater() {
   );
 }
 
-export const action = async ({ request, context }: ActionFunctionArgs) => {
-  let response: Response | undefined;
-  let supabase;
-  ({ supabase, response } = createServerClient(request, context));
-  let user = await getUser(supabase);
-  if (!user) return new Response("Unauthorized", { status: 401 });
+export const action = privateAction(
+  async ({ request, response, env, supabase }) => {
+    const calendarConfig: CalendarConfig = {
+      googleClientId: env.GOOGLE_CLIENT_ID,
+      googleOauthSecret: env.GOOGLE_OAUTH_SECRET,
+      outlookClientId: env.MICROSOFT_CLIENT_ID,
+      outlookOauthSecret: env.MICROSOFT_OAUTH_SECRET,
+    };
 
-  const env = getEnv(context);
-  const calendarConfig: CalendarConfig = {
-    googleClientId: env.GOOGLE_CLIENT_ID,
-    googleOauthSecret: env.GOOGLE_OAUTH_SECRET,
-    outlookClientId: env.MICROSOFT_CLIENT_ID,
-    outlookOauthSecret: env.MICROSOFT_OAUTH_SECRET,
-  };
-
-  switch (request.method) {
-    case "PATCH": {
-      const body: UpdateBody = await request.json();
-      const event = safeQuery(
-        await supabase
-          .from("event")
-          .select("provider_id,calendar(provider_id,account_id)")
-          .eq("id", body.id)
-          .maybeSingle()
-      );
-      if (!event?.calendar) return new Response("Not found", { status: 404 });
-      let credentials = await getCredentials(
-        supabase,
-        event.calendar.account_id
-      );
-      const { startsAt, endsAt, ...otherChanges } = body.changes;
-      const deserializedChanges = {
-        ...otherChanges,
-        ...(startsAt ? { startsAt: new Date(startsAt) } : {}),
-        ...(endsAt ? { endsAt: new Date(endsAt) } : {}),
-      };
-      await update(
-        calendarConfig,
-        credentials,
-        event.calendar.provider_id,
-        event.provider_id,
-        deserializedChanges
-      );
-      return new Response(null, {
-        headers: response.headers,
-        status: 200,
-      });
+    switch (request.method) {
+      case "PATCH": {
+        const body: UpdateBody = await request.json();
+        const event = safeQuery(
+          await supabase
+            .from("event")
+            .select("provider_id,calendar(provider_id,account_id)")
+            .eq("id", body.id)
+            .maybeSingle()
+        );
+        if (!event?.calendar) return new Response("Not found", { status: 404 });
+        let credentials = await getCredentials(
+          supabase,
+          event.calendar.account_id
+        );
+        const { startsAt, endsAt, ...otherChanges } = body.changes;
+        const deserializedChanges = {
+          ...otherChanges,
+          ...(startsAt ? { startsAt: new Date(startsAt) } : {}),
+          ...(endsAt ? { endsAt: new Date(endsAt) } : {}),
+        };
+        await update(
+          calendarConfig,
+          credentials,
+          event.calendar.provider_id,
+          event.provider_id,
+          deserializedChanges
+        );
+        return new Response(null, {
+          headers: response.headers,
+          status: 200,
+        });
+      }
+      default:
+        return new Response("Unsupported method", { status: 405 });
     }
-    default:
-      return new Response("Unsupported method", { status: 405 });
   }
-};
+);

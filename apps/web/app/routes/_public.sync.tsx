@@ -1,6 +1,3 @@
-import type { AppLoadContext, LoaderFunctionArgs } from "@remix-run/cloudflare";
-import { redirect } from "@remix-run/cloudflare";
-
 import { Card, Container, Stack, Text, Title } from "@mantine/core";
 
 import { IconPlugConnected } from "@tabler/icons-react";
@@ -8,29 +5,11 @@ import { IconPlugConnected } from "@tabler/icons-react";
 import CalendarSources from "app/components/calendar-sources";
 import Consent from "app/components/consent";
 import { DEFAULT_PATH } from "app/config";
-import { createServerAdminClient, safeQuery } from "app/db";
+import { privateLoader } from "app/util";
 
-async function requireInvitation(request: Request, context: AppLoadContext) {
-  const url = new URL(request.url);
-  const invitation = url.searchParams.get("invitation");
-  if (!invitation) throw redirect("/waitlist");
-
-  const supabaseAdmin = createServerAdminClient(context);
-  const match = safeQuery(
-    await supabaseAdmin
-      .from("invitation")
-      .select()
-      .eq("code", invitation)
-      .maybeSingle()
-  );
-  if (!match?.remaining)
-    throw redirect(`/waitlist?invitation=${invitation}&error=invalid`);
-}
-
-export const loader = async ({ context, request }: LoaderFunctionArgs) => {
-  await requireInvitation(request, context);
+export const loader = privateLoader(async () => {
   return null;
-};
+});
 
 export default function Sync() {
   return (

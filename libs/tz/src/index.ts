@@ -77,7 +77,7 @@ export const formatDuration = (
   length = Math.round(length);
   const hours = Math.floor(length / 60);
   const minutes = Math.abs(length % 60);
-  const showMinutes = minutes > 0 || alwaysMinutes;
+  const showMinutes = minutes > 0 || alwaysMinutes || hours === 0;
   return (
     (hours ? `${hours}h` : "") +
     (hours && showMinutes ? " " : "") +

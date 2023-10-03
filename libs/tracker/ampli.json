@@ -1,0 +1,14 @@
+{
+  "Zone": "us",
+  "OrgId": "234721",
+  "WorkspaceId": "272a46d3-259b-4468-8130-83af6b4abe1a",
+  "SourceId": "2811714d-f2ee-4455-81b9-3cf1c9d6e634",
+  "Branch": "main",
+  "Version": "1.0.0",
+  "VersionId": "7ba0863a-1f93-4315-835e-14590420ed03",
+  "Runtime": "node.js:typescript-ampli-v2",
+  "Platform": "Node.js",
+  "Language": "TypeScript",
+  "SDK": "@amplitude/analytics-node@^1.0",
+  "Path": "./src/ampli"
+}

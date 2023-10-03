@@ -36,13 +36,28 @@ export default function Login() {
     }
   });
 
+  const invitation = searchParams.get("invitation");
   const googleLogin = async () => {
     if (!supabase) return;
-    await signIn(supabase, "google", "/login/callback", DEFAULT_PATH);
+    await signIn(
+      supabase,
+      "google",
+      "/login/callback",
+      DEFAULT_PATH,
+      undefined,
+      invitation ? { invitation } : undefined
+    );
   };
   const azureLogin = async () => {
     if (!supabase) return;
-    await signIn(supabase, "outlook", "/login/callback", DEFAULT_PATH);
+    await signIn(
+      supabase,
+      "outlook",
+      "/login/callback",
+      DEFAULT_PATH,
+      undefined,
+      invitation ? { invitation } : undefined
+    );
   };
 
   return (
@@ -76,13 +91,15 @@ export default function Login() {
               <Text mt="md">{error}</Text>
             </Alert>
           )}
-          <Text c="dimmed">
-            Need an account?{" "}
-            <Anchor component={Link} to={`/sync`}>
-              Get started here
-            </Anchor>
-            .
-          </Text>
+          {!invitation && (
+            <Text c="dimmed">
+              Need an account?{" "}
+              <Anchor component={Link} to={`/sync`}>
+                Get started here
+              </Anchor>
+              .
+            </Text>
+          )}
         </Stack>
       </Card>
     </Container>

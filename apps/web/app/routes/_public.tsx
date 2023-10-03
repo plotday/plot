@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import type { LoaderFunctionArgs } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
 import {
   Link,
@@ -23,21 +22,15 @@ import { IconBrandLinkedin, IconMail } from "@tabler/icons-react";
 import classes from "css/_public.module.css";
 import { useTypedLoaderData } from "remix-typedjson";
 
-import { getUser } from "app/auth";
-import { createServerClient } from "app/db";
 import type { ContextType } from "app/hooks";
+import { publicLoader } from "app/util";
 
 import Logo from "../components/logo";
 import { DEFAULT_PATH } from "../config";
 
-export const loader = async ({ context, request }: LoaderFunctionArgs) => {
-  let response: Response | undefined;
-  let supabase;
-  ({ supabase, response } = createServerClient(request, context));
-
-  let user = await getUser(supabase);
+export const loader = publicLoader(async ({ user, response }) => {
   return json({ user }, { headers: response.headers });
-};
+});
 
 function AppHeader({ menu }: { menu?: ReactNode }) {
   const { user } = useTypedLoaderData();
@@ -61,12 +54,12 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           </UnstyledButton>
         </Group>
         <Group>
-          {user?.invitation && isPublic && (
+          {user?.status === "active" && isPublic && (
             <Button component={Link} to={DEFAULT_PATH}>
               Go to app
             </Button>
           )}
-          {!user?.invitation && location.pathname !== "/login" && (
+          {user?.status !== "active" && location.pathname !== "/login" && (
             <Button variant="outline" component={Link} to="/login">
               Sign in
             </Button>
@@ -80,8 +73,8 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
 function AppFooter() {
   return (
     <Box p="md" className={classes.footer}>
-      <Group gap="md" justify="space-between">
-        <Group>
+      <Group justify="space-between" align="normal">
+        <Group gap="lg" align="normal">
           <Anchor href="mailto:team@plot.day" title="Email">
             <IconMail />
           </Anchor>
@@ -92,7 +85,7 @@ function AppFooter() {
             <IconBrandLinkedin />
           </Anchor>
         </Group>
-        <Group>
+        <Group gap="lg" align="normal">
           <Anchor component={Link} to={`/terms`}>
             Terms of Service
           </Anchor>
@@ -121,8 +114,9 @@ export default function Index() {
       <AppHeader />
       <AppShell.Main className={classes.main}>
         <Outlet context={ctx} />
+        <Box h={64} />
+        <AppFooter />
       </AppShell.Main>
-      <AppFooter />
     </AppShell>
   );
 }

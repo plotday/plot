@@ -1,6 +1,8 @@
 import type { SupabaseClient as _SupabaseClient } from "@supabase/supabase-js";
 import { createClient as supabaseCreateClient } from "@supabase/supabase-js";
 
+import { toDate } from "@plotday/tz";
+
 import { safeQuery } from "./query";
 import type { Database } from "./types";
 
@@ -40,6 +42,11 @@ export async function getCredentials(
     access_token: account.credentials.access_token,
     refresh_token: account.credentials.refresh_token,
   };
+}
+
+export function parseDateRange(range: string, tz: string) {
+  const dates = range.replaceAll(/["[\]()]/g, "").split(",");
+  return dates.map((d) => toDate(d, tz));
 }
 
 export type {

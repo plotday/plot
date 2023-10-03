@@ -4,7 +4,7 @@ export default function Terms() {
   return (
     <Container mt="lg">
       <Title order={1}>Terms of Use</Title>
-      <TypographyStylesProvider>
+      <TypographyStylesProvider p={0}>
         <h2 id="agreement-to-terms">AGREEMENT TO TERMS</h2>
         <p>
           These Terms of Use constitute a legally binding agreement made between

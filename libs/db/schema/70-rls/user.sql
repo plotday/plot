@@ -9,7 +9,6 @@ CREATE POLICY "Users can read themselves" ON "public"."user" AS permissive
                 account
             WHERE (account.user_id = "user".id))));
 
-CREATE POLICY "internal_admin can view all users" ON "public"."invitation" AS permissive
-    FOR SELECT TO internal_admin
-        USING (TRUE);
+CREATE POLICY "internal_admin can edit all users" ON "public"."user" AS permissive TO internal_admin
+    USING (TRUE);
 

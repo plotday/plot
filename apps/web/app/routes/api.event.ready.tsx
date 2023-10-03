@@ -1,23 +1,29 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
-import type { ActionFunctionArgs } from "@remix-run/cloudflare";
 import { useFetcher } from "@remix-run/react";
 
-import { getUser } from "app/auth";
-import { createServerClient, safeQuery } from "app/db";
+import { parseDateRange } from "@plotday/db";
+import type { Event } from "@plotday/db";
+
+import { safeQuery } from "app/db";
+import { useEventOptimist } from "app/event";
+import { privateAction } from "app/util";
 
 type ApiBody = {
+  eventId: number;
   providerId: string;
   ready?: boolean;
   reviewed?: boolean;
 };
 
-export function useEventReadyResponder() {
+export function useEventReadyResponder(event: Event) {
   const fetcher = useFetcher();
-  return useCallback(
-    (providerId: string, ready?: boolean, reviewed?: boolean) => {
+  const { setOverride, clearOverride } = useEventOptimist();
+  const cb = useCallback(
+    (ready?: boolean, reviewed?: boolean) => {
       const body = {
-        providerId,
+        eventId: event.id,
+        providerId: event.providerId,
         ready,
         reviewed,
       } as ApiBody;
@@ -27,44 +33,83 @@ export function useEventReadyResponder() {
         encType: "application/json",
       });
     },
-    [fetcher]
+    [fetcher, event.id, event.providerId]
   );
+  const body = fetcher.json as ApiBody;
+  useEffect(() => {
+    if (body) {
+      const ready = body.ready ? new Date().toISOString() : null;
+      const reviewed = body.reviewed ? new Date().toISOString() : null;
+      setOverride(event.id, {
+        ...(ready === undefined ? {} : { ready }),
+        ...(reviewed === undefined ? {} : { reviewed }),
+      });
+      // return () => {
+      //   clearOverride(event.id, ["attendance"]);
+      // };
+    }
+  }, [body, setOverride, clearOverride, event.id]);
+  return cb;
 }
 
-export const action = async ({ request, context }: ActionFunctionArgs) => {
-  const { supabase, response } = createServerClient(request, context);
-  let user = await getUser(supabase);
-  if (!user) return new Response("Unauthorized", { status: 401 });
+export const action = privateAction(
+  async ({ request, user, supabase, env, response }) => {
+    switch (request.method) {
+      case "PATCH": {
+        const body: ApiBody = await request.json();
+        safeQuery(
+          await supabase
+            .from("response")
+            .upsert(
+              {
+                user_id: user.id,
+                provider_id: body.providerId,
+                ...(body.ready !== undefined && {
+                  ready: body.ready ? new Date().toISOString() : null,
+                }),
+                ...(body.reviewed !== undefined && {
+                  reviewed: body.reviewed ? new Date().toISOString() : null,
+                }),
+              },
+              { onConflict: "user_id,provider_id" }
+            )
+            .eq("user_id", user.id)
+            .eq("provider_id", body.providerId)
+        );
 
-  switch (request.method) {
-    case "PATCH": {
-      const body: ApiBody = await request.json();
-      const event = safeQuery(
-        await supabase
-          .from("response")
-          .upsert(
-            {
-              user_id: user.id,
-              provider_id: body.providerId,
-              ...(body.ready !== undefined && {
-                ready: body.ready ? new Date().toISOString() : null,
-              }),
-              ...(body.reviewed !== undefined && {
-                reviewed: body.reviewed ? new Date().toISOString() : null,
-              }),
-            },
-            { onConflict: "user_id,provider_id" }
-          )
-          .eq("provider_id", body.providerId)
-          .select()
-      );
-      return new Response(JSON.stringify(event), {
-        headers: response.headers,
-        status: 200,
-      });
+        const event = safeQuery(
+          await supabase
+            .from("event")
+            .select("provider_id,at")
+            .eq("id", body.eventId)
+            .maybeSingle()
+        );
+        if (event) {
+          const leadTime = Math.floor(
+            (parseDateRange(event.at as string, "UTC")[0].getTime() -
+              Date.now()) /
+              60000
+          );
+          if (body.ready === true) {
+            env.tracker.meetingPrepped(user.id.toString(), {
+              "Lead Time": leadTime,
+            });
+          }
+          if (body.reviewed === true) {
+            env.tracker.meetingReviewed(user.id.toString(), {
+              "Lead Time": leadTime,
+            });
+          }
+        }
+
+        return new Response(null, {
+          headers: response.headers,
+          status: 200,
+        });
+      }
+
+      default:
+        return new Response("Unsupported method", { status: 405 });
     }
-
-    default:
-      return new Response("Unsupported method", { status: 405 });
   }
-};
+);

@@ -1,6 +1,5 @@
 import { useState } from "react";
 
-import type { ActionFunctionArgs } from "@remix-run/cloudflare";
 import { json } from "@remix-run/cloudflare";
 import { Form, useSearchParams } from "@remix-run/react";
 
@@ -20,23 +19,35 @@ import { IconMail } from "@tabler/icons-react";
 import { useTypedActionData } from "remix-typedjson";
 
 import { createServerAdminClient, safeQuery } from "app/db";
+import { useUser } from "app/hooks";
+import { publicAction } from "app/util";
 
-export async function action({ request, context }: ActionFunctionArgs) {
+export const action = publicAction(async ({ request, context, env }) => {
   const body = await request.formData();
   const email = body.get("email")?.toString();
   if (!email) return null;
 
   const supabaseAdmin = createServerAdminClient(context);
-  safeQuery(
-    await supabaseAdmin
-      .from("waitlist")
-      .upsert({ email }, { onConflict: "email", ignoreDuplicates: true })
-  );
+  const { id: userId } =
+    safeQuery(
+      await supabaseAdmin
+        .from("user")
+        .upsert({ email }, { onConflict: "email" })
+        .select("id")
+        .maybeSingle()
+    ) || {};
+
+  if (userId) {
+    env.tracker.identify(userId.toString(), {
+      Email: email,
+    });
+    env.tracker.accountWaitlisted(userId.toString());
+  }
 
   return json({
     email,
   });
-}
+});
 
 export function WaitlistForm() {
   const [searchParams] = useSearchParams();
@@ -64,42 +75,41 @@ export function WaitlistForm() {
 export default function Waitlist() {
   const [searchParams] = useSearchParams();
   const [hasError, setHasError] = useState(searchParams.has("error"));
+  let user = useUser(true);
+  if (user?.activated_at) user = null;
   const email = useTypedActionData()?.email;
 
   return (
     <Container size="xs" p="sm" mt="xl">
       <Stack gap="xl">
-        {email && (
-          <Card>
-            <Stack>
-              <Title>Awesome!</Title>
+        <Card>
+          <Stack>
+            <Title>{email ? "Awesome!" : "Hello!"}</Title>
+            {!email && <Text>Plot is currently in private, early access.</Text>}
+            {email && (
               <Text>
                 We're thrilled you're taking this step to own your time.
               </Text>
-              <Text>We'll be in touch soon.</Text>
-              <Text>
-                &mdash;{" "}
-                <Anchor href="https://www.linkedin.com/in/nigelvanderlinden/">
-                  Nigel
-                </Anchor>{" "}
-                and{" "}
-                <Anchor href="https://www.linkedin.com/in/krisbraun/">
-                  Kris
-                </Anchor>
-              </Text>
-            </Stack>
-          </Card>
-        )}
-
-        {!email && (
-          <Card>
-            <Stack>
-              <Title>Hello!</Title>
-              <Text>Plot is currently in private, early access.</Text>
-              <WaitlistForm />
-            </Stack>
-          </Card>
-        )}
+            )}
+            {user && <Text>You've been added to the waitlist.</Text>}
+            {!email && !user && <WaitlistForm />}
+            {(email || user) && (
+              <>
+                <Text>We'll be in touch soon.</Text>
+                <Text>
+                  &mdash;{" "}
+                  <Anchor href="https://www.linkedin.com/in/nigelvanderlinden/">
+                    Nigel
+                  </Anchor>{" "}
+                  and{" "}
+                  <Anchor href="https://www.linkedin.com/in/krisbraun/">
+                    Kris
+                  </Anchor>
+                </Text>
+              </>
+            )}
+          </Stack>
+        </Card>
 
         <Card>
           <Stack>

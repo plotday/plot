@@ -719,91 +719,36 @@ export interface Database {
       }
       user: {
         Row: {
+          activated_at: string | null
           avatar_url: string | null
           created_at: string
           email: string
           id: number
           invitation: string | null
-          name: string
+          name: string | null
           timezone: string
         }
         Insert: {
+          activated_at?: string | null
           avatar_url?: string | null
           created_at?: string
           email: string
           id?: number
           invitation?: string | null
-          name: string
+          name?: string | null
           timezone?: string
         }
         Update: {
+          activated_at?: string | null
           avatar_url?: string | null
           created_at?: string
           email?: string
           id?: number
           invitation?: string | null
-          name?: string
+          name?: string | null
           timezone?: string
         }
         Relationships: []
-      }
-      waitlist: {
-        Row: {
-          created_at: string | null
-          email: string
-          id: number
-          provider: Database["public"]["Enums"]["provider"] | null
-          sync_error: string | null
-          user_id: number | null
-        }
-        Insert: {
-          created_at?: string | null
-          email: string
-          id?: number
-          provider?: Database["public"]["Enums"]["provider"] | null
-          sync_error?: string | null
-          user_id?: number | null
-        }
-        Update: {
-          created_at?: string | null
-          email?: string
-          id?: number
-          provider?: Database["public"]["Enums"]["provider"] | null
-          sync_error?: string | null
-          user_id?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "waitlist_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "waitlist_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "waitlist_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "expenditure"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "waitlist_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "expenditure_monthly"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "waitlist_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "prep_monthly"
-            referencedColumns: ["user_id"]
-          }
-        ]
       }
     }
     Views: {
@@ -964,10 +909,10 @@ export interface Database {
           event_count: number | null
           id: number | null
           invitation: string | null
-          provider: Database["public"]["Enums"]["provider"] | null
+          provider: Database["public"]["Enums"]["provider"][] | null
           status: string | null
           sync_accounts: string[] | null
-          sync_error: string | null
+          sync_error: string[] | null
         }
         Relationships: []
       }
@@ -1058,15 +1003,6 @@ export interface Database {
         }
         Returns: number
       }
-      insert_user: {
-        Args: {
-          _name: string
-          _email: string
-          _avatar_url: string
-          _invitation: string
-        }
-        Returns: number
-      }
       invitee: {
         Args: {
           "": unknown
@@ -1122,6 +1058,13 @@ export interface Database {
               name: string
             }[]
           }
+      redeem_invitation: {
+        Args: {
+          _user_id: number
+          _invitation: string
+        }
+        Returns: undefined
+      }
       update_all_event_labels: {
         Args: Record<PropertyKey, never>
         Returns: undefined
@@ -1160,6 +1103,7 @@ export interface Database {
         | "personal"
       location_type: "room" | "address" | "other"
       provider: "google" | "outlook"
+      user_status: "waitlisted" | "active"
     }
     CompositeTypes: {
       event_contact: {

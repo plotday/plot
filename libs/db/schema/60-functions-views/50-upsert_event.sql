@@ -87,6 +87,17 @@ BEGIN
     DELETE FROM invitee i
     WHERE i.event_id = _new_event.id
         AND "sequence" < _new_event.sequence;
+    -- create labels
+    DELETE FROM event_label
+    WHERE event_id = _new_event.id;
+    INSERT INTO event_label (event_id, label_id)
+    SELECT
+        e.id AS event_id,
+        unnest(event_label_ids (e)) AS label_id
+    FROM
+        event_x e
+    WHERE
+        e.id = _new_event.id;
     RETURN _new_event.id;
 END;
 $function$;

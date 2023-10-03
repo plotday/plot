@@ -8,6 +8,9 @@ type Nullable<T> = { [K in keyof T]: T[K] | null };
 export type ContextType = {
   supabase?: SupabaseClient<Database>;
   user?: Nullable<Partial<Database["public"]["Tables"]["user"]["Row"]>>;
+  waitlistedUser?: Nullable<
+    Partial<Database["public"]["Tables"]["user"]["Row"]>
+  >;
 };
 
 export function useSupabase() {
@@ -15,9 +18,9 @@ export function useSupabase() {
   return supabase;
 }
 
-export function useUser() {
-  const { user } = useOutletContext<ContextType>();
-  return user;
+export function useUser(includeWaitlisted = false) {
+  const { user, waitlistedUser } = useOutletContext<ContextType>();
+  return user ?? (includeWaitlisted ? waitlistedUser : null);
 }
 
 export function useTz() {
