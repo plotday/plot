@@ -10,11 +10,20 @@ compatibility_date = "2023-07-10"
   binding = "SYNC_QUEUE"
 
 [[env.development.queues.producers]]
+  queue = "plot-contact-sync-development-queue"
+  binding = "CONTACT_SYNC_QUEUE"
+
+[[env.development.queues.producers]]
   queue = "plot-event-development-queue"
   binding = "EVENT_QUEUE"
 
 [[env.development.queues.consumers]]
   queue = "plot-sync-development-queue"
+  max_batch_size = 1
+  max_retries = 0
+
+[[env.development.queues.consumers]]
+  queue = "plot-contact-sync-development-queue"
   max_batch_size = 1
   max_retries = 0
 

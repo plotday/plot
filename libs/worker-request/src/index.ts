@@ -22,3 +22,7 @@ export type MailRequest = {
   email: EmailType;
   props?: Record<string, unknown>;
 };
+
+export type ContactSyncRequest = {
+  accountId: number;
+};

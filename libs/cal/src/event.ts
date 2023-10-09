@@ -21,6 +21,7 @@ export type Attachment = {
 export type Contact = {
   email: string;
   name?: string;
+  avatar?: string;
 };
 
 export type Invitee = Contact & {

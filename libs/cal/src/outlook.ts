@@ -7,9 +7,11 @@ import type {
 import { jsonFetch as fetch } from "@worker-tools/json-fetch";
 
 import type {
+  Calendar,
   CalendarConfig,
   CalendarCredentials,
   Contact,
+  ContactSyncState,
   Event,
   EventAvailability,
   EventResponse,
@@ -123,7 +125,7 @@ export async function sync(
 
   const response = await client
     .api(
-      state?.nextToken ??
+      state?.state ??
         `${
           state.calendarId === "primary"
             ? "/me"
@@ -159,10 +161,9 @@ export async function sync(
     }
   }
 
-  const nextToken = response["@odata.nextLink"] || response["@odata.deltaLink"];
   state = {
     ...(state || {}),
-    nextToken,
+    state: response["@odata.nextLink"] || response["@odata.deltaLink"],
     more: !!response["@odata.nextLink"],
   };
 
@@ -428,13 +429,49 @@ export async function respond(
   if (isOrganizer) return;
 
   // Outlook deletes declined events, so we only tentatively accept
-  console.log(response === "accepted" ? "accept" : "tentativelyAccept");
-  const r = await client
+  await client
     .api(
       `/me/calendars/${calendarId}/events/${eventId}/${
         response === "accepted" ? "accept" : "tentativelyAccept"
       }`
     )
     .post({});
-  console.log(JSON.stringify(r));
+}
+
+export async function getCalendars(
+  _config: CalendarConfig,
+  credentials: CalendarCredentials
+): Promise<{
+  calendars: Calendar[];
+  credentials: CalendarCredentials;
+}> {
+  return {
+    calendars: [
+      {
+        name: credentials.email,
+        id: "primary",
+        primary: true,
+        account: credentials.email,
+        tz: "America/New_York", // TODO FIXME
+      },
+    ],
+    credentials,
+  };
+}
+
+export async function getContacts(
+  _config: CalendarConfig,
+  credentials: CalendarCredentials,
+  state: ContactSyncState
+): Promise<{
+  contacts: Contact[];
+  credentials: CalendarCredentials;
+  state: ContactSyncState;
+}> {
+  // TODO
+  return {
+    contacts: [],
+    credentials,
+    state,
+  };
 }

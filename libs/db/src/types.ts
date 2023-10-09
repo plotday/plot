@@ -37,6 +37,7 @@ export interface Database {
       account: {
         Row: {
           auth_user_id: string
+          contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
           domain_id: number | null
@@ -48,6 +49,7 @@ export interface Database {
         }
         Insert: {
           auth_user_id: string
+          contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
           domain_id?: number | null
@@ -58,6 +60,7 @@ export interface Database {
         }
         Update: {
           auth_user_id?: string
+          contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
           domain_id?: number | null
@@ -119,12 +122,12 @@ export interface Database {
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
-          more: boolean | null
-          next_token: string | null
+          name: string | null
           provider_id: string
           sequence: number
           starts_at: string | null
           sync_error: string | null
+          sync_state: Json | null
           synced_at: string | null
           watch_expires_at: string | null
           watch_id: string | null
@@ -138,12 +141,12 @@ export interface Database {
           full_sync_at?: string | null
           full_sync_started_at?: string | null
           id?: number
-          more?: boolean | null
-          next_token?: string | null
+          name?: string | null
           provider_id: string
           sequence?: number
           starts_at?: string | null
           sync_error?: string | null
+          sync_state?: Json | null
           synced_at?: string | null
           watch_expires_at?: string | null
           watch_id?: string | null
@@ -156,12 +159,12 @@ export interface Database {
           full_sync_at?: string | null
           full_sync_started_at?: string | null
           id?: number
-          more?: boolean | null
-          next_token?: string | null
+          name?: string | null
           provider_id?: string
           sequence?: number
           starts_at?: string | null
           sync_error?: string | null
+          sync_state?: Json | null
           synced_at?: string | null
           watch_expires_at?: string | null
           watch_id?: string | null
@@ -178,6 +181,7 @@ export interface Database {
       }
       contact: {
         Row: {
+          avatar_url: string | null
           contact_user_id: number | null
           created_at: string
           domain_id: number | null
@@ -188,6 +192,7 @@ export interface Database {
           organization: unknown | null
         }
         Insert: {
+          avatar_url?: string | null
           contact_user_id?: number | null
           created_at?: string
           domain_id?: number | null
@@ -197,6 +202,7 @@ export interface Database {
           user_id: number
         }
         Update: {
+          avatar_url?: string | null
           contact_user_id?: number | null
           created_at?: string
           domain_id?: number | null
@@ -924,6 +930,7 @@ export interface Database {
         }
         Returns: {
           auth_user_id: string
+          contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
           domain_id: number | null
@@ -973,12 +980,12 @@ export interface Database {
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
-          more: boolean | null
-          next_token: string | null
+          name: string | null
           provider_id: string
           sequence: number
           starts_at: string | null
           sync_error: string | null
+          sync_state: Json | null
           synced_at: string | null
           watch_expires_at: string | null
           watch_id: string | null
@@ -1077,7 +1084,13 @@ export interface Database {
           _organizer: Database["public"]["CompositeTypes"]["event_contact"]
           _invitees: Database["public"]["CompositeTypes"]["event_invitee"][]
         }
-        Returns: number
+        Returns: Database["public"]["CompositeTypes"]["event_insert_result"]
+      }
+      upsert_events: {
+        Args: {
+          _events: Database["public"]["CompositeTypes"]["event_insert"][]
+        }
+        Returns: Database["public"]["CompositeTypes"]["event_insert_result"][]
       }
       work_day_end: {
         Args: Record<PropertyKey, never>
@@ -1109,6 +1122,19 @@ export interface Database {
       event_contact: {
         email: string
         name: string
+      }
+      event_insert: {
+        calendar_id: number
+        raw_event: unknown
+        event: unknown
+        organizer: Database["public"]["CompositeTypes"]["event_contact"]
+        invitees: unknown
+      }
+      event_insert_result: {
+        calendar_id: number
+        provider_id: string
+        event_id: number
+        error: string
       }
       event_invitee: {
         contact: Database["public"]["CompositeTypes"]["event_contact"]

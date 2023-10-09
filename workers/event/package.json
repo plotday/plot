@@ -2,6 +2,7 @@
   "name": "@plotday/event-sync",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "sideEffects": false,
   "version": "0.0.2",
   "private": true,
   "deploy_vars": "SENTRY_DSN SUPABASE_URL",

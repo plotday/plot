@@ -5,7 +5,8 @@ CREATE TABLE "public"."contact" (
     "email" text,
     "name" text,
     "contact_user_id" bigint,
-    "domain_id" bigint
+    "domain_id" bigint,
+    "avatar_url" text
 );
 
 CREATE UNIQUE INDEX contact_pkey ON public.contact USING btree (id);

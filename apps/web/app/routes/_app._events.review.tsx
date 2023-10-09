@@ -36,6 +36,7 @@ export const loader = privateLoader(
 export const handle: { eventFilter: EventFilter } = {
   eventFilter: {
     review: true,
+    match: (event) => !event.reviewed,
     config: [
       {
         label: "Show reviewed",

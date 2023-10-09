@@ -1,5 +1,7 @@
 import type { Provider, Session, SupabaseClient } from "@supabase/supabase-js";
 
+import { jsonFetch as fetch } from "@worker-tools/json-fetch";
+
 import type { CalendarProvider } from "@plotday/cal";
 
 import type { Database } from "app/db";
@@ -91,6 +93,11 @@ export const signIn = async (
       baseScopes = ["openid", "email", "user.read"];
       break;
     case "google":
+      baseScopes = [
+        "openid",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+      ];
       providerParams = {
         access_type: additionalScopes ? "offline" : "online",
         prompt: (additionalScopes ? ["select_account", "consent"] : []).join(
@@ -157,18 +164,31 @@ export const getUser = async (
 };
 
 export const getUserMetadata = async (session: Session) => {
+  const provider =
+    session.user?.app_metadata?.provider === "google"
+      ? "google"
+      : ("outlook" as CalendarProvider);
+  let scopes = [];
+  if (provider === "google") {
+    const response = await fetch(
+      `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${session.provider_token}`,
+      {
+        method: "GET",
+      }
+    );
+    const body = await response.json();
+    scopes = (body as any)?.scope?.split(" ") ?? [];
+  }
   return {
     id: session.user?.id,
-    provider:
-      session.user?.app_metadata?.provider === "google"
-        ? "google"
-        : ("outlook" as CalendarProvider),
+    provider,
     email: session.user?.user_metadata?.email?.toLowerCase() || null,
     name: session.user?.user_metadata?.name || null,
     avatar: session.user?.user_metadata?.avatar_url || null,
     credentials: {
       access_token: session.provider_token,
       refresh_token: session.provider_refresh_token,
+      scopes,
     },
   };
 };
@@ -216,6 +236,7 @@ export async function addAccount(
   if (credentials.refresh_token) {
     env.tracker.accountAdded(user.id.toString(), {
       Provider: provider,
+      Scopes: credentials.scopes,
     });
   }
 

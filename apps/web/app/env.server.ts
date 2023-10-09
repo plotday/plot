@@ -4,11 +4,12 @@ import type { Queue } from "@cloudflare/workers-types";
 import * as z from "zod";
 
 import type { Tracker } from "@plotday/tracker";
-import type { SyncRequest } from "@plotday/worker-request";
+import type { ContactSyncRequest, SyncRequest } from "@plotday/worker-request";
 
 import type { Sentry } from "app/sentry.server";
 
 type SyncQueue = Queue<SyncRequest>;
+type ContactSyncQueue = Queue<ContactSyncRequest>;
 
 const environmentSchema = z.object({
   SUPABASE_URL: z.string().min(1),
@@ -25,6 +26,9 @@ const environmentSchema = z.object({
 
   SYNC_QUEUE: z
     .custom<SyncQueue>((data) => typeof data === "object")
+    .optional(),
+  CONTACT_SYNC_QUEUE: z
+    .custom<ContactSyncQueue>((data) => typeof data === "object")
     .optional(),
 
   tracker: z.custom<Tracker>((data) => typeof data === "object"),

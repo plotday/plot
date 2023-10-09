@@ -18,7 +18,8 @@
     "@microsoft/microsoft-graph-types": "^2.35.0",
     "@plotday/tz": "workspace:^",
     "@worker-tools/json-fetch": "2.1.0-pre.6",
-    "date-fns": "^2.30.0"
+    "date-fns": "^2.30.0",
+    "googleapis": "^126.0.1"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",

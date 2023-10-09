@@ -40,7 +40,13 @@ export default function CalendarSources({
     let scopes;
     switch (provider) {
       case "google":
-        scopes = ["https://www.googleapis.com/auth/calendar"];
+        scopes = [
+          "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+          "https://www.googleapis.com/auth/calendar.events",
+          "https://www.googleapis.com/auth/contacts.readonly",
+          "https://www.googleapis.com/auth/contacts.other.readonly",
+          "https://www.googleapis.com/auth/directory.readonly",
+        ];
         break;
       case "outlook":
         scopes = ["calendars.readwrite", "offline_access"];

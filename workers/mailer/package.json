@@ -1,6 +1,7 @@
 {
   "name": "@plotday/mailer",
   "version": "0.0.2",
+  "sideEffects": false,
   "private": true,
   "env_vars": "SENTRY_DSN SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT RESEND_API_KEY",
   "deploy_vars": "SENTRY_DSN",

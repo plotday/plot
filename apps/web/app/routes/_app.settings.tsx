@@ -1,39 +1,84 @@
 import { useCallback } from "react";
 
-import { json } from "@remix-run/cloudflare";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { Box, Button, Card, Container, Stack, Title } from "@mantine/core";
+import {
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  Container,
+  Group,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
 
-import { useTypedLoaderData } from "remix-typedjson";
+import { typedjson, useTypedLoaderData } from "remix-typedjson";
+
+import { safeQuery, saveCredentials } from "@plotday/db";
 
 import { logout } from "app/auth";
+import {
+  getCalendars as getAccountCalendars,
+  getCalendarConfig,
+} from "app/cal";
 import CalendarSources from "app/components/calendar-sources";
 import { saveAuthCookie } from "app/cookies.server";
-import { safeQuery } from "app/db";
+import type { Environment } from "app/env.server";
 import { useSupabase } from "app/hooks";
 import { privateLoader } from "app/util";
 
-export const loader = privateLoader(async ({ request, response, supabase }) => {
-  const calendars = safeQuery(
+async function getCalendars(
+  supabase: SupabaseClient,
+  env: Environment,
+  userId: number
+) {
+  const accounts = safeQuery(
     await supabase
-      .from("calendar")
-      .select("id,provider_id,account(provider,email)")
+      .from("account")
+      .select(
+        "id,provider,email,credentials,calendars:calendar(name,provider_id)"
+      )
+      .eq("user_id", userId)
   );
-
-  saveAuthCookie(request, response);
-
-  return json(
-    {
-      calendars,
-    },
-    {
-      headers: response.headers,
-    }
+  if (!accounts) return [];
+  const allCalendars = await Promise.all(
+    accounts.map(async (account) => {
+      const { calendars, credentials } = await getAccountCalendars(
+        getCalendarConfig(env),
+        {
+          provider: account.provider,
+          email: account.email,
+          access_token: account.credentials.access_token,
+          refresh_token: account.credentials.refresh_token,
+          scopes: account.credentials.scopes,
+        }
+      );
+      await saveCredentials(supabase, account.id, credentials);
+      return calendars;
+    })
   );
-});
+  return allCalendars.flat();
+}
+
+export const loader = privateLoader(
+  async ({ request, response, supabase, env, user }) => {
+    saveAuthCookie(request, response);
+
+    return typedjson(
+      {
+        calendars: await getCalendars(supabase, env, user.id),
+      },
+      {
+        headers: response.headers,
+      }
+    );
+  }
+);
 
 export default function Settings() {
-  const { calendars } = useTypedLoaderData();
+  const { calendars } = useTypedLoaderData<typeof loader>();
   const supabase = useSupabase();
   const doLogout = useCallback(() => {
     if (!supabase) return;
@@ -43,11 +88,18 @@ export default function Settings() {
     <Container size="xs" p="sm">
       <Card>
         <Stack>
-          {calendars.length > 0 && <Title order={2}>Active calendars</Title>}
-          {calendars.map((calendar: any) => (
+          {calendars && calendars.length > 0 && (
+            <Title order={2}>Calendars</Title>
+          )}
+          {calendars?.map((calendar) => (
             <Box key={calendar.id}>
               <Card withBorder>
-                {calendar.account.email} - {calendar.provider_id}
+                <Group>
+                  <Checkbox readOnly radius="xl" checked={calendar.primary} />
+                  <Text>
+                    {calendar.name} ({calendar.account})
+                  </Text>
+                </Group>
               </Card>
             </Box>
           ))}

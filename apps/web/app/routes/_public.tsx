@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { json } from "@remix-run/cloudflare";
 import {
   Link,
   Outlet,
@@ -20,7 +19,7 @@ import {
 
 import { IconBrandLinkedin, IconMail } from "@tabler/icons-react";
 import classes from "css/_public.module.css";
-import { useTypedLoaderData } from "remix-typedjson";
+import { typedjson, useTypedLoaderData } from "remix-typedjson";
 
 import type { ContextType } from "app/hooks";
 import { publicLoader } from "app/util";
@@ -29,11 +28,11 @@ import Logo from "../components/logo";
 import { DEFAULT_PATH } from "../config";
 
 export const loader = publicLoader(async ({ user, response }) => {
-  return json({ user }, { headers: response.headers });
+  return typedjson({ user }, { headers: response.headers });
 });
 
 function AppHeader({ menu }: { menu?: ReactNode }) {
-  const { user } = useTypedLoaderData();
+  const { user } = useTypedLoaderData<typeof loader>();
   const location = useLocation();
   const routes = useMatches();
   const isPublic = routes.some((r) => r.id === "routes/_public");
@@ -54,12 +53,12 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           </UnstyledButton>
         </Group>
         <Group>
-          {user?.status === "active" && isPublic && (
+          {user?.activated_at && isPublic && (
             <Button component={Link} to={DEFAULT_PATH}>
               Go to app
             </Button>
           )}
-          {user?.status !== "active" && location.pathname !== "/login" && (
+          {!user?.activated_at && location.pathname !== "/login" && (
             <Button variant="outline" component={Link} to="/login">
               Sign in
             </Button>

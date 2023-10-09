@@ -1,7 +1,6 @@
 import { useEffect, useMemo } from "react";
 
 import type { LinksFunction, MetaFunction } from "@remix-run/cloudflare";
-import { json } from "@remix-run/cloudflare";
 import { cssBundleHref } from "@remix-run/css-bundle";
 import {
   Links,
@@ -10,7 +9,6 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-  useLoaderData,
   useRevalidator,
 } from "@remix-run/react";
 
@@ -25,16 +23,18 @@ import {
 } from "@mantine/core";
 import "@mantine/core/styles.css";
 
+import { typedjson, useTypedLoaderData } from "remix-typedjson";
+
 import type { Database } from "@plotday/db";
 
 import { APP_NAME } from "app/config";
+import { getBrowserEnv } from "app/env.server";
 import { ErrorPage } from "app/error";
 import type { ContextType } from "app/hooks";
 import { init as sentryInit } from "app/sentry.client";
 import { publicLoader } from "app/util";
 
 import { authCookieOptions } from "./auth";
-import { getBrowserEnv } from "./env.server";
 import { resolver, theme } from "./theme";
 
 export const loader = publicLoader(
@@ -42,7 +42,7 @@ export const loader = publicLoader(
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    return json(
+    return typedjson(
       {
         env: getBrowserEnv(context),
         session,
@@ -136,7 +136,8 @@ export function ErrorBoundary() {
 }
 
 export default function App() {
-  const { env, user, waitlistedUser, session } = useLoaderData<typeof loader>();
+  const { env, user, waitlistedUser, session } =
+    useTypedLoaderData<typeof loader>();
 
   if (sentryInit && env.SENTRY_DSN && user) {
     sentryInit(env.SENTRY_DSN, user);

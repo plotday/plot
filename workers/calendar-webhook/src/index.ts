@@ -3,7 +3,12 @@ import { Toucan } from "toucan-js";
 import type { CalendarConfig, OutlookChangeNotification } from "@plotday/cal";
 import { deleteWatch, watch } from "@plotday/cal";
 import type { Database } from "@plotday/db";
-import { createClient, getCredentials, safeQuery } from "@plotday/db";
+import {
+  createClient,
+  getCredentials,
+  safeQuery,
+  saveCredentials,
+} from "@plotday/db";
 import type { SyncRequest } from "@plotday/worker-request";
 
 type Calendar = Database["public"]["Tables"]["calendar"]["Row"];
@@ -113,21 +118,13 @@ async function queueSync(
   let credentials = await getCredentials(supabase, accountId);
 
   if (watchId !== calendar.watch_id) {
-    let credentialsChanged;
-    ({ credentials, credentialsChanged } = await deleteWatch(
+    ({ credentials } = await deleteWatch(
       calendarConfig,
       credentials,
       watchId,
       resourceId
     ));
-    if (credentialsChanged) {
-      safeQuery(
-        await supabase
-          .from("account")
-          .update({ credentials })
-          .eq("id", accountId)
-      );
-    }
+    saveCredentials(supabase, accountId, credentials, true);
     return;
   }
 
@@ -178,8 +175,8 @@ async function renewWatch(env: Env, calendar: Calendar) {
   console.log(`Renewing watch for ${calendar.id}`);
 
   const calendarConfig = getCalendarConfig(env);
-  let state, credentialsChanged;
-  ({ state, credentials, credentialsChanged } = await watch(
+  let state;
+  ({ state, credentials } = await watch(
     calendarConfig,
     credentials,
     calendar.provider_id,
@@ -190,11 +187,7 @@ async function renewWatch(env: Env, calendar: Calendar) {
         }
       : undefined
   ));
-  if (credentialsChanged) {
-    safeQuery(
-      await supabase.from("account").update({ credentials }).eq("id", accountId)
-    );
-  }
+  saveCredentials(supabase, accountId, credentials, true);
 
   safeQuery(
     await supabase

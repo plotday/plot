@@ -1,6 +1,8 @@
-import type { Event, EventResponse } from "./event";
+import type { Contact, Event, EventResponse } from "./event";
 import {
   deleteWatch as deleteGoogleWatch,
+  getCalendars as googleGetCalendars,
+  getContacts as googleGetContacts,
   respond as googleRespond,
   sync as googleSync,
   transform as googleTransform,
@@ -9,6 +11,8 @@ import {
 } from "./google";
 import {
   deleteWatch as deleteOutlookWatch,
+  getCalendars as outlookGetCalendars,
+  getContacts as outlookGetContacts,
   respond as outlookRespond,
   sync as outlookSync,
   transform as outlookTransform,
@@ -44,8 +48,11 @@ export type CalendarProvider = "google" | "outlook";
 
 export type CalendarCredentials = {
   provider: CalendarProvider;
+  email: string;
   access_token: string;
   refresh_token: string;
+  scopes: string[];
+  updated?: boolean;
 };
 
 export type SyncState = {
@@ -57,7 +64,7 @@ export type SyncState = {
   // If more === true, a page token.
   // Otherwise, a sync token.
   // If unset, a full sync.
-  nextToken?: string;
+  state?: any;
 };
 
 export type WatchState = {
@@ -67,9 +74,25 @@ export type WatchState = {
   expiry: Date;
 };
 
+export type ContactSyncState = {
+  more?: boolean;
+  // If more === true, a page token.
+  // Otherwise, a sync token.
+  // If unset, a full sync.
+  state?: string;
+};
+
 export type RawEvent = {
   id: string;
   data: { [key: string]: any };
+};
+
+export type Calendar = {
+  name: string;
+  id: string;
+  tz: string;
+  primary: boolean;
+  account: string;
 };
 
 export async function watch(
@@ -83,7 +106,6 @@ export async function watch(
 ): Promise<{
   state: WatchState;
   credentials: CalendarCredentials;
-  credentialsChanged: boolean;
 }> {
   if (!config.webhookUrl) throw new Error("Missing webhookUrl");
   let ret;
@@ -99,19 +121,7 @@ export async function watch(
   }
   return {
     ...ret,
-    credentialsChanged: !credentialsEqual(credentials, ret.credentials),
   };
-}
-
-export function credentialsEqual(
-  c1: CalendarCredentials,
-  c2: CalendarCredentials
-): boolean {
-  return (
-    c1.provider === c2.provider &&
-    c1.access_token === c2.access_token &&
-    c1.refresh_token === c2.refresh_token
-  );
 }
 
 export async function deleteWatch(
@@ -122,7 +132,6 @@ export async function deleteWatch(
   resourceId?: string
 ): Promise<{
   credentials: CalendarCredentials;
-  credentialsChanged: boolean;
 }> {
   let newCredentials: CalendarCredentials;
   switch (credentials.provider) {
@@ -143,7 +152,6 @@ export async function deleteWatch(
   }
   return {
     credentials: newCredentials,
-    credentialsChanged: !credentialsEqual(credentials, newCredentials),
   };
 }
 
@@ -214,7 +222,6 @@ export async function respond(
   calendarId: string,
   eventId: string,
   response: EventResponse,
-  email: string,
   isOrganizer: boolean
 ) {
   switch (credentials.provider) {
@@ -224,8 +231,7 @@ export async function respond(
         credentials,
         calendarId,
         eventId,
-        response,
-        email
+        response
       );
     case "outlook":
       return await outlookRespond(
@@ -236,6 +242,42 @@ export async function respond(
         response,
         isOrganizer
       );
+    default:
+      throw new Error(`Unknown provider: ${credentials.provider}`);
+  }
+}
+
+export async function getCalendars(
+  config: CalendarConfig,
+  credentials: CalendarCredentials
+): Promise<{
+  calendars: Calendar[];
+  credentials: CalendarCredentials;
+}> {
+  switch (credentials.provider) {
+    case "google":
+      return await googleGetCalendars(config, credentials);
+    case "outlook":
+      return await outlookGetCalendars(config, credentials);
+    default:
+      throw new Error(`Unknown provider: ${credentials.provider}`);
+  }
+}
+
+export async function getContacts(
+  config: CalendarConfig,
+  credentials: CalendarCredentials,
+  state: ContactSyncState
+): Promise<{
+  contacts: Contact[];
+  credentials: CalendarCredentials;
+  state: ContactSyncState;
+}> {
+  switch (credentials.provider) {
+    case "google":
+      return await googleGetContacts(config, credentials, state);
+    case "outlook":
+      return await outlookGetContacts(config, credentials, state);
     default:
       throw new Error(`Unknown provider: ${credentials.provider}`);
   }

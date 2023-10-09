@@ -6,7 +6,8 @@ CREATE TABLE "public"."account" (
     "credentials" jsonb,
     "provider" provider NOT NULL,
     "email" text,
-    "domain_id" bigint
+    "domain_id" bigint,
+    "contact_sync_state" jsonb
 );
 
 CREATE UNIQUE INDEX account_pkey ON public.account USING btree (id);
@@ -30,4 +31,6 @@ ALTER TABLE "public"."account"
 ALTER TABLE "public"."account" validate CONSTRAINT "account_user_id_fkey";
 
 CREATE UNIQUE INDEX account_auth_user_id_key ON public.account USING btree (auth_user_id);
+
+CREATE INDEX account_user_id_idx ON public.account USING btree (user_id);
 

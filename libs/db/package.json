@@ -41,6 +41,7 @@
     "supabase": "^1.93.0"
   },
   "dependencies": {
+    "@plotday/cal": "workspace:^",
     "@plotday/tz": "workspace:^",
     "@supabase/supabase-js": "^2.36.0",
     "date-fns": "^2.30.0"

@@ -9,6 +9,8 @@ import type { EventSyncRequest } from "@plotday/worker-request";
 type DbEvent = Database["public"]["Tables"]["event"]["Insert"];
 type DbContact = Database["public"]["CompositeTypes"]["event_contact"];
 type DbInvitee = Database["public"]["CompositeTypes"]["event_invitee"];
+type EventInsert =
+  Database["public"]["Functions"]["upsert_events"]["Args"]["_events"];
 
 export interface Env {
   readonly ENV?: string;
@@ -82,49 +84,35 @@ export default {
       dist: env.PACKAGE,
     });
 
+    let fullSyncComplete = [] as number[];
     try {
       const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
-      let messageNum = 1;
-      for (let message of batch.messages) {
+      const inserts = batch.messages.reduce((inserts, message) => {
         try {
-          if (message.body.rawEvent) {
-            console.log(
-              `Processing ${messageNum} of ${batch.messages.length} (${message.body.calendarId})`
-            );
-            const event = transform(
-              message.body.provider,
-              message.body.rawEvent
-            );
-            // TODO: handle working locations
-            if (eventType(event) !== "event") continue;
-            const db = eventToDb(message.body.calendarId, event);
-            safeQuery(
-              await supabase.rpc("upsert_event", {
-                _calendar_id: message.body.calendarId,
-                _raw_event: {
-                  calendar_id: message.body.calendarId,
-                  provider_id: message.body.rawEvent.id,
-                  event: message.body.rawEvent.data,
-                  sequence: message.body.sequence,
-                },
-                _event: db.event,
-                _organizer: db.organizer as DbContact,
-                _invitees: db.invitees,
-              })
-            );
-          }
           if (message.body.fullSyncComplete) {
-            safeQuery(
-              await supabase
-                .from("calendar")
-                .update({
-                  full_sync_at: new Date().toISOString(),
-                })
-                .eq("id", message.body.calendarId)
-            );
+            fullSyncComplete.push(message.body.calendarId);
           }
-          message.ack();
+          if (!message.body.rawEvent) return inserts;
+          const event = transform(message.body.provider, message.body.rawEvent);
+          // TODO: handle working locations
+          if (eventType(event) !== "event") return inserts;
+          const db = eventToDb(message.body.calendarId, event);
+          return [
+            ...inserts,
+            {
+              calendar_id: message.body.calendarId,
+              raw_event: {
+                calendar_id: message.body.calendarId,
+                provider_id: message.body.rawEvent.id,
+                event: message.body.rawEvent.data,
+                sequence: message.body.sequence,
+              },
+              event: db.event,
+              organizer: db.organizer as DbContact,
+              invitees: db.invitees,
+            },
+          ];
         } catch (e) {
           console.error(e);
           if (message.body.rawEvent) {
@@ -140,9 +128,35 @@ export default {
             scope.setExtra("calendar-id", message.body.calendarId);
             Sentry.captureException(e);
           });
-          message.retry();
+          return inserts;
         }
-        messageNum += 1;
+      }, [] as EventInsert);
+
+      console.log(`Inserting ${inserts.length} events`);
+      const result = safeQuery(
+        await supabase.rpc("upsert_events", { _events: inserts })
+      );
+      for (const r of result ?? []) {
+        if (!r.error) continue;
+        console.error(`Failed to insert ${r.calendar_id}, ${r.provider_id}:`);
+        console.error(r.error);
+        Sentry.withScope((scope) => {
+          scope.setExtra("calendar-id", r.calendar_id);
+          scope.setExtra("provider-id", r.provider_id);
+          Sentry.captureException(new Error(r.error));
+        });
+      }
+
+      for (const calendarId of fullSyncComplete) {
+        console.log(`Full sync ${calendarId} complete`);
+        safeQuery(
+          await supabase
+            .from("calendar")
+            .update({
+              full_sync_at: new Date().toISOString(),
+            })
+            .eq("id", calendarId)
+        );
       }
     } catch (e) {
       console.error(e);

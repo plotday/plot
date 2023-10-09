@@ -64,6 +64,9 @@ export const loader = publicLoader(
         accountId: account.id,
         syncType: "full",
       });
+      await env.CONTACT_SYNC_QUEUE?.send?.({
+        accountId: account.id,
+      });
 
       return redirect(toUrl, {
         headers: response.headers,

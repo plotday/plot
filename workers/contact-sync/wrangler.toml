@@ -1,0 +1,30 @@
+name = "plot-contact-sync"
+main = "src/index.ts"
+compatibility_date = "2023-07-10"
+
+[env.production]
+  vars = { ENV = "production" }
+
+[[env.production.queues.producers]]
+  queue = "plot-contact-sync-production-queue"
+  binding = "CONTACT_SYNC_QUEUE"
+
+[[env.production.queues.consumers]]
+  queue = "plot-contact-sync-production-queue"
+  max_batch_size = 1
+  max_retries = 5
+
+[env.staging]
+  vars = { ENV = "staging" }
+
+[[env.staging.queues.producers]]
+  queue = "plot-contact-sync-staging-queue"
+  binding = "CONTACT_SYNC_QUEUE"
+
+[[env.staging.queues.consumers]]
+  queue = "plot-contact-sync-staging-queue"
+  max_batch_size = 1
+  max_retries = 5
+
+[placement]
+  mode = "smart"

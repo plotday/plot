@@ -1,9 +1,12 @@
 import { jsonFetch as fetch } from "@worker-tools/json-fetch";
+import type { calendar_v3, people_v1 } from "googleapis";
 
 import type {
+  Calendar,
   CalendarConfig,
   CalendarCredentials,
   Contact,
+  ContactSyncState,
   Event,
   EventAvailability,
   EventResponse,
@@ -16,7 +19,6 @@ import type {
   WatchState,
 } from "./";
 import { normalizeName } from "./contact";
-import type { calendar_v3 } from "./google-types";
 
 type GoogleEvent = calendar_v3.Schema$Event;
 type GoogleAttendee = calendar_v3.Schema$EventAttendee;
@@ -71,6 +73,7 @@ class GoogleApi {
       this.credentials = {
         ...this.credentials,
         ...newCredentials,
+        updated: true,
       };
     }
   }
@@ -133,14 +136,14 @@ export async function sync(
     "GET",
     `https://www.googleapis.com/calendar/v3/calendars/${state.calendarId}/events`,
     {
-      ...(state.nextToken && state.more
+      ...(state.state && state.more
         ? {
-            pageToken: state.nextToken,
+            pageToken: state.state,
           }
         : {}),
-      ...(state.nextToken && !state.more
+      ...(state.state && !state.more
         ? {
-            syncToken: state.nextToken,
+            syncToken: state.state,
           }
         : {
             timeMin: toGoogleDate(state.min),
@@ -156,7 +159,7 @@ export async function sync(
   } | null;
 
   if (!data) {
-    if (state.nextToken) {
+    if (state.state) {
       // An incremental sync required a full sync
       const newState = {
         calendarId: state.calendarId,
@@ -167,13 +170,13 @@ export async function sync(
       return sync(config, credentials, newState, maxEvents);
     } else {
       // This should never happen. Failing to avoid an infinite loop.
-      throw new Error("An full sync required another full sync");
+      throw new Error("A full sync required another full sync");
     }
   }
 
   state = {
     ...state,
-    nextToken: data.nextPageToken || data.nextSyncToken,
+    state: data.nextPageToken ?? data.nextSyncToken,
     more: !!data.nextPageToken,
   };
   const events = (data.items || []).map((event: any) => ({
@@ -432,15 +435,14 @@ export async function respond(
   credentials: CalendarCredentials,
   calendarId: string,
   eventId: string,
-  response: EventResponse,
-  email: string
+  response: EventResponse
 ) {
   const api = new GoogleApi(config, credentials);
   let googleChanges = {} as GoogleEvent;
   googleChanges.attendeesOmitted = true;
   googleChanges.attendees = [
     {
-      email,
+      email: credentials.email,
       responseStatus: response,
     },
   ];
@@ -450,4 +452,189 @@ export async function respond(
     undefined,
     googleChanges
   );
+}
+
+export async function getCalendars(
+  config: CalendarConfig,
+  credentials: CalendarCredentials
+): Promise<{
+  calendars: Calendar[];
+  credentials: CalendarCredentials;
+}> {
+  if (
+    !credentials.scopes.some(
+      (scope) => scope === "https://www.googleapis.com/auth/calendar.readonly"
+    )
+  ) {
+    return {
+      calendars: [
+        {
+          name: "Primary",
+          id: "primary",
+          primary: true,
+          tz: "America/New_York",
+          account: credentials.email,
+        },
+      ],
+      credentials,
+    };
+  }
+
+  const api = new GoogleApi(config, credentials);
+  const response = await api.call(
+    "GET",
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+    undefined
+  );
+  return {
+    calendars: (response as any).items.map((item: any) => ({
+      name: item.summary,
+      id: item.id,
+      primary: !!item.primary,
+      tz: item.timeZone,
+      account: credentials.email,
+    })),
+    credentials,
+  };
+}
+
+type ContactTokens = {
+  connections?: {
+    nextPageToken?: string;
+    nextSyncToken?: string;
+  };
+  other?: {
+    nextPageToken?: string;
+    nextSyncToken?: string;
+  };
+};
+
+export async function getContacts(
+  config: CalendarConfig,
+  credentials: CalendarCredentials,
+  state: ContactSyncState
+): Promise<{
+  contacts: Contact[];
+  credentials: CalendarCredentials;
+  state: ContactSyncState;
+}> {
+  const api = new GoogleApi(config, credentials);
+  let tokens = JSON.parse(state.state ?? "{}") as ContactTokens;
+  const contacts = {} as Record<string, Contact>;
+  let more = false;
+
+  // If we're starting a new sync, or there are more pages in a connection sync
+  if (!state.more || tokens.connections?.nextPageToken) {
+    if (
+      credentials.scopes.some(
+        (scope) => scope === "https://www.googleapis.com/auth/contacts.readonly"
+      )
+    ) {
+      const response = (await api.call(
+        "GET",
+        "https://people.googleapis.com/v1/people/me/connections",
+        {
+          requestSyncToken: true,
+          ...(tokens.connections?.nextPageToken
+            ? {
+                pageToken: tokens.connections?.nextPageToken,
+              }
+            : tokens.connections?.nextSyncToken
+            ? {
+                syncToken: tokens.connections?.nextSyncToken,
+              }
+            : {}),
+          personFields: "names,emailAddresses,photos",
+        }
+      )) as people_v1.Schema$ListConnectionsResponse;
+      for (const c of response.connections ?? []) {
+        for (const e of c.emailAddresses ?? []) {
+          if (!e.value) continue;
+          const name = e.displayName ?? c.names?.[0]?.displayName;
+          const avatar = c.photos?.[0]?.url;
+          contacts[e.value] = {
+            ...contacts[e.value],
+            email: e.value,
+            ...(name ? { name } : {}),
+            ...(avatar ? { avatar } : {}),
+          };
+        }
+      }
+      more = true;
+      tokens = {
+        ...tokens,
+        connections: {
+          nextPageToken: response.nextPageToken ?? undefined,
+          nextSyncToken: response.nextSyncToken ?? undefined,
+        },
+      };
+    } else {
+      more = true;
+      tokens = {
+        ...tokens,
+        connections: {},
+      };
+    }
+  } else {
+    if (
+      credentials.scopes.some(
+        (scope) =>
+          scope === "https://www.googleapis.com/auth/contacts.other.readonly"
+      )
+    ) {
+      const response = (await api.call(
+        "GET",
+        "https://people.googleapis.com/v1/otherContacts",
+        {
+          requestSyncToken: true,
+          ...(tokens.other?.nextPageToken
+            ? {
+                pageToken: tokens.other?.nextPageToken,
+              }
+            : tokens.other?.nextSyncToken
+            ? {
+                syncToken: tokens.other?.nextSyncToken,
+              }
+            : {}),
+          readMask: "names,emailAddresses,photos",
+        }
+      )) as people_v1.Schema$ListOtherContactsResponse;
+      for (const c of response.otherContacts ?? []) {
+        for (const e of c.emailAddresses ?? []) {
+          if (!e.value) continue;
+          const name = e.displayName ?? c.names?.[0]?.displayName;
+          const avatar = c.photos?.[0]?.url;
+          contacts[e.value] = {
+            ...contacts[e.value],
+            email: e.value,
+            ...(name ? { name } : {}),
+            ...(avatar ? { avatar } : {}),
+          };
+        }
+      }
+      more = !!response.nextPageToken;
+      tokens = {
+        ...tokens,
+        other: {
+          nextPageToken: response.nextPageToken ?? undefined,
+          nextSyncToken: response.nextSyncToken ?? undefined,
+        },
+      };
+    } else {
+      more = false;
+      tokens = {
+        ...tokens,
+        other: {},
+      };
+    }
+  }
+
+  return {
+    contacts: Object.values(contacts),
+    credentials,
+    state: {
+      more,
+      state: JSON.stringify(tokens),
+    },
+  };
 }

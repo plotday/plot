@@ -2,11 +2,11 @@ import { useCallback, useEffect } from "react";
 
 import { useFetcher } from "@remix-run/react";
 
-import type { CalendarConfig, EventResponse } from "@plotday/cal";
-import { respond } from "@plotday/cal";
+import type { EventResponse } from "@plotday/cal";
 import type { Attendance, Event } from "@plotday/db";
-import { getCredentials, parseDateRange } from "@plotday/db";
+import { parseDateRange } from "@plotday/db";
 
+import { getCalendarConfig, getCredentials, respond } from "app/cal";
 import { safeQuery } from "app/db";
 import { useEventOptimist } from "app/event";
 import { privateAction } from "app/util";
@@ -14,7 +14,6 @@ import { privateAction } from "app/util";
 type ResponseBody = {
   eventId: number;
   attendance: Attendance;
-  email: string;
   isOrganizer: boolean;
 };
 
@@ -26,7 +25,6 @@ export function useEventResponder(event: Event) {
       const body = {
         eventId: event.id,
         attendance,
-        email: event.email,
         isOrganizer: event.isOrganizer,
       } as ResponseBody;
       fetcher.submit(body, {
@@ -35,7 +33,7 @@ export function useEventResponder(event: Event) {
         encType: "application/json",
       });
     },
-    [fetcher, event.id, event.email, event.isOrganizer]
+    [fetcher, event.id, event.isOrganizer]
   );
   const body = fetcher.json as ResponseBody;
   useEffect(() => {
@@ -53,13 +51,6 @@ export function useEventResponder(event: Event) {
 
 export const action = privateAction(
   async ({ request, supabase, user, env }) => {
-    const calendarConfig: CalendarConfig = {
-      googleClientId: env.GOOGLE_CLIENT_ID,
-      googleOauthSecret: env.GOOGLE_OAUTH_SECRET,
-      outlookClientId: env.MICROSOFT_CLIENT_ID,
-      outlookOauthSecret: env.MICROSOFT_OAUTH_SECRET,
-    };
-
     switch (request.method) {
       case "PUT": {
         const body: ResponseBody = await request.json();
@@ -135,12 +126,11 @@ export const action = privateAction(
         );
 
         await respond(
-          calendarConfig,
+          getCalendarConfig(env),
           credentials,
           event.calendar.provider_id,
           event.provider_id,
           response,
-          body.email,
           body.isOrganizer
         );
         return new Response(null, {

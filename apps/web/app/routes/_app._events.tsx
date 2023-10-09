@@ -129,7 +129,6 @@ export default function Events() {
         events={events}
         targets={targets}
         expenditures={expenditures}
-        filter={(e) => e.attendance === null}
       />
     </>
   );

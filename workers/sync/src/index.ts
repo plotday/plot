@@ -4,7 +4,12 @@ import { Toucan } from "toucan-js";
 import type { CalendarConfig, SyncState, WatchState } from "@plotday/cal";
 import { sync, watch } from "@plotday/cal";
 import type { SupabaseClient } from "@plotday/db";
-import { createClient, getCredentials, safeQuery } from "@plotday/db";
+import {
+  createClient,
+  getCredentials,
+  safeQuery,
+  saveCredentials,
+} from "@plotday/db";
 import type {
   EventSyncRequest,
   SyncRequest,
@@ -61,6 +66,7 @@ async function runSync(
       credentials,
       providerCalendarId
     ));
+    await saveCredentials(supabase, accountId, credentials, true);
     return state;
   }
 
@@ -126,7 +132,7 @@ async function runSync(
       syncType === "incremental" &&
       (!calendar.starts_at ||
         !calendar.ends_at ||
-        !calendar.next_token ||
+        !calendar.sync_state ||
         differenceInYears(new Date(), new Date(calendar.starts_at)) < 1)
     ) {
       syncType = "full";
@@ -151,11 +157,10 @@ async function runSync(
       calendarId: calendar.provider_id,
       min,
       max,
-      nextToken:
-        syncType === "incremental" && calendar.next_token
-          ? calendar.next_token
+      state:
+        syncType === "incremental" && calendar.sync_state
+          ? calendar.sync_state
           : undefined,
-      more: syncType === "incremental" && !!calendar.more,
       sequence: (calendar.sequence || 1) + (syncType === "full" ? 1 : 0),
     };
     let batchBytes = 0;
@@ -181,6 +186,7 @@ async function runSync(
           state.more ? "more" : "no more"
         })`
       );
+      await saveCredentials(supabase, accountId, credentials, true);
 
       if (!state.sequence) throw new Error("Sync state sequence unset");
 
@@ -202,15 +208,6 @@ async function runSync(
       await sendBatch();
     }
 
-    safeQuery(
-      await supabase
-        .from("account")
-        .update({
-          credentials,
-        })
-        .eq("id", accountId)
-        .single()
-    );
     if (syncType !== "partial") {
       safeQuery(
         await supabase
@@ -218,8 +215,7 @@ async function runSync(
           .update({
             starts_at: state.min.toISOString(),
             ends_at: state.max.toISOString(),
-            more: state.more,
-            next_token: state.nextToken,
+            sync_state: state.state,
             sequence: state.sequence,
             synced_at: new Date().toISOString(),
           })

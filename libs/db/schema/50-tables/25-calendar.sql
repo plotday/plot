@@ -5,8 +5,7 @@ CREATE TABLE "public"."calendar" (
     "provider_id" text NOT NULL,
     "starts_at" timestamp with time zone,
     "ends_at" timestamp with time zone,
-    "next_token" text,
-    "more" boolean,
+    "sync_state" jsonb,
     "watch_id" text,
     "watch_secret" text,
     "watch_expires_at" timestamp with time zone,
@@ -14,7 +13,8 @@ CREATE TABLE "public"."calendar" (
     "full_sync_at" timestamp with time zone,
     "synced_at" timestamp with time zone,
     "sync_error" text,
-    "full_sync_started_at" timestamp with time zone
+    "full_sync_started_at" timestamp with time zone,
+    "name" text
 );
 
 CREATE UNIQUE INDEX calendar_pkey ON public.calendar USING btree (id);
@@ -28,4 +28,6 @@ ALTER TABLE "public"."calendar"
 ALTER TABLE "public"."calendar" validate CONSTRAINT "calendar_account_id_fkey";
 
 CREATE UNIQUE INDEX calendar_account_id_provider_id_key ON public.calendar USING btree (account_id, provider_id);
+
+CREATE INDEX calendar_account_id_idx ON public.calendar USING btree (account_id);
 

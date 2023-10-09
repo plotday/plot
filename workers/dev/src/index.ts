@@ -1,6 +1,11 @@
+import contactSyncWorker from "@plotday/contact-sync";
 import eventWorker from "@plotday/event-sync";
 import syncWorker from "@plotday/sync";
-import type { EventSyncRequest, SyncRequest } from "@plotday/worker-request";
+import type {
+  ContactSyncRequest,
+  EventSyncRequest,
+  SyncRequest,
+} from "@plotday/worker-request";
 
 interface Env {
   readonly ENV?: string;
@@ -20,6 +25,7 @@ interface Env {
 
   readonly SYNC_QUEUE: Queue<SyncRequest>;
   readonly EVENT_QUEUE: Queue<EventSyncRequest>;
+  readonly CONTACT_SYNC_QUEUE: Queue<ContactSyncRequest>;
 }
 
 export default {
@@ -35,6 +41,13 @@ export default {
 
       case "plot-event-development-queue":
         await eventWorker.queue(batch as MessageBatch<EventSyncRequest>, env);
+        break;
+
+      case "plot-contact-sync-development-queue":
+        await contactSyncWorker.queue(
+          batch as MessageBatch<ContactSyncRequest>,
+          env
+        );
         break;
 
       default:

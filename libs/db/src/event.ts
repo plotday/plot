@@ -202,11 +202,6 @@ export class Event {
     return this.dbEvent.attendance;
   }
 
-  // email address associated with the calendar that owns this event
-  public get email() {
-    return this.invitees.find((invitee) => invitee.isSelf)?.email || null;
-  }
-
   public get providerId() {
     return this.dbEvent.provider_id;
   }

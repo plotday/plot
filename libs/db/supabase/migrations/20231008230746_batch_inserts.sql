@@ -1,30 +1,27 @@
-CREATE TYPE "public"."event_contact" AS (
-    "email" text,
-    "name" text
+DROP TRIGGER IF EXISTS "event_update_trigger" ON "public"."event";
+
+DROP FUNCTION IF EXISTS "public"."update_event_labels" ();
+
+DROP FUNCTION IF EXISTS public.upsert_event CASCADE;
+
+SET check_function_bodies = OFF;
+
+CREATE TYPE "public"."event_insert" AS (
+    "calendar_id" bigint,
+    "raw_event" raw_event,
+    "event" event,
+    "organizer" event_contact,
+    "invitees" event_invitee[]
 );
 
-CREATE TYPE "public"."event_invitee" AS (
-    "contact" public.event_contact,
-    "response" event_response,
-    "is_optional" boolean
+CREATE TYPE "public"."event_insert_result" AS (
+    "calendar_id" bigint,
+    "provider_id" text,
+    "event_id" bigint,
+    "error" text
 );
 
-CREATE TYPE event_insert AS (
-    calendar_id bigint,
-    raw_event public.raw_event,
-    event public.event,
-    organizer public.event_contact,
-    invitees event_invitee[]
-);
-
-CREATE TYPE event_insert_result AS (
-    calendar_id bigint,
-    provider_id text,
-    event_id bigint,
-    error text
-);
-
-CREATE OR REPLACE FUNCTION public.upsert_event (_calendar_id bigint, _raw_event public.raw_event, _event public.event, _organizer public.event_contact, _invitees event_invitee[])
+CREATE OR REPLACE FUNCTION public.upsert_event (_calendar_id bigint, _raw_event raw_event, _event event, _organizer event_contact, _invitees event_invitee[])
     RETURNS event_insert_result
     LANGUAGE plpgsql
     AS $function$
@@ -133,7 +130,7 @@ $function$;
 CREATE OR REPLACE FUNCTION public.upsert_events (_events event_insert[])
     RETURNS SETOF event_insert_result
     LANGUAGE plpgsql
-    AS $$
+    AS $function$
 DECLARE
     _event event_insert;
 BEGIN
@@ -143,5 +140,27 @@ BEGIN
     END LOOP;
     RETURN;
 END;
-$$;
+$function$;
+
+ALTER VIEW gap SET (security_invoker = TRUE);
+
+ALTER VIEW gap_monthly SET (security_invoker = TRUE);
+
+ALTER VIEW gap_daily SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."invitation_admin" SET (security_invoker = FALSE);
+
+ALTER VIEW "public"."event_x" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."waitlist_admin" SET (security_invoker = FALSE);
+
+ALTER VIEW expenditure SET (security_invoker = TRUE);
+
+ALTER VIEW expenditure_monthly SET (security_invoker = TRUE);
+
+ALTER VIEW expenditure_rolling SET (security_invoker = TRUE);
+
+ALTER VIEW prep_monthly SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."sync_admin" SET (security_invoker = FALSE);
 

@@ -75,6 +75,13 @@ export interface AccountActivatedProperties {
 
 export interface AccountAddedProperties {
   Provider?: string;
+  /**
+   * | Rule | Value |
+   * |---|---|
+   * | Unique Items | true |
+   * | Item Type | string |
+   */
+  Scopes: string[];
 }
 
 export interface AccountAuthFailedProperties {
@@ -157,7 +164,7 @@ export class AccountAdded implements BaseEvent {
   event_type = 'Account Added';
 
   constructor(
-    public event_properties?: AccountAddedProperties,
+    public event_properties: AccountAddedProperties,
   ) {
     this.event_properties = event_properties;
   }
@@ -386,7 +393,7 @@ export class Ampli {
    */
   accountAdded(
     userId: string | undefined,
-    properties?: AccountAddedProperties,
+    properties: AccountAddedProperties,
     options?: EventOptions,
   ) {
     return this.track(userId, new AccountAdded(properties), options);

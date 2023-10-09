@@ -23,6 +23,7 @@ export const loader = privateLoader(async ({ supabase, response, user }) => {
 export const handle: { eventFilter: EventFilter } = {
   eventFilter: {
     review: false,
+    match: (event) => !event.ready,
   },
 };
 

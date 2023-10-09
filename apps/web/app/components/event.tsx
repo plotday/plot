@@ -82,7 +82,6 @@ export function EventList({
   expenditures,
   review,
   showGaps,
-  filter,
 }: {
   events: Event[];
   targets: {
@@ -92,7 +91,6 @@ export function EventList({
   expenditures: DailyLabelStats;
   review?: boolean;
   showGaps?: boolean;
-  filter?: (event: Event) => boolean;
 }) {
   showGaps = showGaps ?? false;
   useEventWatch();
