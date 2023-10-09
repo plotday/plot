@@ -136,6 +136,15 @@ async function runSync(
         differenceInYears(new Date(), new Date(calendar.starts_at)) < 1)
     ) {
       syncType = "full";
+      safeQuery(
+        await supabase
+          .from("calendar")
+          .update({
+            full_sync_started_at: new Date().toISOString(),
+            full_sync_at: null,
+          })
+          .eq("id", calendar.id)
+      );
     }
 
     let min, max;

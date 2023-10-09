@@ -45,18 +45,32 @@ async function getCalendars(
   if (!accounts) return [];
   const allCalendars = await Promise.all(
     accounts.map(async (account) => {
-      const { calendars, credentials } = await getAccountCalendars(
-        getCalendarConfig(env),
-        {
-          provider: account.provider,
-          email: account.email,
-          access_token: account.credentials.access_token,
-          refresh_token: account.credentials.refresh_token,
-          scopes: account.credentials.scopes,
-        }
-      );
-      await saveCredentials(supabase, account.id, credentials);
-      return calendars;
+      try {
+        const { calendars, credentials } = await getAccountCalendars(
+          getCalendarConfig(env),
+          {
+            provider: account.provider,
+            email: account.email,
+            access_token: account.credentials.access_token,
+            refresh_token: account.credentials.refresh_token,
+            scopes: account.credentials.scopes,
+          }
+        );
+        await saveCredentials(supabase, account.id, credentials);
+        return calendars;
+      } catch (error) {
+        console.error(error);
+        env.sentry?.captureException?.(error);
+        return [
+          {
+            name: "Primary",
+            id: account.email,
+            primary: true,
+            tz: "America/New_York",
+            account: account.email,
+          },
+        ];
+      }
     })
   );
   return allCalendars.flat();

@@ -462,7 +462,7 @@ export async function getCalendars(
   credentials: CalendarCredentials;
 }> {
   if (
-    !credentials.scopes.some(
+    !credentials.scopes?.some?.(
       (scope) => scope === "https://www.googleapis.com/auth/calendar.readonly"
     )
   ) {
@@ -526,7 +526,7 @@ export async function getContacts(
   // If we're starting a new sync, or there are more pages in a connection sync
   if (!state.more || tokens.connections?.nextPageToken) {
     if (
-      credentials.scopes.some(
+      credentials.scopes?.some?.(
         (scope) => scope === "https://www.googleapis.com/auth/contacts.readonly"
       )
     ) {
@@ -577,7 +577,7 @@ export async function getContacts(
     }
   } else {
     if (
-      credentials.scopes.some(
+      credentials.scopes?.some?.(
         (scope) =>
           scope === "https://www.googleapis.com/auth/contacts.other.readonly"
       )
