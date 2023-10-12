@@ -319,7 +319,7 @@ export interface Database {
           description: string | null
           id: number
           name: string | null
-          organizer: number | null
+          organizer_email: string | null
           provider_id: string
           provider_link: string | null
           sequence: number
@@ -338,7 +338,7 @@ export interface Database {
           description?: string | null
           id?: number
           name?: string | null
-          organizer?: number | null
+          organizer_email?: string | null
           provider_id: string
           provider_link?: string | null
           sequence?: number
@@ -357,7 +357,7 @@ export interface Database {
           description?: string | null
           id?: number
           name?: string | null
-          organizer?: number | null
+          organizer_email?: string | null
           provider_id?: string
           provider_link?: string | null
           sequence?: number
@@ -371,12 +371,6 @@ export interface Database {
             foreignKeyName: "event_calendar_id_fkey"
             columns: ["calendar_id"]
             referencedRelation: "calendar"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "event_organizer_fkey"
-            columns: ["organizer"]
-            referencedRelation: "contact"
             referencedColumns: ["id"]
           }
         ]
@@ -447,36 +441,28 @@ export interface Database {
       }
       invitee: {
         Row: {
-          contact_id: number
           created_at: string
+          email: string
           event_id: number
           is_optional: boolean
           response: Database["public"]["Enums"]["event_response"] | null
-          sequence: number
+          contact: unknown | null
         }
         Insert: {
-          contact_id: number
           created_at?: string
+          email: string
           event_id: number
           is_optional?: boolean
           response?: Database["public"]["Enums"]["event_response"] | null
-          sequence?: number
         }
         Update: {
-          contact_id?: number
           created_at?: string
+          email?: string
           event_id?: number
           is_optional?: boolean
           response?: Database["public"]["Enums"]["event_response"] | null
-          sequence?: number
         }
         Relationships: [
-          {
-            foreignKeyName: "invitee_contact_id_fkey"
-            columns: ["contact_id"]
-            referencedRelation: "contact"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "invitee_event_id_fkey"
             columns: ["event_id"]
@@ -571,7 +557,6 @@ export interface Database {
           event: Json
           id: number
           provider_id: string
-          sequence: number
         }
         Insert: {
           calendar_id: number
@@ -579,7 +564,6 @@ export interface Database {
           event: Json
           id?: number
           provider_id: string
-          sequence?: number
         }
         Update: {
           calendar_id?: number
@@ -587,7 +571,6 @@ export interface Database {
           event?: Json
           id?: number
           provider_id?: string
-          sequence?: number
         }
         Relationships: [
           {
@@ -777,7 +760,7 @@ export interface Database {
           labels: number[] | null
           minutes: number | null
           name: string | null
-          organizer: number | null
+          organizer_email: string | null
           provider_id: string | null
           provider_link: string | null
           ready: string | null
@@ -992,6 +975,27 @@ export interface Database {
           watch_secret: string | null
         }[]
       }
+      cancel_events: {
+        Args: {
+          _events: Database["public"]["CompositeTypes"]["event_ids"][]
+        }
+        Returns: undefined
+      }
+      contact: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          avatar_url: string | null
+          contact_user_id: number | null
+          created_at: string
+          domain_id: number | null
+          email: string | null
+          id: number
+          name: string | null
+          user_id: number
+        }[]
+      }
       event_label_ids: {
         Args: {
           e: unknown
@@ -1015,12 +1019,11 @@ export interface Database {
           "": unknown
         }
         Returns: {
-          contact_id: number
           created_at: string
+          email: string
           event_id: number
           is_optional: boolean
           response: Database["public"]["Enums"]["event_response"] | null
-          sequence: number
         }[]
       }
       is_user_account: {
@@ -1076,21 +1079,24 @@ export interface Database {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
-      upsert_event: {
+      update_labels: {
         Args: {
-          _calendar_id: number
-          _raw_event: unknown
-          _event: unknown
-          _organizer: Database["public"]["CompositeTypes"]["event_contact"]
-          _invitees: Database["public"]["CompositeTypes"]["event_invitee"][]
+          _event_ids: number[]
         }
-        Returns: Database["public"]["CompositeTypes"]["event_insert_result"]
+        Returns: undefined
       }
-      upsert_events: {
+      upsert_contacts: {
         Args: {
-          _events: Database["public"]["CompositeTypes"]["event_insert"][]
+          _contacts: Database["public"]["CompositeTypes"]["contact_upsert"][]
         }
-        Returns: Database["public"]["CompositeTypes"]["event_insert_result"][]
+        Returns: undefined
+      }
+      upsert_invitees: {
+        Args: {
+          _event_ids: number[]
+          _invitees: Database["public"]["CompositeTypes"]["invitee_upsert"][]
+        }
+        Returns: undefined
       }
       work_day_end: {
         Args: Record<PropertyKey, never>
@@ -1119,25 +1125,19 @@ export interface Database {
       user_status: "waitlisted" | "active"
     }
     CompositeTypes: {
-      event_contact: {
+      contact_upsert: {
+        calendar_id: number
         email: string
         name: string
+        avatar_url: string
       }
-      event_insert: {
-        calendar_id: number
-        raw_event: unknown
-        event: unknown
-        organizer: Database["public"]["CompositeTypes"]["event_contact"]
-        invitees: unknown
-      }
-      event_insert_result: {
+      event_ids: {
         calendar_id: number
         provider_id: string
-        event_id: number
-        error: string
       }
-      event_invitee: {
-        contact: Database["public"]["CompositeTypes"]["event_contact"]
+      invitee_upsert: {
+        event_id: number
+        email: string
         response: Database["public"]["Enums"]["event_response"]
         is_optional: boolean
       }

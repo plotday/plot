@@ -252,22 +252,6 @@ async function runSync(
     }
     throw error;
   }
-
-  if (state && syncType === "full") {
-    // Wait 30 seconds (for new events to sync) then delete events with older sequence numbers
-    await new Promise((resolve) => {
-      setTimeout(() => {
-        resolve(null);
-      }, 30_000);
-    });
-    safeQuery(
-      await supabase
-        .from("raw_event")
-        .delete()
-        .eq("calendar_id", calendar.id)
-        .lt("sequence", state.sequence)
-    );
-  }
 }
 
 export default {

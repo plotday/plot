@@ -83,12 +83,12 @@ SELECT
     min(e.visibility) AS visibility,
     min(e.availability) AS availability,
     min(e.conferencing_url) AS conferencing_url,
-    min(e.organizer) AS organizer,
+    min(e.organizer_email) AS organizer_email,
     COALESCE(min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative') AS response,
-    calc_attendance (min(er.attendance), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), count(DISTINCT i.contact_id)::integer, lower(at)) AS attendance,
+    calc_attendance (min(er.attendance), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), count(DISTINCT i.email)::integer, lower(at)) AS attendance,
     (round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
-    count(DISTINCT i.contact_id) FILTER (WHERE (i.response = 'accepted'::event_response))::integer AS attendee_count,
-count(DISTINCT i.contact_id)::integer AS invitee_count,
+    count(DISTINCT i.email) FILTER (WHERE (i.response = 'accepted'::event_response))::integer AS attendee_count,
+count(DISTINCT i.email)::integer AS invitee_count,
 min(er.ready) AS ready,
 CASE WHEN min(upper(e.at)) < u.activated_at THEN
     upper(e.at)
@@ -100,9 +100,9 @@ CASE WHEN EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 THEN
 ELSE
     (lower(e.at) at time zone u.timezone)::date
 END AS day,
-COALESCE(u.id = min(ct.contact_user_id) FILTER (WHERE ct.id = e.organizer), FALSE) AS initiated,
+COALESCE(u.id = min(ct.contact_user_id) FILTER (WHERE ct.email = e.organizer_email), FALSE) AS initiated,
 EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 AS all_day,
-calc_event_type (e.at, min(e.availability), COALESCE(min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative'), count(DISTINCT i.contact_id)::integer) AS type,
+calc_event_type (e.at, min(e.availability), COALESCE(min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative'), count(DISTINCT i.email)::integer) AS type,
 calc_internal (min(ct.domain_id) FILTER (WHERE (ct.contact_user_id = u.id)), array_agg(DISTINCT ct.domain_id)) AS internal,
 CASE WHEN count(el.label_id) > 0 THEN
     array_agg(DISTINCT el.label_id) FILTER (WHERE (el.label_id IS NOT NULL))
@@ -117,7 +117,8 @@ FROM
     LEFT JOIN response er ON (u.id = er.user_id
             AND e.provider_id = er.provider_id)
     JOIN invitee i ON (e.id = i.event_id)
-    JOIN contact ct ON (i.contact_id = ct.id)
+    JOIN contact ct ON (ct.user_id = u.id
+            AND i.email = ct.email)
     LEFT JOIN event_label el ON (e.id = el.event_id)
 GROUP BY
     u.id,

@@ -12,6 +12,8 @@ import {
 } from "@tabler/icons-react";
 import classes from "css/_public._index.module.css";
 
+import { md5 } from "@plotday/crypto";
+
 import { Balance } from "app/components/balance";
 import { APP_NAME, DEFAULT_PATH } from "app/config";
 import { publicLoader } from "app/util";
@@ -48,6 +50,7 @@ export const loader = publicLoader(async ({ request, user }) => {
   if (request.headers.get("referer") === null && user !== null) {
     return redirect(DEFAULT_PATH);
   }
+  console.log(await md5("kris.braun@gmail.com"));
   return null;
 });
 

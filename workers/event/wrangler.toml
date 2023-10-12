@@ -7,7 +7,7 @@ compatibility_date = "2023-07-10"
 
 [[env.production.queues.consumers]]
   queue = "plot-event-production-queue"
-  max_batch_size = 20
+  max_batch_size = 100
   max_batch_timeout = 3
   max_retries = 3
 
@@ -16,7 +16,7 @@ compatibility_date = "2023-07-10"
 
 [[env.staging.queues.consumers]]
   queue = "plot-event-staging-queue"
-  max_batch_size = 20
+  max_batch_size = 100
   max_batch_timeout = 3
   max_retries = 3
 

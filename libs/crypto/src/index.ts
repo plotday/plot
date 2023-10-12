@@ -39,3 +39,10 @@ export async function verifyUrl(url: URL, key: Uint8Array): Promise<boolean> {
   const expectedCode = await sign(urlWithoutCode.toString(), key);
   return code === expectedCode;
 }
+
+export async function md5(str: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const hash = await crypto.subtle.digest("MD5", encoder.encode(str));
+  const decoder = new TextDecoder();
+  return decoder.decode(hash);
+}

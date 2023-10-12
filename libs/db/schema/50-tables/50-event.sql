@@ -14,7 +14,7 @@ CREATE TABLE "public"."event" (
     "visibility" event_visibility NOT NULL DEFAULT 'normal' ::event_visibility,
     "availability" event_availability NOT NULL DEFAULT 'busy' ::event_availability,
     "conferencing_url" text,
-    "organizer" bigint,
+    "organizer_email" text,
     "sequence" integer NOT NULL DEFAULT 1
 );
 
@@ -32,11 +32,6 @@ ALTER TABLE "public"."event" validate CONSTRAINT "event_calendar_id_fkey";
 
 ALTER TABLE "public"."event"
     ADD CONSTRAINT "event_calendar_id_provider_id_key" UNIQUE USING INDEX "event_calendar_id_provider_id_key";
-
-ALTER TABLE "public"."event"
-    ADD CONSTRAINT "event_organizer_fkey" FOREIGN KEY (organizer) REFERENCES contact (id) ON DELETE SET NULL NOT valid;
-
-ALTER TABLE "public"."event" validate CONSTRAINT "event_organizer_fkey";
 
 ALTER publication supabase_realtime
     ADD TABLE public.event;

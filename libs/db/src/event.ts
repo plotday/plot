@@ -31,7 +31,7 @@ export type Invitee = ArrayElement<Invitees>;
 
 const EVENT_USER_QUERY = "user_id";
 const EVENT_QUERY =
-  "user_id,id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer,attendance,ready,reviewed,labels,invitees:invitee(response,is_optional,contact(id,name,email,contact_user_id,organization(id,name)))";
+  "user_id,id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer_email,attendance,ready,reviewed,labels,invitees:invitee(email,response,is_optional,contact(id,name,email,contact_user_id,organization(id,name)))";
 
 type PostgrestQueryBuilder = ReturnType<
   ReturnType<SupabaseClient["from"]>["select"]
@@ -229,13 +229,13 @@ export class Event {
 
   private get self() {
     return this.dbEvent.invitees.filter(
-      (invitee) => invitee.contact?.contact_user_id
+      (invitee) => invitee.contact?.[0]?.contact_user_id
     )[0];
   }
 
   public get organizer() {
     const organizer = this.dbEvent.invitees.filter(
-      (invitee) => invitee.contact?.id === this.dbEvent.organizer
+      (invitee) => invitee.contact?.[0]?.email === this.dbEvent.organizer_email
     )[0];
     if (!organizer) return undefined;
     return this.toInvitee(organizer);
@@ -244,17 +244,18 @@ export class Event {
   private toInvitee(invitee: DbEvent["invitees"][number]) {
     // @ts-ignore Type inference is failing for organziation
     const selfOrg = this.self?.contact?.organization?.id;
+    const contact = invitee.contact?.[0];
     return {
-      id: invitee.contact?.id,
-      name: invitee.contact?.name || invitee.contact?.email,
-      email: invitee.contact?.email,
-      // This assume contact_user_id is only set for the owner
-      isSelf: !!invitee.contact?.contact_user_id,
-      // @ts-ignore Type inference is failing for organziation
-      isExternal: selfOrg && invitee.contact?.organization?.id !== selfOrg,
-      // @ts-ignore Type inference is failing for organziation
-      isInternal: selfOrg && invitee.contact?.organization?.id === selfOrg,
+      email: invitee.email,
       response: invitee.response,
+      id: contact?.id,
+      name: contact?.name || contact?.email,
+      // This assume contact_user_id is only set for the owner
+      isSelf: !!contact?.contact_user_id,
+      // @ts-ignore Type inference is failing for organziation
+      isExternal: selfOrg && contact?.organization?.id !== selfOrg,
+      // @ts-ignore Type inference is failing for organziation
+      isInternal: selfOrg && contact?.organization?.id === selfOrg,
     };
   }
 
@@ -292,8 +293,7 @@ export class Event {
   }
 
   public get isOrganizer() {
-    const selfId = this.self?.contact?.id;
-    return this.dbEvent.organizer === selfId;
+    return this.organizer?.email === this.self?.email;
   }
 
   public get isRecurring() {

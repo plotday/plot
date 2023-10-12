@@ -39,13 +39,8 @@
     "turbo": "^1.10.15",
     "typescript": "^5.1.6",
     "vitest": "^0.33.0",
-    "wrangler": "^3.10.1"
+    "wrangler": "^3.12.0"
   },
   "packageManager": "pnpm@8.6.6",
-  "name": "@plotday/plot",
-  "pnpm": {
-    "patchedDependencies": {
-      "@remix-run/dev@2.0.1": "patches/@remix-run__dev@2.0.1.patch"
-    }
-  }
+  "name": "@plotday/plot"
 }

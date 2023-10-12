@@ -3,8 +3,7 @@ CREATE TABLE "public"."raw_event" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "calendar_id" bigint NOT NULL,
     "event" jsonb NOT NULL,
-    "provider_id" text NOT NULL,
-    "sequence" numeric NOT NULL DEFAULT '1' ::numeric
+    "provider_id" text NOT NULL
 );
 
 CREATE UNIQUE INDEX raw_event_calendar_id_provider_id_key ON public.raw_event USING btree (calendar_id, provider_id);

@@ -94,14 +94,15 @@ export const action = privateAction(
             break;
         }
 
-        const contactIds = safeQuery(
+        const contactEmail = safeQuery(
           await supabase
             .from("contact")
-            .select("id")
+            .select("email")
             .eq("user_id", user.id)
             .eq("contact_user_id", user.id)
-        )?.map((c) => c.id);
-        if (!contactIds)
+            .maybeSingle()
+        )?.email;
+        if (!contactEmail)
           return new Response("Contact not found", { status: 404 });
 
         safeQuery(
@@ -122,7 +123,7 @@ export const action = privateAction(
               response,
             })
             .eq("event_id", body.eventId)
-            .in("contact_id", contactIds)
+            .eq("email", contactEmail)
         );
 
         await respond(

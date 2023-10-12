@@ -1,147 +1,89 @@
-CREATE TYPE "public"."event_contact" AS (
+CREATE TYPE contact_upsert AS (
+    calendar_id bigint,
     "email" text,
-    "name" text
+    "name" text,
+    "avatar_url" text
 );
 
-CREATE TYPE "public"."event_invitee" AS (
-    "contact" public.event_contact,
-    "response" event_response,
-    "is_optional" boolean
-);
-
-CREATE TYPE event_insert AS (
-    calendar_id bigint,
-    raw_event public.raw_event,
-    event public.event,
-    organizer public.event_contact,
-    invitees event_invitee[]
-);
-
-CREATE TYPE event_insert_result AS (
-    calendar_id bigint,
-    provider_id text,
-    event_id bigint,
-    error text
-);
-
-CREATE OR REPLACE FUNCTION public.upsert_event (_calendar_id bigint, _raw_event public.raw_event, _event public.event, _organizer public.event_contact, _invitees event_invitee[])
-    RETURNS event_insert_result
-    LANGUAGE plpgsql
-    AS $function$
-DECLARE
-    _user_id bigint;
-    _new_event record;
-    _contact_id bigint;
-    _invitee event_invitee;
-    _organizer_id bigint;
-    _result event_insert_result;
+CREATE OR REPLACE FUNCTION public.upsert_contacts (_contacts contact_upsert[])
+    RETURNS VOID
+    AS $$
 BEGIN
-    BEGIN
-        _result.calendar_id = _calendar_id;
-        _result.provider_id = _event.provider_id;
+    INSERT INTO contact (user_id, email, name, avatar_url) (
         SELECT
-            a.user_id INTO _user_id
+            a.user_id,
+            vals.email,
+            vals.name,
+            vals.avatar_url
         FROM
-            account a
-            JOIN calendar c ON a.id = c.account_id
-        WHERE
-            c.id = _calendar_id;
-        -- create or update raw event
-        INSERT INTO public.raw_event (calendar_id, provider_id, event, "sequence")
-            VALUES (_raw_event.calendar_id, _raw_event.provider_id, _raw_event.event, _raw_event.sequence)
-        ON CONFLICT (calendar_id, provider_id)
-            DO UPDATE SET event = EXCLUDED.event, "sequence" = EXCLUDED.sequence;
-        -- get (or create) organizer contact
-        IF _organizer.email IS NOT NULL THEN
-            INSERT INTO public.contact (email, name, user_id)
-                VALUES (_organizer.email, _organizer.name, _user_id)
-            ON CONFLICT (user_id, email)
-                DO UPDATE SET
-                    name = COALESCE(contact.name, EXCLUDED.name)
-                RETURNING
-                    id INTO _organizer_id;
-        END IF;
-        -- create or update event
-        IF _event.status = 'cancelled' THEN
-            UPDATE
-                public.event
-            SET
-                status = 'cancelled'
-            WHERE
-                calendar_id = _calendar_id
-                AND provider_id = _event.provider_id
-            RETURNING
-                id INTO _new_event;
-            IF FOUND THEN
-                _result.event_id = _new_event.id;
-                RETURN _result;
-            ELSE
-                RETURN _result;
-            END IF;
-        ELSE
-            INSERT INTO public.event AS e (created_at, calendar_id, provider_id, series, name, status, at, provider_link, summary, description, visibility, availability, conferencing_url, organizer)
-                VALUES (COALESCE(_event.created_at, NOW()), _calendar_id, _event.provider_id, _event.series, _event.name, _event.status, _event.at, _event.provider_link, _event.summary, _event.description, _event.visibility, _event.availability, _event.conferencing_url, _organizer_id)
-            ON CONFLICT (calendar_id, provider_id)
-                DO UPDATE SET
-                    "sequence" = e.sequence + 1, series = COALESCE(EXCLUDED.series, e.series), name = EXCLUDED.name, status = EXCLUDED.status, at = EXCLUDED.at, provider_link = EXCLUDED.provider_link, summary = EXCLUDED.summary, description = EXCLUDED.description, visibility = EXCLUDED.visibility, availability = EXCLUDED.availability, conferencing_url = EXCLUDED.conferencing_url, organizer = COALESCE(EXCLUDED.organizer, e.organizer)
-                RETURNING
-                    id, "sequence" INTO _new_event;
-            IF FOUND THEN
-                _result.event_id = _new_event.id;
-            END IF;
-        END IF;
-        -- create or update contacts and invitees
-        FOREACH _invitee IN ARRAY _invitees LOOP
-            INSERT INTO public.contact (email, name, user_id)
-                VALUES ((_invitee).contact.email, (_invitee).contact.name, _user_id)
-            ON CONFLICT (user_id, email)
-                DO UPDATE SET
-                    name = COALESCE(contact.name, EXCLUDED.name)
-                RETURNING
-                    id INTO _contact_id;
-            INSERT INTO public.invitee (event_id, contact_id, response, "sequence", is_optional)
-                VALUES (_new_event.id, _contact_id, _invitee.response, _new_event.sequence, _invitee.is_optional)
-            ON CONFLICT (event_id, contact_id)
-                DO UPDATE SET
-                    response = EXCLUDED.response, "sequence" = EXCLUDED.sequence, is_optional = EXCLUDED.is_optional;
-        END LOOP;
-        -- delete any now missing invitees
-        DELETE FROM invitee i
-        WHERE i.event_id = _new_event.id
-            AND "sequence" < _new_event.sequence;
-        -- create labels
-        DELETE FROM event_label
-        WHERE event_id = _new_event.id;
-        INSERT INTO event_label (event_id, label_id)
-        SELECT
-            e.id AS event_id,
-            unnest(event_label_ids (e)) AS label_id
-        FROM
-            event_x e
-        WHERE
-            e.id = _new_event.id;
-        RETURN _result;
-    EXCEPTION
-        WHEN OTHERS THEN
-            _result.error = SQLERRM;
-    RETURN _result;
-    END;
+            unnest(_contacts) AS vals (calendar_id,
+                email,
+                name,
+                avatar_url)
+            JOIN calendar c ON vals.calendar_id = c.id
+            JOIN account a ON c.account_id = a.id)
+ON CONFLICT (user_id,
+    email)
+    DO UPDATE SET
+        name = EXCLUDED.name,
+        avatar_url = EXCLUDED.avatar_url;
 END;
+$$
+LANGUAGE plpgsql;
 
-$function$;
+CREATE TYPE event_ids AS (
+    calendar_id bigint,
+    provider_id text
+);
 
-CREATE OR REPLACE FUNCTION public.upsert_events (_events event_insert[])
-    RETURNS SETOF event_insert_result
+CREATE OR REPLACE FUNCTION public.cancel_events (_events event_ids[])
+    RETURNS VOID
     LANGUAGE plpgsql
     AS $$
-DECLARE
-    _event event_insert;
 BEGIN
-    FOREACH _event IN ARRAY _events LOOP
-        -- Call the other function on each element and return the result
-        RETURN NEXT public.upsert_event (_event.calendar_id, _event.raw_event, _event.event, _event.organizer, _event.invitees);
+    FOR i IN 1..array_length(_events, 1)
+    LOOP
+        UPDATE
+            public.event
+        SET
+            status = 'cancelled'
+        WHERE
+            calendar_id = _events[i].calendar_id
+            AND provider_id = _events[i].provider_id;
     END LOOP;
-    RETURN;
 END;
 $$;
+
+CREATE TYPE invitee_upsert AS (
+    event_id bigint,
+    email text,
+    response event_response,
+    is_optional boolean
+);
+
+CREATE OR REPLACE FUNCTION public.upsert_invitees (_event_ids bigint[], _invitees invitee_upsert[])
+    RETURNS VOID
+    AS $$
+BEGIN
+    DELETE FROM invitee
+    WHERE event_id = ANY (_event_ids);
+    INSERT INTO invitee (event_id, email, response, is_optional) (
+        SELECT
+            vals.event_id,
+            vals._email,
+            vals.response,
+            vals.is_optional
+        FROM
+            unnest(_invitees) AS vals (event_id,
+                _email,
+                response,
+                is_optional))
+ON CONFLICT (event_id,
+    email)
+    DO UPDATE SET
+        response = EXCLUDED.response,
+        is_optional = EXCLUDED.is_optional;
+END;
+$$
+LANGUAGE plpgsql;
 

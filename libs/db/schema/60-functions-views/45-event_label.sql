@@ -85,3 +85,21 @@ END;
 $$
 LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION update_labels (_event_ids bigint[])
+    RETURNS void
+    AS $$
+BEGIN
+    DELETE FROM event_label
+    WHERE event_id = ANY (_event_ids);
+    INSERT INTO event_label (event_id, label_id)
+    SELECT
+        id AS event_id,
+        unnest(event_label_ids (e)) AS label_id
+    FROM
+        event_x e
+    WHERE
+        id = ANY (_event_ids);
+END;
+$$
+LANGUAGE plpgsql;
+

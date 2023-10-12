@@ -22,6 +22,7 @@
     "@mantine/dates": "7.1.0",
     "@mantine/hooks": "7.1.0",
     "@plotday/cal": "workspace:^",
+    "@plotday/crypto": "workspace:^",
     "@plotday/db": "workspace:^",
     "@plotday/tracker": "workspace:^",
     "@plotday/tz": "workspace:^",
