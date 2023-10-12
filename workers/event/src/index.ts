@@ -174,9 +174,19 @@ export default {
                 created_at: event.event.createdAt?.toISOString(),
               }),
             };
+            const key = `${event.calendarId}:${event.event.id}`;
             return {
               ...eventChanges,
-              inserts: [...eventChanges.inserts, { event: event.event, db }],
+              inserts: {
+                ...eventChanges.inserts,
+                [key]: {
+                  event: event.event,
+                  db: {
+                    ...eventChanges.inserts[key]?.db,
+                    ...db,
+                  },
+                },
+              },
             };
           } catch (e) {
             console.error(e);
@@ -189,18 +199,22 @@ export default {
           }
         },
         {
-          inserts: [] as { event: Event; db: DbEvent }[],
+          inserts: {} as Record<string, { event: Event; db: DbEvent }>,
           cancelations: [] as { calendar_id: number; provider_id: string }[],
         }
       );
+      const eventInserts = Object.values(eventChanges.inserts);
 
-      console.log(`Inserting ${eventChanges.inserts.length} events`);
+      console.log(`Inserting ${eventInserts.length} events`);
+      // It's critical that we have no duplicate calendar_id, provider_id
+      // entries, as they will cause the upsert to fail with
+      // "ON CONFLICT DO UPDATE command cannot affect row a second time"
       const insertedEvents =
         safeQuery(
           await supabase
             .from("event")
             .upsert(
-              eventChanges.inserts.map((i) => i.db),
+              eventInserts.map((i) => i.db),
               {
                 onConflict: "calendar_id, provider_id",
               }
@@ -208,7 +222,7 @@ export default {
             .select("id")
         )?.map((event, index) => ({
           id: event.id,
-          event: eventChanges.inserts[index].event,
+          event: eventInserts[index].event,
         })) ?? [];
 
       if (eventChanges.cancelations.length > 0) {
