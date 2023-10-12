@@ -244,7 +244,8 @@ export class Event {
   private toInvitee(invitee: DbEvent["invitees"][number]) {
     // @ts-ignore Type inference is failing for organziation
     const selfOrg = this.self?.contact?.organization?.id;
-    const contact = invitee.contact?.[0];
+    // Some TS hackery since it thinks contacts is an array rather than the item
+    const contact = invitee.contact as any as (typeof invitee.contact)[number];
     return {
       email: invitee.email,
       response: invitee.response,

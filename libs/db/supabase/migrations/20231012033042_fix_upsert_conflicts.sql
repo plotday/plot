@@ -1,13 +1,9 @@
-CREATE TYPE contact_upsert AS (
-    calendar_id bigint,
-    "email" text,
-    "name" text,
-    "avatar_url" text
-);
+SET check_function_bodies = OFF;
 
 CREATE OR REPLACE FUNCTION public.upsert_contacts (_contacts contact_upsert[])
-    RETURNS VOID
-    AS $$
+    RETURNS void
+    LANGUAGE plpgsql
+    AS $function$
 BEGIN
     INSERT INTO contact (user_id, email, name, avatar_url) (
         SELECT
@@ -31,42 +27,12 @@ ON CONFLICT (user_id,
         name = EXCLUDED.name,
         avatar_url = EXCLUDED.avatar_url;
 END;
-$$
-LANGUAGE plpgsql;
-
-CREATE TYPE event_ids AS (
-    calendar_id bigint,
-    provider_id text
-);
-
-CREATE OR REPLACE FUNCTION public.cancel_events (_events event_ids[])
-    RETURNS VOID
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    FOR i IN 1..array_length(_events, 1)
-    LOOP
-        UPDATE
-            public.event
-        SET
-            status = 'cancelled'
-        WHERE
-            calendar_id = _events[i].calendar_id
-            AND provider_id = _events[i].provider_id;
-    END LOOP;
-END;
-$$;
-
-CREATE TYPE invitee_upsert AS (
-    event_id bigint,
-    email text,
-    response event_response,
-    is_optional boolean
-);
+$function$;
 
 CREATE OR REPLACE FUNCTION public.upsert_invitees (_event_ids bigint[], _invitees invitee_upsert[])
-    RETURNS VOID
-    AS $$
+    RETURNS void
+    LANGUAGE plpgsql
+    AS $function$
 BEGIN
     DELETE FROM invitee
     WHERE event_id = ANY (_event_ids);
@@ -90,6 +56,16 @@ ON CONFLICT (event_id,
         response = EXCLUDED.response,
         is_optional = EXCLUDED.is_optional;
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 
+ALTER VIEW gap SET ( security_invoker = TRUE);
+ALTER VIEW gap_monthly SET ( security_invoker = TRUE);
+ALTER VIEW gap_daily SET ( security_invoker = TRUE);
+ALTER VIEW "public"."invitation_admin" SET ( security_invoker = FALSE);
+ALTER VIEW "public"."event_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."waitlist_admin" SET ( security_invoker = FALSE);
+ALTER VIEW expenditure SET ( security_invoker = TRUE);
+ALTER VIEW expenditure_monthly SET ( security_invoker = TRUE);
+ALTER VIEW expenditure_rolling SET ( security_invoker = TRUE);
+ALTER VIEW prep_monthly SET ( security_invoker = TRUE);
+ALTER VIEW "public"."sync_admin" SET ( security_invoker = FALSE);
