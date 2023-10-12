@@ -75,7 +75,7 @@ BEGIN
             vals.event_id,
             vals._email,
             min(vals.response),
-            min(vals.is_optional)
+            bool_and(vals.is_optional)
         FROM
             unnest(_invitees) AS vals (event_id,
                 _email,
