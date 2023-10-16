@@ -22,7 +22,7 @@ compatibility_date = "2023-07-10"
   max_batch_size = 1
   max_retries = 5
 
-[[env.production.triggers]]
+[env.production.triggers]
   crons = ["*/47 * * * *"]
 
 [env.staging]
