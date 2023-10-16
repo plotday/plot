@@ -18,7 +18,12 @@ export async function onRequest(context: Context) {
 
   const handleRequest = createPagesFunctionHandler({
     build,
-    getLoadContext: (context: Context) => ({ env: context.env, tracker }),
+    getLoadContext: (context: Context) => ({
+      env: context.env,
+      tracker,
+      sentry,
+      waitUntil: context.waitUntil,
+    }),
     mode: process.env.NODE_ENV,
   });
 
@@ -31,14 +36,7 @@ export async function onRequest(context: Context) {
 
   let ret = undefined;
   try {
-    ret = await handleRequest({
-      ...context,
-      env: {
-        ...context.env,
-        tracker,
-        sentry,
-      },
-    });
+    ret = await handleRequest(context);
   } catch (e) {
     context.waitUntil(flush());
     throw e;

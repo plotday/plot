@@ -162,6 +162,7 @@ export default {
               description: event.event.description,
               summary: event.event.summary,
               provider_link: event.event.providerLink,
+              invitees_hidden: event.event.inviteesHidden,
               visibility: event.event.visibility,
               availability: event.event.availability,
               conferencing_url: event.event.conferencing?.url,
@@ -293,12 +294,17 @@ export default {
     } catch (e) {
       console.error(e);
       Sentry.captureException(e);
-    }
-
-    (await Promise.allSettled(backgroundJobs)).forEach((result) => {
-      if (result.status === "rejected") {
-        Sentry.captureException(result.reason);
+      throw e;
+    } finally {
+      const backgroundErrors = (await Promise.allSettled(backgroundJobs))
+        .map((result) => (result.status === "rejected" ? result.reason : null))
+        .filter((result) => result);
+      backgroundErrors.forEach((error) => Sentry.captureException(error));
+      if (backgroundErrors.length === 1) {
+        throw new Error(backgroundErrors[0]);
+      } else if (backgroundErrors.length > 1) {
+        throw new Error("Background jobs failed", { cause: backgroundErrors });
       }
-    });
+    }
   },
 };

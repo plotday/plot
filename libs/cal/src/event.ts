@@ -57,6 +57,7 @@ export type Event = {
   conferencing?: Conferencing;
   organizer?: Contact;
   invitees: Invitee[];
+  inviteesHidden?: boolean;
   categories: string[];
   locations: Location[];
   attachments: Attachment[];

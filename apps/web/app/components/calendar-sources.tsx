@@ -49,7 +49,13 @@ export default function CalendarSources({
         ];
         break;
       case "outlook":
-        scopes = ["calendars.readwrite", "offline_access"];
+        scopes = [
+          "calendars.readwrite",
+          "Contacts.Read",
+          "Contacts.Read.Shared",
+          "Directory.Read.All",
+          "offline_access",
+        ];
         break;
     }
 

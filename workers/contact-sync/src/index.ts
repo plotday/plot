@@ -30,7 +30,12 @@ interface Env {
   readonly CONTACT_SYNC_QUEUE: Queue<ContactSyncRequest>;
 }
 
-async function runSync(env: Env, supabase: SupabaseClient, accountId: number) {
+async function runSync(
+  env: Env,
+  supabase: SupabaseClient,
+  accountId: number,
+  full: boolean = false
+) {
   const calendarConfig: CalendarConfig = {
     googleClientId: env.GOOGLE_CLIENT_ID,
     googleOauthSecret: env.GOOGLE_OAUTH_SECRET,
@@ -42,9 +47,10 @@ async function runSync(env: Env, supabase: SupabaseClient, accountId: number) {
   let credentials = await buildCredentials(account);
 
   let state: ContactSyncState = {
-    state: account.contact_sync_state
-      ? JSON.stringify(account.contact_sync_state)
-      : undefined,
+    state:
+      !full && account.contact_sync_state
+        ? JSON.stringify(account.contact_sync_state)
+        : undefined,
   };
   do {
     let contacts;
@@ -53,9 +59,9 @@ async function runSync(env: Env, supabase: SupabaseClient, accountId: number) {
       credentials,
       state
     ));
-    saveCredentials(supabase, accountId, credentials, true);
+    await saveCredentials(supabase, accountId, credentials, true);
     console.log(
-      `Fetched ${contacts.length} events for ${account.id} (${
+      `Fetched ${contacts.length} contacts for ${account.id} (${
         state.more ? "more" : "no more"
       })`
     );
@@ -129,7 +135,7 @@ export default {
         const accountId = message.body.accountId;
         console.log(`Starting sync (${accountId})`);
         try {
-          await runSync(env, supabase, accountId);
+          await runSync(env, supabase, accountId, !!message.body.full);
           console.log(`Sync complete (${accountId})`);
           message.ack();
         } catch (e) {

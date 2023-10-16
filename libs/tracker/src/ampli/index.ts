@@ -204,6 +204,14 @@ export class AccountWaitlisted implements BaseEvent {
   event_type = 'Account Waitlisted';
 }
 
+export class CalendarAdded implements BaseEvent {
+  event_type = 'Calendar Added';
+}
+
+export class CalendarRemoved implements BaseEvent {
+  event_type = 'Calendar Removed';
+}
+
 export class GoalSet implements BaseEvent {
   event_type = 'Goal Set';
 
@@ -471,6 +479,40 @@ export class Ampli {
     options?: EventOptions,
   ) {
     return this.track(userId, new AccountWaitlisted(), options);
+  }
+
+  /**
+   * Calendar Added
+   *
+   * [View in Tracking Plan](https://data.amplitude.com/plotday/Plot/events/main/latest/Calendar%20Added)
+   *
+   * Event has no description in tracking plan.
+   *
+   * @param userId The user's ID.
+   * @param options Amplitude event options.
+   */
+  calendarAdded(
+    userId: string | undefined,
+    options?: EventOptions,
+  ) {
+    return this.track(userId, new CalendarAdded(), options);
+  }
+
+  /**
+   * Calendar Removed
+   *
+   * [View in Tracking Plan](https://data.amplitude.com/plotday/Plot/events/main/latest/Calendar%20Removed)
+   *
+   * Event has no description in tracking plan.
+   *
+   * @param userId The user's ID.
+   * @param options Amplitude event options.
+   */
+  calendarRemoved(
+    userId: string | undefined,
+    options?: EventOptions,
+  ) {
+    return this.track(userId, new CalendarRemoved(), options);
   }
 
   /**

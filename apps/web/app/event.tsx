@@ -8,13 +8,22 @@ import {
 
 import { useRevalidator } from "@remix-run/react";
 
+import { useThrottledCallback } from "use-debounce";
+
 import type { DbEvent } from "@plotday/db";
 
 import { useSupabase } from "app/hooks";
 
 export function useEventWatch(_start?: Date, _end?: Date) {
   const supabase = useSupabase();
-  const revalidator = useRevalidator();
+  const { revalidate } = useRevalidator();
+  const throttledRevalidate = useThrottledCallback(
+    () => {
+      revalidate();
+    },
+    10_000,
+    { leading: true, trailing: true }
+  );
   useEffect(() => {
     if (!supabase) return;
     const channel = supabase
@@ -27,14 +36,36 @@ export function useEventWatch(_start?: Date, _end?: Date) {
           table: "event",
         },
         (_payload) => {
-          revalidator.revalidate();
+          throttledRevalidate();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "response",
+        },
+        (_payload) => {
+          throttledRevalidate();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "invitee",
+        },
+        (_payload) => {
+          throttledRevalidate();
         }
       )
       .subscribe();
     return () => {
       channel.unsubscribe();
     };
-  }, [supabase, revalidator]);
+  }, [supabase, throttledRevalidate]);
 }
 
 type EventOverrides = Record<number, Partial<DbEvent>>;

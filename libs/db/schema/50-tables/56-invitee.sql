@@ -18,6 +18,9 @@ ALTER TABLE "public"."invitee" validate CONSTRAINT "invitee_event_id_fkey";
 
 CREATE INDEX invitee_event_id_idx ON public.invitee USING btree (event_id);
 
+ALTER publication supabase_realtime
+    ADD TABLE public.invitee;
+
 CREATE OR REPLACE FUNCTION public.contact (invitee)
     RETURNS SETOF contact ROWS 1
     LANGUAGE sql

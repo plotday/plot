@@ -22,8 +22,8 @@ AS
 SELECT
     user_id,
     day,
-    at * tstzrange((day + work_day_start ()) AT TIME ZONE timezone, (day + work_day_end ()) AT TIME ZONE timezone, '[]') AS at,
-    extract_minutes (at * tstzrange((day + work_day_start ()) AT TIME ZONE timezone, (day + work_day_end ()) AT TIME ZONE timezone, '[]')) AS minutes
+    at * tstzrange((day + work_day_start ()) AT TIME ZONE COALESCE(timezone, 'America/New_York'), (day + work_day_end ()) AT TIME ZONE COALESCE(timezone, 'America/New_York'), '[]') AS at,
+    extract_minutes (at * tstzrange((day + work_day_start ()) AT TIME ZONE COALESCE(timezone, 'America/New_York'), (day + work_day_end ()) AT TIME ZONE COALESCE(timezone, 'America/New_York'), '[]')) AS minutes
 FROM (
     SELECT
         user_id,
@@ -50,7 +50,7 @@ FROM (
             SELECT DISTINCT
                 id,
                 day,
-                tstzrange((day + interval '1 day') AT TIME ZONE timezone, (day + interval '1 day') AT TIME ZONE timezone, '[]') AS at
+                tstzrange((day + interval '1 day') AT TIME ZONE COALESCE(timezone, 'America/New_York'), (day + interval '1 day') AT TIME ZONE COALESCE(timezone, 'America/New_York'), '[]') AS at
             FROM
                 "user"
             CROSS JOIN (

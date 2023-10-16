@@ -3,10 +3,11 @@ import type { Provider, Session, SupabaseClient } from "@supabase/supabase-js";
 import { jsonFetch as fetch } from "@worker-tools/json-fetch";
 
 import type { CalendarProvider } from "@plotday/cal";
+import type { Tracker } from "@plotday/tracker";
 
 import type { Database } from "app/db";
 import { safeQuery } from "app/db";
-import type { Environment } from "app/env.server";
+import type { Sentry } from "app/sentry.server";
 
 export type User = Database["public"]["Tables"]["user"]["Row"];
 
@@ -134,8 +135,10 @@ export const getAuthUserId = async (
 
 export const getUser = async (
   supabase: SupabaseClient,
-  env: Environment,
-  session?: Session
+  tracker: Tracker,
+  sentry: Sentry,
+  session?: Session,
+  defaultTimezone: string | null = "America/New_York"
 ) => {
   const userId = await getAuthUserId(supabase, session);
   if (!userId) {
@@ -145,7 +148,9 @@ export const getUser = async (
   const user = safeQuery(
     await supabase
       .from("account")
-      .select("user(id, email, name, timezone, activated_at)")
+      .select(
+        "user(id, email, name, avatar_url, timezone, invitation, activated_at)"
+      )
       .eq("auth_user_id", userId)
       .maybeSingle()
     // Typescript somehow confuses this as returning an array rather than an object,
@@ -153,12 +158,16 @@ export const getUser = async (
   )?.user as any as User | null;
   if (!user) return null;
 
-  env.sentry.setUser({
+  sentry.setUser({
     id: user.id.toString(),
     ...(user.email ? { email: user.email } : {}),
   });
 
-  env.tracker.identify(user.id.toString());
+  tracker.identify(user.id.toString());
+
+  if (!user.timezone) {
+    user.timezone = defaultTimezone;
+  }
 
   return user;
 };
@@ -196,7 +205,7 @@ export const getUserMetadata = async (session: Session) => {
 export async function addAccount(
   user: User | null,
   session: Session,
-  env: Environment,
+  tracker: Tracker,
   supabaseAdmin: SupabaseClient
 ) {
   let {
@@ -226,15 +235,15 @@ export async function addAccount(
     if (!user) {
       throw Error("Failed to create user");
     }
-    env.tracker.identify(user.id.toString(), {
+    tracker.identify(user.id.toString(), {
       Email: email,
       Name: name,
     });
-    env.tracker.accountWaitlisted(user.id.toString());
+    tracker.accountWaitlisted(user.id.toString());
   }
 
   if (credentials.refresh_token) {
-    env.tracker.accountAdded(user.id.toString(), {
+    tracker.accountAdded(user.id.toString(), {
       Provider: provider,
       Scopes: credentials.scopes,
     });
@@ -260,13 +269,27 @@ export async function addAccount(
     throw Error("Failed to create account");
   }
 
+  // Create or link a contact for the user
+  safeQuery(
+    await supabaseAdmin.from("contact").upsert(
+      {
+        user_id: user.id,
+        email: email,
+        name: name ?? user.name,
+        avatar_url: avatar ?? user.avatar_url,
+        contact_user_id: user.id,
+      },
+      { onConflict: "user_id,email" }
+    )
+  );
+
   return { user, account };
 }
 
-export async function activateAccount(
+export async function redeemInvitation(
   user: User,
   invitation: string,
-  env: Environment,
+  tracker: Tracker,
   supabaseAdmin: SupabaseClient
 ) {
   if (user.activated_at) return;
@@ -276,21 +299,9 @@ export async function activateAccount(
       _invitation: invitation,
     })
   );
-  env.tracker.accountActivated(user.id.toString(), {
+  tracker.accountActivated(user.id.toString(), {
     "Invitation Code": invitation,
   });
-  // Create or link a contact for the user
-  safeQuery(
-    await supabaseAdmin.from("contact").upsert(
-      {
-        email: user.email,
-        name: user.name,
-        user_id: user.id,
-        contact_user_id: user.id,
-      },
-      { onConflict: "user_id,email" }
-    )
-  );
 }
 
 export async function getAccounts(supabase: SupabaseClient, userId: number) {

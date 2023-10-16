@@ -3,10 +3,7 @@ import type { AppLoadContext } from "@remix-run/cloudflare";
 import type { Queue } from "@cloudflare/workers-types";
 import * as z from "zod";
 
-import type { Tracker } from "@plotday/tracker";
 import type { ContactSyncRequest, SyncRequest } from "@plotday/worker-request";
-
-import type { Sentry } from "app/sentry.server";
 
 type SyncQueue = Queue<SyncRequest>;
 type ContactSyncQueue = Queue<ContactSyncRequest>;
@@ -30,9 +27,6 @@ const environmentSchema = z.object({
   CONTACT_SYNC_QUEUE: z
     .custom<ContactSyncQueue>((data) => typeof data === "object")
     .optional(),
-
-  tracker: z.custom<Tracker>((data) => typeof data === "object"),
-  sentry: z.custom<Sentry>((data) => typeof data === "object"),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;

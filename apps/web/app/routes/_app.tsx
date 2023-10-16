@@ -1,6 +1,12 @@
 import { useEffect } from "react";
 
-import { Link, Outlet, useLocation, useOutletContext } from "@remix-run/react";
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useOutletContext,
+  useRevalidator,
+} from "@remix-run/react";
 
 import {
   Anchor,
@@ -9,7 +15,9 @@ import {
   Burger,
   Center,
   Container,
+  Loader,
   NavLink,
+  Stack,
   Text,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
@@ -27,19 +35,35 @@ import add from "date-fns/add";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
 import { promiseHash } from "remix-utils/promise";
 
-import { Event } from "@plotday/db";
-import type { Attendance } from "@plotday/db";
+import { Event, safeQuery } from "@plotday/db";
+import type { Attendance, SupabaseClient } from "@plotday/db";
 
 import Logo from "app/components/logo";
 import { DEFAULT_PATH } from "app/config";
 import { ErrorPage } from "app/error";
-import { EventOptimistProvider } from "app/event";
+import { EventOptimistProvider, useEventWatch } from "app/event";
 import type { ContextType } from "app/hooks";
 import { privateLoader } from "app/util";
+
+async function calendarReady(supabase: SupabaseClient, userId: number) {
+  return !!safeQuery(
+    await supabase
+      .from("user")
+      .select("accounts(calendars(enabled,full_sync_at))")
+      .eq("id", userId)
+      .single()
+  )?.accounts?.some((account) =>
+    account.calendars.some(
+      // @ts-ignore
+      (calendar) => calendar.enabled && calendar.full_sync_at
+    )
+  );
+}
 
 export const loader = privateLoader(async ({ user, supabase, response }) => {
   return typedjson(
     {
+      calendarReady: await calendarReady(supabase, user.id),
       counts: await promiseHash({
         triage: Event.GetCount(
           supabase,
@@ -48,6 +72,7 @@ export const loader = privateLoader(async ({ user, supabase, response }) => {
           add(new Date(), { days: 7 }),
           {
             attendance: [null as Attendance],
+            type: ["meeting"],
           }
         ),
         prep: Event.GetCount(
@@ -57,10 +82,12 @@ export const loader = privateLoader(async ({ user, supabase, response }) => {
           add(new Date(), { days: 2 }),
           {
             ready: false,
+            type: ["meeting"],
           }
         ),
         review: Event.GetCount(supabase, user.id, "-infinity", new Date(), {
           reviewed: false,
+          type: ["meeting"],
         }),
       }),
     },
@@ -88,6 +115,7 @@ function Count({ count }: { count: number }) {
 function AppNavbar() {
   const location = useLocation();
   const { counts } = useTypedLoaderData();
+  useEventWatch();
 
   return (
     <AppShell.Navbar>
@@ -148,14 +176,38 @@ function AppNavbar() {
 }
 
 export default function App() {
+  const { calendarReady } = useTypedLoaderData();
   const ctx = useOutletContext<ContextType>();
   const [opened, { toggle, close }] = useDisclosure();
   const mobile = useMediaQuery("(width < 48em)");
+  const { revalidate } = useRevalidator();
 
   const location = useLocation();
   useEffect(() => {
     close();
   }, [location, close]);
+
+  useEffect(() => {
+    if (!calendarReady) {
+      const interval = setInterval(() => {
+        revalidate();
+      }, 2_000);
+      return () => {
+        clearInterval(interval);
+      };
+    }
+  }, [calendarReady, revalidate]);
+
+  if (!calendarReady) {
+    return (
+      <Center h="100%">
+        <Stack align="center">
+          <Loader type="bars" />
+          <Text>Loading calendar events</Text>
+        </Stack>
+      </Center>
+    );
+  }
 
   return (
     <EventOptimistProvider>

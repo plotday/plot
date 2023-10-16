@@ -54,4 +54,8 @@ export default {
         throw new Error(`Unknown queue ${batch.queue}`);
     }
   },
+
+  async scheduled(event: ScheduledController, env: Env) {
+    return await syncWorker.scheduled(event, env);
+  },
 };

@@ -55,7 +55,11 @@ export const toDate = (date: string, tz: string) => {
 };
 
 export function formatDate(date: Date, tz: string, format: string) {
-  return formatInTimeZone(date, tz, format);
+  try {
+    return formatInTimeZone(date, tz, format);
+  } catch (e) {
+    return format;
+  }
 }
 
 export const formatDay = (start: Date, tz: string) => {

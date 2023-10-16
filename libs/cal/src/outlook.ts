@@ -391,6 +391,7 @@ export function transform(rawEvent: RawEvent): Event {
       : undefined,
     organizer,
     invitees,
+    inviteesHidden: !!event.hideAttendees,
     locations,
 
     // TODO: add categories
@@ -469,6 +470,21 @@ export async function getContacts(
   state: ContactSyncState;
 }> {
   // TODO
+  // const authProvider = new Auth(
+  //   config.outlookClientId,
+  //   config.outlookOauthSecret,
+  //   credentials
+  // );
+  // const client = Client.initWithMiddleware({ authProvider });
+  // const response = await client.api("/me/contacts").get();
+  // return {
+  //   contacts: response.value.map((contact: any) => ({
+  //     email: contact.emailAddresses[0].address,
+  //     name: contact.displayName,
+  //   })),
+  //   credentials,
+  //   state,
+  // };
   return {
     contacts: [],
     credentials,

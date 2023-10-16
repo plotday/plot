@@ -45,6 +45,7 @@ export interface Database {
           id: number
           provider: Database["public"]["Enums"]["provider"]
           user_id: number
+          calendars: unknown | null
           organization: unknown | null
         }
         Insert: {
@@ -118,6 +119,7 @@ export interface Database {
         Row: {
           account_id: number
           created_at: string
+          enabled: boolean
           ends_at: string | null
           full_sync_at: string | null
           full_sync_started_at: string | null
@@ -137,6 +139,7 @@ export interface Database {
         Insert: {
           account_id: number
           created_at?: string
+          enabled?: boolean
           ends_at?: string | null
           full_sync_at?: string | null
           full_sync_started_at?: string | null
@@ -155,6 +158,7 @@ export interface Database {
         Update: {
           account_id?: number
           created_at?: string
+          enabled?: boolean
           ends_at?: string | null
           full_sync_at?: string | null
           full_sync_started_at?: string | null
@@ -318,6 +322,7 @@ export interface Database {
           created_at: string
           description: string | null
           id: number
+          invitees_hidden: boolean
           name: string | null
           organizer_email: string | null
           provider_id: string
@@ -337,6 +342,7 @@ export interface Database {
           created_at?: string
           description?: string | null
           id?: number
+          invitees_hidden?: boolean
           name?: string | null
           organizer_email?: string | null
           provider_id: string
@@ -356,6 +362,7 @@ export interface Database {
           created_at?: string
           description?: string | null
           id?: number
+          invitees_hidden?: boolean
           name?: string | null
           organizer_email?: string | null
           provider_id?: string
@@ -715,7 +722,7 @@ export interface Database {
           id: number
           invitation: string | null
           name: string | null
-          timezone: string
+          timezone: string | null
         }
         Insert: {
           activated_at?: string | null
@@ -725,7 +732,7 @@ export interface Database {
           id?: number
           invitation?: string | null
           name?: string | null
-          timezone?: string
+          timezone?: string | null
         }
         Update: {
           activated_at?: string | null
@@ -735,7 +742,7 @@ export interface Database {
           id?: number
           invitation?: string | null
           name?: string | null
-          timezone?: string
+          timezone?: string | null
         }
         Relationships: []
       }
@@ -757,6 +764,7 @@ export interface Database {
           initiated: boolean | null
           internal: Database["public"]["Enums"]["event_internal"] | null
           invitee_count: number | null
+          invitees_hidden: boolean | null
           labels: number[] | null
           minutes: number | null
           name: string | null
@@ -923,6 +931,22 @@ export interface Database {
           user_id: number
         }[]
       }
+      accounts: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          auth_user_id: string
+          contact_sync_state: Json | null
+          created_at: string
+          credentials: Json | null
+          domain_id: number | null
+          email: string | null
+          id: number
+          provider: Database["public"]["Enums"]["provider"]
+          user_id: number
+        }[]
+      }
       all_views_secure: {
         Args: Record<PropertyKey, never>
         Returns: boolean
@@ -941,7 +965,7 @@ export interface Database {
           at: unknown
           availability: Database["public"]["Enums"]["event_availability"]
           response: Database["public"]["Enums"]["event_response"]
-          invitee_count: number
+          has_invitees: boolean
         }
         Returns: Database["public"]["Enums"]["event_type"]
       }
@@ -959,6 +983,31 @@ export interface Database {
         Returns: {
           account_id: number
           created_at: string
+          enabled: boolean
+          ends_at: string | null
+          full_sync_at: string | null
+          full_sync_started_at: string | null
+          id: number
+          name: string | null
+          provider_id: string
+          sequence: number
+          starts_at: string | null
+          sync_error: string | null
+          sync_state: Json | null
+          synced_at: string | null
+          watch_expires_at: string | null
+          watch_id: string | null
+          watch_secret: string | null
+        }[]
+      }
+      calendars: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          account_id: number
+          created_at: string
+          enabled: boolean
           ends_at: string | null
           full_sync_at: string | null
           full_sync_started_at: string | null

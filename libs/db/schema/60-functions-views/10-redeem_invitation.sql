@@ -17,8 +17,7 @@ BEGIN
         UPDATE
             public.user
         SET
-            invitation = _invitation,
-            activated_at = now()
+            invitation = _invitation
         WHERE
             id = _user_id;
         IF NOT FOUND THEN

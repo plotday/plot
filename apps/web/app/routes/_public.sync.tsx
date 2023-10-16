@@ -5,11 +5,6 @@ import { IconPlugConnected } from "@tabler/icons-react";
 import CalendarSources from "app/components/calendar-sources";
 import Consent from "app/components/consent";
 import { DEFAULT_PATH } from "app/config";
-import { privateLoader } from "app/util";
-
-export const loader = privateLoader(async () => {
-  return null;
-});
 
 export default function Sync() {
   return (

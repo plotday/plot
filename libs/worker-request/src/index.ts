@@ -3,8 +3,7 @@ import type { EmailType } from "@plotday/email";
 
 export type SyncType = "full" | "incremental" | "partial";
 export type SyncRequest = {
-  accountId: number;
-  providerCalendarId?: string;
+  calendarId: number;
   syncType?: SyncType;
 };
 
@@ -25,4 +24,5 @@ export type MailRequest = {
 
 export type ContactSyncRequest = {
   accountId: number;
+  full?: boolean;
 };

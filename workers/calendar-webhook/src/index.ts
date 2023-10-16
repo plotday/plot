@@ -124,7 +124,7 @@ async function queueSync(
       watchId,
       resourceId
     ));
-    saveCredentials(supabase, accountId, credentials, true);
+    await saveCredentials(supabase, accountId, credentials, true);
     return;
   }
 
@@ -133,8 +133,7 @@ async function queueSync(
   }
 
   await env.SYNC_QUEUE.send({
-    accountId,
-    providerCalendarId: calendar.provider_id || undefined,
+    calendarId: calendar.id,
     syncType: "incremental",
   });
 
@@ -187,7 +186,7 @@ async function renewWatch(env: Env, calendar: Calendar) {
         }
       : undefined
   ));
-  saveCredentials(supabase, accountId, credentials, true);
+  await saveCredentials(supabase, accountId, credentials, true);
 
   safeQuery(
     await supabase

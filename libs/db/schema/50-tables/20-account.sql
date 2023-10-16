@@ -34,3 +34,16 @@ CREATE UNIQUE INDEX account_auth_user_id_key ON public.account USING btree (auth
 
 CREATE INDEX account_user_id_idx ON public.account USING btree (user_id);
 
+CREATE OR REPLACE FUNCTION public.accounts ("user")
+    RETURNS SETOF account
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT
+        account.*
+    FROM
+        account
+    WHERE
+        account.user_id = $1.id
+$function$;
+

@@ -12,6 +12,7 @@ export const loader = privateLoader(async ({ supabase, response, user }) => {
     {
       ...(await promiseHash({
         events: Event.GetRange(supabase, user.id, new Date(), true, {
+          type: ["meeting"],
           ready: false,
         }),
       })),

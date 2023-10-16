@@ -22,6 +22,7 @@ import { normalizeName } from "./contact";
 
 type GoogleEvent = calendar_v3.Schema$Event;
 type GoogleAttendee = calendar_v3.Schema$EventAttendee;
+type GoogleContact = people_v1.Schema$Person;
 
 function toGoogleDate(d: Date) {
   function pad(n: number) {
@@ -279,9 +280,11 @@ export function transform(rawEvent: RawEvent): Event {
 
   const attendees: GoogleAttendee[] = event.attendees || [];
 
+  let organizerFound = false;
   let invitees: Invitee[] =
     attendees.reduce((ret, attendee) => {
       if (!attendee.email || attendee.resource) return ret;
+      if (attendee.email === organizer?.email) organizerFound = true;
       return [
         ...ret,
         {
@@ -292,15 +295,14 @@ export function transform(rawEvent: RawEvent): Event {
         },
       ];
     }, [] as Invitee[]) || [];
-  if (invitees.length === 0 && event.organizer?.email) {
-    invitees = [
-      {
-        email: event.organizer.email.toLowerCase(),
-        name: event.organizer.displayName,
-        response: "accepted",
-        isOptional: false,
-      },
-    ];
+  // This happens when attendees are hidden
+  if (!organizerFound && organizer) {
+    invitees.push({
+      email: organizer.email,
+      name: organizer.name,
+      response: "accepted",
+      isOptional: false,
+    });
   }
 
   let availability: EventAvailability;
@@ -403,6 +405,7 @@ export function transform(rawEvent: RawEvent): Event {
       : undefined,
     organizer,
     invitees,
+    inviteesHidden: event.guestsCanSeeOtherGuests === false,
     locations,
 
     // TODO: add categories
@@ -462,15 +465,18 @@ export async function getCalendars(
   credentials: CalendarCredentials;
 }> {
   if (
-    !credentials.scopes?.some?.(
-      (scope) => scope === "https://www.googleapis.com/auth/calendar.readonly"
+    !credentials.scopes?.some?.((scope) =>
+      [
+        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+      ].includes(scope)
     )
   ) {
     return {
       calendars: [
         {
           name: "Primary",
-          id: "primary",
+          id: credentials.email,
           primary: true,
           tz: "America/New_York",
           account: credentials.email,
@@ -508,6 +514,14 @@ type ContactTokens = {
     nextSyncToken?: string;
   };
 };
+
+function parseContact(contact: GoogleContact) {
+  const name = contact.names?.[0]?.displayName;
+  const avatar = contact.photos?.filter(
+    (p) => !p.default && p.metadata?.primary
+  )?.[0]?.url;
+  return { name, avatar };
+}
 
 export async function getContacts(
   config: CalendarConfig,
@@ -550,8 +564,7 @@ export async function getContacts(
       for (const c of response.connections ?? []) {
         for (const e of c.emailAddresses ?? []) {
           if (!e.value) continue;
-          const name = e.displayName ?? c.names?.[0]?.displayName;
-          const avatar = c.photos?.[0]?.url;
+          const { name, avatar } = parseContact(c);
           contacts[e.value] = {
             ...contacts[e.value],
             email: e.value,
@@ -602,8 +615,7 @@ export async function getContacts(
       for (const c of response.otherContacts ?? []) {
         for (const e of c.emailAddresses ?? []) {
           if (!e.value) continue;
-          const name = e.displayName ?? c.names?.[0]?.displayName;
-          const avatar = c.photos?.[0]?.url;
+          const { name, avatar } = parseContact(c);
           contacts[e.value] = {
             ...contacts[e.value],
             email: e.value,

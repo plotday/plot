@@ -15,17 +15,14 @@ export const loader = privateLoader(
     return typedjson(
       {
         ...(await promiseHash({
-          events: Event.GetRange(
-            supabase,
-            user.id,
-            new Date(),
-            false,
-            showReviewed
+          events: Event.GetRange(supabase, user.id, new Date(), false, {
+            type: ["meeting"],
+            ...(showReviewed
               ? {}
               : {
                   reviewed: false,
-                }
-          ),
+                }),
+          }),
         })),
       },
       { headers: response.headers }

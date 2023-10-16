@@ -36,6 +36,7 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
   const location = useLocation();
   const routes = useMatches();
   const isPublic = routes.some((r) => r.id === "routes/_public");
+  const isSync = routes.some((r) => r.pathname === "/sync");
 
   return (
     <AppShell.Header p="xs" className={classes.header}>
@@ -53,7 +54,7 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           </UnstyledButton>
         </Group>
         <Group>
-          {user?.activated_at && isPublic && (
+          {user?.activated_at && isPublic && !isSync && (
             <Button component={Link} to={DEFAULT_PATH}>
               Go to app
             </Button>

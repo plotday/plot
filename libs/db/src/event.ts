@@ -1,5 +1,7 @@
 import differenceInMinutes from "date-fns/differenceInMinutes";
 
+import type { EventResponse } from "@plotday/cal";
+
 import type { SupabaseClient } from "./";
 import { parseDateRange } from "./";
 import { safeQuery } from "./query";
@@ -24,18 +26,31 @@ export type DbEvents = DbEvent[];
 
 export type Attendance = Database["public"]["Enums"]["event_attendance"] | null;
 
-type ArrayElement<T> = T extends (infer E)[] ? E : never;
-
-export type Invitees = Event["invitees"];
-export type Invitee = ArrayElement<Invitees>;
+export type Invitee = {
+  email: string;
+  response: EventResponse;
+  name: string;
+  avatar?: string;
+  isSelf: boolean;
+  isExternal: boolean;
+  isInternal: boolean;
+};
+export type Invitees = Invitee[];
 
 const EVENT_USER_QUERY = "user_id";
 const EVENT_QUERY =
-  "user_id,id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer_email,attendance,ready,reviewed,labels,invitees:invitee(email,response,is_optional,contact(id,name,email,contact_user_id,organization(id,name)))";
+  "user_id,id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer_email,attendance,ready,reviewed,labels,invitees:invitee(email,response,is_optional,contact(id,name,email,avatar_url,contact_user_id,organization(id,name)))";
 
 type PostgrestQueryBuilder = ReturnType<
   ReturnType<SupabaseClient["from"]>["select"]
 >;
+
+export type EventFilters = {
+  attendance?: Attendance[];
+  type?: Database["public"]["Enums"]["event_type"][];
+  ready?: boolean;
+  reviewed?: boolean;
+};
 
 export class Event {
   public static async Get(supabase: SupabaseClient, eventId: number) {
@@ -53,11 +68,7 @@ export class Event {
     userId: number,
     from: Date | "-infinity",
     to: Date | "infinity",
-    filters: {
-      attendance?: Attendance[];
-      ready?: boolean;
-      reviewed?: boolean;
-    }
+    filters: EventFilters
   ) {
     const during = `[${from instanceof Date ? from.toISOString() : from}, ${
       to instanceof Date ? to.toISOString() : to
@@ -76,6 +87,12 @@ export class Event {
         `attendance.in.(${nonNull}), ${isNull ? "attendance.is.null" : "false"}`
       );
     }
+
+    if (filters.type) {
+      const list = filters.type.map((f) => `"${f}"`).join(",");
+      query = query.or(`type.in.(${list})`);
+    }
+
     if (filters.ready === true) {
       query = query.not("ready", "is", null);
     } else if (filters.ready === false) {
@@ -95,11 +112,7 @@ export class Event {
     userId: number,
     from: Date = new Date(),
     forward: boolean = true,
-    filters: {
-      attendance?: Attendance[];
-      ready?: boolean;
-      reviewed?: boolean;
-    } = {}
+    filters: EventFilters = {}
   ) {
     const eventsQuery = Event.AddFilters(
       supabase.from("event_x").select(`${EVENT_QUERY},${EVENT_USER_QUERY}`),
@@ -123,11 +136,7 @@ export class Event {
     userId: number,
     from: Date | "-infinity",
     to: Date | "infinity",
-    filters: {
-      attendance?: Attendance[];
-      ready?: boolean;
-      reviewed?: boolean;
-    }
+    filters: EventFilters
   ) {
     const eventsQuery = Event.AddFilters(
       supabase
@@ -149,7 +158,9 @@ export class Event {
     public dbEvent: DbEvent,
     public tz: string,
     private _labels: LabelMap
-  ) {}
+  ) {
+    if (!tz) throw Error("Missing timezone");
+  }
 
   public get id() {
     if (!this.dbEvent.id) throw Error("Event has no id");
@@ -234,23 +245,24 @@ export class Event {
   }
 
   public get organizer() {
-    const organizer = this.dbEvent.invitees.filter(
-      (invitee) => invitee.contact?.[0]?.email === this.dbEvent.organizer_email
+    const organizer = this.invitees.filter(
+      (invitee) => invitee.email === this.dbEvent.organizer_email
     )[0];
     if (!organizer) return undefined;
-    return this.toInvitee(organizer);
+    return organizer;
   }
 
-  private toInvitee(invitee: DbEvent["invitees"][number]) {
-    // @ts-ignore Type inference is failing for organziation
-    const selfOrg = this.self?.contact?.organization?.id;
+  private toInvitee(invitee: DbEvent["invitees"][number]): Invitee {
+    const selfOrg = this.dbEvent.invitees
+      // @ts-ignore Type inference is failing
+      .filter((i) => i.contact?.contact_user_id)?.organization?.id;
     // Some TS hackery since it thinks contacts is an array rather than the item
     const contact = invitee.contact as any as (typeof invitee.contact)[number];
     return {
       email: invitee.email,
       response: invitee.response,
-      id: contact?.id,
-      name: contact?.name || contact?.email,
+      name: contact?.name || invitee.email,
+      avatar: contact?.avatar_url ?? undefined,
       // This assume contact_user_id is only set for the owner
       isSelf: !!contact?.contact_user_id,
       // @ts-ignore Type inference is failing for organziation
@@ -307,6 +319,10 @@ export class Event {
 
   public get hasOnlyInternalInvitees() {
     return this.invitees.every((i) => i.isInternal);
+  }
+
+  public get isMeeting() {
+    return !!this.dbEvent.ready;
   }
 
   public get isReady() {

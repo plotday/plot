@@ -28,8 +28,8 @@ BEGIN
 ON CONFLICT (user_id,
     email)
     DO UPDATE SET
-        name = EXCLUDED.name,
-        avatar_url = EXCLUDED.avatar_url;
+        name = COALESCE(contact.name, EXCLUDED.name),
+        avatar_url = COALESCE(contact.avatar_url, EXCLUDED.avatar_url);
 END;
 $$
 LANGUAGE plpgsql;

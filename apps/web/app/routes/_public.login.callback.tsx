@@ -1,17 +1,17 @@
 import { redirect } from "@remix-run/cloudflare";
 
 import {
-  activateAccount,
   addAccount,
   completeSignIn,
   getAccounts,
   getUser,
+  redeemInvitation,
 } from "app/auth";
 import { DEFAULT_PATH } from "app/config";
 import { publicLoader } from "app/util";
 
 export const loader = publicLoader(
-  async ({ request, response, supabase, supabaseAdmin, env }) => {
+  async ({ request, response, supabase, supabaseAdmin, tracker, sentry }) => {
     const url = new URL(request.url);
     const fromUrl = url.searchParams.get("from") || "/login";
     let toUrl = url.searchParams.get("to") || DEFAULT_PATH;
@@ -22,18 +22,19 @@ export const loader = publicLoader(
       // combination of passing the session and using supabaseAdmin is required
       // for the rest of this request.
 
-      let user = await getUser(supabaseAdmin, env, session);
+      let user = await getUser(supabaseAdmin, tracker, sentry, session);
       if (!user) {
-        ({ user } = await addAccount(user, session, env, supabaseAdmin));
+        ({ user } = await addAccount(user, session, tracker, supabaseAdmin));
       }
 
       const invitation = url.searchParams.get("invitation");
-      if (invitation) {
-        await activateAccount(user, invitation, env, supabaseAdmin);
+      if (!user.invitation && invitation) {
+        await redeemInvitation(user, invitation, tracker, supabaseAdmin);
       }
-
       const accounts = await getAccounts(supabaseAdmin, user.id);
-      if (accounts?.length === 0) {
+      if (!user.invitation && !invitation) {
+        toUrl = "/waitlist";
+      } else if (accounts?.length === 0) {
         toUrl = "/sync";
       }
 

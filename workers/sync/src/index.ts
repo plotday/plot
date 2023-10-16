@@ -11,6 +11,7 @@ import {
   saveCredentials,
 } from "@plotday/db";
 import type {
+  ContactSyncRequest,
   EventSyncRequest,
   SyncRequest,
   SyncType,
@@ -34,13 +35,13 @@ interface Env {
 
   readonly SYNC_QUEUE: Queue<SyncRequest>;
   readonly EVENT_QUEUE: Queue<EventSyncRequest>;
+  readonly CONTACT_SYNC_QUEUE: Queue<ContactSyncRequest>;
 }
 
 async function runSync(
   env: Env,
   supabase: SupabaseClient,
-  accountId: number,
-  providerCalendarId: string,
+  calendarId: number,
   syncType: SyncType
 ) {
   const maxBatchSize = 50;
@@ -55,56 +56,65 @@ async function runSync(
     webhookUrl: env.CALENDAR_WEBHOOK_URL,
   };
 
-  let credentials = await getCredentials(supabase, accountId);
-
-  async function updateWatch() {
-    if (syncType === "partial" || !env.CALENDAR_WEBHOOK_URL) return null;
-    console.log(`Updating watch (${accountId}:${providerCalendarId})`);
-    let state: WatchState;
-    ({ state, credentials } = await watch(
-      calendarConfig,
-      credentials,
-      providerCalendarId
-    ));
-    await saveCredentials(supabase, accountId, credentials, true);
-    return state;
-  }
-
   let state: SyncState | undefined;
-  let calendar;
   try {
-    // Create a new watch
-    let watchState = syncType === "full" ? await updateWatch() : null;
-
-    calendar = safeQuery(
+    const calendar = safeQuery(
       await supabase
         .from("calendar")
-        .upsert(
-          {
-            account_id: accountId,
-            provider_id: providerCalendarId,
-            sync_error: null,
-            ...(syncType === "full"
-              ? {
-                  full_sync_started_at: new Date().toISOString(),
-                  full_sync_at: null,
-                }
-              : {}),
-            ...(watchState
-              ? {
-                  watch_id: watchState.watchId,
-                  provider_id: watchState.calendarId,
-                  watch_secret: watchState.secret,
-                  watch_expires_at: watchState.expiry.toISOString(),
-                }
-              : {}),
-          },
-          { onConflict: "account_id, provider_id" }
-        )
-        .select()
+        .update({
+          sync_error: null,
+          ...(syncType === "full"
+            ? {
+                full_sync_started_at: new Date().toISOString(),
+                full_sync_at: null,
+              }
+            : {}),
+        })
+        .eq("id", calendarId)
+        .select("*,account(*)")
         .single()
     );
-    if (!calendar) throw new Error("Could not create calendar");
+
+    async function updateWatch() {
+      if (syncType === "partial" || !env.CALENDAR_WEBHOOK_URL || !calendar)
+        return null;
+      console.log(`Updating watch (${calendarId})`);
+      let state: WatchState;
+      ({ state, credentials } = await watch(
+        calendarConfig,
+        credentials,
+        calendar.provider_id
+      ));
+      await saveCredentials(supabase, accountId, credentials, true);
+      safeQuery(
+        await supabase
+          .from("calendar")
+          .update({
+            watch_id: state.watchId,
+            provider_id: state.calendarId,
+            watch_secret: state.secret,
+            watch_expires_at: state.expiry.toISOString(),
+          })
+          .eq("id", calendarId)
+      );
+    }
+
+    // Create a new watch
+    if (syncType === "full") {
+      await updateWatch();
+    }
+
+    if (!calendar) throw new Error(`Calendar ${calendarId} not found`);
+    const accountId = calendar.account_id;
+
+    if (syncType === "full") {
+      await env.CONTACT_SYNC_QUEUE?.send?.({
+        accountId,
+        full: true,
+      });
+    }
+
+    let credentials = await getCredentials(supabase, accountId);
 
     // Update a missing or expired watch
     if (
@@ -112,20 +122,7 @@ async function runSync(
       !calendar.watch_expires_at ||
       new Date(calendar.watch_expires_at) < new Date()
     ) {
-      watchState = await updateWatch();
-      if (watchState) {
-        safeQuery(
-          await supabase
-            .from("calendar")
-            .update({
-              watch_id: watchState.watchId,
-              provider_id: watchState.calendarId,
-              watch_secret: watchState.secret,
-              watch_expires_at: watchState.expiry.toISOString(),
-            })
-            .eq("id", calendar.id)
-        );
-      }
+      await updateWatch();
     }
 
     if (
@@ -191,7 +188,7 @@ async function runSync(
         numBatchesPerSync * maxBatchSize
       ));
       console.log(
-        `Fetched ${events.length} events for ${state.calendarId} (${
+        `Fetched ${events.length} events for ${calendar.id} (${
           state.more ? "more" : "no more"
         })`
       );
@@ -240,14 +237,14 @@ async function runSync(
       });
     }
   } catch (error) {
-    if (calendar && error instanceof Error) {
+    if (error instanceof Error) {
       safeQuery(
         await supabase
           .from("calendar")
           .update({
             sync_error: error.message,
           })
-          .eq("id", calendar.id)
+          .eq("id", calendarId)
       );
     }
     throw error;
@@ -269,15 +266,13 @@ export default {
       return new Response("Forbidden", { status: 403 });
     }
     const body = await req.json();
-    const accountId = (body as any)?.accountId;
-    if (typeof accountId !== "number") {
+    const calendarId = (body as any)?.calendarId;
+    if (typeof calendarId !== "number") {
       return new Response("Bad Request", { status: 400 });
     }
-    const providerCalendarId = (body as any)?.providerCalendarId;
     const syncType = (body as any)?.syncType;
     await env.SYNC_QUEUE.send({
-      accountId,
-      providerCalendarId,
+      calendarId,
       syncType,
     });
 
@@ -300,19 +295,17 @@ export default {
     for (const m of batch.messages) {
       try {
         const message = m as Message<SyncRequest>;
-        const accountId = message.body.accountId;
-        const providerCalendarId = message.body.providerCalendarId || "primary";
+        const calendarId = message.body.calendarId;
         const syncType = message.body.syncType || "incremental";
-        console.log(`Starting ${syncType} sync (${accountId})`);
+        console.log(`Starting ${syncType} sync (${calendarId})`);
         try {
-          await runSync(env, supabase, accountId, providerCalendarId, syncType);
-          console.log(`Sync complete (${accountId})`);
+          await runSync(env, supabase, calendarId, syncType);
+          console.log(`Sync complete (${calendarId})`);
           message.ack();
         } catch (e) {
           console.error(e);
           Sentry.withScope((scope) => {
-            scope.setExtra("account-id", accountId);
-            scope.setExtra("provider-calendar-id", providerCalendarId);
+            scope.setExtra("calendar-id", calendarId);
             Sentry.captureException(e);
           });
           message.retry();
@@ -323,6 +316,48 @@ export default {
         // It's a failure, but it will never succeed because the parameters
         // are wrong.
         m.ack();
+      }
+    }
+  },
+
+  async scheduled(_event: ScheduledController, env: Env) {
+    const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+
+    // Sync calendars
+    const calendars = safeQuery(
+      await supabase.from("calendar").select("id").eq("enabled", true)
+    );
+    if (calendars && env.SYNC_QUEUE) {
+      const chunkSize = 100;
+      const chunks = Array.from(
+        { length: Math.ceil(calendars.length / chunkSize) },
+        (_, index) =>
+          calendars.slice(index * chunkSize, (index + 1) * chunkSize)
+      );
+      for (const chunk of chunks) {
+        await env.SYNC_QUEUE.sendBatch(
+          chunk.map((a) => ({ body: { calendarId: a.id } }))
+        );
+      }
+    }
+
+    // Sync contacts
+    const accounts = safeQuery(
+      await supabase
+        .from("account")
+        .select("id")
+        .not("credentials", "is", "null")
+    );
+    if (accounts && env.CONTACT_SYNC_QUEUE) {
+      const chunkSize = 100;
+      const chunks = Array.from(
+        { length: Math.ceil(accounts.length / chunkSize) },
+        (_, index) => accounts.slice(index * chunkSize, (index + 1) * chunkSize)
+      );
+      for (const chunk of chunks) {
+        await env.CONTACT_SYNC_QUEUE.sendBatch(
+          chunk.map((a) => ({ body: { accountId: a.id, full: false } }))
+        );
       }
     }
   },

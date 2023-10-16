@@ -23,3 +23,6 @@ CREATE UNIQUE INDEX response_user_id_provider_id_key ON public.response USING bt
 ALTER TABLE "public"."response"
     ADD CONSTRAINT "response_user_id_provider_id_key" UNIQUE USING INDEX "response_user_id_provider_id_key";
 
+ALTER publication supabase_realtime
+    ADD TABLE public.response;
+

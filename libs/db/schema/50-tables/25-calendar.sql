@@ -14,7 +14,8 @@ CREATE TABLE "public"."calendar" (
     "synced_at" timestamp with time zone,
     "sync_error" text,
     "full_sync_started_at" timestamp with time zone,
-    "name" text
+    "name" text,
+    "enabled" boolean NOT NULL DEFAULT FALSE
 );
 
 CREATE UNIQUE INDEX calendar_pkey ON public.calendar USING btree (id);
@@ -30,4 +31,17 @@ ALTER TABLE "public"."calendar" validate CONSTRAINT "calendar_account_id_fkey";
 CREATE UNIQUE INDEX calendar_account_id_provider_id_key ON public.calendar USING btree (account_id, provider_id);
 
 CREATE INDEX calendar_account_id_idx ON public.calendar USING btree (account_id);
+
+CREATE OR REPLACE FUNCTION public.calendars (account)
+    RETURNS SETOF calendar
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT
+        calendar.*
+    FROM
+        calendar
+    WHERE
+        calendar.account_id = $1.id
+$function$;
 

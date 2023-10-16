@@ -22,14 +22,14 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION "public"."calc_event_type" (at tstzrange, availability event_availability, response event_response, invitee_count integer)
+CREATE OR REPLACE FUNCTION "public"."calc_event_type" (at tstzrange, availability event_availability, response event_response, has_invitees boolean)
     RETURNS event_type
     LANGUAGE plpgsql
     AS $function$
 BEGIN
     RETURN CASE WHEN EXTRACT(epoch FROM (upper(at) - lower(at))) >= 60 * 60 * 23 THEN
         'note'::event_type
-    WHEN invitee_count > 1
+    WHEN has_invitees
         AND (availability = 'busy'
             OR response = 'declined') THEN
         'meeting'::event_type
@@ -68,7 +68,7 @@ SELECT
     e.name,
     (
         CASE WHEN EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 THEN
-            tstzrange(timezone(u.timezone, timezone('UTC', lower(e.at))), timezone(u.timezone, timezone('UTC', upper(e.at))), '[)'::text)
+            tstzrange(timezone(COALESCE(u.timezone, 'America/New_York'), timezone('UTC', lower(e.at))), timezone(COALESCE(u.timezone, 'America/New_York'), timezone('UTC', upper(e.at))), '[)'::text)
         ELSE
             e.at
         END) AS at,
@@ -96,19 +96,21 @@ ELSE
     min(er.reviewed)
 END AS reviewed,
 CASE WHEN EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 THEN
-    timezone(u.timezone, timezone('UTC', lower(e.at)))::date
+    timezone(COALESCE(u.timezone, 'America/New_York'), timezone('UTC', lower(e.at)))::date
 ELSE
-    (lower(e.at) at time zone u.timezone)::date
+    (lower(e.at) at time zone COALESCE(u.timezone, 'America/New_York'))::date
 END AS day,
 COALESCE(u.id = min(ct.contact_user_id) FILTER (WHERE ct.email = e.organizer_email), FALSE) AS initiated,
 EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 AS all_day,
-calc_event_type (e.at, min(e.availability), COALESCE(min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative'), count(DISTINCT i.email)::integer) AS type,
+calc_event_type (e.at, min(e.availability), COALESCE(min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative'), count(DISTINCT i.email)::integer > 1
+    OR bool_or(e.invitees_hidden)) AS type,
 calc_internal (min(ct.domain_id) FILTER (WHERE (ct.contact_user_id = u.id)), array_agg(DISTINCT ct.domain_id)) AS internal,
 CASE WHEN count(el.label_id) > 0 THEN
     array_agg(DISTINCT el.label_id) FILTER (WHERE (el.label_id IS NOT NULL))
 ELSE
     ARRAY[]::bigint[]
-END AS labels
+END AS labels,
+bool_or(e.invitees_hidden) AS invitees_hidden
 FROM
     event e
     JOIN calendar c ON (e.calendar_id = c.id)
@@ -120,6 +122,8 @@ FROM
     JOIN contact ct ON (ct.user_id = u.id
             AND i.email = ct.email)
     LEFT JOIN event_label el ON (e.id = el.event_id)
+WHERE
+    c.enabled = TRUE
 GROUP BY
     u.id,
     e.name,

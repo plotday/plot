@@ -4,7 +4,6 @@ import { json } from "@remix-run/cloudflare";
 import { Form, useSearchParams } from "@remix-run/react";
 
 import {
-  Anchor,
   Button,
   Card,
   Container,
@@ -18,11 +17,14 @@ import {
 import { IconMail } from "@tabler/icons-react";
 import { useTypedActionData } from "remix-typedjson";
 
+import CalendarSources from "app/components/calendar-sources";
+import Consent from "app/components/consent";
+import { DEFAULT_PATH } from "app/config";
 import { createServerAdminClient, safeQuery } from "app/db";
 import { useUser } from "app/hooks";
 import { publicAction } from "app/util";
 
-export const action = publicAction(async ({ request, context, env }) => {
+export const action = publicAction(async ({ request, context, tracker }) => {
   const body = await request.formData();
   const email = body.get("email")?.toString();
   if (!email) return null;
@@ -38,10 +40,10 @@ export const action = publicAction(async ({ request, context, env }) => {
     ) || {};
 
   if (userId) {
-    env.tracker.identify(userId.toString(), {
+    tracker.identify(userId.toString(), {
       Email: email,
     });
-    env.tracker.accountWaitlisted(userId.toString());
+    tracker.accountWaitlisted(userId.toString());
   }
 
   return json({
@@ -85,27 +87,21 @@ export default function Waitlist() {
         <Card>
           <Stack>
             <Title>{email ? "Awesome!" : "Hello!"}</Title>
-            {!email && <Text>Plot is currently in private, early access.</Text>}
-            {email && (
-              <Text>
-                We're thrilled you're taking this step to own your time.
-              </Text>
-            )}
-            {user && <Text>You've been added to the waitlist.</Text>}
+            <Text>
+              {!email && "Plot is currently in private, early access. "}
+              {email &&
+                "We're thrilled you're taking this step to own your time. "}
+              {user && "You've been added to the waitlist. "}
+            </Text>
             {!email && !user && <WaitlistForm />}
             {(email || user) && (
               <>
-                <Text>We'll be in touch soon.</Text>
+                <Title order={2}>Test your calendar</Title>
                 <Text>
-                  &mdash;{" "}
-                  <Anchor href="https://www.linkedin.com/in/nigelvanderlinden/">
-                    Nigel
-                  </Anchor>{" "}
-                  and{" "}
-                  <Anchor href="https://www.linkedin.com/in/krisbraun/">
-                    Kris
-                  </Anchor>
+                  You can test your calendar now to see if it is supported.
                 </Text>
+                <CalendarSources redirectTo={DEFAULT_PATH} />
+                <Consent />
               </>
             )}
           </Stack>

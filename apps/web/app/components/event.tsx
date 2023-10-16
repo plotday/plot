@@ -397,45 +397,39 @@ function initials(name: string) {
   return initials;
 }
 
-function KeyPerson({
-  invitees,
-  organizer,
-}: {
-  invitees: Invitee[];
-  organizer?: Invitee;
-}) {
-  const p = useMemo(() => {
-    const others = invitees.filter((i) => !i.isSelf);
-    let p = null;
-    if (others.length === 1) {
-      p = others[0];
-    } else if (others.length > 1) {
-      p =
-        invitees.find((i) => i.email === organizer?.email) ?? organizer
-          ? {
-              ...organizer,
-              response: "accepted",
-            }
-          : undefined;
-    }
-    return p;
-  }, [organizer, invitees]);
+function InviteeAvatar({ invitee }: { invitee: Invitee }) {
   const generatedInitials = useMemo(
-    () => initials(p?.name || p?.email || "?"),
-    [p]
+    () => initials(invitee?.name || invitee?.email || "?"),
+    [invitee]
   );
-
-  if (!p) {
-    return <Avatar>?</Avatar>;
-  }
+  const color =
+    invitee.response === "accepted"
+      ? "var(--mantine-color-brand-outline)"
+      : invitee.response === "declined"
+      ? "var(--mantine-color-secondary-filled)"
+      : "var(--mantine-color-background)";
   return (
-    <Tooltip key={p.email} label={p.name || p.email || undefined} withArrow>
+    <Tooltip
+      key={invitee.email}
+      label={`${invitee.name || invitee.email} ${
+        invitee.response === "accepted"
+          ? " ✅"
+          : invitee.response === "declined"
+          ? " ❌"
+          : ""
+      }`}
+      withArrow
+    >
       <Avatar
-        alt={p.name || undefined}
+        src={invitee.avatar || undefined}
+        alt={invitee.name || undefined}
+        style={{
+          border: `2px solid ${color}`,
+        }}
         color={
-          p.response === "accepted"
+          invitee.response === "accepted"
             ? "brand"
-            : p.response === "declined"
+            : invitee.response === "declined"
             ? "secondary.7"
             : undefined
         }
@@ -444,6 +438,23 @@ function KeyPerson({
       </Avatar>
     </Tooltip>
   );
+}
+
+function KeyPerson({
+  invitees,
+  organizer,
+}: {
+  invitees: Invitee[];
+  organizer?: Invitee;
+}) {
+  const p = useMemo(() => {
+    return invitees.find((i) => i.email === organizer?.email);
+  }, [organizer, invitees]);
+
+  if (!p) {
+    return null;
+  }
+  return <InviteeAvatar invitee={p} />;
 }
 
 const InviteeSummary = memo(function InviteeSummary({
@@ -460,29 +471,12 @@ const InviteeSummary = memo(function InviteeSummary({
         .map((i) => ({ ...i, initials: initials(i.name || i.email || "?") })),
     [invitees, organizer]
   );
-  if (others.length <= 1) return null;
+  if (others.length === 0) return null;
   return (
     <Tooltip.Group>
       <Avatar.Group>
         {others.map((invitee) => (
-          <Tooltip
-            key={invitee.id}
-            label={invitee.name || invitee.email || undefined}
-            withArrow
-          >
-            <Avatar
-              alt={invitee.name || undefined}
-              color={
-                invitee.response === "accepted"
-                  ? "brand"
-                  : invitee.response === "declined"
-                  ? "secondary.7"
-                  : undefined
-              }
-            >
-              {invitee.initials}
-            </Avatar>
-          </Tooltip>
+          <InviteeAvatar invitee={invitee} key={invitee.email} />
         ))}
       </Avatar.Group>
     </Tooltip.Group>
@@ -542,14 +536,12 @@ function EventCard({
   const updateReady = useCallback(
     (clickEvent: ChangeEvent<HTMLInputElement>) => {
       const ready = clickEvent.currentTarget.checked;
-      if (event.providerId) {
-        eventReadyResponder(
-          review ? undefined : ready,
-          review ? ready : undefined
-        );
-      }
+      eventReadyResponder(
+        review ? undefined : ready,
+        review ? ready : undefined
+      );
     },
-    [event, eventReadyResponder, review]
+    [eventReadyResponder, review]
   );
 
   return (
@@ -598,35 +590,40 @@ function EventCard({
           />
         </Group>
 
-        <Center>
-          <Checkbox
-            radius="xl"
-            lh="lg"
-            checked={ready}
-            disabled={event.attendance === null}
-            styles={{
-              input: {
-                ...(event.attendance !== null && !ready
-                  ? { borderColor: "var(--mantine-color-brand-outline)" }
-                  : {}),
-              },
-            }}
-            onChange={updateReady}
-          />
-        </Center>
-        <Group>
-          <SelectAttendance
-            options={[
-              { value: "attend", label: review ? "Attended" : "Attend" },
-              { value: "skip", label: review ? "Skipped" : "Skip" },
-              ...(review || event.attendance === null
-                ? []
-                : [{ value: "", label: "Undecided" }]),
-            ]}
-            value={event.attendance || undefined}
-            onChange={setAttendance}
-          />
-        </Group>
+        {event.type === "meeting" && (
+          <>
+            <Center>
+              {event.attendance !== null && (
+                <Checkbox
+                  radius="xl"
+                  lh="lg"
+                  checked={ready}
+                  styles={{
+                    input: {
+                      ...(event.attendance !== null && !ready
+                        ? { borderColor: "var(--mantine-color-brand-outline)" }
+                        : {}),
+                    },
+                  }}
+                  onChange={updateReady}
+                />
+              )}
+            </Center>
+            <Group>
+              <SelectAttendance
+                options={[
+                  { value: "attend", label: review ? "Attended" : "Attend" },
+                  { value: "skip", label: review ? "Skipped" : "Skip" },
+                  ...(review || event.attendance === null
+                    ? []
+                    : [{ value: "", label: "Undecided" }]),
+                ]}
+                value={event.attendance || undefined}
+                onChange={setAttendance}
+              />
+            </Group>
+          </>
+        )}
 
         {event.labels.length > 0 && (
           <>

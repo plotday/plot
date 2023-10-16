@@ -194,7 +194,7 @@ export const loader = privateLoader(
 );
 
 export const action = privateAction(
-  async ({ request, supabase, user, env }) => {
+  async ({ request, supabase, user, tracker }) => {
     const bodyParams = await request.formData();
     if (typeof bodyParams.get("targets") === "string") {
       const targets = JSON.parse(
@@ -210,7 +210,7 @@ export const action = privateAction(
               org: target.org,
             })
           );
-          env.tracker.goalSet(user.id.toString(), {
+          tracker.goalSet(user.id.toString(), {
             Category: labelId,
           });
         } else {

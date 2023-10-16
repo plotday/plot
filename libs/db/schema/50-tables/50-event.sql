@@ -15,7 +15,8 @@ CREATE TABLE "public"."event" (
     "availability" event_availability NOT NULL DEFAULT 'busy' ::event_availability,
     "conferencing_url" text,
     "organizer_email" text,
-    "sequence" integer NOT NULL DEFAULT 1
+    "sequence" integer NOT NULL DEFAULT 1,
+    "invitees_hidden" boolean NOT NULL DEFAULT FALSE
 );
 
 CREATE UNIQUE INDEX event_calendar_id_provider_id_key ON public.event USING btree (calendar_id, provider_id);

@@ -50,7 +50,7 @@ export function useEventResponder(event: Event) {
 }
 
 export const action = privateAction(
-  async ({ request, supabase, user, env }) => {
+  async ({ request, supabase, user, env, tracker }) => {
     switch (request.method) {
       case "PUT": {
         const body: ResponseBody = await request.json();
@@ -58,11 +58,12 @@ export const action = privateAction(
         const event = safeQuery(
           await supabase
             .from("event")
-            .select("provider_id,at,calendar(provider_id,account_id)")
+            .select("provider_id,at,calendar(provider_id,account(id,email))")
             .eq("id", body.eventId)
             .maybeSingle()
         );
-        if (!event?.calendar) return new Response("Not found", { status: 404 });
+        if (!event?.calendar?.account?.email)
+          return new Response("Not found", { status: 404 });
 
         const leadTime = Math.floor(
           (parseDateRange(event.at as string, "UTC")[0].getTime() -
@@ -70,7 +71,7 @@ export const action = privateAction(
             60000
         );
         if (body.attendance !== null) {
-          env.tracker.meetingTriaged(user.id.toString(), {
+          tracker.meetingTriaged(user.id.toString(), {
             Choice: body.attendance,
             "Lead Time": leadTime,
           });
@@ -78,7 +79,7 @@ export const action = privateAction(
 
         let credentials = await getCredentials(
           supabase,
-          event.calendar.account_id
+          event.calendar.account.id
         );
         let response: EventResponse;
         switch (body.attendance) {
@@ -93,17 +94,6 @@ export const action = privateAction(
             response = "tentative";
             break;
         }
-
-        const contactEmail = safeQuery(
-          await supabase
-            .from("contact")
-            .select("email")
-            .eq("user_id", user.id)
-            .eq("contact_user_id", user.id)
-            .maybeSingle()
-        )?.email;
-        if (!contactEmail)
-          return new Response("Contact not found", { status: 404 });
 
         safeQuery(
           await supabase.from("response").upsert(
@@ -123,7 +113,7 @@ export const action = privateAction(
               response,
             })
             .eq("event_id", body.eventId)
-            .eq("email", contactEmail)
+            .eq("email", event.calendar.account.email)
         );
 
         await respond(

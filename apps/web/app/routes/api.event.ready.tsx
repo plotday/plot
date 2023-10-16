@@ -53,7 +53,7 @@ export function useEventReadyResponder(event: Event) {
 }
 
 export const action = privateAction(
-  async ({ request, user, supabase, env, response }) => {
+  async ({ request, user, supabase, tracker, response }) => {
     switch (request.method) {
       case "PATCH": {
         const body: ApiBody = await request.json();
@@ -91,12 +91,12 @@ export const action = privateAction(
               60000
           );
           if (body.ready === true) {
-            env.tracker.meetingPrepped(user.id.toString(), {
+            tracker.meetingPrepped(user.id.toString(), {
               "Lead Time": leadTime,
             });
           }
           if (body.reviewed === true) {
-            env.tracker.meetingReviewed(user.id.toString(), {
+            tracker.meetingReviewed(user.id.toString(), {
               "Lead Time": leadTime,
             });
           }

@@ -8,7 +8,7 @@ CREATE TABLE "public"."user" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "email" text NOT NULL,
     "name" text,
-    "timezone" text NOT NULL DEFAULT 'America/New_York' ::text,
+    "timezone" text,
     "avatar_url" text,
     "invitation" text,
     "activated_at" timestamp with time zone

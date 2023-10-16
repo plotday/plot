@@ -1,7 +1,7 @@
 import type { SupabaseClient as _SupabaseClient } from "@supabase/supabase-js";
 import { createClient as supabaseCreateClient } from "@supabase/supabase-js";
 
-import type { CalendarCredentials, ContactSyncState } from "@plotday/cal";
+import type { Calendar, CalendarCredentials } from "@plotday/cal";
 import { toDate } from "@plotday/tz";
 
 import { safeQuery } from "./query";
@@ -77,6 +77,27 @@ export async function saveCredentials(
 export function parseDateRange(range: string, tz: string) {
   const dates = range.replaceAll(/["[\]()]/g, "").split(",");
   return dates.map((d) => toDate(d, tz));
+}
+
+export async function saveCalendars(
+  supabase: SupabaseClient,
+  accountId: number,
+  calendars: Calendar[]
+) {
+  return safeQuery(
+    await supabase
+      .from("calendar")
+      .upsert(
+        calendars.map((calendar) => ({
+          account_id: accountId,
+          provider_id: calendar.id,
+          name: calendar.name,
+          enabled: calendar.primary,
+        })),
+        { onConflict: "account_id, provider_id", ignoreDuplicates: true }
+      )
+      .select()
+  );
 }
 
 export type {
