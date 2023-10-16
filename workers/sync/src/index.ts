@@ -75,9 +75,27 @@ async function runSync(
         .single()
     );
 
-    async function updateWatch() {
-      if (syncType === "partial" || !env.CALENDAR_WEBHOOK_URL || !calendar)
-        return null;
+    if (!calendar) throw new Error(`Calendar ${calendarId} not found`);
+    const accountId = calendar.account_id;
+
+    let credentials = await getCredentials(supabase, accountId);
+
+    if (syncType === "full") {
+      await env.CONTACT_SYNC_QUEUE?.send?.({
+        accountId,
+        full: true,
+      });
+    }
+
+    // Update a missing or expired watch
+    if (
+      (syncType === "full" ||
+        !calendar.watch_id ||
+        !calendar.watch_expires_at ||
+        new Date(calendar.watch_expires_at) < new Date()) &&
+      syncType !== "partial" &&
+      !!env.CALENDAR_WEBHOOK_URL
+    ) {
       console.log(`Updating watch (${calendarId})`);
       let state: WatchState;
       ({ state, credentials } = await watch(
@@ -97,32 +115,6 @@ async function runSync(
           })
           .eq("id", calendarId)
       );
-    }
-
-    // Create a new watch
-    if (syncType === "full") {
-      await updateWatch();
-    }
-
-    if (!calendar) throw new Error(`Calendar ${calendarId} not found`);
-    const accountId = calendar.account_id;
-
-    if (syncType === "full") {
-      await env.CONTACT_SYNC_QUEUE?.send?.({
-        accountId,
-        full: true,
-      });
-    }
-
-    let credentials = await getCredentials(supabase, accountId);
-
-    // Update a missing or expired watch
-    if (
-      !calendar.watch_id ||
-      !calendar.watch_expires_at ||
-      new Date(calendar.watch_expires_at) < new Date()
-    ) {
-      await updateWatch();
     }
 
     if (
@@ -283,7 +275,7 @@ export default {
     batch: MessageBatch<SyncRequest | EventSyncRequest>,
     env: Env
   ): Promise<void> {
-    const Sentry = new Toucan({
+    const sentry = new Toucan({
       dsn: env.SENTRY_DSN,
       environment: env.ENV,
       release: env.RELEASE,
@@ -303,16 +295,17 @@ export default {
           console.log(`Sync complete (${calendarId})`);
           message.ack();
         } catch (e) {
+          console.log(`Sync failed (${calendarId})`);
           console.error(e);
-          Sentry.withScope((scope) => {
+          sentry.withScope((scope) => {
             scope.setExtra("calendar-id", calendarId);
-            Sentry.captureException(e);
+            sentry.captureException(e);
           });
           message.retry();
         }
       } catch (e) {
         console.error(e);
-        Sentry.captureException(e);
+        sentry.captureException(e);
         // It's a failure, but it will never succeed because the parameters
         // are wrong.
         m.ack();
