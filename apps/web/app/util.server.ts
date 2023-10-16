@@ -58,7 +58,11 @@ export function privateLoader<T>(
     const augmentedArgs = await augment(args);
     if (!augmentedArgs.user) {
       if (augmentedArgs.waitlistedUser) {
-        throw redirect("/waitlist");
+        if (augmentedArgs.waitlistedUser.invitation) {
+          throw redirect("/sync");
+        } else {
+          throw redirect("/waitlist");
+        }
       } else {
         throw redirect("/login");
       }

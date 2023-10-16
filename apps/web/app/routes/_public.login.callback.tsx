@@ -31,10 +31,9 @@ export const loader = publicLoader(
       if (!user.invitation && invitation) {
         await redeemInvitation(user, invitation, tracker, supabaseAdmin);
       }
-      const accounts = await getAccounts(supabaseAdmin, user.id);
       if (!user.invitation && !invitation) {
         toUrl = "/waitlist";
-      } else if (accounts?.length === 0) {
+      } else if (!user.activated_at) {
         toUrl = "/sync";
       }
 
