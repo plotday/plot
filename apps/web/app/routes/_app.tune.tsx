@@ -4,11 +4,12 @@ import { json } from "@remix-run/cloudflare";
 import { useFetcher, useSearchParams } from "@remix-run/react";
 
 import {
+  Box,
   Button,
   Card,
   Center,
   Group,
-  Paper,
+  SimpleGrid,
   Stack,
   Text,
   Title,
@@ -22,7 +23,7 @@ import sub from "date-fns/sub";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
 import { promiseHash } from "remix-utils/promise";
 
-import { formatDate, formatDuration, startOfMonth } from "@plotday/tz";
+import { formatDate, startOfMonth } from "@plotday/tz";
 
 import { Gauge } from "app/components/gauge";
 import type { LabelStats, LabelStatsMap } from "app/components/tuner";
@@ -235,6 +236,20 @@ export function ErrorBoundary() {
   return <ErrorPage />;
 }
 
+function ratio(n?: number | null, total?: number | null) {
+  if (!n || !total) return 100;
+  return (n / total) * 100;
+}
+
+function trend(current?: number | null, previous?: number | null) {
+  current ??= 0;
+  previous ??= 0;
+  if (current && !previous) return 100;
+  if (!current && previous) return -100;
+  if (!current && !previous) return 0;
+  return ((current - previous) / previous) * 100;
+}
+
 export default function Tune() {
   const fetcher = useFetcher();
 
@@ -277,6 +292,9 @@ export default function Tune() {
   const meetings = statsWithMeetings[monthKey][1]?.attend?.minutes ?? 0;
   const previousMeetings =
     statsWithMeetings[previousMonthKey][1]?.attend?.minutes ?? 0;
+  const pendingMeetings = statsWithMeetings[monthKey][1]?.pending?.minutes ?? 0;
+  const previousPending =
+    statsWithMeetings[previousMonthKey][1]?.pending?.minutes ?? 0;
 
   const move = (movement: number) => {
     const newStart = add(month, { months: movement });
@@ -311,8 +329,10 @@ export default function Tune() {
 
   return (
     <>
-      <Paper
+      <Box
         mt="-1rem"
+        ml="-1rem"
+        mr="-1rem"
         pt="1rem"
         pb="1rem"
         style={{
@@ -344,37 +364,30 @@ export default function Tune() {
             </Button>
           </Group>
         </Center>
-      </Paper>
+      </Box>
       <Stack gap="xl">
-        <Group>
-          <Card>
+        <Card>
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
             <Gauge
               label="Meetings"
               actual={
                 meetings ? (meetings / monthlyWorkingMinutes) * 100 : null
               }
-              previousActual={
-                previousMeetings
-                  ? (previousMeetings / previousMonthlyWorkingMinutes) * 100
-                  : null
+              pending={
+                pendingMeetings
+                  ? (pendingMeetings / monthlyWorkingMinutes) * 100
+                  : undefined
               }
+              trend={trend(meetings, previousMeetings)}
               weeklyWorkingMinutes={weeklyWorkingMinutes}
             />
-          </Card>
-          <Card>
             <Gauge
               label="Focus"
               description="Time during working hours you have an hour or more of uninterrupted time"
               actual={focus ? (focus / monthlyWorkingMinutes) * 100 : null}
-              previousActual={
-                previousFocus
-                  ? (previousFocus / previousMonthlyWorkingMinutes) * 100
-                  : null
-              }
+              trend={trend(focus, previousFocus)}
               weeklyWorkingMinutes={weeklyWorkingMinutes}
             />
-          </Card>
-          <Card>
             <Gauge
               label="Prep"
               description="Meetings where you are prepared before the start"
@@ -385,16 +398,17 @@ export default function Tune() {
                     100
                   : 0
               }
-              previousActual={
-                prep[previousMonthKey].past_count
-                  ? ((prep[previousMonthKey].past_ready_count ?? 0) /
-                      (prep[previousMonthKey].past_count ?? 0)) *
-                    100
-                  : 0
-              }
+              trend={trend(
+                ratio(
+                  prep[monthKey].past_ready_count,
+                  prep[monthKey].past_count
+                ),
+                ratio(
+                  prep[previousMonthKey].past_ready_count,
+                  prep[previousMonthKey].past_count
+                )
+              )}
             />
-          </Card>
-          <Card>
             <Gauge
               label="Review"
               description="Meetings you review within 2 days"
@@ -405,16 +419,19 @@ export default function Tune() {
                     100
                   : 0
               }
-              previousActual={
-                prep[previousMonthKey].past_count
-                  ? ((prep[previousMonthKey].past_reviewed_count ?? 0) /
-                      (prep[previousMonthKey].past_count ?? 0)) *
-                    100
-                  : 0
-              }
+              trend={trend(
+                ratio(
+                  prep[monthKey].past_reviewed_count,
+                  prep[monthKey].past_count
+                ),
+                ratio(
+                  prep[previousMonthKey].past_reviewed_count,
+                  prep[previousMonthKey].past_count
+                )
+              )}
             />
-          </Card>
-        </Group>
+          </SimpleGrid>
+        </Card>
         <Card>
           <Title order={2} mb="md">
             <Tooltip label="Time you spend in meetings">

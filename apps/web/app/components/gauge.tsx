@@ -1,4 +1,5 @@
 import {
+  Center,
   Group,
   RingProgress,
   Stack,
@@ -11,72 +12,106 @@ import { IconArrowDownLeft, IconArrowUpRight } from "@tabler/icons-react";
 
 import { formatDuration } from "@plotday/tz";
 
+import classes from "./tuner.module.css";
+
 export function Gauge({
   label,
   description,
   actual,
-  previousActual,
+  pending,
+  trend,
   weeklyWorkingMinutes,
 }: {
   label: string;
   description?: string;
   weeklyWorkingMinutes?: number;
   actual: number | null;
-  previousActual: number | null;
+  pending?: number;
+  trend?: number;
   target?: number;
   onTargetChange?: (target: number | null) => void;
 }) {
-  actual = actual !== null ? Math.round(actual) : null;
-  previousActual = previousActual !== null ? Math.round(previousActual) : null;
-
-  const trend =
-    actual && previousActual
-      ? Math.round(((actual - previousActual) / previousActual) * 100)
-      : 0;
+  actual = Math.round(actual ?? 0);
+  pending = Math.round(pending ?? 0);
+  trend = Math.round(trend ?? 0);
 
   return (
-    <Group>
+    <Center>
       <Stack>
-        <Title order={2}>
-          <Tooltip label={description} disabled={!description}>
-            <Text span inherit>
-              {label}
-            </Text>
-          </Tooltip>
-        </Title>
-        {actual !== null && weeklyWorkingMinutes && (
-          <Text miw="10rem">
-            {formatDuration((actual / 100) * weeklyWorkingMinutes)} per week
-          </Text>
-        )}
-      </Stack>
-      <RingProgress
-        label={
-          <Stack gap={0}>
-            <Text c="brand" fw={700} ta="center" size="xl">
-              {actual !== null ? `${actual}%` : "–"}
-            </Text>
-            {trend !== 0 && (
-              <Group
-                wrap="nowrap"
-                gap={0}
-                c={trend < 0 ? "secondary" : "brand"}
-                justify="center"
-              >
-                {trend > 0 ? (
-                  <IconArrowUpRight size="1em" />
-                ) : (
-                  <IconArrowDownLeft size="1em" />
+        <RingProgress
+          size={250}
+          label={
+            <Stack gap={0} align="center">
+              <Group gap={8}>
+                <Tooltip
+                  label={`${formatDuration(
+                    (actual / 100) * (weeklyWorkingMinutes ?? 0)
+                  )} per week`}
+                  disabled={!actual || !weeklyWorkingMinutes}
+                >
+                  <Text c="brand" fw={700} fz={32} ta="center" size="xl">
+                    {actual ? `${actual}%` : "–"}
+                  </Text>
+                </Tooltip>
+                {trend !== 0 && (
+                  <Stack
+                    c={trend < 0 ? "secondary" : "brand"}
+                    align="center"
+                    gap={0}
+                  >
+                    {trend > 0 ? (
+                      <IconArrowUpRight size="0.9em" />
+                    ) : (
+                      <IconArrowDownLeft size="0.9em" />
+                    )}
+                    <Text inherit fz="xs">
+                      {Math.abs(trend)}%
+                    </Text>
+                  </Stack>
                 )}
-                <Text inherit fz="xs">
-                  {Math.abs(trend)}%
-                </Text>
               </Group>
-            )}
-          </Stack>
-        }
-        sections={[{ value: actual ?? 0, color: "brand" }]}
-      />
-    </Group>
+              <Title order={2} size="h4" ta="center" c="gray">
+                <Tooltip label={description} disabled={!description}>
+                  <Text span inherit>
+                    {label}
+                  </Text>
+                </Tooltip>
+              </Title>
+            </Stack>
+          }
+          sections={[
+            { value: actual / 2, color: "brand" },
+            {
+              value: pending ? pending / 2 : 0,
+              color: "var(--mantine-color-brand-background)",
+            },
+            {
+              value: 50 - (actual + pending) / 2,
+              color: "var(--mantine-color-track)",
+            },
+          ]}
+          rootColor="#ffffff00"
+          styles={{
+            root: {
+              transform: "rotate(-90deg)",
+              width: "calc(var(--rp-size)/2)",
+              marginBottom: "calc(-1 * var(--rp-size) / 2)",
+            },
+            label: {
+              transform: "rotate(90deg)",
+              left: "var(--rp-label-offset)",
+              top: "var(--rp-label-offset)",
+              bottom: "var(--rp-label-offset)",
+              right: "var(--rp-label-offset)",
+              paddingBottom:
+                "calc(var(--rp-size) / 2 - var(--rp-label-offset) )",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+            },
+          }}
+        />
+      </Stack>
+    </Center>
   );
 }
