@@ -15,7 +15,8 @@ CREATE TABLE "public"."calendar" (
     "sync_error" text,
     "full_sync_started_at" timestamp with time zone,
     "name" text,
-    "enabled" boolean NOT NULL DEFAULT FALSE
+    "enabled" boolean NOT NULL DEFAULT FALSE,
+    "ready" boolean NOT NULL DEFAULT FALSE
 );
 
 CREATE UNIQUE INDEX calendar_pkey ON public.calendar USING btree (id);

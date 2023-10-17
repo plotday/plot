@@ -12,7 +12,7 @@ export type EventSyncRequest = {
   calendarId: number;
   sequence: number;
   rawEvent?: RawEvent;
-  fullSyncComplete?: boolean;
+  complete?: SyncType;
 };
 
 export type MailRequest = {

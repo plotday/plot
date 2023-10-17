@@ -264,11 +264,10 @@ export default {
         })
       );
 
-      const fullSyncComplete: number[] = [];
       for (const message of batch.messages) {
-        if (!message.body.fullSyncComplete) continue;
-        fullSyncComplete.push(message.body.calendarId);
-        console.log(`Full sync complete (${message.body.calendarId})`);
+        const syncType = message.body.complete;
+        if (!syncType) continue;
+        console.log(`${syncType} sync complete (${message.body.calendarId})`);
         backgroundJobs.push(
           (async () => {
             safeQuery(
@@ -280,15 +279,20 @@ export default {
             );
           })()
         );
-      }
-      if (fullSyncComplete.length > 0) {
-        safeQuery(
-          await supabase
-            .from("calendar")
-            .update({
-              full_sync_at: new Date().toISOString(),
-            })
-            .filter("id", "in", `(${fullSyncComplete.join(",")})`)
+        backgroundJobs.push(
+          (async () => {
+            safeQuery(
+              await supabase
+                .from("calendar")
+                .update({
+                  ready: true,
+                  ...(syncType === "full" && {
+                    full_sync_at: new Date().toISOString(),
+                  }),
+                })
+                .eq("id", message.body.calendarId)
+            );
+          })()
         );
       }
     } catch (e) {

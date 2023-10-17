@@ -1,4 +1,13 @@
-import { add, differenceInYears, startOfYear, sub, subYears } from "date-fns";
+import {
+  add,
+  differenceInYears,
+  endOfMonth,
+  max as maxDate,
+  startOfMonth,
+  startOfYear,
+  subMonths,
+  subYears,
+} from "date-fns";
 import { Toucan } from "toucan-js";
 
 import type { CalendarConfig, SyncState, WatchState } from "@plotday/cal";
@@ -147,8 +156,8 @@ async function runSync(
         max = new Date(calendar.ends_at as string);
         break;
       case "partial":
-        min = sub(new Date(), { days: 3 });
-        max = add(new Date(), { days: 7 });
+        min = startOfMonth(subMonths(new Date(), 1));
+        max = maxDate([endOfMonth(new Date()), add(new Date(), { days: 7 })]);
         break;
     }
     state = {
@@ -220,14 +229,12 @@ async function runSync(
           .eq("id", calendar.id)
       );
     }
-    if (syncType === "full") {
-      await env.EVENT_QUEUE.send({
-        provider: credentials.provider,
-        calendarId: calendar.id,
-        sequence: state.sequence,
-        fullSyncComplete: true,
-      });
-    }
+    await env.EVENT_QUEUE.send({
+      provider: credentials.provider,
+      calendarId: calendar.id,
+      sequence: state.sequence,
+      complete: syncType,
+    });
   } catch (error) {
     if (error instanceof Error) {
       safeQuery(

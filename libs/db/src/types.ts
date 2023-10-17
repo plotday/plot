@@ -126,6 +126,7 @@ export interface Database {
           id: number
           name: string | null
           provider_id: string
+          ready: boolean
           sequence: number
           starts_at: string | null
           sync_error: string | null
@@ -146,6 +147,7 @@ export interface Database {
           id?: number
           name?: string | null
           provider_id: string
+          ready?: boolean
           sequence?: number
           starts_at?: string | null
           sync_error?: string | null
@@ -165,6 +167,7 @@ export interface Database {
           id?: number
           name?: string | null
           provider_id?: string
+          ready?: boolean
           sequence?: number
           starts_at?: string | null
           sync_error?: string | null
@@ -990,6 +993,7 @@ export interface Database {
           id: number
           name: string | null
           provider_id: string
+          ready: boolean
           sequence: number
           starts_at: string | null
           sync_error: string | null
@@ -1014,6 +1018,7 @@ export interface Database {
           id: number
           name: string | null
           provider_id: string
+          ready: boolean
           sequence: number
           starts_at: string | null
           sync_error: string | null

@@ -45,25 +45,27 @@ import { EventOptimistProvider, useEventWatch } from "app/event";
 import type { ContextType } from "app/hooks";
 import { privateLoader } from "app/util";
 
-async function calendarReady(supabase: SupabaseClient, userId: number) {
-  return !!safeQuery(
+async function getCalendarStatus(supabase: SupabaseClient, userId: number) {
+  const calendars = safeQuery(
     await supabase
       .from("user")
-      .select("accounts(calendars(enabled,full_sync_at))")
+      .select("accounts(calendars:calendar(enabled,ready,sync_error))")
       .eq("id", userId)
       .single()
-  )?.accounts?.some((account) =>
-    account.calendars.some(
-      // @ts-ignore
-      (calendar) => calendar.enabled && calendar.full_sync_at
-    )
-  );
+  )
+    ?.accounts?.map((account) => account.calendars)
+    ?.flat();
+  return {
+    ready: !!calendars?.some((calendar) => calendar.ready),
+    error: calendars?.filter((calendar) => calendar.sync_error)?.[0]
+      ?.sync_error,
+  };
 }
 
 export const loader = privateLoader(async ({ user, supabase, response }) => {
   return typedjson(
     {
-      calendarReady: await calendarReady(supabase, user.id),
+      status: await getCalendarStatus(supabase, user.id),
       counts: await promiseHash({
         triage: Event.GetCount(
           supabase,
@@ -176,7 +178,7 @@ function AppNavbar() {
 }
 
 export default function App() {
-  const { calendarReady } = useTypedLoaderData();
+  const { status } = useTypedLoaderData();
   const ctx = useOutletContext<ContextType>();
   const [opened, { toggle, close }] = useDisclosure();
   const mobile = useMediaQuery("(width < 48em)");
@@ -188,7 +190,7 @@ export default function App() {
   }, [location, close]);
 
   useEffect(() => {
-    if (!calendarReady) {
+    if (!status.ready && !status.error) {
       const interval = setInterval(() => {
         revalidate();
       }, 2_000);
@@ -196,9 +198,20 @@ export default function App() {
         clearInterval(interval);
       };
     }
-  }, [calendarReady, revalidate]);
+  }, [status.ready, status.error, revalidate]);
 
-  if (!calendarReady) {
+  if (status.error) {
+    return (
+      <Center h="100%">
+        <Stack align="center">
+          <Text>We had trouble loading your calendar.</Text>
+          <Text>We'll fix this and let you know when it's good to go!</Text>
+        </Stack>
+      </Center>
+    );
+  }
+
+  if (!status.ready) {
     return (
       <Center h="100%">
         <Stack align="center">
