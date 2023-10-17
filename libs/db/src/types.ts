@@ -975,6 +975,7 @@ export interface Database {
       }
       calc_internal: {
         Args: {
+          invitee_count: number
           user_domain: number
           domains: number[]
         }

@@ -19,7 +19,7 @@ export function Gauge({
   weeklyWorkingMinutes,
 }: {
   label: string;
-  description: string;
+  description?: string;
   weeklyWorkingMinutes?: number;
   actual: number | null;
   previousActual: number | null;
@@ -38,7 +38,7 @@ export function Gauge({
     <Group>
       <Stack>
         <Title order={2}>
-          <Tooltip label={description}>
+          <Tooltip label={description} disabled={!description}>
             <Text span inherit>
               {label}
             </Text>

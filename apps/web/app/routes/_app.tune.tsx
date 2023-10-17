@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+
 import { json } from "@remix-run/cloudflare";
 import { useFetcher, useSearchParams } from "@remix-run/react";
 
@@ -237,8 +239,14 @@ export default function Tune() {
   const fetcher = useFetcher();
 
   const [, setSearchParams] = useSearchParams();
-  const { stats, gaps, prep, month, previousMonth, targets } =
-    useTypedLoaderData<typeof loader>();
+  const {
+    stats: statsWithMeetings,
+    gaps,
+    prep,
+    month,
+    previousMonth,
+    targets,
+  } = useTypedLoaderData<typeof loader>();
   useEventWatch(month, add(month, { months: 1 }));
 
   const user = useUser();
@@ -255,6 +263,20 @@ export default function Tune() {
   const previousMonthKey = formatDate(previousMonth, tz, "yyyy-MM");
   const focus = gaps[monthKey].focus;
   const previousFocus = gaps[previousMonthKey].focus;
+
+  const stats = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(statsWithMeetings).map(([month, stats]) => {
+          const { 1: _, ...rest } = stats;
+          return [month, rest];
+        })
+      ),
+    [statsWithMeetings]
+  );
+  const meetings = statsWithMeetings[monthKey][1]?.attend?.minutes ?? 0;
+  const previousMeetings =
+    statsWithMeetings[previousMonthKey][1]?.attend?.minutes ?? 0;
 
   const move = (movement: number) => {
     const newStart = add(month, { months: movement });
@@ -327,6 +349,20 @@ export default function Tune() {
         <Group>
           <Card>
             <Gauge
+              label="Meetings"
+              actual={
+                meetings ? (meetings / monthlyWorkingMinutes) * 100 : null
+              }
+              previousActual={
+                previousMeetings
+                  ? (previousMeetings / previousMonthlyWorkingMinutes) * 100
+                  : null
+              }
+              weeklyWorkingMinutes={weeklyWorkingMinutes}
+            />
+          </Card>
+          <Card>
+            <Gauge
               label="Focus"
               description="Time during working hours you have an hour or more of uninterrupted time"
               actual={focus ? (focus / monthlyWorkingMinutes) * 100 : null}
@@ -341,7 +377,7 @@ export default function Tune() {
           <Card>
             <Gauge
               label="Prep"
-              description="Ratio of meetings where you are prepared before they start"
+              description="Meetings where you are prepared before the start"
               actual={
                 prep[monthKey].past_count
                   ? ((prep[monthKey].past_ready_count ?? 0) /
@@ -358,23 +394,25 @@ export default function Tune() {
               }
             />
           </Card>
-          <Card style={{ alignSelf: "stretch", justifyContent: "center" }}>
-            <Stack>
-              <Title order={2}>
-                <Tooltip label="Average time to review past meetings">
-                  <Text span inherit>
-                    Review
-                  </Text>
-                </Tooltip>
-              </Title>
-              <Text>
-                {prep[monthKey].review_time ? (
-                  formatDuration(prep[monthKey].review_time ?? 0)
-                ) : (
-                  <>&mdash;</>
-                )}
-              </Text>
-            </Stack>
+          <Card>
+            <Gauge
+              label="Review"
+              description="Meetings you review within 2 days"
+              actual={
+                prep[monthKey].past_count
+                  ? ((prep[monthKey].past_reviewed_count ?? 0) /
+                      (prep[monthKey].past_count ?? 0)) *
+                    100
+                  : 0
+              }
+              previousActual={
+                prep[previousMonthKey].past_count
+                  ? ((prep[previousMonthKey].past_reviewed_count ?? 0) /
+                      (prep[previousMonthKey].past_count ?? 0)) *
+                    100
+                  : 0
+              }
+            />
           </Card>
         </Group>
         <Card>

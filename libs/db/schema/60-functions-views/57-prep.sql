@@ -7,9 +7,9 @@ SELECT
     COUNT(*) FILTER (WHERE (LOWER(at) < CURRENT_TIMESTAMP)) AS past_count,
 COUNT(*) FILTER (WHERE (LOWER(at) < CURRENT_TIMESTAMP
     AND ready < LOWER(at))) AS past_ready_count,
-COUNT(*) FILTER (WHERE (LOWER(at) < CURRENT_TIMESTAMP
-    AND reviewed IS NOT NULL)) AS past_reviewed_count,
-ROUND(AVG(EXTRACT(epoch FROM (COALESCE(reviewed, CURRENT_TIMESTAMP) - LOWER(at)))) FILTER (WHERE (LOWER(at) < CURRENT_TIMESTAMP)) / 60) AS review_time
+COUNT(*) FILTER (WHERE (UPPER(at) < CURRENT_TIMESTAMP
+    AND reviewed < (UPPER(at) + INTERVAL '2 days'))) AS past_reviewed_count,
+ROUND(AVG(EXTRACT(epoch FROM (COALESCE(reviewed, CURRENT_TIMESTAMP) - UPPER(at)))) FILTER (WHERE (UPPER(at) < CURRENT_TIMESTAMP)) / 60) AS review_time
 FROM
     event_x e
 WHERE

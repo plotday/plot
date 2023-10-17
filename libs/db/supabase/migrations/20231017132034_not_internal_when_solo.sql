@@ -1,50 +1,3 @@
-CREATE OR REPLACE FUNCTION "public"."calc_attendance" (attendance public.event_attendance, response public.event_response, invitee_count integer, "start" timestamp with time zone, self_organized_single boolean)
-    RETURNS event_attendance
-    LANGUAGE plpgsql
-    AS $function$
-BEGIN
-    RETURN CASE WHEN response = 'declined'::event_response THEN
-        'skip'::event_attendance
-    WHEN response = 'accepted'
-        AND (invitee_count < 2
-            OR "start" < CURRENT_TIMESTAMP
-            OR self_organized_single) THEN
-        'attend'::event_attendance
-    WHEN attendance IS NULL THEN
-        NULL
-    WHEN response = 'accepted'::event_response THEN
-        'attend'::event_attendance
-    WHEN attendance = 'attend'::event_attendance
-        AND response = 'tentative'::event_response THEN
-        'skip'::event_attendance
-    ELSE
-        attendance
-    END;
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION "public"."calc_event_type" (at tstzrange, availability event_availability, response event_response, has_invitees boolean)
-    RETURNS event_type
-    LANGUAGE plpgsql
-    AS $function$
-BEGIN
-    RETURN CASE WHEN EXTRACT(epoch FROM (upper(at) - lower(at))) >= 60 * 60 * 23 THEN
-        'note'::event_type
-    WHEN has_invitees
-        AND (availability = 'busy'
-            OR response = 'declined') THEN
-        'meeting'::event_type
-    ELSE
-        'task'::event_type
-    END;
-END;
-$function$;
-
-CREATE TYPE "public"."event_internal" AS enum (
-    'internal',
-    'external'
-);
-
 CREATE OR REPLACE FUNCTION "public"."calc_internal" (invitee_count integer, user_domain bigint, domains bigint[])
     RETURNS event_internal
     LANGUAGE plpgsql
@@ -132,44 +85,5 @@ GROUP BY
     e.name,
     e.at;
 
--- Define a computed relation for PostgREST joins
--- https://postgrest.org/en/stable/references/api/resource_embedding.html#computed-relationships
-CREATE OR REPLACE FUNCTION public.invitee (event_x)
-    RETURNS SETOF invitee
-    LANGUAGE sql
-    STABLE
-    AS $function$
-    SELECT
-        *
-    FROM
-        invitee
-    WHERE
-        event_id = $1.id
-$function$;
-
-CREATE OR REPLACE FUNCTION public.calendar (event_x)
-    RETURNS SETOF calendar ROWS 1
-    LANGUAGE sql
-    STABLE
-    AS $function$
-    SELECT
-        calendar.*
-    FROM
-        calendar
-    WHERE
-        calendar.id = $1.calendar_id
-$function$;
-
-CREATE OR REPLACE FUNCTION public.account (calendar)
-    RETURNS SETOF account ROWS 1
-    LANGUAGE sql
-    STABLE
-    AS $function$
-    SELECT
-        account.*
-    FROM
-        account
-    WHERE
-        account.id = $1.account_id
-$function$;
+DROP FUNCTION IF EXISTS "public"."calc_internal" (user_domain bigint, domains bigint[]);
 
