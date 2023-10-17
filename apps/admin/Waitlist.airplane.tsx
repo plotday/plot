@@ -19,6 +19,7 @@ const Waitlist = () => {
         <Table
           title="Waitlist"
           task="view_waitlist"
+          enableCSVDownload
           outputTransform={(data) =>
             data.map((d: any) => ({
               ...d,
