@@ -30,18 +30,6 @@
     text-align: right !important;
   }
 }
-.badge {
-  min-width: 2.5rem;
-  text-align: center;
-  font-size: var(--mantine-font-size-xs);
-  line-height: var(--mantine-line-height);
-  background-color: light-dark(
-    var(--mantine-color-gray-1),
-    var(--mantine-color-dark-7)
-  );
-  color: light-dark(var(--mantine-color-gray-9), var(--mantine-color-dark-0));
-  border-radius: var(--mantine-radius-lg);
-}
 .pending {
   background-color: light-dark(
     var(--mantine-color-brand-0),

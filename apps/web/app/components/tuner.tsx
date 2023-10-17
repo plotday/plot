@@ -84,10 +84,6 @@ export function TunerList({
     )
   );
 
-  const hasTargets = Object.values(targets).some(
-    (target) => target !== undefined
-  );
-
   if (Object.keys(labelStats).length === 0) {
     return <Text>No data</Text>;
   }
@@ -135,8 +131,6 @@ export function TunerList({
               </Progress.Root>
             </Table.Th>
             <Table.Th ta="right">hrs/wk</Table.Th>
-            <Table.Th></Table.Th>
-            <Table.Th ta="center">#</Table.Th>
             <Table.Th ta="right">Goal</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -317,6 +311,7 @@ export function Tuner({
   const weeklyMinutes = toWeekly(monthlyMinutes);
   const previousMinutes = previousStats?.attend?.[minutesKey] || 0;
   const pendingMinutes = labelStats.pending?.[minutesKey] || 0;
+  const previousPendingMinutes = previousStats?.pending?.[minutesKey] || 0;
   const count = labelStats.attend?.[countKey] || 0;
 
   let weeklyTargetMinutes: number | undefined = undefined;
@@ -338,8 +333,12 @@ export function Tuner({
     monthlyTargetMinutes || 0
   );
 
-  const load = (monthlyMinutes / monthlyWorkingMinutes) * 100;
-  const previousLoad = (previousMinutes / previousMonthlyWorkingMinutes) * 100;
+  const load =
+    ((monthlyMinutes + pendingMinutes) / monthlyWorkingMinutes) * 100;
+  const previousLoad =
+    ((previousMinutes + previousPendingMinutes) /
+      previousMonthlyWorkingMinutes) *
+    100;
   const trend = previousLoad
     ? Math.round(((load - previousLoad) / previousLoad) * 100)
     : 0;
@@ -361,13 +360,13 @@ export function Tuner({
         }}
       />
       <Table.Tr>
-        <Table.Td w="7rem" pl={0}>
+        <Table.Td pl={0} className={classes.fitContent}>
           <Tooltip
             label={labelStats.description}
             disabled={!labelStats.description}
           >
             <Text inherit truncate w="7rem">
-              {labelStats.tag} {labelStats.name}{" "}
+              {labelStats.tag} {labelStats.name}
             </Text>
           </Tooltip>
         </Table.Td>
@@ -404,6 +403,20 @@ export function Tuner({
                 />
               )}
             </Progress.Root>
+            <Group
+              wrap="nowrap"
+              gap={0}
+              c={trend > 0 ? "secondary" : "brand"}
+              ml="sm"
+              miw="4rem"
+            >
+              {trend === 0 ? null : trend > 0 ? (
+                <IconArrowUpRight size="1em" />
+              ) : (
+                <IconArrowDownLeft size="1em" />
+              )}
+              {trend && <Text inherit>{Math.abs(trend)}%</Text>}
+            </Group>
           </Group>
         </Table.Td>
         <Table.Td
@@ -414,26 +427,6 @@ export function Tuner({
           <Text inherit miw="2.8rem" ta="right">
             {weeklyMinutes ? formatDuration(weeklyMinutes, true) : ""}
           </Text>
-        </Table.Td>
-        <Table.Td className={classes.number} pl={0}>
-          {trend !== 0 && (
-            <Group
-              wrap="nowrap"
-              gap={0}
-              c={trend > 0 ? "secondary" : "brand"}
-              justify="end"
-            >
-              {trend > 0 ? (
-                <IconArrowUpRight size="1em" />
-              ) : (
-                <IconArrowDownLeft size="1em" />
-              )}
-              <Text inherit>{Math.abs(trend)}%</Text>
-            </Group>
-          )}
-        </Table.Td>
-        <Table.Td className={classes.fitContent} pl={0}>
-          <Text className={classes.badge}>{count ? count : ""}</Text>
         </Table.Td>
         <Table.Td className={classes.number} pt={0} pb={0} pr={0} w="5rem">
           {weeklyTargetMinutes === undefined && (
