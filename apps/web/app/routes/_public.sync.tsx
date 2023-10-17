@@ -4,7 +4,6 @@ import { IconPlugConnected } from "@tabler/icons-react";
 
 import CalendarSources from "app/components/calendar-sources";
 import Consent from "app/components/consent";
-import { DEFAULT_PATH } from "app/config";
 
 export default function Sync() {
   return (
@@ -23,7 +22,7 @@ export default function Sync() {
             Plot works with your existing calendars. Simply sign in with your
             primary calendar provider. You can always add more later.
           </Text>
-          <CalendarSources redirectTo={DEFAULT_PATH} />
+          <CalendarSources redirectTo="/tune" />
           <Consent />
         </Stack>
       </Card>

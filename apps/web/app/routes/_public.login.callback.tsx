@@ -3,7 +3,6 @@ import { redirect } from "@remix-run/cloudflare";
 import {
   addAccount,
   completeSignIn,
-  getAccounts,
   getUser,
   redeemInvitation,
 } from "app/auth";

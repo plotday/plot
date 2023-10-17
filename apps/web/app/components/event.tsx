@@ -498,15 +498,27 @@ const Labels = memo(function Labels({
       {labels.map((label) => {
         const balance = balances[label.id];
         return (
-          <Badge
+          <Tooltip
             key={label.id}
-            color={attendance !== "skip" && balance < 0 ? "secondary" : "gray"}
-            fw={500}
-            tt="unset"
+            label={
+              balance
+                ? `${formatDuration(Math.abs(balance / 4))} ${
+                    balance < 0 ? "over goal" : "under goal"
+                  } per week`
+                : null
+            }
+            disabled={!balance}
           >
-            {label.tag} {label.name}
-            {balance ? ` (${formatDuration(balance)})` : null}
-          </Badge>
+            <Badge
+              color={
+                attendance !== "skip" && balance < 0 ? "secondary" : "gray"
+              }
+              fw={500}
+              tt="unset"
+            >
+              {label.tag} {label.name}
+            </Badge>
+          </Tooltip>
         );
       })}
     </Group>

@@ -960,6 +960,7 @@ export interface Database {
           response: Database["public"]["Enums"]["event_response"]
           invitee_count: number
           start: string
+          self_organized_single: boolean
         }
         Returns: Database["public"]["Enums"]["event_attendance"]
       }

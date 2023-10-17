@@ -78,7 +78,7 @@ export default function Waitlist() {
   const [searchParams] = useSearchParams();
   const [hasError, setHasError] = useState(searchParams.has("error"));
   let user = useUser(true);
-  if (user?.activated_at) user = null;
+  const waitlisted = !user?.activated_at;
   const email = useTypedActionData()?.email;
 
   return (
@@ -91,10 +91,10 @@ export default function Waitlist() {
               {!email && "Plot is currently in private, early access. "}
               {email &&
                 "We're thrilled you're taking this step to own your time. "}
-              {user && "You've been added to the waitlist. "}
+              {waitlisted && "You've been added to the waitlist. "}
             </Text>
-            {!email && !user && <WaitlistForm />}
-            {(email || user) && (
+            {!email && !waitlisted && <WaitlistForm />}
+            {(email || waitlisted) && (
               <>
                 <Title order={2}>Test your calendar</Title>
                 <Text>
@@ -110,7 +110,11 @@ export default function Waitlist() {
         <Card>
           <Stack>
             <Text>If you have an invitation code, please enter it here.</Text>
-            <Form method="get" action="/login" reloadDocument>
+            <Form
+              method="get"
+              action={user ? "/sync" : "/login"}
+              reloadDocument
+            >
               <Group grow align="start">
                 <TextInput
                   name="invitation"
