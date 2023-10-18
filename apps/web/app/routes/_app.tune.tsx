@@ -4,11 +4,11 @@ import { json } from "@remix-run/cloudflare";
 import { useFetcher, useSearchParams } from "@remix-run/react";
 
 import {
-  Box,
   Button,
   Card,
   Center,
   Group,
+  Paper,
   SimpleGrid,
   Stack,
   Text,
@@ -329,7 +329,8 @@ export default function Tune() {
 
   return (
     <>
-      <Box
+      <Paper
+        bg="var(--mantine-color-background)"
         mt="-1rem"
         ml="-1rem"
         mr="-1rem"
@@ -364,7 +365,7 @@ export default function Tune() {
             </Button>
           </Group>
         </Center>
-      </Box>
+      </Paper>
       <Stack gap="xl">
         <Card>
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
