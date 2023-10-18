@@ -407,7 +407,7 @@ function InviteeAvatar({ invitee }: { invitee: Invitee }) {
       ? "var(--mantine-color-brand-outline)"
       : invitee.response === "declined"
       ? "var(--mantine-color-secondary-filled)"
-      : "var(--mantine-color-background)";
+      : "var(--mantine-color-neutral)";
   return (
     <Tooltip
       key={invitee.email}
