@@ -12,8 +12,6 @@ import { IconArrowDownLeft, IconArrowUpRight } from "@tabler/icons-react";
 
 import { formatDuration } from "@plotday/tz";
 
-import classes from "./tuner.module.css";
-
 export function Gauge({
   label,
   description,
@@ -21,6 +19,7 @@ export function Gauge({
   pending,
   trend,
   weeklyWorkingMinutes,
+  moreBetter,
 }: {
   label: string;
   description?: string;
@@ -30,10 +29,12 @@ export function Gauge({
   trend?: number;
   target?: number;
   onTargetChange?: (target: number | null) => void;
+  moreBetter?: boolean;
 }) {
   actual = Math.round(actual ?? 0);
   pending = Math.round(pending ?? 0);
   trend = Math.round(trend ?? 0);
+  moreBetter = moreBetter !== false;
 
   return (
     <Center>
@@ -41,7 +42,7 @@ export function Gauge({
         <RingProgress
           size={250}
           label={
-            <Stack gap={0} align="center">
+            <Stack gap="xs" align="center">
               <Group gap={8}>
                 <Tooltip
                   label={`${formatDuration(
@@ -49,22 +50,22 @@ export function Gauge({
                   )} per week`}
                   disabled={!actual || !weeklyWorkingMinutes}
                 >
-                  <Text c="brand" fw={700} fz={32} ta="center" size="xl">
+                  <Text c="brand" fw={700} fz={32} ta="center" size="xl" lh={1}>
                     {actual ? `${actual}%` : "–"}
                   </Text>
                 </Tooltip>
                 {trend !== 0 && (
                   <Stack
-                    c={trend < 0 ? "secondary" : "brand"}
+                    c={trend < 0 === !!moreBetter ? "secondary" : "brand"}
                     align="center"
-                    gap={0}
+                    gap={2}
                   >
                     {trend > 0 ? (
                       <IconArrowUpRight size="0.9em" />
                     ) : (
                       <IconArrowDownLeft size="0.9em" />
                     )}
-                    <Text inherit fz="xs">
+                    <Text inherit fz="xs" lh={1}>
                       {Math.abs(trend)}%
                     </Text>
                   </Stack>

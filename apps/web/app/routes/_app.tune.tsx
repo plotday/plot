@@ -381,6 +381,7 @@ export default function Tune() {
               }
               trend={trend(meetings, previousMeetings)}
               weeklyWorkingMinutes={weeklyWorkingMinutes}
+              moreBetter={false}
             />
             <Gauge
               label="Focus"
