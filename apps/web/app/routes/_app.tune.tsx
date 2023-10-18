@@ -279,16 +279,27 @@ export default function Tune() {
   const focus = gaps[monthKey].focus;
   const previousFocus = gaps[previousMonthKey].focus;
 
+  // We filter out focus (0) and meetings (1) before passing these to tuner
   const stats = useMemo(
     () =>
       Object.fromEntries(
         Object.entries(statsWithMeetings).map(([month, stats]) => {
-          const { 1: _, ...rest } = stats;
+          const { 0: _0, 1: _1, ...rest } = stats;
           return [month, rest];
         })
       ),
     [statsWithMeetings]
   );
+  const personalTargets = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.keys(targets.targets)
+          .filter((key) => parseInt(key) > 1)
+          .map((key) => [parseInt(key), targets.targets[parseInt(key)]])
+      ),
+    [targets]
+  );
+
   const meetings = statsWithMeetings[monthKey][1]?.attend?.minutes ?? 0;
   const previousMeetings =
     statsWithMeetings[previousMonthKey][1]?.attend?.minutes ?? 0;
@@ -372,23 +383,37 @@ export default function Tune() {
             <Gauge
               label="Meetings"
               actual={
-                meetings ? (meetings / monthlyWorkingMinutes) * 100 : null
+                meetings
+                  ? (meetings / monthlyWorkingMinutes) * weeklyWorkingMinutes
+                  : null
               }
               pending={
                 pendingMeetings
-                  ? (pendingMeetings / monthlyWorkingMinutes) * 100
+                  ? (pendingMeetings / monthlyWorkingMinutes) *
+                    weeklyWorkingMinutes
                   : undefined
               }
-              trend={trend(meetings, previousMeetings)}
+              trend={trend(
+                meetings + pendingMeetings,
+                previousMeetings + previousPending
+              )}
               weeklyWorkingMinutes={weeklyWorkingMinutes}
               moreBetter={false}
+              target={targets.targets[1]}
+              onTargetChange={(target) => onTargetChange(1, target, false)}
             />
             <Gauge
               label="Focus"
               description="Time during working hours you have an hour or more of uninterrupted time"
-              actual={focus ? (focus / monthlyWorkingMinutes) * 100 : null}
+              actual={
+                focus
+                  ? (focus / monthlyWorkingMinutes) * weeklyWorkingMinutes
+                  : null
+              }
               trend={trend(focus, previousFocus)}
               weeklyWorkingMinutes={weeklyWorkingMinutes}
+              target={targets.targets[0]}
+              onTargetChange={(target) => onTargetChange(0, target, false)}
             />
             <Gauge
               label="Prep"
@@ -448,7 +473,7 @@ export default function Tune() {
             monthlyWorkingMinutes={monthlyWorkingMinutes}
             previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
             weeklyWorkingMinutes={weeklyWorkingMinutes}
-            targets={targets.targets}
+            targets={personalTargets}
             onTargetChange={onTargetChange}
             org={false}
           />
@@ -467,7 +492,7 @@ export default function Tune() {
             monthlyWorkingMinutes={monthlyWorkingMinutes}
             previousMonthlyWorkingMinutes={previousMonthlyWorkingMinutes}
             weeklyWorkingMinutes={40 * 60}
-            targets={targets.orgTargets}
+            targets={personalTargets}
             onTargetChange={onTargetChange}
             org={true}
           />

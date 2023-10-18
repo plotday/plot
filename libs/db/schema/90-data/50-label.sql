@@ -1,7 +1,8 @@
 -- When changing, copy this in to a manual migration (`pnpm new-migration`).
 -- Synchronize this list with schema/60-functions-views/55-event_label.sql
 INSERT INTO label (id, "order", tag, name, description)
-    VALUES (1, 10, '💼', 'Meeting', NULL),
+    VALUES (0, 0, '🎯', 'Focus', NULL),
+    (1, 10, '💼', 'Meeting', NULL),
     (2, 100, '👥', '1:1', '2 invitees'),
     (3, 110, '👥', 'Small', '3-4 invitees'),
     (4, 120, '👥', 'Medium', '5-7 invitees'),
