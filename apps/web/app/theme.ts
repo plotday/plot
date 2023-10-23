@@ -6,9 +6,11 @@ import type {
 import {
   Anchor,
   Button,
+  Chip,
   createTheme,
   defaultVariantColorsResolver,
   parseThemeColor,
+  rgba,
 } from "@mantine/core";
 
 import classes from "./theme.module.css";
@@ -92,6 +94,32 @@ export const theme: MantineThemeOverride = createTheme({
         }
       },
     }),
+    Chip: Chip.extend({
+      classNames: (_theme, props) => {
+        if (props.variant === "light") {
+          return {
+            label: classes.lightBg,
+          };
+        } else {
+          return {};
+        }
+      },
+      styles: (_theme, props) => {
+        if (props.variant === "light") {
+          return {
+            label: {
+              color: props.checked
+                ? "var(--mantine-color-brand-light-color)"
+                : "var(--mantine-color-gray-light-color)",
+              fontSize: "var(--mantine-font-size-sm)",
+              fontWeight: 600,
+            },
+          };
+        } else {
+          return {};
+        }
+      },
+    }),
   },
 });
 
@@ -100,33 +128,45 @@ export const resolver: CSSVariablesResolver = (theme) => ({
   light: {
     "--mantine-color-brand-background": theme.colors.brand[0],
     "--mantine-color-brand-hover": theme.colors.brand[1],
+    "--mantine-color-brand-light-hover": rgba(theme.colors.brand[6], 0.16),
     "--mantine-color-brand-filled-foreground": theme.colors.brand[9],
     "--mantine-color-brand-border": theme.colors.brand[2],
+    "--mantine-color-brand-dimmed": theme.colors.brand[3],
     "--mantine-color-secondary-background": theme.colors.secondary[1],
     "--mantine-color-secondary-hover": theme.colors.secondary[2],
+    "--mantine-color-secondary-light-hover": rgba(
+      theme.colors.secondary[6],
+      0.16
+    ),
     "--mantine-color-secondary-filled-foreground": theme.colors.secondary[9],
     "--mantine-color-secondary-border": theme.colors.secondary[2],
+    "--mantine-color-secondary-dimmed": theme.colors.secondary[3],
     "--mantine-color-gray-background": theme.colors.gray[1],
     "--mantine-color-gray-hover": theme.colors.gray[2],
+    "--mantine-color-gray-light-hover": rgba(theme.colors.gray[6], 0.16),
     "--mantine-color-gray-filled-foreground": theme.colors.gray[9],
     "--mantine-color-background": theme.colors.gray[0],
     "--mantine-color-neutral": theme.colors.gray[5],
     "--mantine-color-track": theme.colors.gray[1],
+    "--mantine-color-text-bold": theme.colors.brand[9],
   },
   dark: {
     "--mantine-color-brand-background": theme.colors.brand[8],
     "--mantine-color-brand-hover": theme.colors.brand[7],
     "--mantine-color-brand-filled-foreground": theme.white,
     "--mantine-color-brand-border": theme.colors.brand[9],
+    "--mantine-color-brand-dimmed": theme.colors.brand[6],
     "--mantine-color-secondary-background": theme.colors.secondary[8],
     "--mantine-color-secondary-hover": theme.colors.secondary[7],
     "--mantine-color-secondary-filled-foreground": theme.white,
     "--mantine-color-secondary-border": theme.colors.secondary[9],
+    "--mantine-color-secondary-dimmed": theme.colors.secondary[6],
     "--mantine-color-gray-background": theme.colors.gray[8],
     "--mantine-color-gray-hover": theme.colors.gray[7],
     "--mantine-color-gray-filled-foreground": theme.white,
     "--mantine-color-background": theme.colors.dark[7],
     "--mantine-color-neutral": theme.colors.gray[6],
     "--mantine-color-track": theme.colors.dark[4],
+    "--mantine-color-text-bold": theme.white,
   },
 });

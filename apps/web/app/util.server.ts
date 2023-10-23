@@ -10,7 +10,7 @@ import type { Sentry } from "app/sentry.server";
 
 import type { Context } from "../server";
 
-const augment = async ({ request, context }: DataFunctionArgs) => {
+const augment = async ({ request, context, ...rest }: DataFunctionArgs) => {
   const env = getEnv(context);
   const { supabase, response } = createServerClient(request, context);
   const supabaseAdmin = createServerAdminClient(context);
@@ -22,7 +22,17 @@ const augment = async ({ request, context }: DataFunctionArgs) => {
     waitlistedUser = user;
     user = null;
   }
+  const trailingSlash = (trailingSlash: boolean) => {
+    const hasTrailingSlash = request.url.endsWith("/");
+    if (trailingSlash !== hasTrailingSlash) {
+      throw redirect(
+        request.url.replace(/\/$/, "") + (trailingSlash ? "/" : "")
+      );
+    }
+  };
+
   return {
+    ...rest,
     request,
     context: context as Context,
     env,
@@ -33,6 +43,7 @@ const augment = async ({ request, context }: DataFunctionArgs) => {
     supabaseAdmin,
     sentry,
     tracker,
+    trailingSlash,
   };
 };
 

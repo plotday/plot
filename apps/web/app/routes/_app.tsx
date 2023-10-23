@@ -27,7 +27,7 @@ import {
   IconArrowBigLeftLinesFilled,
   IconArrowBigRightLinesFilled,
   IconCalendar,
-  IconInbox,
+  IconCalendarPlus,
   IconSettings,
 } from "@tabler/icons-react";
 import classes from "css/_app.module.css";
@@ -130,14 +130,14 @@ function AppNavbar() {
           label="Agenda"
           leftSection={<IconCalendar />}
           to="/agenda"
-          active={location.pathname === "/agenda"}
+          active={location.pathname.startsWith("/agenda")}
         />
         <NavLink
           component={Link}
-          label="Inbox"
-          leftSection={<IconInbox />}
-          to="/inbox"
-          active={location.pathname === "/inbox"}
+          label="Plan"
+          leftSection={<IconCalendarPlus />}
+          to="/plan"
+          active={location.pathname.startsWith("/plan")}
           rightSection={<Count count={counts.triage} />}
         />
         <NavLink
@@ -145,7 +145,7 @@ function AppNavbar() {
           label="Prep"
           leftSection={<IconArrowBigRightLinesFilled />}
           to="/prep"
-          active={location.pathname === "/prep"}
+          active={location.pathname.startsWith("/prep")}
           rightSection={<Count count={counts.prep} />}
         />
         <NavLink
@@ -153,7 +153,7 @@ function AppNavbar() {
           label="Review"
           leftSection={<IconArrowBigLeftLinesFilled />}
           to="/review"
-          active={location.pathname === "/review"}
+          active={location.pathname.startsWith("/review")}
           rightSection={<Count count={counts.review} />}
         />
         <NavLink

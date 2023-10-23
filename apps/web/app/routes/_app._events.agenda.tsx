@@ -43,6 +43,6 @@ export const handle: { eventFilter: EventFilter } = {
   },
 };
 
-export default function Prep() {
+export default function Agenda() {
   return null;
 }

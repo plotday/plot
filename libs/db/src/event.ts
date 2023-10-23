@@ -40,6 +40,8 @@ export type Invitees = Invitee[];
 const EVENT_USER_QUERY = "user_id";
 const EVENT_QUERY =
   "user_id,id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer_email,attendance,ready,reviewed,labels,invitees:invitee(email,response,is_optional,contact(id,name,email,avatar_url,contact_user_id,organization(id,name)))";
+const EVENT_DETAILS_QUERY =
+  "user_id,id,name,description,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer_email,attendance,ready,reviewed,labels,invitees:invitee(email,response,is_optional,contact(id,name,email,avatar_url,contact_user_id,organization(id,name)))";
 
 type PostgrestQueryBuilder = ReturnType<
   ReturnType<SupabaseClient["from"]>["select"]
@@ -57,7 +59,7 @@ export class Event {
     return safeQuery(
       await supabase
         .from("event_x")
-        .select(EVENT_QUERY)
+        .select(EVENT_DETAILS_QUERY)
         .eq("id", eventId)
         .maybeSingle()
     );
@@ -150,8 +152,8 @@ export class Event {
     return (await eventsQuery).count;
   }
 
-  public static Hydrate(dbEvents: DbEvent[], tz: string, labels: LabelMap) {
-    return dbEvents.map((e: DbEvent) => new Event(e, tz, labels));
+  public static Hydrate(dbEvent: DbEvent, tz: string, labels: LabelMap) {
+    return new Event(dbEvent, tz, labels);
   }
 
   constructor(
@@ -204,9 +206,9 @@ export class Event {
     return title;
   }
 
-  // public get description() {
-  //   return this.dbEvent.description;
-  // }
+  public get description() {
+    return this.dbEvent.description;
+  }
 
   // calendar owner's response
   public get attendance() {

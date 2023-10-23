@@ -1,25 +1,22 @@
-import type { ChangeEvent, ReactNode } from "react";
-import React, { memo, useCallback, useMemo } from "react";
+import React, { memo, useMemo } from "react";
+
+import { Link, useLocation } from "@remix-run/react";
 
 import {
   Anchor,
   Avatar,
   Badge,
   Box,
-  Button,
   Card,
   Center,
-  Checkbox,
-  Combobox,
   Group,
-  InputBase,
   Paper,
   Stack,
   Text,
   Title,
   Tooltip,
-  useCombobox,
 } from "@mantine/core";
+import { useHover } from "@mantine/hooks";
 
 import {
   IconBrandMicrosoftTeams,
@@ -44,8 +41,6 @@ import {
 } from "@plotday/tz";
 
 import { useEventWatch } from "app/event";
-import { useEventReadyResponder } from "app/routes/api.event.ready";
-import { useEventResponder } from "app/routes/api.response";
 import type { DailyLabelStats } from "app/target";
 
 function conferencingProviderName(provider: ConferencingProvider) {
@@ -62,18 +57,15 @@ function conferencingProviderName(provider: ConferencingProvider) {
 }
 
 function ConferencingIcon({ provider }: { provider: ConferencingProvider }) {
-  const name = conferencingProviderName(provider);
-  let icon;
   switch (provider) {
     case "zoom":
-      icon = <IconBrandZoom size="1em" />;
+      return <IconBrandZoom size="1em" />;
     case "teams":
-      icon = <IconBrandMicrosoftTeams size="1em" />;
+      return <IconBrandMicrosoftTeams size="1em" />;
     case "meet":
     default:
-      icon = <IconVideo size="1em" />;
+      return <IconVideo size="1em" />;
   }
-  return <Tooltip label={name}>{icon}</Tooltip>;
 }
 
 export function EventList({
@@ -153,7 +145,7 @@ export function EventList({
   }, [events, expenditures, targets]);
 
   return (
-    <Box mt="-1rem">
+    <Box>
       {Object.keys(groupedEvents).map((day) => {
         let previousEvent: Event | null = null;
         return (
@@ -162,6 +154,7 @@ export function EventList({
               bg="var(--mantine-color-background)"
               radius={0}
               h="4rem"
+              pl="1rem"
               style={{
                 position: "sticky",
                 top: 0,
@@ -169,7 +162,7 @@ export function EventList({
                 gridColumn: "1 / span 2",
               }}
             >
-              <Title fw="normal" order={3} pt="md">
+              <Title fw="normal" order={3} fz="md" pt="md">
                 {day}
               </Title>
             </Paper>
@@ -208,6 +201,7 @@ function TimeCard({
   tz,
   alert,
   dimmed,
+  selected,
   children,
 }: {
   start: Date;
@@ -215,6 +209,7 @@ function TimeCard({
   tz: string;
   alert?: boolean;
   dimmed?: boolean;
+  selected?: boolean;
   children?: React.ReactNode;
 }) {
   return (
@@ -240,8 +235,12 @@ function TimeCard({
           alert === undefined
             ? "var(--mantine-color-default-border)"
             : alert
-            ? "secondary"
-            : "brand"
+            ? selected
+              ? "secondary"
+              : "var(--mantine-color-secondary-dimmed)"
+            : selected
+            ? "brand"
+            : "var(--mantine-color-brand-dimmed)"
         }
         style={
           alert === undefined
@@ -310,79 +309,6 @@ function BreakCard({
   );
 }
 
-function SelectAttendance({
-  value,
-  onChange,
-  options,
-}: {
-  value?: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: ReactNode }[];
-}) {
-  const combobox = useCombobox({
-    onDropdownClose: () => combobox.resetSelectedOption(),
-  });
-
-  const selectedOption = useMemo(
-    () => options.find((item) => item.value === value),
-    [value, options]
-  );
-
-  if (!selectedOption) {
-    return (
-      <Button.Group>
-        {options.map((item) => (
-          <Button
-            key={item.value}
-            variant="outline"
-            onClick={() => onChange(item.value)}
-          >
-            {item.label}
-          </Button>
-        ))}
-      </Button.Group>
-    );
-  }
-
-  return (
-    <Combobox
-      store={combobox}
-      onOptionSubmit={(val) => {
-        onChange(val);
-        combobox.closeDropdown();
-      }}
-      variant="filled"
-    >
-      <Combobox.Target>
-        <InputBase
-          component="button"
-          pointer
-          rightSection={<Combobox.Chevron />}
-          onClick={() => combobox.toggleDropdown()}
-          rightSectionPointerEvents="none"
-          multiline
-          variant="filled"
-          w="8rem"
-        >
-          {selectedOption.label}
-        </InputBase>
-      </Combobox.Target>
-
-      <Combobox.Dropdown>
-        <Combobox.Options>
-          {options
-            .filter((item) => item.value !== value)
-            .map((item) => (
-              <Combobox.Option value={item.value} key={item.value}>
-                {item.label}
-              </Combobox.Option>
-            ))}
-        </Combobox.Options>
-      </Combobox.Dropdown>
-    </Combobox>
-  );
-}
-
 function initials(name: string) {
   let names;
   if (name.includes("@")) {
@@ -404,7 +330,7 @@ function InviteeAvatar({ invitee }: { invitee: Invitee }) {
   );
   const color =
     invitee.response === "accepted"
-      ? "var(--mantine-color-brand-outline)"
+      ? "var(--mantine-color-brand-filled)"
       : invitee.response === "declined"
       ? "var(--mantine-color-secondary-filled)"
       : "var(--mantine-color-neutral)";
@@ -422,6 +348,7 @@ function InviteeAvatar({ invitee }: { invitee: Invitee }) {
     >
       <Avatar
         src={invitee.avatar || undefined}
+        imageProps={{ referrerPolicy: "no-referrer" }}
         alt={invitee.name || undefined}
         style={{
           border: `2px solid ${color}`,
@@ -502,9 +429,9 @@ const Labels = memo(function Labels({
             key={label.id}
             label={
               balance
-                ? `${formatDuration(Math.abs(balance / 4))} ${
+                ? `${formatDuration(Math.abs(balance / 4))} per week ${
                     balance < 0 ? "over goal" : "under goal"
-                  } per week`
+                  }`
                 : null
             }
             disabled={!balance}
@@ -529,125 +456,90 @@ function EventCard({
   event,
   balances,
   review,
+  selected,
 }: {
   event: Event;
   balances: Record<number, number>;
   review?: boolean;
+  selected?: boolean;
 }) {
-  const eventResponder = useEventResponder(event);
-  const eventReadyResponder = useEventReadyResponder(event);
+  const { hovered, ref } = useHover();
+  selected = hovered;
 
-  const setAttendance = useCallback(
-    (attendance: string) => {
-      eventResponder((attendance || null) as Attendance);
-    },
-    [eventResponder]
-  );
-
-  const ready = event.isDone(!!review);
-  const updateReady = useCallback(
-    (clickEvent: ChangeEvent<HTMLInputElement>) => {
-      const ready = clickEvent.currentTarget.checked;
-      eventReadyResponder(
-        review ? undefined : ready,
-        review ? ready : undefined
-      );
-    },
-    [eventReadyResponder, review]
-  );
+  const location = useLocation();
+  const rootPath = "/" + location.pathname.split("/")[1];
 
   return (
-    <TimeCard
-      start={event.start}
-      end={event.end}
-      tz={event.tz}
-      alert={!event.isDone(!!review)}
-    >
-      <Box
-        display="grid"
-        style={{
-          gridTemplateColumns: "min-content 1fr",
-          columnGap: "var(--mantine-spacing-md)",
-          rowGap: "var(--mantine-spacing-md)",
-        }}
+    <div ref={ref}>
+      <Anchor
+        component={Link}
+        to={`${rootPath}/${event.id}`}
+        underline="never"
+        c="var(--mantine-color-text)"
       >
-        <Center>
-          {event.type === "task" ? (
-            <Avatar alt="Task">
-              <IconClipboardList color="var(--mantine-color-dimmed)" />
-            </Avatar>
-          ) : (
-            <KeyPerson invitees={event.invitees} organizer={event.organizer} />
-          )}
-        </Center>
-        <Group>
-          <Stack gap={0}>
-            <Text fw={event.attendance === "skip" ? "normal" : "bold"}>
-              {event.name}
-            </Text>
-            {event.conferencing && (
-              <Anchor href={event.conferencing.url} target="_blank">
-                <Group gap="xs" align="center">
-                  <ConferencingIcon provider={event.conferencing.provider} />
-                  <Text fz="xs" c="dimmed" lh={0}>
-                    {conferencingProviderName(event.conferencing.provider)}
-                  </Text>
-                </Group>
-              </Anchor>
-            )}
-          </Stack>
-          <InviteeSummary
-            invitees={event.invitees}
-            organizer={event.organizer}
-          />
-        </Group>
-
-        {event.type === "meeting" && (
-          <>
+        <TimeCard
+          start={event.start}
+          end={event.end}
+          tz={event.tz}
+          alert={!event.isDone(!!review)}
+          selected={selected}
+        >
+          <Box
+            display="grid"
+            style={{
+              gridTemplateColumns: "min-content 1fr",
+              columnGap: "var(--mantine-spacing-md)",
+              rowGap: "var(--mantine-spacing-md)",
+            }}
+          >
             <Center>
-              {event.attendance !== null && (
-                <Checkbox
-                  radius="xl"
-                  lh="lg"
-                  checked={ready}
-                  styles={{
-                    input: {
-                      ...(event.attendance !== null && !ready
-                        ? { borderColor: "var(--mantine-color-brand-outline)" }
-                        : {}),
-                    },
-                  }}
-                  onChange={updateReady}
+              {event.type === "task" ? (
+                <Avatar alt="Task">
+                  <IconClipboardList color="var(--mantine-color-dimmed)" />
+                </Avatar>
+              ) : (
+                <KeyPerson
+                  invitees={event.invitees}
+                  organizer={event.organizer}
                 />
               )}
             </Center>
             <Group>
-              <SelectAttendance
-                options={[
-                  { value: "attend", label: review ? "Attended" : "Attend" },
-                  { value: "skip", label: review ? "Skipped" : "Skip" },
-                  ...(review || event.attendance === null
-                    ? []
-                    : [{ value: "", label: "Undecided" }]),
-                ]}
-                value={event.attendance || undefined}
-                onChange={setAttendance}
+              <Stack gap={0}>
+                <Text
+                  c={selected ? "var(--mantine-color-text-bold)" : undefined}
+                  fw={event.attendance === "skip" ? "normal" : "bold"}
+                >
+                  {event.name}
+                </Text>
+                {event.conferencing && (
+                  <Group gap="xs" align="center">
+                    <ConferencingIcon provider={event.conferencing.provider} />
+                    <Text fz="xs" c="dimmed" lh={0}>
+                      {conferencingProviderName(event.conferencing.provider)}
+                    </Text>
+                  </Group>
+                )}
+              </Stack>
+              <InviteeSummary
+                invitees={event.invitees}
+                organizer={event.organizer}
               />
             </Group>
-          </>
-        )}
 
-        {event.labels.length > 0 && (
-          <>
-            <Box />
-            <Labels
-              labels={event.labels}
-              balances={balances}
-              attendance={event.attendance}
-            />
-          </>
-        )}
-      </Box>
-    </TimeCard>
+            {event.labels.length > 0 && (
+              <>
+                <Box />
+                <Labels
+                  labels={event.labels}
+                  balances={balances}
+                  attendance={event.attendance}
+                />
+              </>
+            )}
+          </Box>
+        </TimeCard>
+      </Anchor>
+    </div>
   );
 }

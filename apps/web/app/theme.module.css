@@ -6,3 +6,11 @@
     }
   }
 }
+.lightBg {
+  &:not([data-checked]) {
+    background-color: var(--mantine-color-gray-light) !important;
+    &:hover {
+      background-color: var(--mantine-color-gray-light-hover) !important;
+    }
+  }
+}

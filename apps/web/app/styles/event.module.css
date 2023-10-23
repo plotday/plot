@@ -1,0 +1,20 @@
+.layout {
+  height: 100vh;
+  margin: -1rem;
+  @media (width >= $mantine-breakpoint-md) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 4px;
+  }
+}
+.mobileSecondary {
+  @media (width < $mantine-breakpoint-md) {
+    display: none;
+  }
+}
+.mobileNav {
+  display: none;
+  @media (width < $mantine-breakpoint-md) {
+    display: block;
+  }
+}
