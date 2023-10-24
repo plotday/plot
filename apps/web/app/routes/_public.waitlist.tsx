@@ -4,6 +4,7 @@ import { json } from "@remix-run/cloudflare";
 import { Form, useSearchParams } from "@remix-run/react";
 
 import {
+  Alert,
   Button,
   Card,
   Container,
@@ -19,15 +20,24 @@ import { useTypedActionData } from "remix-typedjson";
 
 import CalendarSources from "app/components/calendar-sources";
 import Consent from "app/components/consent";
+import { Turnstile, validateTurnstile } from "app/components/turnstile";
 import { DEFAULT_PATH } from "app/config";
 import { createServerAdminClient, safeQuery } from "app/db";
 import { useUser } from "app/hooks";
 import { publicAction } from "app/util";
 
 export const action = publicAction(async ({ request, context, tracker }) => {
+  console.log("HEY!");
   const body = await request.formData();
   const email = body.get("email")?.toString();
   if (!email) return null;
+
+  if (!(await validateTurnstile(request, body, context.env))) {
+    return json({
+      email,
+      error: "Something went wrong. Please try again.",
+    });
+  }
 
   const supabaseAdmin = createServerAdminClient(context);
   const { id: userId } =
@@ -56,6 +66,7 @@ export function WaitlistForm() {
   const email = searchParams.get("email") || "";
   return (
     <Form method="post" action="/waitlist">
+      <Turnstile />
       <Group grow>
         <TextInput
           name="email"
@@ -78,8 +89,9 @@ export default function Waitlist() {
   const [searchParams] = useSearchParams();
   const [hasError, setHasError] = useState(searchParams.has("error"));
   let user = useUser(true);
-  const waitlisted = !user?.activated_at;
-  const email = useTypedActionData()?.email;
+  const { email, error } = useTypedActionData() ?? {};
+  const waitlisted = (user || email) && !error && !user?.activated_at;
+  const success = email && !error;
 
   return (
     <Container size="xs" p="sm" mt="xl">
@@ -93,8 +105,9 @@ export default function Waitlist() {
                 "We're thrilled you're taking this step to own your time. "}
               {waitlisted && "You've been added to the waitlist. "}
             </Text>
-            {!email && !waitlisted && <WaitlistForm />}
-            {(email || waitlisted) && (
+            {error && <Alert>{error}</Alert>}
+            {!success && !waitlisted && <WaitlistForm />}
+            {waitlisted && (
               <>
                 <Title order={2}>Test your calendar</Title>
                 <Text>
@@ -115,6 +128,7 @@ export default function Waitlist() {
               action={user ? "/sync" : "/login"}
               reloadDocument
             >
+              <Turnstile />
               <Group grow align="start">
                 <TextInput
                   name="invitation"

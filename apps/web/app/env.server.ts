@@ -21,6 +21,9 @@ const environmentSchema = z.object({
 
   AMPLITUDE_API_KEY: z.string().min(1),
 
+  TURNSTILE_SITE_KEY: z.string().min(1),
+  TURNSTILE_SECRET_KEY: z.string().min(1),
+
   SYNC_QUEUE: z
     .custom<SyncQueue>((data) => typeof data === "object")
     .optional(),
@@ -35,6 +38,7 @@ export const getEnv = (context: AppLoadContext) =>
   environmentSchema.parse(context.env);
 
 export const getBrowserEnv = (context: AppLoadContext) => {
-  const { SUPABASE_URL, SUPABASE_ANON_KEY, SENTRY_DSN } = getEnv(context);
-  return { SUPABASE_URL, SUPABASE_ANON_KEY, SENTRY_DSN };
+  const { SUPABASE_URL, SUPABASE_ANON_KEY, SENTRY_DSN, TURNSTILE_SITE_KEY } =
+    getEnv(context);
+  return { SUPABASE_URL, SUPABASE_ANON_KEY, SENTRY_DSN, TURNSTILE_SITE_KEY };
 };

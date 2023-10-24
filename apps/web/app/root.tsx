@@ -184,6 +184,7 @@ export default function App() {
       supabase: supabase ?? undefined,
       user: user ?? undefined,
       waitlistedUser: waitlistedUser ?? undefined,
+      env,
     }),
     [supabase, user, waitlistedUser]
   );

@@ -4,7 +4,7 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
-  "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET AMPLITUDE_API_KEY",
+  "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET AMPLITUDE_API_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY",
   "scripts": {
     "gen-env": "../../scripts/gen-env $npm_package_env_vars",
     "set-version": "mkdir -p build && echo export const VERSION = \\\"$VERSION\\\" > build/version.ts",
@@ -21,6 +21,7 @@
     "@mantine/core": "7.1.0",
     "@mantine/dates": "7.1.0",
     "@mantine/hooks": "7.1.0",
+    "@marsidev/react-turnstile": "^0.3.1",
     "@plotday/cal": "workspace:^",
     "@plotday/crypto": "workspace:^",
     "@plotday/db": "workspace:^",

@@ -87,6 +87,9 @@ importers:
       '@mantine/hooks':
         specifier: 7.1.0
         version: 7.1.0(react@18.2.0)
+      '@marsidev/react-turnstile':
+        specifier: ^0.3.1
+        version: 0.3.1(react-dom@18.2.0)(react@18.2.0)
       '@plotday/cal':
         specifier: workspace:^
         version: link:../../libs/cal
@@ -3431,6 +3434,16 @@ packages:
   /@mapbox/whoots-js@3.1.0:
     resolution: {integrity: sha512-Es6WcD0nO5l+2BOQS4uLfNPYQaNDfbot3X1XUoloz+x0mPDS3eeORZJl06HXjwBG1fOGwCRnzK88LMdxKRrd6Q==}
     engines: {node: '>=6.0.0'}
+    dev: false
+
+  /@marsidev/react-turnstile@0.3.1(react-dom@18.2.0)(react@18.2.0):
+    resolution: {integrity: sha512-XnpIUqufuZp2VoC14fmYztB2/8lSABh8eFG6TWAR7Loipdy0p2lZXzuvUOTcQl69j1XKvWu3WChFCBWx/Cbd1A==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+    dependencies:
+      react: 18.2.0
+      react-dom: 18.2.0(react@18.2.0)
     dev: false
 
   /@mdx-js/mdx@2.3.0:

@@ -4,6 +4,8 @@ import type { SupabaseClient } from "@supabase/auth-helpers-remix";
 
 import type { Database } from "@plotday/db";
 
+import type { getBrowserEnv } from "./env.server";
+
 type Nullable<T> = { [K in keyof T]: T[K] | null };
 export type ContextType = {
   supabase?: SupabaseClient<Database>;
@@ -11,6 +13,7 @@ export type ContextType = {
   waitlistedUser?: Nullable<
     Partial<Database["public"]["Tables"]["user"]["Row"]>
   >;
+  env?: ReturnType<typeof getBrowserEnv>;
 };
 
 export function useSupabase() {
@@ -21,6 +24,11 @@ export function useSupabase() {
 export function useUser(includeWaitlisted = false) {
   const { user, waitlistedUser } = useOutletContext<ContextType>();
   return user ?? (includeWaitlisted ? waitlistedUser : null);
+}
+
+export function useEnv() {
+  const { env } = useOutletContext<ContextType>();
+  return env;
 }
 
 export function useTz() {
