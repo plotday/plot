@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId } from "react";
 
 import { Turnstile as BaseTurnstile } from "@marsidev/react-turnstile";
 
@@ -36,7 +36,7 @@ export async function validateTurnstile(
 }
 
 export function Turnstile() {
-  const [id] = useState(Math.random().toString(36).substr(2, 9));
+  const id = useId();
   let env = useEnv();
   const key = env?.TURNSTILE_SITE_KEY;
   if (!key) return null;
