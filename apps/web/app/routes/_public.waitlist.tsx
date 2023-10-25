@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { json } from "@remix-run/cloudflare";
-import { Form, useSearchParams } from "@remix-run/react";
+import { Form, Link, useSearchParams } from "@remix-run/react";
 
 import {
   Alert,
@@ -18,16 +18,12 @@ import {
 import { IconMail } from "@tabler/icons-react";
 import { useTypedActionData } from "remix-typedjson";
 
-import CalendarSources from "app/components/calendar-sources";
-import Consent from "app/components/consent";
 import { Turnstile, validateTurnstile } from "app/components/turnstile";
-import { DEFAULT_PATH } from "app/config";
 import { createServerAdminClient, safeQuery } from "app/db";
 import { useUser } from "app/hooks";
 import { publicAction } from "app/util";
 
 export const action = publicAction(async ({ request, context, tracker }) => {
-  console.log("HEY!");
   const body = await request.formData();
   const email = body.get("email")?.toString();
   if (!email) return null;
@@ -90,8 +86,9 @@ export default function Waitlist() {
   const [hasError, setHasError] = useState(searchParams.has("error"));
   let user = useUser(true);
   const { email, error } = useTypedActionData() ?? {};
-  const waitlisted = (user || email) && !error && !user?.activated_at;
+  const waitlisted = (user || email) && !error && !user?.invitation;
   const success = email && !error;
+  const syncUrl = `/sync${email ? `?email=${encodeURIComponent(email)}` : ""}`;
 
   return (
     <Container size="xs" p="sm" mt="xl">
@@ -109,12 +106,15 @@ export default function Waitlist() {
             {!success && !waitlisted && <WaitlistForm />}
             {waitlisted && (
               <>
-                <Title order={2}>Test your calendar</Title>
+                <Title order={2}>Check your calendar</Title>
                 <Text>
-                  You can test your calendar now to see if it is supported.
+                  Some organizations require Plot to be approved before you can
+                  sync your calendar. Testing your calendar now helps us start
+                  that process.
                 </Text>
-                <CalendarSources redirectTo={DEFAULT_PATH} />
-                <Consent />
+                <Button component={Link} variant="outline" to={syncUrl}>
+                  Check your calendar
+                </Button>
               </>
             )}
           </Stack>

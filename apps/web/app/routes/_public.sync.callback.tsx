@@ -104,7 +104,7 @@ export const loader = publicLoader(
         await saveCredentials(supabaseAdmin, user.id, credentials);
         const timezone = calendars[0]?.tz;
         const updateTimezone = !user.timezone && timezone;
-        const activate = !user.activated_at;
+        const activate = invitation && !user.activated_at;
         if (updateTimezone || activate) {
           safeQuery(
             await supabaseAdmin
