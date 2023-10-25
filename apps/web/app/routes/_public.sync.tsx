@@ -1,5 +1,3 @@
-import { useSearchParams } from "@remix-run/react";
-
 import { Anchor, Card, Container, Stack, Text, Title } from "@mantine/core";
 
 import { IconPlugConnected } from "@tabler/icons-react";
@@ -9,8 +7,6 @@ import Consent from "app/components/consent";
 import { useUser } from "app/hooks";
 
 export default function Sync() {
-  const [searchParams] = useSearchParams();
-  const email = searchParams.get("email");
   const user = useUser(true);
   const testing = !user?.invitation;
   return (
@@ -37,6 +33,11 @@ export default function Sync() {
               primary calendar provider. You can always add more later.
             </Text>
           )}
+          <Text>
+            If your organization requires approval, just drop us a line at{" "}
+            <Anchor href="mailto:team@plot.day">team@plot.day</Anchor> and we'll
+            sort it out!
+          </Text>
           <Text>
             If your organization requires approval, just drop us a line at{" "}
             <Anchor href="mailto:team@plot.day">team@plot.day</Anchor> and we'll

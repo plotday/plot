@@ -88,7 +88,12 @@ export default function Waitlist() {
   const { email, error } = useTypedActionData() ?? {};
   const waitlisted = (user || email) && !error && !user?.invitation;
   const success = email && !error;
-  const syncUrl = `/sync${email ? `?email=${encodeURIComponent(email)}` : ""}`;
+  let checkUrl = "/check";
+  if (user) {
+    checkUrl += `?uid=${user.id}`;
+  } else if (email) {
+    checkUrl += `?email=${encodeURIComponent(email)}`;
+  }
 
   return (
     <Container size="xs" p="sm" mt="xl">
@@ -112,7 +117,7 @@ export default function Waitlist() {
                   sync your calendar. Testing your calendar now helps us start
                   that process.
                 </Text>
-                <Button component={Link} variant="outline" to={syncUrl}>
+                <Button component={Link} variant="outline" to={checkUrl}>
                   Check your calendar
                 </Button>
               </>
