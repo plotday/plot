@@ -4,7 +4,9 @@
 // import { createCookie } from "@remix-run/cloudflare";
 import { parse as parseCookie, serialize as serializeCookie } from "cookie";
 
-import { authCookieOptions } from "./auth";
+import type { SupabaseClient } from "app/db";
+
+const SavedAuthKeyName = "plot-saved-auth";
 
 const tempCookieOptions = {
   sameSite: false,
@@ -26,29 +28,38 @@ export function getCookie(request: Request, name: string) {
 }
 
 export function saveAuthCookie(request: Request, response: Response) {
-  const auth = parseCookie(request.headers.get("Cookie") || "");
-  if (auth.pa?.length) {
+  const cookies = parseCookie(request.headers.get("Cookie") || "");
+  for (const key of Object.keys(cookies)) {
+    if (!key.match(/^sb-.*auth-token$/)) continue;
+    const value = cookies[key];
     response.headers.append(
       "Set-Cookie",
-      serializeCookie("sa", auth.pa, tempCookieOptions)
+      serializeCookie(SavedAuthKeyName, value, tempCookieOptions)
     );
   }
 }
 
-export function restoreAuthCookie(request: Request, response: Response) {
-  const auth = parseCookie(request.headers.get("Cookie") || "");
-  if (auth.sa?.length) {
+export async function restoreSession(
+  request: Request,
+  response: Response,
+  supabase: SupabaseClient
+) {
+  const cookies = parseCookie(request.headers.get("Cookie") || "");
+  if (cookies[SavedAuthKeyName]?.length) {
     response.headers.append(
       "Set-Cookie",
-      serializeCookie("sa", "", tempCookieOptions)
+      serializeCookie(SavedAuthKeyName, "", tempCookieOptions)
     );
-    if (auth.sa !== auth.pa) {
-      response.headers.append(
-        "Set-Cookie",
-        serializeCookie("pa", auth.sa, authCookieOptions)
-      );
-      return true;
+    const auth = JSON.parse(cookies[SavedAuthKeyName]);
+    const { access_token, refresh_token } = auth;
+    if (access_token && refresh_token) {
+      const { data, error } = await supabase.auth.setSession({
+        access_token,
+        refresh_token,
+      });
+      if (data?.session) return data.session;
+      console.error(error);
     }
   }
-  return false;
+  return null;
 }

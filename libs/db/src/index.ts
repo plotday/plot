@@ -11,7 +11,7 @@ export type { Database } from "./types";
 export type SupabaseClient = _SupabaseClient<Database>;
 
 // Create a non-session client.
-// Use supabase/auth-helpers-remix for sessions.
+// Use supabase/ssr for sessions.
 export function createClient(supabaseUrl: string, supabaseKey: string) {
   return supabaseCreateClient<Database>(supabaseUrl, supabaseKey, {
     auth: {

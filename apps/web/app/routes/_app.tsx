@@ -200,7 +200,7 @@ export default function App() {
     }
   }, [status.ready, status.error, revalidate]);
 
-  if (status.error) {
+  if (!status.ready && status.error) {
     return (
       <Center h="100%">
         <Stack align="center">

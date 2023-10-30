@@ -41,17 +41,25 @@ export function TargetModal({
     setMinutes(defaultMinutes);
   }, [opened, setHours, setMinutes, defaultHours, defaultMinutes]);
 
-  const onHourChange = useCallback((value: number) => {
+  const onHourChange = useCallback((value: number | string) => {
+    if (typeof value === "string") {
+      value = parseInt(value);
+      if (isNaN(value)) return;
+    }
     setHours(value);
   }, []);
-  const onMinuteChange = useCallback((value: number) => {
+  const onMinuteChange = useCallback((value: number | string) => {
+    if (typeof value === "string") {
+      value = parseInt(value);
+      if (isNaN(value)) return;
+    }
     if (value === 60) {
       setHours((h) => h + 1);
       setMinutes(0);
     } else if (value < 0) {
       setHours((h) => {
         if (h > 0) {
-          setMinutes(60 + value);
+          setMinutes(60 + (value as number));
           return h - 1;
         }
         return h;

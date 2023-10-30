@@ -87,7 +87,8 @@ SELECT
     min(e.conferencing_url) AS conferencing_url,
     min(e.organizer_email) AS organizer_email,
     COALESCE(min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), 'tentative') AS response,
-    calc_attendance (min(er.attendance), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), count(DISTINCT i.email)::integer, lower(at), COALESCE(u.id = min(ct.contact_user_id) FILTER (WHERE ct.email = e.organizer_email), FALSE)
+    calc_attendance (min(er.attendance), min(i.response) FILTER (WHERE (ct.contact_user_id = u.id)), count(DISTINCT i.email)::integer, lower(at), count(DISTINCT i.email) < 2
+    AND COALESCE(u.id = min(ct.contact_user_id) FILTER (WHERE ct.email = e.organizer_email), FALSE)
     AND min(e.series) IS NULL) AS attendance,
     (round((EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) / (60)::numeric)))::integer AS minutes,
     count(DISTINCT i.email) FILTER (WHERE (i.response = 'accepted'::event_response))::integer AS attendee_count,

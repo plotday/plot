@@ -38,11 +38,6 @@ export default function Sync() {
             <Anchor href="mailto:team@plot.day">team@plot.day</Anchor> and we'll
             sort it out!
           </Text>
-          <Text>
-            If your organization requires approval, just drop us a line at{" "}
-            <Anchor href="mailto:team@plot.day">team@plot.day</Anchor> and we'll
-            sort it out!
-          </Text>
           <CalendarSources redirectTo="/tune" />
           <Consent />
         </Stack>

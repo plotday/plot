@@ -16,7 +16,7 @@ import {
 } from "app/auth";
 import { getCalendarConfig, getCalendars } from "app/cal";
 import { DEFAULT_PATH } from "app/config";
-import { restoreAuthCookie } from "app/cookies.server";
+import { restoreSession } from "app/cookies.server";
 import { publicLoader } from "app/util";
 
 function toProvider(
@@ -50,18 +50,20 @@ export const loader = publicLoader(
     let provider = toProvider(url.searchParams.get("provider"));
 
     try {
-      user = await getUser(supabase, tracker, sentry, undefined, null);
+      let session = await restoreSession(request, response, supabase);
+
+      // For some reason, the supabase client doesn't apply RLS properly for the
+      // new session, so we need to use supabaseAdmin.
+      user = await getUser(
+        session ? supabaseAdmin : supabase,
+        tracker,
+        sentry,
+        session ?? undefined
+      );
       if (user) uid = user.id.toString();
 
-      // Restart with the previous user
-      if (!user && restoreAuthCookie(request, response)) {
-        return redirect(request.url, {
-          headers: response.headers,
-        });
-      }
-
       // Load the user matching the auth user
-      const session = await completeSignIn(request, supabase);
+      session = await completeSignIn(request, supabase);
       if (!user) {
         user = await getUser(supabaseAdmin, tracker, sentry, session, null);
         if (user) uid = user.id.toString();

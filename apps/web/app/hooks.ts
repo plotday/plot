@@ -1,6 +1,6 @@
 import { useOutletContext } from "@remix-run/react";
 
-import type { SupabaseClient } from "@supabase/auth-helpers-remix";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@plotday/db";
 

@@ -123,7 +123,9 @@ export const action = privateAction(
       case "PATCH": {
         const schema = z.object({
           calendarId: z.coerce.number(),
-          enabled: z.coerce.boolean(),
+          enabled: z
+            .enum(["0", "1", "true", "false"])
+            .transform((value) => value == "true" || value == "1"),
         });
         const data = schema.parse(Object.fromEntries(await request.formData()));
         safeQuery(
@@ -179,11 +181,11 @@ export default function Settings() {
                           radius="xl"
                           label={calendar.name}
                           checked={calendar.enabled}
-                          onChange={() => {
+                          onChange={(event) => {
                             fetcher.submit(
                               {
                                 calendarId: calendar.id,
-                                enabled: !calendar.enabled,
+                                enabled: event.currentTarget.checked,
                               },
                               { method: "PATCH" }
                             );

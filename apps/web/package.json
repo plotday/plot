@@ -18,9 +18,9 @@
     "lint": "export VERSION=lint && pnpm set-version && tsc && eslint ."
   },
   "dependencies": {
-    "@mantine/core": "7.1.0",
-    "@mantine/dates": "7.1.0",
-    "@mantine/hooks": "7.1.0",
+    "@mantine/core": "7.1.7",
+    "@mantine/dates": "7.1.7",
+    "@mantine/hooks": "7.1.7",
     "@marsidev/react-turnstile": "^0.3.1",
     "@plotday/cal": "workspace:^",
     "@plotday/crypto": "workspace:^",
@@ -35,7 +35,7 @@
     "@remix-run/server-runtime": "^2.1.0",
     "@sentry/integrations": "^7.70.0",
     "@sentry/remix": "^7.70.0",
-    "@supabase/auth-helpers-remix": "^0.2.2",
+    "@supabase/ssr": "^0.0.4",
     "@supabase/supabase-js": "^2.36.0",
     "@tabler/icons-react": "^2.30.0",
     "@worker-tools/json-fetch": "2.1.0-pre.6",

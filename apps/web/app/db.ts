@@ -1,11 +1,14 @@
 import type { AppLoadContext } from "@remix-run/cloudflare";
 
-import { createServerClient as createServerClientHelper } from "@supabase/auth-helpers-remix";
+import {
+  createServerClient as createServerClientHelper,
+  parse,
+  serialize,
+} from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 
 import type { Database } from "@plotday/db";
 
-import { authCookieOptions } from "./auth";
 import { getEnv } from "./env.server";
 
 export type { Database, SupabaseClient } from "@plotday/db";
@@ -17,13 +20,23 @@ export const createServerClient = (
 ) => {
   const response = new Response();
   const env = getEnv(context);
+
+  const cookies = parse(request.headers.get("Cookie") ?? "");
   const supabase = createServerClientHelper<Database>(
     env.SUPABASE_URL,
     env.SUPABASE_ANON_KEY,
     {
-      request,
-      response,
-      cookieOptions: authCookieOptions,
+      cookies: {
+        get(key) {
+          return cookies[key];
+        },
+        set(key, value, options) {
+          response.headers.append("Set-Cookie", serialize(key, value, options));
+        },
+        remove(key, options) {
+          response.headers.append("Set-Cookie", serialize(key, "", options));
+        },
+      },
     }
   );
   return { response, supabase };

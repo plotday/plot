@@ -12,7 +12,7 @@ import {
   useRevalidator,
 } from "@remix-run/react";
 
-import { createBrowserClient } from "@supabase/auth-helpers-remix";
+import { createBrowserClient } from "@supabase/ssr";
 
 import {
   Anchor,
@@ -34,7 +34,6 @@ import type { ContextType } from "app/hooks";
 import { init as sentryInit } from "app/sentry.client";
 import { publicLoader } from "app/util";
 
-import { authCookieOptions } from "./auth";
 import { resolver, theme } from "./theme";
 
 export const loader = publicLoader(
@@ -148,12 +147,7 @@ export default function App() {
     try {
       return createBrowserClient<Database, "public">(
         env.SUPABASE_URL,
-        env.SUPABASE_ANON_KEY,
-        {
-          // @ts-ignore
-          auth: { flowType: "pkce" },
-          cookieOptions: authCookieOptions,
-        }
+        env.SUPABASE_ANON_KEY
       );
     } catch (error) {
       console.error(error);
@@ -186,7 +180,7 @@ export default function App() {
       waitlistedUser: waitlistedUser ?? undefined,
       env,
     }),
-    [supabase, user, waitlistedUser]
+    [env, supabase, user, waitlistedUser]
   );
 
   return (

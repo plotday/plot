@@ -11,15 +11,6 @@ import type { Sentry } from "app/sentry.server";
 
 export type User = Database["public"]["Tables"]["user"]["Row"];
 
-export const authCookieOptions = {
-  name: "pa",
-  maxAge: 60 * 60 * 24 * 365, // 1 year
-  sameSite: false,
-  secure: false,
-  domain: "",
-  path: "/",
-};
-
 // Process an Oauth callback and create a session
 //
 // NOTE: The session is not set for the current request, so functions that rely
