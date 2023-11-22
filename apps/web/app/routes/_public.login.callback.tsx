@@ -42,7 +42,15 @@ export const loader = publicLoader(
       }
 
       const invitation = url.searchParams.get("invitation");
-      if (!user.invitation) {
+      if (user.invitation) {
+        // TODO fixme
+        toUrl = await redeemInvitation(
+          user,
+          user.invitation,
+          tracker,
+          supabaseAdmin
+        );
+      } else {
         if (invitation) {
           toUrl = await redeemInvitation(
             user,
@@ -53,9 +61,6 @@ export const loader = publicLoader(
         } else {
           toUrl = "/waitlist";
         }
-      } else {
-        // TODO fixme
-        toUrl = await redeemInvitation(user, "foo", tracker, supabaseAdmin);
       }
 
       return redirect(toUrl, {
