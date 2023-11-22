@@ -10,30 +10,52 @@ import { DEFAULT_PATH } from "app/config";
 import { publicLoader } from "app/util";
 
 export const loader = publicLoader(
-  async ({ request, response, supabase, supabaseAdmin, tracker, sentry }) => {
+  async ({
+    request,
+    response,
+    supabase,
+    supabaseAdmin,
+    tracker,
+    sentry,
+    waitlistedUser,
+  }) => {
     const url = new URL(request.url);
     const fromUrl = url.searchParams.get("from") || "/login";
     let toUrl = url.searchParams.get("to") || DEFAULT_PATH;
     try {
-      const session = await completeSignIn(request, supabase);
+      let user: Awaited<ReturnType<typeof addAccount>>["user"] | null = null;
+      if (url.searchParams.has("code") || url.searchParams.has("error")) {
+        const session = await completeSignIn(request, supabase);
 
-      // The new session does not apply to the current "supabase" instance, so a
-      // combination of passing the session and using supabaseAdmin is required
-      // for the rest of this request.
+        // The new session does not apply to the current "supabase" instance, so a
+        // combination of passing the session and using supabaseAdmin is required
+        // for the rest of this request.
 
-      let user = await getUser(supabaseAdmin, tracker, sentry, session);
-      if (!user) {
-        ({ user } = await addAccount(user, session, tracker, supabaseAdmin));
+        user = await getUser(supabaseAdmin, tracker, sentry, session);
+        if (!user) {
+          ({ user } = await addAccount(user, session, tracker, supabaseAdmin));
+        }
+      } else if (waitlistedUser) {
+        user = waitlistedUser;
+      } else {
+        throw new Error("Please try again");
       }
 
       const invitation = url.searchParams.get("invitation");
-      if (!user.invitation && invitation) {
-        await redeemInvitation(user, invitation, tracker, supabaseAdmin);
-      }
-      if (!user.invitation && !invitation) {
-        toUrl = "/waitlist";
-      } else if (!user.activated_at) {
-        toUrl = "/sync";
+      if (!user.invitation) {
+        if (invitation) {
+          toUrl = await redeemInvitation(
+            user,
+            invitation,
+            tracker,
+            supabaseAdmin
+          );
+        } else {
+          toUrl = "/waitlist";
+        }
+      } else {
+        // TODO fixme
+        toUrl = await redeemInvitation(user, "foo", tracker, supabaseAdmin);
       }
 
       return redirect(toUrl, {

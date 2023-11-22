@@ -25,5 +25,7 @@ export default {
     "./node_modules/@plotday/tracker/src/**",
   ],
   postcss: true,
-  future: {},
+  future: {
+    v3_fetcherPersist: true,
+  },
 };

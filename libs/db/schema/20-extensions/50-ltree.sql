@@ -1,0 +1,2 @@
+CREATE EXTENSION IF NOT EXISTS "ltree" WITH SCHEMA "extensions";
+

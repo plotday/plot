@@ -1,17 +1,8 @@
 import { useEffect, useState } from "react";
 
-import { Link, useSearchParams } from "@remix-run/react";
+import { useSearchParams } from "@remix-run/react";
 
-import {
-  Alert,
-  Anchor,
-  Box,
-  Card,
-  Container,
-  Stack,
-  Text,
-  Title,
-} from "@mantine/core";
+import { Alert, Box, Card, Container, Stack, Text, Title } from "@mantine/core";
 
 import { IconAlertCircle, IconSunFilled } from "@tabler/icons-react";
 import {
@@ -19,6 +10,7 @@ import {
   MicrosoftLoginButton,
 } from "react-social-login-buttons";
 
+import Consent from "app/components/consent";
 import { useSupabase } from "app/hooks";
 
 import { signIn } from "../auth";
@@ -63,15 +55,15 @@ export default function Login() {
   return (
     <Container size="xs" p="sm" mt="xl">
       <Card>
+        <Title>
+          <Text c="yellow" span inherit style={{ verticalAlign: "middle" }}>
+            <IconSunFilled size={34} />
+          </Text>{" "}
+          <Text span inherit>
+            Good day!
+          </Text>
+        </Title>
         <Stack>
-          <Title>
-            <Text c="yellow" span inherit style={{ verticalAlign: "middle" }}>
-              <IconSunFilled size={34} />
-            </Text>{" "}
-            <Text span inherit>
-              Good day!
-            </Text>
-          </Title>
           <Box m="xl">
             <Stack>
               <GoogleLoginButton onClick={googleLogin}>
@@ -91,15 +83,7 @@ export default function Login() {
               <Text mt="md">{error}</Text>
             </Alert>
           )}
-          {!invitation && (
-            <Text c="dimmed">
-              Need an account?{" "}
-              <Anchor component={Link} to={`/sync`}>
-                Get started here
-              </Anchor>
-              .
-            </Text>
-          )}
+          <Consent />
         </Stack>
       </Card>
     </Container>

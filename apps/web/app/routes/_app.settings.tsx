@@ -61,7 +61,7 @@ async function refreshCalendars(
         );
         await Promise.all([
           saveCredentials(supabaseAdmin, account.id, credentials),
-          saveCalendars(supabaseAdmin, account.id, calendars),
+          saveCalendars(supabaseAdmin, userId, account.id, calendars),
         ]);
       } catch (error) {
         console.error(error);
@@ -163,11 +163,13 @@ export default function Settings() {
     logout(supabase);
   }, [supabase]);
   const fetcher = useFetcher();
+  const numCalendars =
+    calendars?.reduce((acc, account) => acc + account.calendars.length, 0) ?? 0;
   return (
     <Container size="xs" p="sm">
-      <Card>
+      <Card withBorder>
         <Stack gap="xl">
-          {calendars && calendars.length > 0 && (
+          {numCalendars > 0 && (
             <fetcher.Form method="post">
               <Stack gap="lg">
                 <Title order={2}>Calendars</Title>
@@ -204,7 +206,7 @@ export default function Settings() {
           </Stack>
         </Stack>
       </Card>
-      <Box mt="lg">
+      <Box m="lg">
         <Button onClick={doLogout} variant="outline" color="red">
           Sign out
         </Button>

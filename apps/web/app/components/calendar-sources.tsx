@@ -43,19 +43,10 @@ export default function CalendarSources({
         scopes = [
           "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
           "https://www.googleapis.com/auth/calendar.events",
-          "https://www.googleapis.com/auth/contacts.readonly",
-          "https://www.googleapis.com/auth/contacts.other.readonly",
-          "https://www.googleapis.com/auth/directory.readonly",
         ];
         break;
       case "outlook":
-        scopes = [
-          "calendars.readwrite",
-          "Contacts.Read",
-          "Contacts.Read.Shared",
-          "Directory.Read.All",
-          "offline_access",
-        ];
+        scopes = ["calendars.readwrite", "offline_access"];
         break;
     }
 

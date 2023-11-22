@@ -1,0 +1,9 @@
+ALTER VIEW gap SET ( security_invoker = TRUE);
+ALTER VIEW gap_monthly SET ( security_invoker = TRUE);
+ALTER VIEW gap_daily SET ( security_invoker = TRUE);
+ALTER VIEW insight SET ( security_invoker = TRUE);
+ALTER VIEW insight_weekly SET ( security_invoker = TRUE);
+ALTER VIEW "public"."invitation_admin" SET ( security_invoker = FALSE);
+ALTER VIEW "public"."event_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."waitlist_admin" SET ( security_invoker = FALSE);
+ALTER VIEW "public"."sync_admin" SET ( security_invoker = FALSE);

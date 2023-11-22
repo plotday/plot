@@ -129,7 +129,7 @@ export const getUser = async (
   tracker: Tracker,
   sentry: Sentry,
   session?: Session,
-  defaultTimezone: string | null = "America/New_York"
+  defaultTimezone: string = "America/New_York"
 ) => {
   const userId = await getAuthUserId(supabase, session);
   if (!userId) {
@@ -160,7 +160,10 @@ export const getUser = async (
     user.timezone = defaultTimezone;
   }
 
-  return user;
+  return {
+    ...user,
+    timezone: user.timezone ?? defaultTimezone,
+  };
 };
 
 export const getUserMetadata = async (session: Session) => {
@@ -283,7 +286,18 @@ export async function redeemInvitation(
   tracker: Tracker,
   supabaseAdmin: SupabaseClient
 ) {
-  if (user.activated_at) return;
+  if (user.activated_at) {
+    const categories = safeQuery(
+      await supabaseAdmin.from("category").select("path").eq("user_id", user.id)
+    );
+    const path = categories.filter((c) => c.path.indexOf(".") === -1)?.[0]
+      ?.path;
+    if (path) {
+      return `/+${path}`;
+    } else {
+      return "/";
+    }
+  }
   safeQuery(
     await supabaseAdmin.rpc("redeem_invitation", {
       _user_id: user.id,
@@ -293,6 +307,44 @@ export async function redeemInvitation(
   tracker.accountActivated(user.id.toString(), {
     "Invitation Code": invitation,
   });
+  const userDomain = safeQuery(
+    await supabaseAdmin
+      .from("user")
+      .select("domain(domain,organization(name))")
+      .eq("id", user.id)
+      .single()
+  );
+  let root = "personal";
+  let name = "Personal";
+  let domain = (userDomain.domain as any)?.domain as string | undefined;
+  if (domain) {
+    let lastDotIndex = domain.lastIndexOf(".");
+    if (lastDotIndex !== -1) {
+      domain = domain.substring(0, lastDotIndex);
+    }
+    root = domain.replaceAll(".", "-");
+    name =
+      ((userDomain.domain as any)?.organization?.name as string | undefined) ??
+      "Work";
+  }
+  safeQuery(
+    await supabaseAdmin
+      .from("category")
+      .upsert([
+        {
+          user_id: user.id,
+          name,
+          path: root,
+        },
+        {
+          user_id: user.id,
+          name: "Meetings",
+          path: `${root}.meetings`,
+        },
+      ])
+      .select()
+  );
+  return `/+${root}`;
 }
 
 export async function getAccounts(supabase: SupabaseClient, userId: number) {

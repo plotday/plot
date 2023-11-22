@@ -21,3 +21,16 @@ CREATE UNIQUE INDEX user_pkey ON public."user" USING btree (id);
 ALTER TABLE "public"."user"
     ADD CONSTRAINT "user_pkey" PRIMARY KEY USING INDEX "user_pkey";
 
+CREATE OR REPLACE FUNCTION public.domain ("user")
+    RETURNS SETOF "domain" ROWS 1
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT
+        domain.*
+    FROM
+        "domain"
+    WHERE
+        "domain"."domain" = lower(regexp_replace(split_part($1.email, '@', 2), '\s+', '', 'g'));
+$function$;
+

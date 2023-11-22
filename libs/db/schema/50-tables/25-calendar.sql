@@ -5,7 +5,7 @@ CREATE TABLE "public"."calendar" (
     "provider_id" text NOT NULL,
     "starts_at" timestamp with time zone,
     "ends_at" timestamp with time zone,
-    "sync_state" jsonb,
+    "sync_state" text,
     "watch_id" text,
     "watch_secret" text,
     "watch_expires_at" timestamp with time zone,

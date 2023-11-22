@@ -258,12 +258,6 @@ export default {
         })
       );
 
-      safeQuery(
-        await supabase.rpc("update_labels", {
-          _event_ids: insertedEvents.map((i) => i.id),
-        })
-      );
-
       for (const message of batch.messages) {
         const syncType = message.body.complete;
         if (!syncType) continue;

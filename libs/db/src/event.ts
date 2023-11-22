@@ -1,30 +1,23 @@
 import differenceInMinutes from "date-fns/differenceInMinutes";
 
 import type { EventResponse } from "@plotday/cal";
+import { formatDate } from "@plotday/tz";
 
 import type { SupabaseClient } from "./";
-import { parseDateRange } from "./";
+import { parseDatetimeRange } from "./";
+import type { Balances, DbCategories } from "./category";
 import { safeQuery } from "./query";
 import type { Database } from "./types";
 
-export type Label = {
-  id: number;
-  tag: string | null;
-  name: string;
-  description: string | null;
-  order: number;
-};
-
-export type LabelMap = {
-  [id: number]: Label;
-};
-
 export type ConferencingProvider = "zoom" | "meet" | "teams" | "other";
 
-export type DbEvent = NonNullable<Awaited<ReturnType<typeof Event.Get>>>;
-export type DbEvents = DbEvent[];
+export type DbEvents = NonNullable<Awaited<ReturnType<typeof Event.GetRange>>>;
+export type DbDetailedEvent = NonNullable<
+  Awaited<ReturnType<typeof Event.Get>>
+>;
+export type DbEvent = DbEvents[0] & Partial<DbDetailedEvent>;
 
-export type Attendance = Database["public"]["Enums"]["event_attendance"] | null;
+export type Response = Database["public"]["Enums"]["event_response"] | null;
 
 export type Invitee = {
   email: string;
@@ -39,19 +32,18 @@ export type Invitees = Invitee[];
 
 const EVENT_USER_QUERY = "user_id";
 const EVENT_QUERY =
-  "user_id,id,name,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer_email,attendance,ready,reviewed,labels,invitees:invitee(email,response,is_optional,contact(id,name,email,avatar_url,contact_user_id,organization(id,name)))";
+  "user_id,id,name,status,at,created_at,series,provider_id,provider_link,category_path,summary,visibility,availability,type,conferencing_url,organizer_email,response,invitees:invitee(email,response,is_optional,contact(id,name,email,avatar_url,contact_user_id,organization(id,name)))";
 const EVENT_DETAILS_QUERY =
-  "user_id,id,name,description,status,at,created_at,series,provider_id,provider_link,summary,visibility,availability,type,conferencing_url,organizer_email,attendance,ready,reviewed,labels,invitees:invitee(email,response,is_optional,contact(id,name,email,avatar_url,contact_user_id,organization(id,name)))";
+  "user_id,id,name,description,status,at,created_at,series,provider_id,provider_link,category_path,summary,visibility,availability,type,conferencing_url,organizer_email,response,invitees:invitee(email,response,is_optional,contact(id,name,email,avatar_url,contact_user_id,organization(id,name)))";
 
 type PostgrestQueryBuilder = ReturnType<
   ReturnType<SupabaseClient["from"]>["select"]
 >;
 
 export type EventFilters = {
-  attendance?: Attendance[];
+  response?: Response[];
   type?: Database["public"]["Enums"]["event_type"][];
-  ready?: boolean;
-  reviewed?: boolean;
+  category?: string;
 };
 
 export class Event {
@@ -79,14 +71,14 @@ export class Event {
     query = query.eq("user_id", userId);
     query = query.overlaps("at", during).neq("status", "cancelled");
 
-    if (filters.attendance) {
-      const nonNull = filters.attendance
+    if (filters.response) {
+      const nonNull = filters.response
         .filter((f) => f !== null)
         .map((f) => `"${f}"`)
         .join(",");
-      const isNull = filters.attendance.filter((f) => f === null);
+      const isNull = filters.response.filter((f) => f === null);
       query = query.or(
-        `attendance.in.(${nonNull}), ${isNull ? "attendance.is.null" : "false"}`
+        `response.in.(${nonNull}), ${isNull ? "response.is.null" : "false"}`
       );
     }
 
@@ -95,15 +87,8 @@ export class Event {
       query = query.or(`type.in.(${list})`);
     }
 
-    if (filters.ready === true) {
-      query = query.not("ready", "is", null);
-    } else if (filters.ready === false) {
-      query = query.is("ready", null);
-    }
-    if (filters.reviewed === true) {
-      query = query.not("reviewed", "is", null);
-    } else if (filters.reviewed === false) {
-      query = query.is("reviewed", null);
+    if (filters.category) {
+      query = query.eq("category_path", filters.category);
     }
 
     return query;
@@ -112,18 +97,18 @@ export class Event {
   public static async GetRange(
     supabase: SupabaseClient,
     userId: number,
-    from: Date = new Date(),
-    forward: boolean = true,
+    start: Date = new Date(),
+    end: Date = new Date(),
     filters: EventFilters = {}
   ) {
     const eventsQuery = Event.AddFilters(
       supabase.from("event_x").select(`${EVENT_QUERY},${EVENT_USER_QUERY}`),
       userId,
-      forward ? from : "-infinity",
-      forward ? "infinity" : from,
+      start,
+      end,
       filters
     )
-      .order("at", { ascending: forward })
+      .order("at", { ascending: true })
       .order("response", { foreignTable: "invitee" })
       .limit(80);
     const events = safeQuery(await eventsQuery);
@@ -152,14 +137,11 @@ export class Event {
     return (await eventsQuery).count;
   }
 
-  public static Hydrate(dbEvent: DbEvent, tz: string, labels: LabelMap) {
-    return new Event(dbEvent, tz, labels);
-  }
-
   constructor(
     public dbEvent: DbEvent,
     public tz: string,
-    private _labels: LabelMap
+    private _categories?: DbCategories,
+    private _balances?: Balances
   ) {
     if (!tz) throw Error("Missing timezone");
   }
@@ -170,11 +152,15 @@ export class Event {
   }
 
   public get start() {
-    return parseDateRange((this.dbEvent.at as string) || "", this.tz)[0];
+    return parseDatetimeRange((this.dbEvent.at as string) || "", this.tz)[0];
   }
 
   public get end() {
-    return parseDateRange((this.dbEvent.at as string) || "", this.tz)[1];
+    return parseDatetimeRange((this.dbEvent.at as string) || "", this.tz)[1];
+  }
+
+  public get week(): string {
+    return formatDate(this.start, this.tz, "yyyy-MM-dd");
   }
 
   public get name() {
@@ -211,8 +197,8 @@ export class Event {
   }
 
   // calendar owner's response
-  public get attendance() {
-    return this.dbEvent.attendance;
+  public get response() {
+    return this.dbEvent.response;
   }
 
   public get providerId() {
@@ -222,6 +208,20 @@ export class Event {
   public get providerLink() {
     return this.dbEvent.provider_link;
   }
+
+  public get categoryId() {
+    return this.dbEvent.category_path;
+  }
+
+  // public get category() {
+  //   if (!this.dbEvent.category_path || !this._categories) return undefined;
+  //   return this._categories[this.dbEvent.category_path];
+  // }
+  //
+  // public get balance() {
+  //   if (!this.dbEvent.category_id || !this._balances) return undefined;
+  //   return this._balances[this.week]?.[this.dbEvent.category_id];
+  // }
 
   public get conferencing() {
     const url = this.dbEvent.conferencing_url;
@@ -278,18 +278,8 @@ export class Event {
     return this.dbEvent.invitees.map((i) => this.toInvitee(i));
   }
 
-  public get labels() {
-    return (
-      this.dbEvent.labels?.map((l) => {
-        if (!(l in this._labels)) {
-          throw Error(`Label ${l} not found (${this.dbEvent.id})`);
-        }
-        return this._labels[l];
-      }) ?? []
-    );
-  }
-
   public get duration() {
+    if (this.type === "note") return 0;
     return differenceInMinutes(this.end, this.start);
   }
 
@@ -324,24 +314,10 @@ export class Event {
   }
 
   public get isMeeting() {
-    return !!this.dbEvent.ready;
-  }
-
-  public get isReady() {
-    return !!this.dbEvent.ready;
-  }
-
-  public get isReviewed() {
-    return !!this.dbEvent.reviewed;
+    return this.dbEvent.type === "meeting";
   }
 
   public get type() {
     return this.dbEvent.type;
-  }
-
-  public isDone(review: boolean) {
-    return (
-      this.attendance !== null && (review ? this.isReviewed : this.isReady)
-    );
   }
 }

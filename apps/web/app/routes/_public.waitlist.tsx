@@ -130,7 +130,7 @@ export default function Waitlist() {
             <Text>If you have an invitation code, please enter it here.</Text>
             <Form
               method="get"
-              action={user ? "/sync" : "/login"}
+              action={user ? "/login/callback" : "/login"}
               reloadDocument
             >
               <Turnstile />

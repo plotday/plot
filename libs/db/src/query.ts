@@ -1,4 +1,7 @@
-import type { PostgrestError } from "@supabase/supabase-js";
+import type {
+  PostgrestError,
+  PostgrestSingleResponse,
+} from "@supabase/supabase-js";
 
 export class DbError extends Error {
   constructor(cause: PostgrestError) {
@@ -15,15 +18,20 @@ export class DbError extends Error {
   }
 }
 
-export function safeQuery<T>({
-  data,
-  error,
-}: {
-  data: T;
-  error: PostgrestError | null;
-}) {
-  if (error) {
-    throw new DbError(error);
+export function safeQuery<T>(response: PostgrestSingleResponse<T>): T;
+export function safeQuery<T>(
+  response: PromiseLike<PostgrestSingleResponse<T>>
+): PromiseLike<T>;
+
+export function safeQuery<T>(
+  response: PostgrestSingleResponse<T> | PromiseLike<PostgrestSingleResponse<T>>
+): T | PromiseLike<T> {
+  if ("then" in response) {
+    return response.then(safeQuery<T>);
+  } else {
+    if (response.error) {
+      throw new DbError(response.error);
+    }
+    return response.data;
   }
-  return data;
 }

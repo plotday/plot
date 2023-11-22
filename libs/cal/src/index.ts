@@ -64,7 +64,7 @@ export type SyncState = {
   // If more === true, a page token.
   // Otherwise, a sync token.
   // If unset, a full sync.
-  state?: any;
+  state?: string;
 };
 
 export type WatchState = {

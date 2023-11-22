@@ -22,6 +22,7 @@ const augment = async ({ request, context, ...rest }: DataFunctionArgs) => {
     waitlistedUser = user;
     user = null;
   }
+
   const trailingSlash = (trailingSlash: boolean) => {
     const hasTrailingSlash = request.url.endsWith("/");
     if (trailingSlash !== hasTrailingSlash) {
@@ -37,6 +38,7 @@ const augment = async ({ request, context, ...rest }: DataFunctionArgs) => {
     context: context as Context,
     env,
     user,
+    url: new URL(request.url),
     waitlistedUser,
     response,
     supabase,

@@ -65,7 +65,7 @@ export const loader = publicLoader(
       // Load the user matching the auth user
       session = await completeSignIn(request, supabase);
       if (!user) {
-        user = await getUser(supabaseAdmin, tracker, sentry, session, null);
+        user = await getUser(supabaseAdmin, tracker, sentry, session);
         if (user) uid = user.id.toString();
       }
 
@@ -105,21 +105,19 @@ export const loader = publicLoader(
         ));
         await saveCredentials(supabaseAdmin, user.id, credentials);
         const timezone = calendars[0]?.tz;
-        const updateTimezone = !user.timezone && timezone;
-        const activate = invitation && !user.activated_at;
-        if (updateTimezone || activate) {
+        if (!user.timezone && timezone) {
           safeQuery(
             await supabaseAdmin
               .from("user")
               .update({
-                ...(updateTimezone ? { timezone } : {}),
-                ...(activate ? { activated_at: new Date().toISOString() } : {}),
+                timezone,
               })
               .eq("id", user.id)
           );
         }
         const dbCalendars = await saveCalendars(
           supabaseAdmin,
+          user.id,
           account.id,
           calendars
         );
