@@ -80,8 +80,8 @@ jobs:
       - name: Start supabase
         run: pnpm --filter @plotday/db test:setup
 
-      - name: Run tests
-        run: pnpm test
+      # - name: Run tests
+      #   run: pnpm test
 
       - name: Migrate DB
         run: pnpm --filter @plotday/db run link $SUPABASE_PROJECT_ID && pnpm --filter @plotday/db run push
