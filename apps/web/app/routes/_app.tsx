@@ -82,7 +82,7 @@ export default function App() {
   return (
     <AppShell header={{ height: 36 }}>
       <Header />
-      <AppShell.Main bg="var(--mantine-color-gray-0)">
+      <AppShell.Main bg="var(--mantine-color-background)">
         <Outlet context={ctx} />
       </AppShell.Main>
     </AppShell>
