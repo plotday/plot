@@ -1,19 +1,13 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
-import {
-  Button,
-  Combobox,
-  Group,
-  Progress,
-  Table,
-  Text,
-  Tooltip,
-  useCombobox,
-} from "@mantine/core";
+import { useParams } from "@remix-run/react";
+
+import { Button, Combobox, useCombobox } from "@mantine/core";
 
 import { IconFolderOpen } from "@tabler/icons-react";
 
 import type { DbCategories, Event } from "@plotday/db";
+import { urlToPath } from "@plotday/db";
 
 import { useEventCategorizer } from "app/routes/api.event.category";
 
@@ -24,9 +18,9 @@ export const Categorizer = ({
   event: Event;
   categories: DbCategories;
 }) => {
+  const params = useParams();
   const categorize = useEventCategorizer(event);
   const [search, setSearch] = useState("");
-  const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const combobox = useCombobox({
     onDropdownClose: () => {
       combobox.resetSelectedOption();
@@ -55,8 +49,16 @@ export const Categorizer = ({
       position="bottom-start"
       withArrow
       onOptionSubmit={(val) => {
-        setSelectedItem(val);
-        categorize(Number(val));
+        if (val === "$create") {
+          if (!params.role) {
+            console.error("Categorizer used outside a params path");
+            return;
+          }
+          categorize({ role: urlToPath(params.role), name: search });
+        } else {
+          categorize({ id: Number(val) });
+        }
+
         combobox.closeDropdown();
       }}
     >
@@ -73,10 +75,9 @@ export const Categorizer = ({
           placeholder="Search categories"
         />
         <Combobox.Options>
-          {options.length > 0 ? (
-            options
-          ) : (
-            <Combobox.Empty>Nothing found</Combobox.Empty>
+          {options}
+          {search.trim().length > 0 && (
+            <Combobox.Option value="$create">+ Create {search}</Combobox.Option>
           )}
         </Combobox.Options>
       </Combobox.Dropdown>
