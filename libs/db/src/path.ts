@@ -72,6 +72,7 @@ export async function createCategories(
             user_id: userId,
             name,
             path,
+            priority: "O",
           },
           {
             user_id: userId,

@@ -48,6 +48,7 @@ async function refreshCalendars(
   if (!accounts) return;
   await Promise.all(
     accounts.map(async (account) => {
+      if (!account.credentials) return;
       try {
         const { calendars, credentials } = await getAccountCalendars(
           getCalendarConfig(env),

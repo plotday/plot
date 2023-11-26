@@ -167,8 +167,8 @@ export function EventCard({
 }) {
   return (
     <Card withBorder maw={800}>
-      {totalTime && (
-        <Card.Section>
+      {!!totalTime && (
+        <Card.Section mb="sm">
           <Progress.Root size={18} radius={0}>
             <Progress.Section
               value={(event.duration / totalTime) * 100}
@@ -182,7 +182,7 @@ export function EventCard({
         </Card.Section>
       )}
 
-      <Group mt="sm" justify="space-between">
+      <Group justify="space-between">
         <Group>
           {event.type === "task" ? (
             <Avatar alt="Task">

@@ -30,7 +30,7 @@ export const WeeklyGoal = ({
   const [minimize, setMinimize] = useState(category?.minimize ?? false);
   const fetcher = useFetcher();
   const fetcherSubmit = fetcher.submit;
-  if (relativeWidth || isNaN(relativeWidth)) relativeWidth = 0;
+  if (isNaN(relativeWidth)) relativeWidth = 0;
 
   const scheduled =
     (insights?.meeting?.minutes ?? 0) + (insights?.task?.minutes ?? 0);
