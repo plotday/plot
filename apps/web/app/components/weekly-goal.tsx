@@ -2,9 +2,14 @@ import { useCallback, useState } from "react";
 
 import { useFetcher } from "@remix-run/react";
 
-import { Box, Button, Group, Progress, Switch } from "@mantine/core";
+import { Box, Button, Group, Menu, Progress } from "@mantine/core";
 
-import { IconTrendingDown, IconTrendingUp } from "@tabler/icons-react";
+import {
+  IconMinus,
+  IconPlus,
+  IconTrendingDown,
+  IconTrendingUp,
+} from "@tabler/icons-react";
 
 import type { Database } from "@plotday/db";
 import { pathToUrl } from "@plotday/db";
@@ -25,6 +30,7 @@ export const WeeklyGoal = ({
   const [minimize, setMinimize] = useState(category?.minimize ?? false);
   const fetcher = useFetcher();
   const fetcherSubmit = fetcher.submit;
+  if (relativeWidth || isNaN(relativeWidth)) relativeWidth = 0;
 
   const scheduled =
     (insights?.meeting?.minutes ?? 0) + (insights?.task?.minutes ?? 0);
@@ -72,18 +78,38 @@ export const WeeklyGoal = ({
 
   return (
     <Group>
-      <Switch
-        checked={!minimize}
-        onChange={(event) => saveMinimize(!event.currentTarget.checked)}
-        offLabel={<IconTrendingDown />}
-        onLabel={<IconTrendingUp />}
-      />
       <Button.Group>
+        <Menu shadow="md" width={200}>
+          <Menu.Target>
+            <Button variant="subtle" size="xs">
+              {minimize ? (
+                <IconTrendingDown size={16} />
+              ) : (
+                <IconTrendingUp size={16} />
+              )}
+            </Button>
+          </Menu.Target>
+
+          <Menu.Dropdown>
+            <Menu.Item
+              leftSection={<IconTrendingDown size={16} />}
+              onClick={() => saveMinimize(true)}
+            >
+              Budget
+            </Menu.Item>
+            <Menu.Item
+              leftSection={<IconTrendingUp size={16} />}
+              onClick={() => saveMinimize(false)}
+            >
+              Goal
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
         <Button variant="subtle" size="xs" onClick={() => saveBudget(-15)}>
-          -
+          <IconMinus size={16} />
         </Button>
         <Button variant="subtle" size="xs" onClick={() => saveBudget(15)}>
-          +
+          <IconPlus size={16} />
         </Button>
       </Button.Group>
       <Box style={{ flexGrow: 1 }}>

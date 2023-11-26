@@ -77,6 +77,7 @@ export async function createCategories(
             user_id: userId,
             name: "Meetings",
             path: `${path}.meetings`,
+            priority: "M",
           },
         ],
         { onConflict: "user_id,path", ignoreDuplicates: true }

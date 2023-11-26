@@ -57,7 +57,11 @@ export async function getCategory(
 export async function getCategories(supabase: SupabaseClient, userId: number) {
   const results =
     safeQuery(
-      await supabase.from("category").select("*").eq("user_id", userId)
+      await supabase
+        .from("category")
+        .select("*")
+        .eq("user_id", userId)
+        .order("priority")
     ) || [];
   return results.map((result) => ({
     ...result,
