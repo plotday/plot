@@ -147,6 +147,7 @@ export async function getCategoryInsights(
             minutes: number;
             pending_count: number;
             pending_minutes: number;
+            value: string;
           }[];
         };
       };

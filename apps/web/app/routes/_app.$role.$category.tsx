@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { redirect } from "@remix-run/cloudflare";
 
-import { Card, Stack } from "@mantine/core";
+import { Card, SimpleGrid, Stack, Title } from "@mantine/core";
 
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
 import { promiseHash } from "remix-utils/promise";
@@ -20,6 +20,7 @@ import {
 } from "@plotday/db";
 
 import { EventCard } from "app/components/event";
+import { Gauge } from "app/components/gauge";
 import { getWeek } from "app/components/select-week";
 import { WeeklyGoal } from "app/components/weekly-goal";
 import { useTz } from "app/hooks";
@@ -184,20 +185,34 @@ export default function Category() {
   );
 
   return (
-    <Stack>
-      <Card withBorder>
-        <WeeklyGoal category={category} insights={totals} />
+    <SimpleGrid cols={2} spacing="md">
+      <Stack>
+        <Card>
+          <WeeklyGoal category={category} insights={totals} />
+        </Card>
+        {categories &&
+          events?.map((event) => (
+            <EventCard
+              key={event.id}
+              event={event}
+              minimize={minimize}
+              categories={categories}
+              totalTime={totalTime}
+            />
+          ))}
+      </Stack>
+      <Card>
+        <Stack>
+          <Title order={3}>Meeting insights</Title>
+          <SimpleGrid cols={3}>
+            {Object.entries(insights?.[week]?.meeting ?? {})
+              .filter(([key]) => key !== "Total")
+              .map(([key, values]) => (
+                <Gauge key={key} label={key} values={values} />
+              ))}
+          </SimpleGrid>
+        </Stack>
       </Card>
-      {categories &&
-        events?.map((event) => (
-          <EventCard
-            key={event.id}
-            event={event}
-            minimize={minimize}
-            categories={categories}
-            totalTime={totalTime}
-          />
-        ))}
-    </Stack>
+    </SimpleGrid>
   );
 }

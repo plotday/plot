@@ -173,7 +173,7 @@ export function EventCard({
 }) {
   const eventResponder = useEventResponder(event);
   return (
-    <Card withBorder maw={800}>
+    <Card>
       {!!totalTime && (
         <Card.Section mb="sm">
           <Progress.Root size={18} radius={0}>
