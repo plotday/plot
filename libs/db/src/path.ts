@@ -4,7 +4,7 @@ import type { SupabaseClient } from "./";
 import { safeQuery } from "./query";
 
 export function urlToPath(url: string) {
-  return url.replaceAll("-", "_").replaceAll(":", ".");
+  return url.replaceAll("+", "").replaceAll("-", "_").replaceAll(":", ".");
 }
 
 export function pathToUrl(path: string) {

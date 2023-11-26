@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   Form,
@@ -20,7 +20,11 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 
-import { IconChevronRight, IconDotsVertical } from "@tabler/icons-react";
+import {
+  IconChevronLeft,
+  IconDotsVertical,
+  IconMinusVertical,
+} from "@tabler/icons-react";
 
 import type { DbCategory } from "@plotday/db";
 import { pathToUrl, urlToPath } from "@plotday/db";
@@ -80,7 +84,10 @@ export const Navigator = () => {
   const [searchParams] = useSearchParams();
   const params = useParams();
   const navigate = useNavigate();
-  const [role, setRole] = useState(urlToPath(params.role?.slice(1) ?? ""));
+  const [role, setRole] = useState(urlToPath(params.role ?? ""));
+  useEffect(() => {
+    setRole(urlToPath(params.role ?? ""));
+  }, [params.role]);
   const path = `${role}.${urlToPath(params.category ?? "")}`;
   const readOnly =
     params.category && ["other", "meetings"].includes(params.category);
@@ -88,7 +95,7 @@ export const Navigator = () => {
     (category) => category.path.indexOf(".") === -1
   );
   const roleCategory = categories.filter(
-    (category) => category.path === role
+    (category) => !role || category.path === role
   )?.[0];
   const category = categories.filter(
     (category) => category.path === (params.category === "other" ? role : path)
@@ -99,7 +106,7 @@ export const Navigator = () => {
   return (
     <>
       <Group gap={0} wrap="nowrap">
-        {!category && (
+        {role && !category && (
           <Select
             fw="bold"
             pl="sm"
@@ -117,24 +124,29 @@ export const Navigator = () => {
             allowDeselect={false}
           />
         )}
+        {(!role || category) && (
+          <Button
+            pl="sm"
+            pr="xs"
+            radius={0}
+            variant="subtle"
+            component={Link}
+            to={`/+${roleCategory.path}?${searchParams}`}
+            c="var(--mantine-color-text)"
+          >
+            <IconChevronLeft />
+            {roleCategory?.name}
+          </Button>
+        )}
         {category && (
           <>
-            <Button
-              pl="sm"
-              pr="xs"
-              radius={0}
-              variant="subtle"
-              component={Link}
-              to={`/+${role}?${searchParams}`}
-              c="var(--mantine-color-text)"
-            >
-              {roleCategory?.name}
-            </Button>
-            <IconChevronRight />
             {readOnly && (
-              <Text fz="sm" fw={600} pl="xs" pr="xs">
-                {name}
-              </Text>
+              <>
+                <IconMinusVertical color="var(--mantine-color-dimmed)" />
+                <Text fz="sm" fw={600} pl="xs" pr="xs">
+                  {name}
+                </Text>
+              </>
             )}
             {!readOnly && (
               <Button
