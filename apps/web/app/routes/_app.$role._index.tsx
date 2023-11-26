@@ -172,7 +172,6 @@ export default function Main() {
   const isAdding = addFetcher.state == "submitting";
   const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
-    console.log("isAdding", isAdding, formRef.current);
     if (!isAdding) {
       setNewCategory("");
     }

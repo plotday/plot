@@ -95,7 +95,8 @@ export const Navigator = () => {
     (category) => category.path.indexOf(".") === -1
   );
   const roleCategory = categories.filter(
-    (category) => !role || category.path === role
+    (category) =>
+      (!role && category.path.indexOf(".") === -1) || category.path === role
   )?.[0];
   const category = categories.filter(
     (category) => category.path === (params.category === "other" ? role : path)
