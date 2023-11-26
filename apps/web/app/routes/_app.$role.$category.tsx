@@ -58,23 +58,35 @@ export const loader = privateLoader(
 export const action = privateAction(
   async ({ request, params, user, supabase }) => {
     const role = params.role && urlToPath(params.role.slice(1));
-    const category = params.category && urlToPath(params.category);
-    const path = `${role}.${category}`;
+    let category = params.category && urlToPath(params.category);
+    let path;
+    if (category && category !== "other") {
+      path = `${role}.${category}`;
+    } else {
+      path = role as string;
+    }
 
     switch (request.method) {
       case "POST": {
         const schema = z.object({
           name: z.string(),
+          priority: z.string().optional(),
+          "no-redirect": z.string().optional(),
         });
         const data = schema.parse(Object.fromEntries(await request.formData()));
         const category = nameToPath(data.name);
         const path = `${role}.${category}`;
+        const priority = data.priority ?? "O";
         safeQuery(
           await supabase
             .from("category")
-            .insert({ user_id: user.id, name: data.name, path })
+            .insert({ user_id: user.id, name: data.name, path, priority })
         );
-        return redirect(pathToUrl(path));
+        if (data["no-redirect"]) {
+          return null;
+        } else {
+          return redirect(pathToUrl(path));
+        }
       }
 
       case "PATCH": {
@@ -86,6 +98,7 @@ export const action = privateAction(
             .optional(),
           budget_weekly: z.coerce.number().optional(),
           balance_weekly_grant: z.coerce.number().optional(),
+          priority: z.string().optional(),
         });
         const data = schema.parse(Object.fromEntries(await request.formData()));
         let url: string | undefined = undefined;
@@ -96,7 +109,6 @@ export const action = privateAction(
           nameUpdate = { name: data.name, path };
           url = pathToUrl(path);
         }
-        console.log(path, nameUpdate);
         safeQuery(
           await supabase
             .from("category")
@@ -110,6 +122,9 @@ export const action = privateAction(
                 : {}),
               ...(data.balance_weekly_grant !== undefined
                 ? { balance_weekly_grant: data.balance_weekly_grant }
+                : {}),
+              ...(data.priority !== undefined
+                ? { priority: data.priority }
                 : {}),
             })
             .eq("user_id", user.id)
