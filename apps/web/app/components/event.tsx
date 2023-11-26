@@ -2,6 +2,7 @@ import React, { memo, useMemo } from "react";
 
 import {
   Avatar,
+  Button,
   Card,
   Group,
   Progress,
@@ -13,9 +14,13 @@ import {
 import {
   IconBrandMicrosoftTeams,
   IconBrandZoom,
+  IconCheck,
+  IconCircleCheck,
+  IconCircleX,
   IconClipboardList,
   IconNote,
   IconVideo,
+  IconX,
 } from "@tabler/icons-react";
 
 import type {
@@ -27,6 +32,7 @@ import type {
 import { formatDate, formatDuration, formatTime } from "@plotday/tz";
 
 import { Categorizer } from "app/components/categorizer";
+import { useEventResponder } from "app/routes/api.event.response";
 
 function conferencingProviderName(provider: ConferencingProvider) {
   switch (provider) {
@@ -165,6 +171,7 @@ export function EventCard({
   categories: DbCategories;
   totalTime?: number;
 }) {
+  const eventResponder = useEventResponder(event);
   return (
     <Card withBorder maw={800}>
       {!!totalTime && (
@@ -184,6 +191,22 @@ export function EventCard({
 
       <Group justify="space-between">
         <Group>
+          <Button.Group>
+            <Button
+              size="xs"
+              variant={event.response === "accepted" ? "outline" : "subtle"}
+              onClick={() => eventResponder("accepted")}
+            >
+              <IconCheck size={16} />
+            </Button>
+            <Button
+              size="xs"
+              variant={event.response === "declined" ? "outline" : "subtle"}
+              onClick={() => eventResponder("declined")}
+            >
+              <IconX size={16} />
+            </Button>
+          </Button.Group>
           {event.type === "task" ? (
             <Avatar alt="Task">
               <IconClipboardList color="var(--mantine-color-dimmed)" />

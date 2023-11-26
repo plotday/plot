@@ -64,7 +64,7 @@ export const Categorizer = ({
     >
       <Combobox.Target withAriaAttributes={false}>
         <Button onClick={() => combobox.toggleDropdown()} variant="subtle">
-          <IconFolderOpen />
+          <IconFolderOpen size={16} />
         </Button>
       </Combobox.Target>
 
