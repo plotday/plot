@@ -3,6 +3,7 @@ import type { Provider, Session, SupabaseClient } from "@supabase/supabase-js";
 import { jsonFetch as fetch } from "@worker-tools/json-fetch";
 
 import type { CalendarProvider } from "@plotday/cal";
+import { createCategories, pathToUrl } from "@plotday/db";
 import type { Tracker } from "@plotday/tracker";
 
 import type { Database } from "app/db";
@@ -234,6 +235,8 @@ export async function addAccount(
       Name: name,
     });
     tracker.accountWaitlisted(user.id.toString());
+
+    await createCategories(supabaseAdmin, user.id, user.email, true);
   }
 
   if (credentials.refresh_token) {
@@ -286,17 +289,8 @@ export async function redeemInvitation(
   tracker: Tracker,
   supabaseAdmin: SupabaseClient
 ) {
-  if (user.activated_at) {
-    const categories = safeQuery(
-      await supabaseAdmin.from("category").select("path").eq("user_id", user.id)
-    );
-    const path = categories.filter((c) => c.path.indexOf(".") === -1)?.[0]
-      ?.path;
-    if (path) {
-      return `/+${path}`;
-    } else {
-      return "/";
-    }
+  if (user.activated_at && user.default_category) {
+    return pathToUrl(user.default_category);
   }
   safeQuery(
     await supabaseAdmin.rpc("redeem_invitation", {
@@ -307,44 +301,14 @@ export async function redeemInvitation(
   tracker.accountActivated(user.id.toString(), {
     "Invitation Code": invitation,
   });
-  const userDomain = safeQuery(
-    await supabaseAdmin
-      .from("user")
-      .select("domain(domain,organization(name))")
-      .eq("id", user.id)
-      .single()
+
+  const category = await createCategories(
+    supabaseAdmin,
+    user.id,
+    user.email,
+    !user.default_category
   );
-  let root = "personal";
-  let name = "Personal";
-  let domain = (userDomain.domain as any)?.domain as string | undefined;
-  if (domain) {
-    let lastDotIndex = domain.lastIndexOf(".");
-    if (lastDotIndex !== -1) {
-      domain = domain.substring(0, lastDotIndex);
-    }
-    root = domain.replaceAll(".", "-");
-    name =
-      ((userDomain.domain as any)?.organization?.name as string | undefined) ??
-      "Work";
-  }
-  safeQuery(
-    await supabaseAdmin
-      .from("category")
-      .upsert([
-        {
-          user_id: user.id,
-          name,
-          path: root,
-        },
-        {
-          user_id: user.id,
-          name: "Meetings",
-          path: `${root}.meetings`,
-        },
-      ])
-      .select()
-  );
-  return `/+${root}`;
+  return pathToUrl(category);
 }
 
 export async function getAccounts(supabase: SupabaseClient, userId: number) {

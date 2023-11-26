@@ -4,6 +4,7 @@ import { createClient as supabaseCreateClient } from "@supabase/supabase-js";
 import type { Calendar, CalendarCredentials } from "@plotday/cal";
 import { toDate } from "@plotday/tz";
 
+import { createCategories } from "./path";
 import { safeQuery } from "./query";
 import type { Database } from "./types";
 
@@ -88,6 +89,13 @@ export async function saveCalendars(
   accountId: number,
   calendars: Calendar[]
 ) {
+  const primaryCalendar = calendars.find((c) => c.primary);
+  if (!primaryCalendar) throw new Error("No primary calendar");
+  const category = await createCategories(
+    supabase,
+    userId,
+    primaryCalendar.account
+  );
   const result = safeQuery(
     await supabase
       .from("calendar")
@@ -97,55 +105,35 @@ export async function saveCalendars(
           provider_id: calendar.id,
           name: calendar.name,
           enabled: calendar.primary,
+          category,
         })),
         { onConflict: "account_id, provider_id", ignoreDuplicates: true }
       )
       .select()
   );
 
-  const userDomain = safeQuery(
-    await supabase
-      .from("user")
-      .select("domain(domain,organization(name))")
-      .eq("id", userId)
-      .single()
-  );
-  let root = "personal";
-  let domain = (userDomain.domain as any)?.domain as string | undefined;
-  if (domain) {
-    let lastDotIndex = domain.lastIndexOf(".");
-    if (lastDotIndex !== -1) {
-      domain = domain.substring(0, lastDotIndex);
-    }
-    root = domain.replaceAll(".", "-");
-  }
-
   const categories = safeQuery(
     await supabase
       .from("category")
       .select()
       .eq("user_id", userId)
-      .in("path", [root, `${root}.meetings`])
+      .in("path", [category, `${category}.meetings`])
   );
-  console.log("categories", JSON.stringify(categories));
 
-  const primaryCalendar = result.find((c) => c.enabled)?.id;
-  console.log("primaryCalendar", primaryCalendar);
-
-  if (primaryCalendar) {
-    safeQuery(
-      await supabase.from("event_rule").upsert(
+  safeQuery(
+    await supabase.from("event_rule").upsert(
+      result.flatMap((calendar) =>
         categories.map((c) => ({
           user_id: userId,
-          calendar_id: primaryCalendar,
+          calendar_id: calendar.id,
           ...((c.path as string).endsWith(".meetings")
             ? { type: "meeting" as Database["public"]["Enums"]["event_type"] }
             : {}),
           category_id: c.id,
         }))
       )
-    );
-  }
+    )
+  );
   return result;
 }
 
@@ -161,3 +149,4 @@ export { Event } from "./event";
 export { safeQuery } from "./query";
 
 export * from "./category";
+export * from "./path";

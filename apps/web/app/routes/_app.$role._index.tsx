@@ -12,11 +12,16 @@ import cx from "clsx";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
 import { promiseHash } from "remix-utils/promise";
 
-import { getCategoriesWithTotals, getCategory } from "@plotday/db";
+import {
+  getCategoriesWithTotals,
+  getCategory,
+  pathToUrl,
+  urlToPath,
+} from "@plotday/db";
 
 import { getWeek } from "app/components/select-week";
 import { WeeklyGoal } from "app/components/weekly-goal";
-import { pathToUrl, privateLoader, urlToPath } from "app/util";
+import { privateLoader } from "app/util";
 
 import classes from "./dnd.module.css";
 
@@ -135,7 +140,7 @@ export default function Main() {
           w="18rem"
           value={newCategory}
           onChange={(event) => setNewCategory(event.currentTarget.value)}
-          placeholder="+ Add priority"
+          placeholder="+ New priority"
           rightSection={
             !newCategory ? null : <Button type="submit">Add priority</Button>
           }

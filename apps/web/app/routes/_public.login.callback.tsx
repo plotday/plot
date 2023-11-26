@@ -1,12 +1,13 @@
 import { redirect } from "@remix-run/cloudflare";
 
+import { createCategories, pathToUrl } from "@plotday/db";
+
 import {
   addAccount,
   completeSignIn,
   getUser,
   redeemInvitation,
 } from "app/auth";
-import { DEFAULT_PATH } from "app/config";
 import { publicLoader } from "app/util";
 
 export const loader = publicLoader(
@@ -21,7 +22,7 @@ export const loader = publicLoader(
   }) => {
     const url = new URL(request.url);
     const fromUrl = url.searchParams.get("from") || "/login";
-    let toUrl = url.searchParams.get("to") || DEFAULT_PATH;
+    let toUrl = url.searchParams.get("to");
     try {
       let user: Awaited<ReturnType<typeof addAccount>>["user"] | null = null;
       if (url.searchParams.has("code") || url.searchParams.has("error")) {
@@ -43,13 +44,13 @@ export const loader = publicLoader(
 
       const invitation = url.searchParams.get("invitation");
       if (user.invitation) {
-        // TODO fixme
-        toUrl = await redeemInvitation(
-          user,
-          user.invitation,
-          tracker,
-          supabaseAdmin
-        );
+        if (user.default_category) {
+          toUrl = pathToUrl(user.default_category);
+        } else {
+          toUrl = pathToUrl(
+            await createCategories(supabaseAdmin, user.id, user.email, true)
+          );
+        }
       } else {
         if (invitation) {
           toUrl = await redeemInvitation(

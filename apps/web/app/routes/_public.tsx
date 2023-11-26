@@ -21,11 +21,12 @@ import { IconBrandLinkedin, IconMail } from "@tabler/icons-react";
 import classes from "css/_public.module.css";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
 
+import { pathToUrl } from "@plotday/db";
+
 import type { ContextType } from "app/hooks";
 import { publicLoader } from "app/util";
 
 import Logo from "../components/logo";
-import { DEFAULT_PATH } from "../config";
 
 export const loader = publicLoader(async ({ user, response }) => {
   return typedjson({ user }, { headers: response.headers });
@@ -54,11 +55,14 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           </UnstyledButton>
         </Group>
         <Group>
-          {user?.activated_at && isPublic && !isSync && (
-            <Button component={Link} to={DEFAULT_PATH}>
-              Go to app
-            </Button>
-          )}
+          {user?.activated_at &&
+            user?.default_category &&
+            isPublic &&
+            !isSync && (
+              <Button component={Link} to={pathToUrl(user.default_category)}>
+                Go to app
+              </Button>
+            )}
           {!user?.activated_at && location.pathname !== "/login" && (
             <Button variant="outline" component={Link} to="/login">
               Sign in

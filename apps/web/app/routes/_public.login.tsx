@@ -14,7 +14,6 @@ import Consent from "app/components/consent";
 import { useSupabase } from "app/hooks";
 
 import { signIn } from "../auth";
-import { DEFAULT_PATH } from "../config";
 
 export default function Login() {
   const supabase = useSupabase();
@@ -35,7 +34,7 @@ export default function Login() {
       supabase,
       "google",
       "/login/callback",
-      DEFAULT_PATH,
+      undefined,
       undefined,
       invitation ? { invitation } : undefined
     );
@@ -46,7 +45,7 @@ export default function Login() {
       supabase,
       "outlook",
       "/login/callback",
-      DEFAULT_PATH,
+      undefined,
       undefined,
       invitation ? { invitation } : undefined
     );

@@ -11,7 +11,8 @@ CREATE TABLE "public"."user" (
     "timezone" text,
     "avatar_url" text,
     "invitation" text,
-    "activated_at" timestamp with time zone
+    "activated_at" timestamp with time zone,
+    "default_category" text
 );
 
 CREATE UNIQUE INDEX user_email_key ON public."user" USING btree (email);

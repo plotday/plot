@@ -12,8 +12,10 @@ import {
 } from "@tabler/icons-react";
 import classes from "css/_public._index.module.css";
 
+import { pathToUrl } from "@plotday/db";
+
 import { Balance } from "app/components/balance";
-import { APP_NAME, DEFAULT_PATH } from "app/config";
+import { APP_NAME } from "app/config";
 import { publicLoader } from "app/util";
 
 import { WaitlistForm } from "./_public.waitlist";
@@ -45,8 +47,8 @@ export const meta: MetaFunction = () => {
 };
 
 export const loader = publicLoader(async ({ request, user }) => {
-  if (request.headers.get("referer") === null && user !== null) {
-    return redirect(DEFAULT_PATH);
+  if (request.headers.get("referer") === null && user?.default_category) {
+    return redirect(pathToUrl(user.default_category));
   }
   return null;
 });

@@ -2,6 +2,7 @@ import { redirect } from "@remix-run/cloudflare";
 
 import {
   type Database,
+  pathToUrl,
   safeQuery,
   saveCalendars,
   saveCredentials,
@@ -15,7 +16,6 @@ import {
   redeemInvitation,
 } from "app/auth";
 import { getCalendarConfig, getCalendars } from "app/cal";
-import { DEFAULT_PATH } from "app/config";
 import { restoreSession } from "app/cookies.server";
 import { publicLoader } from "app/util";
 
@@ -45,7 +45,7 @@ export const loader = publicLoader(
     // Supabase appends an extra query string
     const url = new URL(request.url.replace("&%3F", "&"));
     const fromUrl = url.searchParams.get("from") || "/sync";
-    const toUrl = url.searchParams.get("to") || DEFAULT_PATH;
+    let toUrl = url.searchParams.get("to");
     let uid = url.searchParams.get("uid");
     let provider = toProvider(url.searchParams.get("provider"));
 
@@ -121,6 +121,7 @@ export const loader = publicLoader(
           account.id,
           calendars
         );
+
         if (dbCalendars) {
           for (const calendar of dbCalendars) {
             if (!calendar.enabled) continue;
@@ -137,7 +138,10 @@ export const loader = publicLoader(
         }
       }
 
-      return redirect(toUrl, {
+      if (user?.invitation && user?.default_category) {
+        toUrl ??= pathToUrl(user.default_category);
+      }
+      return redirect(toUrl ?? "/sync", {
         headers: response.headers,
       });
     } catch (error) {

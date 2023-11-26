@@ -13,20 +13,17 @@ import {
   getCategories,
   getCategory,
   getCategoryInsights,
+  nameToPath,
+  pathToUrl,
   safeQuery,
+  urlToPath,
 } from "@plotday/db";
 
 import { EventCard } from "app/components/event";
 import { getWeek } from "app/components/select-week";
 import { WeeklyGoal } from "app/components/weekly-goal";
 import { useTz } from "app/hooks";
-import {
-  nameToPath,
-  pathToUrl,
-  privateAction,
-  privateLoader,
-  urlToPath,
-} from "app/util";
+import { privateAction, privateLoader } from "app/util";
 
 export const loader = privateLoader(
   async ({ params, url, response, user, supabase }) => {

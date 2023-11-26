@@ -7,9 +7,8 @@ import { Box, Button, Group, Progress, Switch } from "@mantine/core";
 import { IconTrendingDown, IconTrendingUp } from "@tabler/icons-react";
 
 import type { Database } from "@plotday/db";
+import { pathToUrl } from "@plotday/db";
 import { formatDuration } from "@plotday/tz";
-
-import { pathToUrl } from "app/util";
 
 type Category = Database["public"]["Tables"]["category"]["Row"];
 

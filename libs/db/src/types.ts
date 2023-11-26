@@ -106,6 +106,7 @@ export interface Database {
       calendar: {
         Row: {
           account_id: number
+          category: string | null
           created_at: string
           enabled: boolean
           ends_at: string | null
@@ -127,6 +128,7 @@ export interface Database {
         }
         Insert: {
           account_id: number
+          category?: string | null
           created_at?: string
           enabled?: boolean
           ends_at?: string | null
@@ -147,6 +149,7 @@ export interface Database {
         }
         Update: {
           account_id?: number
+          category?: string | null
           created_at?: string
           enabled?: boolean
           ends_at?: string | null
@@ -587,6 +590,7 @@ export interface Database {
           activated_at: string | null
           avatar_url: string | null
           created_at: string
+          default_category: string | null
           email: string
           id: number
           invitation: string | null
@@ -597,6 +601,7 @@ export interface Database {
           activated_at?: string | null
           avatar_url?: string | null
           created_at?: string
+          default_category?: string | null
           email: string
           id?: number
           invitation?: string | null
@@ -607,6 +612,7 @@ export interface Database {
           activated_at?: string | null
           avatar_url?: string | null
           created_at?: string
+          default_category?: string | null
           email?: string
           id?: number
           invitation?: string | null
@@ -869,6 +875,7 @@ export interface Database {
         }
         Returns: {
           account_id: number
+          category: string | null
           created_at: string
           enabled: boolean
           ends_at: string | null
@@ -894,6 +901,7 @@ export interface Database {
         }
         Returns: {
           account_id: number
+          category: string | null
           created_at: string
           enabled: boolean
           ends_at: string | null

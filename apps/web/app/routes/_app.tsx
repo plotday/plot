@@ -2,15 +2,7 @@ import { useMemo } from "react";
 
 import { Link, Outlet, useOutletContext } from "@remix-run/react";
 
-import {
-  Anchor,
-  AppShell,
-  Box,
-  Button,
-  Container,
-  Flex,
-  Text,
-} from "@mantine/core";
+import { AppShell, Box, Button, Container, Flex, Text } from "@mantine/core";
 
 import { IconSettings } from "@tabler/icons-react";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
@@ -20,7 +12,6 @@ import { getCategories } from "@plotday/db";
 
 import { Navigator } from "app/components/navigator";
 import { SelectWeek } from "app/components/select-week";
-import { DEFAULT_PATH } from "app/config";
 import { ErrorPage } from "app/error";
 import type { ContextType } from "app/hooks";
 import { privateLoader } from "app/util";
@@ -40,9 +31,7 @@ export function ErrorBoundary() {
   return (
     <Container mt="xl">
       <ErrorPage>
-        <Text>
-          Please <Anchor href={DEFAULT_PATH}>give it another try</Anchor>.
-        </Text>
+        <Text>Please try again.</Text>
       </ErrorPage>
     </Container>
   );

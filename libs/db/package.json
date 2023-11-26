@@ -44,7 +44,8 @@
     "@plotday/cal": "workspace:^",
     "@plotday/tz": "workspace:^",
     "@supabase/supabase-js": "^2.38.4",
-    "date-fns": "^2.30.0"
+    "date-fns": "^2.30.0",
+    "parse-domain": "^8.0.1"
   },
   "exports": {
     ".": "./src/index.ts",

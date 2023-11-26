@@ -23,9 +23,9 @@ import { useDisclosure } from "@mantine/hooks";
 import { IconChevronRight, IconDotsVertical } from "@tabler/icons-react";
 
 import type { DbCategory } from "@plotday/db";
+import { pathToUrl, urlToPath } from "@plotday/db";
 
 import { useCategories } from "app/hooks";
-import { pathToUrl, urlToPath } from "app/util";
 
 export const CategoryEditor = ({
   category,

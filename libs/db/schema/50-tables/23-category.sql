@@ -21,3 +21,6 @@ ALTER TABLE "public"."category" validate CONSTRAINT "category_user_id_fkey";
 
 CREATE INDEX category_path_idx ON "public"."category" USING GIST (user_id, path);
 
+ALTER TABLE public.category
+    ADD CONSTRAINT category_user_path UNIQUE (user_id, path);
+
