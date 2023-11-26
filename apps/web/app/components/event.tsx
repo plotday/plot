@@ -179,7 +179,11 @@ export function EventCard({
           <Progress.Root size={18} radius={0}>
             <Progress.Section
               value={(event.duration / totalTime) * 100}
-              color={minimize ? "secondary" : "brand"}
+              color={
+                minimize === (event.response === "accepted")
+                  ? "secondary"
+                  : "brand"
+              }
             >
               <Progress.Label c="var(--mantine-color-default)" lh="unset">
                 {formatDuration(event.duration)}
