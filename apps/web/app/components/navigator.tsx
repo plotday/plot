@@ -12,8 +12,8 @@ import {
 import {
   Button,
   Group,
+  Menu,
   Modal,
-  Select,
   Stack,
   Text,
   TextInput,
@@ -21,6 +21,7 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 
 import {
+  IconCaretDownFilled,
   IconChevronLeft,
   IconDotsVertical,
   IconMinusVertical,
@@ -108,22 +109,30 @@ export const Navigator = () => {
     <>
       <Group gap={0} wrap="nowrap">
         {role && !category && (
-          <Select
-            fw="bold"
-            pl="sm"
-            variant="unstyled"
-            data={topLevel.map((category) => ({
-              value: category.path,
-              label: category.name,
-            }))}
-            value={role}
-            onChange={(value) => {
-              setRole(value ?? role);
-              navigate(`/+${value}`);
-            }}
-            withCheckIcon={false}
-            allowDeselect={false}
-          />
+          <Menu shadow="md" width={200}>
+            <Menu.Target>
+              <Button
+                variant="subtle"
+                rightSection={<IconCaretDownFilled size={16} />}
+              >
+                {topLevel.filter((category) => category.path === role)[0]?.name}
+              </Button>
+            </Menu.Target>
+
+            <Menu.Dropdown>
+              {topLevel.map((category) => (
+                <Menu.Item
+                  key={category.id}
+                  onClick={() => {
+                    setRole(category.path);
+                    navigate(`/+${category.path}`);
+                  }}
+                >
+                  {category.name}
+                </Menu.Item>
+              ))}
+            </Menu.Dropdown>
+          </Menu>
         )}
         {(!role || category) && (
           <Button

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { redirect } from "@remix-run/cloudflare";
 
-import { Card, SimpleGrid, Stack, Title } from "@mantine/core";
+import { Card, Center, SimpleGrid, Stack, Title } from "@mantine/core";
 
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
 import { promiseHash } from "remix-utils/promise";
@@ -185,8 +185,9 @@ export default function Category() {
   );
 
   return (
-    <SimpleGrid cols={2} spacing="md">
+    <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
       <Stack>
+        <Title order={3}>Your Time</Title>
         <Card>
           <WeeklyGoal category={category} insights={totals} />
         </Card>
@@ -203,12 +204,14 @@ export default function Category() {
       </Stack>
       <Card>
         <Stack>
-          <Title order={3}>Meeting insights</Title>
-          <SimpleGrid cols={3}>
+          <Title order={3}>Meeting Insights</Title>
+          <SimpleGrid cols={{ base: 2, sm: 3 }}>
             {Object.entries(insights?.[week]?.meeting ?? {})
               .filter(([key]) => key !== "Total")
               .map(([key, values]) => (
-                <Gauge key={key} label={key} values={values} />
+                <Center key={key}>
+                  <Gauge label={key} values={values} />
+                </Center>
               ))}
           </SimpleGrid>
         </Stack>

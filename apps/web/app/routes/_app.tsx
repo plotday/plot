@@ -39,7 +39,7 @@ export function ErrorBoundary() {
 
 function Header() {
   return (
-    <AppShell.Header>
+    <AppShell.Header py={8}>
       <Flex justify="space-between">
         <Box style={{ flex: 1 }}>
           <Navigator />
@@ -69,7 +69,7 @@ export default function App() {
   );
 
   return (
-    <AppShell header={{ height: 36 }}>
+    <AppShell header={{ height: 54 }}>
       <Header />
       <AppShell.Main bg="var(--mantine-color-background)">
         <Outlet context={ctx} />
