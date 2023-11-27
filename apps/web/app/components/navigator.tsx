@@ -93,7 +93,7 @@ export const Navigator = () => {
   const readOnly =
     params.category && ["other", "meetings"].includes(params.category);
   const topLevel = categories.filter(
-    (category) => category.path.indexOf(".") === -1
+    (category) => category.path.indexOf(".") === -1 && category.path !== role
   );
   const roleCategory = categories.filter(
     (category) =>
@@ -108,14 +108,19 @@ export const Navigator = () => {
   return (
     <>
       <Group gap={0} wrap="nowrap">
-        {role && !category && (
+        {role && !category && topLevel.length === 0 && (
+          <Text py="xs" px="sm" fw="bold" lh={1}>
+            {roleCategory?.name}
+          </Text>
+        )}
+        {role && !category && topLevel.length > 0 && (
           <Menu shadow="md" width={200}>
             <Menu.Target>
               <Button
                 variant="subtle"
                 rightSection={<IconCaretDownFilled size={16} />}
               >
-                {topLevel.filter((category) => category.path === role)[0]?.name}
+                {roleCategory?.name}
               </Button>
             </Menu.Target>
 
