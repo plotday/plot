@@ -62,6 +62,7 @@ export async function getCategories(supabase: SupabaseClient, userId: number) {
         .select("*")
         .eq("user_id", userId)
         .order("priority")
+        .order("created_at")
     ) || [];
   return results.map((result) => ({
     ...result,

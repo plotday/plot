@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useFetcher } from "@remix-run/react";
 
@@ -56,24 +56,29 @@ export const WeeklyGoal = ({
     },
     [category, fetcherSubmit]
   );
+  const lastBudget = useRef(budget);
+  useEffect(() => {
+    if (budget === lastBudget.current) return;
+    lastBudget.current = budget;
+    let path = category.path as string;
+    if (path.indexOf(".") === -1) path = `${path}.other`;
+    fetcherSubmit(
+      {
+        id: category.id,
+        budget_weekly: budget,
+      },
+      { method: "PATCH", action: pathToUrl(path) }
+    );
+  }, [category.id, category.path, budget, fetcherSubmit]);
   const saveBudget = useCallback(
     (change: number) => {
       if (!category?.id) return;
-      let path = category.path as string;
-      if (path.indexOf(".") === -1) path = `${path}.other`;
       setBudget((value) => {
         value = Math.max(0, value + change);
-        fetcherSubmit(
-          {
-            id: category.id,
-            budget_weekly: value,
-          },
-          { method: "PATCH", action: pathToUrl(path) }
-        );
         return value;
       });
     },
-    [category, fetcherSubmit]
+    [category]
   );
 
   return (
