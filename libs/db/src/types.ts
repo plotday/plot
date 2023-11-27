@@ -536,6 +536,61 @@ export interface Database {
           }
         ]
       }
+      note: {
+        Row: {
+          author: number | null
+          body: string
+          category_id: number
+          created_at: string | null
+          id: number
+        }
+        Insert: {
+          author?: number | null
+          body: string
+          category_id: number
+          created_at?: string | null
+          id?: number
+        }
+        Update: {
+          author?: number | null
+          body?: string
+          category_id?: number
+          created_at?: string | null
+          id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_author_fkey"
+            columns: ["author"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_author_fkey"
+            columns: ["author"]
+            referencedRelation: "event_x"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "note_author_fkey"
+            columns: ["author"]
+            referencedRelation: "insight"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "note_category_id_fkey"
+            columns: ["category_id"]
+            referencedRelation: "category"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_category_id_fkey"
+            columns: ["category_id"]
+            referencedRelation: "event_x"
+            referencedColumns: ["category_id"]
+          }
+        ]
+      }
       organization: {
         Row: {
           created_at: string
@@ -963,6 +1018,10 @@ export interface Database {
         Args: {
           email: string
         }
+        Returns: number
+      }
+      get_user_id: {
+        Args: Record<PropertyKey, never>
         Returns: number
       }
       invitee: {

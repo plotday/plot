@@ -1,13 +1,26 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { redirect } from "@remix-run/cloudflare";
+import { Form, useSubmit } from "@remix-run/react";
 
-import { Card, Center, SimpleGrid, Stack, Title } from "@mantine/core";
+import {
+  Card,
+  Center,
+  SimpleGrid,
+  Stack,
+  Tabs,
+  Text,
+  Textarea,
+  Title,
+  rem,
+} from "@mantine/core";
 
+import { IconCalendarTime, IconNotes } from "@tabler/icons-react";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
 import { promiseHash } from "remix-utils/promise";
 import { z } from "zod";
 
+import type { SupabaseClient } from "@plotday/db";
 import {
   Event,
   getCategories,
@@ -25,6 +38,18 @@ import { getWeek } from "app/components/select-week";
 import { WeeklyGoal } from "app/components/weekly-goal";
 import { useTz } from "app/hooks";
 import { privateAction, privateLoader } from "app/util";
+
+async function getNotes(supabase: SupabaseClient, categoryId: number) {
+  return (
+    safeQuery(
+      await supabase
+        .from("note")
+        .select("*")
+        .eq("category_id", categoryId)
+        .order("created_at")
+    ) || []
+  );
+}
 
 export const loader = privateLoader(
   async ({ params, url, response, user, supabase }) => {
@@ -48,6 +73,12 @@ export const loader = privateLoader(
           events: Event.GetRange(supabase, user.id, start, end, {
             category: path,
           }),
+          notes: getNotes(
+            supabase,
+            (
+              await getCategory(supabase, user.id, path)
+            ).id
+          ),
         })),
         week,
       },
@@ -161,6 +192,7 @@ export default function Category() {
     events: dbEvents,
     insights,
     week,
+    notes,
   } = useTypedLoaderData<typeof loader>();
   const tz = useTz();
   const events = useMemo(
@@ -168,6 +200,9 @@ export default function Category() {
     [dbEvents, tz]
   );
   const minimize = category?.minimize ?? false;
+  const [note, setNote] = useState("");
+  const submit = useSubmit();
+  const newNoteForm = useRef<HTMLFormElement>(null);
 
   if (!category || !week) return null;
   const totals = insights?.[week]
@@ -184,6 +219,10 @@ export default function Category() {
     category.budget_weekly ?? 0
   );
 
+  const iconStyle = { width: rem(16), height: rem(16) };
+  const meetingInsights = Object.entries(
+    insights?.[week]?.meeting ?? {}
+  ).filter(([key]) => key !== "Total");
   return (
     <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
       <Stack>
@@ -203,18 +242,67 @@ export default function Category() {
           ))}
       </Stack>
       <Card>
-        <Stack>
-          <Title order={3}>Meeting Insights</Title>
-          <SimpleGrid cols={{ base: 2, sm: 3 }}>
-            {Object.entries(insights?.[week]?.meeting ?? {})
-              .filter(([key]) => key !== "Total")
-              .map(([key, values]) => (
-                <Center key={key}>
-                  <Gauge label={key} values={values} />
-                </Center>
+        <Tabs defaultValue="notes">
+          <Tabs.List>
+            <Tabs.Tab
+              value="notes"
+              leftSection={<IconNotes style={iconStyle} />}
+            >
+              Notes
+            </Tabs.Tab>
+            {meetingInsights.length > 0 && (
+              <Tabs.Tab
+                value="insights"
+                leftSection={<IconCalendarTime style={iconStyle} />}
+              >
+                Meeting Insights
+              </Tabs.Tab>
+            )}
+          </Tabs.List>
+
+          <Tabs.Panel value="notes">
+            <Stack mt="lg">
+              {notes.map((note) => (
+                <Text key={note.id}>{note.body}</Text>
               ))}
-          </SimpleGrid>
-        </Stack>
+              <Form
+                ref={newNoteForm}
+                method="post"
+                action="note"
+                navigate={false}
+                fetcherKey="newNoteForm"
+              >
+                <input type="hidden" name="categoryId" value={category.id} />
+                <Textarea
+                  autosize
+                  name="body"
+                  value={note}
+                  onChange={(event) => setNote(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      if (newNoteForm.current) submit(newNoteForm.current);
+                      setNote("");
+                      event.preventDefault();
+                    }
+                  }}
+                  placeholder="+ New note"
+                />
+              </Form>
+            </Stack>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="insights">
+            <Stack mt="lg">
+              <SimpleGrid cols={{ base: 2, sm: 3 }}>
+                {meetingInsights.map(([key, values]) => (
+                  <Center key={key}>
+                    <Gauge label={key} values={values} />
+                  </Center>
+                ))}
+              </SimpleGrid>
+            </Stack>
+          </Tabs.Panel>
+        </Tabs>
       </Card>
     </SimpleGrid>
   );
