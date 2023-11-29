@@ -280,7 +280,9 @@ export default function Category() {
                   onChange={(event) => setNote(event.currentTarget.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
-                      if (newNoteForm.current) submit(newNoteForm.current);
+                      if (newNoteForm.current) {
+                        submit(newNoteForm.current, { navigate: false });
+                      }
                       setNote("");
                       event.preventDefault();
                     }
