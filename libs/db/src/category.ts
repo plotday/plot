@@ -5,6 +5,44 @@ import { formatDate } from "@plotday/tz";
 import type { Database, SupabaseClient } from "./";
 import { parseDateRange, safeQuery } from "./";
 
+export type Category = Omit<
+  Database["public"]["Tables"]["category"]["Row"],
+  "path"
+> & {
+  path: string;
+  totals?: {
+    [week: string]: {
+      [type in Database["public"]["Enums"]["event_type"]]?: {
+        minutes: number;
+        count: number;
+      };
+    };
+  };
+  budgets?: {
+    [week: string]: {
+      budget?: number;
+      order?: string;
+    };
+  };
+};
+
+export type Categories = {
+  [path: string]: Category;
+};
+
+export type CategoryWeek = Omit<Category, "totals" | "budgets"> & {
+  budget?: number;
+  order?: string;
+  totals?: {
+    [type in Database["public"]["Enums"]["event_type"]]?: {
+      minutes: number;
+      count: number;
+    };
+  };
+};
+
+export type CategoriesWeek = CategoryWeek[];
+
 export type Insights = {
   [event_type in Database["public"]["Enums"]["event_type"]]: {
     [response in Database["public"]["Enums"]["event_response"]]: {
@@ -17,22 +55,6 @@ export type Insights = {
     };
   };
 };
-
-export type Balance = {
-  minutes: number;
-  pending_minutes: number;
-};
-
-export type Balances = {
-  [week: string]: {
-    [category_id: number]: Balance;
-  };
-};
-
-export type DbCategories = NonNullable<
-  Awaited<ReturnType<typeof getCategories>>
->;
-export type DbCategory = NonNullable<DbCategories[0]>;
 
 export async function getCategory(
   supabase: SupabaseClient,
@@ -54,43 +76,93 @@ export async function getCategory(
   };
 }
 
-export async function getCategories(supabase: SupabaseClient, userId: number) {
-  const results =
+export async function getCategories(
+  supabase: SupabaseClient,
+  userId: number,
+  start?: string,
+  end?: string
+): Promise<Categories> {
+  if (start && !end) {
+    end = formatDate(add(new Date(start), { days: 7 }), "UTC", "yyyy-MM-dd");
+  }
+  const [categories, weeklyTotals] = await Promise.all([
     safeQuery(
       await supabase
         .from("category")
-        .select("*")
+        .select("*,budget(*)")
+        // TODO: filter by date
         .eq("user_id", userId)
-        .order("priority")
-        .order("created_at")
-    ) || [];
-  return results.map((result) => ({
-    ...result,
-    path: result.path as string,
-  }));
-}
+    ),
+    start &&
+      safeQuery(
+        supabase
+          .from("insight_weekly")
+          .select()
+          .eq("user_id", userId)
+          .eq("name", "Total")
+          .overlaps("week", `[${start},${end})`)
+      ),
+  ]);
+  if (!categories) return {};
 
-export async function getGoals(
-  supabase: SupabaseClient,
-  userId: number,
-  start?: Date,
-  end?: Date
-) {
-  return (
-    safeQuery(await supabase.from("goal").select("*").eq("user_id", userId)) ||
-    []
-  ).reduce((acc, cur) => {
-    const { category_id, at, type, weekly_minutes, minimize } = cur;
-    acc[category_id] = {
-      ...acc[category_id],
-      [type]: {
-        // TODO: start and end
-        weekly_minutes,
-        minimize,
+  const groupedCategories = Object.fromEntries(
+    categories.map((r) => {
+      const { path, budget, ...rest } = r;
+      return [
+        path as string,
+        {
+          ...rest,
+          path: path as string,
+          budgets: budget.reduce((acc, cur) => {
+            const { week, budget, order } = cur;
+            acc[week ? parseDateRange(week as string)[0] : "*"] = {
+              budget: budget ?? undefined,
+              order: order ?? undefined,
+            };
+            return acc;
+          }, {} as Record<string, { budget?: number; order?: string }>),
+        },
+      ];
+    })
+  );
+  if (!weeklyTotals) return groupedCategories;
+  return weeklyTotals.reduce<Categories>((acc, cur) => {
+    let { week, path: rawPath, type, ...rest } = cur;
+    if (!week || !rawPath || !type) return acc;
+    const path = rawPath as string;
+    const weekKey = parseDateRange(week as string)[0];
+    acc[path] = {
+      ...acc[path],
+      totals: {
+        [weekKey]: {
+          ...acc[path].totals?.[weekKey],
+          [type]: rest,
+        },
       },
     };
     return acc;
-  }, {} as Record<number, Record<string, { start?: Date; end?: Date; weekly_minutes: number; minimize: boolean }>>);
+  }, groupedCategories);
+}
+
+export async function getCategoriesWeek(
+  supabase: SupabaseClient,
+  userId: number,
+  week: string
+): Promise<CategoriesWeek> {
+  const categories = await getCategories(supabase, userId, week);
+
+  return Object.entries(categories)
+    .map(
+      ([, { budgets, totals, ...rest }]: [string, Category]): CategoryWeek => {
+        return {
+          ...rest,
+          budget: (budgets?.[week] ?? budgets?.["*"])?.budget,
+          order: budgets?.[week]?.order,
+          totals: totals?.[week],
+        };
+      }
+    )
+    .sort((a, b) => (!b.order || (a.order && a.order < b.order) ? -1 : 1));
 }
 
 export async function getCategoryInsights(
@@ -153,70 +225,5 @@ export async function getCategoryInsights(
         };
       };
     }
-  );
-}
-
-export async function getCategoriesWithTotals(
-  supabase: SupabaseClient,
-  userId: number,
-  start: string,
-  end?: string
-) {
-  if (!end) {
-    end = formatDate(add(new Date(start), { days: 7 }), "UTC", "yyyy-MM-dd");
-  }
-  const [categories, weeklyTotals] = await Promise.all([
-    getCategories(supabase, userId),
-    safeQuery(
-      supabase
-        .from("insight_weekly")
-        .select()
-        .eq("user_id", userId)
-        .eq("name", "Total")
-        .overlaps("week", `[${start},${end})`)
-    ),
-  ]);
-  if (!categories || !weeklyTotals) return null;
-
-  return weeklyTotals.reduce(
-    (acc, cur) => {
-      let { week, path: rawPath, type, ...rest } = cur;
-      if (!week || !rawPath || !type) return acc;
-      const path = rawPath as string;
-      const weekKey = parseDateRange(week as string)[0];
-      acc[path] = {
-        ...acc[path],
-        insights: {
-          [weekKey]: {
-            ...acc[path].insights[weekKey],
-            [type]: rest,
-          },
-        },
-      };
-      return acc;
-    },
-    categories.reduce(
-      (acc, cur) => {
-        const { path, ...rest } = cur;
-        return {
-          ...acc,
-          [path]: { ...rest, path: path as string, insights: {} },
-        };
-      },
-      {} as Record<
-        string,
-        (typeof categories)[0] & {
-          path: string;
-          insights: {
-            [week: string]: {
-              [type in Database["public"]["Enums"]["event_type"]]: {
-                minutes: number;
-                count: number;
-              };
-            };
-          };
-        }
-      >
-    )
   );
 }

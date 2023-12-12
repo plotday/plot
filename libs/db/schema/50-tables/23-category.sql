@@ -3,10 +3,7 @@ CREATE TABLE "public"."category" (
     "created_at" timestamp with time zone DEFAULT now(),
     "user_id" bigint NOT NULL,
     "path" ltree NOT NULL,
-    "name" text NOT NULL,
-    "priority" text DEFAULT 'O' NOT NULL,
-    "budget_weekly" integer,
-    "minimize" boolean DEFAULT TRUE NOT NULL
+    "name" text NOT NULL
 );
 
 CREATE UNIQUE INDEX category_pkey ON public.category USING btree (id);

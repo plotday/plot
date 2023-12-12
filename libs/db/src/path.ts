@@ -4,12 +4,11 @@ import type { SupabaseClient } from "./";
 import { safeQuery } from "./query";
 
 export function urlToPath(url: string) {
-  return url.replaceAll("+", "").replaceAll("-", "_").replaceAll(":", ".");
+  return url.replaceAll("/", ".").replaceAll("-", "_");
 }
 
 export function pathToUrl(path: string) {
-  const parts = path.replaceAll("_", "-").split(".");
-  return "/+" + [parts[0], parts.slice(1).join(":")].join("/");
+  return `/@/${path.replaceAll(".", "/").replaceAll("_", "-")}`;
 }
 
 export function nameToPath(name: string) {
@@ -70,15 +69,13 @@ export async function createCategories(
         [
           {
             user_id: userId,
-            name,
-            path,
-            priority: "O",
+            name: "Meetings",
+            path: `${path}.meetings`,
           },
           {
             user_id: userId,
-            name: "Meetings",
-            path: `${path}.meetings`,
-            priority: "M",
+            name,
+            path,
           },
         ],
         { onConflict: "user_id,path", ignoreDuplicates: true }

@@ -103,6 +103,46 @@ export interface Database {
           }
         ]
       }
+      budget: {
+        Row: {
+          budget: number | null
+          category_id: number
+          created_at: string
+          id: number
+          order: string | null
+          week: unknown | null
+        }
+        Insert: {
+          budget?: number | null
+          category_id: number
+          created_at?: string
+          id?: number
+          order?: string | null
+          week?: unknown | null
+        }
+        Update: {
+          budget?: number | null
+          category_id?: number
+          created_at?: string
+          id?: number
+          order?: string | null
+          week?: unknown | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_category_id_fkey"
+            columns: ["category_id"]
+            referencedRelation: "category"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_category_id_fkey"
+            columns: ["category_id"]
+            referencedRelation: "event_x"
+            referencedColumns: ["category_id"]
+          }
+        ]
+      }
       calendar: {
         Row: {
           account_id: number
@@ -179,33 +219,25 @@ export interface Database {
       }
       category: {
         Row: {
-          budget_weekly: number | null
           created_at: string | null
           id: number
-          minimize: boolean
           name: string
           path: unknown
-          priority: string
           user_id: number
+          budget: unknown | null
         }
         Insert: {
-          budget_weekly?: number | null
           created_at?: string | null
           id?: number
-          minimize?: boolean
           name: string
           path: unknown
-          priority?: string
           user_id: number
         }
         Update: {
-          budget_weekly?: number | null
           created_at?: string | null
           id?: number
-          minimize?: boolean
           name?: string
           path?: unknown
-          priority?: string
           user_id?: number
         }
         Relationships: [
@@ -869,6 +901,19 @@ export interface Database {
       all_views_secure: {
         Args: Record<PropertyKey, never>
         Returns: boolean
+      }
+      budget: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          budget: number | null
+          category_id: number
+          created_at: string
+          id: number
+          order: string | null
+          week: unknown | null
+        }[]
       }
       calc_all_day: {
         Args: {

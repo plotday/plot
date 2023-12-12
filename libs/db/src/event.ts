@@ -5,7 +5,6 @@ import { formatDate } from "@plotday/tz";
 
 import type { SupabaseClient } from "./";
 import { parseDatetimeRange } from "./";
-import type { Balances, DbCategories } from "./category";
 import { safeQuery } from "./query";
 import type { Database } from "./types";
 
@@ -137,12 +136,7 @@ export class Event {
     return (await eventsQuery).count;
   }
 
-  constructor(
-    public dbEvent: DbEvent,
-    public tz: string,
-    private _categories?: DbCategories,
-    private _balances?: Balances
-  ) {
+  constructor(public dbEvent: DbEvent, public tz: string) {
     if (!tz) throw Error("Missing timezone");
   }
 
