@@ -148,5 +148,4 @@ export { Event } from "./event";
 
 export { safeQuery } from "./query";
 
-export * from "./category";
 export * from "./path";

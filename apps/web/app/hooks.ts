@@ -2,7 +2,7 @@ import { useLoaderData, useOutletContext } from "@remix-run/react";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { Database, getCategories } from "@plotday/db";
+import type { Database } from "@plotday/db";
 
 import type { getBrowserEnv } from "./env.server";
 
@@ -14,7 +14,6 @@ export type ContextType = {
     Partial<Database["public"]["Tables"]["user"]["Row"]>
   >;
   env?: ReturnType<typeof getBrowserEnv>;
-  categories?: Awaited<ReturnType<typeof getCategories>>;
 };
 
 export function useSupabase() {
@@ -39,14 +38,4 @@ export function useTz() {
     throw new Error("Missing timezone");
   }
   return tz;
-}
-
-export function useCategories() {
-  let { categories } = useOutletContext<ContextType>();
-  const { categories: loaderCategories } = useLoaderData<any>();
-  categories ??= loaderCategories;
-  if (!categories) {
-    throw new Error("Missing categories");
-  }
-  return categories;
 }

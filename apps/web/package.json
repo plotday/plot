@@ -1,6 +1,6 @@
 {
   "name": "@plotday/web",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "private": true,
   "sideEffects": false,
   "type": "module",
