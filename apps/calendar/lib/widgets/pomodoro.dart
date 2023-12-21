@@ -1,87 +1,54 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
-class PomodoroTimer extends StatefulWidget {
-  final String title;
+import '../time/time_bloc.dart';
 
-  const PomodoroTimer({super.key, required this.title});
+class PomodoroTimer extends StatelessWidget {
+  final int? remainingMinutes;
+  final DateTime? next;
 
-  @override
-  State<PomodoroTimer> createState() => _PomodoroTimerState();
-}
-
-class _PomodoroTimerState extends State<PomodoroTimer> {
-  static const Duration _defaultDuration = Duration(minutes: 25);
-
-  Timer? _timer;
-  Duration _duration = _defaultDuration;
-
-  @override
-  void initState() {
-    super.initState();
-    _resetTimer();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _resetTimer() {
-    setState(() {
-      _duration = _defaultDuration;
-    });
-    _startTimer();
-  }
-
-  void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        if (_duration.inSeconds > 0) {
-          _duration -= const Duration(seconds: 1);
-        } else {
-          timer.cancel();
-        }
-      });
-    });
-  }
+  const PomodoroTimer({super.key, this.remainingMinutes, this.next});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: CircularProgressIndicator(
-              value: 0.92,
+    return BlocBuilder<TimeBloc, TimeState>(
+      builder: (context, state) {
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 200),
+          child: Center(
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: Stack(
+                children: [
+                  const Positioned.fill(
+                    child: CircularProgressIndicator(
+                      value: 0.92,
+                    ),
+                  ),
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        if (state is TimeProgress)
+                          Text(
+                            state.duration.toString(),
+                            style: Theme.of(context).textTheme.displaySmall,
+                          ),
+                        ElevatedButton(
+                          onPressed: () {
+                            context.read<TimeBloc>().add(const TimeStarted());
+                          },
+                          child: const Text('Start'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          AspectRatio(
-            aspectRatio: 1,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Text(
-                  widget.title,
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                Text(
-                  _duration.toString().split('.').first.padLeft(8, "0"),
-                  style: Theme.of(context).textTheme.displaySmall,
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    _timer?.cancel();
-                    _resetTimer();
-                  },
-                  child: const Text('Reset Timer'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
