@@ -74,9 +74,10 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> {
+  final DateTime next = DateTime.now().add(const Duration(minutes: 25));
+
   @override
   Widget build(BuildContext context) {
-    final next = DateTime.now().add(const Duration(minutes: 25));
     return Scaffold(
       appBar: AppBar(
         // TRY THIS: Try changing the color here to a specific color (to
