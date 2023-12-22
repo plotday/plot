@@ -20,9 +20,14 @@ class PomodoroTimer extends StatelessWidget {
               aspectRatio: 1,
               child: Stack(
                 children: [
-                  const Positioned.fill(
-                    child: CircularProgressIndicator(
-                      value: 0.92,
+                  Positioned.fill(
+                    child: InkResponse(
+                      onTap: () {
+                        context.read<TimeBloc>().add(const TimeStarted());
+                      },
+                      child: const CircularProgressIndicator(
+                        value: 0.92,
+                      ),
                     ),
                   ),
                   Center(
@@ -34,12 +39,12 @@ class PomodoroTimer extends StatelessWidget {
                             state.duration.toString(),
                             style: Theme.of(context).textTheme.displaySmall,
                           ),
-                        ElevatedButton(
-                          onPressed: () {
-                            context.read<TimeBloc>().add(const TimeStarted());
-                          },
-                          child: const Text('Start'),
-                        ),
+                        if (state is! TimeProgress)
+                          const Icon(
+                            Icons.play_arrow,
+                            size: 48.0,
+                            semanticLabel: 'Start',
+                          ),
                       ],
                     ),
                   ),
