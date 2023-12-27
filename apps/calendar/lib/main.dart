@@ -3,8 +3,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'env.dart';
-import 'time/time_bloc.dart';
-import 'widgets/pomodoro.dart';
+import 'activity/bloc.dart';
+import 'activity/activity.dart';
+import 'activity/widget/pomodoro.dart';
+import 'schedule/bloc.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,8 +49,11 @@ class App extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.lightGreen),
         useMaterial3: true,
       ),
-      home: BlocProvider(
-        create: (_) => TimeBloc(),
+      home: MultiBlocProvider(
+        providers: [
+          BlocProvider(create: (_) => ActivityBloc()),
+          BlocProvider(create: (_) => ScheduleBloc()),
+        ],
         child: const HomePage(title: 'Plot'),
       ),
     );
@@ -74,39 +79,39 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> {
-  final DateTime next = DateTime.now().add(const Duration(minutes: 25));
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
-      ),
-      body: Center(
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            PomodoroTimer(next: next),
-          ],
-        ),
-      ),
-    );
+    return FutureBuilder(
+        future: Activity.list(),
+        builder: (context, activity) => Scaffold(
+              appBar: AppBar(
+                // TRY THIS: Try changing the color here to a specific color (to
+                // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
+                // change color while the other colors stay the same.
+                backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+                title: Text(widget.title),
+              ),
+              body: Center(
+                child: Column(
+                  // Column is also a layout widget. It takes a list of children and
+                  // arranges them vertically. By default, it sizes itself to fit its
+                  // children horizontally, and tries to be as tall as its parent.
+                  //
+                  // Column has various properties to control how it sizes itself and
+                  // how it positions its children. Here we use mainAxisAlignment to
+                  // center the children vertically; the main axis here is the vertical
+                  // axis because Columns are vertical (the cross axis would be
+                  // horizontal).
+                  //
+                  // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
+                  // action in the IDE, or press "p" in the console), to see the
+                  // wireframe for each widget.
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    PomodoroTimer(activity: activity.data?.first)
+                  ],
+                ),
+              ),
+            ));
   }
 }

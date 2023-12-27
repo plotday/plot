@@ -4,10 +4,12 @@ class Clock {
   static final Clock _instance = Clock._init();
 
   final StreamController<DateTime> _controller = StreamController<DateTime>();
+
+  late Stream<DateTime> seconds;
+  late Stream<DateTime> minutes;
+
   Timer? _timer;
   int _lastMinute = -1;
-
-  Stream<DateTime> get stream => _controller.stream;
 
   factory Clock() {
     return _instance;
@@ -15,13 +17,16 @@ class Clock {
 
   Clock._init() {
     _timer = Timer.periodic(const Duration(seconds: 1), _tick);
+    seconds = _controller.stream.asBroadcastStream();
+    minutes = seconds.where((DateTime now) {
+      if (now.minute == _lastMinute) return false;
+      _lastMinute = now.minute;
+      return true;
+    }).asBroadcastStream();
   }
 
   void _tick(Timer timer) {
-    final now = DateTime.now();
-    if (now.minute == _lastMinute) return;
-    _lastMinute = now.minute;
-    _controller.sink.add(now);
+    _controller.sink.add(DateTime.now());
   }
 
   void dispose() {
