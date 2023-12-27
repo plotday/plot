@@ -19,14 +19,8 @@ abstract class ActivityProgress extends ActivityState {
 
   Duration get duration;
 
-  double progress({DateTime? end, Duration? duration}) {
-    if (duration != null) {
-      this.duration.inSeconds / duration.inSeconds;
-    }
-    if (end != null) {
-      return this.duration.inSeconds / end.difference(started).inSeconds;
-    }
-    return 0.0;
+  double progress(Duration duration) {
+    return this.duration.inSeconds / duration.inSeconds;
   }
 
   @override

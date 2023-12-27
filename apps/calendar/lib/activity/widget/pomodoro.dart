@@ -3,12 +3,16 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../bloc.dart';
 import '../activity.dart';
+import '../activity_preferences.dart';
 import '../../schedule/bloc.dart';
 import '../../clock.dart';
 
-String formatDuration(Duration duration) {
+String formatDuration(Duration duration, {bool roundUp = false}) {
   final hours = duration.inHours;
-  final minutes = duration.inMinutes.remainder(60);
+  var minutes = duration.inMinutes.remainder(60);
+  if (roundUp && duration.inSeconds.remainder(60) > 0) {
+    minutes += 1;
+  }
   return [hours > 0 ? hours.toString() : '', minutes.toString().padLeft(2, '0')]
       .join(':');
 }
@@ -33,9 +37,16 @@ class PomodoroTimer extends StatelessWidget {
                   progress = scheduleState.currentProgress(activity) ?? 0;
                   end = scheduleState.endOf(activity);
                 }
+                final Duration available = ActivityPreferences.sessionDuration(
+                    end != null ? DateTime.now().difference(end) : null);
                 if (progress == 0 && activityState is ActivityProgress) {
-                  progress = activityState.progress(end: end);
+                  progress = activityState.progress(available);
                 }
+                var remaining = available;
+                if (activityState is ActivityProgress) {
+                  remaining -= activityState.duration;
+                }
+
                 return ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 200),
                   child: Center(
@@ -73,17 +84,11 @@ class PomodoroTimer extends StatelessWidget {
                                       ),
                                     ),
                                   ),
-                                if (scheduleState is ScheduleLoadedState &&
-                                    scheduleState.endOf(activity) != null)
-                                  Text(
-                                    formatDuration(scheduleState
-                                            .endOf(activity)!
-                                            .difference(DateTime.now()) +
-                                        const Duration(minutes: 1)),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .displaySmall,
-                                  ),
+                                Text(
+                                  formatDuration(remaining, roundUp: true),
+                                  style:
+                                      Theme.of(context).textTheme.displaySmall,
+                                ),
                               ],
                             ),
                           ),
