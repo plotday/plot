@@ -114,8 +114,9 @@ class PomodoroTimer extends StatelessWidget {
                               },
                               child: CircularProgressIndicator(
                                   value: progress,
-                                  backgroundColor:
-                                      Theme.of(context).dividerColor),
+                                  backgroundColor: Theme.of(context)
+                                      .progressIndicatorTheme
+                                      .circularTrackColor),
                             ),
                           ),
                         ],

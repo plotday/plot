@@ -9,8 +9,8 @@ class ScheduledEvent extends Equatable {
       ScheduledEvent(
           "Dev Standup",
           DateRange(
-            DateTime(2023, 12, 27, 11, 15),
-            DateTime(2023, 12, 27, 11, 30),
+            DateTime(2023, 12, 27, 14, 30),
+            DateTime(2023, 12, 27, 15, 00),
           ),
           1),
     ],
