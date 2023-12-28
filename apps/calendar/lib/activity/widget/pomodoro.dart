@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -42,9 +44,15 @@ class PomodoroTimer extends StatelessWidget {
                 if (progress == 0 && activityState is ActivityProgress) {
                   progress = activityState.progress(available);
                 }
-                var remaining = available;
+                Duration remaining;
                 if (activityState is ActivityProgress) {
-                  remaining -= activityState.duration;
+                  if (available < activityState.duration) {
+                    remaining = const Duration();
+                  } else {
+                    remaining = available - activityState.duration;
+                  }
+                } else {
+                  remaining = available;
                 }
 
                 return ConstrainedBox(
