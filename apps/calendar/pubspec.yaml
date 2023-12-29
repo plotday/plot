@@ -1,5 +1,5 @@
-name: calendar
-description: "A new Flutter project."
+name: plot
+description: "A calendar for being better than busy"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
@@ -40,6 +40,7 @@ dependencies:
   bloc_concurrency: ^0.2.3
   in_date_range: ^1.1.0
   adaptive_theme: ^3.4.1
+  google_sign_in: ^6.2.1
 
 dev_dependencies:
   flutter_test:

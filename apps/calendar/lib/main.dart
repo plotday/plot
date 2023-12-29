@@ -4,6 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'env.dart';
+
+import 'signin.dart';
+
 import 'activity/bloc.dart';
 import 'activity/activity.dart';
 import 'activity/widget/pomodoro.dart';
@@ -81,6 +84,7 @@ class HomePageState extends State<HomePage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
+                    const SigninWidget(),
                     PomodoroTimer(activity: activity.data?.first)
                   ],
                 ),
