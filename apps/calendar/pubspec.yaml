@@ -95,4 +95,5 @@ flutter:
   # see https://flutter.dev/custom-fonts/#from-packages
 
 scripts:
-  dev: flutter run -d macOS --dart-define-from-file=.env
+  dev-macos: flutter run -d macOS --dart-define-from-file=.env
+  dev-android: flutter run --dart-define-from-file=.env

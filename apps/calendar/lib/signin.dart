@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,11 +12,14 @@ class SigninWidget extends StatelessWidget {
   const SigninWidget({super.key});
 
   Future<AuthResponse> _googleSignIn() async {
-    // Google sign in on Android will work without providing the Android
-    // Client ID registered on Google Cloud.
-
+    late final String? clientId;
+    if (Platform.isAndroid) {
+      clientId = Env.googleAndroidClientId;
+    } else {
+      clientId = Env.googleIosClientId;
+    }
     final GoogleSignIn googleSignIn = GoogleSignIn(
-        clientId: Env.googleIosClientId,
+        clientId: clientId,
         serverClientId: Env.googleClientId,
         scopes: ['email']);
     final googleUser = await googleSignIn.signIn();

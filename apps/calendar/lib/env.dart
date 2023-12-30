@@ -7,4 +7,6 @@ abstract class Env {
       String.fromEnvironment('GOOGLE_CLIENT_ID');
   static const String googleIosClientId =
       String.fromEnvironment('GOOGLE_IOS_CLIENT_ID');
+  static const String googleAndroidClientId =
+      String.fromEnvironment('GOOGLE_ANDROID_CLIENT');
 }
