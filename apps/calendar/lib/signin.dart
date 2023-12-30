@@ -23,9 +23,6 @@ class SigninWidget extends StatelessWidget {
         serverClientId: Env.googleClientId,
         scopes: ['email']);
     final googleUser = await googleSignIn.signIn();
-    print('Signed in');
-    print(googleUser);
-    print((await googleUser?.authentication)?.idToken);
     if (googleUser == null) {
       throw 'No user returned.';
     }
@@ -54,11 +51,7 @@ class SigninWidget extends StatelessWidget {
         onPressed: () async {
           try {
             final response = await _googleSignIn();
-            print('Got response');
-            print(response.toString());
-          } catch (e) {
-            print(e.toString());
-          }
+          } catch (e) {}
         },
         child: const Text('Sign in with Google'),
       ),

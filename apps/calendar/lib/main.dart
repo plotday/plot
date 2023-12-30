@@ -73,6 +73,9 @@ class HomePage extends StatefulWidget {
 class HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
+    if (supabase.auth.currentUser == null) {
+      return const SigninWidget();
+    }
     return FutureBuilder(
         future: Activity.list(),
         builder: (context, activity) => Scaffold(
@@ -84,7 +87,6 @@ class HomePageState extends State<HomePage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
-                    const SigninWidget(),
                     PomodoroTimer(activity: activity.data?.first)
                   ],
                 ),
