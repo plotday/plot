@@ -100,35 +100,34 @@ class PomodoroTimer extends StatelessWidget {
                           ),
                           Positioned.fill(
                             child: InkResponse(
-                              onTap: () {
-                                switch (activityState) {
-                                  case ActivityIdle _:
-                                    if (activity != null) {
+                                onTap: () {
+                                  switch (activityState) {
+                                    case ActivityIdle _:
+                                      if (activity != null) {
+                                        context
+                                            .read<ActivityBloc>()
+                                            .add(ActivityStarted(activity!));
+                                      }
+                                      break;
+                                    case ActivityProgressActive _:
                                       context
                                           .read<ActivityBloc>()
-                                          .add(ActivityStarted(activity!));
-                                    }
-                                    break;
-                                  case ActivityProgressActive _:
-                                    context
-                                        .read<ActivityBloc>()
-                                        .add(const ActivityPaused());
-                                    break;
-                                  case ActivityProgressPaused _:
-                                    context
-                                        .read<ActivityBloc>()
-                                        .add(const ActivityResumed());
-                                    break;
-                                  default:
-                                    break;
-                                }
-                              },
-                              child: CircularProgressIndicator(
-                                  value: progress,
-                                  backgroundColor: Theme.of(context)
-                                      .progressIndicatorTheme
-                                      .circularTrackColor),
-                            ),
+                                          .add(const ActivityPaused());
+                                      break;
+                                    case ActivityProgressPaused _:
+                                      context
+                                          .read<ActivityBloc>()
+                                          .add(const ActivityResumed());
+                                      break;
+                                    default:
+                                      break;
+                                  }
+                                },
+                                child: CircularProgressIndicator(
+                                    value: progress,
+                                    backgroundColor: Theme.of(context)
+                                        .colorScheme
+                                        .outlineVariant)),
                           ),
                         ],
                       ),
