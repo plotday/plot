@@ -6,11 +6,18 @@ sealed class ActivityState extends Equatable {
   final Activity? selected;
 
   @override
-  List<Object> get props => [];
+  List<Object?> get props => [selected];
+
+  ActivityState copyWith({Activity? selected});
 }
 
 final class ActivityIdle extends ActivityState {
   const ActivityIdle({super.selected});
+
+  @override
+  ActivityIdle copyWith({Activity? selected}) {
+    return ActivityIdle(selected: selected ?? this.selected);
+  }
 }
 
 abstract class ActivityProgress extends ActivityState {
@@ -26,7 +33,7 @@ abstract class ActivityProgress extends ActivityState {
   }
 
   @override
-  List<Object> get props => super.props + [active, started];
+  List<Object?> get props => super.props + [active, started];
 }
 
 final class ActivityProgressActive extends ActivityProgress {
@@ -44,7 +51,13 @@ final class ActivityProgressActive extends ActivityProgress {
   get duration => _duration + DateTime.now().difference(_restarted);
 
   @override
-  List<Object> get props => super.props + [_duration, _restarted];
+  List<Object?> get props => super.props + [_duration, _restarted];
+
+  @override
+  ActivityProgress copyWith({Activity? selected}) {
+    return ActivityProgressActive(active, _duration,
+        selected: selected ?? this.selected, started: started);
+  }
 }
 
 final class ActivityProgressPaused extends ActivityProgress {
@@ -59,5 +72,11 @@ final class ActivityProgressPaused extends ActivityProgress {
   final Duration duration;
 
   @override
-  List<Object> get props => super.props + [duration];
+  List<Object?> get props => super.props + [duration];
+
+  @override
+  ActivityProgress copyWith({Activity? selected}) {
+    return ActivityProgressActive(active, duration,
+        selected: selected ?? this.selected, started: started);
+  }
 }

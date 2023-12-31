@@ -8,10 +8,15 @@ part 'state.dart';
 
 class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
   ActivityBloc() : super(const ActivityIdle()) {
+    on<ActivitySelected>(_onSelected);
     on<ActivityStarted>(_onStarted);
     on<ActivityPaused>(_onPaused);
     on<ActivityResumed>(_onResumed);
     on<ActivityStopped>(_onStopped);
+  }
+
+  void _onSelected(ActivitySelected event, Emitter<ActivityState> emit) {
+    emit(state.copyWith(selected: event.activity));
   }
 
   void _onStarted(ActivityStarted event, Emitter<ActivityState> emit) {

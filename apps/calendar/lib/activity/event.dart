@@ -4,6 +4,12 @@ sealed class ActivityEvent {
   const ActivityEvent();
 }
 
+final class ActivitySelected extends ActivityEvent {
+  const ActivitySelected(this.activity);
+
+  final Activity activity;
+}
+
 final class ActivityStarted extends ActivityEvent {
   const ActivityStarted(this.activity);
 
