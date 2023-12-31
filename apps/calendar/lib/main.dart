@@ -86,46 +86,47 @@ class LayoutState extends State<Layout> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     return SignInPage(
         child: FutureBuilder(
-            future: Activity.list(),
-            builder: (context, activity) => Scaffold(
-                appBar: AppBar(
-                  backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-                  title: Text(widget.title),
-                ),
-                bottomNavigationBar: NavigationBar(
-                  onDestinationSelected: (int index) {
-                    setState(() {
-                      _tabController.animateTo(index);
-                    });
-                  },
-                  selectedIndex: _tabController.index,
-                  destinations: const <Widget>[
-                    NavigationDestination(
-                      icon: Icon(Icons.crisis_alert),
-                      label: 'Priorities',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.schedule),
-                      label: 'Now',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.calendar_today),
-                      label: 'Schedule',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.settings),
-                      label: 'Settings',
-                    ),
-                  ],
-                ),
-                body: TabBarView(
-                  controller: _tabController,
-                  children: const [
-                    PrioritiesPage(),
-                    NowPage(),
-                    SchedulePage(),
-                    AccountPage(),
-                  ],
-                ))));
+            future: Activity.load(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              return Scaffold(
+                  bottomNavigationBar: NavigationBar(
+                    onDestinationSelected: (int index) {
+                      setState(() {
+                        _tabController.animateTo(index);
+                      });
+                    },
+                    selectedIndex: _tabController.index,
+                    destinations: const <Widget>[
+                      NavigationDestination(
+                        icon: Icon(Icons.crisis_alert),
+                        label: 'Priorities',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.schedule),
+                        label: 'Now',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.calendar_today),
+                        label: 'Schedule',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.settings),
+                        label: 'Settings',
+                      ),
+                    ],
+                  ),
+                  body: TabBarView(
+                    controller: _tabController,
+                    children: const [
+                      PrioritiesPage(),
+                      NowPage(),
+                      SchedulePage(),
+                      AccountPage(),
+                    ],
+                  ));
+            }));
   }
 }

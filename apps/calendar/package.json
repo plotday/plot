@@ -7,6 +7,7 @@
   "scripts": {
     "gen-env": "../../scripts/gen-env $npm_package_env_vars",
     "dev-macos": "pnpm --silent gen-env > .env && flutter run -d macOS --dart-define-from-file=.env",
+    "start-android": "flutter emulators --launch Medium_Phone_API_34",
     "dev-android": "pnpm --silent gen-env | sed 's/localhost/10.0.2.2/' > .env && flutter run --dart-define-from-file=.env",
     "dev-web": "pnpm --silent gen-env > .env && flutter run -d chrome --dart-define-from-file=.env --web-port 8788"
   }
