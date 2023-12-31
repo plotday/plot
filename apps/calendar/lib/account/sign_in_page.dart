@@ -46,6 +46,9 @@ class _SignInPageState extends State<SignInPage> {
         case AuthChangeEvent.initialSession:
           setState(() {
             _signedIn = supabase.auth.currentSession?.accessToken != null;
+            if (_signedIn == false && kIsWeb) {
+              _googleSignIn.signInSilently();
+            }
           });
           break;
         case AuthChangeEvent.signedIn:
@@ -99,10 +102,6 @@ class _SignInPageState extends State<SignInPage> {
         accessToken: accessToken,
       );
     });
-
-    if (kIsWeb) {
-      _googleSignIn.signInSilently();
-    }
   }
 
   @override
