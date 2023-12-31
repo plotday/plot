@@ -5,11 +5,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'env.dart';
 
-import 'signin.dart';
+import 'account/sign_in_page.dart';
+import 'activity/now_page.dart';
+import 'activity/priorities_page.dart';
+import 'schedule/schedule_page.dart';
+import 'account/account_page.dart';
 
 import 'activity/bloc.dart';
 import 'activity/activity.dart';
-import 'activity/widget/pomodoro.dart';
 import 'schedule/bloc.dart';
 
 void main() async {
@@ -54,43 +57,75 @@ class App extends StatelessWidget {
             BlocProvider(create: (_) => ActivityBloc()),
             BlocProvider(create: (_) => ScheduleBloc()),
           ],
-          child: const HomePage(title: 'Plot'),
+          child: const Layout(title: 'Plot'),
         ),
       ),
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.title});
+class Layout extends StatefulWidget {
+  const Layout({super.key, required this.title});
 
   final String title;
 
   @override
-  State<HomePage> createState() => HomePageState();
+  State<Layout> createState() => LayoutState();
 }
 
-class HomePageState extends State<HomePage> {
+class LayoutState extends State<Layout> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this, initialIndex: 1);
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (supabase.auth.currentUser == null) {
-      return const SigninWidget();
-    }
-    return FutureBuilder(
-        future: Activity.list(),
-        builder: (context, activity) => Scaffold(
-              appBar: AppBar(
-                backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-                title: Text(widget.title),
-              ),
-              body: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    PomodoroTimer(activity: activity.data?.first)
+    return SignInPage(
+        child: FutureBuilder(
+            future: Activity.list(),
+            builder: (context, activity) => Scaffold(
+                appBar: AppBar(
+                  backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+                  title: Text(widget.title),
+                ),
+                bottomNavigationBar: NavigationBar(
+                  onDestinationSelected: (int index) {
+                    setState(() {
+                      _tabController.animateTo(index);
+                    });
+                  },
+                  selectedIndex: _tabController.index,
+                  destinations: const <Widget>[
+                    NavigationDestination(
+                      icon: Icon(Icons.crisis_alert),
+                      label: 'Priorities',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.schedule),
+                      label: 'Now',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.calendar_today),
+                      label: 'Schedule',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.settings),
+                      label: 'Settings',
+                    ),
                   ],
                 ),
-              ),
-            ));
+                body: TabBarView(
+                  controller: _tabController,
+                  children: const [
+                    PrioritiesPage(),
+                    NowPage(),
+                    SchedulePage(),
+                    AccountPage(),
+                  ],
+                ))));
   }
 }

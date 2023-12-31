@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../bloc.dart';
-import '../activity.dart';
-import '../activity_preferences.dart';
-import '../../schedule/bloc.dart';
-import '../../clock.dart';
+import 'bloc.dart';
+import 'activity.dart';
+import 'activity_preferences.dart';
+import '../schedule/bloc.dart';
+import '../clock.dart';
 
 String formatDuration(Duration duration, {bool roundUp = false}) {
   final hours = duration.inHours;
@@ -17,10 +17,8 @@ String formatDuration(Duration duration, {bool roundUp = false}) {
       .join(':');
 }
 
-class PomodoroTimer extends StatelessWidget {
-  const PomodoroTimer({super.key, this.activity});
-
-  final Activity? activity;
+class PomodoroWidget extends StatelessWidget {
+  const PomodoroWidget({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -31,8 +29,14 @@ class PomodoroTimer extends StatelessWidget {
               builder: (context, activityState) =>
                   BlocBuilder<ScheduleBloc, ScheduleState>(
                       builder: (context, scheduleState) {
+                Activity? activity;
                 double progress = 0;
                 DateTime? end;
+                if (activityState is ActivityProgress) {
+                  activity = activityState.active;
+                } else if (activityState is ActivityIdle) {
+                  activity = activityState.selected;
+                }
                 if (scheduleState is ScheduleLoadedState) {
                   progress = scheduleState.currentProgress(activity) ?? 0;
                   end = scheduleState.endOf(activity);
@@ -83,7 +87,7 @@ class PomodoroTimer extends StatelessWidget {
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 16.0),
                                       child: Text(
-                                        activity!.name,
+                                        activity.name,
                                         style: Theme.of(context)
                                             .textTheme
                                             .displaySmall,
@@ -102,11 +106,11 @@ class PomodoroTimer extends StatelessWidget {
                             child: InkResponse(
                                 onTap: () {
                                   switch (activityState) {
-                                    case ActivityIdle _:
-                                      if (activity != null) {
+                                    case ActivityIdle s:
+                                      if (s.selected != null) {
                                         context
                                             .read<ActivityBloc>()
-                                            .add(ActivityStarted(activity!));
+                                            .add(ActivityStarted(s.selected!));
                                       }
                                       break;
                                     case ActivityProgressActive _:

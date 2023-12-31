@@ -16,13 +16,20 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
 
   void _onStarted(ActivityStarted event, Emitter<ActivityState> emit) {
     emit(ActivityProgressActive(
-        event.activity, DateTime.now(), const Duration()));
+      event.activity,
+      const Duration(),
+      started: DateTime.now(),
+    ));
   }
 
   void _onPaused(ActivityPaused event, Emitter<ActivityState> emit) {
     switch (state) {
       case ActivityProgressActive s:
-        emit(ActivityProgressPaused(s.current, s.started, s.duration));
+        emit(ActivityProgressPaused(
+          s.active,
+          s.duration,
+          started: s.started,
+        ));
         break;
       default:
         break;
@@ -32,7 +39,11 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
   void _onResumed(ActivityResumed resume, Emitter<ActivityState> emit) {
     switch (state) {
       case ActivityProgressPaused s:
-        emit(ActivityProgressActive(s.current, s.started, s.duration));
+        emit(ActivityProgressActive(
+          s.active,
+          s.duration,
+          started: s.started,
+        ));
         break;
       default:
         break;

@@ -1,20 +1,22 @@
 part of 'bloc.dart';
 
 sealed class ActivityState extends Equatable {
-  const ActivityState();
+  const ActivityState({this.selected});
+
+  final Activity? selected;
 
   @override
   List<Object> get props => [];
 }
 
 final class ActivityIdle extends ActivityState {
-  const ActivityIdle();
+  const ActivityIdle({super.selected});
 }
 
 abstract class ActivityProgress extends ActivityState {
-  const ActivityProgress(this.current, this.started);
+  const ActivityProgress(this.active, {super.selected, required this.started});
 
-  final Activity current;
+  final Activity active;
   final DateTime started;
 
   Duration get duration;
@@ -24,11 +26,16 @@ abstract class ActivityProgress extends ActivityState {
   }
 
   @override
-  List<Object> get props => super.props + [current, started];
+  List<Object> get props => super.props + [active, started];
 }
 
 final class ActivityProgressActive extends ActivityProgress {
-  ActivityProgressActive(super.current, super.started, this._duration);
+  ActivityProgressActive(
+    super.active,
+    this._duration, {
+    super.selected,
+    required super.started,
+  });
 
   final Duration _duration;
   final DateTime _restarted = DateTime.now();
@@ -41,7 +48,12 @@ final class ActivityProgressActive extends ActivityProgress {
 }
 
 final class ActivityProgressPaused extends ActivityProgress {
-  const ActivityProgressPaused(super.current, super.started, this.duration);
+  const ActivityProgressPaused(
+    super.active,
+    this.duration, {
+    super.selected,
+    required super.started,
+  });
 
   @override
   final Duration duration;
