@@ -80,33 +80,29 @@ class _SignInPageState extends State<SignInPage> {
     }
     _googleSignIn = GoogleSignIn(
         clientId: clientId, serverClientId: serverClientId, scopes: ['email']);
-  }
 
-  Future<AuthResponse> _signInWithGoogle() async {
+    _googleSignIn.onCurrentUserChanged
+        .listen((GoogleSignInAccount? account) async {
+      if (account == null) return;
+
+      final googleAuth = await account.authentication;
+      final accessToken = googleAuth.accessToken;
+      final idToken = googleAuth.idToken;
+
+      if (idToken == null) {
+        throw 'No ID Token found.';
+      }
+
+      supabase.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        accessToken: accessToken,
+      );
+    });
+
     if (kIsWeb) {
-      await _googleSignIn.signInSilently();
+      _googleSignIn.signInSilently();
     }
-
-    final googleUser = await _googleSignIn.signIn();
-    if (googleUser == null) {
-      throw 'No user returned.';
-    }
-    final googleAuth = await googleUser.authentication;
-    final accessToken = googleAuth.accessToken;
-    final idToken = googleAuth.idToken;
-
-    if (accessToken == null) {
-      throw 'No Access Token found.';
-    }
-    if (idToken == null) {
-      throw 'No ID Token found.';
-    }
-
-    return supabase.auth.signInWithIdToken(
-      provider: OAuthProvider.google,
-      idToken: idToken,
-      accessToken: accessToken,
-    );
   }
 
   @override
@@ -132,7 +128,7 @@ class _SignInPageState extends State<SignInPage> {
             constraints: const BoxConstraints(maxWidth: 280),
             child: buildGoogleSignInButton(onPressed: () async {
               try {
-                await _signInWithGoogle();
+                await _googleSignIn.signIn();
               } on String catch (message) {
                 SnackBar(
                   content: Text(message),
