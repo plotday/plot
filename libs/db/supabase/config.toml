@@ -64,7 +64,6 @@ enable_signup = true
 enabled = true
 client_id = "env(GOOGLE_CLIENT_ID)"
 secret = "env(GOOGLE_OAUTH_SECRET)"
-skip_nonce_check = true
 
 [auth.external.azure]
 enabled = true

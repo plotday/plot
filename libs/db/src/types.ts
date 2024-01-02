@@ -36,7 +36,6 @@ export interface Database {
     Tables: {
       account: {
         Row: {
-          auth_user_id: string
           contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
@@ -44,40 +43,31 @@ export interface Database {
           email: string | null
           id: number
           provider: Database["public"]["Enums"]["provider"]
-          user_id: number
+          user_id: string
           calendars: unknown | null
           organization: unknown | null
         }
         Insert: {
-          auth_user_id: string
           contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
           domain_id?: number | null
           email?: string | null
-          id?: number
+          id?: never
           provider: Database["public"]["Enums"]["provider"]
-          user_id: number
+          user_id: string
         }
         Update: {
-          auth_user_id?: string
           contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
           domain_id?: number | null
           email?: string | null
-          id?: number
+          id?: never
           provider?: Database["public"]["Enums"]["provider"]
-          user_id?: number
+          user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "account_auth_user_id_fkey"
-            columns: ["auth_user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "account_domain_id_fkey"
             columns: ["domain_id"]
@@ -89,21 +79,92 @@ export interface Database {
             foreignKeyName: "account_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      activity: {
+        Row: {
+          created_at: string
+          id: number
+          name: string
+          path: unknown
+          user_id: string
+          budget: unknown | null
+        }
+        Insert: {
+          created_at?: string
+          id?: never
+          name: string
+          path: unknown
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: never
+          name?: string
+          path?: unknown
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      budget: {
+        Row: {
+          activity_id: number | null
+          budget: number | null
+          created_at: string
+          id: number
+          order: string | null
+          user_id: string
+          week: unknown | null
+        }
+        Insert: {
+          activity_id?: number | null
+          budget?: number | null
+          created_at?: string
+          id?: never
+          order?: string | null
+          user_id: string
+          week?: unknown | null
+        }
+        Update: {
+          activity_id?: number | null
+          budget?: number | null
+          created_at?: string
+          id?: never
+          order?: string | null
+          user_id?: string
+          week?: unknown | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
+            referencedColumns: ["activity_id"]
           },
           {
-            foreignKeyName: "account_user_id_fkey"
+            foreignKeyName: "budget_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "account_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
+            referencedRelation: "users"
             referencedColumns: ["id"]
           }
         ]
@@ -111,10 +172,8 @@ export interface Database {
       calendar: {
         Row: {
           account_id: number
-          category: string | null
           created_at: string
           enabled: boolean
-          ends_at: string | null
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
@@ -122,10 +181,10 @@ export interface Database {
           provider_id: string
           ready: boolean
           sequence: number
-          starts_at: string | null
           sync_error: string | null
           sync_state: string | null
           synced_at: string | null
+          synced_dates: unknown | null
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -133,42 +192,38 @@ export interface Database {
         }
         Insert: {
           account_id: number
-          category?: string | null
           created_at?: string
           enabled?: boolean
-          ends_at?: string | null
           full_sync_at?: string | null
           full_sync_started_at?: string | null
-          id?: number
+          id?: never
           name?: string | null
           provider_id: string
           ready?: boolean
           sequence?: number
-          starts_at?: string | null
           sync_error?: string | null
           sync_state?: string | null
           synced_at?: string | null
+          synced_dates?: unknown | null
           watch_expires_at?: string | null
           watch_id?: string | null
           watch_secret?: string | null
         }
         Update: {
           account_id?: number
-          category?: string | null
           created_at?: string
           enabled?: boolean
-          ends_at?: string | null
           full_sync_at?: string | null
           full_sync_started_at?: string | null
-          id?: number
+          id?: never
           name?: string | null
           provider_id?: string
           ready?: boolean
           sequence?: number
-          starts_at?: string | null
           sync_error?: string | null
           sync_state?: string | null
           synced_at?: string | null
+          synced_dates?: unknown | null
           watch_expires_at?: string | null
           watch_id?: string | null
           watch_secret?: string | null
@@ -183,115 +238,39 @@ export interface Database {
           }
         ]
       }
-      category: {
-        Row: {
-          budget_weekly: number | null
-          created_at: string | null
-          id: number
-          minimize: boolean
-          name: string
-          path: unknown
-          priority: string
-          user_id: number
-        }
-        Insert: {
-          budget_weekly?: number | null
-          created_at?: string | null
-          id?: number
-          minimize?: boolean
-          name: string
-          path: unknown
-          priority?: string
-          user_id: number
-        }
-        Update: {
-          budget_weekly?: number | null
-          created_at?: string | null
-          id?: number
-          minimize?: boolean
-          name?: string
-          path?: unknown
-          priority?: string
-          user_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "category_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "category_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "category_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          }
-        ]
-      }
       contact: {
         Row: {
           avatar_url: string | null
-          contact_user_id: number | null
           created_at: string
           domain_id: number | null
-          email: string | null
+          email: string
           id: number
+          is_self: boolean
           name: string | null
-          user_id: number
+          user_id: string
           organization: unknown | null
         }
         Insert: {
           avatar_url?: string | null
-          contact_user_id?: number | null
           created_at?: string
           domain_id?: number | null
-          email?: string | null
-          id?: number
+          email: string
+          id?: never
+          is_self?: boolean
           name?: string | null
-          user_id: number
+          user_id: string
         }
         Update: {
           avatar_url?: string | null
-          contact_user_id?: number | null
           created_at?: string
           domain_id?: number | null
-          email?: string | null
-          id?: number
+          email?: string
+          id?: never
+          is_self?: boolean
           name?: string | null
-          user_id?: number
+          user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "contact_contact_user_id_fkey"
-            columns: ["contact_user_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "contact_contact_user_id_fkey"
-            columns: ["contact_user_id"]
-            isOneToOne: false
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "contact_contact_user_id_fkey"
-            columns: ["contact_user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "contact_domain_id_fkey"
             columns: ["domain_id"]
@@ -303,42 +282,28 @@ export interface Database {
             foreignKeyName: "contact_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "contact_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "contact_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
+            referencedRelation: "users"
             referencedColumns: ["id"]
           }
         ]
       }
       domain: {
         Row: {
-          created_at: string | null
+          created_at: string
           domain: string
           id: number
           organization_id: number | null
         }
         Insert: {
-          created_at?: string | null
+          created_at?: string
           domain: string
-          id?: number
+          id?: never
           organization_id?: number | null
         }
         Update: {
-          created_at?: string | null
+          created_at?: string
           domain?: string
-          id?: number
+          id?: never
           organization_id?: number | null
         }
         Relationships: [
@@ -354,9 +319,8 @@ export interface Database {
       event: {
         Row: {
           at: unknown
-          attended: unknown | null
           availability: Database["public"]["Enums"]["event_availability"]
-          calendar_id: number
+          calendar_id: number | null
           conferencing_url: string | null
           created_at: string
           description: string | null
@@ -374,13 +338,12 @@ export interface Database {
         }
         Insert: {
           at: unknown
-          attended?: unknown | null
           availability?: Database["public"]["Enums"]["event_availability"]
-          calendar_id: number
+          calendar_id?: number | null
           conferencing_url?: string | null
           created_at?: string
           description?: string | null
-          id?: number
+          id?: never
           invitees_hidden?: boolean
           name?: string | null
           organizer_email?: string | null
@@ -394,13 +357,12 @@ export interface Database {
         }
         Update: {
           at?: unknown
-          attended?: unknown | null
           availability?: Database["public"]["Enums"]["event_availability"]
-          calendar_id?: number
+          calendar_id?: number | null
           conferencing_url?: string | null
           created_at?: string
           description?: string | null
-          id?: number
+          id?: never
           invitees_hidden?: boolean
           name?: string | null
           organizer_email?: string | null
@@ -422,108 +384,23 @@ export interface Database {
           }
         ]
       }
-      event_rule: {
-        Row: {
-          calendar_id: number | null
-          category_id: number | null
-          created_at: string | null
-          id: number
-          internal: Database["public"]["Enums"]["event_internal"] | null
-          invitee_domain: string | null
-          invitees: string[] | null
-          name: string | null
-          series: string | null
-          type: Database["public"]["Enums"]["event_type"] | null
-          user_id: number
-        }
-        Insert: {
-          calendar_id?: number | null
-          category_id?: number | null
-          created_at?: string | null
-          id?: number
-          internal?: Database["public"]["Enums"]["event_internal"] | null
-          invitee_domain?: string | null
-          invitees?: string[] | null
-          name?: string | null
-          series?: string | null
-          type?: Database["public"]["Enums"]["event_type"] | null
-          user_id: number
-        }
-        Update: {
-          calendar_id?: number | null
-          category_id?: number | null
-          created_at?: string | null
-          id?: number
-          internal?: Database["public"]["Enums"]["event_internal"] | null
-          invitee_domain?: string | null
-          invitees?: string[] | null
-          name?: string | null
-          series?: string | null
-          type?: Database["public"]["Enums"]["event_type"] | null
-          user_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "event_rule_calendar_id_fkey"
-            columns: ["calendar_id"]
-            isOneToOne: false
-            referencedRelation: "calendar"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "event_rule_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "category"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "event_rule_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["category_id"]
-          },
-          {
-            foreignKeyName: "event_rule_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "event_rule_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "event_rule_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          }
-        ]
-      }
       invitation: {
         Row: {
           code: string
-          created_at: string | null
+          created_at: string
           id: number
           remaining: number
         }
         Insert: {
           code: string
-          created_at?: string | null
-          id?: number
+          created_at?: string
+          id?: never
           remaining?: number
         }
         Update: {
           code?: string
-          created_at?: string | null
-          id?: number
+          created_at?: string
+          id?: never
           remaining?: number
         }
         Relationships: []
@@ -532,7 +409,7 @@ export interface Database {
         Row: {
           created_at: string
           email: string
-          event_id: number
+          event_id: number | null
           is_optional: boolean
           response: Database["public"]["Enums"]["event_response"] | null
           contact: unknown | null
@@ -540,14 +417,14 @@ export interface Database {
         Insert: {
           created_at?: string
           email: string
-          event_id: number
+          event_id?: number | null
           is_optional?: boolean
           response?: Database["public"]["Enums"]["event_response"] | null
         }
         Update: {
           created_at?: string
           email?: string
-          event_id?: number
+          event_id?: number | null
           is_optional?: boolean
           response?: Database["public"]["Enums"]["event_response"] | null
         }
@@ -563,61 +440,47 @@ export interface Database {
       }
       note: {
         Row: {
-          author: number | null
+          activity_id: number | null
           body: string
-          category_id: number
-          created_at: string | null
+          created_at: string
           id: number
+          user_id: string
         }
         Insert: {
-          author?: number | null
+          activity_id?: number | null
           body: string
-          category_id: number
-          created_at?: string | null
-          id?: number
+          created_at?: string
+          id?: never
+          user_id: string
         }
         Update: {
-          author?: number | null
+          activity_id?: number | null
           body?: string
-          category_id?: number
-          created_at?: string | null
-          id?: number
+          created_at?: string
+          id?: never
+          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "note_author_fkey"
-            columns: ["author"]
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "note_author_fkey"
-            columns: ["author"]
-            isOneToOne: false
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "note_author_fkey"
-            columns: ["author"]
-            isOneToOne: false
-            referencedRelation: "user"
+            referencedRelation: "activity"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "note_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "category"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_category_id_fkey"
-            columns: ["category_id"]
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["category_id"]
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "note_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           }
         ]
       }
@@ -629,36 +492,36 @@ export interface Database {
         }
         Insert: {
           created_at?: string
-          id?: number
+          id?: never
           name: string
         }
         Update: {
           created_at?: string
-          id?: number
+          id?: never
           name?: string
         }
         Relationships: []
       }
       raw_event: {
         Row: {
-          calendar_id: number
+          calendar_id: number | null
           created_at: string
           event: Json
           id: number
           provider_id: string
         }
         Insert: {
-          calendar_id: number
+          calendar_id?: number | null
           created_at?: string
           event: Json
-          id?: number
+          id?: never
           provider_id: string
         }
         Update: {
-          calendar_id?: number
+          calendar_id?: number | null
           created_at?: string
           event?: Json
-          id?: number
+          id?: never
           provider_id?: string
         }
         Relationships: [
@@ -671,39 +534,144 @@ export interface Database {
           }
         ]
       }
-      user: {
+      rule: {
+        Row: {
+          activity_id: number | null
+          calendar_id: number | null
+          created_at: string
+          id: number
+          internal: Database["public"]["Enums"]["event_internal"] | null
+          invitee_domain: string | null
+          invitees: string[] | null
+          name: string | null
+          series: string | null
+          type: Database["public"]["Enums"]["event_type"] | null
+          user_id: string
+        }
+        Insert: {
+          activity_id?: number | null
+          calendar_id?: number | null
+          created_at?: string
+          id?: never
+          internal?: Database["public"]["Enums"]["event_internal"] | null
+          invitee_domain?: string | null
+          invitees?: string[] | null
+          name?: string | null
+          series?: string | null
+          type?: Database["public"]["Enums"]["event_type"] | null
+          user_id: string
+        }
+        Update: {
+          activity_id?: number | null
+          calendar_id?: number | null
+          created_at?: string
+          id?: never
+          internal?: Database["public"]["Enums"]["event_internal"] | null
+          invitee_domain?: string | null
+          invitees?: string[] | null
+          name?: string | null
+          series?: string | null
+          type?: Database["public"]["Enums"]["event_type"] | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rule_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rule_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "rule_calendar_id_fkey"
+            columns: ["calendar_id"]
+            isOneToOne: false
+            referencedRelation: "calendar"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rule_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      time: {
+        Row: {
+          activity_id: number | null
+          at: unknown
+          created_at: string
+          id: number
+          user_id: string
+        }
+        Insert: {
+          activity_id?: number | null
+          at: unknown
+          created_at?: string
+          id?: never
+          user_id: string
+        }
+        Update: {
+          activity_id?: number | null
+          at?: unknown
+          created_at?: string
+          id?: never
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "time_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      waitlist: {
         Row: {
           activated_at: string | null
-          avatar_url: string | null
           created_at: string
-          default_category: string | null
           email: string
           id: number
           invitation: string | null
-          name: string | null
-          timezone: string | null
         }
         Insert: {
           activated_at?: string | null
-          avatar_url?: string | null
           created_at?: string
-          default_category?: string | null
           email: string
           id?: number
           invitation?: string | null
-          name?: string | null
-          timezone?: string | null
         }
         Update: {
           activated_at?: string | null
-          avatar_url?: string | null
           created_at?: string
-          default_category?: string | null
           email?: string
           id?: number
           invitation?: string | null
-          name?: string | null
-          timezone?: string | null
         }
         Relationships: []
       }
@@ -711,13 +679,13 @@ export interface Database {
     Views: {
       event_x: {
         Row: {
+          activity_id: number | null
+          activity_path: unknown | null
           all_day: boolean | null
           at: unknown | null
           attendee_count: number | null
           availability: Database["public"]["Enums"]["event_availability"] | null
           calendar_id: number | null
-          category_id: number | null
-          category_path: unknown | null
           conferencing_url: string | null
           created_at: string | null
           day: string | null
@@ -744,17 +712,25 @@ export interface Database {
           status: Database["public"]["Enums"]["event_status"] | null
           summary: string | null
           type: Database["public"]["Enums"]["event_type"] | null
-          user_id: number | null
+          user_id: string | null
           visibility: Database["public"]["Enums"]["event_visibility"] | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "account_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       gap: {
         Row: {
           at: unknown | null
           day: string | null
           minutes: number | null
-          user_id: number | null
+          user_id: string | null
         }
         Relationships: []
       }
@@ -763,7 +739,7 @@ export interface Database {
           day: string | null
           focus: number | null
           total: number | null
-          user_id: number | null
+          user_id: string | null
         }
         Relationships: []
       }
@@ -772,23 +748,31 @@ export interface Database {
           focus: number | null
           month: string | null
           total: number | null
-          user_id: number | null
+          user_id: string | null
         }
         Relationships: []
       }
       insight: {
         Row: {
-          category_path: unknown | null
+          activity_path: unknown | null
           count: number | null
           day: string | null
           minutes: number | null
           name: string | null
           response: Database["public"]["Enums"]["event_response"] | null
           type: Database["public"]["Enums"]["event_type"] | null
-          user_id: number | null
+          user_id: string | null
           value: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "account_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       insight_weekly: {
         Row: {
@@ -799,31 +783,17 @@ export interface Database {
           pending_count: number | null
           pending_minutes: number | null
           type: Database["public"]["Enums"]["event_type"] | null
-          user_id: number | null
+          user_id: string | null
           value: string | null
           week: unknown | null
         }
         Relationships: [
           {
-            foreignKeyName: "category_user_id_fkey"
+            foreignKeyName: "activity_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "user"
+            referencedRelation: "users"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "category_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "category_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
           }
         ]
       }
@@ -873,7 +843,6 @@ export interface Database {
           "": unknown
         }
         Returns: {
-          auth_user_id: string
           contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
@@ -881,28 +850,26 @@ export interface Database {
           email: string | null
           id: number
           provider: Database["public"]["Enums"]["provider"]
-          user_id: number
-        }[]
-      }
-      accounts: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          auth_user_id: string
-          contact_sync_state: Json | null
-          created_at: string
-          credentials: Json | null
-          domain_id: number | null
-          email: string | null
-          id: number
-          provider: Database["public"]["Enums"]["provider"]
-          user_id: number
+          user_id: string
         }[]
       }
       all_views_secure: {
         Args: Record<PropertyKey, never>
         Returns: boolean
+      }
+      budget: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          activity_id: number | null
+          budget: number | null
+          created_at: string
+          id: number
+          order: string | null
+          user_id: string
+          week: unknown | null
+        }[]
       }
       calc_all_day: {
         Args: {
@@ -964,10 +931,8 @@ export interface Database {
         }
         Returns: {
           account_id: number
-          category: string | null
           created_at: string
           enabled: boolean
-          ends_at: string | null
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
@@ -975,10 +940,10 @@ export interface Database {
           provider_id: string
           ready: boolean
           sequence: number
-          starts_at: string | null
           sync_error: string | null
           sync_state: string | null
           synced_at: string | null
+          synced_dates: unknown | null
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -990,10 +955,8 @@ export interface Database {
         }
         Returns: {
           account_id: number
-          category: string | null
           created_at: string
           enabled: boolean
-          ends_at: string | null
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
@@ -1001,10 +964,10 @@ export interface Database {
           provider_id: string
           ready: boolean
           sequence: number
-          starts_at: string | null
           sync_error: string | null
           sync_state: string | null
           synced_at: string | null
+          synced_dates: unknown | null
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -1022,24 +985,13 @@ export interface Database {
         }
         Returns: {
           avatar_url: string | null
-          contact_user_id: number | null
           created_at: string
           domain_id: number | null
-          email: string | null
+          email: string
           id: number
+          is_self: boolean
           name: string | null
-          user_id: number
-        }[]
-      }
-      domain: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          created_at: string | null
-          domain: string
-          id: number
-          organization_id: number | null
+          user_id: string
         }[]
       }
       extract_minutes: {
@@ -1054,10 +1006,6 @@ export interface Database {
         }
         Returns: number
       }
-      get_user_id: {
-        Args: Record<PropertyKey, never>
-        Returns: number
-      }
       invitee: {
         Args: {
           "": unknown
@@ -1065,15 +1013,26 @@ export interface Database {
         Returns: {
           created_at: string
           email: string
-          event_id: number
+          event_id: number | null
           is_optional: boolean
           response: Database["public"]["Enums"]["event_response"] | null
         }[]
       }
-      is_user_account: {
+      is_finite: {
         Args: {
-          auth_user_id: string
-          user_id: number
+          test: unknown
+        }
+        Returns: boolean
+      }
+      is_lower: {
+        Args: {
+          "": string
+        }
+        Returns: boolean
+      }
+      is_week: {
+        Args: {
+          p_week: unknown
         }
         Returns: boolean
       }
@@ -1118,6 +1077,10 @@ export interface Database {
         }
         Returns: undefined
       }
+      user_timezone: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       week_from_date: {
         Args: {
           d: string
@@ -1148,7 +1111,6 @@ export interface Database {
       location_type: "room" | "address" | "other"
       meeting_size: "1:1" | "Small" | "Medium" | "Large" | "XL" | "XXL"
       provider: "google" | "outlook"
-      user_status: "waitlisted" | "active"
     }
     CompositeTypes: {
       contact_upsert: {

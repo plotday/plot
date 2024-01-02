@@ -1,20 +1,13 @@
 CREATE TABLE "public"."invitee" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "event_id" bigint NOT NULL,
-    "email" text NOT NULL,
+    "event_id" bigint REFERENCES "event" ON DELETE CASCADE,
+    "email" text NOT NULL CHECK (is_lower ("email")),
     "response" event_response,
-    "is_optional" boolean NOT NULL DEFAULT FALSE
+    "is_optional" boolean NOT NULL DEFAULT FALSE,
+    CONSTRAINT invitee_event_email_unique UNIQUE (event_id, email)
 );
 
-CREATE UNIQUE INDEX invitee_pkey ON public.invitee USING btree (event_id, email);
-
-ALTER TABLE "public"."invitee"
-    ADD CONSTRAINT "invitee_pkey" PRIMARY KEY USING INDEX "invitee_pkey";
-
-ALTER TABLE "public"."invitee"
-    ADD CONSTRAINT "invitee_event_id_fkey" FOREIGN KEY (event_id) REFERENCES event (id) ON DELETE CASCADE NOT valid;
-
-ALTER TABLE "public"."invitee" validate CONSTRAINT "invitee_event_id_fkey";
+ALTER TABLE "public"."invitee" ENABLE ROW LEVEL SECURITY;
 
 CREATE INDEX invitee_event_id_idx ON public.invitee USING btree (event_id);
 
