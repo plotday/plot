@@ -67,7 +67,7 @@ class _NewPriorityModalState extends State<NewPriorityModal> {
                   child: const Text('Add'),
                   onPressed: () async {
                     await Activity.add(activityController.text, parent);
-                    Navigator.of(context).pop();
+                    if (context.mounted) Navigator.of(context).pop();
                   },
                 ),
               ],

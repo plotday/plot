@@ -4,11 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 final supabase = Supabase.instance.client;
 
 class Activity extends Equatable {
-  static final Map<int, Activity> _cache = {
-    1: const Activity(1, "Development", "plot.development"),
-    2: const Activity(2, "Customer discovery", "plot.customer-discovery"),
-    3: const Activity(3, "Team meetings", "plot.team-meetings"),
-  };
+  static Map<int, Activity> _cache = {};
 
   static String nameToPath(String name) {
     return name
@@ -18,9 +14,11 @@ class Activity extends Equatable {
   }
 
   static Future<bool> load() async {
-    // final categories = await supabase.from('category').select();
-    // print(categories.toList());
-    // return categories.toList().map((e) => Activity.fromJson(e)).toList();
+    final activities = await supabase.from('activity').select();
+    _cache = {
+      for (var activity in activities)
+        activity['id']: Activity.fromJson(activity)
+    };
     return true;
   }
 
@@ -33,9 +31,6 @@ class Activity extends Equatable {
 
   static List<Activity> list() {
     return _cache.values.toList();
-    // final categories = await supabase.from('category').select();
-    // print(categories.toList());
-    // return categories.toList().map((e) => Activity.fromJson(e)).toList();
   }
 
   static Future<Activity> add(String name, Activity? parent) async {
@@ -43,8 +38,15 @@ class Activity extends Equatable {
     if (parent != null) {
       path = '${parent.path}.$path';
     }
-    final newActivity = await supabase.from('category').insert(
-        {'user_id': supabase.auth.currentUser?.id, 'name': name, 'path': path});
+    final newActivity = await supabase
+        .from('activity')
+        .insert({
+          'user_id': supabase.auth.currentUser?.id,
+          'name': name,
+          'path': path
+        })
+        .select()
+        .single();
     return Activity.fromJson(newActivity);
   }
 
