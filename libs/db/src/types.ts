@@ -610,21 +610,30 @@ export interface Database {
           activity_id: number | null
           at: unknown
           created_at: string
+          event_id: number | null
           id: number
+          series_id: number | null
+          status: Database["public"]["Enums"]["time_status"]
           user_id: string
         }
         Insert: {
           activity_id?: number | null
           at: unknown
           created_at?: string
+          event_id?: number | null
           id?: never
+          series_id?: number | null
+          status?: Database["public"]["Enums"]["time_status"]
           user_id: string
         }
         Update: {
           activity_id?: number | null
           at?: unknown
           created_at?: string
+          event_id?: number | null
           id?: never
+          series_id?: number | null
+          status?: Database["public"]["Enums"]["time_status"]
           user_id?: string
         }
         Relationships: [
@@ -641,6 +650,20 @@ export interface Database {
             isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "time_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "event"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "time"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "time_user_id_fkey"
@@ -1111,6 +1134,7 @@ export interface Database {
       location_type: "room" | "address" | "other"
       meeting_size: "1:1" | "Small" | "Medium" | "Large" | "XL" | "XXL"
       provider: "google" | "outlook"
+      time_status: "started" | "paused" | "skipped" | "stopped"
     }
     CompositeTypes: {
       contact_upsert: {

@@ -21,62 +21,66 @@ final class ActivityIdle extends ActivityState {
 }
 
 abstract class ActivityProgress extends ActivityState {
-  const ActivityProgress(this.active, {super.selected, required this.started});
+  const ActivityProgress(this.active,
+      {super.selected, required this.start, required this.end});
 
   final Activity active;
-  final DateTime started;
+  final DateTime start;
+  final DateTime end;
 
-  Duration get duration;
+  Duration get elapsed;
 
   double progress(Duration duration) {
-    return this.duration.inSeconds / duration.inSeconds;
+    return elapsed.inSeconds / duration.inSeconds;
   }
 
   @override
-  List<Object?> get props => super.props + [active, started];
+  List<Object?> get props => super.props + [active, start];
 }
 
 final class ActivityProgressActive extends ActivityProgress {
   ActivityProgressActive(
     super.active,
-    this._duration, {
+    this._elapsed, {
     super.selected,
-    required super.started,
+    required super.start,
+    required super.end,
   });
 
-  final Duration _duration;
+  final Duration _elapsed;
   final DateTime _restarted = DateTime.now();
 
   @override
-  get duration => _duration + DateTime.now().difference(_restarted);
+  get elapsed => _elapsed + DateTime.now().difference(_restarted);
 
   @override
-  List<Object?> get props => super.props + [_duration, _restarted];
+  List<Object?> get props => super.props + [_elapsed, _restarted];
 
   @override
   ActivityProgress copyWith({Activity? selected}) {
-    return ActivityProgressActive(active, _duration,
-        selected: selected ?? this.selected, started: started);
+    return ActivityProgressActive(active, _elapsed,
+        selected: selected ?? this.selected, start: start, end: end);
   }
 }
 
 final class ActivityProgressPaused extends ActivityProgress {
   const ActivityProgressPaused(
     super.active,
-    this.duration, {
+    this.elapsed, {
     super.selected,
-    required super.started,
+    required super.start,
+    required super.end,
   });
 
   @override
-  final Duration duration;
+  final Duration elapsed;
 
   @override
-  List<Object?> get props => super.props + [duration];
+  List<Object?> get props => super.props + [elapsed];
 
   @override
   ActivityProgress copyWith({Activity? selected}) {
-    return ActivityProgressActive(active, duration,
-        selected: selected ?? this.selected, started: started);
+    return ActivityProgressActive(active, elapsed,
+        selected: selected ?? this.selected, start: start, end: end);
   }
 }

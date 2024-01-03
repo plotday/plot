@@ -11,9 +11,14 @@ final class ActivitySelected extends ActivityEvent {
 }
 
 final class ActivityStarted extends ActivityEvent {
-  const ActivityStarted(this.activity);
+  ActivityStarted(this.activity, {Duration? duration, DateTime? end})
+      : start = DateTime.now(),
+        end = end ??
+            (duration != null ? DateTime.now().add(duration) : DateTime.now());
 
   final Activity activity;
+  final DateTime start;
+  final DateTime end;
 }
 
 final class ActivityPaused extends ActivityEvent {

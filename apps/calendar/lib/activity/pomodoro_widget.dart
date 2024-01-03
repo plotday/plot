@@ -48,10 +48,10 @@ class PomodoroWidget extends StatelessWidget {
                 }
                 Duration remaining;
                 if (activityState is ActivityProgress) {
-                  if (available < activityState.duration) {
+                  if (available < activityState.elapsed) {
                     remaining = const Duration();
                   } else {
-                    remaining = available - activityState.duration;
+                    remaining = available - activityState.elapsed;
                   }
                 } else {
                   remaining = available;
@@ -70,7 +70,7 @@ class PomodoroWidget extends StatelessWidget {
                               children: <Widget>[
                                 if (activityState is ActivityProgress)
                                   Text(
-                                    formatDuration(activityState.duration),
+                                    formatDuration(activityState.elapsed),
                                     style: Theme.of(context)
                                         .textTheme
                                         .displaySmall,

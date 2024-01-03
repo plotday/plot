@@ -22,11 +22,11 @@ class Activity extends Equatable {
     return true;
   }
 
-  static Activity? get(int id) {
+  static Activity get(int id) {
     if (!_cache.containsKey(id)) {
-      return null;
+      throw ArgumentError('Activity $id not found');
     }
-    return _cache[id];
+    return _cache[id]!;
   }
 
   static List<Activity> list() {
