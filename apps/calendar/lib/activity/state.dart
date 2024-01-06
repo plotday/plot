@@ -21,12 +21,10 @@ final class ActivityIdle extends ActivityState {
 }
 
 abstract class ActivityProgress extends ActivityState {
-  const ActivityProgress(this.active,
-      {super.selected, required this.start, required this.end});
+  const ActivityProgress(this.active, {super.selected, required this.at});
 
   final Activity active;
-  final DateTime start;
-  final DateTime end;
+  final Interval at;
 
   Duration get elapsed;
 
@@ -35,7 +33,7 @@ abstract class ActivityProgress extends ActivityState {
   }
 
   @override
-  List<Object?> get props => super.props + [active, start];
+  List<Object?> get props => super.props + [active, at];
 }
 
 final class ActivityProgressActive extends ActivityProgress {
@@ -43,8 +41,7 @@ final class ActivityProgressActive extends ActivityProgress {
     super.active,
     this._elapsed, {
     super.selected,
-    required super.start,
-    required super.end,
+    required super.at,
   });
 
   final Duration _elapsed;
@@ -59,7 +56,7 @@ final class ActivityProgressActive extends ActivityProgress {
   @override
   ActivityProgress copyWith({Activity? selected}) {
     return ActivityProgressActive(active, _elapsed,
-        selected: selected ?? this.selected, start: start, end: end);
+        selected: selected ?? this.selected, at: at);
   }
 }
 
@@ -68,8 +65,7 @@ final class ActivityProgressPaused extends ActivityProgress {
     super.active,
     this.elapsed, {
     super.selected,
-    required super.start,
-    required super.end,
+    required super.at,
   });
 
   @override
@@ -81,6 +77,6 @@ final class ActivityProgressPaused extends ActivityProgress {
   @override
   ActivityProgress copyWith({Activity? selected}) {
     return ActivityProgressActive(active, elapsed,
-        selected: selected ?? this.selected, start: start, end: end);
+        selected: selected ?? this.selected, at: at);
   }
 }

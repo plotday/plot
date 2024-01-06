@@ -13,6 +13,7 @@ import 'account/account_page.dart';
 
 import 'activity/bloc.dart';
 import 'activity/activity.dart';
+import 'activity/time_block.dart';
 import 'schedule/bloc.dart';
 
 void main() async {
@@ -86,7 +87,7 @@ class LayoutState extends State<Layout> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     return SignInPage(
         child: FutureBuilder(
-            future: Activity.load(),
+            future: Future.wait([Activity.load(), TimeBlock.load()]),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());

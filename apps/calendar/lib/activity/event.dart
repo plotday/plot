@@ -12,13 +12,15 @@ final class ActivitySelected extends ActivityEvent {
 
 final class ActivityStarted extends ActivityEvent {
   ActivityStarted(this.activity, {Duration? duration, DateTime? end})
-      : start = DateTime.now(),
-        end = end ??
-            (duration != null ? DateTime.now().add(duration) : DateTime.now());
+      : at = Interval(
+            DateTime.now(),
+            end ??
+                (duration != null
+                    ? DateTime.now().add(duration)
+                    : DateTime.now()));
 
   final Activity activity;
-  final DateTime start;
-  final DateTime end;
+  final Interval at;
 }
 
 final class ActivityPaused extends ActivityEvent {
@@ -31,4 +33,8 @@ final class ActivityResumed extends ActivityEvent {
 
 class ActivityStopped extends ActivityEvent {
   const ActivityStopped();
+}
+
+class _ActivityInit extends ActivityEvent {
+  const _ActivityInit();
 }

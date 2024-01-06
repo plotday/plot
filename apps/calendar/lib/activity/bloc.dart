@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
+import '../util/date_time.dart';
 import 'activity.dart';
 import 'time_block.dart';
 
@@ -9,11 +10,23 @@ part 'state.dart';
 
 class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
   ActivityBloc() : super(const ActivityIdle()) {
+    on<_ActivityInit>(_onInit);
     on<ActivitySelected>(_onSelected);
     on<ActivityStarted>(_onStarted);
     on<ActivityPaused>(_onPaused);
     on<ActivityResumed>(_onResumed);
     on<ActivityStopped>(_onStopped);
+    add(const _ActivityInit());
+  }
+
+  void _onInit(_ActivityInit event, Emitter<ActivityState> emit) {
+    final current = TimeBlock.current;
+    if (current == null) return;
+    emit(ActivityProgressActive(
+      current.activity,
+      DateTime.now().difference(current.at.start),
+      at: current.at,
+    ));
   }
 
   void _onSelected(ActivitySelected event, Emitter<ActivityState> emit) {
@@ -24,10 +37,9 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     emit(ActivityProgressActive(
       event.activity,
       const Duration(),
-      start: event.start,
-      end: event.end,
+      at: event.at,
     ));
-    TimeBlock.start(event.activity, event.start, event.end);
+    TimeBlock.add(event.activity, event.at);
   }
 
   void _onPaused(ActivityPaused event, Emitter<ActivityState> emit) {
@@ -36,8 +48,7 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
         emit(ActivityProgressPaused(
           s.active,
           s.elapsed,
-          start: s.start,
-          end: s.end,
+          at: s.at,
         ));
         break;
       default:
@@ -51,8 +62,7 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
         emit(ActivityProgressActive(
           s.active,
           s.elapsed,
-          start: s.start,
-          end: s.end,
+          at: s.at,
         ));
         break;
       default:

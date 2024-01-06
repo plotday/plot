@@ -1,14 +1,14 @@
 import 'package:equatable/equatable.dart';
-import 'package:in_date_range/in_date_range.dart';
 
+import '../util/date_time.dart';
 import '../activity/activity.dart';
 
 class ScheduledEvent extends Equatable {
-  static final Map<DateRange, List<ScheduledEvent>> _cache = {
-    DateRange.day(DateTime(2023, 12, 27)): [
+  static final Map<Interval, List<ScheduledEvent>> _cache = {
+    IntervalUtil.day(DateTime(2023, 12, 27)): [
       ScheduledEvent(
           "Dev Standup",
-          DateRange(
+          Interval(
             DateTime(2023, 12, 27, 14, 30),
             DateTime(2023, 12, 27, 15, 00),
           ),
@@ -16,18 +16,18 @@ class ScheduledEvent extends Equatable {
     ],
   };
 
-  static Future<List<ScheduledEvent>> list(DateRange day) {
+  static Future<List<ScheduledEvent>> list(Interval day) {
     return Future.value(_cache[day] ?? []);
   }
 
   static Future<List<ScheduledEvent>> today() async {
-    return list(DateRange.day(DateTime.now()));
+    return list(IntervalUtil.day(DateTime.now()));
   }
 
   static Future<List<ScheduledEvent>> current() async {
     final all = await today();
     final current = all.where((ScheduledEvent event) {
-      return event.at.contains(DateTime.now());
+      return event.at.includes(DateTime.now());
     }).toList();
     return Future.value(current);
   }
@@ -49,7 +49,7 @@ class ScheduledEvent extends Equatable {
   const ScheduledEvent(this.name, this.at, this._activityId);
 
   final String name;
-  final DateRange at;
+  final Interval at;
   get activity => Activity.get(_activityId);
 
   final int _activityId;

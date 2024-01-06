@@ -13,13 +13,18 @@ class Activity extends Equatable {
         .toLowerCase();
   }
 
-  static Future<bool> load() async {
+  static Future<void>? _loading;
+  static Future<void> _load() async {
     final activities = await supabase.from('activity').select();
     _cache = {
       for (var activity in activities)
         activity['id']: Activity.fromJson(activity)
     };
-    return true;
+  }
+
+  static Future<void> load() async {
+    _loading ??= _load();
+    return _loading;
   }
 
   static Activity get(int id) {

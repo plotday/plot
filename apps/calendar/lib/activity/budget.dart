@@ -1,25 +1,25 @@
 import 'package:equatable/equatable.dart';
-import 'package:in_date_range/in_date_range.dart';
 
+import '../util/date_time.dart';
 import 'activity.dart';
 
 class Budget extends Equatable {
-  static final Map<DateRange, List<Budget>> _cache = {
-    DateRange.week(DateTime(2023, 12, 25)): [
+  static final Map<Interval, List<Budget>> _cache = {
+    IntervalUtil.week(DateTime(2024, 01, 01)): [
       const Budget(1, Duration(hours: 30), "A"),
-      const Budget(3, Duration(hours: 3), "B"),
+      const Budget(1, Duration(hours: 3), "B"),
       const Budget(2, Duration(hours: 3), "C"),
     ],
   };
 
-  static Future<Budget> get(DateRange week, int activityId) {
+  static Future<Budget> get(Interval week, int activityId) {
     return list(week).then((List<Budget> list) {
       return list
           .firstWhere((Budget budget) => budget._activityId == activityId);
     });
   }
 
-  static Future<List<Budget>> list(DateRange week) {
+  static Future<List<Budget>> list(Interval week) {
     return Future.value(_cache[week] ?? []);
   }
 
