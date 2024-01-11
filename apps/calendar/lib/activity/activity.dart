@@ -65,6 +65,7 @@ class Activity extends Equatable {
   final int id;
   final String name;
   final String path;
+  final Duration pomodoro = const Duration(minutes: 25);
 
   @override
   List<Object> get props => [id, name, path];

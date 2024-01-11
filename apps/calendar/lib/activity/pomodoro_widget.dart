@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'bloc.dart';
-import 'activity.dart';
-import 'activity_preferences.dart';
+import 'time_block.dart';
 import '../schedule/bloc.dart';
 import '../clock.dart';
 
@@ -29,114 +28,55 @@ class PomodoroWidget extends StatelessWidget {
               builder: (context, activityState) =>
                   BlocBuilder<ScheduleBloc, ScheduleState>(
                       builder: (context, scheduleState) {
-                Activity? activity;
-                double progress = 0;
-                DateTime? end;
-                if (activityState is ActivityProgress) {
-                  activity = activityState.active;
-                } else if (activityState is ActivityIdle) {
-                  activity = activityState.selected;
-                }
-                if (scheduleState is ScheduleLoadedState) {
-                  progress = scheduleState.currentProgress(activity) ?? 0;
-                  end = scheduleState.endOf(activity);
-                }
-                final Duration available = ActivityPreferences.sessionDuration(
-                    end != null ? DateTime.now().difference(end) : null);
-                if (progress == 0 && activityState is ActivityProgress) {
-                  progress = activityState.progress(available);
-                }
-                Duration remaining;
-                if (activityState is ActivityProgress) {
-                  if (available < activityState.elapsed) {
-                    remaining = const Duration();
-                  } else {
-                    remaining = available - activityState.elapsed;
-                  }
-                } else {
-                  remaining = available;
-                }
-
-                return ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 200),
-                  child: Center(
-                    child: AspectRatio(
-                      aspectRatio: 1,
-                      child: Stack(
-                        children: [
-                          Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: <Widget>[
-                                if (activityState is ActivityProgress)
-                                  Text(
-                                    formatDuration(activityState.elapsed),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .displaySmall,
-                                  ),
-                                if (activityState is! ActivityProgress)
-                                  const Icon(
-                                    Icons.play_arrow,
-                                    size: 48.0,
-                                    semanticLabel: 'Start',
-                                  ),
-                                if (activity != null)
-                                  FittedBox(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 16.0),
-                                      child: Text(
-                                        activity.name,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .displaySmall,
-                                      ),
-                                    ),
-                                  ),
-                                Text(
-                                  formatDuration(remaining, roundUp: true),
+                return Column(
+                  children: [
+                    Text(activityState.selected.name),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: Center(
+                        child: AspectRatio(
+                          aspectRatio: 1,
+                          child: Stack(
+                            children: [
+                              Center(
+                                child: Text(
+                                  formatDuration(activityState.remaining,
+                                      roundUp: true),
                                   style:
                                       Theme.of(context).textTheme.displaySmall,
                                 ),
-                              ],
-                            ),
-                          ),
-                          Positioned.fill(
-                            child: InkResponse(
-                                onTap: () {
-                                  switch (activityState) {
-                                    case ActivityIdle s:
-                                      if (s.selected != null) {
-                                        context
-                                            .read<ActivityBloc>()
-                                            .add(ActivityStarted(s.selected!));
+                              ),
+                              Positioned.fill(
+                                child: InkResponse(
+                                    onTap: () {
+                                      switch (activityState) {
+                                        case ActivityActive s:
+                                          if (s.selected == s.active.activity) {
+                                            context.read<ActivityBloc>().add(
+                                                s.active.status ==
+                                                        TimeBlockStatus.started
+                                                    ? const ActivityStopped()
+                                                    : const ActivityResumed());
+                                          }
+                                        default:
+                                          context.read<ActivityBloc>().add(
+                                              ActivityStarted(
+                                                  activityState.selected));
+                                          break;
                                       }
-                                      break;
-                                    case ActivityProgressActive _:
-                                      context
-                                          .read<ActivityBloc>()
-                                          .add(const ActivityPaused());
-                                      break;
-                                    case ActivityProgressPaused _:
-                                      context
-                                          .read<ActivityBloc>()
-                                          .add(const ActivityResumed());
-                                      break;
-                                    default:
-                                      break;
-                                  }
-                                },
-                                child: CircularProgressIndicator(
-                                    value: progress,
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .outlineVariant)),
+                                    },
+                                    child: CircularProgressIndicator(
+                                        value: activityState.progress,
+                                        backgroundColor: Theme.of(context)
+                                            .colorScheme
+                                            .outlineVariant)),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 );
               }),
             ));

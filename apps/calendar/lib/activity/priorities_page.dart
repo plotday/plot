@@ -88,7 +88,7 @@ class PrioritiesPage extends StatelessWidget {
     return BlocBuilder<ActivityBloc, ActivityState>(
       builder: (context, activityState) => Scaffold(
         appBar: AppBar(
-          title: Text(activityState.selected?.name ?? 'Priorities'),
+          title: Text(activityState.selected.name),
         ),
         floatingActionButton: FloatingActionButton(
           onPressed: () {

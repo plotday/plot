@@ -4,6 +4,7 @@ CREATE TABLE "public"."activity" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "name" text NOT NULL,
     "path" ltree NOT NULL,
+    "pomodoro" integer NOT NULL DEFAULT 25,
     CONSTRAINT user_path_unique UNIQUE (user_id, path)
 );
 

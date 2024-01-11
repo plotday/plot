@@ -90,6 +90,7 @@ export interface Database {
           id: number
           name: string
           path: unknown
+          pomodoro: number
           user_id: string
           budget: unknown | null
         }
@@ -98,6 +99,7 @@ export interface Database {
           id?: never
           name: string
           path: unknown
+          pomodoro?: number
           user_id: string
         }
         Update: {
@@ -105,6 +107,7 @@ export interface Database {
           id?: never
           name?: string
           path?: unknown
+          pomodoro?: number
           user_id?: string
         }
         Relationships: [
@@ -612,6 +615,8 @@ export interface Database {
           created_at: string
           event_id: number | null
           id: number
+          planned: number
+          remaining: number
           series_id: number | null
           status: Database["public"]["Enums"]["time_status"]
           user_id: string
@@ -622,6 +627,8 @@ export interface Database {
           created_at?: string
           event_id?: number | null
           id?: never
+          planned: number
+          remaining?: number
           series_id?: number | null
           status?: Database["public"]["Enums"]["time_status"]
           user_id: string
@@ -632,6 +639,8 @@ export interface Database {
           created_at?: string
           event_id?: number | null
           id?: never
+          planned?: number
+          remaining?: number
           series_id?: number | null
           status?: Database["public"]["Enums"]["time_status"]
           user_id?: string
@@ -1134,7 +1143,7 @@ export interface Database {
       location_type: "room" | "address" | "other"
       meeting_size: "1:1" | "Small" | "Medium" | "Large" | "XL" | "XXL"
       provider: "google" | "outlook"
-      time_status: "started" | "paused" | "skipped" | "stopped"
+      time_status: "started" | "skipped" | "stopped"
     }
     CompositeTypes: {
       contact_upsert: {

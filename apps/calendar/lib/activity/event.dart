@@ -10,29 +10,31 @@ final class ActivitySelected extends ActivityEvent {
   final Activity activity;
 }
 
-final class ActivityStarted extends ActivityEvent {
-  ActivityStarted(this.activity, {Duration? duration, DateTime? end})
-      : at = Interval(
-            DateTime.now(),
-            end ??
-                (duration != null
-                    ? DateTime.now().add(duration)
-                    : DateTime.now()));
-
-  final Activity activity;
-  final Interval at;
+final class ActivityTimeIncreased extends ActivityEvent {
+  ActivityTimeIncreased();
 }
 
-final class ActivityPaused extends ActivityEvent {
-  const ActivityPaused();
+final class ActivityTimeDecreased extends ActivityEvent {
+  ActivityTimeDecreased();
+}
+
+final class ActivityStarted extends ActivityEvent {
+  ActivityStarted(this.activity, {this.duration, this.end});
+
+  final Activity activity;
+  final Duration? duration;
+  final DateTime? end;
+}
+
+final class ActivityStopped extends ActivityEvent {
+  const ActivityStopped();
 }
 
 final class ActivityResumed extends ActivityEvent {
-  const ActivityResumed();
-}
+  const ActivityResumed({this.duration, this.end});
 
-class ActivityStopped extends ActivityEvent {
-  const ActivityStopped();
+  final Duration? duration;
+  final DateTime? end;
 }
 
 class _ActivityInit extends ActivityEvent {

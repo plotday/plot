@@ -9,46 +9,46 @@ part 'event.dart';
 part 'state.dart';
 
 class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
-  ActivityBloc() : super(const ActivityIdle()) {
+  ActivityBloc()
+      : super(ActivityIdle(
+            TimeBlock.current?.activity ?? Activity.list().first)) {
     on<_ActivityInit>(_onInit);
     on<ActivitySelected>(_onSelected);
     on<ActivityStarted>(_onStarted);
-    on<ActivityPaused>(_onPaused);
-    on<ActivityResumed>(_onResumed);
     on<ActivityStopped>(_onStopped);
+    on<ActivityResumed>(_onResumed);
     add(const _ActivityInit());
   }
 
   void _onInit(_ActivityInit event, Emitter<ActivityState> emit) {
     final current = TimeBlock.current;
     if (current == null) return;
-    emit(ActivityProgressActive(
-      current.activity,
-      DateTime.now().difference(current.at.start),
-      at: current.at,
-    ));
+    emit(ActivityActive(current, selected: state.selected));
   }
 
   void _onSelected(ActivitySelected event, Emitter<ActivityState> emit) {
     emit(state.copyWith(selected: event.activity));
   }
 
-  void _onStarted(ActivityStarted event, Emitter<ActivityState> emit) {
-    emit(ActivityProgressActive(
-      event.activity,
-      const Duration(),
-      at: event.at,
+  void _onStarted(ActivityStarted event, Emitter<ActivityState> emit) async {
+    final block = await TimeBlock.add(event.activity,
+        duration: event.duration, end: event.end);
+    emit(ActivityActive(
+      block,
+      selected: state.selected,
     ));
-    TimeBlock.add(event.activity, event.at);
   }
 
-  void _onPaused(ActivityPaused event, Emitter<ActivityState> emit) {
+  void _onStopped(ActivityStopped event, Emitter<ActivityState> emit) async {
     switch (state) {
-      case ActivityProgressActive s:
-        emit(ActivityProgressPaused(
-          s.active,
-          s.elapsed,
-          at: s.at,
+      case ActivityActive s:
+        final block = await s.active.update(
+            at: Interval(s.active.at.start, DateTime.now()),
+            remaining: s.active.at.end.difference(DateTime.now()).inSeconds,
+            status: TimeBlockStatus.stopped);
+        emit(ActivityActive(
+          block,
+          selected: state.selected,
         ));
         break;
       default:
@@ -56,21 +56,18 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     }
   }
 
-  void _onResumed(ActivityResumed resume, Emitter<ActivityState> emit) {
+  void _onResumed(ActivityResumed event, Emitter<ActivityState> emit) async {
     switch (state) {
-      case ActivityProgressPaused s:
-        emit(ActivityProgressActive(
-          s.active,
-          s.elapsed,
-          at: s.at,
+      case ActivityActive s:
+        final block = await TimeBlock.add(s.active.activity,
+            duration: event.duration ?? s.active.remaining, end: event.end);
+        emit(ActivityActive(
+          block,
+          selected: state.selected,
         ));
         break;
       default:
         break;
     }
-  }
-
-  void _onStopped(ActivityStopped event, Emitter<ActivityState> emit) {
-    emit(const ActivityIdle());
   }
 }

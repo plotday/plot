@@ -11,7 +11,6 @@ $$;
 
 CREATE TYPE "public"."time_status" AS enum (
     'started',
-    'paused',
     'skipped',
     'stopped'
 );
@@ -22,6 +21,8 @@ CREATE TABLE "public"."time" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "activity_id" bigint REFERENCES activity ON DELETE SET NULL,
     "at" tstzrange NOT NULL CHECK (is_finite (at)),
+    "planned" integer NOT NULL CHECK (planned >= 0),
+    "remaining" integer NOT NULL DEFAULT 0 CHECK (remaining >= 0),
     "status" time_status NOT NULL DEFAULT 'started',
     "event_id" bigint REFERENCES event ON DELETE SET NULL,
     "series_id" bigint REFERENCES "time" ON DELETE SET NULL,
