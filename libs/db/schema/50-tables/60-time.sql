@@ -9,21 +9,14 @@ BEGIN
 END;
 $$;
 
-CREATE TYPE "public"."time_status" AS enum (
-    'started',
-    'skipped',
-    'stopped'
-);
-
 CREATE TABLE "public"."time" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "activity_id" bigint REFERENCES activity ON DELETE SET NULL,
     "at" tstzrange NOT NULL CHECK (is_finite (at)),
-    "planned" integer NOT NULL CHECK (planned >= 0),
-    "remaining" integer NOT NULL DEFAULT 0 CHECK (remaining >= 0),
-    "status" time_status NOT NULL DEFAULT 'started',
+    "planned" interval NOT NULL CHECK (planned >= '00:00:00'::interval),
+    "remaining" interval NOT NULL DEFAULT '00:00:00' CHECK (remaining >= '00:00:00'::interval),
     "event_id" bigint REFERENCES event ON DELETE SET NULL,
     "series_id" bigint REFERENCES "time" ON DELETE SET NULL,
     EXCLUDE USING gist (user_id WITH =, at WITH &&)

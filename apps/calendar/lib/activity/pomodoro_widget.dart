@@ -53,8 +53,7 @@ class PomodoroWidget extends StatelessWidget {
                                         case ActivityActive s:
                                           if (s.selected == s.active.activity) {
                                             context.read<ActivityBloc>().add(
-                                                s.active.status ==
-                                                        TimeBlockStatus.started
+                                                s.active.isRunning
                                                     ? const ActivityStopped()
                                                     : const ActivityResumed());
                                           }

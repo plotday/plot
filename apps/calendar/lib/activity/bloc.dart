@@ -1,7 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
-import '../util/date_time.dart';
+import '../util/time.dart';
 import 'activity.dart';
 import 'time_block.dart';
 
@@ -30,26 +30,29 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     emit(state.copyWith(selected: event.activity));
   }
 
-  void _onStarted(ActivityStarted event, Emitter<ActivityState> emit) async {
-    final block = await TimeBlock.add(event.activity,
-        duration: event.duration, end: event.end);
+  Future<void> _newActive(Emitter<ActivityState> emit, TimeBlock block) async {
     emit(ActivityActive(
       block,
       selected: state.selected,
     ));
+    final newBlock = await block.save();
+    emit(ActivityActive(
+      newBlock,
+      selected: state.selected,
+    ));
+  }
+
+  void _onStarted(ActivityStarted event, Emitter<ActivityState> emit) async {
+    await _newActive(
+        emit,
+        TimeBlock.now(event.activity,
+            duration: event.duration, end: event.end));
   }
 
   void _onStopped(ActivityStopped event, Emitter<ActivityState> emit) async {
     switch (state) {
       case ActivityActive s:
-        final block = await s.active.update(
-            at: Interval(s.active.at.start, DateTime.now()),
-            remaining: s.active.at.end.difference(DateTime.now()).inSeconds,
-            status: TimeBlockStatus.stopped);
-        emit(ActivityActive(
-          block,
-          selected: state.selected,
-        ));
+        await _newActive(emit, s.active.copyStopped());
         break;
       default:
         break;
@@ -59,12 +62,13 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
   void _onResumed(ActivityResumed event, Emitter<ActivityState> emit) async {
     switch (state) {
       case ActivityActive s:
-        final block = await TimeBlock.add(s.active.activity,
-            duration: event.duration ?? s.active.remaining, end: event.end);
-        emit(ActivityActive(
-          block,
-          selected: state.selected,
-        ));
+        await _newActive(
+            emit,
+            TimeBlock.now(s.active.activity,
+                planned: s.active.planned,
+                duration: event.duration ??
+                    (event.end == null ? s.active.remaining : null),
+                end: event.end));
         break;
       default:
         break;

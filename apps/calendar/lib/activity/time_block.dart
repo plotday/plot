@@ -1,51 +1,46 @@
-import 'dart:math';
-
 import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../util/date_time.dart';
+import '../util/time.dart';
+import '../util/map.dart';
 import 'activity.dart';
 
 final supabase = Supabase.instance.client;
 
-enum TimeBlockStatus {
-  started,
-  stopped,
-  skipped,
-}
-
 class TimeBlock extends Equatable {
   static TimeBlock? _current;
 
-  static Future<bool> load() async {
+  static Future<TimeBlock?> load() async {
     try {
-      final block = await supabase
+      final dbBlock = await supabase
           .from('time')
           .select()
           .eq('user_id', supabase.auth.currentUser!.id)
-          .inFilter('status', ['started', 'stopped'])
           .order('at', ascending: false)
           .limit(1)
           .maybeSingle();
       await Activity.load();
-      if (block == null) {
-        _current = null;
-      } else {
-        _current = TimeBlock.fromJson(block);
+      _current = null;
+      if (dbBlock != null) {
+        final block = TimeBlock.fromJson(dbBlock);
+        if (block.remaining > Duration.zero) {
+          _current = block;
+        }
       }
+      return _current;
     } catch (e) {
       print('Loading time blocks failed');
       print(e);
     }
-    return true;
+    return null;
   }
 
   static TimeBlock? get current {
     return _current;
   }
 
-  static Future<TimeBlock> add(Activity activity,
-      {Duration? duration, DateTime? end}) async {
+  static TimeBlock now(Activity activity,
+      {Duration? planned, Duration? duration, DateTime? end}) {
     final start = DateTime.now();
     if (end == null) {
       duration ??= activity.pomodoro;
@@ -53,91 +48,106 @@ class TimeBlock extends Equatable {
     } else {
       duration = end.difference(start);
     }
-    final result = await supabase
-        .from('time')
-        .insert({
-          'user_id': supabase.auth.currentUser?.id,
-          'activity_id': activity.id,
-          'at': Interval(start, end).toDb(),
-          'planned': duration.inSeconds,
-          'remaining': duration.inSeconds,
-          'status': "started",
-        })
-        .select()
-        .single();
+    planned ??= duration;
+    return TimeBlock(
+      activity: activity,
+      planned: planned,
+      at: Interval(start, end),
+      remaining: Duration.zero,
+    );
+  }
+
+  const TimeBlock({
+    this.id,
+    required this.activity,
+    required this.at,
+    required this.planned,
+    required remaining,
+  }) : _remaining = remaining;
+
+  TimeBlock.fromJson(Map<String, dynamic> json)
+      : id = json['id'] as int,
+        activity = Activity.get(json['activity_id'] as int),
+        at = Time.interval(json['at'] as String),
+        planned = Time.duration(json['planned'] as String),
+        _remaining = Time.duration(json['remaining'] as String);
+
+  final int? id;
+  final Activity activity;
+  final Interval at;
+  final Duration planned;
+  final Duration _remaining;
+
+  @override
+  List<Object> get props =>
+      [id ?? 'null', activity.id, at, planned, _remaining];
+
+  TimeBlock copyWith({Interval? at, Duration? remaining, Duration? planned}) {
+    return TimeBlock(
+      id: id,
+      activity: activity,
+      planned: planned ?? this.planned,
+      at: at ?? this.at,
+      remaining: remaining ?? this.remaining,
+    );
+  }
+
+  TimeBlock copyStopped() {
+    return copyWith(
+      at: Interval(at.start, DateTime.now()),
+      remaining: remaining,
+    );
+  }
+
+  Future<TimeBlock> save() async {
+    Map<String, dynamic>? result;
+    if (id == null) {
+      result = await supabase
+          .from('time')
+          .insert({
+            ...toJson(),
+            'user_id': supabase.auth.currentUser?.id,
+          })
+          .select()
+          .single();
+    } else {
+      result = await supabase
+          .from('time')
+          .update(toJson().filterKeys({'at', 'remaining', 'planned'}))
+          .eq('id', id!)
+          .select()
+          .single();
+    }
     final newBlock = TimeBlock.fromJson(result);
     _current = newBlock;
     return newBlock;
   }
 
-  TimeBlock.fromJson(Map<String, dynamic> json)
-      : id = json['id'] as int,
-        activity = Activity.get(json['activity_id'] as int),
-        at = IntervalUtil.parseDb(json['at'] as String),
-        planned = Duration(seconds: json['planned'] as int),
-        _remaining = Duration(seconds: json['remaining'] as int),
-        status = TimeBlockStatus.values.byName(json['status'] as String);
-
-  final int id;
-  final Activity activity;
-  final Interval at;
-  final Duration planned;
-  final Duration _remaining;
-  final TimeBlockStatus status;
-
-  @override
-  List<Object> get props => [id, activity.id, at, planned, _remaining, status];
-
-  Future<TimeBlock> update(
-      {Interval? at, int? remaining, TimeBlockStatus? status}) async {
-    final result = await supabase
-        .from('time')
-        .update({
-          if (at != null) 'at': at.toDb(),
-          if (remaining != null) 'remaining': remaining,
-          if (status != null) 'status': status.name,
-        })
-        .eq('id', id)
-        .select()
-        .single();
-    final newBlock = TimeBlock.fromJson(result);
-    if (_current == this) {
-      _current = newBlock;
-    }
-    return newBlock;
-  }
+  bool get isRunning => at.includes(DateTime.now());
 
   Duration get elapsed {
-    var elapsed = planned - _remaining;
-    if (status == TimeBlockStatus.started) {
-      elapsed += DateTime.now().difference(at.start);
+    final now = DateTime.now();
+    if (at.end.isBefore(now)) {
+      return planned - _remaining;
+    } else if (at.start.isAfter(now)) {
+      return _remaining;
+    } else {
+      return planned - _remaining - at.end.difference(now);
     }
-    return elapsed;
   }
 
   Duration get remaining {
-    switch (status) {
-      case TimeBlockStatus.started:
-        if (DateTime.now().isAfter(at.end)) {
-          return Duration.zero;
-        }
-        return _remaining - DateTime.now().difference(at.start);
-      case TimeBlockStatus.stopped:
-        return _remaining;
-      case TimeBlockStatus.skipped:
-        return Duration.zero;
-    }
+    return planned - elapsed;
   }
 
   double get progress =>
-      elapsed.inSeconds == 0 ? 0.0 : planned.inSeconds / elapsed.inSeconds;
+      elapsed.inSeconds == 0 ? 0.0 : elapsed.inSeconds / planned.inSeconds;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
+        if (id != null) 'id': id,
         'activity_id': activity.id,
         'at': at.toDb(),
-        'planned': planned.inSeconds,
-        'remaining': _remaining.inSeconds,
-        'status': status.name,
+        'planned': planned.toDb(),
+        'remaining': _remaining.toDb(),
       };
 }

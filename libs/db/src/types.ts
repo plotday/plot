@@ -618,7 +618,6 @@ export interface Database {
           planned: number
           remaining: number
           series_id: number | null
-          status: Database["public"]["Enums"]["time_status"]
           user_id: string
         }
         Insert: {
@@ -630,7 +629,6 @@ export interface Database {
           planned: number
           remaining?: number
           series_id?: number | null
-          status?: Database["public"]["Enums"]["time_status"]
           user_id: string
         }
         Update: {
@@ -642,7 +640,6 @@ export interface Database {
           planned?: number
           remaining?: number
           series_id?: number | null
-          status?: Database["public"]["Enums"]["time_status"]
           user_id?: string
         }
         Relationships: [
@@ -1143,7 +1140,6 @@ export interface Database {
       location_type: "room" | "address" | "other"
       meeting_size: "1:1" | "Small" | "Medium" | "Large" | "XL" | "XXL"
       provider: "google" | "outlook"
-      time_status: "started" | "skipped" | "stopped"
     }
     CompositeTypes: {
       contact_upsert: {

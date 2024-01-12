@@ -1,11 +1,11 @@
 import 'package:equatable/equatable.dart';
 
-import '../util/date_time.dart';
+import '../util/time.dart';
 import 'activity.dart';
 
 class Budget extends Equatable {
   static final Map<Interval, List<Budget>> _cache = {
-    IntervalUtil.week(DateTime(2024, 01, 01)): [
+    Time.week(DateTime(2024, 01, 01)): [
       const Budget(1, Duration(hours: 30), "A"),
       const Budget(1, Duration(hours: 3), "B"),
       const Budget(2, Duration(hours: 3), "C"),

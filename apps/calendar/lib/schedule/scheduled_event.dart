@@ -1,11 +1,11 @@
 import 'package:equatable/equatable.dart';
 
-import '../util/date_time.dart';
+import '../util/time.dart';
 import '../activity/activity.dart';
 
 class ScheduledEvent extends Equatable {
   static final Map<Interval, List<ScheduledEvent>> _cache = {
-    IntervalUtil.day(DateTime(2023, 12, 27)): [
+    Time.day(DateTime(2023, 12, 27)): [
       ScheduledEvent(
           "Dev Standup",
           Interval(
@@ -21,7 +21,7 @@ class ScheduledEvent extends Equatable {
   }
 
   static Future<List<ScheduledEvent>> today() async {
-    return list(IntervalUtil.day(DateTime.now()));
+    return list(Time.day(DateTime.now()));
   }
 
   static Future<List<ScheduledEvent>> current() async {
