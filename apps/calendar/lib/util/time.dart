@@ -3,6 +3,10 @@ export 'package:dart_date/dart_date.dart';
 
 class Time {
   static Interval interval(String db) {
+    if (db == 'empty') {
+      final now = DateTime.now();
+      return Interval(now, now);
+    }
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateTimeStrings = stripped.split(',');
     List<DateTime> dateTimes = dateTimeStrings

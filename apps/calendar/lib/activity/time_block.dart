@@ -85,11 +85,16 @@ class TimeBlock extends Equatable {
   TimeBlock copyWith({Interval? at, Duration? planned, Duration? remaining}) {
     at ??= this.at;
     if (planned != null) {
-      remaining ??= this.remaining + planned - this.planned;
-      at = Interval(at.start, at.start.add(remaining));
+      final delta = planned - this.planned;
+      if (_remaining == Duration.zero) {
+        remaining ??= Duration.zero;
+      } else {
+        remaining ??= _remaining + delta;
+      }
+      at = Interval(at.start, at.end.add(delta));
     } else {
       planned = this.planned;
-      remaining ??= this.remaining;
+      remaining ??= _remaining;
     }
     return TimeBlock(
       id: id,
@@ -133,16 +138,16 @@ class TimeBlock extends Equatable {
 
   bool get isRunning => at.includes(DateTime.now());
 
+  Duration get _duration => _remaining == Duration.zero ? planned : _remaining;
+
   Duration get elapsed {
     final now = DateTime.now();
     if (at.end.isBefore(now)) {
       return planned - _remaining;
     } else if (at.start.isAfter(now)) {
       return _remaining;
-    } else if (_remaining == Duration.zero) {
-      return planned - at.end.difference(now);
     } else {
-      return _remaining - at.end.difference(now);
+      return _duration - at.end.difference(now);
     }
   }
 
