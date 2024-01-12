@@ -615,8 +615,8 @@ export interface Database {
           created_at: string
           event_id: number | null
           id: number
-          planned: number
-          remaining: number
+          planned: unknown
+          remaining: unknown
           series_id: number | null
           user_id: string
         }
@@ -626,8 +626,8 @@ export interface Database {
           created_at?: string
           event_id?: number | null
           id?: never
-          planned: number
-          remaining?: number
+          planned: unknown
+          remaining?: unknown
           series_id?: number | null
           user_id: string
         }
@@ -637,8 +637,8 @@ export interface Database {
           created_at?: string
           event_id?: number | null
           id?: never
-          planned?: number
-          remaining?: number
+          planned?: unknown
+          remaining?: unknown
           series_id?: number | null
           user_id?: string
         }
