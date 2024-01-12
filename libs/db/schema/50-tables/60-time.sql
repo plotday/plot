@@ -16,7 +16,7 @@ CREATE TABLE "public"."time" (
     "activity_id" bigint REFERENCES activity ON DELETE SET NULL,
     "at" tstzrange NOT NULL CHECK (is_finite (at)),
     "planned" interval NOT NULL CHECK (planned >= '00:00:00'::interval),
-    "remaining" interval NOT NULL DEFAULT '00:00:00' CHECK (remaining >= '00:00:00'::interval),
+    "remaining" interval NOT NULL DEFAULT '00:00:00' CHECK (remaining >= '00:00:00'::interval AND remaining <= planned),
     "event_id" bigint REFERENCES event ON DELETE SET NULL,
     "series_id" bigint REFERENCES "time" ON DELETE SET NULL,
     EXCLUDE USING gist (user_id WITH =, at WITH &&)

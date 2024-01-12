@@ -28,24 +28,40 @@ class PomodoroWidget extends StatelessWidget {
               builder: (context, activityState) =>
                   BlocBuilder<ScheduleBloc, ScheduleState>(
                       builder: (context, scheduleState) {
-                return Column(
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(activityState.selected.name),
+                    IconButton(
+                      icon: const Icon(Icons.remove),
+                      tooltip: 'Reduce time',
+                      onPressed: () {
+                        context
+                            .read<ActivityBloc>()
+                            .add(ActivityTimeDecreased());
+                      },
+                    ),
                     ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 200),
+                      constraints: const BoxConstraints(maxHeight: 64.0),
                       child: Center(
                         child: AspectRatio(
                           aspectRatio: 1,
                           child: Stack(
                             children: [
                               Center(
-                                child: Text(
-                                  formatDuration(activityState.remaining,
-                                      roundUp: true),
-                                  style:
-                                      Theme.of(context).textTheme.displaySmall,
+                                  child: FittedBox(
+                                fit: BoxFit.fitWidth,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8.0),
+                                  child: Text(
+                                    formatDuration(activityState.remaining,
+                                        roundUp: true),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .displaySmall,
+                                  ),
                                 ),
-                              ),
+                              )),
                               Positioned.fill(
                                 child: InkResponse(
                                     onTap: () {
@@ -74,6 +90,15 @@ class PomodoroWidget extends StatelessWidget {
                           ),
                         ),
                       ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add),
+                      tooltip: 'Add time',
+                      onPressed: () {
+                        context
+                            .read<ActivityBloc>()
+                            .add(ActivityTimeIncreased());
+                      },
                     ),
                   ],
                 );

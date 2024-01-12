@@ -17,6 +17,8 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     on<ActivityStarted>(_onStarted);
     on<ActivityStopped>(_onStopped);
     on<ActivityResumed>(_onResumed);
+    on<ActivityTimeIncreased>(_onTimeIncreased);
+    on<ActivityTimeDecreased>(_onTimeDecreased);
     add(const _ActivityInit());
   }
 
@@ -69,6 +71,36 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
                 duration: event.duration ??
                     (event.end == null ? s.active.remaining : null),
                 end: event.end));
+        break;
+      default:
+        break;
+    }
+  }
+
+  void _onTimeIncreased(
+      ActivityTimeIncreased event, Emitter<ActivityState> emit) async {
+    switch (state) {
+      case ActivityActive s:
+        await _newActive(
+            emit,
+            s.active.copyWith(
+              planned: s.active.planned + const Duration(minutes: 5),
+            ));
+        break;
+      default:
+        break;
+    }
+  }
+
+  void _onTimeDecreased(
+      ActivityTimeDecreased event, Emitter<ActivityState> emit) async {
+    switch (state) {
+      case ActivityActive s:
+        await _newActive(
+            emit,
+            s.active.copyWith(
+              planned: s.active.planned - const Duration(minutes: 5),
+            ));
         break;
       default:
         break;

@@ -82,13 +82,21 @@ class TimeBlock extends Equatable {
   List<Object> get props =>
       [id ?? 'null', activity.id, at, planned, _remaining];
 
-  TimeBlock copyWith({Interval? at, Duration? remaining, Duration? planned}) {
+  TimeBlock copyWith({Interval? at, Duration? planned, Duration? remaining}) {
+    at ??= this.at;
+    if (planned != null) {
+      remaining ??= this.remaining + planned - this.planned;
+      at = Interval(at.start, at.start.add(remaining));
+    } else {
+      planned = this.planned;
+      remaining ??= this.remaining;
+    }
     return TimeBlock(
       id: id,
       activity: activity,
-      planned: planned ?? this.planned,
-      at: at ?? this.at,
-      remaining: remaining ?? this.remaining,
+      planned: planned,
+      at: at,
+      remaining: remaining,
     );
   }
 
@@ -131,8 +139,10 @@ class TimeBlock extends Equatable {
       return planned - _remaining;
     } else if (at.start.isAfter(now)) {
       return _remaining;
+    } else if (_remaining == Duration.zero) {
+      return planned - at.end.difference(now);
     } else {
-      return planned - _remaining - at.end.difference(now);
+      return _remaining - at.end.difference(now);
     }
   }
 
