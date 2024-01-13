@@ -1,6 +1,8 @@
 import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../util/map.dart';
+
 final supabase = Supabase.instance.client;
 
 class Activity extends Equatable {
@@ -13,18 +15,13 @@ class Activity extends Equatable {
         .toLowerCase();
   }
 
-  static Future<void>? _loading;
-  static Future<void> _load() async {
+  static Future<void> load() async {
     final activities = await supabase.from('activity').select();
     _cache = {
-      for (var activity in activities)
-        activity['id']: Activity.fromJson(activity)
+      for (var activity
+          in activities.map((activity) => Activity.fromJson(activity)))
+        activity.id!: activity
     };
-  }
-
-  static Future<void> load() async {
-    _loading ??= _load();
-    return _loading;
   }
 
   static Activity get(int id) {
@@ -46,7 +43,7 @@ class Activity extends Equatable {
     final newActivity = await supabase
         .from('activity')
         .insert({
-          'user_id': supabase.auth.currentUser?.id,
+          'user_id': supabase.auth.currentUser!.id,
           'name': name,
           'path': path
         })
@@ -55,24 +52,65 @@ class Activity extends Equatable {
     return Activity.fromJson(newActivity);
   }
 
-  const Activity(this.id, this.name, this.path);
+  const Activity(
+      {this.id,
+      required this.name,
+      required this.path,
+      this.pomodoro = const Duration(minutes: 25)});
 
   Activity.fromJson(Map<String, dynamic> json)
       : id = json['id'] as int,
         name = json['name'] as String,
-        path = json['path'] as String;
+        path = json['path'] as String,
+        pomodoro = Duration(minutes: json['pomodoro'] as int);
 
-  final int id;
+  final int? id;
   final String name;
   final String path;
-  final Duration pomodoro = const Duration(minutes: 25);
+  final Duration pomodoro;
+
+  Activity copyWith({String? name, Duration? pomodoro}) {
+    var path = this.path;
+    if (name != null) {
+      path = (this.path.split('.') + [(Activity.nameToPath(name))]).join('.');
+    }
+    return Activity(
+      id: id,
+      name: name ?? this.name,
+      path: path,
+      pomodoro: pomodoro ?? this.pomodoro,
+    );
+  }
+
+  Future<Activity> save() async {
+    Map<String, dynamic>? result;
+    if (id == null) {
+      result = await supabase
+          .from('activity')
+          .insert({
+            ...toJson(),
+            'user_id': supabase.auth.currentUser?.id,
+          })
+          .select()
+          .single();
+    } else {
+      result = await supabase
+          .from('activity')
+          .update(toJson().filterKeys({'name', 'path', 'pomodoro'}))
+          .eq('id', id!)
+          .select()
+          .single();
+    }
+    return Activity.fromJson(result);
+  }
 
   @override
-  List<Object> get props => [id, name, path];
+  List<Object> get props => [id ?? 0, name, path, pomodoro];
 
   Map<String, dynamic> toJson() => {
-        'id': id,
+        if (id != null) 'id': id,
         'name': name,
         'path': path,
+        'pomodoro': pomodoro.inMinutes,
       };
 }

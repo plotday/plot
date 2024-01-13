@@ -101,6 +101,11 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
             ));
         break;
       default:
+        final selected = state.selected.copyWith(
+          pomodoro: state.selected.pomodoro + const Duration(minutes: 5),
+        );
+        emit(ActivityIdle(selected));
+        await selected.save();
         break;
     }
   }
@@ -116,6 +121,11 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
             ));
         break;
       default:
+        final selected = state.selected.copyWith(
+          pomodoro: state.selected.pomodoro - const Duration(minutes: 5),
+        );
+        emit(ActivityIdle(selected));
+        await selected.save();
         break;
     }
   }

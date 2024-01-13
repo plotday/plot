@@ -12,14 +12,18 @@ class TimeBlock extends Equatable {
 
   static Future<TimeBlock?> load() async {
     try {
-      final dbBlock = await supabase
-          .from('time')
-          .select()
-          .eq('user_id', supabase.auth.currentUser!.id)
-          .order('at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-      await Activity.load();
+      final List<dynamic> results = await Future.wait([
+        supabase
+            .from('time')
+            .select()
+            .eq('user_id', supabase.auth.currentUser!.id)
+            .order('at', ascending: false)
+            .limit(1)
+            .maybeSingle(),
+        Activity.load(),
+      ]);
+      final dbBlock = results[0] as Map<String, dynamic>?;
+
       _current = null;
       if (dbBlock != null) {
         final block = TimeBlock.fromJson(dbBlock);
@@ -80,7 +84,7 @@ class TimeBlock extends Equatable {
 
   @override
   List<Object> get props =>
-      [id ?? 'null', activity.id, at, planned, _remaining];
+      [id ?? 0, activity.id ?? 0, at, planned, _remaining];
 
   TimeBlock copyWith({Interval? at, Duration? planned, Duration? remaining}) {
     at ??= this.at;
