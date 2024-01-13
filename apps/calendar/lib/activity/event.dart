@@ -37,6 +37,10 @@ final class ActivityResumed extends ActivityEvent {
   final DateTime? end;
 }
 
+final class ActivityCompleted extends ActivityEvent {
+  const ActivityCompleted();
+}
+
 class _ActivityInit extends ActivityEvent {
   const _ActivityInit();
 }

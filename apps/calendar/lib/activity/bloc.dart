@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
-import '../util/time.dart';
 import 'activity.dart';
 import 'time_block.dart';
 
@@ -19,7 +20,16 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     on<ActivityResumed>(_onResumed);
     on<ActivityTimeIncreased>(_onTimeIncreased);
     on<ActivityTimeDecreased>(_onTimeDecreased);
+    on<ActivityCompleted>(_onCompleted);
     add(const _ActivityInit());
+  }
+
+  Timer? _activityTimer;
+
+  @override
+  Future<void> close() {
+    _activityTimer?.cancel();
+    return super.close();
   }
 
   void _onInit(_ActivityInit event, Emitter<ActivityState> emit) {
@@ -37,6 +47,9 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
       block,
       selected: state.selected,
     ));
+    _activityTimer?.cancel();
+    _activityTimer =
+        Timer(block.remaining, () => add(const ActivityCompleted()));
     final newBlock = await block.save();
     emit(ActivityActive(
       newBlock,
@@ -105,5 +118,10 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
       default:
         break;
     }
+  }
+
+  void _onCompleted(
+      ActivityCompleted event, Emitter<ActivityState> emit) async {
+    emit(ActivityIdle(state.selected));
   }
 }
