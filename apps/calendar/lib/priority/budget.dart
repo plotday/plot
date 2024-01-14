@@ -65,7 +65,7 @@ class Budget extends Equatable {
       previous = next;
       return next;
     }).toList();
-    return budgets + unbudgeted;
+    return [...budgets, ...unbudgeted];
   }
 
   // Order so this element is between after and before
@@ -95,7 +95,14 @@ class Budget extends Equatable {
   }
 
   Future<Budget> save() async {
-    // TODO: update cache
+    // Update cache
+    final newBudgets = _cache[week] ?? {};
+    newBudgets[_activityId] = this;
+    final sortedBudgets = newBudgets.values.toList()
+      ..sort((a, b) => a._order.compareTo(b._order));
+    _cache[week] = {for (var b in sortedBudgets) b._activityId: b};
+
+    // TODO run these queries in parallel
     await supabase.from('budget').upsert(
         toJson().filterKeys({'user_id', 'activity_id', 'budget', 'order'}),
         onConflict: 'user_id,activity_id,week');

@@ -5,6 +5,7 @@ import 'activity.dart';
 import 'budget.dart';
 import 'bloc.dart';
 import '../now/bloc.dart';
+import '../util/cached_reorderable_list_view.dart';
 
 class NewPriorityModal extends StatefulWidget {
   const NewPriorityModal({super.key});
@@ -88,52 +89,54 @@ class PrioritiesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PrioritiesBloc, PrioritiesState>(
       builder: (context, prioritiesState) => Scaffold(
-          appBar: AppBar(title: const Text("Priorities")),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => const NewPriorityModal(),
+        appBar: AppBar(title: const Text("Priorities")),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (context) => const NewPriorityModal(),
+            );
+          },
+          child: const Icon(Icons.add),
+        ),
+        body: Builder(builder: (BuildContext context) {
+          switch (prioritiesState) {
+            case PrioritiesLoading _:
+              return const CircularProgressIndicator();
+            case PrioritiesLoaded _:
+              return CachedReorderableListView(
+                onReorder: (int oldIndex, int newIndex) async {
+                  var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+                  var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+                  Budget? previous;
+                  if (previousIndex >= 0) {
+                    previous = prioritiesState.priorities[previousIndex];
+                  }
+                  Budget? next;
+                  if (nextIndex < prioritiesState.priorities.length) {
+                    next = prioritiesState.priorities[nextIndex];
+                  }
+                  final budget = prioritiesState.priorities[oldIndex]
+                      .copyWith(after: previous, before: next);
+                  context.read<PrioritiesBloc>().add(PriorityChanged(budget));
+                },
+                list: prioritiesState.priorities,
+                itemBuilder: (context, item) {
+                  return ListTile(
+                      key: Key(item.activity.id.toString()),
+                      title: TextButton(
+                        onPressed: () {
+                          context
+                              .read<NowBloc>()
+                              .add(ActivitySelected(item.activity));
+                        },
+                        child: Text(item.activity.name),
+                      ));
+                },
               );
-            },
-            child: const Icon(Icons.add),
-          ),
-          body: Builder(builder: (BuildContext context) {
-            switch (prioritiesState) {
-              case PrioritiesLoading _:
-                return const CircularProgressIndicator();
-              case PrioritiesLoaded _:
-                return ReorderableListView.builder(
-                    onReorder: (int oldIndex, int newIndex) async {
-                      Budget? before;
-                      if (newIndex > 0) {
-                        before = prioritiesState.priorities[newIndex - 1];
-                      }
-                      Budget? after;
-                      if (newIndex < prioritiesState.priorities.length - 1) {
-                        after = prioritiesState.priorities[newIndex + 1];
-                      }
-                      final budget = prioritiesState.priorities[oldIndex]
-                          .copyWith(before: before, after: after);
-                      final hey = await budget.save();
-                      print("Hey ${hey.toJson()}");
-                    },
-                    itemCount: prioritiesState.priorities.length,
-                    itemBuilder: (context, index) {
-                      final priority = prioritiesState.priorities[index];
-                      return ListTile(
-                          key: Key(priority.activity.id.toString()),
-                          title: TextButton(
-                            onPressed: () {
-                              context
-                                  .read<NowBloc>()
-                                  .add(ActivitySelected(priority.activity));
-                            },
-                            child: Text(priority.activity.name),
-                          ));
-                    });
-            }
-          })),
+          }
+        }),
+      ),
     );
   }
 }

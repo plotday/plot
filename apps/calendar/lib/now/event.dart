@@ -40,7 +40,3 @@ final class ActivityResumed extends NowEvent {
 final class ActivityCompleted extends NowEvent {
   const ActivityCompleted();
 }
-
-class _ActivityInit extends NowEvent {
-  const _ActivityInit();
-}

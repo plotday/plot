@@ -1,10 +1,12 @@
-CREATE OR REPLACE FUNCTION budget_week (user_id uuid, week daterange)
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE FUNCTION public.budget_week (user_id uuid, week daterange)
     RETURNS TABLE (
         activity_id bigint,
         "order" text,
-        budget integer
-    )
-    AS $$
+        budget integer)
+    LANGUAGE plpgsql
+    AS $function$
 BEGIN
     RETURN QUERY
     SELECT
@@ -30,6 +32,5 @@ BEGIN
 ORDER BY
     coalesce(b.order, b2.order);
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 

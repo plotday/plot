@@ -11,9 +11,10 @@ part 'state.dart';
 
 class NowBloc extends Bloc<NowEvent, NowState> {
   NowBloc()
-      : super(ActivityIdle(
-            TimeBlock.current?.activity ?? Activity.list().first)) {
-    on<_ActivityInit>(_onInit);
+      : super(TimeBlock.current == null
+            ? ActivityIdle(TimeBlock.current?.activity ?? Activity.list().first)
+            : ActivityActive(TimeBlock.current!,
+                selected: TimeBlock.current!.activity)) {
     on<ActivitySelected>(_onSelected);
     on<ActivityStarted>(_onStarted);
     on<ActivityStopped>(_onStopped);
@@ -21,7 +22,6 @@ class NowBloc extends Bloc<NowEvent, NowState> {
     on<ActivityTimeIncreased>(_onTimeIncreased);
     on<ActivityTimeDecreased>(_onTimeDecreased);
     on<ActivityCompleted>(_onCompleted);
-    add(const _ActivityInit());
   }
 
   Timer? _activityTimer;
@@ -30,12 +30,6 @@ class NowBloc extends Bloc<NowEvent, NowState> {
   Future<void> close() {
     _activityTimer?.cancel();
     return super.close();
-  }
-
-  void _onInit(_ActivityInit event, Emitter<NowState> emit) {
-    final current = TimeBlock.current;
-    if (current == null) return;
-    emit(ActivityActive(current, selected: state.selected));
   }
 
   void _onSelected(ActivitySelected event, Emitter<NowState> emit) {

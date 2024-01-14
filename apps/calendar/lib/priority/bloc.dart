@@ -2,7 +2,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'budget.dart';
-import 'activity.dart';
 import '../util/time.dart';
 
 part 'event.dart';
@@ -11,6 +10,7 @@ part 'state.dart';
 class PrioritiesBloc extends Bloc<PriorityEvent, PrioritiesState> {
   PrioritiesBloc() : super(PrioritiesLoading(Time.week(DateTime.now()))) {
     on<PrioritiesWeekChanged>(_onWeekChanged);
+    on<PriorityChanged>(_onPriorityChanged);
     add(PrioritiesWeekChanged(Time.week(DateTime.now())));
   }
 
@@ -19,5 +19,12 @@ class PrioritiesBloc extends Bloc<PriorityEvent, PrioritiesState> {
     emit(PrioritiesLoading(event.week));
     final budgets = await Budget.list(event.week);
     emit(PrioritiesLoaded(event.week, budgets));
+  }
+
+  void _onPriorityChanged(
+      PriorityChanged event, Emitter<PrioritiesState> emit) async {
+    await event.budget.save();
+    final newList = await Budget.list(state.week);
+    emit(PrioritiesLoaded(state.week, newList));
   }
 }

@@ -9,3 +9,9 @@ final class PrioritiesWeekChanged extends PriorityEvent {
 
   final Interval week;
 }
+
+final class PriorityChanged extends PriorityEvent {
+  const PriorityChanged(this.budget);
+
+  final Budget budget;
+}
