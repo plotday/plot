@@ -1,0 +1,35 @@
+CREATE OR REPLACE FUNCTION budget_week (user_id uuid, week daterange)
+    RETURNS TABLE (
+        activity_id bigint,
+        "order" text,
+        budget integer
+    )
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        b.activity_id,
+        COALESCE(b.order, b2.order) AS "order",
+        COALESCE(b.budget, b2.budget) AS budget
+    FROM (
+        SELECT
+            *
+        FROM
+            budget bi
+        WHERE
+            bi.user_id = budget_week.user_id
+            AND bi.week && budget_week.week) b
+    FULL OUTER JOIN (
+    SELECT
+        *
+    FROM
+        budget bi
+    WHERE
+        bi.user_id = budget_week.user_id
+        AND bi.week IS NULL) b2 ON b.activity_id = b2.activity_id
+ORDER BY
+    coalesce(b.order, b2.order);
+END;
+$$
+LANGUAGE plpgsql;
+

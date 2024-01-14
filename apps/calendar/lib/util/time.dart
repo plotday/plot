@@ -17,22 +17,22 @@ class Time {
 
   static Interval day(DateTime value) => Interval(
         value.startOfDay,
-        value.nextDay,
+        value.startOfDay.nextDay,
       );
 
   static Interval week(DateTime value) => Interval(
         value.startOfWeek,
-        value.nextWeek,
+        value.startOfWeek.nextWeek,
       );
 
   static Interval month(DateTime value) => Interval(
         value.startOfMonth,
-        value.nextMonth,
+        value.startOfMonth.nextMonth,
       );
 
   static Interval year(DateTime value) => Interval(
         value.startOfYear,
-        value.nextYear,
+        value.startOfYear.nextYear,
       );
 
   static Interval today() => Time.day(DateTime.now());

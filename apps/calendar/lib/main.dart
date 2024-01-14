@@ -6,14 +6,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'env.dart';
 
 import 'account/sign_in_page.dart';
-import 'activity/now_page.dart';
-import 'activity/priorities_page.dart';
+import 'now/page.dart';
+import 'priority/page.dart';
 import 'schedule/schedule_page.dart';
 import 'account/account_page.dart';
 
-import 'activity/bloc.dart';
-import 'activity/activity.dart';
-import 'activity/time_block.dart';
+import 'priority/bloc.dart';
+import 'priority/activity.dart';
+import 'now/bloc.dart';
+import 'now/time_block.dart';
 import 'schedule/bloc.dart';
 
 void main() async {
@@ -55,7 +56,8 @@ class App extends StatelessWidget {
         darkTheme: darkTheme,
         home: MultiBlocProvider(
           providers: [
-            BlocProvider(create: (_) => ActivityBloc()),
+            BlocProvider(create: (_) => PrioritiesBloc()),
+            BlocProvider(create: (_) => NowBloc()),
             BlocProvider(create: (_) => ScheduleBloc()),
           ],
           child: const Layout(title: 'Plot'),

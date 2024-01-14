@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'bloc.dart';
-import 'time_block.dart';
 import '../schedule/bloc.dart';
-import '../clock.dart';
+import '../util/clock.dart';
 
 String formatDuration(Duration duration, {bool roundUp = false}) {
   final hours = duration.inHours;
@@ -23,8 +22,7 @@ class PomodoroWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder(
         stream: Clock().seconds,
-        builder: (context, snapshot) =>
-            BlocBuilder<ActivityBloc, ActivityState>(
+        builder: (context, snapshot) => BlocBuilder<NowBloc, NowState>(
               builder: (context, activityState) =>
                   BlocBuilder<ScheduleBloc, ScheduleState>(
                       builder: (context, scheduleState) {
@@ -36,9 +34,7 @@ class PomodoroWidget extends StatelessWidget {
                       icon: const Icon(Icons.remove),
                       tooltip: 'Reduce time',
                       onPressed: () {
-                        context
-                            .read<ActivityBloc>()
-                            .add(ActivityTimeDecreased());
+                        context.read<NowBloc>().add(ActivityTimeDecreased());
                       },
                     ),
                     ConstrainedBox(
@@ -68,13 +64,13 @@ class PomodoroWidget extends StatelessWidget {
                                       switch (activityState) {
                                         case ActivityActive s:
                                           if (s.selected == s.active.activity) {
-                                            context.read<ActivityBloc>().add(
+                                            context.read<NowBloc>().add(
                                                 s.active.isRunning
                                                     ? const ActivityStopped()
                                                     : const ActivityResumed());
                                           }
                                         default:
-                                          context.read<ActivityBloc>().add(
+                                          context.read<NowBloc>().add(
                                               ActivityStarted(
                                                   activityState.selected));
                                           break;
@@ -95,9 +91,7 @@ class PomodoroWidget extends StatelessWidget {
                       icon: const Icon(Icons.add),
                       tooltip: 'Add time',
                       onPressed: () {
-                        context
-                            .read<ActivityBloc>()
-                            .add(ActivityTimeIncreased());
+                        context.read<NowBloc>().add(ActivityTimeIncreased());
                       },
                     ),
                   ],

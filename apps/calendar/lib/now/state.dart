@@ -1,21 +1,21 @@
 part of 'bloc.dart';
 
-sealed class ActivityState extends Equatable {
-  const ActivityState(this.selected);
+sealed class NowState extends Equatable {
+  const NowState(this.selected);
 
   final Activity selected;
 
   @override
   List<Object?> get props => [selected];
 
-  ActivityState copyWith({Activity? selected});
+  NowState copyWith({Activity? selected});
 
   get remaining => selected.pomodoro;
 
   get progress => 0.0;
 }
 
-final class ActivityIdle extends ActivityState {
+final class ActivityIdle extends NowState {
   const ActivityIdle(super.selected);
 
   @override
@@ -24,7 +24,7 @@ final class ActivityIdle extends ActivityState {
   }
 }
 
-class ActivityActive extends ActivityState {
+class ActivityActive extends NowState {
   const ActivityActive(this.active, {required Activity selected})
       : super(selected);
 

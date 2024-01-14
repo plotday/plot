@@ -4,7 +4,8 @@ CREATE OR REPLACE FUNCTION is_week (p_week daterange)
     IMMUTABLE
     AS $$
 BEGIN
-    RETURN EXTRACT(DOW FROM lower(p_week)) = 0
+    RETURN p_week IS NULL
+        OR EXTRACT(DOW FROM lower(p_week)) = 0
         AND upper(p_week) - lower(p_week) = 7;
 END;
 $$;

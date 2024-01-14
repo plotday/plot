@@ -900,6 +900,17 @@ export interface Database {
           week: unknown | null
         }[]
       }
+      budget_week: {
+        Args: {
+          user_id: string
+          week: unknown
+        }
+        Returns: {
+          activity_id: number
+          order: string
+          budget: number
+        }[]
+      }
       calc_all_day: {
         Args: {
           at: unknown

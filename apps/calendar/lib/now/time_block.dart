@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../util/time.dart';
 import '../util/map.dart';
-import 'activity.dart';
+import '../priority/activity.dart';
 
 final supabase = Supabase.instance.client;
 

@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
-import 'activity.dart';
+import '../priority/activity.dart';
 import 'time_block.dart';
 
 part 'event.dart';
 part 'state.dart';
 
-class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
-  ActivityBloc()
+class NowBloc extends Bloc<NowEvent, NowState> {
+  NowBloc()
       : super(ActivityIdle(
             TimeBlock.current?.activity ?? Activity.list().first)) {
     on<_ActivityInit>(_onInit);
@@ -32,17 +32,17 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     return super.close();
   }
 
-  void _onInit(_ActivityInit event, Emitter<ActivityState> emit) {
+  void _onInit(_ActivityInit event, Emitter<NowState> emit) {
     final current = TimeBlock.current;
     if (current == null) return;
     emit(ActivityActive(current, selected: state.selected));
   }
 
-  void _onSelected(ActivitySelected event, Emitter<ActivityState> emit) {
+  void _onSelected(ActivitySelected event, Emitter<NowState> emit) {
     emit(state.copyWith(selected: event.activity));
   }
 
-  Future<void> _newActive(Emitter<ActivityState> emit, TimeBlock block) async {
+  Future<void> _newActive(Emitter<NowState> emit, TimeBlock block) async {
     emit(ActivityActive(
       block,
       selected: state.selected,
@@ -57,14 +57,14 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     ));
   }
 
-  void _onStarted(ActivityStarted event, Emitter<ActivityState> emit) async {
+  void _onStarted(ActivityStarted event, Emitter<NowState> emit) async {
     await _newActive(
         emit,
         TimeBlock.now(event.activity,
             duration: event.duration, end: event.end));
   }
 
-  void _onStopped(ActivityStopped event, Emitter<ActivityState> emit) async {
+  void _onStopped(ActivityStopped event, Emitter<NowState> emit) async {
     switch (state) {
       case ActivityActive s:
         await _newActive(emit, s.active.copyStopped());
@@ -74,7 +74,7 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     }
   }
 
-  void _onResumed(ActivityResumed event, Emitter<ActivityState> emit) async {
+  void _onResumed(ActivityResumed event, Emitter<NowState> emit) async {
     switch (state) {
       case ActivityActive s:
         await _newActive(
@@ -91,7 +91,7 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
   }
 
   void _onTimeIncreased(
-      ActivityTimeIncreased event, Emitter<ActivityState> emit) async {
+      ActivityTimeIncreased event, Emitter<NowState> emit) async {
     switch (state) {
       case ActivityActive s:
         await _newActive(
@@ -111,7 +111,7 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
   }
 
   void _onTimeDecreased(
-      ActivityTimeDecreased event, Emitter<ActivityState> emit) async {
+      ActivityTimeDecreased event, Emitter<NowState> emit) async {
     switch (state) {
       case ActivityActive s:
         await _newActive(
@@ -130,8 +130,7 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     }
   }
 
-  void _onCompleted(
-      ActivityCompleted event, Emitter<ActivityState> emit) async {
+  void _onCompleted(ActivityCompleted event, Emitter<NowState> emit) async {
     emit(ActivityIdle(state.selected));
   }
 }

@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import '../util/time.dart';
-import '../activity/activity.dart';
+import '../priority/activity.dart';
 
 class ScheduledEvent extends Equatable {
   static final Map<Interval, List<ScheduledEvent>> _cache = {

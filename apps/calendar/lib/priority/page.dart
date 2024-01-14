@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'activity.dart';
+import 'budget.dart';
 import 'bloc.dart';
+import '../now/bloc.dart';
 
 class NewPriorityModal extends StatefulWidget {
   const NewPriorityModal({super.key});
@@ -84,34 +86,54 @@ class PrioritiesPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activities = Activity.list();
-    return BlocBuilder<ActivityBloc, ActivityState>(
-      builder: (context, activityState) => Scaffold(
-        appBar: AppBar(
-          title: Text(activityState.selected.name),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () {
-            showDialog(
-              context: context,
-              builder: (context) => const NewPriorityModal(),
-            );
-          },
-          child: const Icon(Icons.add),
-        ),
-        body: ListView.builder(
-            itemCount: activities.length,
-            itemBuilder: (context, index) {
-              final activity = activities[index];
-              return ListTile(
-                  title: TextButton(
-                onPressed: () {
-                  context.read<ActivityBloc>().add(ActivitySelected(activity));
-                },
-                child: Text(activity.name),
-              ));
-            }),
-      ),
+    return BlocBuilder<PrioritiesBloc, PrioritiesState>(
+      builder: (context, prioritiesState) => Scaffold(
+          appBar: AppBar(title: const Text("Priorities")),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => const NewPriorityModal(),
+              );
+            },
+            child: const Icon(Icons.add),
+          ),
+          body: Builder(builder: (BuildContext context) {
+            switch (prioritiesState) {
+              case PrioritiesLoading _:
+                return const CircularProgressIndicator();
+              case PrioritiesLoaded _:
+                return ReorderableListView.builder(
+                    onReorder: (int oldIndex, int newIndex) async {
+                      Budget? before;
+                      if (newIndex > 0) {
+                        before = prioritiesState.priorities[newIndex - 1];
+                      }
+                      Budget? after;
+                      if (newIndex < prioritiesState.priorities.length - 1) {
+                        after = prioritiesState.priorities[newIndex + 1];
+                      }
+                      final budget = prioritiesState.priorities[oldIndex]
+                          .copyWith(before: before, after: after);
+                      final hey = await budget.save();
+                      print("Hey ${hey.toJson()}");
+                    },
+                    itemCount: prioritiesState.priorities.length,
+                    itemBuilder: (context, index) {
+                      final priority = prioritiesState.priorities[index];
+                      return ListTile(
+                          key: Key(priority.activity.id.toString()),
+                          title: TextButton(
+                            onPressed: () {
+                              context
+                                  .read<NowBloc>()
+                                  .add(ActivitySelected(priority.activity));
+                            },
+                            child: Text(priority.activity.name),
+                          ));
+                    });
+            }
+          })),
     );
   }
 }
