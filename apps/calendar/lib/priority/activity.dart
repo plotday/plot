@@ -40,7 +40,7 @@ class Activity extends Equatable {
     if (parent != null) {
       path = '${parent.path}.$path';
     }
-    final newActivity = await supabase
+    final response = await supabase
         .from('activity')
         .insert({
           'user_id': supabase.auth.currentUser!.id,
@@ -49,7 +49,9 @@ class Activity extends Equatable {
         })
         .select()
         .single();
-    return Activity.fromJson(newActivity);
+    final activity = Activity.fromJson(response);
+    _cache[activity.id!] = activity;
+    return activity;
   }
 
   const Activity(

@@ -15,3 +15,10 @@ final class PriorityChanged extends PriorityEvent {
 
   final Budget budget;
 }
+
+final class PriorityAdded extends PriorityEvent {
+  const PriorityAdded(this.name, {this.parent});
+
+  final String name;
+  final Activity? parent;
+}

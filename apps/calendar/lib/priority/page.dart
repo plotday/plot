@@ -69,7 +69,8 @@ class _NewPriorityModalState extends State<NewPriorityModal> {
                 TextButton(
                   child: const Text('Add'),
                   onPressed: () async {
-                    await Activity.add(activityController.text, parent);
+                    context.read<PrioritiesBloc>().add(
+                        PriorityAdded(activityController.text, parent: parent));
                     if (context.mounted) Navigator.of(context).pop();
                   },
                 ),
@@ -93,9 +94,11 @@ class PrioritiesPage extends StatelessWidget {
         floatingActionButton: FloatingActionButton(
           onPressed: () {
             showDialog(
-              context: context,
-              builder: (context) => const NewPriorityModal(),
-            );
+                context: context,
+                builder: (_) => BlocProvider.value(
+                      value: BlocProvider.of<PrioritiesBloc>(context),
+                      child: const NewPriorityModal(),
+                    ));
           },
           child: const Icon(Icons.add),
         ),
