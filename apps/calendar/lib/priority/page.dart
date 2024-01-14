@@ -177,8 +177,11 @@ class PrioritiesPage extends StatelessWidget {
                 },
                 list: prioritiesState.priorities,
                 itemBuilder: (context, priority) {
-                  return PriorityWidget(
-                      priority: priority, key: ValueKey(priority.key));
+                  return BlocProvider.value(
+                    key: ValueKey(priority.key),
+                    value: BlocProvider.of<NowBloc>(context),
+                    child: PriorityWidget(priority: priority),
+                  );
                 },
               );
           }
