@@ -55,17 +55,19 @@ class Budget extends Equatable {
       _cache[week] = Map.fromEntries(budgets);
     }
     final budgets = _cache[week]?.values.toList() ?? [];
-    var previous = budgets.lastOrNull;
     final unbudgeted = Activity.list()
-        .where((activity) =>
-            !budgets.any((budget) => budget.activity.id == activity.id))
-        .map((activity) {
-      final next = Budget(activity.id!, week, Duration.zero,
-          after: previous, before: null);
-      previous = next;
-      return next;
+        .asMap()
+        .entries
+        .where((entry) =>
+            !budgets.any((budget) => budget.activity.id == entry.value.id))
+        .map((entry) {
+      return Budget._(entry.value.id!, week, Duration.zero,
+          'Z${entry.key.toString().padLeft(4, '0')}');
     }).toList();
-    return [...budgets, ...unbudgeted];
+    final sortedBudgets = (budgets + unbudgeted)
+      ..sort((a, b) => a._order.compareTo(b._order));
+    _cache[week] = {for (var b in sortedBudgets) b._activityId: b};
+    return _cache[week]!.values.toList();
   }
 
   // Order so this element is between after and before
@@ -96,11 +98,8 @@ class Budget extends Equatable {
 
   Future<Budget> save() async {
     // Update cache
-    final newBudgets = _cache[week] ?? {};
-    newBudgets[_activityId] = this;
-    final sortedBudgets = newBudgets.values.toList()
-      ..sort((a, b) => a._order.compareTo(b._order));
-    _cache[week] = {for (var b in sortedBudgets) b._activityId: b};
+    _cache[week] ??= {};
+    _cache[week]![_activityId] = this;
 
     // TODO run these queries in parallel
     await supabase.from('budget').upsert(
