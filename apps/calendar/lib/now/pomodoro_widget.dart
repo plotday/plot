@@ -15,77 +15,28 @@ String formatDuration(Duration duration, {bool roundUp = false}) {
       .join(':');
 }
 
-class PomodoroWidget extends StatelessWidget {
+class PomodoroWidget extends StatelessWidget implements PreferredSizeWidget {
   const PomodoroWidget({super.key});
 
   @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
   Widget build(BuildContext context) {
-    return StreamBuilder(
-        stream: Clock().seconds,
-        builder: (context, snapshot) => BlocBuilder<NowBloc, NowState>(
-              builder: (context, activityState) =>
-                  BlocBuilder<ScheduleBloc, ScheduleState>(
-                      builder: (context, scheduleState) {
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(activityState.selected.name),
+    return BlocBuilder<NowBloc, NowState>(
+        builder: (context, nowState) =>
+            BlocBuilder<ScheduleBloc, ScheduleState>(
+              builder: (context, scheduleState) => StreamBuilder(
+                stream: Clock().seconds,
+                builder: (context, snapshot) => AppBar(
+                  title: Text(nowState.selected.name),
+                  actions: [
                     IconButton(
                       icon: const Icon(Icons.remove),
                       tooltip: 'Reduce time',
                       onPressed: () {
                         context.read<NowBloc>().add(ActivityTimeDecreased());
                       },
-                    ),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 64.0),
-                      child: Center(
-                        child: AspectRatio(
-                          aspectRatio: 1,
-                          child: Stack(
-                            children: [
-                              Center(
-                                  child: FittedBox(
-                                fit: BoxFit.fitWidth,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: Text(
-                                    formatDuration(activityState.remaining,
-                                        roundUp: true),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .displaySmall,
-                                  ),
-                                ),
-                              )),
-                              Positioned.fill(
-                                child: InkResponse(
-                                    onTap: () {
-                                      switch (activityState) {
-                                        case ActivityActive s:
-                                          if (s.selected == s.active.activity) {
-                                            context.read<NowBloc>().add(
-                                                s.active.isRunning
-                                                    ? const ActivityStopped()
-                                                    : const ActivityResumed());
-                                          }
-                                        default:
-                                          context.read<NowBloc>().add(
-                                              ActivityStarted(
-                                                  activityState.selected));
-                                          break;
-                                      }
-                                    },
-                                    child: CircularProgressIndicator(
-                                        value: activityState.progress,
-                                        backgroundColor: Theme.of(context)
-                                            .colorScheme
-                                            .outlineVariant)),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.add),
@@ -94,9 +45,51 @@ class PomodoroWidget extends StatelessWidget {
                         context.read<NowBloc>().add(ActivityTimeIncreased());
                       },
                     ),
+                    AspectRatio(
+                      aspectRatio: 1,
+                      child: Stack(
+                        children: [
+                          Center(
+                              child: FittedBox(
+                            fit: BoxFit.fitWidth,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Text(
+                                formatDuration(nowState.remaining,
+                                    roundUp: true),
+                                style: Theme.of(context).textTheme.displaySmall,
+                              ),
+                            ),
+                          )),
+                          Positioned.fill(
+                            child: InkResponse(
+                                onTap: () {
+                                  switch (nowState) {
+                                    case ActivityActive s:
+                                      if (s.selected == s.active.activity) {
+                                        context.read<NowBloc>().add(
+                                            s.active.isRunning
+                                                ? const ActivityStopped()
+                                                : const ActivityResumed());
+                                      }
+                                    default:
+                                      context.read<NowBloc>().add(
+                                          ActivityStarted(nowState.selected));
+                                      break;
+                                  }
+                                },
+                                child: CircularProgressIndicator(
+                                    value: nowState.progress,
+                                    backgroundColor: Theme.of(context)
+                                        .colorScheme
+                                        .outlineVariant)),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
-                );
-              }),
+                ),
+              ),
             ));
   }
 }

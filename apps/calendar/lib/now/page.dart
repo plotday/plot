@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'bloc.dart';
 import 'pomodoro_widget.dart';
 
 class NowPage extends StatelessWidget {
@@ -7,10 +9,9 @@ class NowPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-        child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[PomodoroWidget()],
-    ));
+    return BlocBuilder<NowBloc, NowState>(builder: (context, nowState) {
+      return const Scaffold(appBar: PomodoroWidget());
+    });
   }
 }
+//
