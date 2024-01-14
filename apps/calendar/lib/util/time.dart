@@ -83,6 +83,28 @@ extension PostgresDateTime on DateTime {
 }
 
 extension PostgresDateTimeRange on Interval {
+  Interval get previous => Interval(start.subtract(duration), start);
+  Interval get next => Interval(end, end.add(duration));
+
+  String get friendly {
+    final now = DateTime.now();
+    if (start.isSameDay(end)) {
+      return start.format('EEEE, MMM d');
+    } else if (start == now.startOfWeek && end == now.startOfWeek.nextWeek) {
+      return "This week";
+    } else if (start == now.startOfWeek.previousWeek &&
+        end == now.startOfWeek) {
+      return "Last week";
+    } else if (start == now.startOfWeek.nextWeek &&
+        end == now.startOfWeek.nextWeek.nextWeek) {
+      return "Next week";
+    } else if (start.isSameMonth(end)) {
+      return '${start.format('MMM d')} - ${end.format('d')}';
+    } else {
+      return '${start.format('MMM d')} - ${end.format('MMM d')}';
+    }
+  }
+
   String toDb() {
     return "[${start.toUtc().toIso8601String()}, ${end.toUtc().toIso8601String()})";
   }

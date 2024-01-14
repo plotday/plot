@@ -5,6 +5,7 @@ import 'activity.dart';
 import 'budget.dart';
 import 'bloc.dart';
 import '../now/bloc.dart';
+import '../util/time.dart';
 import '../util/cached_reorderable_list_view.dart';
 
 class NewPriorityModal extends StatefulWidget {
@@ -108,6 +109,32 @@ class PriorityWidget extends StatelessWidget {
   }
 }
 
+class WeekNavigatorWidget extends StatelessWidget {
+  const WeekNavigatorWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final week = context.watch<PrioritiesBloc>().state.week;
+    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      IconButton(
+          icon: const Icon(Icons.chevron_left),
+          onPressed: () {
+            context
+                .read<PrioritiesBloc>()
+                .add(PrioritiesWeekChanged(week.previous));
+          }),
+      Text(week.friendly),
+      IconButton(
+          icon: const Icon(Icons.chevron_right),
+          onPressed: () {
+            context
+                .read<PrioritiesBloc>()
+                .add(PrioritiesWeekChanged(week.next));
+          }),
+    ]);
+  }
+}
+
 class PrioritiesPage extends StatelessWidget {
   const PrioritiesPage({super.key});
 
@@ -115,7 +142,7 @@ class PrioritiesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PrioritiesBloc, PrioritiesState>(
       builder: (context, prioritiesState) => Scaffold(
-        appBar: AppBar(title: const Text("Priorities")),
+        appBar: AppBar(title: const WeekNavigatorWidget()),
         floatingActionButton: FloatingActionButton(
           onPressed: () {
             showDialog(
