@@ -83,6 +83,31 @@ class _NewPriorityModalState extends State<NewPriorityModal> {
   }
 }
 
+class PriorityWidget extends StatelessWidget {
+  const PriorityWidget({required this.priority, super.key});
+  final Budget priority;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      key: ValueKey(priority.activity.id.toString()),
+      onTap: () {
+        context.read<NowBloc>().add(ActivitySelected(priority.activity));
+      },
+      isThreeLine: true,
+      title: Text(priority.activity.name),
+      subtitle: const Column(children: [
+        LinearProgressIndicator(value: 0.3),
+        Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [Text('0:30'), Text('2:30')])
+      ]),
+      selected:
+          priority.activity.id == context.watch<NowBloc>().state.selected.id,
+    );
+  }
+}
+
 class PrioritiesPage extends StatelessWidget {
   const PrioritiesPage({super.key});
 
@@ -124,17 +149,9 @@ class PrioritiesPage extends StatelessWidget {
                   context.read<PrioritiesBloc>().add(PriorityChanged(budget));
                 },
                 list: prioritiesState.priorities,
-                itemBuilder: (context, item) {
-                  return ListTile(
-                      key: Key(item.activity.id.toString()),
-                      title: TextButton(
-                        onPressed: () {
-                          context
-                              .read<NowBloc>()
-                              .add(ActivitySelected(item.activity));
-                        },
-                        child: Text(item.activity.name),
-                      ));
+                itemBuilder: (context, priority) {
+                  return PriorityWidget(
+                      priority: priority, key: ValueKey(priority.key));
                 },
               );
           }

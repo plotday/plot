@@ -117,6 +117,7 @@ class Budget extends Equatable {
   final Interval week;
   final Duration duration;
   get activity => Activity.get(_activityId);
+  get key => _activityId.toString();
 
   final String _order;
 
