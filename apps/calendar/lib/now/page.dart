@@ -14,4 +14,3 @@ class NowPage extends StatelessWidget {
     });
   }
 }
-//

@@ -12,7 +12,7 @@ part 'state.dart';
 class NowBloc extends Bloc<NowEvent, NowState> {
   NowBloc()
       : super(TimeBlock.current == null
-            ? ActivityIdle(TimeBlock.current?.activity ?? Activity.list().first)
+            ? ActivityIdle(Activity.list().first)
             : ActivityActive(TimeBlock.current!,
                 selected: TimeBlock.current!.activity)) {
     on<ActivitySelected>(_onSelected);
