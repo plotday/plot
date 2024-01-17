@@ -89,11 +89,11 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
+            VALUE "CompanyName", "day.plot" "\0"
             VALUE "FileDescription", "calendar" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "calendar" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2023 com.example. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2024 day.plot. All rights reserved." "\0"
             VALUE "OriginalFilename", "calendar.exe" "\0"
             VALUE "ProductName", "calendar" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"

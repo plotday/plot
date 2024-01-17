@@ -16,9 +16,16 @@ class ProviderAuth {
 }
 
 class SignInWidget extends StatefulWidget {
-  const SignInWidget({required this.onSignIn, super.key});
+  const SignInWidget(
+      {required this.onSignIn,
+      this.scopes = const ['email'],
+      this.codeForRefreshToken = false,
+      super.key});
 
   final void Function(ProviderAuth providerAuth) onSignIn;
+
+  final List<String> scopes;
+  final bool codeForRefreshToken;
 
   @override
   State<SignInWidget> createState() => _SignInWidgetState();
@@ -54,7 +61,11 @@ class _SignInWidgetState extends State<SignInWidget> {
       clientId = Env.googleClientId;
     }
     _googleSignIn = GoogleSignIn(
-        clientId: clientId, serverClientId: serverClientId, scopes: ['email']);
+      clientId: clientId,
+      serverClientId: serverClientId,
+      scopes: widget.scopes,
+      forceCodeForRefreshToken: widget.codeForRefreshToken,
+    );
 
     _googleSignIn.onCurrentUserChanged
         .listen((GoogleSignInAccount? account) async {
@@ -83,6 +94,8 @@ class _SignInWidgetState extends State<SignInWidget> {
       child: buildGoogleSignInButton(onPressed: () async {
         try {
           await _googleSignIn.signIn();
+          print("Who: ${_googleSignIn.currentUser?.displayName}");
+          print("Auth code: ${_googleSignIn.currentUser?.serverAuthCode}");
         } on String catch (message) {
           if (mounted) {
             SnackBar(
