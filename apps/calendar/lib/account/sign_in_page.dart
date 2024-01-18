@@ -8,9 +8,9 @@ import 'sign_in_widget.dart';
 final supabase = Supabase.instance.client;
 
 class SignInPage extends StatefulWidget {
-  const SignInPage({super.key, this.child});
+  const SignInPage({super.key, this.builder});
 
-  final Widget? child;
+  final Widget Function(BuildContext)? builder;
 
   @override
   State<SignInPage> createState() => _SignInPageState();
@@ -66,8 +66,8 @@ class _SignInPageState extends State<SignInPage> {
         ),
       );
     }
-    if (_signedIn == true && widget.child != null) {
-      return widget.child!;
+    if (_signedIn == true && widget.builder != null) {
+      return widget.builder!(context);
     }
 
     return Scaffold(

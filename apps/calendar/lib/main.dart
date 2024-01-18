@@ -24,6 +24,10 @@ void main() async {
     url: Env.supabaseUrl,
     anonKey: Env.supabaseAnonKey,
   );
+  print("access_token: (${supabase.auth.currentSession?.accessToken.length})");
+  print(supabase.auth.currentSession?.accessToken?.substring(0, 700));
+  print(supabase.auth.currentSession?.accessToken?.substring(700));
+  print("refresh_token: ${supabase.auth.currentSession?.refreshToken}");
 
   runApp(const App());
 }
@@ -54,13 +58,25 @@ class App extends StatelessWidget {
         title: 'Plot',
         theme: theme,
         darkTheme: darkTheme,
-        home: MultiBlocProvider(
-          providers: [
-            BlocProvider(create: (_) => PrioritiesBloc()),
-            BlocProvider(create: (_) => NowBloc()),
-            BlocProvider(create: (_) => ScheduleBloc()),
-          ],
-          child: const Layout(title: 'Plot'),
+        home: SignInPage(
+          builder: (context) {
+            return FutureBuilder(
+              future: Future.wait([Activity.load(), TimeBlock.load()]),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return MultiBlocProvider(
+                  providers: [
+                    BlocProvider(create: (_) => PrioritiesBloc()),
+                    BlocProvider(create: (_) => NowBloc()),
+                    BlocProvider(create: (_) => ScheduleBloc()),
+                  ],
+                  child: const Layout(title: 'Plot'),
+                );
+              },
+            );
+          },
         ),
       ),
     );
@@ -87,49 +103,41 @@ class LayoutState extends State<Layout> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return SignInPage(
-        child: FutureBuilder(
-            future: Future.wait([Activity.load(), TimeBlock.load()]),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              return Scaffold(
-                  bottomNavigationBar: NavigationBar(
-                    onDestinationSelected: (int index) {
-                      setState(() {
-                        _tabController.animateTo(index);
-                      });
-                    },
-                    selectedIndex: _tabController.index,
-                    destinations: const <Widget>[
-                      NavigationDestination(
-                        icon: Icon(Icons.crisis_alert),
-                        label: 'Priorities',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.schedule),
-                        label: 'Now',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.calendar_today),
-                        label: 'Schedule',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.settings),
-                        label: 'Settings',
-                      ),
-                    ],
-                  ),
-                  body: TabBarView(
-                    controller: _tabController,
-                    children: const [
-                      PrioritiesPage(),
-                      NowPage(),
-                      SchedulePage(),
-                      AccountPage(),
-                    ],
-                  ));
-            }));
+    return Scaffold(
+        bottomNavigationBar: NavigationBar(
+          onDestinationSelected: (int index) {
+            setState(() {
+              _tabController.animateTo(index);
+            });
+          },
+          selectedIndex: _tabController.index,
+          destinations: const <Widget>[
+            NavigationDestination(
+              icon: Icon(Icons.crisis_alert),
+              label: 'Priorities',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.schedule),
+              label: 'Now',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_today),
+              label: 'Schedule',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings),
+              label: 'Settings',
+            ),
+          ],
+        ),
+        body: TabBarView(
+          controller: _tabController,
+          children: const [
+            PrioritiesPage(),
+            NowPage(),
+            SchedulePage(),
+            AccountPage(),
+          ],
+        ));
   }
 }
