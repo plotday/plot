@@ -105,8 +105,12 @@ extension PostgresDateTimeRange on Interval {
     }
   }
 
-  String toDb() {
+  String toRangeString() {
     return "[${start.toUtc().toIso8601String()}, ${end.toUtc().toIso8601String()})";
+  }
+
+  String toDayString() {
+    return start.startOfDay.format('yyyy-MM-dd');
   }
 }
 

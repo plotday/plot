@@ -165,7 +165,7 @@ class TimeBlock extends Equatable {
   Map<String, dynamic> toJson() => {
         if (id != null) 'id': id,
         'activity_id': activity.id,
-        'at': at.toDb(),
+        'at': at.toRangeString(),
         'planned': planned.toDb(),
         'remaining': _remaining.toDb(),
       };

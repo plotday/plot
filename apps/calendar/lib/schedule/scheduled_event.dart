@@ -1,27 +1,32 @@
 import 'package:equatable/equatable.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../util/time.dart';
 import '../priority/activity.dart';
 
+final supabase = Supabase.instance.client;
+
 class ScheduledEvent extends Equatable {
-  static final Map<Interval, List<ScheduledEvent>> _cache = {
-    Time.day(DateTime(2023, 12, 27)): [
-      ScheduledEvent(
-          "Dev Standup",
-          Interval(
-            DateTime(2023, 12, 27, 14, 30),
-            DateTime(2023, 12, 27, 15, 00),
-          ),
-          1),
-    ],
-  };
+  static final Map<Interval, List<ScheduledEvent>> _cache = {};
+
+  static Future<List<ScheduledEvent>> _load(Interval day) async {
+    final events = await supabase
+        .from('event_x')
+        .select()
+        .eq('user_id', supabase.auth.currentUser!.id)
+        .eq('day', day.toDayString())
+        .order('at', ascending: true);
+    _cache[day] =
+        events.map((event) => ScheduledEvent.fromJson(event)).toList();
+    return _cache[day]!;
+  }
 
   static Future<List<ScheduledEvent>> list(Interval day) {
-    return Future.value(_cache[day] ?? []);
+    return _cache[day] != null ? Future.value(_cache[day]) : _load(day);
   }
 
   static Future<List<ScheduledEvent>> today() async {
-    return list(Time.day(DateTime.now()));
+    return list(Time.today());
   }
 
   static Future<List<ScheduledEvent>> current() async {
@@ -46,14 +51,19 @@ class ScheduledEvent extends Equatable {
     return Future.value(next);
   }
 
-  const ScheduledEvent(this.name, this.at, this._activityId);
+  ScheduledEvent.fromJson(Map<String, dynamic> json)
+      : id = json['id'] as int,
+        name = json['name'] as String,
+        at = Time.interval(json['at'] as String),
+        _activityId = json['activity_id'] as int?;
 
+  final int? id;
   final String name;
   final Interval at;
-  get activity => Activity.get(_activityId);
+  get activity => _activityId == null ? null : Activity.get(_activityId);
 
-  final int _activityId;
+  final int? _activityId;
 
   @override
-  List<Object> get props => [name, at, _activityId];
+  List<Object> get props => [id ?? 0, name, at, _activityId ?? 0];
 }

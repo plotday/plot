@@ -46,7 +46,7 @@ class Budget extends Equatable {
     if (!_cache.containsKey(week)) {
       final results = await supabase.rpc('budget_week', params: {
         'user_id': supabase.auth.currentUser!.id,
-        'week': week.toDb()
+        'week': week.toRangeString()
       });
       final budgets = results.map<MapEntry<int, Budget>>((json) {
         final budget = Budget.fromJson(week, json);
@@ -127,7 +127,7 @@ class Budget extends Equatable {
   Map<String, dynamic> toJson() => {
         'user_id': supabase.auth.currentUser!.id,
         'activity_id': _activityId,
-        'week': week.toDb(),
+        'week': week.toRangeString(),
         'budget': duration.inMinutes,
         'order': _order,
       };
