@@ -1,3 +1,4 @@
+import jwt from "@tsndr/cloudflare-worker-jwt";
 import { jsonFetch as fetch } from "@worker-tools/json-fetch";
 import type { calendar_v3, people_v1 } from "googleapis";
 
@@ -648,5 +649,61 @@ export async function getContacts(
       more,
       state: JSON.stringify(tokens),
     },
+  };
+}
+
+export async function getCredentials(
+  config: CalendarConfig,
+  code: string
+): Promise<CalendarCredentials> {
+  const payload = {
+    client_id: config.googleClientId,
+    client_secret: config.googleOauthSecret,
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: "http://localhost:54321/auth/v1/callback",
+  };
+  const body = new URLSearchParams(payload);
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error);
+  }
+  const creds = await response.json();
+  if (creds === null || typeof creds !== "object") {
+    throw new Error("Invalid response");
+  }
+  if (!("id_token" in creds)) {
+    throw new Error("Missing access token");
+  }
+  if (!("access_token" in creds)) {
+    throw new Error("Missing access token");
+  }
+  if (!("refresh_token" in creds)) {
+    throw new Error("Missing refresh token");
+  }
+  if (!("scope" in creds)) {
+    throw new Error("Missing scopes");
+  }
+
+  const token = jwt.decode(creds.id_token as string);
+  const email = token.payload?.email;
+  if (!email) {
+    throw new Error("Missing email");
+  }
+
+  return {
+    ...creds,
+    access_token: creds.access_token as string,
+    refresh_token: creds.refresh_token as string,
+    scopes: (creds.scope as string).split(" "),
+    provider: "google",
+    email,
   };
 }

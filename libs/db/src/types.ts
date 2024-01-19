@@ -40,9 +40,8 @@ export interface Database {
           created_at: string
           credentials: Json | null
           domain_id: number | null
-          email: string | null
+          email: string
           id: number
-          provider: Database["public"]["Enums"]["provider"]
           user_id: string
           calendars: unknown | null
           organization: unknown | null
@@ -52,9 +51,8 @@ export interface Database {
           created_at?: string
           credentials?: Json | null
           domain_id?: number | null
-          email?: string | null
+          email: string
           id?: never
-          provider: Database["public"]["Enums"]["provider"]
           user_id: string
         }
         Update: {
@@ -62,9 +60,8 @@ export interface Database {
           created_at?: string
           credentials?: Json | null
           domain_id?: number | null
-          email?: string | null
+          email?: string
           id?: never
-          provider?: Database["public"]["Enums"]["provider"]
           user_id?: string
         }
         Relationships: [
@@ -845,7 +842,7 @@ export interface Database {
           event_count: number | null
           first_synced_at: string | null
           full_sync_at: string | null
-          provider: Database["public"]["Enums"]["provider"] | null
+          provider: Json | null
           sync_seconds: number | null
           synced_at: string | null
         }
@@ -858,7 +855,7 @@ export interface Database {
           event_count: number | null
           id: number | null
           invitation: string | null
-          provider: Database["public"]["Enums"]["provider"][] | null
+          provider: Json | null
           status: string | null
           sync_accounts: string[] | null
           sync_error: string[] | null
@@ -876,9 +873,8 @@ export interface Database {
           created_at: string
           credentials: Json | null
           domain_id: number | null
-          email: string | null
+          email: string
           id: number
-          provider: Database["public"]["Enums"]["provider"]
           user_id: string
         }[]
       }

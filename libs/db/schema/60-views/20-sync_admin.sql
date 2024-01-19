@@ -4,7 +4,7 @@ AS
 SELECT
     min(a.email) AS email,
     min(a.id) AS account_id,
-    min(a.provider) AS provider,
+    ((array_agg(a.credentials))[0]) -> 'provider' AS provider,
     c.provider_id AS calendar_provider_id,
     c.created_at AS first_synced_at,
     c.full_sync_at AS full_sync_at,

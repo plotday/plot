@@ -17,6 +17,7 @@
     "@microsoft/microsoft-graph-client": "^3.0.5",
     "@microsoft/microsoft-graph-types": "^2.35.0",
     "@plotday/tz": "workspace:^",
+    "@tsndr/cloudflare-worker-jwt": "^2.3.2",
     "@worker-tools/json-fetch": "2.1.0-pre.6",
     "date-fns": "^2.30.0",
     "googleapis": "^126.0.1"

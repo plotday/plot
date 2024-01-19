@@ -1,10 +1,13 @@
 import { Toucan } from "toucan-js";
 
-import type { CalendarConfig, ContactSyncState } from "@plotday/cal";
+import type {
+  CalendarConfig,
+  CalendarCredentials,
+  ContactSyncState,
+} from "@plotday/cal";
 import { getContacts } from "@plotday/cal";
 import type { SupabaseClient } from "@plotday/db";
 import {
-  buildCredentials,
   createClient,
   getAccount,
   safeQuery,
@@ -44,7 +47,7 @@ async function runSync(
   };
 
   let account = await getAccount(supabase, accountId);
-  let credentials = await buildCredentials(account);
+  let credentials = account.credentials as CalendarCredentials;
 
   let state: ContactSyncState = {
     state:

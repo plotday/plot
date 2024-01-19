@@ -16,7 +16,7 @@ SELECT
     END AS "status",
     array_agg(DISTINCT a.email) FILTER (WHERE a.email IS NOT NULL) AS sync_accounts,
     array_agg(c.sync_error) FILTER (WHERE c.sync_error IS NOT NULL) AS sync_error,
-    array_agg(DISTINCT a.provider) FILTER (WHERE a.provider IS NOT NULL) AS provider,
+    ((array_agg(a.credentials))[0]) -> 'provider' AS provider,
     w.invitation AS invitation,
     count(e.id) AS event_count
 FROM

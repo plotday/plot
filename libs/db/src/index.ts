@@ -29,35 +29,15 @@ export async function getAccount(supabase: SupabaseClient, accountId: number) {
   return account;
 }
 
-export async function buildCredentials(
-  account: Awaited<ReturnType<typeof getAccount>>
-): Promise<CalendarCredentials> {
-  if (!account.email) throw new Error(`Account ${account.id} missing email`);
-  if (
-    !account.credentials ||
-    typeof account.credentials !== "object" ||
-    !("access_token" in account.credentials) ||
-    typeof account.credentials.access_token !== "string" ||
-    !("refresh_token" in account.credentials) ||
-    typeof account.credentials.refresh_token !== "string"
-  ) {
-    throw new Error(`Account ${account.id} missing credentials`);
-  }
-  return {
-    provider: account.provider,
-    email: account.email,
-    access_token: account.credentials.access_token,
-    refresh_token: account.credentials.refresh_token,
-    scopes: (account.credentials.scopes ?? []) as string[],
-  };
-}
 export async function getCredentials(
   supabase: SupabaseClient,
   accountId: number
 ): Promise<CalendarCredentials> {
   const account = await getAccount(supabase, accountId);
   if (!account.email) throw new Error(`Account ${accountId} missing email`);
-  return buildCredentials(account);
+  if (!account.credentials)
+    throw new Error(`Account ${accountId} missing credentials`);
+  return account.credentials as CalendarCredentials;
 }
 
 export async function saveCredentials(
@@ -75,12 +55,20 @@ export async function saveCredentials(
   }
 }
 
-export function parseDateRange(range: string) {
-  return range.replaceAll(/["[\]()]/g, "").split(",");
+export function parseDateRange(range: string | unknown) {
+  const [start, end] = (range as string).replaceAll(/["[\]()]/g, "").split(",");
+  return {
+    start,
+    end,
+  };
 }
 
-export function parseDatetimeRange(range: string, tz: string) {
-  return parseDateRange(range).map((d) => toDate(d, tz));
+export function parseDatetimeRange(range: string | unknown, tz?: string) {
+  const { start, end } = parseDateRange(range);
+  return {
+    start: tz ? toDate(start, tz) : new Date(start),
+    end: tz ? toDate(end, tz) : new Date(end),
+  };
 }
 
 export async function saveCalendars(
@@ -147,5 +135,4 @@ export type {
 export { Event } from "./event";
 
 export { safeQuery } from "./query";
-
 export * from "./path";

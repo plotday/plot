@@ -3,6 +3,8 @@ abstract class Env {
   static const String supabaseAnonKey =
       String.fromEnvironment('SUPABASE_ANON_KEY');
 
+  static const String syncApi = String.fromEnvironment('SYNC_API');
+
   static const String googleClientId =
       String.fromEnvironment('GOOGLE_CLIENT_ID');
   static const String googleIosClientId =

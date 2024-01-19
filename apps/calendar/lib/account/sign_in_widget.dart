@@ -20,12 +20,14 @@ class SignInWidget extends StatefulWidget {
       {required this.onSignIn,
       this.scopes = const ['email'],
       this.codeForRefreshToken = false,
+      this.repeatable = false,
       super.key});
 
   final void Function(ProviderAuth providerAuth) onSignIn;
 
   final List<String> scopes;
   final bool codeForRefreshToken;
+  final bool repeatable;
 
   @override
   State<SignInWidget> createState() => _SignInWidgetState();
@@ -60,6 +62,9 @@ class _SignInWidgetState extends State<SignInWidget> {
     } else {
       clientId = Env.googleClientId;
     }
+    print("clientId: $clientId");
+    print("serverClientId: $serverClientId");
+    print("scopes: ${widget.scopes}");
     _googleSignIn = GoogleSignIn(
       clientId: clientId,
       serverClientId: serverClientId,
@@ -84,6 +89,7 @@ class _SignInWidgetState extends State<SignInWidget> {
 
       widget
           .onSignIn(ProviderAuth(accessToken, idToken, account.serverAuthCode));
+      if (widget.repeatable) _googleSignIn.signOut();
     });
   }
 

@@ -24,10 +24,6 @@ void main() async {
     url: Env.supabaseUrl,
     anonKey: Env.supabaseAnonKey,
   );
-  print("access_token: (${supabase.auth.currentSession?.accessToken.length})");
-  print(supabase.auth.currentSession?.accessToken?.substring(0, 700));
-  print(supabase.auth.currentSession?.accessToken?.substring(700));
-  print("refresh_token: ${supabase.auth.currentSession?.refreshToken}");
 
   runApp(const App());
 }

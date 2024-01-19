@@ -1,0 +1,37 @@
+import 'package:equatable/equatable.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../util/api.dart' as api;
+import '../env.dart';
+
+final supabase = Supabase.instance.client;
+
+enum AccountProvider { google, outlook }
+
+class Account extends Equatable {
+  static List<Account> list() {
+    // TODO
+    return [];
+  }
+
+  static Future<Account> add(AccountProvider provider, String code) async {
+    final response = await api.post(
+      "${Env.syncApi}/account",
+      body: {
+        'provider': provider.name,
+        'code': code,
+      },
+    );
+    return Account.fromJson(response);
+  }
+
+  Account.fromJson(Map<String, dynamic> json)
+      : id = json['id'] as int,
+        email = json['email'] as String;
+
+  final int? id;
+  final String email;
+
+  @override
+  List<Object> get props => [id ?? 0, email];
+}

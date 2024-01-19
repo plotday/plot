@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'sign_in_widget.dart';
+import 'account.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -17,14 +18,16 @@ class AccountPage extends StatelessWidget {
           children: <Widget>[
             SignInWidget(
               onSignIn: (providerAuth) async {
-                print("providerAuth: ${providerAuth.serverAuthCode}");
+                if (providerAuth.serverAuthCode == null) return;
+                await Account.add(
+                    AccountProvider.google, providerAuth.serverAuthCode!);
               },
               codeForRefreshToken: true,
               scopes: const [
-                'calendar.events',
-                'calendar.calendarlist.readonly',
-                'offline'
+                'https://www.googleapis.com/auth/calendar.events',
+                'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
               ],
+              repeatable: true,
             ),
             ElevatedButton(
                 onPressed: () async {

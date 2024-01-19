@@ -1,24 +1,6 @@
 import type { Contact, Event, EventResponse } from "./event";
-import {
-  deleteWatch as deleteGoogleWatch,
-  getCalendars as googleGetCalendars,
-  getContacts as googleGetContacts,
-  respond as googleRespond,
-  sync as googleSync,
-  transform as googleTransform,
-  update as googleUpdate,
-  watch as googleWatch,
-} from "./google";
-import {
-  deleteWatch as deleteOutlookWatch,
-  getCalendars as outlookGetCalendars,
-  getContacts as outlookGetContacts,
-  respond as outlookRespond,
-  sync as outlookSync,
-  transform as outlookTransform,
-  update as outlookUpdate,
-  watch as outlookWatch,
-} from "./outlook";
+import * as google from "./google";
+import * as outlook from "./outlook";
 
 export type {
   Event,
@@ -95,6 +77,21 @@ export type Calendar = {
   account: string;
 };
 
+export async function getCredentials(
+  config: CalendarConfig,
+  provider: CalendarProvider,
+  code: string
+): Promise<CalendarCredentials> {
+  switch (provider) {
+    case "google":
+      return await google.getCredentials(config, code);
+    case "outlook":
+    default:
+      throw new Error("Not implemented");
+    // return await getCredentials(config, email, code);
+  }
+}
+
 export async function watch(
   config: CalendarConfig,
   credentials: CalendarCredentials,
@@ -111,10 +108,10 @@ export async function watch(
   let ret;
   switch (credentials.provider) {
     case "google":
-      ret = await googleWatch(config, credentials, calendarId);
+      ret = await google.watch(config, credentials, calendarId);
       break;
     case "outlook":
-      ret = await outlookWatch(config, credentials, calendarId, renew);
+      ret = await outlook.watch(config, credentials, calendarId, renew);
       break;
     default:
       throw new Error(`Unknown provider: ${credentials.provider}`);
@@ -137,7 +134,7 @@ export async function deleteWatch(
   switch (credentials.provider) {
     case "google":
       if (!resourceId) throw new Error("Missing resourceId");
-      newCredentials = await deleteGoogleWatch(
+      newCredentials = await google.deleteWatch(
         config,
         credentials,
         watchId,
@@ -145,7 +142,7 @@ export async function deleteWatch(
       );
       break;
     case "outlook":
-      newCredentials = await deleteOutlookWatch(config, credentials, watchId);
+      newCredentials = await outlook.deleteWatch(config, credentials, watchId);
       break;
     default:
       throw new Error(`Unknown provider: ${credentials.provider}`);
@@ -168,9 +165,9 @@ export async function sync(
   if (!state.sequence) state.sequence = 1;
   switch (credentials.provider) {
     case "google":
-      return await googleSync(config, credentials, state, maxEvents);
+      return await google.sync(config, credentials, state, maxEvents);
     case "outlook":
-      return await outlookSync(config, credentials, state, maxEvents);
+      return await outlook.sync(config, credentials, state, maxEvents);
     default:
       throw new Error(`Unknown provider: ${credentials.provider}`);
   }
@@ -179,9 +176,9 @@ export async function sync(
 export function transform(provider: CalendarProvider, event: RawEvent): Event {
   switch (provider) {
     case "google":
-      return googleTransform(event);
+      return google.transform(event);
     case "outlook":
-      return outlookTransform(event);
+      return outlook.transform(event);
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }
@@ -196,7 +193,7 @@ export async function update(
 ) {
   switch (credentials.provider) {
     case "google":
-      return await googleUpdate(
+      return await google.update(
         config,
         credentials,
         calendarId,
@@ -204,7 +201,7 @@ export async function update(
         changes
       );
     case "outlook":
-      return await outlookUpdate(
+      return await outlook.update(
         config,
         credentials,
         calendarId,
@@ -226,7 +223,7 @@ export async function respond(
 ) {
   switch (credentials.provider) {
     case "google":
-      return await googleRespond(
+      return await google.respond(
         config,
         credentials,
         calendarId,
@@ -234,7 +231,7 @@ export async function respond(
         response
       );
     case "outlook":
-      return await outlookRespond(
+      return await outlook.respond(
         config,
         credentials,
         calendarId,
@@ -256,9 +253,9 @@ export async function getCalendars(
 }> {
   switch (credentials.provider) {
     case "google":
-      return await googleGetCalendars(config, credentials);
+      return await google.getCalendars(config, credentials);
     case "outlook":
-      return await outlookGetCalendars(config, credentials);
+      return await outlook.getCalendars(config, credentials);
     default:
       throw new Error(`Unknown provider: ${credentials.provider}`);
   }
@@ -275,9 +272,9 @@ export async function getContacts(
 }> {
   switch (credentials.provider) {
     case "google":
-      return await googleGetContacts(config, credentials, state);
+      return await google.getContacts(config, credentials, state);
     case "outlook":
-      return await outlookGetContacts(config, credentials, state);
+      return await outlook.getContacts(config, credentials, state);
     default:
       throw new Error(`Unknown provider: ${credentials.provider}`);
   }
