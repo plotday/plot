@@ -12,6 +12,7 @@ WITH event_x1 AS (
             ELSE
                 e.at
             END) AS at,
+        min(c.account_id) AS account_id,
         min(e.calendar_id) AS calendar_id,
         min(e.provider_id) AS provider_id,
         COALESCE(min(e.series), min(e.provider_id)) AS series,
@@ -71,18 +72,22 @@ FROM
         SELECT
             activity_id,
             CASE WHEN series IS NOT NULL THEN
-                64
+                128
             ELSE
                 0
             END + CASE WHEN name IS NOT NULL THEN
-                32
+                64
             ELSE
                 0
             END + CASE WHEN invitees IS NOT NULL THEN
-                16
+                32
             ELSE
                 0
             END + CASE WHEN invitee_domain IS NOT NULL THEN
+                16
+            ELSE
+                0
+            END + CASE WHEN account_id IS NOT NULL THEN
                 8
             ELSE
                 0
@@ -111,6 +116,8 @@ FROM
                 OR e.invitees = r.invitees)
             AND (r.invitee_domain IS NULL
                 OR e.invitee_domains @> ARRAY[r.invitee_domain])
+            AND (r.account_id IS NULL
+                OR e.account_id = r.account_id)
             AND (r.calendar_id IS NULL
                 OR e.calendar_id = r.calendar_id)
             AND (r.internal IS NULL

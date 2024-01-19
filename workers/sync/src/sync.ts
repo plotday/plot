@@ -11,7 +11,7 @@ import {
   subYears,
 } from "date-fns";
 
-import { getCredentials, sync, watch } from "@plotday/cal";
+import { getCalendars, getCredentials, sync, watch } from "@plotday/cal";
 import type {
   CalendarConfig,
   CalendarProvider,
@@ -19,9 +19,13 @@ import type {
   WatchState,
 } from "@plotday/cal";
 import {
+  type Database,
+  createActivities,
+  formatDatetimeRange,
   getCredentials as getDbCredentials,
   parseDatetimeRange,
   safeQuery,
+  saveCalendars,
   saveCredentials,
 } from "@plotday/db";
 import type { EventSyncRequest, SyncType } from "@plotday/worker-request";
@@ -54,10 +58,6 @@ export async function addAccount(
   const avatar_url = user.user_metadata?.avatar_url;
   const email = credentials.email;
 
-  // if (!user) {
-  //   await createCategories(supabase, id, email, true);
-  // }
-
   const account = safeQuery(
     await supabaseAdmin
       .from("account")
@@ -76,6 +76,20 @@ export async function addAccount(
     throw Error("Failed to create account");
   }
 
+  const activities = await createActivities(supabaseAdmin, user.id, email);
+  safeQuery(
+    await supabaseAdmin.from("rule").upsert(
+      activities.map((c) => ({
+        user_id,
+        account_id: account.id,
+        ...((c.path as string).endsWith(".meetings")
+          ? { type: "meeting" as Database["public"]["Enums"]["event_type"] }
+          : {}),
+        activity_id: c.id,
+      }))
+    )
+  );
+
   // Create or link a contact for the user
   safeQuery(
     await supabaseAdmin.from("contact").upsert(
@@ -90,6 +104,29 @@ export async function addAccount(
     )
   );
 
+  let calendars;
+  ({ calendars, credentials } = await getCalendars(
+    getCalendarConfig(env),
+    credentials
+  ));
+  await saveCredentials(supabaseAdmin, user.id, credentials);
+  const dbCalendars = await saveCalendars(supabaseAdmin, account.id, calendars);
+
+  if (dbCalendars) {
+    for (const calendar of dbCalendars) {
+      if (!calendar.enabled) continue;
+      // Start a partial sync plus a full sync
+      await env.SYNC_QUEUE?.send?.({
+        calendarId: calendar.id,
+        syncType: "partial",
+      });
+      await env.SYNC_QUEUE?.send?.({
+        calendarId: calendar.id,
+        syncType: "full",
+      });
+    }
+  }
+
   return account;
 }
 
@@ -102,6 +139,8 @@ export async function syncCalendar(
   const maxBatchSize = 50;
   const maxBatchBytes = 128_000;
   const numBatchesPerSync = 5;
+
+  const calendarConfig = getCalendarConfig(env);
 
   let state: SyncState | undefined;
   try {
@@ -259,8 +298,7 @@ export async function syncCalendar(
         await supabase
           .from("calendar")
           .update({
-            starts_at: state.min.toISOString(),
-            ends_at: state.max.toISOString(),
+            synced_dates: formatDatetimeRange(state.min, state.max),
             sync_state: state.state,
             sequence: state.sequence,
             synced_at: new Date().toISOString(),

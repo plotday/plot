@@ -18,7 +18,7 @@ export function nameToPath(name: string) {
     .toLowerCase();
 }
 
-export async function emailToCategory(supabase: SupabaseClient, email: string) {
+export async function emailToActivity(supabase: SupabaseClient, email: string) {
   const parts = email.split("@");
   let domain = parts[parts.length - 1];
 
@@ -55,16 +55,15 @@ export async function emailToCategory(supabase: SupabaseClient, email: string) {
   };
 }
 
-export async function createCategories(
+export async function createActivities(
   supabaseAdmin: SupabaseClient,
-  userId: number,
-  email: string,
-  updateDefault = false
+  userId: string,
+  email: string
 ) {
-  const { path, name } = await emailToCategory(supabaseAdmin, email);
-  safeQuery(
+  const { path, name } = await emailToActivity(supabaseAdmin, email);
+  return safeQuery(
     await supabaseAdmin
-      .from("category")
+      .from("activity")
       .upsert(
         [
           {
@@ -82,15 +81,4 @@ export async function createCategories(
       )
       .select()
   );
-
-  if (updateDefault) {
-    safeQuery(
-      await supabaseAdmin
-        .from("user")
-        .update({ default_category: path })
-        .eq("id", userId)
-    );
-  }
-
-  return path;
 }

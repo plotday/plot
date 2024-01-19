@@ -3,7 +3,7 @@ CREATE OR REPLACE FUNCTION user_timezone ()
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    RETURN COALESCE(auth.jwt () -> 'app_metadata' -> 'timezone', 'America/New_York');
+    RETURN COALESCE((auth.jwt () -> 'app_metadata' -> 'timezone')::text, 'America/New_York');
 END;
 $$;
 

@@ -7,12 +7,13 @@ CREATE TABLE "public"."rule" (
     "name" text,
     "invitees" text[],
     "invitee_domain" text,
+    "account_id" bigint REFERENCES account ON DELETE CASCADE,
     "calendar_id" bigint REFERENCES calendar ON DELETE CASCADE,
     "internal" event_internal,
     "type" event_type,
     -- overrides
     "activity_id" bigint REFERENCES activity ON DELETE CASCADE,
-    CONSTRAINT rule_unique UNIQUE NULLS NOT DISTINCT (user_id, series, name, invitees, invitee_domain, calendar_id, internal, type)
+    CONSTRAINT rule_unique UNIQUE NULLS NOT DISTINCT (user_id, series, name, invitees, invitee_domain, account_id, calendar_id, internal, type)
 );
 
 ALTER TABLE "public"."rule" ENABLE ROW LEVEL SECURITY;
