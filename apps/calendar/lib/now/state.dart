@@ -1,32 +1,63 @@
 part of 'bloc.dart';
 
 sealed class NowState extends Equatable {
-  const NowState(this.selected);
+  const NowState({this.selected, this.current, this.next});
 
-  final Activity selected;
+  final Activity? selected;
+  final ScheduledEvent? current;
+  final ScheduledEvent? next;
 
   @override
-  List<Object?> get props => [selected];
+  List<Object?> get props => [selected, current, next];
 
-  NowState copyWith({Activity? selected});
+  NowState copyWith(
+      {Activity? selected, ScheduledEvent? current, ScheduledEvent? next});
 
-  get remaining => selected.pomodoro;
+  get remaining => selected?.pomodoro ?? const Duration(minutes: 25);
 
   get progress => 0.0;
+
+  ScheduledEvent? currentOf(Activity? activity) {
+    return current?.activity == activity ? current : null;
+  }
+
+  DateTime? endOf(Activity? activity) {
+    final active = currentOf(activity);
+    if (active != null) {
+      return active.at.end;
+    }
+    if (next != null) {
+      return next!.at.start;
+    }
+    return null;
+  }
+
+  double? currentProgress(Activity? activity) {
+    final active = currentOf(activity);
+    if (active == null) return null;
+    final total = active.at.end.difference(active.at.start).inSeconds;
+    if (total == 0) return null;
+    return DateTime.now().difference(active.at.start).inSeconds / total;
+  }
 }
 
 final class ActivityIdle extends NowState {
-  const ActivityIdle(super.selected);
+  const ActivityIdle({super.selected, super.current, super.next});
 
   @override
-  ActivityIdle copyWith({Activity? selected}) {
-    return ActivityIdle(selected ?? this.selected);
+  ActivityIdle copyWith(
+      {Activity? selected, ScheduledEvent? current, ScheduledEvent? next}) {
+    return ActivityIdle(
+        selected: selected ?? this.selected,
+        current: current ?? this.current,
+        next: next ?? this.next);
   }
 }
 
 class ActivityActive extends NowState {
-  const ActivityActive(this.active, {required Activity selected})
-      : super(selected);
+  const ActivityActive(this.active,
+      {required Activity selected, super.current, super.next})
+      : super(selected: selected);
 
   final TimeBlock active;
 
@@ -34,9 +65,18 @@ class ActivityActive extends NowState {
   List<Object?> get props => super.props + [active];
 
   @override
-  ActivityActive copyWith({Activity? selected, TimeBlock? active}) {
-    return ActivityActive(active ?? this.active,
-        selected: selected ?? this.selected);
+  ActivityActive copyWith(
+      {TimeBlock? active,
+      Activity? selected,
+      ScheduledEvent? current,
+      ScheduledEvent? next}) {
+    return ActivityActive(
+      active ?? this.active,
+      selected:
+          selected ?? this.selected ?? active?.activity ?? this.active.activity,
+      current: current ?? this.current,
+      next: next ?? this.next,
+    );
   }
 
   @override

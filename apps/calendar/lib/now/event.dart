@@ -40,3 +40,7 @@ final class ActivityResumed extends NowEvent {
 final class ActivityCompleted extends NowEvent {
   const ActivityCompleted();
 }
+
+final class _ClockTicked extends NowEvent {
+  const _ClockTicked();
+}

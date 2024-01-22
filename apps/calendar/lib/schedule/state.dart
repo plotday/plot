@@ -1,51 +1,20 @@
 part of 'bloc.dart';
 
-sealed class ScheduleState extends Equatable {
-  const ScheduleState();
-
-  @override
-  List<Object> get props => [];
+class EventList {
+  const EventList(this.events, this.nextAnchor);
+  final Map<DateTime, List<ScheduledEvent>> events;
+  final DateTime? nextAnchor;
 }
 
-final class ScheduleLoadingState extends ScheduleState {
-  const ScheduleLoadingState();
-}
+final class ScheduleState extends Equatable {
+  const ScheduleState(
+      {this.lists = const {
+        TimeDirection.descending: EventList({}, null),
+        TimeDirection.ascending: EventList({}, null)
+      }});
 
-final class ScheduleLoadedState extends ScheduleState {
-  const ScheduleLoadedState(this.current, this.next);
-
-  final List<ScheduledEvent> current;
-  final List<ScheduledEvent> next;
-
-  ScheduledEvent? currentOf(Activity? activity) {
-    final active = current.where((ScheduledEvent event) {
-      return activity == null || event.activity == activity;
-    });
-    if (active.isNotEmpty) {
-      return active.first;
-    }
-    return null;
-  }
-
-  DateTime? endOf(Activity? activity) {
-    final active = currentOf(activity);
-    if (active != null) {
-      return active.at.end;
-    }
-    if (next.isNotEmpty) {
-      return next.first.at.start;
-    }
-    return null;
-  }
-
-  double? currentProgress(Activity? activity) {
-    final active = currentOf(activity);
-    if (active == null) return null;
-    final total = active.at.end.difference(active.at.start).inSeconds;
-    if (total == 0) return null;
-    return DateTime.now().difference(active.at.start).inSeconds / total;
-  }
+  final Map<TimeDirection, EventList> lists;
 
   @override
-  List<Object> get props => [current, next];
+  List<Object> get props => [lists];
 }

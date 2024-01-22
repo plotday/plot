@@ -8,14 +8,13 @@ import 'env.dart';
 import 'account/sign_in_page.dart';
 import 'now/page.dart';
 import 'priority/page.dart';
-import 'schedule/schedule_page.dart';
-import 'account/account_page.dart';
+import 'schedule/page.dart';
+import 'account/page.dart';
 
 import 'priority/bloc.dart';
 import 'priority/activity.dart';
 import 'now/bloc.dart';
 import 'now/time_block.dart';
-import 'schedule/bloc.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -66,7 +65,6 @@ class App extends StatelessWidget {
                   providers: [
                     BlocProvider(create: (_) => PrioritiesBloc()),
                     BlocProvider(create: (_) => NowBloc()),
-                    BlocProvider(create: (_) => ScheduleBloc()),
                   ],
                   child: const Layout(title: 'Plot'),
                 );

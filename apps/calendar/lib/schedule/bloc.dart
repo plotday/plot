@@ -1,42 +1,55 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:equatable/equatable.dart';
 
 import 'scheduled_event.dart';
+import '../util/time.dart';
 import '../priority/activity.dart';
-import '../util/clock.dart';
 
 part 'event.dart';
 part 'state.dart';
 
 class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
-  ScheduleBloc() : super(const ScheduleLoadingState()) {
-    on<_ScheduleUpdated>(_onUpdated);
-    on<_ScheduleTicked>(_onTicked, transformer: droppable());
-    _secondsSubscription =
-        Clock().seconds.listen((void _) => add(const _ScheduleTicked()));
+  ScheduleBloc(
+      {this.horizon = TimeHorizon.day,
+      this.initialActivity,
+      DateTime? initialAnchor})
+      : initialAnchor = initialAnchor ?? Time.today().start,
+        super(const ScheduleState()) {
+    on<ScheduleFetch>(_onFetch);
+    add(ScheduleFetch(this.initialAnchor, TimeDirection.ascending));
+    add(ScheduleFetch(this.initialAnchor, TimeDirection.descending));
   }
 
-  StreamSubscription<void>? _secondsSubscription;
+  final TimeHorizon horizon;
+  final DateTime initialAnchor;
+  final Activity? initialActivity;
 
-  @override
-  Future<void> close() {
-    _secondsSubscription?.cancel();
-    return super.close();
-  }
-
-  void _onUpdated(_ScheduleUpdated event, Emitter<ScheduleState> emit) {
-    emit(ScheduleLoadedState(event.current, event.next));
-  }
-
-  Future<void> _onTicked(
-      _ScheduleTicked event, Emitter<ScheduleState> emit) async {
-    final [current, next] = await Future.wait([
-      ScheduledEvent.current(),
-      ScheduledEvent.next(),
-    ]);
-    add(_ScheduleUpdated(current, next));
+  Future<void> _onFetch(
+      ScheduleFetch event, Emitter<ScheduleState> emit) async {
+    final groupedEvents = await ScheduledEvent.list(event.anchor,
+        direction: event.direction,
+        horizon: horizon,
+        activity: initialActivity);
+    if (event.direction == TimeDirection.descending) {
+      emit(ScheduleState(lists: {
+        TimeDirection.descending: EventList(
+            {}
+              ..addAll(groupedEvents.events)
+              ..addAll(state.lists[TimeDirection.descending]!.events),
+            groupedEvents.nextAnchor),
+        TimeDirection.ascending: state.lists[TimeDirection.ascending]!
+      }));
+    } else {
+      emit(ScheduleState(lists: {
+        TimeDirection.descending: state.lists[TimeDirection.descending]!,
+        TimeDirection.ascending: EventList(
+            {}
+              ..addAll(state.lists[TimeDirection.ascending]!.events)
+              ..addAll(groupedEvents.events),
+            groupedEvents.nextAnchor),
+      }));
+    }
   }
 }

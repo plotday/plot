@@ -4,13 +4,9 @@ sealed class ScheduleEvent {
   const ScheduleEvent();
 }
 
-final class _ScheduleUpdated extends ScheduleEvent {
-  const _ScheduleUpdated(this.current, this.next);
+final class ScheduleFetch extends ScheduleEvent {
+  const ScheduleFetch(this.anchor, this.direction);
 
-  final List<ScheduledEvent> current;
-  final List<ScheduledEvent> next;
-}
-
-final class _ScheduleTicked extends ScheduleEvent {
-  const _ScheduleTicked();
+  final DateTime anchor;
+  final TimeDirection direction;
 }

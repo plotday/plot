@@ -4,26 +4,40 @@ DROP VIEW IF EXISTS "public"."gap_monthly";
 
 DROP VIEW IF EXISTS "public"."insight_weekly";
 
-DROP VIEW IF EXISTS "public"."sync_admin";
-
-DROP VIEW IF EXISTS "public"."waitlist_admin";
-
 DROP VIEW IF EXISTS "public"."gap";
 
 DROP VIEW IF EXISTS "public"."insight";
 
 DROP VIEW IF EXISTS "public"."event_x" CASCADE;
 
-ALTER TABLE "public"."account"
-    DROP COLUMN "provider";
+ALTER TABLE "public"."rule"
+    DROP CONSTRAINT "rule_unique";
 
-ALTER TABLE "public"."account"
-    ALTER COLUMN "email" SET NOT NULL;
+ALTER TABLE "public"."rule"
+    ADD COLUMN "account_id" bigint;
 
-CREATE UNIQUE INDEX account_user_id_email_key ON public.account USING btree (user_id, email);
+CREATE UNIQUE INDEX rule_unique ON public.rule USING btree (user_id, series, name, invitees, invitee_domain, account_id, calendar_id, internal, type) NULLS NOT DISTINCT;
 
-ALTER TABLE "public"."account"
-    ADD CONSTRAINT "account_user_id_email_key" UNIQUE USING INDEX "account_user_id_email_key";
+ALTER TABLE "public"."rule"
+    ADD CONSTRAINT "rule_account_id_fkey" FOREIGN KEY (account_id) REFERENCES account (id) ON DELETE CASCADE NOT valid;
+
+ALTER TABLE "public"."rule" validate CONSTRAINT "rule_account_id_fkey";
+
+ALTER TABLE "public"."rule"
+    ADD CONSTRAINT "rule_unique" UNIQUE USING INDEX "rule_unique";
+
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE FUNCTION public.user_timezone ()
+    RETURNS text
+    LANGUAGE plpgsql
+    AS $function$
+BEGIN
+    RETURN COALESCE((auth.jwt () -> 'app_metadata' -> 'timezone')::text, 'America/New_York');
+END;
+$function$;
+
+SET check_function_bodies = OFF;
 
 CREATE OR REPLACE VIEW "public"."event_x" AS
 WITH event_x1 AS (
@@ -36,6 +50,7 @@ WITH event_x1 AS (
         ELSE
             e_1.at
         END AS at,
+        min(c.account_id) AS account_id,
         min(e_1.calendar_id) AS calendar_id,
         min(e_1.provider_id) AS provider_id,
         COALESCE(min(e_1.series), min(e_1.provider_id)) AS series,
@@ -88,6 +103,7 @@ SELECT
     e.id,
     e.name,
     e.at,
+    e.account_id,
     e.calendar_id,
     e.provider_id,
     e.series,
@@ -123,28 +139,32 @@ FROM ((event_x1 e
     LEFT JOIN LATERAL (
         SELECT
             r_1.activity_id,
-            ((((((
+            (((((((
                 CASE WHEN (r_1.series IS NOT NULL) THEN
-                    64
+                    128
                 ELSE
                     0
                 END + CASE WHEN (r_1.name IS NOT NULL) THEN
-                    32
+                    64
                 ELSE
                     0
                 END) + CASE WHEN (r_1.invitees IS NOT NULL) THEN
-                16
+                32
             ELSE
                 0
             END) + CASE WHEN (r_1.invitee_domain IS NOT NULL) THEN
-            8
+            16
         ELSE
             0
-        END) + CASE WHEN (r_1.calendar_id IS NOT NULL) THEN
-        4
+        END) + CASE WHEN (r_1.account_id IS NOT NULL) THEN
+        8
     ELSE
         0
-    END) + CASE WHEN (r_1.internal IS NOT NULL) THEN
+    END) + CASE WHEN (r_1.calendar_id IS NOT NULL) THEN
+    4
+ELSE
+    0
+END) + CASE WHEN (r_1.internal IS NOT NULL) THEN
     2
 ELSE
     0
@@ -164,6 +184,8 @@ END) AS priority
                 OR (e.invitees = r_1.invitees))
             AND ((r_1.invitee_domain IS NULL)
                 OR (e.invitee_domains @> ARRAY[r_1.invitee_domain]))
+            AND ((r_1.account_id IS NULL)
+                OR (e.account_id = r_1.account_id))
             AND ((r_1.calendar_id IS NULL)
                 OR (e.calendar_id = r_1.calendar_id))
             AND ((r_1.internal IS NULL)
@@ -171,20 +193,24 @@ END) AS priority
             AND ((r_1.type IS NULL)
                 OR (e.type = r_1.type)))
     ORDER BY
-        ((((((
-                                CASE WHEN (r_1.series IS NOT NULL) THEN
-                                    64
-                                ELSE
-                                    0
-                                END + CASE WHEN (r_1.name IS NOT NULL) THEN
+        (((((((
+                                    CASE WHEN (r_1.series IS NOT NULL) THEN
+                                        128
+                                    ELSE
+                                        0
+                                    END + CASE WHEN (r_1.name IS NOT NULL) THEN
+                                        64
+                                    ELSE
+                                        0
+                                    END) + CASE WHEN (r_1.invitees IS NOT NULL) THEN
                                     32
                                 ELSE
                                     0
-                                END) + CASE WHEN (r_1.invitees IS NOT NULL) THEN
+                                END) + CASE WHEN (r_1.invitee_domain IS NOT NULL) THEN
                                 16
                             ELSE
                                 0
-                            END) + CASE WHEN (r_1.invitee_domain IS NOT NULL) THEN
+                            END) + CASE WHEN (r_1.account_id IS NOT NULL) THEN
                             8
                         ELSE
                             0
@@ -345,55 +371,31 @@ GROUP BY
     i.name,
     i.value;
 
-CREATE OR REPLACE VIEW "public"."sync_admin" AS
-SELECT
-    min(a.email) AS email,
-    min(a.id) AS account_id,
-    ((array_agg(a.credentials))[0] -> 'provider'::text) AS provider,
-    c.provider_id AS calendar_provider_id,
-    c.created_at AS first_synced_at,
-    c.full_sync_at,
-    c.synced_at,
-    c.sync_error AS error,
-    CASE WHEN ((c.full_sync_at IS NULL)
-        OR (c.sync_error IS NOT NULL)) THEN
-        NULL::numeric
-    ELSE
-        round(EXTRACT(epoch FROM (COALESCE(c.full_sync_at, now()) - c.full_sync_started_at)))
-    END AS sync_seconds,
-    count(e.id) AS event_count
-FROM ((account a
-    LEFT JOIN calendar c ON (c.account_id = a.id))
-    LEFT JOIN event e ON (e.calendar_id = c.id))
-GROUP BY
-    c.id;
+CREATE OR REPLACE FUNCTION public.calendar (event_x)
+    RETURNS SETOF calendar
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        calendar.*
+    FROM
+        calendar
+    WHERE
+        calendar.id = $1.calendar_id
+$function$;
 
-CREATE OR REPLACE VIEW "public"."waitlist_admin" AS
-SELECT
-    min(w.id) AS id,
-    min(w.created_at) AS created_at,
-    min(w.email) AS email,
-    CASE WHEN (min(c.sync_error) IS NOT NULL) THEN
-        'sync_error'::text
-    WHEN (min(w.activated_at) IS NOT NULL) THEN
-        'active'::text
-    WHEN (count(*) FILTER (WHERE ((a.credentials -> 'refresh_token'::text) IS NOT NULL)) > 0) THEN
-        'synced'::text
-    ELSE
-        'waitlisted'::text
-    END AS status,
-    array_agg(DISTINCT a.email) FILTER (WHERE (a.email IS NOT NULL)) AS sync_accounts,
-array_agg(c.sync_error) FILTER (WHERE (c.sync_error IS NOT NULL)) AS sync_error,
-((array_agg(a.credentials))[0] -> 'provider'::text) AS provider,
-w.invitation,
-count(e.id) AS event_count
-FROM (((waitlist w
-        LEFT JOIN account a ON (((w.email = a.email)
-                    AND (a.credentials IS NOT NULL))))
-    LEFT JOIN calendar c ON (c.account_id = a.id))
-    LEFT JOIN event e ON (e.calendar_id = c.id))
-GROUP BY
-    w.id;
+CREATE OR REPLACE FUNCTION public.invitee (event_x)
+    RETURNS SETOF invitee
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT
+        *
+    FROM
+        invitee
+    WHERE
+        event_id = $1.id
+$function$;
 
 ALTER VIEW gap SET (security_invoker = TRUE);
 

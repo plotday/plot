@@ -104,7 +104,7 @@ class PriorityWidget extends StatelessWidget {
             children: [Text('0:30'), Text('2:30')])
       ]),
       selected:
-          priority.activity.id == context.watch<NowBloc>().state.selected.id,
+          priority.activity.id == context.watch<NowBloc>().state.selected?.id,
     );
   }
 }

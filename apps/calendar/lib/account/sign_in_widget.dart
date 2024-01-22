@@ -100,8 +100,6 @@ class _SignInWidgetState extends State<SignInWidget> {
       child: buildGoogleSignInButton(onPressed: () async {
         try {
           await _googleSignIn.signIn();
-          print("Who: ${_googleSignIn.currentUser?.displayName}");
-          print("Auth code: ${_googleSignIn.currentUser?.serverAuthCode}");
         } on String catch (message) {
           if (mounted) {
             SnackBar(

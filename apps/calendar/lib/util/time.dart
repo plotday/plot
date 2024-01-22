@@ -1,6 +1,16 @@
 import 'package:dart_date/dart_date.dart';
 export 'package:dart_date/dart_date.dart';
 
+enum TimeHorizon {
+  day,
+  week,
+}
+
+enum TimeDirection {
+  descending,
+  ascending,
+}
+
 class Time {
   static Interval interval(String db) {
     if (db == 'empty') {
@@ -88,6 +98,7 @@ extension PostgresDateTimeRange on Interval {
 
   String get friendly {
     final now = DateTime.now();
+    final end = this.end.subtract(const Duration(seconds: 1));
     if (start.isSameDay(end)) {
       return start.format('EEEE, MMM d');
     } else if (start == now.startOfWeek && end == now.startOfWeek.nextWeek) {
