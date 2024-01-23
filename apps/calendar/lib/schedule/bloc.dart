@@ -36,8 +36,8 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
       emit(ScheduleState(lists: {
         TimeDirection.descending: EventList(
             {}
-              ..addAll(groupedEvents.events)
-              ..addAll(state.lists[TimeDirection.descending]!.events),
+              ..addAll(state.lists[TimeDirection.descending]!.events)
+              ..addAll(groupedEvents.events),
             groupedEvents.nextAnchor),
         TimeDirection.ascending: state.lists[TimeDirection.ascending]!
       }));

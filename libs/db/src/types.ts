@@ -536,6 +536,7 @@ export interface Database {
       }
       rule: {
         Row: {
+          account_id: number | null
           activity_id: number | null
           calendar_id: number | null
           created_at: string
@@ -549,6 +550,7 @@ export interface Database {
           user_id: string
         }
         Insert: {
+          account_id?: number | null
           activity_id?: number | null
           calendar_id?: number | null
           created_at?: string
@@ -562,6 +564,7 @@ export interface Database {
           user_id: string
         }
         Update: {
+          account_id?: number | null
           activity_id?: number | null
           calendar_id?: number | null
           created_at?: string
@@ -575,6 +578,13 @@ export interface Database {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "rule_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "account"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "rule_activity_id_fkey"
             columns: ["activity_id"]
@@ -705,6 +715,7 @@ export interface Database {
     Views: {
       event_x: {
         Row: {
+          account_id: number | null
           activity_id: number | null
           activity_path: unknown | null
           all_day: boolean | null

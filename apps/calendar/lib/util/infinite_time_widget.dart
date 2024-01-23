@@ -53,11 +53,13 @@ class InfiniteTimeState<T> extends State<InfiniteTimeWidget<T>> {
     _pagingController = {
       TimeDirection.descending: PagingController(
         firstPageKey: widget.anchor,
+        invisibleItemsThreshold: 20,
       )..addPageRequestListener((pageKey) {
           widget.onFetch(pageKey, TimeDirection.descending);
         }),
       TimeDirection.ascending: PagingController(
         firstPageKey: widget.anchor,
+        invisibleItemsThreshold: 20,
       )..addPageRequestListener((pageKey) {
           widget.onFetch(pageKey, TimeDirection.ascending);
         }),
