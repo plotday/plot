@@ -51,13 +51,11 @@ class ScheduledEvent extends Equatable {
         .limit(_pageSize);
     var items =
         response.map((event) => ScheduledEvent.fromJson(event)).toList();
-    print("Fetched ${anchor.toDb()} $direction: ${items.first.at.start}");
 
     if (items.length < _pageSize) {
       _last[activity] ??= {};
       _last[activity]![direction] ??=
           items.isEmpty ? anchor : items.last.at.start;
-      print("LAST: ${_last[activity]![direction]} (${items.length})");
     }
 
     // Remove any partial days
@@ -69,7 +67,6 @@ class ScheduledEvent extends Equatable {
     if (direction == TimeDirection.descending) {
       items = items.toList().reversed.toList();
     }
-    print("Adding ${items.length} items");
     _cache[activity] ??= {};
     for (var day = Time.day(anchor);
         direction == TimeDirection.descending
@@ -103,7 +100,7 @@ class ScheduledEvent extends Equatable {
             : anchor.isSameOrAfter(last));
   }
 
-  static Future<List<ScheduledEvent>> list(DateTime anchor,
+  static Future<List<ScheduledEvent>> getDay(DateTime anchor,
       {TimeHorizon horizon = TimeHorizon.day,
       TimeDirection direction = TimeDirection.ascending,
       Activity? activity}) async {
@@ -118,70 +115,30 @@ class ScheduledEvent extends Equatable {
       return items;
     }
 
-    // TODO : handle week
     return await _fetch(anchor, direction: direction, activity: activity);
-    //
-    // if (_isDone(activity, anchor, direction)) {
-    //   print("No more!");
-    //   return const GroupedEvents(events: {}, nextAnchor: null);
-    // }
-    //
-    // final movement = Duration(days: horizon == TimeHorizon.week ? 7 : 1) *
-    //     (direction == TimeDirection.descending ? -1 : 1);
-    //
-    // // attempt up to three fetches to reach the next horizon
-    // List<ScheduledEvent> list = [];
-    // var fetchAnchor = anchor;
-    // for (var i = 0; i < 3; i++) {
-    //   list =
-    //       await _fetch(fetchAnchor, direction: direction, activity: activity);
-    //   final horizons = list.isEmpty
-    //       ? 0
-    //       : (anchor
-    //               .differenceInDays(direction == TimeDirection.descending
-    //                   ? list.first.at.start.addSeconds(1)
-    //                   : list.last.at.start)
-    //               .abs() /
-    //           movement.inDays.abs());
-    //   if (horizons > 0) {
-    //     break;
-    //   }
-    //
-    //   if (list.isNotEmpty) {
-    //     fetchAnchor = _getHead(list, direction)!.at.start;
-    //   }
-    // }
-    //
-    // if (list.isEmpty) {
-    //   throw Exception("Could not get more events");
-    // }
-    //
-    // Map<DateTime, List<ScheduledEvent>> groupedEvents = {};
-    // DateTime? nextAnchor;
-    // for (var h =
-    //         horizon == TimeHorizon.week ? Time.week(anchor) : Time.day(anchor);
-    //     direction == TimeDirection.descending
-    //         ? list.first.at.start.isBefore(h.previous.start)
-    //         : list.last.at.start.isSameOrAfter(h.next.start);
-    //     h = direction == TimeDirection.descending ? h.previous : h.next) {
-    //   final h2 = direction == TimeDirection.descending ? h.previous : h;
-    //   groupedEvents[h2.start] =
-    //       list.where((event) => (h2).includes(event.at.start)).toList();
-    //   nextAnchor = h2.start;
-    // }
-    //
-    // print(
-    //     "Returning $horizon $direction from $anchor to $nextAnchor (${groupedEvents.keys.length})");
-    // if (groupedEvents.keys.length == 0) {
-    //   throw new Exception("no items");
-    // }
-    // return GroupedEvents(events: groupedEvents, nextAnchor: nextAnchor);
+  }
+
+  static Future<Map<DateTime, List<ScheduledEvent>>> list(DateTime anchor,
+      {TimeHorizon horizon = TimeHorizon.day,
+      TimeDirection direction = TimeDirection.ascending,
+      Activity? activity,
+      int minHorizons = 10}) async {
+    anchor = anchor.startOfDay;
+
+    Map<DateTime, List<ScheduledEvent>> items = {};
+    for (var i = 0; i < minHorizons; i++) {
+      var day = _cache[activity]?[anchor];
+      day ??= await _fetch(anchor, direction: direction, activity: activity);
+      items[anchor] = day;
+      anchor = direction == TimeDirection.descending
+          ? anchor - horizon.duration
+          : anchor + horizon.duration;
+    }
+    return items;
   }
 
   static Future<List<ScheduledEvent>> today() async {
-    final today = Time.today().start;
-    // Could optimize to only return one day
-    return await list(today);
+    return await getDay(Time.today().start);
   }
 
   static Future<List<ScheduledEvent>> current() async {

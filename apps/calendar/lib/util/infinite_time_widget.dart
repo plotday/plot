@@ -55,13 +55,13 @@ class InfiniteTimeState<T> extends State<InfiniteTimeWidget<T>> {
     _pagingController = {
       TimeDirection.descending: PagingController(
         firstPageKey: widget.anchor - widget.horizon.duration,
-        invisibleItemsThreshold: 20,
+        invisibleItemsThreshold: 10,
       )..addPageRequestListener((pageKey) {
           widget.onFetch(pageKey, TimeDirection.descending);
         }),
       TimeDirection.ascending: PagingController(
         firstPageKey: widget.anchor,
-        invisibleItemsThreshold: 20,
+        invisibleItemsThreshold: 10,
       )..addPageRequestListener((pageKey) {
           widget.onFetch(pageKey, TimeDirection.ascending);
         }),
@@ -73,10 +73,6 @@ class InfiniteTimeState<T> extends State<InfiniteTimeWidget<T>> {
     // _pagingController is more efficient.
     _streamSubscription = widget.stream.listen((pagedItemsState) {
       _pagingController.forEach((direction, controller) {
-        if (pagedItemsState.lists[direction]!.items.isNotEmpty) {
-          print(
-              "List $direction: ${pagedItemsState.lists[direction]!.items.length} (${pagedItemsState.lists[direction]!.nextPageKey})");
-        }
         controller.value = PagingState(
           itemList: pagedItemsState.lists[direction]!.items,
           nextPageKey: pagedItemsState.lists[direction]!.nextPageKey,

@@ -21,19 +21,17 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
 
   Future<void> _onFetch(
       ScheduleFetch event, Emitter<ScheduleState> emit) async {
-    print("FETCH: ${event.anchor} ${event.direction}");
     final events = await ScheduledEvent.list(event.anchor,
         direction: event.direction,
         horizon: horizon,
         activity: initialActivity);
-    print("  GOT: ${events.length}");
     if (event.direction == TimeDirection.descending) {
       emit(ScheduleState(lists: {
         TimeDirection.descending: EventList(
             {}
               ..addAll(state.lists[TimeDirection.descending]!.events)
-              ..addAll({event.anchor: events}),
-            event.anchor - horizon.duration),
+              ..addAll(events),
+            events.keys.last - horizon.duration),
         TimeDirection.ascending: state.lists[TimeDirection.ascending]!
       }));
     } else {
@@ -42,8 +40,8 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
         TimeDirection.ascending: EventList(
             {}
               ..addAll(state.lists[TimeDirection.ascending]!.events)
-              ..addAll({event.anchor: events}),
-            event.anchor + horizon.duration),
+              ..addAll(events),
+            events.keys.last + horizon.duration),
       }));
     }
   }
