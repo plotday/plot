@@ -27,8 +27,8 @@ class NowBloc extends Bloc<NowEvent, NowState> {
     on<ActivityCompleted>(_onCompleted);
 
     on<_ClockTicked>(_onTicked, transformer: droppable());
-    _secondsSubscription =
-        Clock().seconds.listen((void _) => add(const _ClockTicked()));
+    // _secondsSubscription =
+    //     Clock().seconds.listen((void _) => add(const _ClockTicked()));
   }
 
   StreamSubscription<void>? _secondsSubscription;

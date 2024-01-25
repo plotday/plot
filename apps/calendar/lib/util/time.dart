@@ -3,7 +3,16 @@ export 'package:dart_date/dart_date.dart';
 
 enum TimeHorizon {
   day,
-  week,
+  week;
+
+  get duration {
+    switch (this) {
+      case TimeHorizon.day:
+        return const Duration(days: 1);
+      case TimeHorizon.week:
+        return const Duration(days: 7);
+    }
+  }
 }
 
 enum TimeDirection {
@@ -90,6 +99,10 @@ extension PostgresDateTime on DateTime {
   String toDb() {
     return toUtc().toIso8601String();
   }
+
+  String toDayString() {
+    return startOfDay.format('yyyy-MM-dd');
+  }
 }
 
 extension PostgresDateTimeRange on Interval {
@@ -121,7 +134,7 @@ extension PostgresDateTimeRange on Interval {
   }
 
   String toDayString() {
-    return start.startOfDay.format('yyyy-MM-dd');
+    return start.toDayString();
   }
 }
 

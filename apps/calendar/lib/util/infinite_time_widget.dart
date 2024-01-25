@@ -29,6 +29,7 @@ class InfiniteTimeWidget<T> extends StatefulWidget {
       required this.onFetch,
       required this.builderDelegate,
       required this.anchor,
+      this.horizon = TimeHorizon.day,
       super.key});
 
   final Stream<PagedItemsState<T>> stream;
@@ -36,6 +37,7 @@ class InfiniteTimeWidget<T> extends StatefulWidget {
       onFetch;
   final PagedChildBuilderDelegate<T> builderDelegate;
   final DateTime anchor;
+  final TimeHorizon horizon;
 
   @override
   InfiniteTimeState createState() => InfiniteTimeState<T>();
@@ -52,7 +54,7 @@ class InfiniteTimeState<T> extends State<InfiniteTimeWidget<T>> {
   void initState() {
     _pagingController = {
       TimeDirection.descending: PagingController(
-        firstPageKey: widget.anchor,
+        firstPageKey: widget.anchor - widget.horizon.duration,
         invisibleItemsThreshold: 20,
       )..addPageRequestListener((pageKey) {
           widget.onFetch(pageKey, TimeDirection.descending);
@@ -71,6 +73,10 @@ class InfiniteTimeState<T> extends State<InfiniteTimeWidget<T>> {
     // _pagingController is more efficient.
     _streamSubscription = widget.stream.listen((pagedItemsState) {
       _pagingController.forEach((direction, controller) {
+        if (pagedItemsState.lists[direction]!.items.isNotEmpty) {
+          print(
+              "List $direction: ${pagedItemsState.lists[direction]!.items.length} (${pagedItemsState.lists[direction]!.nextPageKey})");
+        }
         controller.value = PagingState(
           itemList: pagedItemsState.lists[direction]!.items,
           nextPageKey: pagedItemsState.lists[direction]!.nextPageKey,

@@ -11,34 +11,29 @@ part 'event.dart';
 part 'state.dart';
 
 class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
-  ScheduleBloc(
-      {this.horizon = TimeHorizon.day,
-      this.initialActivity,
-      DateTime? initialAnchor})
-      : initialAnchor = initialAnchor ?? Time.today().start,
-        super(const ScheduleState()) {
+  ScheduleBloc({this.horizon = TimeHorizon.day, this.initialActivity})
+      : super(const ScheduleState()) {
     on<ScheduleFetch>(_onFetch);
-    add(ScheduleFetch(this.initialAnchor, TimeDirection.ascending));
-    add(ScheduleFetch(this.initialAnchor, TimeDirection.descending));
   }
 
   final TimeHorizon horizon;
-  final DateTime initialAnchor;
   final Activity? initialActivity;
 
   Future<void> _onFetch(
       ScheduleFetch event, Emitter<ScheduleState> emit) async {
-    final groupedEvents = await ScheduledEvent.list(event.anchor,
+    print("FETCH: ${event.anchor} ${event.direction}");
+    final events = await ScheduledEvent.list(event.anchor,
         direction: event.direction,
         horizon: horizon,
         activity: initialActivity);
+    print("  GOT: ${events.length}");
     if (event.direction == TimeDirection.descending) {
       emit(ScheduleState(lists: {
         TimeDirection.descending: EventList(
             {}
               ..addAll(state.lists[TimeDirection.descending]!.events)
-              ..addAll(groupedEvents.events),
-            groupedEvents.nextAnchor),
+              ..addAll({event.anchor: events}),
+            event.anchor - horizon.duration),
         TimeDirection.ascending: state.lists[TimeDirection.ascending]!
       }));
     } else {
@@ -47,8 +42,8 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
         TimeDirection.ascending: EventList(
             {}
               ..addAll(state.lists[TimeDirection.ascending]!.events)
-              ..addAll(groupedEvents.events),
-            groupedEvents.nextAnchor),
+              ..addAll({event.anchor: events}),
+            event.anchor + horizon.duration),
       }));
     }
   }
