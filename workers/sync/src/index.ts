@@ -1,82 +1,18 @@
 import { Toucan } from "toucan-js";
 
 import { createClient, safeQuery } from "@plotday/db";
-import type { EventSyncRequest, SyncRequest } from "@plotday/worker-request";
+import type { EventSyncRequest } from "@plotday/worker-request";
 
 import type { Env } from "./env";
-import { addAccount, syncCalendar } from "./sync";
+import { syncCalendar } from "./sync";
+
+export type SyncType = "full" | "incremental" | "partial";
+export type SyncRequest = {
+  calendarId: number;
+  syncType?: SyncType;
+};
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    const url = new URL(req.url);
-    if (req.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
-    let tokens = req.headers.get("Authorization");
-    if (!tokens?.startsWith("Bearer ")) {
-      return new Response("Forbidden", { status: 403 });
-    }
-    tokens = tokens.replace(/\s*Bearer\s+/, "");
-    const [access_token, refresh_token] = tokens?.split("/");
-    const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
-    const session = await supabase.auth.setSession({
-      access_token,
-      refresh_token,
-    });
-    const user = session.data?.user;
-
-    const supabaseAdmin = createClient(
-      env.SUPABASE_URL,
-      env.SUPABASE_SERVICE_KEY
-    );
-    if (!user) {
-      return new Response("Forbidden", { status: 403 });
-    }
-
-    if (url.pathname === "/account") {
-      const body = await req.json();
-      const code = (body as any)?.code;
-      if (!code) {
-        return new Response("Bad request (missing code)", { status: 400 });
-      }
-      const provider = (body as any)?.provider;
-      if (!provider) {
-        return new Response("Bad request (missing provider)", { status: 400 });
-      }
-      const account = await addAccount(
-        env,
-        supabaseAdmin,
-        user,
-        provider,
-        code
-      );
-      const response = new Response(JSON.stringify(account));
-      return response;
-    }
-
-    const apiKey = req.headers.get("Authorization");
-    if (
-      env.ENV !== "development" &&
-      apiKey &&
-      env.API_KEY &&
-      !apiKey.endsWith(env.API_KEY)
-    ) {
-      return new Response("Forbidden", { status: 403 });
-    }
-    const body = await req.json();
-    const calendarId = (body as any)?.calendarId;
-    if (typeof calendarId !== "number") {
-      return new Response("Bad request (missing calendarId)", { status: 400 });
-    }
-    const syncType = (body as any)?.syncType;
-    await env.SYNC_QUEUE.send({
-      calendarId,
-      syncType,
-    });
-
-    return new Response("Sync queued");
-  },
-
   async queue(
     batch: MessageBatch<SyncRequest | EventSyncRequest>,
     env: Env

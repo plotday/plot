@@ -29,8 +29,6 @@ interface Env {
   readonly GOOGLE_OAUTH_SECRET: string;
   readonly MICROSOFT_CLIENT_ID: string;
   readonly MICROSOFT_OAUTH_SECRET: string;
-
-  readonly CONTACT_SYNC_QUEUE: Queue<ContactSyncRequest>;
 }
 
 async function runSync(
@@ -94,31 +92,6 @@ async function runSync(
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    if (req.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
-    const apiKey = req.headers.get("Authorization");
-    if (
-      env.ENV !== "development" &&
-      apiKey &&
-      env.API_KEY &&
-      !apiKey.endsWith(env.API_KEY)
-    ) {
-      return new Response("Forbidden", { status: 403 });
-    }
-    const body = await req.json();
-    const accountId = (body as any)?.accountId;
-    if (typeof accountId !== "number") {
-      return new Response("Bad Request", { status: 400 });
-    }
-    await env.CONTACT_SYNC_QUEUE.send({
-      accountId,
-    });
-
-    return new Response("Sync queued");
-  },
-
   async queue(
     batch: MessageBatch<ContactSyncRequest>,
     env: Env

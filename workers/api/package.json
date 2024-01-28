@@ -1,0 +1,22 @@
+{
+  "name": "@plotday/api",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "private": true,
+  "deploy_vars": "SENTRY_DSN SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET CALENDAR_WEBHOOK_URL",
+  "scripts": {
+    "deploy": "../../scripts/deploy-worker",
+    "lint": "tsc && eslint ."
+  },
+  "dependencies": {
+    "@plotday/cal": "workspace:^",
+    "@plotday/db": "workspace:^",
+    "@supabase/supabase-js": "^2.38.4",
+    "hono": "^3.12.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20231218.0",
+    "@plotday/sync": "workspace:^"
+  }
+}

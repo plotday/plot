@@ -11,6 +11,7 @@
     "lint": "tsc && eslint ."
   },
   "dependencies": {
+    "@plotday/api": "workspace:^",
     "@plotday/contact-sync": "workspace:^",
     "@plotday/event-sync": "workspace:^",
     "@plotday/sync": "workspace:^",

@@ -9,8 +9,13 @@ class ScheduledEventWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    return Card(
+        child: ListTile(
       title: Text(event.name),
-    );
+      trailing: IconButton(
+        icon: const Icon(Icons.close),
+        onPressed: () {},
+      ),
+    ));
   }
 }

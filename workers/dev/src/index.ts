@@ -1,3 +1,4 @@
+import apiWorker from "@plotday/api";
 import contactSyncWorker from "@plotday/contact-sync";
 import eventWorker from "@plotday/event-sync";
 import syncWorker from "@plotday/sync";
@@ -30,7 +31,7 @@ interface Env {
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
-    return await syncWorker.fetch(req, env);
+    return await apiWorker.fetch(req, env);
   },
 
   async queue(batch: MessageBatch, env: Env): Promise<void> {
