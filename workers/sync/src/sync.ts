@@ -11,8 +11,13 @@ import {
   subYears,
 } from "date-fns";
 
-import { sync, watch } from "@plotday/cal";
-import type { CalendarConfig, SyncState, WatchState } from "@plotday/cal";
+import {
+  type SyncState,
+  type WatchState,
+  getCalendarConfig,
+  sync,
+  watch,
+} from "@plotday/cal";
 import {
   formatDatetimeRange,
   getCredentials as getDbCredentials,
@@ -23,16 +28,6 @@ import {
 import type { EventSyncRequest, SyncType } from "@plotday/worker-request";
 
 import type { Env } from "./env";
-
-function getCalendarConfig(env: Env): CalendarConfig {
-  return {
-    googleClientId: env.GOOGLE_CLIENT_ID,
-    googleOauthSecret: env.GOOGLE_OAUTH_SECRET,
-    outlookClientId: env.MICROSOFT_CLIENT_ID,
-    outlookOauthSecret: env.MICROSOFT_OAUTH_SECRET,
-    webhookUrl: env.CALENDAR_WEBHOOK_URL,
-  };
-}
 
 export async function syncCalendar(
   env: Env,

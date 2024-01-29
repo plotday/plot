@@ -3,7 +3,7 @@
   "license": "UNLICENSED",
   "private": true,
   "sideEffects": false,
-  "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY SYNC_API SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT MICROSOFT_CLIENT_ID AMPLITUDE_API_KEY",
+  "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT MICROSOFT_CLIENT_ID AMPLITUDE_API_KEY",
   "scripts": {
     "gen-env": "../../scripts/gen-env $npm_package_env_vars",
     "dev-macos": "pnpm --silent gen-env > .env && flutter run -d macOS --dart-define-from-file=.env",

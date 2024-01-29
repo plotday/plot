@@ -2,7 +2,6 @@ import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../util/api.dart' as api;
-import '../env.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -16,7 +15,7 @@ class Account extends Equatable {
 
   static Future<Account> add(AccountProvider provider, String code) async {
     final response = await api.post(
-      "${Env.syncApi}/account",
+      "/sync",
       body: {
         'provider': provider.name,
         'code': code,

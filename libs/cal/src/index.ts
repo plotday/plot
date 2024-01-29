@@ -77,6 +77,22 @@ export type Calendar = {
   account: string;
 };
 
+export function getCalendarConfig(env: {
+  readonly GOOGLE_CLIENT_ID: string;
+  readonly GOOGLE_OAUTH_SECRET: string;
+  readonly MICROSOFT_CLIENT_ID: string;
+  readonly MICROSOFT_OAUTH_SECRET: string;
+  readonly CALENDAR_WEBHOOK_URL: string;
+}): CalendarConfig {
+  return {
+    googleClientId: env.GOOGLE_CLIENT_ID,
+    googleOauthSecret: env.GOOGLE_OAUTH_SECRET,
+    outlookClientId: env.MICROSOFT_CLIENT_ID,
+    outlookOauthSecret: env.MICROSOFT_OAUTH_SECRET,
+    webhookUrl: env.CALENDAR_WEBHOOK_URL,
+  };
+}
+
 export async function getCredentials(
   config: CalendarConfig,
   provider: CalendarProvider,
