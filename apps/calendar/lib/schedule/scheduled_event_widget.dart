@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../util/api.dart' as api;
+import '../util/time.dart';
 
 import 'scheduled_event.dart';
 
@@ -22,15 +23,26 @@ class ScheduledEventWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-        child: ListTile(
-      title: Text(event.name),
-      trailing: IconButton(
-        icon: const Icon(Icons.close),
-        onPressed: () {
-          _rsvp(EventResponse.declined);
-        },
-      ),
-    ));
+    return Row(
+      children: [
+        SizedBox(
+            width: 80,
+            child: Text(
+              event.at.start.toTimeString(),
+              textAlign: TextAlign.end,
+            )),
+        Flexible(
+            child: Card(
+                child: ListTile(
+          title: Text(event.name),
+          trailing: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () {
+              _rsvp(EventResponse.declined);
+            },
+          ),
+        )))
+      ],
+    );
   }
 }

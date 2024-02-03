@@ -29,7 +29,7 @@ class Time {
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateTimeStrings = stripped.split(',');
     List<DateTime> dateTimes = dateTimeStrings
-        .map((timestamp) => DateTime.parse(timestamp.trim()))
+        .map((timestamp) => DateTime.parse(timestamp.trim()).toLocal())
         .toList();
     return Interval(dateTimes[0], dateTimes[1]);
   }
@@ -102,6 +102,10 @@ extension PostgresDateTime on DateTime {
 
   String toDayString() {
     return startOfDay.format('yyyy-MM-dd');
+  }
+
+  String toTimeString() {
+    return format('h:mm a');
   }
 }
 
