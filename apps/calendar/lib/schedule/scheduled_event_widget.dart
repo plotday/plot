@@ -26,11 +26,21 @@ class ScheduledEventWidget extends StatelessWidget {
     return Row(
       children: [
         SizedBox(
-            width: 80,
-            child: Text(
-              event.at.start.toTimeString(),
-              textAlign: TextAlign.end,
-            )),
+          width: 80,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                event.at.start.toTimeString(),
+                textAlign: TextAlign.end,
+              ),
+              Text(
+                event.at.duration.friendly,
+                textAlign: TextAlign.end,
+              )
+            ],
+          ),
+        ),
         Flexible(
             child: Card(
                 child: ListTile(

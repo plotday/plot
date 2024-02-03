@@ -155,4 +155,12 @@ extension PostgresInterval on Duration {
     }
     return 'P${inDays}DT${format(inHours)}H${format(inMinutes)}M${seconds}S';
   }
+
+  String get friendly {
+    if (inHours > 0) {
+      return '${inHours}h ${inMinutes.remainder(60)}m';
+    } else {
+      return '${inMinutes}m';
+    }
+  }
 }
