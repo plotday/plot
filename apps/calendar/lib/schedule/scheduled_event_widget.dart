@@ -26,7 +26,7 @@ class ScheduledEventWidget extends StatelessWidget {
     return Row(
       children: [
         SizedBox(
-          width: 80,
+          width: 75,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [

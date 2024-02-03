@@ -163,6 +163,10 @@ class ScheduledEvent extends Equatable {
     return Future.value(next);
   }
 
+  ScheduledEvent(
+      {required this.name, required this.at, this.id, Activity? activity})
+      : _activityId = activity?.id;
+
   ScheduledEvent.fromJson(Map<String, dynamic> json)
       : id = json['id'] as int,
         name = json['name'] as String,
@@ -181,7 +185,43 @@ class ScheduledEvent extends Equatable {
 }
 
 class ScheduledDay extends Equatable {
-  const ScheduledDay(this.day, this.events);
+  static const _startOfDay = TimeOfDay(hour: 7, minute: 0);
+  static const _endOfDay = TimeOfDay(hour: 23, minute: 0);
+
+  static List<ScheduledEvent> _expandEvents(
+      Interval day, List<ScheduledEvent> events) {
+    List<ScheduledEvent> expanded = [];
+    if (events.isEmpty || _startOfDay < events.first.at.start) {
+      expanded.add(ScheduledEvent(
+        name: 'Do something',
+        at: Interval(
+            day.at(_startOfDay),
+            day.at(
+                events.isEmpty ? _endOfDay : events.first.at.start.timeOfDay)),
+      ));
+    }
+    // loop through events and add gaps
+    for (var i = 0; i < events.length; i++) {
+      expanded.add(events[i]);
+      if (i + 1 < events.length && events[i].at.end < events[i + 1].at.start) {
+        expanded.add(ScheduledEvent(
+          name: 'Do something',
+          at: Interval(day.at(events[i].at.end.timeOfDay),
+              day.at(events[i + 1].at.start.timeOfDay)),
+        ));
+      }
+    }
+    if (events.isNotEmpty && _endOfDay > events.last.at.end) {
+      expanded.add(ScheduledEvent(
+        name: 'Do something',
+        at: Interval(day.at(events.last.at.end.timeOfDay), day.at(_endOfDay)),
+      ));
+    }
+    return expanded;
+  }
+
+  ScheduledDay(this.day, List<ScheduledEvent> events)
+      : events = _expandEvents(day, events);
 
   final Interval day;
   final List<ScheduledEvent> events;

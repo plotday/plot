@@ -1,5 +1,8 @@
 import 'package:dart_date/dart_date.dart';
+import 'package:flutter/material.dart' show TimeOfDay;
+
 export 'package:dart_date/dart_date.dart';
+export 'package:flutter/material.dart' show TimeOfDay;
 
 enum TimeHorizon {
   day,
@@ -107,11 +110,25 @@ extension PostgresDateTime on DateTime {
   String toTimeString() {
     return format('h:mm a');
   }
+
+  TimeOfDay get timeOfDay {
+    return TimeOfDay(hour: hour, minute: minute);
+  }
 }
 
 extension PostgresDateTimeRange on Interval {
   Interval get previous => Interval(start.subtract(duration), start);
   Interval get next => Interval(end, end.add(duration));
+
+  DateTime at(TimeOfDay time) {
+    return DateTime(
+      start.year,
+      start.month,
+      start.day,
+      time.hour,
+      time.minute,
+    );
+  }
 
   String get friendly {
     final now = DateTime.now();
@@ -162,5 +179,31 @@ extension PostgresInterval on Duration {
     } else {
       return '${inMinutes}m';
     }
+  }
+}
+
+extension TimeOfDayExtension on TimeOfDay {
+  bool sameTime(DateTime other) {
+    return hour == other.hour && minute == other.minute;
+  }
+
+  bool operator <(DateTime other) {
+    return hour < other.hour || (hour == other.hour && minute < other.minute);
+  }
+
+  bool operator >(DateTime other) {
+    return hour > other.hour || (hour == other.hour && minute > other.minute);
+  }
+
+  bool operator <=(DateTime other) {
+    return sameTime(other) || this < other;
+  }
+
+  bool operator >=(DateTime other) {
+    return sameTime(other) || this > other;
+  }
+
+  String get friendly {
+    return "${hour == 0 ? 12 : hour <= 12 ? hour : hour - 12}:${minute.toString().padLeft(2, '0')} ${hour < 12 ? 'AM' : 'PM'}";
   }
 }
