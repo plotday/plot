@@ -111,12 +111,20 @@ extension PostgresDateTime on DateTime {
     return format('h:mm a');
   }
 
+  String get clockString {
+    return format('h:mm');
+  }
+
+  String get meridiem {
+    return format('a');
+  }
+
   TimeOfDay get timeOfDay {
     return TimeOfDay(hour: hour, minute: minute);
   }
 }
 
-extension PostgresDateTimeRange on Interval {
+extension IntervalExtension on Interval {
   Interval get previous => Interval(start.subtract(duration), start);
   Interval get next => Interval(end, end.add(duration));
 
@@ -157,9 +165,13 @@ extension PostgresDateTimeRange on Interval {
   String toDayString() {
     return start.toDayString();
   }
+
+  bool isNow() {
+    return includes(DateTime.now());
+  }
 }
 
-extension PostgresInterval on Duration {
+extension DurationExtension on Duration {
   String toDb() {
     String format(int n, {int digits = 2}) {
       return n.toString().padLeft(digits, '0');
@@ -174,11 +186,23 @@ extension PostgresInterval on Duration {
   }
 
   String get friendly {
-    if (inHours > 0) {
-      return '${inHours}h ${inMinutes.remainder(60)}m';
-    } else {
-      return '${inMinutes}m';
-    }
+    return '${inHours > 0 ? inHours : ''}:${inMinutes.remainder(60).toString().padLeft(2, '0')}';
+  }
+
+  bool get hasHours {
+    return inHours > 0;
+  }
+
+  String get hoursString {
+    return inHours.toString();
+  }
+
+  bool get hasMinutes {
+    return inMinutes.remainder(60) > 0;
+  }
+
+  String get minutesString {
+    return inMinutes.remainder(60).toString().padLeft(hasHours ? 2 : 1, '0');
   }
 }
 

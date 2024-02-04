@@ -10,7 +10,12 @@ class NowPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<NowBloc, NowState>(builder: (context, nowState) {
-      return const Scaffold(appBar: PomodoroWidget());
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(nowState.selected?.name ?? ''),
+          actions: const [PomodoroWidget()],
+        ),
+      );
     });
   }
 }

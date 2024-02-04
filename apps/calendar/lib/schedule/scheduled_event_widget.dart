@@ -1,4 +1,7 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:plot/now/pomodoro_widget.dart';
 
 import '../util/api.dart' as api;
 import '../util/time.dart';
@@ -24,34 +27,70 @@ class ScheduledEventWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 75,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                event.at.start.toTimeString(),
-                textAlign: TextAlign.end,
-              ),
-              Text(
-                event.at.duration.friendly,
-                textAlign: TextAlign.end,
-              )
-            ],
-          ),
+        Container(
+          width: 85,
+          padding: const EdgeInsets.only(left: 16, right: 8),
+          child: event.at.isNow()
+              ? const PomodoroWidget()
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text.rich(
+                      TextSpan(
+                        children: <TextSpan>[
+                          TextSpan(
+                            text: event.at.start.clockString,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const TextSpan(text: ' '),
+                          TextSpan(
+                            text: event.at.start.meridiem,
+                            style: const TextStyle(
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text.rich(
+                      TextSpan(
+                        children: <TextSpan>[
+                          if (event.at.duration.hasHours)
+                            TextSpan(
+                              text: event.at.duration.hoursString,
+                            ),
+                          if (event.at.duration.hasHours)
+                            const TextSpan(
+                              text: 'H',
+                              style: TextStyle(fontSize: 10),
+                            ),
+                          const TextSpan(text: ' '),
+                          if (event.at.duration.hasMinutes)
+                            TextSpan(
+                              text: event.at.duration.minutesString,
+                            ),
+                          if (event.at.duration.hasMinutes)
+                            const TextSpan(
+                              text: 'M',
+                              style: TextStyle(fontSize: 10),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
         ),
-        Flexible(
-            child: Card(
-                child: ListTile(
-          title: Text(event.name),
-          trailing: IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () {
-              _rsvp(EventResponse.declined);
-            },
-          ),
-        )))
+        Expanded(
+          child: Text(event.name),
+        ),
+        IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () {
+            _rsvp(EventResponse.declined);
+          },
+        )
       ],
     );
   }

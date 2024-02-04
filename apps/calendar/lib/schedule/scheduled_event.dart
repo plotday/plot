@@ -186,7 +186,7 @@ class ScheduledEvent extends Equatable {
 
 class ScheduledDay extends Equatable {
   static const _startOfDay = TimeOfDay(hour: 7, minute: 0);
-  static const _endOfDay = TimeOfDay(hour: 23, minute: 0);
+  static const _endOfDay = TimeOfDay(hour: 23, minute: 45);
 
   static List<ScheduledEvent> _expandEvents(
       Interval day, List<ScheduledEvent> events) {
