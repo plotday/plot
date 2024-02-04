@@ -3,16 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'bloc.dart';
 import '../util/clock.dart';
-
-String formatDuration(Duration duration, {bool roundUp = false}) {
-  final hours = duration.inHours;
-  var minutes = duration.inMinutes.remainder(60);
-  if (roundUp && duration.inSeconds.remainder(60) > 0) {
-    minutes += 1;
-  }
-  return [hours > 0 ? hours.toString() : '', minutes.toString().padLeft(2, '0')]
-      .join(':');
-}
+import '../util/duration_widget.dart';
 
 class PomodoroWidget extends StatelessWidget implements PreferredSizeWidget {
   const PomodoroWidget({super.key});
@@ -59,11 +50,9 @@ class PomodoroWidget extends StatelessWidget implements PreferredSizeWidget {
                           Theme.of(context).colorScheme.outlineVariant),
                 )),
                 Center(
-                  child: Text(
-                    formatDuration(state.remaining, roundUp: true),
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
+                    child: DurationWidget(
+                        duration: state.remaining +
+                            const Duration(hours: 1, seconds: 59))),
               ],
             ),
           ),

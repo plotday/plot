@@ -1,10 +1,9 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:plot/now/pomodoro_widget.dart';
 
 import '../util/api.dart' as api;
 import '../util/time.dart';
+import '../util/duration_widget.dart';
 
 import 'scheduled_event.dart';
 
@@ -39,10 +38,11 @@ class ScheduledEventWidget extends StatelessWidget {
                   children: [
                     Text.rich(
                       TextSpan(
+                        style: const TextStyle(height: 0.8),
                         children: <TextSpan>[
                           TextSpan(
                             text: event.at.start.clockString,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            style: const TextStyle(fontWeight: FontWeight.w500),
                           ),
                           const TextSpan(text: ' '),
                           TextSpan(
@@ -54,36 +54,16 @@ class ScheduledEventWidget extends StatelessWidget {
                         ],
                       ),
                     ),
-                    Text.rich(
-                      TextSpan(
-                        children: <TextSpan>[
-                          if (event.at.duration.hasHours)
-                            TextSpan(
-                              text: event.at.duration.hoursString,
-                            ),
-                          if (event.at.duration.hasHours)
-                            const TextSpan(
-                              text: 'H',
-                              style: TextStyle(fontSize: 10),
-                            ),
-                          const TextSpan(text: ' '),
-                          if (event.at.duration.hasMinutes)
-                            TextSpan(
-                              text: event.at.duration.minutesString,
-                            ),
-                          if (event.at.duration.hasMinutes)
-                            const TextSpan(
-                              text: 'M',
-                              style: TextStyle(fontSize: 10),
-                            ),
-                        ],
-                      ),
-                    ),
+                    const SizedBox(height: 4),
+                    DurationWidget(
+                      duration: event.at.duration,
+                    )
                   ],
                 ),
         ),
         Expanded(
-          child: Text(event.name),
+          child: Text(event.name,
+              style: const TextStyle(fontWeight: FontWeight.w500, height: 0.8)),
         ),
         IconButton(
           icon: const Icon(Icons.close),

@@ -202,7 +202,7 @@ extension DurationExtension on Duration {
   }
 
   String get minutesString {
-    return inMinutes.remainder(60).toString().padLeft(hasHours ? 2 : 1, '0');
+    return inMinutes.remainder(60).toString();
   }
 }
 
