@@ -118,11 +118,13 @@ class NowBloc extends Bloc<NowEvent, NowState> {
       ActivityTimeDecreased event, Emitter<NowState> emit) async {
     switch (state) {
       case ActivityActive s:
-        await _newActive(
-            emit,
-            s.active.copyWith(
-              planned: s.active.planned - const Duration(minutes: 5),
-            ));
+        if (s.active.planned.inMinutes > 5) {
+          await _newActive(
+              emit,
+              s.active.copyWith(
+                planned: s.active.planned - const Duration(minutes: 5),
+              ));
+        }
         break;
       default:
         if (state.selected == null) return;
