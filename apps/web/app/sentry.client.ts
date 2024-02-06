@@ -11,7 +11,7 @@ export let Sentry: typeof ClientSentry | undefined;
 
 export const init = (
   dsn: string,
-  user?: { id: number; email: string | null } | null
+  user?: { id: string; email: string | null } | null
 ) => {
   if (Sentry) return;
   Sentry = ClientSentry;

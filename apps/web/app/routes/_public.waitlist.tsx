@@ -86,7 +86,7 @@ export default function Waitlist() {
   const [hasError, setHasError] = useState(searchParams.has("error"));
   let user = useUser(true);
   const { email, error } = useTypedActionData() ?? {};
-  const waitlisted = (user || email) && !error && !user?.invitation;
+  const waitlisted = (user || email) && !error && !user?.app_metadata.invitation;
   const success = email && !error;
   let checkUrl = "/check";
   if (user) {

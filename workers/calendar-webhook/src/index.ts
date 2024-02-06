@@ -108,13 +108,14 @@ async function queueSync(
   const calendar = safeQuery(
     await supabase
       .from("calendar")
-      .select()
+      .select("*,account(user_id)")
       .eq("watch_id", watchId)
       .maybeSingle()
   );
   if (!calendar) throw new Error(`Calendar for watch ${watchId} not found`);
 
   const accountId = calendar.account_id;
+  const userId = calendar.account!.user_id;
   let credentials = await getCredentials(supabase, accountId);
 
   if (watchId !== calendar.watch_id) {
@@ -124,7 +125,7 @@ async function queueSync(
       watchId,
       resourceId
     ));
-    await saveCredentials(supabase, accountId, credentials, true);
+    await saveCredentials(supabase, userId, credentials, true);
     return;
   }
 
@@ -166,7 +167,7 @@ async function handleGoogle(request: Request, env: Env) {
   });
 }
 
-async function renewWatch(env: Env, calendar: Calendar) {
+async function renewWatch(env: Env, userId: string, calendar: Calendar) {
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
   const accountId = calendar.account_id;
   let credentials = await getCredentials(supabase, accountId);
@@ -186,7 +187,7 @@ async function renewWatch(env: Env, calendar: Calendar) {
         }
       : undefined
   ));
-  await saveCredentials(supabase, accountId, credentials, true);
+  await saveCredentials(supabase, userId, credentials, true);
 
   safeQuery(
     await supabase
@@ -207,12 +208,12 @@ async function renewWatchById(env: Env, watchId: string) {
   const calendar = safeQuery(
     await supabase
       .from("calendar")
-      .select()
+      .select("*, account(user_id)")
       .eq("watch_id", watchId)
       .maybeSingle()
   );
   if (!calendar) throw new Error(`Calendar for watch ${watchId} not found`);
-  await renewWatch(env, calendar);
+  await renewWatch(env, calendar.account!.user_id, calendar);
 }
 
 async function handleOutlook(request: Request, env: Env) {
@@ -278,7 +279,7 @@ async function renewWatches(env: Env) {
     safeQuery(
       await supabase
         .from("calendar")
-        .select()
+        .select("*, account(user_id)")
         .lte(
           "watch_expires_at",
           new Date(Date.now() + 60 * 60 * 1000).toISOString()
@@ -286,7 +287,7 @@ async function renewWatches(env: Env) {
     ) || [];
   for (const calendar of calendars) {
     try {
-      await renewWatch(env, calendar);
+      await renewWatch(env, calendar.account!.user_id, calendar);
     } catch (e) {
       handleException(e, { calendar_id: calendar.id });
     }

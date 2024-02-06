@@ -38,7 +38,7 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
   const routes = useMatches();
   const isPublic = routes.some((r) => r.id === "routes/_public");
   const isSync = routes.some((r) => r.pathname === "/sync");
-  const activated = user?.activated_at && user?.default_category;
+  const activated = user?.app_metadata.invitation;
 
   console.log("USER", JSON.stringify(user));
   return (
@@ -57,14 +57,6 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           </UnstyledButton>
         </Group>
         <Group>
-          {activated && isPublic && !isSync && (
-            <Button
-              component={Link}
-              to={pathToUrl(user.default_category as string)}
-            >
-              Go to app
-            </Button>
-          )}
           {!activated && location.pathname !== "/login" && (
             <Button variant="outline" component={Link} to="/login">
               Sign in

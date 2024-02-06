@@ -60,7 +60,7 @@ async function runSync(
       credentials,
       state
     ));
-    await saveCredentials(supabase, accountId, credentials, true);
+    await saveCredentials(supabase, account.user_id, credentials, true);
     console.log(
       `Fetched ${contacts.length} contacts for ${account.id} (${
         state.more ? "more" : "no more"

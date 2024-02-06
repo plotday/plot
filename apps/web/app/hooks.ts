@@ -1,18 +1,15 @@
-import { useLoaderData, useOutletContext } from "@remix-run/react";
+import { useOutletContext } from "@remix-run/react";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 import type { Database } from "@plotday/db";
 
 import type { getBrowserEnv } from "./env.server";
 
-type Nullable<T> = { [K in keyof T]: T[K] | null };
 export type ContextType = {
   supabase?: SupabaseClient<Database>;
-  user?: Nullable<Partial<Database["public"]["Tables"]["user"]["Row"]>>;
-  waitlistedUser?: Nullable<
-    Partial<Database["public"]["Tables"]["user"]["Row"]>
-  >;
+  user?: User;
+  waitlistedUser?: User;
   env?: ReturnType<typeof getBrowserEnv>;
 };
 
@@ -33,7 +30,7 @@ export function useEnv() {
 
 export function useTz() {
   const user = useUser();
-  const tz = user?.timezone;
+  const tz = user?.app_metadata?.timezone;
   if (!tz) {
     throw new Error("Missing timezone");
   }

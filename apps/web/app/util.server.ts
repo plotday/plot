@@ -18,7 +18,7 @@ const augment = async ({ request, context, ...rest }: DataFunctionArgs) => {
   const tracker = context.tracker as Tracker;
   let user = await getUser(supabase, tracker, sentry);
   let waitlistedUser = null;
-  if (user && !user.activated_at) {
+  if (user && !user.app_metadata.invitation) {
     waitlistedUser = user;
     user = null;
   }
@@ -71,7 +71,7 @@ export function privateLoader<T>(
     const augmentedArgs = await augment(args);
     if (!augmentedArgs.user) {
       if (augmentedArgs.waitlistedUser) {
-        if (augmentedArgs.waitlistedUser.invitation) {
+        if (augmentedArgs.waitlistedUser.app_metadata.invitation) {
           throw redirect("/sync");
         } else {
           throw redirect("/waitlist");

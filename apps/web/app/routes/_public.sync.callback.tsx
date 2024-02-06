@@ -1,14 +1,12 @@
 import { redirect } from "@remix-run/cloudflare";
+import { User } from "@supabase/supabase-js";
 
 import {
   type Database,
-  pathToUrl,
-  safeQuery,
   saveCalendars,
   saveCredentials,
 } from "@plotday/db";
 
-import type { User } from "app/auth";
 import {
   addAccount,
   completeSignIn,
@@ -105,19 +103,15 @@ export const loader = publicLoader(
         ));
         await saveCredentials(supabaseAdmin, user.id, credentials);
         const timezone = calendars[0]?.tz;
-        if (!user.timezone && timezone) {
-          safeQuery(
-            await supabaseAdmin
-              .from("user")
-              .update({
-                timezone,
-              })
-              .eq("id", user.id)
-          );
+        if (!user.app_metadata.timezone && timezone) {
+          await supabaseAdmin.auth.updateUser({
+            data: {
+              timezone,
+            }
+          })
         }
         const dbCalendars = await saveCalendars(
           supabaseAdmin,
-          user.id,
           account.id,
           calendars
         );
@@ -138,9 +132,6 @@ export const loader = publicLoader(
         }
       }
 
-      if (user?.invitation && user?.default_category) {
-        toUrl ??= pathToUrl(user.default_category);
-      }
       return redirect(toUrl ?? "/sync", {
         headers: response.headers,
       });
@@ -176,8 +167,8 @@ export const loader = publicLoader(
           Error: sync_error,
           ...(provider
             ? {
-                Provider: provider,
-              }
+              Provider: provider,
+            }
             : {}),
         });
       }

@@ -1,9 +1,7 @@
 import { redirect } from "@remix-run/cloudflare";
-
-import { createCategories, pathToUrl } from "@plotday/db";
+import { User } from "@supabase/supabase-js";
 
 import {
-  addAccount,
   completeSignIn,
   getUser,
   redeemInvitation,
@@ -24,7 +22,7 @@ export const loader = publicLoader(
     const fromUrl = url.searchParams.get("from") || "/login";
     let toUrl = url.searchParams.get("to");
     try {
-      let user: Awaited<ReturnType<typeof addAccount>>["user"] | null = null;
+      let user: User | null = null;
       if (url.searchParams.has("code") || url.searchParams.has("error")) {
         const session = await completeSignIn(request, supabase);
 
@@ -33,9 +31,6 @@ export const loader = publicLoader(
         // for the rest of this request.
 
         user = await getUser(supabaseAdmin, tracker, sentry, session);
-        if (!user) {
-          ({ user } = await addAccount(user, session, tracker, supabaseAdmin));
-        }
       } else if (waitlistedUser) {
         user = waitlistedUser;
       } else {
@@ -43,25 +38,19 @@ export const loader = publicLoader(
       }
 
       const invitation = url.searchParams.get("invitation");
-      if (user.invitation) {
-        if (user.default_category) {
-          toUrl = pathToUrl(user.default_category);
-        } else {
-          toUrl = pathToUrl(
-            await createCategories(supabaseAdmin, user.id, user.email, true)
-          );
-        }
+      if (user?.app_metadata?.invitation) {
+        // Already in
+        toUrl = '/';
+      } else if (user && invitation) {
+        await redeemInvitation(
+          user,
+          invitation,
+          tracker,
+          supabaseAdmin
+        );
+        toUrl = '/';
       } else {
-        if (invitation) {
-          toUrl = await redeemInvitation(
-            user,
-            invitation,
-            tracker,
-            supabaseAdmin
-          );
-        } else {
-          toUrl = "/waitlist";
-        }
+        toUrl = "/waitlist";
       }
 
       return redirect(toUrl, {

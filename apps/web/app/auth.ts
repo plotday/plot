@@ -1,16 +1,17 @@
-import type { Provider, Session, SupabaseClient } from "@supabase/supabase-js";
+import type {
+  Provider,
+  Session,
+  SupabaseClient,
+  User,
+} from "@supabase/supabase-js";
 
 import { jsonFetch as fetch } from "@worker-tools/json-fetch";
 
 import type { CalendarProvider } from "@plotday/cal";
-import { createCategories, pathToUrl } from "@plotday/db";
 import type { Tracker } from "@plotday/tracker";
 
-import type { Database } from "app/db";
 import { safeQuery } from "app/db";
 import type { Sentry } from "app/sentry.server";
-
-export type User = Database["public"]["Tables"]["user"]["Row"];
 
 // Process an Oauth callback and create a session
 //
@@ -114,17 +115,6 @@ export const logout = async (supabase: SupabaseClient) => {
   await supabase.auth.signOut();
 };
 
-export const getAuthUserId = async (
-  supabase: SupabaseClient,
-  session?: Session
-) => {
-  session ??= (await supabase.auth.getSession()).data.session || undefined;
-  if (!session) {
-    return null;
-  }
-  return session.user?.id;
-};
-
 export const getUser = async (
   supabase: SupabaseClient,
   tracker: Tracker,
@@ -132,23 +122,11 @@ export const getUser = async (
   session?: Session,
   defaultTimezone: string = "America/New_York"
 ) => {
-  const userId = await getAuthUserId(supabase, session);
-  if (!userId) {
+  session ??= (await supabase.auth.getSession()).data.session || undefined;
+  if (!session) {
     return null;
   }
-
-  const user = safeQuery(
-    await supabase
-      .from("account")
-      .select(
-        "user(id, email, name, avatar_url, timezone, invitation, activated_at)"
-      )
-      .eq("auth_user_id", userId)
-      .maybeSingle()
-    // Typescript somehow confuses this as returning an array rather than an object,
-    // so we need to specify the type explicitly
-  )?.user as any as User | null;
-  if (!user) return null;
+  const user = session.user;
 
   sentry.setUser({
     id: user.id.toString(),
@@ -157,13 +135,10 @@ export const getUser = async (
 
   tracker.identify(user.id.toString());
 
-  if (!user.timezone) {
-    user.timezone = defaultTimezone;
-  }
-
   return {
     ...user,
-    timezone: user.timezone ?? defaultTimezone,
+    email: user.email!,
+    timezone: user.app_metadata?.timezone ?? defaultTimezone,
   };
 };
 
@@ -235,8 +210,6 @@ export async function addAccount(
       Name: name,
     });
     tracker.accountWaitlisted(user.id.toString());
-
-    await createCategories(supabaseAdmin, user.id, user.email, true);
   }
 
   if (credentials.refresh_token) {
@@ -272,8 +245,8 @@ export async function addAccount(
       {
         user_id: user.id,
         email: email,
-        name: name ?? user.name,
-        avatar_url: avatar ?? user.avatar_url,
+        name: name ?? user.user_metadata.name,
+        avatar_url: avatar ?? user.user_metadata.avatar_url,
         contact_user_id: user.id,
       },
       { onConflict: "user_id,email" }
@@ -289,9 +262,7 @@ export async function redeemInvitation(
   tracker: Tracker,
   supabaseAdmin: SupabaseClient
 ) {
-  if (user.activated_at && user.default_category) {
-    return pathToUrl(user.default_category);
-  }
+  if (user.app_metadata.invitation) return;
   safeQuery(
     await supabaseAdmin.rpc("redeem_invitation", {
       _user_id: user.id,
@@ -301,17 +272,9 @@ export async function redeemInvitation(
   tracker.accountActivated(user.id.toString(), {
     "Invitation Code": invitation,
   });
-
-  const category = await createCategories(
-    supabaseAdmin,
-    user.id,
-    user.email,
-    !user.default_category
-  );
-  return pathToUrl(category);
 }
 
-export async function getAccounts(supabase: SupabaseClient, userId: number) {
+export async function getAccounts(supabase: SupabaseClient, userId: string) {
   return safeQuery(
     await supabase
       .from("account")

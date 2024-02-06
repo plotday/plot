@@ -8,7 +8,7 @@ import { useUser } from "app/hooks";
 
 export default function Sync() {
   const user = useUser(true);
-  const testing = !user?.invitation;
+  const testing = !user?.app_metadata.invitation;
   return (
     <Container size="sm" p="sm" mt="xl">
       <Card>
