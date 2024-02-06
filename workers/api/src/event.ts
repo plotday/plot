@@ -2,7 +2,7 @@ import type { EventResponse } from "@plotday/cal";
 import { respond as calendarRespond, getCalendarConfig } from "@plotday/cal";
 import { type SupabaseClient, getCredentials, safeQuery } from "@plotday/db";
 
-import { Bindings } from "./";
+import { type Bindings } from "./";
 
 export async function respond(
   env: Bindings,

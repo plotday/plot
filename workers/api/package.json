@@ -17,6 +17,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20231218.0",
-    "@plotday/sync": "workspace:^"
+    "@plotday/sync": "workspace:^",
+    "@plotday/eslint-config-custom": "workspace:*",
+    "@plotday/tsconfig": "workspace:*"
   }
 }

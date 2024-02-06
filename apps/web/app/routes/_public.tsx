@@ -4,7 +4,6 @@ import {
   Link,
   Outlet,
   useLocation,
-  useMatches,
   useOutletContext,
 } from "@remix-run/react";
 
@@ -21,8 +20,6 @@ import { IconBrandLinkedin, IconMail } from "@tabler/icons-react";
 import classes from "css/_public.module.css";
 import { typedjson, useTypedLoaderData } from "remix-typedjson";
 
-import { pathToUrl } from "@plotday/db";
-
 import type { ContextType } from "app/hooks";
 import { publicLoader } from "app/util";
 
@@ -35,9 +32,6 @@ export const loader = publicLoader(async ({ user, response }) => {
 function AppHeader({ menu }: { menu?: ReactNode }) {
   const { user } = useTypedLoaderData<typeof loader>();
   const location = useLocation();
-  const routes = useMatches();
-  const isPublic = routes.some((r) => r.id === "routes/_public");
-  const isSync = routes.some((r) => r.pathname === "/sync");
   const activated = user?.app_metadata.invitation;
 
   console.log("USER", JSON.stringify(user));
