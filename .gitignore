@@ -24,3 +24,6 @@ coverage
 
 # react-email
 .react-email
+
+# Cloudflare Pages build is failing when dart and flutter are included
+.tool-versions
