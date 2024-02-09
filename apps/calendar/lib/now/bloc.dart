@@ -4,7 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:equatable/equatable.dart';
 
-import '../util/clock.dart';
 import '../priority/activity.dart';
 import '../schedule/scheduled_event.dart';
 import 'time_block.dart';

@@ -140,7 +140,7 @@ extension IntervalExtension on Interval {
 
   String get friendly {
     final now = DateTime.now();
-    final end = this.end.subtract(const Duration(seconds: 1));
+    final displayEnd = end.subtract(const Duration(seconds: 1));
     if (start.isSameDay(end)) {
       return start.format('EEEE, MMM d');
     } else if (start == now.startOfWeek && end == now.startOfWeek.nextWeek) {
@@ -152,9 +152,9 @@ extension IntervalExtension on Interval {
         end == now.startOfWeek.nextWeek.nextWeek) {
       return "Next week";
     } else if (start.isSameMonth(end)) {
-      return '${start.format('MMM d')} - ${end.format('d')}';
+      return '${start.format('MMM d')} - ${displayEnd.format('d')}';
     } else {
-      return '${start.format('MMM d')} - ${end.format('MMM d')}';
+      return '${start.format('MMM d')} - ${displayEnd.format('MMM d')}';
     }
   }
 
