@@ -78,7 +78,8 @@
       ]
     },
     "@plotday/calendar#build:web": {
-      "outputs": ["build/web/**"]
+      "outputs": ["build/web/**"],
+      "inputs": ["$TURBO_DEFAULT$", "scripts/*"]
     },
     "pre-commit": {}
   }
