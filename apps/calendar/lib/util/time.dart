@@ -61,7 +61,7 @@ class Time {
 
   static Duration duration(String durationString) {
     final RegExp postgresIntervalRegExp = RegExp(
-        r'^(([0-9]+) days? )?([0-9]{2}):([0-9]{2}):([0-9]+(\.[0-9]+)?)?$');
+        r'^(([0-9]+) days? )?([0-9]{2-3}):([0-9]{2}):([0-9]+(\.[0-9]+)?)?$');
     final RegExp iso8601RegExp = RegExp(
         r'^P(([0-9]+)D)?(T(([0-9]+)H)?(([0-9]+)M)?(([0-9]+(\.[0-9]+)?)S)?)?$');
 
