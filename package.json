@@ -17,7 +17,7 @@
     "gen-migration": "pnpm --filter @plotday/db run gen-migration",
     "new-migration": "pnpm --filter @plotday/db run new-migration",
     "lint": "turbo run lint --filter=!@plotday/dev-worker --concurrency=100%",
-    "pre-commit": "pnpm install --silent --frozen-lockfile && turbo run lint --filter=!@plotday/dev-worker --concurrency=100% --output-logs=errors-only && turbo --output-logs=errors-only run pre-commit",
+    "pre-commit": "pnpm install --silent --frozen-lockfile && turbo --output-logs=errors-only run pre-commit",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
