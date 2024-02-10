@@ -95,7 +95,7 @@ jobs:
           cache: true
 
       - name: Build calendar (web)
-        run: flutter build web
+        run: pnpm run deploy:calendar:web
 
       - name: Deploy calendar (web)
         uses: cloudflare/wrangler-action@v3
