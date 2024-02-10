@@ -680,7 +680,7 @@ export async function getCredentials(
     throw new Error("Invalid response");
   }
   if (!("id_token" in creds)) {
-    throw new Error("Missing access token");
+    throw new Error("Missing ID token");
   }
   if (!("access_token" in creds)) {
     throw new Error("Missing access token");

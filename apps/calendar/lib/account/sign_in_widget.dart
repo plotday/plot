@@ -10,7 +10,7 @@ import 'google_sign_in_button.dart';
 class ProviderAuth {
   ProviderAuth(this.accessToken, this.idToken, this.serverAuthCode);
 
-  final String accessToken;
+  final String? accessToken;
   final String idToken;
   final String? serverAuthCode;
 }
@@ -80,9 +80,6 @@ class _SignInWidgetState extends State<SignInWidget> {
       final accessToken = googleAuth.accessToken;
       final idToken = googleAuth.idToken;
 
-      if (accessToken == null) {
-        throw 'Missing access token';
-      }
       if (idToken == null) {
         throw 'Missing ID token';
       }
@@ -91,6 +88,10 @@ class _SignInWidgetState extends State<SignInWidget> {
           .onSignIn(ProviderAuth(accessToken, idToken, account.serverAuthCode));
       if (widget.repeatable) _googleSignIn.signOut();
     });
+
+    if (kIsWeb) {
+      _googleSignIn.signInSilently();
+    }
   }
 
   @override
