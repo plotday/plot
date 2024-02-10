@@ -46,6 +46,9 @@ jobs:
         with:
           fetch-depth: 2
 
+      - run: git config --global user.email "github-actions@users.noreply.github.com"
+      - run: git config --global user.name "GitHub Actions"
+
       - uses: pnpm/action-setup@v3
         name: Install pnpm
         id: pnpm-install
@@ -94,11 +97,5 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Build calendar (web)
-        run: pnpm run deploy:calendar:web
-
       - name: Deploy calendar (web)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: pages deploy --project-name=calendar
+        run: pnpm run deploy:calendar:web

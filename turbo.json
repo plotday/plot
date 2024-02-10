@@ -1,13 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": [
-    ".env",
-    ".env.*",
-    ".env.*.*",
-    ".github/workflows/*",
-    "scripts/*",
-    "lib/tsconfig/*.json"
-  ],
+  "globalDependencies": [".env", ".env.*", ".env.*.*", "lib/tsconfig/*.json"],
   "globalEnv": [
     "NODE_ENV",
     "SENTRY_DSN",
@@ -27,10 +20,12 @@
     },
     "build": {
       "dependsOn": ["^build", "topo"],
-      "outputs": ["build/**"]
+      "outputs": ["build/**"],
+      "inputs": ["$TURBO_DEFAULT$", "scripts/*"]
     },
     "deploy": {
-      "dependsOn": ["^build", "build"]
+      "dependsOn": ["^build", "build"],
+      "inputs": ["$TURBO_DEFAULT$", "scripts/*"]
     },
     "deploy:workers:changed": {
       "dependsOn": ["^build", "build"]
