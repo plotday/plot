@@ -6,9 +6,11 @@
   "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT MICROSOFT_CLIENT_ID AMPLITUDE_API_KEY",
   "scripts": {
     "gen-env": "../../scripts/gen-env $npm_package_env_vars",
-    "dev-macos": "pnpm --silent gen-env > .env && flutter run -d macOS --dart-define-from-file=.env",
-    "start-android": "flutter emulators --launch Medium_Phone_API_34",
-    "dev-android": "pnpm --silent gen-env | sed 's/localhost/10.0.2.2/' > .env && flutter run --dart-define-from-file=.env",
-    "dev-web": "pnpm --silent gen-env > .env && flutter run -d chrome --dart-define-from-file=.env --web-port 8788"
+    "dev:macos": "pnpm --silent gen-env > .env && flutter run -d macOS --dart-define-from-file=.env",
+    "start:android": "flutter emulators --launch Medium_Phone_API_34",
+    "dev:android": "pnpm --silent gen-env | sed 's/localhost/10.0.2.2/' > .env && flutter run --dart-define-from-file=.env",
+    "dev:web": "pnpm --silent gen-env > .env && flutter run -d chrome --dart-define-from-file=.env --web-port 8788",
+    "build:web": "pnpm --silent gen-env > .env && flutter pub get && flutter build web --release --base-href=/ --dart-define-from-file=.env",
+    "deploy:web": "../../scripts/publish-branch build/web ${DEPLOY_ENV:-staging}/calendar/web"
   }
 }

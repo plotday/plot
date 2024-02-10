@@ -6,6 +6,8 @@
     "build:web": "turbo run build --filter=@plotday/web && ln -sfn apps/web/functions functions",
     "deploy:workers": "turbo deploy --filter={./workers/*}",
     "deploy:workers:changed": "turbo deploy --filter={./workers/*}...[HEAD^1]",
+    "build:calendar:web": "turbo run build:web --filter @plotday/calendar",
+    "deploy:calendar:web": "pnpm run build:calendar:web && pnpm --filter @plotday/calendar run deploy:web",
     "dev": "turbo run dev --concurrency=18",
     "dev:email": "email dev -d libs/email/src -p 8790",
     "gen-types": "turbo run gen-types",

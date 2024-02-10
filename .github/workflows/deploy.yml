@@ -88,3 +88,20 @@ jobs:
 
       - name: Deploy workers
         run: pnpm run deploy:workers:changed
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Prep calendar build
+        run: flutter pub get
+
+      - name: Build calendar (web)
+        run: flutter build web
+
+      - name: Deploy calendar (web)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: pages deploy --project-name=calendar

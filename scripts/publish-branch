@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# Check number of arguments
+if [ "$#" -ne 2 ]; then
+  echo "Usage: publish-branch SOURCE_PATH GIT_BRANCH"
+  exit 1
+fi
+
+SOURCE_DIR=$1
+DEPLOY_BRANCH=$2
+GIT_REPO=$(git config --get remote.origin.url)
+
+# Save current directory
+CURRENT_DIR=$(pwd)
+
+# Create a temporary directory and move into it
+TEMP_DIR=$(mktemp -d)
+cd $TEMP_DIR
+
+# Initialize a new git repository
+git init .
+
+# Set the remote to your original repository
+git remote add origin $GIT_REPO
+
+# Checkout to the branch
+git checkout -b $DEPLOY_BRANCH
+
+# Remove all files tracked by git (if any)
+git rm -r .
+
+# Copy files from source directory
+cp -r $CURRENT_DIR/$SOURCE_DIR/* .
+
+# Add and commit changes
+git add .
+git commit -m "Deploying to $DEPLOY_BRANCH"
+
+# Push changes
+git push -f origin $DEPLOY_BRANCH
+
+# Move back to the original directory and remove the temporary directory
+cd $CURRENT_DIR
+rm -rf $TEMP_DIR
