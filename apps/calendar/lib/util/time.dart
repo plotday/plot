@@ -60,8 +60,8 @@ class Time {
   static Interval today() => Time.day(DateTime.now());
 
   static Duration duration(String durationString) {
-    final RegExp postgresIntervalRegExp =
-        RegExp(r'^([0-9]{2}):([0-9]{2}):([0-9]+(\.[0-9]+)?)?$');
+    final RegExp postgresIntervalRegExp = RegExp(
+        r'^(([0-9]+) days? )?([0-9]{2}):([0-9]{2}):([0-9]+(\.[0-9]+)?)?$');
     final RegExp iso8601RegExp = RegExp(
         r'^P(([0-9]+)D)?(T(([0-9]+)H)?(([0-9]+)M)?(([0-9]+(\.[0-9]+)?)S)?)?$');
 
@@ -84,10 +84,12 @@ class Time {
         seconds: seconds != null ? double.parse(seconds).round() : 0,
       );
     } else if (postgresIntervalMatch != null) {
-      hours = postgresIntervalMatch.group(1);
-      minutes = postgresIntervalMatch.group(2);
-      seconds = postgresIntervalMatch.group(3);
+      String? days = postgresIntervalMatch.group(2);
+      hours = postgresIntervalMatch.group(3);
+      minutes = postgresIntervalMatch.group(4);
+      seconds = postgresIntervalMatch.group(5);
       return Duration(
+        days: days != null ? int.parse(days) : 0,
         hours: hours != null ? int.parse(hours) : 0,
         minutes: minutes != null ? int.parse(minutes) : 0,
         seconds: seconds != null ? double.parse(seconds).round() : 0,
@@ -141,7 +143,7 @@ extension IntervalExtension on Interval {
   String get friendly {
     final now = DateTime.now();
     final displayEnd = end.subtract(const Duration(seconds: 1));
-    if (start.isSameDay(end)) {
+    if (start.isSameDay(displayEnd)) {
       return start.format('EEEE, MMM d');
     } else if (start == now.startOfWeek && end == now.startOfWeek.nextWeek) {
       return "This week";
