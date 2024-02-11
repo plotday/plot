@@ -71,7 +71,7 @@ jobs:
           version: latest
 
       - name: Link Supabase
-        run: supabase link --project-ref $SUPABASE_PROJECT_ID
+        run: pnpm --filter @plotday/db supabase link --project-ref $SUPABASE_PROJECT_ID
 
       # - name: Start supabase
       #   run: pnpm --filter @plotday/db test:setup
