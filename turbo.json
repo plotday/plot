@@ -79,8 +79,11 @@
     },
     "@plotday/calendar#build:web": {
       "outputs": ["build/web/**"],
-      "inputs": ["$TURBO_DEFAULT$", "scripts/*"]
+      "inputs": ["$turbo_default$", "scripts/*"]
     },
-    "pre-commit": {}
+    "pre-commit": {},
+    "@plotday/dev#pre-commit": {
+      "inputs": ["**/package.json", "**/pnpm-lock.json"]
+    }
   }
 }

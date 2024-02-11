@@ -1,6 +1,8 @@
 {
+  "name": "@plotday/plot",
+  "packageManager": "pnpm@8.6.6",
   "private": true,
-  "license": "MIT",
+  "license": "UNLICENSED",
   "scripts": {
     "build": "turbo run build",
     "build:web": "turbo run build --filter=@plotday/web && ln -sfn apps/web/functions functions",
@@ -17,7 +19,7 @@
     "gen-migration": "pnpm --filter @plotday/db run gen-migration",
     "new-migration": "pnpm --filter @plotday/db run new-migration",
     "lint": "turbo run lint --filter=!@plotday/dev-worker --concurrency=100%",
-    "pre-commit": "pnpm install --silent --frozen-lockfile && turbo --output-logs=errors-only run pre-commit",
+    "pre-commit": "turbo --output-logs=errors-only run pre-commit",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
@@ -42,7 +44,5 @@
     "typescript": "^5.1.6",
     "vitest": "^0.33.0",
     "wrangler": "3.25.0"
-  },
-  "packageManager": "pnpm@8.6.6",
-  "name": "@plotday/plot"
+  }
 }
