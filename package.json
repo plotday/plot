@@ -18,6 +18,7 @@
     "diff-schema-db": "pnpm --filter @plotday/db run diff-schema-db",
     "gen-migration": "pnpm --filter @plotday/db run gen-migration",
     "new-migration": "pnpm --filter @plotday/db run new-migration",
+    "migrate": "turbo run migrate",
     "lint": "turbo run lint --filter=!@plotday/dev-worker --concurrency=100%",
     "pre-commit": "turbo --output-logs=errors-only run pre-commit",
     "test": "turbo run test",

@@ -67,15 +67,16 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
+        run: supabase link --project-ref $SUPABASE_PROJECT_ID
 
-      - name: Start supabase
-        run: pnpm --filter @plotday/db test:setup
+      # - name: Start supabase
+      #   run: pnpm --filter @plotday/db test:setup
 
       # - name: Run tests
       #   run: pnpm test
 
       - name: Migrate DB
-        run: pnpm --filter @plotday/db run link $SUPABASE_PROJECT_ID && pnpm --filter @plotday/db run push
+        run: pnpm run migrate
 
       - name: Deploy workers
         run: pnpm run deploy:workers:changed
