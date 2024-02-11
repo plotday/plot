@@ -55,11 +55,13 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - name: Configure git
+        run: |
+          git config --global user.email "github-actions@users.noreply.github.com"
+          git config --global user.name "GitHub Actions"
+
       - name: Install dependencies
         run: pnpm install
-
-      - run: git config --global user.email "github-actions@users.noreply.github.com"
-      - run: git config --global user.name "GitHub Actions"
 
       - name: Lint
         run: pnpm lint
@@ -67,6 +69,8 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
+
+      - name: Link Supabase
         run: supabase link --project-ref $SUPABASE_PROJECT_ID
 
       # - name: Start supabase
