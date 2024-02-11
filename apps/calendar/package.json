@@ -11,6 +11,6 @@
     "dev:android": "pnpm --silent gen-env | sed 's/localhost/10.0.2.2/' > .env && flutter run --dart-define-from-file=.env",
     "dev:web": "pnpm --silent gen-env > .env && flutter run -d chrome --dart-define-from-file=.env --web-port 8788",
     "build:web": "pnpm --silent gen-env > .env && flutter pub get && flutter build web --release --base-href=/ --dart-define-from-file=.env",
-    "deploy:web": "wrangler pages deploy build/web --project-name=calendar --branch ${DEPLOY_ENV:-staging}/calendar/web --commit-hash ${GITHUB_SHA:-dev}"
+    "deploy:web": "wrangler pages deploy build/web --project-name=calendar --branch $(git rev-parse --abbrev-ref HEAD) --commit-hash ${GITHUB_SHA:-dev}"
   }
 }
