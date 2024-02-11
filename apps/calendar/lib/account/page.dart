@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
-import 'package:google_sign_in_web/web_only.dart';
 
+import 'google_sign_in.dart';
 import 'sign_in_widget.dart';
 import 'account.dart';
 

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../env.dart';
-import 'google_sign_in_button.dart';
+import 'google_sign_in.dart';
 
 class ProviderAuth {
   ProviderAuth(this.accessToken, this.idToken, this.serverAuthCode);
