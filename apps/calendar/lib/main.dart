@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:adaptive_theme/adaptive_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'env.dart';
 
@@ -16,7 +17,7 @@ import 'priority/activity.dart';
 import 'now/bloc.dart';
 import 'now/time_block.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
@@ -24,7 +25,12 @@ void main() async {
     anonKey: Env.supabaseAnonKey,
   );
 
-  runApp(const App());
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = Env.sentryDsn;
+    },
+    appRunner: () => runApp(const App()),
+  );
 }
 
 final supabase = Supabase.instance.client;

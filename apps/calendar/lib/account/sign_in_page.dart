@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'sign_in_widget.dart';
 
@@ -38,7 +39,7 @@ class _SignInPageState extends State<SignInPage> {
       switch (data.event) {
         case AuthChangeEvent.initialSession:
           setState(() {
-            _signedIn = supabase.auth.currentSession?.accessToken != null;
+            _signedIn = data.session?.accessToken != null;
           });
           break;
         case AuthChangeEvent.signedIn:
@@ -53,6 +54,16 @@ class _SignInPageState extends State<SignInPage> {
           break;
         default:
           break;
+      }
+      if (data.session?.user == null) {
+        Sentry.configureScope((scope) => scope.setUser(null));
+      } else {
+        Sentry.configureScope(
+          (scope) => scope.setUser(SentryUser(
+            id: data.session!.user.id,
+            email: data.session!.user.email,
+          )),
+        );
       }
     });
   }

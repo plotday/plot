@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'sign_in_widget.dart';
 import 'account.dart';
@@ -18,7 +19,13 @@ class AccountPage extends StatelessWidget {
           children: <Widget>[
             SignInWidget(
               onSignIn: (providerAuth) async {
-                if (providerAuth.serverAuthCode == null) return;
+                if (providerAuth.serverAuthCode == null) {
+                  Sentry.captureMessage(
+                    'Google sign in failed: no serverAuthCode',
+                    level: SentryLevel.warning,
+                  );
+                  return;
+                }
                 await Account.add(
                     AccountProvider.google, providerAuth.serverAuthCode!);
               },
