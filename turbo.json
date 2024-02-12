@@ -1,6 +1,12 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": [".env", ".env.*", ".env.*.*", "lib/tsconfig/*.json"],
+  "globalDependencies": [
+    ".env",
+    ".env.*",
+    ".env.*.*",
+    "lib/tsconfig/*.json",
+    "scripts/*"
+  ],
   "globalEnv": [
     "NODE_ENV",
     "SENTRY_DSN",
@@ -20,12 +26,10 @@
     },
     "build": {
       "dependsOn": ["^build", "topo"],
-      "outputs": ["build/**"],
-      "inputs": ["$TURBO_DEFAULT$", "scripts/*"]
+      "outputs": ["build/**"]
     },
     "deploy": {
-      "dependsOn": ["^build", "build"],
-      "inputs": ["$TURBO_DEFAULT$", "scripts/*"]
+      "dependsOn": ["^build", "build"]
     },
     "deploy:workers:changed": {
       "dependsOn": ["^build", "build"]
@@ -78,8 +82,7 @@
       ]
     },
     "@plotday/calendar#build:web": {
-      "outputs": ["build/web/**"],
-      "inputs": ["$turbo_default$", "scripts/*"]
+      "outputs": ["build/web/**"]
     },
     "pre-commit": {},
     "@plotday/dev#pre-commit": {
