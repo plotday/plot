@@ -19,7 +19,7 @@
     "diff-schema-db": "DIFF_SOURCE=schema DIFF_TARGET=database pnpm --silent tusker:diff",
     "diff-remote": "supabase db diff --linked | supabase migration new init",
     "tusker:copy": "for file in schema/15-supabase/*.sql; do cp \"$file\" \"supabase/migrations/0000-$(basename \"$file\")\"; done",
-    "tusker:diff": "SQLALCHEMY_SILENCE_UBER_WARNING=1 tusker diff ${DIFF_TARGET} ${DIFF_SOURCE} | pg_format",
+    "tusker:diff": "SQLALCHEMY_SILENCE_UBER_WARNING=1 pnpm --silent --workspace-root nopy python_modules/bin/tusker diff ${DIFF_TARGET} ${DIFF_SOURCE} | pg_format",
     "tusker:clean": "rm -f supabase/migrations/0000-*.sql",
     "new-migration": "supabase migration new",
     "reset": "export $(pnpm --silent gen-env) && supabase db reset",

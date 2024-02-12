@@ -29,6 +29,9 @@ importers:
       husky:
         specifier: ^8.0.0
         version: 8.0.3
+      nopy:
+        specifier: ^0.2.9
+        version: 0.2.9
       prettier:
         specifier: ^2.5.1
         version: 2.8.8
@@ -6617,6 +6620,7 @@ packages:
 
   /color-space@1.16.0:
     resolution: {integrity: sha512-A6WMiFzunQ8KEPFmj02OnnoUnqhmSaHaZ/0LVFcPTdlvm8+3aMJ5x1HRHy3bDHPkovkf4sS0f4wsVvwk71fKkg==}
+    deprecated: Use colorjs.io instead
     dependencies:
       hsluv: 0.0.3
       mumath: 3.3.4
@@ -11343,6 +11347,11 @@ packages:
     hasBin: true
     dependencies:
       abbrev: 1.1.1
+
+  /nopy@0.2.9:
+    resolution: {integrity: sha512-lh/Iu4jA00HTF4UMFLgC1a48+zdtUpwFtr2TSkpeTSMlRNN2B8h1ES+Bq6zalKZkrLvCChNV7Dx5ECCGD/xrcg==}
+    hasBin: true
+    dev: true
 
   /normalize-package-data@2.5.0:
     resolution: {integrity: sha512-/5CMN3T0R4XTj4DcGaexo+roZSdSFW/0AOOTROrjxzCG1wrWXEsGbRKevjlIL+ZDE4sZlJr5ED4YW0yqmkK+eA==}

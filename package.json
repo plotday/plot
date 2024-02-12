@@ -4,6 +4,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "install": "npip install",
     "build": "turbo run build",
     "build:web": "turbo run build --filter=@plotday/web && ln -sfn apps/web/functions functions",
     "deploy:workers": "turbo deploy --filter={./workers/*}",
@@ -29,7 +30,9 @@
     "restart": "echo .",
     "update": "pnpm update --latest --recursive",
     "prepare": "husky install",
-    "tracker:pull": "pnpm --filter @plotday/tracker tracker:pull"
+    "tracker:pull": "pnpm --filter @plotday/tracker tracker:pull",
+    "nopy": "nopy",
+    "npip": "npip"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230724.0",
@@ -39,11 +42,17 @@
     "@turbo/gen": "^1.9.7",
     "eslint": "^8.38.0",
     "husky": "^8.0.0",
+    "nopy": "^0.2.9",
     "prettier": "^2.5.1",
     "react-email": "^1.9.4",
     "turbo": "^1.12.3",
     "typescript": "^5.1.6",
     "vitest": "^0.33.0",
     "wrangler": "3.25.0"
+  },
+  "python": {
+    "dependencies": {
+      "tusker": ""
+    }
   }
 }
