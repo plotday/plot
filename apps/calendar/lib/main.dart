@@ -18,16 +18,17 @@ import 'now/bloc.dart';
 import 'now/time_block.dart';
 
 Future<void> main() async {
-  await Supabase.initialize(
-    url: Env.supabaseUrl,
-    anonKey: Env.supabaseAnonKey,
-  );
-
   await SentryFlutter.init(
     (options) {
       options.dsn = Env.sentryDsn;
     },
-    appRunner: () => runApp(const App()),
+    appRunner: () async {
+      await Supabase.initialize(
+        url: Env.supabaseUrl,
+        anonKey: Env.supabaseAnonKey,
+      );
+      return runApp(const App());
+    },
   );
 }
 
