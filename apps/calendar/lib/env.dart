@@ -6,6 +6,8 @@ abstract class Env {
       String.fromEnvironment('SUPABASE_ANON_KEY');
 
   static const String apiRoot = String.fromEnvironment('API_ROOT');
+  static const String authCallbackUrl =
+      String.fromEnvironment('AUTH_CALLBACK_URL');
 
   static const String googleClientId =
       String.fromEnvironment('GOOGLE_CLIENT_ID');

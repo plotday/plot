@@ -1,7 +1,7 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 
-import { getCalendars, getCredentials } from "@plotday/cal";
-import type { CalendarConfig, CalendarProvider } from "@plotday/cal";
+import { getCalendarConfig, getCalendars, getCredentials } from "@plotday/cal";
+import type { CalendarProvider } from "@plotday/cal";
 import {
   type Database,
   createActivities,
@@ -11,16 +11,6 @@ import {
 } from "@plotday/db";
 
 import type { Bindings } from "./";
-
-function getCalendarConfig(env: Bindings): CalendarConfig {
-  return {
-    googleClientId: env.GOOGLE_CLIENT_ID,
-    googleOauthSecret: env.GOOGLE_OAUTH_SECRET,
-    outlookClientId: env.MICROSOFT_CLIENT_ID,
-    outlookOauthSecret: env.MICROSOFT_OAUTH_SECRET,
-    webhookUrl: env.CALENDAR_WEBHOOK_URL,
-  };
-}
 
 export async function addAccount(
   env: Bindings,

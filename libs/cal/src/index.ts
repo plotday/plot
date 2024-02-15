@@ -23,7 +23,8 @@ export type CalendarConfig = {
   googleOauthSecret: string;
   outlookClientId: string;
   outlookOauthSecret: string;
-  webhookUrl?: string;
+  authCallbackUrl: string;
+  webhookUrl: string;
 };
 
 export type CalendarProvider = "google" | "outlook";
@@ -83,6 +84,7 @@ export function getCalendarConfig(env: {
   readonly MICROSOFT_CLIENT_ID: string;
   readonly MICROSOFT_OAUTH_SECRET: string;
   readonly CALENDAR_WEBHOOK_URL: string;
+  readonly AUTH_CALLBACK_URL: string;
 }): CalendarConfig {
   return {
     googleClientId: env.GOOGLE_CLIENT_ID,
@@ -90,6 +92,7 @@ export function getCalendarConfig(env: {
     outlookClientId: env.MICROSOFT_CLIENT_ID,
     outlookOauthSecret: env.MICROSOFT_OAUTH_SECRET,
     webhookUrl: env.CALENDAR_WEBHOOK_URL,
+    authCallbackUrl: env.AUTH_CALLBACK_URL,
   };
 }
 
@@ -120,7 +123,6 @@ export async function watch(
   state: WatchState;
   credentials: CalendarCredentials;
 }> {
-  if (!config.webhookUrl) throw new Error("Missing webhookUrl");
   let ret;
   switch (credentials.provider) {
     case "google":

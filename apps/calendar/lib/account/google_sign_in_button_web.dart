@@ -5,5 +5,8 @@ typedef HandleSignInFn = Future<void> Function();
 
 Widget buildGoogleSignInButton({HandleSignInFn? onPressed}) {
   return renderButton(
-      configuration: GSIButtonConfiguration(theme: GSIButtonTheme.filledBlue));
+    configuration: GSIButtonConfiguration(
+      theme: GSIButtonTheme.filledBlue,
+    ),
+  );
 }

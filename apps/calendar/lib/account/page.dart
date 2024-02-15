@@ -3,9 +3,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-import 'google_sign_in.dart';
-import 'sign_in_widget.dart';
 import 'account.dart';
+import 'auth_widget.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -16,28 +15,21 @@ class AccountPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Wrap(
+          direction: Axis.vertical,
+          alignment: WrapAlignment.center,
+          spacing: 8,
           children: <Widget>[
-            SignInWidget(
+            AuthWidget(
               onSignIn: (providerAuth) async {
-                final serverAuthCode = providerAuth.serverAuthCode ??
-                    (kIsWeb ? await requestServerAuthCode() : null);
-                if (serverAuthCode == null) {
-                  Sentry.captureMessage(
-                    'Google sign in failed: no serverAuthCode',
-                    level: SentryLevel.warning,
-                  );
-                  return;
-                }
-                await Account.add(AccountProvider.google, serverAuthCode);
+                await Account.add(AccountProvider.google, providerAuth.code);
               },
-              codeForRefreshToken: true,
               scopes: const [
+                'openid',
+                'profile',
                 'https://www.googleapis.com/auth/calendar.events',
                 'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
               ],
-              repeatable: true,
             ),
             ElevatedButton(
                 onPressed: () async {

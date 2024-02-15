@@ -19,15 +19,13 @@ class SignInWidget extends StatefulWidget {
   const SignInWidget(
       {required this.onSignIn,
       this.scopes = const ['email'],
-      this.codeForRefreshToken = false,
-      this.repeatable = false,
+      this.authorization = false,
       super.key});
 
   final void Function(ProviderAuth providerAuth) onSignIn;
 
   final List<String> scopes;
-  final bool codeForRefreshToken;
-  final bool repeatable;
+  final bool authorization;
 
   @override
   State<SignInWidget> createState() => _SignInWidgetState();
@@ -69,7 +67,7 @@ class _SignInWidgetState extends State<SignInWidget> {
       clientId: clientId,
       serverClientId: serverClientId,
       scopes: widget.scopes,
-      forceCodeForRefreshToken: widget.codeForRefreshToken,
+      forceCodeForRefreshToken: widget.authorization,
     );
 
     _googleSignIn.onCurrentUserChanged
@@ -79,6 +77,9 @@ class _SignInWidgetState extends State<SignInWidget> {
       final googleAuth = await account.authentication;
       final accessToken = googleAuth.accessToken;
       final idToken = googleAuth.idToken;
+      print("accessToken: $accessToken");
+      print("idToken: $idToken");
+      print("authCode: ${account.serverAuthCode}");
 
       if (idToken == null) {
         throw 'Missing ID token';
@@ -86,11 +87,30 @@ class _SignInWidgetState extends State<SignInWidget> {
 
       widget
           .onSignIn(ProviderAuth(accessToken, idToken, account.serverAuthCode));
-      if (widget.repeatable) _googleSignIn.signOut();
+      if (widget.authorization) _googleSignIn.signOut();
     });
 
-    if (kIsWeb) {
+    if (kIsWeb && !widget.authorization) {
       _googleSignIn.signInSilently();
+    }
+  }
+
+  Future<void> onSignIn() async {
+    try {
+      if (widget.authorization) {
+        print("here we go!");
+        await _googleSignIn.requestScopes(widget.scopes);
+        print("SAC: ${_googleSignIn.currentUser?.serverAuthCode}");
+      } else {
+        await _googleSignIn.signIn();
+      }
+    } on String catch (message) {
+      if (mounted) {
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        );
+      }
     }
   }
 
@@ -98,18 +118,12 @@ class _SignInWidgetState extends State<SignInWidget> {
   Widget build(BuildContext context) {
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 280),
-      child: buildGoogleSignInButton(onPressed: () async {
-        try {
-          await _googleSignIn.signIn();
-        } on String catch (message) {
-          if (mounted) {
-            SnackBar(
-              content: Text(message),
-              backgroundColor: Theme.of(context).colorScheme.error,
-            );
-          }
-        }
-      }),
+      child: widget.authorization
+          ? ElevatedButton(
+              onPressed: onSignIn,
+              child: const Text("Authorize"),
+            )
+          : buildGoogleSignInButton(onPressed: onSignIn),
     );
   }
 }

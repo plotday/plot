@@ -4,7 +4,7 @@
   "types": "src/index.ts",
   "sideEffects": false,
   "private": true,
-  "deploy_vars": "SENTRY_DSN SUPABASE_URL GOOGLE_CLIENT_ID MICROSOFT_CLIENT_ID CALENDAR_WEBHOOK_URL",
+  "deploy_vars": "SENTRY_DSN SUPABASE_URL GOOGLE_CLIENT_ID MICROSOFT_CLIENT_ID CALENDAR_WEBHOOK_URL AUTH_CALLBACK_URL",
   "scripts": {
     "deploy": "../../scripts/deploy-worker",
     "lint": "tsc && eslint ."

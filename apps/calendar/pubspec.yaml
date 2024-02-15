@@ -45,6 +45,7 @@ dependencies:
   infinite_scroll_pagination: ^4.0.0
   sentry_flutter: ^7.16.0
   sentry_dart_plugin: ^1.7.0
+  flutter_web_auth_2: ^4.0.0-alpha.0
 
 dev_dependencies:
   flutter_test:

@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 
 import type { SupabaseClient } from "@plotday/db";
 import { createClient } from "@plotday/db";
@@ -19,6 +20,7 @@ export type Bindings = {
   readonly MICROSOFT_CLIENT_ID: string;
   readonly MICROSOFT_OAUTH_SECRET: string;
 
+  readonly AUTH_CALLBACK_URL: string;
   readonly CALENDAR_WEBHOOK_URL: string;
 
   readonly SYNC_QUEUE: Queue<SyncRequest>;
@@ -34,7 +36,16 @@ declare module "hono" {
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Auth middleware
+app.use(
+  "/*",
+  cors({
+    origin: "http://localhost:8788",
+  })
+);
 app.use("*", async (c, next) => {
+  if (c.req.method === "OPTIONS") {
+    return await next();
+  }
   let tokens = c.req.header("Authorization");
   if (!tokens?.startsWith("Bearer ")) {
     return new Response("Forbidden", { status: 403 });

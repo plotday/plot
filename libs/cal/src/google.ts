@@ -661,7 +661,7 @@ export async function getCredentials(
     client_secret: config.googleOauthSecret,
     code,
     grant_type: "authorization_code",
-    redirect_uri: "http://localhost:54321/auth/v1/callback",
+    redirect_uri: config.authCallbackUrl,
   };
   const body = new URLSearchParams(payload);
   const response = await fetch("https://oauth2.googleapis.com/token", {
