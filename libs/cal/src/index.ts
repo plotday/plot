@@ -23,8 +23,8 @@ export type CalendarConfig = {
   googleOauthSecret: string;
   outlookClientId: string;
   outlookOauthSecret: string;
-  authCallbackUrl: string;
-  webhookUrl: string;
+  authCallbackUrl?: string;
+  webhookUrl?: string;
 };
 
 export type CalendarProvider = "google" | "outlook";
@@ -83,8 +83,8 @@ export function getCalendarConfig(env: {
   readonly GOOGLE_OAUTH_SECRET: string;
   readonly MICROSOFT_CLIENT_ID: string;
   readonly MICROSOFT_OAUTH_SECRET: string;
-  readonly CALENDAR_WEBHOOK_URL: string;
-  readonly AUTH_CALLBACK_URL: string;
+  readonly CALENDAR_WEBHOOK_URL?: string;
+  readonly AUTH_CALLBACK_URL?: string;
 }): CalendarConfig {
   return {
     googleClientId: env.GOOGLE_CLIENT_ID,

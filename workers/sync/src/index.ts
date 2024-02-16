@@ -1,7 +1,7 @@
 import { Toucan } from "toucan-js";
 
+import type { CalendarProvider, RawEvent } from "@plotday/cal";
 import { createClient, safeQuery } from "@plotday/db";
-import type { EventSyncRequest } from "@plotday/worker-request";
 
 import type { Env } from "./env";
 import { syncCalendar } from "./sync";
@@ -10,6 +10,13 @@ export type SyncType = "full" | "incremental" | "partial";
 export type SyncRequest = {
   calendarId: number;
   syncType?: SyncType;
+};
+export type EventSyncRequest = {
+  provider: CalendarProvider;
+  calendarId: number;
+  sequence: number;
+  rawEvent?: RawEvent;
+  complete?: SyncType;
 };
 
 export default {

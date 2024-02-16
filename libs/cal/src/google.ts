@@ -656,6 +656,9 @@ export async function getCredentials(
   config: CalendarConfig,
   code: string
 ): Promise<CalendarCredentials> {
+  if (!config.authCallbackUrl) {
+    throw new Error("Missing authCallbackUrl");
+  }
   const payload = {
     client_id: config.googleClientId,
     client_secret: config.googleOauthSecret,

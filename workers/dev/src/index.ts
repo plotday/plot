@@ -1,12 +1,9 @@
 import apiWorker from "@plotday/api";
 import contactSyncWorker from "@plotday/contact-sync";
+import type { ContactSyncRequest } from "@plotday/contact-sync";
 import eventWorker from "@plotday/event-sync";
 import syncWorker from "@plotday/sync";
-import type {
-  ContactSyncRequest,
-  EventSyncRequest,
-  SyncRequest,
-} from "@plotday/worker-request";
+import type { EventSyncRequest, SyncRequest } from "@plotday/sync";
 
 interface Env {
   readonly ENV?: string;

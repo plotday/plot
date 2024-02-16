@@ -9,7 +9,7 @@ import {
   safeQuery,
   saveCredentials,
 } from "@plotday/db";
-import type { SyncRequest } from "@plotday/worker-request";
+import type { SyncRequest } from "@plotday/sync";
 
 type Calendar = Database["public"]["Tables"]["calendar"]["Row"];
 

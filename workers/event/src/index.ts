@@ -4,7 +4,7 @@ import type { Event } from "@plotday/cal";
 import { transform } from "@plotday/cal";
 import type { Database, SupabaseClient } from "@plotday/db";
 import { createClient, safeQuery } from "@plotday/db";
-import type { EventSyncRequest } from "@plotday/worker-request";
+import type { EventSyncRequest } from "@plotday/sync";
 
 type DbRawEvent = Database["public"]["Tables"]["raw_event"]["Insert"];
 type DbEvent = Database["public"]["Tables"]["event"]["Insert"];

@@ -25,8 +25,8 @@ import {
   safeQuery,
   saveCredentials,
 } from "@plotday/db";
-import type { EventSyncRequest, SyncType } from "@plotday/worker-request";
 
+import { type EventSyncRequest, type SyncType } from "./";
 import type { Env } from "./env";
 
 export async function syncCalendar(

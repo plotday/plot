@@ -1,7 +1,15 @@
 import { Toucan } from "toucan-js";
 
-import { render } from "@plotday/email";
-import type { MailRequest } from "@plotday/worker-request";
+import { type EmailType, render } from "@plotday/email";
+
+export { type EmailType } from "@plotday/email";
+
+export type MailRequest = {
+  to: string[];
+  subject: string;
+  email: EmailType;
+  props?: Record<string, unknown>;
+};
 
 export interface Env {
   readonly ENV?: string;

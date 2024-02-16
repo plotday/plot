@@ -1,8 +1,6 @@
-import type {
-  ContactSyncRequest,
-  EventSyncRequest,
-  SyncRequest,
-} from "@plotday/worker-request";
+import type { ContactSyncRequest } from "@plotday/contact-sync";
+
+import type { EventSyncRequest, SyncRequest } from "./";
 
 export interface Env {
   readonly ENV?: string;

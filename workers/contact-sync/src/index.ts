@@ -13,7 +13,11 @@ import {
   safeQuery,
   saveCredentials,
 } from "@plotday/db";
-import type { ContactSyncRequest } from "@plotday/worker-request";
+
+export type ContactSyncRequest = {
+  accountId: number;
+  full?: boolean;
+};
 
 interface Env {
   readonly ENV?: string;

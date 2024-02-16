@@ -3,7 +3,8 @@ import type { AppLoadContext } from "@remix-run/cloudflare";
 import type { Queue } from "@cloudflare/workers-types";
 import * as z from "zod";
 
-import type { ContactSyncRequest, SyncRequest } from "@plotday/worker-request";
+import type { ContactSyncRequest } from "@plotday/contact-sync";
+import type { SyncRequest } from "@plotday/sync";
 
 type SyncQueue = Queue<SyncRequest>;
 type ContactSyncQueue = Queue<ContactSyncRequest>;

@@ -15,8 +15,7 @@
     "@plotday/api": "workspace:^",
     "@plotday/contact-sync": "workspace:^",
     "@plotday/event-sync": "workspace:^",
-    "@plotday/sync": "workspace:^",
-    "@plotday/worker-request": "workspace:^"
+    "@plotday/sync": "workspace:^"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",

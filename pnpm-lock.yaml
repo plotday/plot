@@ -113,9 +113,6 @@ importers:
       '@plotday/tz':
         specifier: workspace:^
         version: link:../../libs/tz
-      '@plotday/worker-request':
-        specifier: workspace:^
-        version: link:../../libs/worker-request
       '@react-css/grid':
         specifier: ^2.2.0
         version: 2.2.0(react-dom@18.2.0)(react@18.2.0)
@@ -195,6 +192,12 @@ importers:
         specifier: ^3.22.4
         version: 3.22.4
     devDependencies:
+      '@plotday/contact-sync':
+        specifier: workspace:^
+        version: link:../../workers/contact-sync
+      '@plotday/sync':
+        specifier: workspace:^
+        version: link:../../workers/sync
       '@plotday/tsconfig':
         specifier: workspace:*
         version: link:../../libs/tsconfig
@@ -388,22 +391,6 @@ importers:
         specifier: workspace:*
         version: link:../tsconfig
 
-  libs/worker-request:
-    dependencies:
-      '@plotday/cal':
-        specifier: workspace:^
-        version: link:../cal
-      '@plotday/email':
-        specifier: workspace:^
-        version: link:../email
-    devDependencies:
-      '@plotday/eslint-config-custom':
-        specifier: workspace:*
-        version: link:../eslint-config-custom
-      '@plotday/tsconfig':
-        specifier: workspace:*
-        version: link:../tsconfig
-
   workers/api:
     dependencies:
       '@plotday/cal':
@@ -440,9 +427,6 @@ importers:
       '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db
-      '@plotday/worker-request':
-        specifier: workspace:^
-        version: link:../../libs/worker-request
       '@supabase/supabase-js':
         specifier: ^2.38.4
         version: 2.38.4
@@ -453,6 +437,9 @@ importers:
       '@plotday/eslint-config-custom':
         specifier: workspace:*
         version: link:../../libs/eslint-config-custom
+      '@plotday/sync':
+        specifier: workspace:^
+        version: link:../sync
       '@plotday/tsconfig':
         specifier: workspace:*
         version: link:../../libs/tsconfig
@@ -465,9 +452,6 @@ importers:
       '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db
-      '@plotday/worker-request':
-        specifier: workspace:^
-        version: link:../../libs/worker-request
       '@supabase/supabase-js':
         specifier: ^2.38.4
         version: 2.38.4
@@ -499,9 +483,6 @@ importers:
       '@plotday/sync':
         specifier: workspace:^
         version: link:../sync
-      '@plotday/worker-request':
-        specifier: workspace:^
-        version: link:../../libs/worker-request
     devDependencies:
       '@plotday/eslint-config-custom':
         specifier: workspace:*
@@ -518,9 +499,6 @@ importers:
       '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db
-      '@plotday/worker-request':
-        specifier: workspace:^
-        version: link:../../libs/worker-request
       '@supabase/supabase-js':
         specifier: ^2.38.4
         version: 2.38.4
@@ -531,6 +509,9 @@ importers:
       '@plotday/eslint-config-custom':
         specifier: workspace:*
         version: link:../../libs/eslint-config-custom
+      '@plotday/sync':
+        specifier: workspace:^
+        version: link:../sync
       '@plotday/tsconfig':
         specifier: workspace:*
         version: link:../../libs/tsconfig
@@ -540,9 +521,6 @@ importers:
       '@plotday/email':
         specifier: workspace:^
         version: link:../../libs/email
-      '@plotday/worker-request':
-        specifier: workspace:^
-        version: link:../../libs/worker-request
       toucan-js:
         specifier: ^3.3.0
         version: 3.3.0
@@ -562,9 +540,6 @@ importers:
       '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db
-      '@plotday/worker-request':
-        specifier: workspace:^
-        version: link:../../libs/worker-request
       '@supabase/supabase-js':
         specifier: ^2.38.4
         version: 2.38.4
@@ -578,6 +553,9 @@ importers:
         specifier: ^3.3.0
         version: 3.3.0
     devDependencies:
+      '@plotday/contact-sync':
+        specifier: workspace:^
+        version: link:../contact-sync
       '@plotday/eslint-config-custom':
         specifier: workspace:*
         version: link:../../libs/eslint-config-custom
@@ -6620,7 +6598,6 @@ packages:
 
   /color-space@1.16.0:
     resolution: {integrity: sha512-A6WMiFzunQ8KEPFmj02OnnoUnqhmSaHaZ/0LVFcPTdlvm8+3aMJ5x1HRHy3bDHPkovkf4sS0f4wsVvwk71fKkg==}
-    deprecated: Use colorjs.io instead
     dependencies:
       hsluv: 0.0.3
       mumath: 3.3.4
