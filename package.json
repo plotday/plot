@@ -4,7 +4,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "install": "[ \"$CF_PAGES\" != \"1\" ] && npip install",
+    "install": "[ \"$CF_PAGES\" == \"1\" ] || npip install",
     "build": "turbo run build",
     "build:web": "turbo run build --filter=@plotday/web && ln -sfn apps/web/functions functions",
     "deploy:workers": "turbo deploy --filter={./workers/*}",
