@@ -90,11 +90,21 @@ class _SignInPageState extends State<SignInPage> {
           child: AuthButton(
             onSignIn: (auth) async {
               if (auth.idToken == null) return;
-              supabase.auth.signInWithIdToken(
-                provider: OAuthProvider.google,
-                idToken: auth.idToken!,
-                accessToken: auth.accessToken,
-              );
+              try {
+                await supabase.auth.signInWithIdToken(
+                  provider: OAuthProvider.google,
+                  idToken: auth.idToken!,
+                  accessToken: auth.accessToken,
+                );
+              } on AuthException catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(e.message),
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                );
+              }
             },
           ),
         ));
