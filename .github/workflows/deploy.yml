@@ -15,6 +15,7 @@ jobs:
     env:
       AMPLITUDE_API_KEY: ${{ vars.AMPLITUDE_API_KEY }}
       API_ROOT: ${{ vars.API_ROOT }}
+      AUTH_CALLBACK_URL: ${{ vars.AUTH_CALLBACK_URL }}
       CALENDAR_WEBHOOK_URL: ${{ vars.CALENDAR_WEBHOOK_URL }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       DEPLOY_ENV: ${{ vars.DEPLOY_ENV }}
