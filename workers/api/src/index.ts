@@ -39,7 +39,11 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.use(
   "/*",
   cors({
-    origin: "http://localhost:8788",
+    origin: [
+      "http://localhost:8788",
+      "https://preview.plot.day",
+      "https://app.plot.day",
+    ],
   })
 );
 app.use("*", async (c, next) => {
