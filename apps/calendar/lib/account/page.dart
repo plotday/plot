@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'account.dart';
-import 'auth_widget.dart';
+import 'auth_button.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -15,14 +13,14 @@ class AccountPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Wrap(
-          direction: Axis.vertical,
-          alignment: WrapAlignment.center,
-          spacing: 8,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            AuthWidget(
+            AuthButton(
               onSignIn: (providerAuth) async {
-                await Account.add(AccountProvider.google, providerAuth.code);
+                if (providerAuth.code != null) {
+                  await Account.add(AccountProvider.google, providerAuth.code!);
+                }
               },
               scopes: const [
                 'openid',
@@ -31,6 +29,7 @@ class AccountPage extends StatelessWidget {
                 'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
               ],
             ),
+            const SizedBox(height: 16),
             ElevatedButton(
                 onPressed: () async {
                   try {

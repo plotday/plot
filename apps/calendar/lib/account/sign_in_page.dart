@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-import 'sign_in_widget.dart';
+import 'auth_button.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -87,11 +87,12 @@ class _SignInPageState extends State<SignInPage> {
           title: const Text('Plot'),
         ),
         body: Center(
-          child: SignInWidget(
+          child: AuthButton(
             onSignIn: (auth) async {
+              if (auth.idToken == null) return;
               supabase.auth.signInWithIdToken(
                 provider: OAuthProvider.google,
-                idToken: auth.idToken,
+                idToken: auth.idToken!,
                 accessToken: auth.accessToken,
               );
             },
