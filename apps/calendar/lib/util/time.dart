@@ -39,22 +39,22 @@ class Time {
 
   static Interval day(DateTime value) => Interval(
         value.startOfDay,
-        value.startOfDay.nextDay,
+        value.startOfDay.nextDay.subtract(const Duration(seconds: 1)),
       );
 
   static Interval week(DateTime value) => Interval(
         value.startOfWeek,
-        value.startOfWeek.nextWeek,
+        value.startOfWeek.nextWeek.subtract(const Duration(seconds: 1)),
       );
 
   static Interval month(DateTime value) => Interval(
         value.startOfMonth,
-        value.startOfMonth.nextMonth,
+        value.startOfMonth.nextMonth.subtract(const Duration(seconds: 1)),
       );
 
   static Interval year(DateTime value) => Interval(
         value.startOfYear,
-        value.startOfYear.nextYear,
+        value.startOfYear.nextYear.subtract(const Duration(seconds: 1)),
       );
 
   static Interval today() => Time.day(DateTime.now());
