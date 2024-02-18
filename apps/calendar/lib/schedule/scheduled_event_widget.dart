@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../util/time.dart';
 import '../util/duration_widget.dart';
+import '../util/api.dart' as api;
 
 import 'scheduled_event.dart';
 
@@ -25,7 +26,6 @@ class ScheduledEventWidget extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: Text.rich(
               TextSpan(
-                // style: const TextStyle(height: 0.8),
                 children: <TextSpan>[
                   TextSpan(
                     text: event.at.start.clockString,
@@ -43,17 +43,37 @@ class ScheduledEventWidget extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  event.activity?.name ?? 'Open',
-                  // style: const TextStyle(height: 0.8),
+            child: MenuAnchor(
+              builder: (BuildContext context, MenuController controller,
+                      Widget? child) =>
+                  InkWell(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event.activity?.name ?? 'Open',
+                    ),
+                    if (event.name != null)
+                      Text(
+                        event.name!,
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                  ],
                 ),
-                if (event.name != null)
-                  Text(
-                    event.name!,
-                    style: const TextStyle(fontWeight: FontWeight.w500),
+                onTap: () {
+                  if (controller.isOpen) {
+                    controller.close();
+                  } else {
+                    controller.open();
+                  }
+                },
+              ),
+              menuChildren: [
+                if (event.id != null && event.at.end.isAfter(DateTime.now()))
+                  MenuItemButton(
+                    leadingIcon: const Icon(Icons.event_busy),
+                    onPressed: () => {_rsvp(EventResponse.declined)},
+                    child: const Text('Release time'),
                   ),
               ],
             ),
@@ -65,9 +85,17 @@ class ScheduledEventWidget extends StatelessWidget {
               child: DurationWidget(
                 duration: event.at.duration,
               )),
-          // ScheduledEventMenu(event: event),
         ],
       ),
+    );
+  }
+
+  Future<void> _rsvp(EventResponse response) async {
+    await api.put(
+      "/event/${event.id}/rsvp",
+      body: {
+        'response': response.name,
+      },
     );
   }
 }
