@@ -1,11 +1,12 @@
 {
-    "name": "calendar",
-    "short_name": "calendar",
-    "start_url": ".",
+    "name": "Plot",
+    "short_name": "Plot",
+    "developerName": "Plot Technologies Inc",
+    "start_url": "/",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "theme_color": "#239870",
+    "background_color": "#239870",
+    "description": "A calendar for being better than busy",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
