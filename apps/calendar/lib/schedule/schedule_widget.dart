@@ -28,10 +28,14 @@ class ScheduleWidget extends StatelessWidget {
         context.read<ScheduleBloc>().add(ScheduleFetch(pageKey, direction));
       },
       builderDelegate: PagedChildBuilderDelegate<ScheduledDay>(
-        itemBuilder: (context, item, index) => DayWidget(
-          day: item,
-        ),
-      ),
+          itemBuilder: (context, item, index) => Column(children: [
+                DayWidget(
+                  day: item,
+                ),
+                const SizedBox(
+                  height: 8,
+                ),
+              ])),
       anchor: Time.today().start,
     );
   }

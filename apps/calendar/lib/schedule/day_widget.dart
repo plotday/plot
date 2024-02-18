@@ -13,7 +13,6 @@ class DayWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(children: [
       Text(day.day.friendly, style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 8),
       ...day.events.map((event) => ScheduledEventWidget(event: event)),
     ]);
   }

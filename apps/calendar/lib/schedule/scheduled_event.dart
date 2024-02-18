@@ -163,8 +163,7 @@ class ScheduledEvent extends Equatable {
     return Future.value(next);
   }
 
-  ScheduledEvent(
-      {required this.name, required this.at, this.id, Activity? activity})
+  ScheduledEvent({this.name, required this.at, this.id, Activity? activity})
       : _activityId = activity?.id;
 
   ScheduledEvent.fromJson(Map<String, dynamic> json)
@@ -174,14 +173,14 @@ class ScheduledEvent extends Equatable {
         _activityId = json['activity_id'] as int?;
 
   final int? id;
-  final String name;
+  final String? name;
   final Interval at;
   get activity => _activityId == null ? null : Activity.get(_activityId);
 
   final int? _activityId;
 
   @override
-  List<Object> get props => [id ?? 0, name, at, _activityId ?? 0];
+  List<Object> get props => [id ?? 0, name ?? '', at, _activityId ?? 0];
 }
 
 class ScheduledDay extends Equatable {
@@ -193,7 +192,6 @@ class ScheduledDay extends Equatable {
     List<ScheduledEvent> expanded = [];
     if (events.isEmpty || _startOfDay < events.first.at.start) {
       expanded.add(ScheduledEvent(
-        name: 'Do something',
         at: Interval(
             day.at(_startOfDay),
             day.at(
@@ -205,7 +203,6 @@ class ScheduledDay extends Equatable {
       expanded.add(events[i]);
       if (i + 1 < events.length && events[i].at.end < events[i + 1].at.start) {
         expanded.add(ScheduledEvent(
-          name: 'Do something',
           at: Interval(day.at(events[i].at.end.timeOfDay),
               day.at(events[i + 1].at.start.timeOfDay)),
         ));
@@ -213,7 +210,6 @@ class ScheduledDay extends Equatable {
     }
     if (events.isNotEmpty && _endOfDay > events.last.at.end) {
       expanded.add(ScheduledEvent(
-        name: 'Do something',
         at: Interval(day.at(events.last.at.end.timeOfDay), day.at(_endOfDay)),
       ));
     }
