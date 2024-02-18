@@ -108,6 +108,13 @@ class GoogleApi {
             throw new Error(await response.text());
           }
           break;
+        case 400:
+          const body = await response.json();
+          if ((body as any).status === "FAILED_PRECONDITION") {
+            // For contact requests, this indicates a sync token is expired.
+            return null;
+          }
+          throw new Error("Invalid request", { cause: body });
         case 410:
           // This indicates a full sync is required
           // https://developers.google.com/calendar/api/guides/sync#full_sync_required_by_server
@@ -545,23 +552,30 @@ export async function getContacts(
         (scope) => scope === "https://www.googleapis.com/auth/contacts.readonly"
       )
     ) {
-      const response = (await api.call(
-        "GET",
-        "https://people.googleapis.com/v1/people/me/connections",
-        {
-          requestSyncToken: true,
-          ...(tokens.connections?.nextPageToken
-            ? {
-                pageToken: tokens.connections?.nextPageToken,
-              }
-            : tokens.connections?.nextSyncToken
-            ? {
-                syncToken: tokens.connections?.nextSyncToken,
-              }
-            : {}),
-          personFields: "names,emailAddresses,photos",
-        }
-      )) as people_v1.Schema$ListConnectionsResponse;
+      let response = undefined;
+      while (true) {
+        response = (await api.call(
+          "GET",
+          "https://people.googleapis.com/v1/people/me/connections",
+          {
+            requestSyncToken: true,
+            ...(tokens.connections?.nextPageToken
+              ? {
+                  pageToken: tokens.connections?.nextPageToken,
+                }
+              : tokens.connections?.nextSyncToken
+              ? {
+                  syncToken: tokens.connections?.nextSyncToken,
+                }
+              : {}),
+            personFields: "names,emailAddresses,photos",
+          }
+        )) as people_v1.Schema$ListConnectionsResponse;
+        if (response !== null) break;
+        if (!tokens.connections) break;
+        tokens.connections = undefined;
+        continue;
+      }
       for (const c of response.connections ?? []) {
         for (const e of c.emailAddresses ?? []) {
           if (!e.value) continue;
@@ -596,23 +610,30 @@ export async function getContacts(
           scope === "https://www.googleapis.com/auth/contacts.other.readonly"
       )
     ) {
-      const response = (await api.call(
-        "GET",
-        "https://people.googleapis.com/v1/otherContacts",
-        {
-          requestSyncToken: true,
-          ...(tokens.other?.nextPageToken
-            ? {
-                pageToken: tokens.other?.nextPageToken,
-              }
-            : tokens.other?.nextSyncToken
-            ? {
-                syncToken: tokens.other?.nextSyncToken,
-              }
-            : {}),
-          readMask: "names,emailAddresses,photos",
-        }
-      )) as people_v1.Schema$ListOtherContactsResponse;
+      let response = undefined;
+      while (true) {
+        response = (await api.call(
+          "GET",
+          "https://people.googleapis.com/v1/otherContacts",
+          {
+            requestSyncToken: true,
+            ...(tokens.other?.nextPageToken
+              ? {
+                  pageToken: tokens.other?.nextPageToken,
+                }
+              : tokens.other?.nextSyncToken
+              ? {
+                  syncToken: tokens.other?.nextSyncToken,
+                }
+              : {}),
+            readMask: "names,emailAddresses,photos",
+          }
+        )) as people_v1.Schema$ListOtherContactsResponse;
+        if (response !== null) break;
+        if (!tokens.other) break;
+        tokens.other = undefined;
+        continue;
+      }
       for (const c of response.otherContacts ?? []) {
         for (const e of c.emailAddresses ?? []) {
           if (!e.value) continue;
