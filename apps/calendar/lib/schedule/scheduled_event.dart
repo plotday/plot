@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../util/time.dart';
 import '../priority/activity.dart';
+import '../util/api.dart' as api;
 
 final supabase = Supabase.instance.client;
 
@@ -22,6 +23,8 @@ class _FetchParams extends Equatable {
   @override
   List<Object> get props => [anchor, direction, activity ?? ''];
 }
+
+enum EventResponse { accepted, declined, tentative }
 
 class ScheduledEvent extends Equatable {
   // All (null) or specific activities
@@ -163,24 +166,63 @@ class ScheduledEvent extends Equatable {
     return Future.value(next);
   }
 
-  ScheduledEvent({this.name, required this.at, this.id, Activity? activity})
+  ScheduledEvent(
+      {this.name, required this.at, this.id, Activity? activity, this.response})
       : _activityId = activity?.id;
 
   ScheduledEvent.fromJson(Map<String, dynamic> json)
       : id = json['id'] as int,
         name = json['name'] as String,
         at = Time.interval(json['at'] as String),
-        _activityId = json['activity_id'] as int?;
+        _activityId = json['activity_id'] as int?,
+        response = EventResponse.values.byName(json['response'] as String);
+
+  ScheduledEvent copyWith(
+      {String? name,
+      Interval? at,
+      Activity? activity,
+      EventResponse? response}) {
+    return ScheduledEvent(
+      id: id,
+      name: name ?? this.name,
+      at: at ?? this.at,
+      activity: activity ?? this.activity,
+      response: response ?? this.response,
+    );
+  }
 
   final int? id;
   final String? name;
   final Interval at;
+  final EventResponse? response;
+
   get activity => _activityId == null ? null : Activity.get(_activityId);
 
   final int? _activityId;
 
   @override
   List<Object> get props => [id ?? 0, name ?? '', at, _activityId ?? 0];
+
+  Future<void> rsvp(EventResponse response) async {
+    await api.put(
+      "/event/$id/rsvp",
+      body: {
+        'response': response.name,
+      },
+    );
+  }
+
+  Future<ScheduledEvent> classify(Activity activity) async {
+    final response = await supabase
+        .from('event')
+        .update({
+          'id': id,
+          'activity_id': activity.id,
+        })
+        .select()
+        .single();
+    return ScheduledEvent.fromJson(response);
+  }
 }
 
 class ScheduledDay extends Equatable {

@@ -10,3 +10,10 @@ final class ScheduleFetch extends ScheduleEvent {
   final DateTime anchor;
   final TimeDirection direction;
 }
+
+final class ScheduleUpdated extends ScheduleEvent {
+  const ScheduleUpdated(this.event, {this.replacing});
+
+  final ScheduledEvent event;
+  final ScheduledEvent? replacing;
+}

@@ -12,8 +12,9 @@ part 'state.dart';
 
 class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
   ScheduleBloc({this.horizon = TimeHorizon.day, this.initialActivity})
-      : super(const ScheduleState()) {
+      : super(ScheduleState()) {
     on<ScheduleFetch>(_onFetch);
+    on<ScheduleUpdated>(_onUpdated);
   }
 
   final TimeHorizon horizon;
@@ -44,5 +45,10 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
             events.keys.last + horizon.duration),
       }));
     }
+  }
+
+  Future<void> _onUpdated(
+      ScheduleUpdated event, Emitter<ScheduleState> emit) async {
+    emit(state.copyWith(event.event));
   }
 }
