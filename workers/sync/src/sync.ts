@@ -177,6 +177,7 @@ export async function syncCalendar(
       for (let i = 0; i < events.length; i += 1) {
         const body = {
           provider: credentials.provider,
+          userId: calendar.account.user_id,
           calendarId: calendar.id,
           sequence: state.sequence,
           rawEvent: events[i],
@@ -207,6 +208,7 @@ export async function syncCalendar(
     }
     await env.EVENT_QUEUE.send({
       provider: credentials.provider,
+      userId: calendar.account.user_id,
       calendarId: calendar.id,
       sequence: state.sequence,
       complete: syncType,
