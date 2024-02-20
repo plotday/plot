@@ -3,7 +3,7 @@ import { Toucan } from "toucan-js";
 import type { Event } from "@plotday/cal";
 import { transform } from "@plotday/cal";
 import type { Database, SupabaseClient } from "@plotday/db";
-import { createClient, safeQuery } from "@plotday/db";
+import { calendarToDb, createClient, safeQuery } from "@plotday/db";
 import type { EventSyncRequest } from "@plotday/sync";
 
 type DbRawEvent = Database["public"]["Tables"]["raw_event"]["Insert"];
@@ -107,6 +107,7 @@ export default {
             {
               event,
               calendarId: message.body.calendarId,
+              userId: message.body.userId,
               sequence: message.body.sequence,
             },
           ];
@@ -127,7 +128,7 @@ export default {
           });
           return events;
         }
-      }, [] as { event: Event; calendarId: number; sequence: number }[]);
+      }, [] as { event: Event; userId: string; calendarId: number; sequence: number }[]);
 
       backgroundJobs.push(insertContacts(events, supabase));
 
@@ -152,29 +153,12 @@ export default {
                 ],
               };
             }
-            const db: DbEvent = {
-              calendar_id: event.calendarId,
-              sequence: event.sequence,
-              provider_id: event.event.id,
-              series: event.event.series,
-              name: event.event.name,
-              status: event.event.status,
-              description: event.event.description,
-              summary: event.event.summary,
-              provider_link: event.event.providerLink,
-              invitees_hidden: event.event.inviteesHidden,
-              visibility: event.event.visibility,
-              availability: event.event.availability,
-              conferencing_url: event.event.conferencing?.url,
-              organizer_email: event.event.organizer?.email,
-              at:
-                event.event.startsAt && event.event.endsAt
-                  ? `[${event.event.startsAt.toISOString()},${event.event.endsAt.toISOString()})`
-                  : null,
-              ...(event.event.createdAt && {
-                created_at: event.event.createdAt?.toISOString(),
-              }),
-            };
+            const db: DbEvent = calendarToDb(
+              event.userId,
+              event.event,
+              event.calendarId,
+              event.sequence
+            );
             const key = `${event.calendarId}:${event.event.id}`;
             return {
               ...eventChanges,

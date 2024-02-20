@@ -1,10 +1,6 @@
-import differenceInMinutes from "date-fns/differenceInMinutes";
-
-import type { EventResponse } from "@plotday/cal";
-import { formatDate } from "@plotday/tz";
+import type { Event as CalendarEvent, EventResponse } from "@plotday/cal";
 
 import type { SupabaseClient } from "./";
-import { parseDatetimeRange } from "./";
 import { safeQuery } from "./query";
 import type { Database } from "./types";
 
@@ -44,6 +40,38 @@ export type EventFilters = {
   type?: Database["public"]["Enums"]["event_type"][];
   category?: string;
 };
+
+export function calendarToDb(
+  user_id: string,
+  event: CalendarEvent,
+  calendar_id?: number,
+  sequence?: number
+): Database["public"]["Tables"]["event"]["Insert"] {
+  return {
+    user_id,
+    calendar_id,
+    sequence,
+    provider_id: event.id,
+    series: event.series,
+    name: event.name,
+    status: event.status,
+    description: event.description,
+    summary: event.summary,
+    provider_link: event.providerLink,
+    invitees_hidden: event.inviteesHidden,
+    visibility: event.visibility,
+    availability: event.availability,
+    conferencing_url: event.conferencing?.url,
+    organizer_email: event.organizer?.email,
+    at:
+      event.startsAt && event.endsAt
+        ? `[${event.startsAt.toISOString()},${event.endsAt.toISOString()})`
+        : null,
+    ...(event.createdAt && {
+      created_at: event.createdAt?.toISOString(),
+    }),
+  };
+}
 
 export class Event {
   public static async Get(supabase: SupabaseClient, eventId: number) {

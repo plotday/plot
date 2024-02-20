@@ -7,7 +7,8 @@ CREATE TYPE "public"."event_availability" AS enum (
     'busy',
     'away',
     'focus',
-    'free'
+    'free',
+    'location'
 );
 
 CREATE TYPE "public"."event_response" AS enum (

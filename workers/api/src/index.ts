@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@plotday/db";
 import { createClient } from "@plotday/db";
 import type { SyncRequest } from "@plotday/sync";
 
-import { respond } from "./event";
+import { create, respond, update } from "./event";
 import { addAccount } from "./sync";
 
 export type Bindings = {
@@ -93,6 +93,27 @@ app.post("/sync", async (c) => {
     code
   );
   return c.json(account);
+});
+
+app.post("/event", async (c) => {
+  const body = await c.req.json();
+  const event = (body as any)?.event;
+  if (!event) {
+    return new Response("Bad request (missing event)", { status: 400 });
+  }
+  await create(c.env, c.var.supabase, event);
+  return c.json({});
+});
+
+app.patch("/event/:id", async (c) => {
+  const eventId = parseInt(c.req.param("id"));
+  const body = await c.req.json();
+  const event = (body as any)?.event;
+  if (!event) {
+    return new Response("Bad request (missing event)", { status: 400 });
+  }
+  await update(c.env, c.var.supabase, eventId, event);
+  return c.json({});
 });
 
 app.put("/event/:id/rsvp", async (c) => {

@@ -271,8 +271,10 @@ function transformResponse(response: string | null | undefined): EventResponse {
 
 export function transform(rawEvent: RawEvent): Event {
   const event: GoogleEvent = rawEvent.data as GoogleEvent;
-  const id = rawEvent.id;
+  return fromGoogleEvent(event);
+}
 
+export function fromGoogleEvent(event: GoogleEvent): Event {
   const startString = event.start?.dateTime || event.start?.date;
   const startsAt = startString ? new Date(startString) : undefined;
   const endString = event.end?.dateTime || event.end?.date;
@@ -393,7 +395,7 @@ export function transform(rawEvent: RawEvent): Event {
   );
 
   return {
-    id,
+    id: event.id!,
     providerLink: event.htmlLink || undefined,
     series: event.recurringEventId || undefined,
     name: event.summary || undefined,
@@ -423,22 +425,48 @@ export function transform(rawEvent: RawEvent): Event {
   };
 }
 
-export async function update(
-  _config: CalendarConfig,
-  _credentials: CalendarCredentials,
-  _calendarId: string,
-  _eventId: string,
-  _changes: Partial<Event>
+function toGoogleEvent(event: Partial<Event>) {
+  let googleChanges = {} as GoogleEvent;
+  if (event.name) googleChanges.summary = event.name;
+  if (event.startsAt)
+    googleChanges.start = { dateTime: toGoogleDate(event.startsAt) };
+  if (event.endsAt)
+    googleChanges.end = { dateTime: toGoogleDate(event.endsAt) };
+  return googleChanges;
+}
+
+export async function create(
+  config: CalendarConfig,
+  credentials: CalendarCredentials,
+  calendarId: string,
+  event: Partial<Event>
 ) {
-  throw new Error("Not implemented");
-  // const api = new GoogleApi(config, credentials);
-  // let googleChanges = {} as GoogleEvent;
-  // await api.call(
-  //   "PATCH",
-  //   `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`,
-  //   undefined,
-  //   googleChanges
-  // );
+  const api = new GoogleApi(config, credentials);
+  let googleChanges = toGoogleEvent(event);
+  const newEvent = (await api.call(
+    "POST",
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
+    undefined,
+    googleChanges
+  )) as GoogleEvent;
+  return fromGoogleEvent(newEvent);
+}
+
+export async function update(
+  config: CalendarConfig,
+  credentials: CalendarCredentials,
+  calendarId: string,
+  eventId: string,
+  changes: Partial<Event>
+) {
+  const api = new GoogleApi(config, credentials);
+  let googleChanges = toGoogleEvent(changes);
+  await api.call(
+    "PATCH",
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`,
+    undefined,
+    googleChanges
+  );
 }
 
 export async function respond(

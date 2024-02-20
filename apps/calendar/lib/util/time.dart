@@ -23,6 +23,17 @@ enum TimeDirection {
   ascending,
 }
 
+class OpenInterval extends Interval {
+  OpenInterval(DateTime start, this.openEnd)
+      : super(start, openEnd.subtract(const Duration(seconds: 1)));
+
+  final DateTime openEnd;
+
+  String toRangeString() {
+    return "[${start.toUtc().toIso8601String()}, ${openEnd.toUtc().toIso8601String()})";
+  }
+}
+
 class Time {
   static Interval interval(String db) {
     if (db == 'empty') {
@@ -37,24 +48,24 @@ class Time {
     return Interval(dateTimes[0], dateTimes[1]);
   }
 
-  static Interval day(DateTime value) => Interval(
+  static Interval day(DateTime value) => OpenInterval(
         value.startOfDay,
-        value.startOfDay.nextDay.subtract(const Duration(seconds: 1)),
+        value.startOfDay.nextDay,
       );
 
-  static Interval week(DateTime value) => Interval(
+  static Interval week(DateTime value) => OpenInterval(
         value.startOfWeek,
-        value.startOfWeek.nextWeek.subtract(const Duration(seconds: 1)),
+        value.startOfWeek.nextWeek,
       );
 
-  static Interval month(DateTime value) => Interval(
+  static Interval month(DateTime value) => OpenInterval(
         value.startOfMonth,
-        value.startOfMonth.nextMonth.subtract(const Duration(seconds: 1)),
+        value.startOfMonth.nextMonth,
       );
 
-  static Interval year(DateTime value) => Interval(
+  static Interval year(DateTime value) => OpenInterval(
         value.startOfYear,
-        value.startOfYear.nextYear.subtract(const Duration(seconds: 1)),
+        value.startOfYear.nextYear,
       );
 
   static Interval today() => Time.day(DateTime.now());

@@ -130,7 +130,7 @@ class TimeBlock extends Equatable {
     } else {
       result = await supabase
           .from('time')
-          .update(toJson().filterKeys({'at', 'remaining', 'planned'}))
+          .update(toJson())
           .eq('id', id!)
           .select()
           .single();
@@ -163,7 +163,6 @@ class TimeBlock extends Equatable {
       elapsed.inSeconds == 0 ? 0.0 : elapsed.inSeconds / planned.inSeconds;
 
   Map<String, dynamic> toJson() => {
-        if (id != null) 'id': id,
         'activity_id': activity.id,
         'at': at.toRangeString(),
         'planned': planned.toDb(),

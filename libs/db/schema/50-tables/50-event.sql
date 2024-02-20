@@ -1,8 +1,9 @@
 CREATE TABLE "public"."event" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "calendar_id" bigint REFERENCES calendar ON DELETE CASCADE,
-    "provider_id" text NOT NULL,
+    "provider_id" text NOT NULL DEFAULT gen_random_uuid () ::text,
     "series" text,
     "name" text,
     "status" event_status NOT NULL DEFAULT 'confirmed' ::event_status,

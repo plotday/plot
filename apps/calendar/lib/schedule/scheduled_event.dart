@@ -52,8 +52,18 @@ class ScheduledEvent extends Equatable {
     final response = await query
         .order('at', ascending: direction == TimeDirection.ascending)
         .limit(_pageSize);
-    var items =
-        response.map((event) => ScheduledEvent.fromJson(event)).toList();
+    var items = response
+        .map((event) {
+          try {
+            return ScheduledEvent.fromJson(event);
+          } catch (e) {
+            print(e);
+            return null;
+          }
+        })
+        .where((item) => item != null)
+        .map((item) => item!)
+        .toList();
 
     if (items.length < _pageSize) {
       _last[activity] ??= {};
@@ -166,16 +176,30 @@ class ScheduledEvent extends Equatable {
     return Future.value(next);
   }
 
-  ScheduledEvent(
-      {this.name, required this.at, this.id, Activity? activity, this.response})
-      : _activityId = activity?.id;
+  ScheduledEvent({
+    this.name,
+    required this.at,
+    this.id,
+    Activity? activity,
+    this.response = EventResponse.accepted,
+    this.series,
+    this.invitees = const [],
+  }) : _activityId = activity?.id;
 
   ScheduledEvent.fromJson(Map<String, dynamic> json)
       : id = json['id'] as int,
-        name = json['name'] as String,
+        series = json['series'] as String?,
+        name = json['name'] as String?,
         at = Time.interval(json['at'] as String),
+        invitees = (json['invitees'] as List).map((i) => i as String).toList(),
         _activityId = json['activity_id'] as int?,
         response = EventResponse.values.byName(json['response'] as String);
+
+  Map<String, dynamic> toJson() => {
+        'user_id': supabase.auth.currentUser?.id,
+        'name': name,
+        'at': at.toRangeString(),
+      };
 
   ScheduledEvent copyWith(
       {String? name,
@@ -192,9 +216,11 @@ class ScheduledEvent extends Equatable {
   }
 
   final int? id;
+  final String? series;
   final String? name;
   final Interval at;
-  final EventResponse? response;
+  final List<String> invitees;
+  final EventResponse response;
 
   get activity => _activityId == null ? null : Activity.get(_activityId);
 
@@ -203,25 +229,46 @@ class ScheduledEvent extends Equatable {
   @override
   List<Object> get props => [id ?? 0, name ?? '', at, _activityId ?? 0];
 
-  Future<void> rsvp(EventResponse response) async {
-    await api.put(
-      "/event/$id/rsvp",
-      body: {
-        'response': response.name,
-      },
-    );
-  }
+  Future<ScheduledEvent> save({ScheduledEvent? previous}) async {
+    Map<String, dynamic>? result;
+    if (id == null) {
+      result = await api.post(
+        "/event",
+        body: {
+          'event': toJson(),
+        },
+      );
+    } else {
+      result = await api.patch(
+        "/event/$id",
+        body: {
+          'event': toJson(),
+        },
+      );
+      await api.put(
+        "/event/$id/rsvp",
+        body: {
+          'response': response.name,
+        },
+      );
+    }
 
-  Future<ScheduledEvent> classify(Activity activity) async {
-    final response = await supabase
-        .from('event')
-        .update({
-          'id': id,
+    if (previous?.id == null || previous?.activity != activity) {
+      await supabase.from('rule').upsert([
+        {
+          'user_id': supabase.auth.currentUser?.id,
+          'series': series,
           'activity_id': activity.id,
-        })
-        .select()
-        .single();
-    return ScheduledEvent.fromJson(response);
+        },
+        {
+          'user_id': supabase.auth.currentUser?.id,
+          'name': name,
+          'invitees': invitees,
+          'activity_id': activity.id,
+        },
+      ]);
+    }
+    return ScheduledEvent.fromJson(result);
   }
 }
 

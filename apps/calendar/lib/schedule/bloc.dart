@@ -50,5 +50,6 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
   Future<void> _onUpdated(
       ScheduleUpdated event, Emitter<ScheduleState> emit) async {
     emit(state.copyWith(event.event));
+    emit(state.copyWith(await event.event.save(previous: event.replace)));
   }
 }

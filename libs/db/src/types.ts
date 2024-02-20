@@ -334,6 +334,7 @@ export interface Database {
           series: string | null
           status: Database["public"]["Enums"]["event_status"]
           summary: string | null
+          user_id: string
           visibility: Database["public"]["Enums"]["event_visibility"]
         }
         Insert: {
@@ -347,12 +348,13 @@ export interface Database {
           invitees_hidden?: boolean
           name?: string | null
           organizer_email?: string | null
-          provider_id: string
+          provider_id?: string
           provider_link?: string | null
           sequence?: number
           series?: string | null
           status?: Database["public"]["Enums"]["event_status"]
           summary?: string | null
+          user_id: string
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
         Update: {
@@ -372,6 +374,7 @@ export interface Database {
           series?: string | null
           status?: Database["public"]["Enums"]["event_status"]
           summary?: string | null
+          user_id?: string
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
         Relationships: [
@@ -380,6 +383,13 @@ export interface Database {
             columns: ["calendar_id"]
             isOneToOne: false
             referencedRelation: "calendar"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           }
         ]
@@ -754,7 +764,7 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "account_user_id_fkey"
+            foreignKeyName: "event_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -803,7 +813,7 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "account_user_id_fkey"
+            foreignKeyName: "event_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -1144,7 +1154,7 @@ export interface Database {
       }
     }
     Enums: {
-      event_availability: "busy" | "away" | "focus" | "free"
+      event_availability: "busy" | "away" | "focus" | "free" | "location"
       event_internal: "internal" | "external"
       event_response: "accepted" | "declined" | "tentative"
       event_status: "confirmed" | "cancelled" | "tentative"

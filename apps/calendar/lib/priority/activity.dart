@@ -1,8 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../util/map.dart';
-
 final supabase = Supabase.instance.client;
 
 class Activity extends Equatable {
@@ -98,7 +96,7 @@ class Activity extends Equatable {
     } else {
       result = await supabase
           .from('activity')
-          .update(toJson().filterKeys({'name', 'path', 'pomodoro'}))
+          .update(toJson())
           .eq('id', id!)
           .select()
           .single();
@@ -110,7 +108,6 @@ class Activity extends Equatable {
   List<Object> get props => [id ?? 0, name, path, pomodoro];
 
   Map<String, dynamic> toJson() => {
-        if (id != null) 'id': id,
         'name': name,
         'path': path,
         'pomodoro': pomodoro.inMinutes,

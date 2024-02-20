@@ -110,7 +110,7 @@ export type {
   DbEvents,
   DbEvent,
 } from "./event";
-export { Event } from "./event";
+export { Event, calendarToDb, calendarToDbPartial } from "./event";
 
 export { safeQuery } from "./query";
 export * from "./path";

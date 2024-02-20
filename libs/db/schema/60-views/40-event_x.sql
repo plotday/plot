@@ -3,7 +3,7 @@ CREATE OR REPLACE VIEW "public"."event_x" WITH ( security_invoker = TRUE)
 AS
 WITH event_x1 AS (
     SELECT
-        a.user_id AS user_id,
+        e.user_id AS user_id,
         min(e.id) AS id,
         e.name,
         (
@@ -39,9 +39,9 @@ WITH event_x1 AS (
     calc_event_type (e.at, min(e.availability), COALESCE(min(i.response) FILTER (WHERE ct.is_self), 'tentative'), count(DISTINCT i.email)::integer > 1
         OR bool_or(e.invitees_hidden)) AS type,
     calc_internal (count(DISTINCT i.email)::integer, min(ct.domain_id) FILTER (WHERE ct.is_self), array_agg(DISTINCT ct.domain_id)) AS internal,
-    array_agg(DISTINCT i.email ORDER BY i.email) AS invitees,
-    array_agg(DISTINCT split_part(i.email, '@', 2)
-    ORDER BY split_part(i.email, '@', 2)) AS invitee_domains,
+    array_remove(array_agg(DISTINCT i.email ORDER BY i.email), NULL) AS invitees,
+    array_remove(array_agg(DISTINCT split_part(i.email, '@', 2)
+        ORDER BY split_part(i.email, '@', 2)), NULL) AS invitee_domains,
     bool_or(e.invitees_hidden) AS invitees_hidden,
     min(e.series) IS NOT NULL AS recurring,
     calc_notice (min(e.created_at), e.at) AS notice,
@@ -50,15 +50,15 @@ WITH event_x1 AS (
     calc_meeting_size (count(DISTINCT i.email)::integer) AS size
 FROM
     event e
-    JOIN calendar c ON (e.calendar_id = c.id)
-    JOIN account a ON (c.account_id = a.id)
-    JOIN invitee i ON (e.id = i.event_id)
-    JOIN contact ct ON (ct.user_id = a.user_id
-            AND i.email = ct.email)
+    LEFT OUTER JOIN calendar c ON (e.calendar_id = c.id)
+    LEFT OUTER JOIN invitee i ON (e.id = i.event_id)
+        LEFT OUTER JOIN contact ct ON (ct.user_id = e.user_id
+                AND i.email = ct.email)
     WHERE
-        c.enabled = TRUE
+        e.calendar_id IS NULL
+        OR c.enabled = TRUE
     GROUP BY
-        a.user_id,
+        e.user_id,
         e.name,
         e.at
 )

@@ -79,8 +79,11 @@ class ScheduledEventWidget extends StatelessWidget {
                       MenuItemButton(
                         leadingIcon: const Icon(Icons.event_busy),
                         onPressed: () {
-                          context.read<ScheduleBloc>().add(ScheduleUpdated(event
-                              .copyWith(response: EventResponse.declined)));
+                          context.read<ScheduleBloc>().add(ScheduleUpdated(
+                                event.copyWith(
+                                    response: EventResponse.declined),
+                                replace: event,
+                              ));
                         },
                         child: const Text('Release time'),
                       ),
@@ -89,7 +92,9 @@ class ScheduledEventWidget extends StatelessWidget {
                         (priority) => MenuItemButton(
                           onPressed: () {
                             context.read<ScheduleBloc>().add(ScheduleUpdated(
-                                event.copyWith(activity: priority.activity)));
+                                  event.copyWith(activity: priority.activity),
+                                  replace: event,
+                                ));
                           },
                           child: Text(priority.activity.name),
                         ),

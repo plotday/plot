@@ -102,9 +102,9 @@ class Budget extends Equatable {
     _cache[week]![_activityId] = this;
 
     // TODO run these queries in parallel
-    await supabase.from('budget').upsert(
-        toJson().filterKeys({'user_id', 'activity_id', 'budget', 'order'}),
-        onConflict: 'user_id,activity_id,week');
+    await supabase
+        .from('budget')
+        .upsert(toJson(), onConflict: 'user_id,activity_id,week');
     final result = await supabase
         .from('budget')
         .upsert(toJson(), onConflict: 'user_id,activity_id,week')
