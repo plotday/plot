@@ -101,8 +101,8 @@ app.post("/event", async (c) => {
   if (!event) {
     return new Response("Bad request (missing event)", { status: 400 });
   }
-  await create(c.env, c.var.supabase, event);
-  return c.json({});
+  const dbEvent = await create(c.env, c.var.supabase, event);
+  return c.json(dbEvent);
 });
 
 app.patch("/event/:id", async (c) => {
@@ -112,19 +112,12 @@ app.patch("/event/:id", async (c) => {
   if (!event) {
     return new Response("Bad request (missing event)", { status: 400 });
   }
-  await update(c.env, c.var.supabase, eventId, event);
-  return c.json({});
-});
-
-app.put("/event/:id/rsvp", async (c) => {
-  const eventId = parseInt(c.req.param("id"));
-  const body = await c.req.json();
+  const dbEvent = await update(c.env, c.var.supabase, eventId, event);
   const response = (body as any)?.response;
-  if (!response) {
-    return new Response("Bad request (missing response)", { status: 400 });
+  if (response) {
+    await respond(c.env, c.var.supabase, eventId, response);
   }
-  await respond(c.env, c.var.supabase, eventId, response);
-  return c.json({});
+  return c.json(dbEvent);
 });
 
 export default app;

@@ -4,13 +4,12 @@ import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../util/time.dart';
-import '../util/map.dart';
 import 'activity.dart';
 
 final supabase = Supabase.instance.client;
 
 class Budget extends Equatable {
-  static final Map<Interval, Map<int, Budget>> _cache = {};
+  static final Map<DateTimeRange, Map<int, Budget>> _cache = {};
 
   static String _between(String? str1, String? str2) {
     if (str1 == null) {
@@ -37,16 +36,16 @@ class Budget extends Equatable {
     return newStr;
   }
 
-  static Future<Budget> get(Interval week, int activityId) async {
+  static Future<Budget> get(DateTimeRange week, int activityId) async {
     final budgets = await list(week);
     return budgets[activityId];
   }
 
-  static Future<List<Budget>> list(Interval week) async {
+  static Future<List<Budget>> list(DateTimeRange week) async {
     if (!_cache.containsKey(week)) {
       final results = await supabase.rpc('budget_week', params: {
         'user_id': supabase.auth.currentUser!.id,
-        'week': week.toRangeString()
+        'week': week.toString()
       });
       final budgets = results.map<MapEntry<int, Budget>>((json) {
         final budget = Budget.fromJson(week, json);
@@ -114,7 +113,7 @@ class Budget extends Equatable {
   }
 
   final int _activityId;
-  final Interval week;
+  final DateTimeRange week;
   final Duration duration;
   get activity => Activity.get(_activityId);
   get key => _activityId.toString();
@@ -127,7 +126,7 @@ class Budget extends Equatable {
   Map<String, dynamic> toJson() => {
         'user_id': supabase.auth.currentUser!.id,
         'activity_id': _activityId,
-        'week': week.toRangeString(),
+        'week': week.toString(),
         'budget': duration.inMinutes,
         'order': _order,
       };

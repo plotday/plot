@@ -9,11 +9,12 @@ part 'event.dart';
 part 'state.dart';
 
 class PrioritiesBloc extends Bloc<PriorityEvent, PrioritiesState> {
-  PrioritiesBloc() : super(PrioritiesLoading(Time.week(DateTime.now()))) {
+  PrioritiesBloc()
+      : super(PrioritiesLoading(DateTimeRange.week(DateTime.now()))) {
     on<PrioritiesWeekChanged>(_onWeekChanged);
     on<PriorityChanged>(_onPriorityChanged);
     on<PriorityAdded>(_onPriorityAdded);
-    add(PrioritiesWeekChanged(Time.week(DateTime.now())));
+    add(PrioritiesWeekChanged(DateTimeRange.week(DateTime.now())));
   }
 
   void _onWeekChanged(

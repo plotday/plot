@@ -26,7 +26,7 @@ export async function emailToActivity(supabase: SupabaseClient, email: string) {
     await supabase
       .from("domain")
       .select("organization(name)")
-      .eq("domain", domain)
+      .eq("name", domain)
       .single()
   );
   if (!domainRecord.organization) {

@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../util/api.dart' as api;
-import '../util/time.dart';
-
 import '../now/bloc.dart';
 import 'scheduled_event.dart';
-
-enum EventResponse { accepted, declined, tentative }
 
 class ScheduledEventMenu extends StatelessWidget {
   const ScheduledEventMenu({required this.event, super.key});
@@ -15,12 +10,7 @@ class ScheduledEventMenu extends StatelessWidget {
   final ScheduledEvent event;
 
   Future<void> _rsvp(EventResponse response) async {
-    await api.put(
-      "/event/${event.id}/rsvp",
-      body: {
-        'response': response.name,
-      },
-    );
+    await event.copyWith(response: response).save();
   }
 
   @override

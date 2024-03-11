@@ -2,7 +2,6 @@ import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../util/time.dart';
-import '../util/map.dart';
 import '../priority/activity.dart';
 
 final supabase = Supabase.instance.client;
@@ -56,7 +55,7 @@ class TimeBlock extends Equatable {
     return TimeBlock(
       activity: activity,
       planned: planned,
-      at: Interval(start, end),
+      at: DateTimeRange(start, end),
       remaining: Duration.zero,
     );
   }
@@ -72,13 +71,13 @@ class TimeBlock extends Equatable {
   TimeBlock.fromJson(Map<String, dynamic> json)
       : id = json['id'] as int,
         activity = Activity.get(json['activity_id'] as int),
-        at = Time.interval(json['at'] as String),
+        at = DateTimeRange.fromString(json['at'] as String),
         planned = Time.duration(json['planned'] as String),
         _remaining = Time.duration(json['remaining'] as String);
 
   final int? id;
   final Activity activity;
-  final Interval at;
+  final DateTimeRange at;
   final Duration planned;
   final Duration _remaining;
 
@@ -86,7 +85,8 @@ class TimeBlock extends Equatable {
   List<Object> get props =>
       [id ?? 0, activity.id ?? 0, at, planned, _remaining];
 
-  TimeBlock copyWith({Interval? at, Duration? planned, Duration? remaining}) {
+  TimeBlock copyWith(
+      {DateTimeRange? at, Duration? planned, Duration? remaining}) {
     at ??= this.at;
     if (planned != null) {
       final delta = planned - this.planned;
@@ -95,7 +95,7 @@ class TimeBlock extends Equatable {
       } else {
         remaining ??= _remaining + delta;
       }
-      at = Interval(at.start, at.end.add(delta));
+      at = DateTimeRange(at.start, at.end.add(delta));
     } else {
       planned = this.planned;
       remaining ??= _remaining;
@@ -111,7 +111,7 @@ class TimeBlock extends Equatable {
 
   TimeBlock copyStopped() {
     return copyWith(
-      at: Interval(at.start, DateTime.now()),
+      at: DateTimeRange(at.start, DateTime.now()),
       remaining: remaining,
     );
   }
@@ -164,7 +164,7 @@ class TimeBlock extends Equatable {
 
   Map<String, dynamic> toJson() => {
         'activity_id': activity.id,
-        'at': at.toRangeString(),
+        'at': at.toString(),
         'planned': planned.toDb(),
         'remaining': _remaining.toDb(),
       };

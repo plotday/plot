@@ -31,7 +31,7 @@ final class ScheduleState extends Equatable {
       TimeDirection.ascending: EventList({}, null)
     },
     DateTime? anchor,
-  }) : anchor = anchor ?? Time.today().start;
+  }) : anchor = anchor ?? DateTimeRange.today().start;
 
   ScheduleState copyWith(ScheduledEvent event) {
     var descendingList = lists[TimeDirection.descending]!;

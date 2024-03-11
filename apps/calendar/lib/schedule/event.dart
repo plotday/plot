@@ -12,8 +12,7 @@ final class ScheduleFetch extends ScheduleEvent {
 }
 
 final class ScheduleUpdated extends ScheduleEvent {
-  const ScheduleUpdated(this.event, {this.replace});
+  const ScheduleUpdated(this.event);
 
   final ScheduledEvent event;
-  final ScheduledEvent? replace;
 }

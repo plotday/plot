@@ -17,6 +17,7 @@
     "toucan-js": "^3.3.0"
   },
   "devDependencies": {
+    "@cloudflare/ai": "^1.0.50",
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/sync": "workspace:^",
     "@plotday/tsconfig": "workspace:*"

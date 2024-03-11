@@ -1,5 +1,5 @@
 -- Add personal email providers to prevent the creation of organizations
-INSERT INTO "public"."domain" ("domain")
+INSERT INTO "public"."domain" ("name")
     VALUES ('gmail.com'),
     ('yahoo.com'),
     ('hotmail.com'),

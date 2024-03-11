@@ -26,7 +26,7 @@ export async function addAccount(
   const user_id = user.id;
   const name = user.user_metadata?.full_name;
   const avatar_url = user.user_metadata?.avatar_url;
-  const email = credentials.email;
+  const email = credentials.email.toLowerCase();
 
   const account = safeQuery(
     await supabaseAdmin
@@ -46,19 +46,7 @@ export async function addAccount(
     throw Error("Failed to create account");
   }
 
-  const activities = await createActivities(supabaseAdmin, user.id, email);
-  safeQuery(
-    await supabaseAdmin.from("rule").upsert(
-      activities.map((c) => ({
-        user_id,
-        account_id: account.id,
-        ...((c.path as string).endsWith(".meetings")
-          ? { type: "meeting" as Database["public"]["Enums"]["event_type"] }
-          : {}),
-        activity_id: c.id,
-      }))
-    )
-  );
+  await createActivities(supabaseAdmin, user.id, email);
 
   // Create or link a contact for the user
   safeQuery(
@@ -68,7 +56,6 @@ export async function addAccount(
         email,
         name,
         avatar_url,
-        is_self: true,
       },
       { onConflict: "user_id,email" }
     )

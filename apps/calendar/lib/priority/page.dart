@@ -5,7 +5,6 @@ import 'activity.dart';
 import 'budget.dart';
 import 'bloc.dart';
 import '../now/bloc.dart';
-import '../util/time.dart';
 import '../util/cached_reorderable_list_view.dart';
 
 class NewPriorityModal extends StatefulWidget {
@@ -121,15 +120,15 @@ class WeekNavigatorWidget extends StatelessWidget {
           onPressed: () {
             context
                 .read<PrioritiesBloc>()
-                .add(PrioritiesWeekChanged(week.previous));
+                .add(PrioritiesWeekChanged(week.previous()));
           }),
-      Text(week.friendly),
+      Text(week.toFriendlyString()),
       IconButton(
           icon: const Icon(Icons.chevron_right),
           onPressed: () {
             context
                 .read<PrioritiesBloc>()
-                .add(PrioritiesWeekChanged(week.next));
+                .add(PrioritiesWeekChanged(week.next()));
           }),
     ]);
   }

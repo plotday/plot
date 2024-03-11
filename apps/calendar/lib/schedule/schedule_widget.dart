@@ -5,7 +5,7 @@ import 'scheduled_event.dart';
 import 'day_widget.dart';
 import 'bloc.dart';
 import '../util/infinite_time_widget.dart';
-import '../util/time.dart';
+import '../util/time.dart' as time;
 
 class ScheduleWidget extends StatelessWidget {
   const ScheduleWidget({super.key});
@@ -16,12 +16,12 @@ class ScheduleWidget extends StatelessWidget {
       builder: (context, scheduleState) => InfiniteTimeWidget<ScheduledDay>(
         stream: context.read<ScheduleBloc>().stream.map((state) =>
             PagedItemsState<ScheduledDay>(Map.fromEntries(
-                TimeDirection.values.map((direction) => MapEntry(
+                time.TimeDirection.values.map((direction) => MapEntry(
                     direction,
                     DualList<DateTime, ScheduledDay>(
                       state.lists[direction]!.events.entries
-                          .map<ScheduledDay>((entry) =>
-                              ScheduledDay(Time.day(entry.key), entry.value))
+                          .map<ScheduledDay>((entry) => ScheduledDay(
+                              time.DateTimeRange.day(entry.key), entry.value))
                           .toList(),
                       state.lists[direction]!.nextAnchor,
                     )))))),

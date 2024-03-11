@@ -3,7 +3,7 @@ part of 'bloc.dart';
 sealed class PrioritiesState extends Equatable {
   const PrioritiesState(this.week);
 
-  final Interval week;
+  final DateTimeRange week;
 
   @override
   List<Object?> get props => [week];

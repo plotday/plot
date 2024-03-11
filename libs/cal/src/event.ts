@@ -46,14 +46,16 @@ export type Event = {
   series?: string;
   name?: string;
   status: EventStatus;
+  response?: EventResponse;
+  visibility: EventVisibility;
+  availability: EventAvailability;
+  isOptional: boolean;
   startsAt?: Date;
   endsAt?: Date;
   createdAt?: Date;
   providerLink?: string; // for editing in the provider client on the web
   summary?: string;
   description?: string;
-  visibility: EventVisibility;
-  availability: EventAvailability;
   conferencing?: Conferencing;
   organizer?: Contact;
   invitees: Invitee[];

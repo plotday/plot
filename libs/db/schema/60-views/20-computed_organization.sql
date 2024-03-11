@@ -9,7 +9,7 @@ CREATE OR REPLACE FUNCTION public.organization (contact)
         organization
         JOIN "domain" ON organization.id = domain.organization_id
     WHERE
-        domain.id = $1.domain_id
+        domain.name = get_domain ($1.email)
 $function$;
 
 CREATE OR REPLACE FUNCTION public.organization (account)
@@ -23,6 +23,6 @@ CREATE OR REPLACE FUNCTION public.organization (account)
         organization
         JOIN "domain" ON organization.id = domain.organization_id
     WHERE
-        domain.id = $1.domain_id
+        domain.name = get_domain ($1.email)
 $function$;
 

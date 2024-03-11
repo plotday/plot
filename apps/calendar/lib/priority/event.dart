@@ -7,7 +7,7 @@ sealed class PriorityEvent {
 final class PrioritiesWeekChanged extends PriorityEvent {
   const PrioritiesWeekChanged(this.week);
 
-  final Interval week;
+  final DateTimeRange week;
 }
 
 final class PriorityChanged extends PriorityEvent {

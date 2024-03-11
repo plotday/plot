@@ -33,13 +33,14 @@ class ScheduledEvent extends Equatable {
   static final Map<Activity?, Map<TimeDirection, DateTime>> _last = {};
   static final Map<_FetchParams, Future<List<ScheduledEvent>>> _loading = {};
   static const int _pageSize = 50;
+  static const _columns = 'id,series,name,at,invitees,activity_id,response';
 
   static Future<List<ScheduledEvent>> _fetchImpl(DateTime anchor,
       {TimeDirection direction = TimeDirection.ascending,
       Activity? activity}) async {
     var query = supabase
         .from('event_x')
-        .select()
+        .select(_columns)
         .eq('user_id', supabase.auth.currentUser!.id)
         .overlaps(
             'at',
@@ -57,7 +58,8 @@ class ScheduledEvent extends Equatable {
           try {
             return ScheduledEvent.fromJson(event);
           } catch (e) {
-            print(e);
+            print("Error parsing event: $e");
+            print("Event: $event");
             return null;
           }
         })
@@ -81,11 +83,14 @@ class ScheduledEvent extends Equatable {
       items = items.toList().reversed.toList();
     }
     _cache[activity] ??= {};
-    for (var day = Time.day(anchor);
-        direction == TimeDirection.descending
-            ? day.start.isAfter(items.first.at.start)
-            : day.end.isBefore(items.last.at.start);
-        day = direction == TimeDirection.descending ? day.previous : day.next) {
+    for (var day = DateTimeRange.day(anchor);
+        items.isNotEmpty &&
+            (direction == TimeDirection.descending
+                ? day.isAfter(items.first.at)
+                : day.isBefore(items.last.at));
+        day = direction == TimeDirection.descending
+            ? day.previous()
+            : day.next()) {
       _cache[activity]![day.start] =
           items.where((event) => day.includes(event.at.start)).toList();
     }
@@ -144,14 +149,14 @@ class ScheduledEvent extends Equatable {
       day ??= await _fetch(anchor, direction: direction, activity: activity);
       items[anchor] = day;
       anchor = direction == TimeDirection.descending
-          ? anchor - horizon.duration
-          : anchor + horizon.duration;
+          ? horizon.sub(anchor)
+          : horizon.add(anchor);
     }
     return items;
   }
 
   static Future<List<ScheduledEvent>> today() async {
-    return await getDay(Time.today().start);
+    return await getDay(DateTimeRange.today().start);
   }
 
   static Future<List<ScheduledEvent>> current() async {
@@ -184,32 +189,42 @@ class ScheduledEvent extends Equatable {
     this.response = EventResponse.accepted,
     this.series,
     this.invitees = const [],
-  }) : _activityId = activity?.id;
+    ScheduledEvent? copiedFrom,
+  })  : _activityId = activity?.id,
+        _copiedFrom = copiedFrom?._copiedFrom ?? copiedFrom;
 
   ScheduledEvent.fromJson(Map<String, dynamic> json)
       : id = json['id'] as int,
         series = json['series'] as String?,
         name = json['name'] as String?,
-        at = Time.interval(json['at'] as String),
+        at = DateTimeRange.fromString(json['at'] as String),
         invitees = (json['invitees'] as List).map((i) => i as String).toList(),
         _activityId = json['activity_id'] as int?,
-        response = EventResponse.values.byName(json['response'] as String);
+        _copiedFrom = null,
+        response = EventResponse.values
+            .byName((json['response'] as String?) ?? 'tentative');
 
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson({patch = false}) => {
         'user_id': supabase.auth.currentUser?.id,
-        'name': name,
-        'at': at.toRangeString(),
+        if (!patch || _copiedFrom?.name != name) 'name': name,
+        if (!patch || _copiedFrom?.at != at) 'at': at.toString(),
+        if (!patch || _copiedFrom?.response != response)
+          'response': response.name,
       };
 
-  ScheduledEvent copyWith(
-      {String? name,
-      Interval? at,
-      Activity? activity,
-      EventResponse? response}) {
+  ScheduledEvent copyWith({
+    String? name,
+    DateTimeRange? at,
+    Activity? activity,
+    EventResponse? response,
+  }) {
     return ScheduledEvent(
+      copiedFrom: this,
       id: id,
+      series: series,
       name: name ?? this.name,
       at: at ?? this.at,
+      invitees: invitees,
       activity: activity ?? this.activity,
       response: response ?? this.response,
     );
@@ -218,18 +233,18 @@ class ScheduledEvent extends Equatable {
   final int? id;
   final String? series;
   final String? name;
-  final Interval at;
+  final DateTimeRange at;
   final List<String> invitees;
   final EventResponse response;
+  final int? _activityId;
+  final ScheduledEvent? _copiedFrom;
 
   get activity => _activityId == null ? null : Activity.get(_activityId);
-
-  final int? _activityId;
 
   @override
   List<Object> get props => [id ?? 0, name ?? '', at, _activityId ?? 0];
 
-  Future<ScheduledEvent> save({ScheduledEvent? previous}) async {
+  Future<ScheduledEvent> save() async {
     Map<String, dynamic>? result;
     if (id == null) {
       result = await api.post(
@@ -239,36 +254,37 @@ class ScheduledEvent extends Equatable {
         },
       );
     } else {
+      // TODO Only patch if there are changes
       result = await api.patch(
         "/event/$id",
         body: {
-          'event': toJson(),
-        },
-      );
-      await api.put(
-        "/event/$id/rsvp",
-        body: {
-          'response': response.name,
+          'event': toJson(patch: true),
         },
       );
     }
 
-    if (previous?.id == null || previous?.activity != activity) {
-      await supabase.from('rule').upsert([
-        {
-          'user_id': supabase.auth.currentUser?.id,
-          'series': series,
-          'activity_id': activity.id,
-        },
-        {
-          'user_id': supabase.auth.currentUser?.id,
-          'name': name,
-          'invitees': invitees,
-          'activity_id': activity.id,
-        },
-      ]);
+    if (series != null &&
+        (_copiedFrom?.series == null || _copiedFrom?.activity != activity)) {
+      await supabase
+          .from('series')
+          .update(
+            {
+              'activity_id': activity.id,
+            },
+          )
+          .eq('user_id', supabase.auth.currentUser!.id)
+          .eq('series', series!);
     }
-    return ScheduledEvent.fromJson(result);
+
+    return ScheduledEvent(
+      id: result['id'],
+      series: series,
+      name: name,
+      at: at,
+      invitees: invitees,
+      activity: activity,
+      response: response,
+    );
   }
 }
 
@@ -277,11 +293,11 @@ class ScheduledDay extends Equatable {
   static const _endOfDay = TimeOfDay(hour: 23, minute: 45);
 
   static List<ScheduledEvent> _expandEvents(
-      Interval day, List<ScheduledEvent> events) {
+      DateTimeRange day, List<ScheduledEvent> events) {
     List<ScheduledEvent> expanded = [];
     if (events.isEmpty || _startOfDay < events.first.at.start) {
       expanded.add(ScheduledEvent(
-        at: Interval(
+        at: DateTimeRange(
             day.at(_startOfDay),
             day.at(
                 events.isEmpty ? _endOfDay : events.first.at.start.timeOfDay)),
@@ -292,14 +308,15 @@ class ScheduledDay extends Equatable {
       expanded.add(events[i]);
       if (i + 1 < events.length && events[i].at.end < events[i + 1].at.start) {
         expanded.add(ScheduledEvent(
-          at: Interval(day.at(events[i].at.end.timeOfDay),
+          at: DateTimeRange(day.at(events[i].at.end.timeOfDay),
               day.at(events[i + 1].at.start.timeOfDay)),
         ));
       }
     }
     if (events.isNotEmpty && _endOfDay > events.last.at.end) {
       expanded.add(ScheduledEvent(
-        at: Interval(day.at(events.last.at.end.timeOfDay), day.at(_endOfDay)),
+        at: DateTimeRange(
+            day.at(events.last.at.end.timeOfDay), day.at(_endOfDay)),
       ));
     }
     return expanded;
@@ -308,7 +325,7 @@ class ScheduledDay extends Equatable {
   ScheduledDay(this.day, List<ScheduledEvent> events)
       : events = _expandEvents(day, events);
 
-  final Interval day;
+  final DateTimeRange day;
   final List<ScheduledEvent> events;
 
   @override

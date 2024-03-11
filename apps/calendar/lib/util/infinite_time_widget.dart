@@ -54,7 +54,7 @@ class InfiniteTimeState<T> extends State<InfiniteTimeWidget<T>> {
   void initState() {
     _pagingController = {
       TimeDirection.descending: PagingController(
-        firstPageKey: widget.anchor - widget.horizon.duration,
+        firstPageKey: widget.horizon.sub(widget.anchor),
         invisibleItemsThreshold: 10,
       )..addPageRequestListener((pageKey) {
           widget.onFetch(pageKey, TimeDirection.descending);

@@ -32,7 +32,7 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
             {}
               ..addAll(state.lists[TimeDirection.descending]!.events)
               ..addAll(events),
-            events.keys.last - horizon.duration),
+            horizon.sub(events.keys.last)),
         TimeDirection.ascending: state.lists[TimeDirection.ascending]!
       }));
     } else {
@@ -42,7 +42,7 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
             {}
               ..addAll(state.lists[TimeDirection.ascending]!.events)
               ..addAll(events),
-            events.keys.last + horizon.duration),
+            horizon.add(events.keys.last)),
       }));
     }
   }
@@ -50,6 +50,6 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
   Future<void> _onUpdated(
       ScheduleUpdated event, Emitter<ScheduleState> emit) async {
     emit(state.copyWith(event.event));
-    emit(state.copyWith(await event.event.save(previous: event.replace)));
+    emit(state.copyWith(await event.event.save()));
   }
 }

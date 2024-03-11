@@ -191,12 +191,16 @@ export async function sync(
   }
 }
 
-export function transform(provider: CalendarProvider, event: RawEvent): Event {
+export function transform(
+  provider: CalendarProvider,
+  event: RawEvent,
+  accountEmail: string
+): Event {
   switch (provider) {
     case "google":
       return google.transform(event);
     case "outlook":
-      return outlook.transform(event);
+      return outlook.transform(event, accountEmail);
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }

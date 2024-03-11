@@ -14,6 +14,7 @@ export type SyncRequest = {
 export type EventSyncRequest = {
   provider: CalendarProvider;
   userId: string;
+  accountEmail: string;
   calendarId: number;
   sequence: number;
   rawEvent?: RawEvent;

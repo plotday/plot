@@ -1,3 +1,4 @@
+import { Ai } from "@cloudflare/ai";
 import { Toucan } from "toucan-js";
 
 import type { Event } from "@plotday/cal";
@@ -8,6 +9,7 @@ import type { EventSyncRequest } from "@plotday/sync";
 
 type DbRawEvent = Database["public"]["Tables"]["raw_event"]["Insert"];
 type DbEvent = Database["public"]["Tables"]["event"]["Insert"];
+type DbSeries = Database["public"]["Tables"]["series"]["Insert"];
 
 export interface Env {
   readonly ENV?: string;
@@ -17,6 +19,8 @@ export interface Env {
   readonly SUPABASE_URL: string;
   readonly SUPABASE_SERVICE_KEY: string;
   readonly SENTRY_DSN: string;
+
+  ai: any;
 }
 
 function eventType(event: Event): "event" | "working_location" {
@@ -80,6 +84,34 @@ async function insertContacts(
   );
 }
 
+async function generateEmbeddings(env: Env, text: string[]) {
+  if (text.length === 0) return [];
+  console.log(`Generating ${text.length} embeddings`);
+  let embeddings: never[];
+  if (env.ENV === "development") {
+    const response = await fetch(
+      "https://api.cloudflare.com/client/v4/accounts/34ceb662899230b63c7e8114eaf9277c/ai/run/@cf/baai/bge-small-en-v1.5",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer AJntmJRIMHS7LNxeVfGYXKletAmvzYibe9GvvVlP`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text,
+        }),
+      }
+    );
+    embeddings = ((await response.json()) as any).result.data;
+  } else {
+    const ai = new Ai(env.ai);
+    embeddings = await ai.run("@cf/baai/bge-small-en-v1.5", {
+      text,
+    });
+  }
+  return embeddings;
+}
+
 export default {
   async queue(batch: MessageBatch<EventSyncRequest>, env: Env): Promise<void> {
     const Sentry = new Toucan({
@@ -99,7 +131,11 @@ export default {
       const events = batch.messages.reduce((events, message) => {
         try {
           if (!message.body.rawEvent) return events;
-          const event = transform(message.body.provider, message.body.rawEvent);
+          const event = transform(
+            message.body.provider,
+            message.body.rawEvent,
+            message.body.accountEmail
+          );
           // TODO: handle working locations
           if (eventType(event) !== "event") return events;
           return [
@@ -188,7 +224,7 @@ export default {
           cancelations: [] as { calendar_id: number; provider_id: string }[],
         }
       );
-      const eventInserts = Object.values(eventChanges.inserts);
+      let eventInserts = Object.values(eventChanges.inserts);
 
       console.log(`Inserting ${eventInserts.length} events`);
       // It's critical that we have no duplicate calendar_id, provider_id
@@ -209,6 +245,37 @@ export default {
           id: event.id,
           event: eventInserts[index].event,
         })) ?? [];
+
+      let series: (DbSeries & { text?: string })[] = Object.values(
+        Object.fromEntries(
+          eventInserts.map((insert) => [
+            insert.event.series ?? insert.event.id,
+            {
+              user_id: insert.db.user_id,
+              series: insert.event.series ?? insert.event.id,
+              text: insert.event.name ?? "Untitled",
+              invitees: insert.event.invitees.map((invitee) => invitee.email),
+            },
+          ])
+        )
+      );
+      const embeddings = await generateEmbeddings(
+        env,
+        series.map((i) => i.text!)
+      );
+      series = series.map((item, i) => {
+        const { text, ...rest } = item;
+        const embedding = embeddings[i];
+        return {
+          ...rest,
+          embedding,
+        };
+      });
+      safeQuery(
+        await supabase
+          .from("series")
+          .upsert(series, { onConflict: "user_id, series" })
+      );
 
       if (eventChanges.cancelations.length > 0) {
         console.log(`Cancelling ${eventChanges.cancelations.length} events`);

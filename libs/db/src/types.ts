@@ -39,7 +39,6 @@ export interface Database {
           contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
-          domain_id: number | null
           email: string
           id: number
           user_id: string
@@ -50,7 +49,6 @@ export interface Database {
           contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
-          domain_id?: number | null
           email: string
           id?: never
           user_id: string
@@ -59,19 +57,11 @@ export interface Database {
           contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
-          domain_id?: number | null
           email?: string
           id?: never
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "account_domain_id_fkey"
-            columns: ["domain_id"]
-            isOneToOne: false
-            referencedRelation: "domain"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "account_user_id_fkey"
             columns: ["user_id"]
@@ -242,10 +232,8 @@ export interface Database {
         Row: {
           avatar_url: string | null
           created_at: string
-          domain_id: number | null
           email: string
           id: number
-          is_self: boolean
           name: string | null
           user_id: string
           organization: unknown | null
@@ -253,31 +241,20 @@ export interface Database {
         Insert: {
           avatar_url?: string | null
           created_at?: string
-          domain_id?: number | null
           email: string
           id?: never
-          is_self?: boolean
           name?: string | null
           user_id: string
         }
         Update: {
           avatar_url?: string | null
           created_at?: string
-          domain_id?: number | null
           email?: string
           id?: never
-          is_self?: boolean
           name?: string | null
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "contact_domain_id_fkey"
-            columns: ["domain_id"]
-            isOneToOne: false
-            referencedRelation: "domain"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "contact_user_id_fkey"
             columns: ["user_id"]
@@ -290,20 +267,20 @@ export interface Database {
       domain: {
         Row: {
           created_at: string
-          domain: string
           id: number
+          name: string
           organization_id: number | null
         }
         Insert: {
           created_at?: string
-          domain: string
           id?: never
+          name: string
           organization_id?: number | null
         }
         Update: {
           created_at?: string
-          domain?: string
           id?: never
+          name?: string
           organization_id?: number | null
         }
         Relationships: [
@@ -327,9 +304,11 @@ export interface Database {
           id: number
           invitees_hidden: boolean
           name: string | null
+          optional: boolean
           organizer_email: string | null
           provider_id: string
           provider_link: string | null
+          response: Database["public"]["Enums"]["event_response"] | null
           sequence: number
           series: string | null
           status: Database["public"]["Enums"]["event_status"]
@@ -347,9 +326,11 @@ export interface Database {
           id?: never
           invitees_hidden?: boolean
           name?: string | null
+          optional?: boolean
           organizer_email?: string | null
           provider_id?: string
           provider_link?: string | null
+          response?: Database["public"]["Enums"]["event_response"] | null
           sequence?: number
           series?: string | null
           status?: Database["public"]["Enums"]["event_status"]
@@ -367,9 +348,11 @@ export interface Database {
           id?: never
           invitees_hidden?: boolean
           name?: string | null
+          optional?: boolean
           organizer_email?: string | null
           provider_id?: string
           provider_link?: string | null
+          response?: Database["public"]["Enums"]["event_response"] | null
           sequence?: number
           series?: string | null
           status?: Database["public"]["Enums"]["event_status"]
@@ -544,80 +527,51 @@ export interface Database {
           }
         ]
       }
-      rule: {
+      series: {
         Row: {
-          account_id: number | null
           activity_id: number | null
-          calendar_id: number | null
           created_at: string
+          embedding: string | null
           id: number
-          internal: Database["public"]["Enums"]["event_internal"] | null
-          invitee_domain: string | null
           invitees: string[] | null
-          name: string | null
-          series: string | null
-          type: Database["public"]["Enums"]["event_type"] | null
+          series: string
           user_id: string
         }
         Insert: {
-          account_id?: number | null
           activity_id?: number | null
-          calendar_id?: number | null
           created_at?: string
+          embedding?: string | null
           id?: never
-          internal?: Database["public"]["Enums"]["event_internal"] | null
-          invitee_domain?: string | null
           invitees?: string[] | null
-          name?: string | null
-          series?: string | null
-          type?: Database["public"]["Enums"]["event_type"] | null
+          series: string
           user_id: string
         }
         Update: {
-          account_id?: number | null
           activity_id?: number | null
-          calendar_id?: number | null
           created_at?: string
+          embedding?: string | null
           id?: never
-          internal?: Database["public"]["Enums"]["event_internal"] | null
-          invitee_domain?: string | null
           invitees?: string[] | null
-          name?: string | null
-          series?: string | null
-          type?: Database["public"]["Enums"]["event_type"] | null
+          series?: string
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "rule_account_id_fkey"
-            columns: ["account_id"]
-            isOneToOne: false
-            referencedRelation: "account"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rule_activity_id_fkey"
+            foreignKeyName: "series_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "activity"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "rule_activity_id_fkey"
+            foreignKeyName: "series_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["activity_id"]
           },
           {
-            foreignKeyName: "rule_calendar_id_fkey"
-            columns: ["calendar_id"]
-            isOneToOne: false
-            referencedRelation: "calendar"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rule_user_id_fkey"
+            foreignKeyName: "series_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -737,9 +691,10 @@ export interface Database {
           created_at: string | null
           day: string | null
           description: string | null
+          embedding: string | null
+          external: boolean | null
           id: number | null
           initiated: boolean | null
-          internal: Database["public"]["Enums"]["event_internal"] | null
           invitee_count: number | null
           invitee_domains: string[] | null
           invitees: string[] | null
@@ -893,7 +848,6 @@ export interface Database {
           contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
-          domain_id: number | null
           email: string
           id: number
           user_id: string
@@ -1043,10 +997,8 @@ export interface Database {
         Returns: {
           avatar_url: string | null
           created_at: string
-          domain_id: number | null
           email: string
           id: number
-          is_self: boolean
           name: string | null
           user_id: string
         }[]
@@ -1057,7 +1009,13 @@ export interface Database {
         }
         Returns: number
       }
-      get_or_create_domain_id: {
+      get_domain: {
+        Args: {
+          email: string
+        }
+        Returns: string
+      }
+      insert_domain: {
         Args: {
           email: string
         }

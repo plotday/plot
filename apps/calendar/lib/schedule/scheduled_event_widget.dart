@@ -82,7 +82,6 @@ class ScheduledEventWidget extends StatelessWidget {
                           context.read<ScheduleBloc>().add(ScheduleUpdated(
                                 event.copyWith(
                                     response: EventResponse.declined),
-                                replace: event,
                               ));
                         },
                         child: const Text('Release time'),
@@ -93,7 +92,6 @@ class ScheduledEventWidget extends StatelessWidget {
                           onPressed: () {
                             context.read<ScheduleBloc>().add(ScheduleUpdated(
                                   event.copyWith(activity: priority.activity),
-                                  replace: event,
                                 ));
                           },
                           child: Text(priority.activity.name),

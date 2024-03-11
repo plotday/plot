@@ -290,11 +290,20 @@ export function fromGoogleEvent(event: GoogleEvent): Event {
 
   const attendees: GoogleAttendee[] = event.attendees || [];
 
-  let organizerFound = false;
+  let response: EventResponse = "accepted";
+  let isOptional = false;
+  let organizerFound = event.organizer?.self ?? false;
   let invitees: Invitee[] =
     attendees.reduce((ret, attendee) => {
       if (!attendee.email || attendee.resource) return ret;
-      if (attendee.email === organizer?.email) organizerFound = true;
+      if (attendee.organizer || attendee.email === organizer?.email) {
+        organizerFound = true;
+      }
+      if (attendee.self) {
+        response = transformResponse(attendee.responseStatus);
+        isOptional = !!attendee.optional;
+        return ret;
+      }
       return [
         ...ret,
         {
@@ -400,6 +409,8 @@ export function fromGoogleEvent(event: GoogleEvent): Event {
     series: event.recurringEventId || undefined,
     name: event.summary || undefined,
     status,
+    response,
+    isOptional,
     createdAt: event.created ? new Date(event.created) : undefined,
     startsAt,
     endsAt,

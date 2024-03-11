@@ -61,6 +61,8 @@ export function calendarToDb(
     invitees_hidden: event.inviteesHidden,
     visibility: event.visibility,
     availability: event.availability,
+    response: event.response,
+    optional: event.isOptional,
     conferencing_url: event.conferencing?.url,
     organizer_email: event.organizer?.email,
     at:

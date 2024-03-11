@@ -1,20 +1,32 @@
 import 'package:dart_date/dart_date.dart';
 import 'package:flutter/material.dart' show TimeOfDay;
+import 'package:equatable/equatable.dart';
 
-export 'package:dart_date/dart_date.dart';
+export 'package:dart_date/dart_date.dart' show Date, DurationExtension;
 export 'package:flutter/material.dart' show TimeOfDay;
 
 enum TimeHorizon {
   day,
-  week;
+  week,
+  month,
+  year;
 
-  get duration {
-    switch (this) {
-      case TimeHorizon.day:
-        return const Duration(days: 1);
-      case TimeHorizon.week:
-        return const Duration(days: 7);
-    }
+  DateTime add(DateTime dateTime) {
+    return switch (this) {
+      TimeHorizon.day => dateTime.addDays(1, true),
+      TimeHorizon.week => dateTime.addDays(7, true),
+      TimeHorizon.month => dateTime.nextMonth,
+      TimeHorizon.year => dateTime.nextYear,
+    };
+  }
+
+  DateTime sub(DateTime dateTime) {
+    return switch (this) {
+      TimeHorizon.day => dateTime.addDays(-1, true),
+      TimeHorizon.week => dateTime.addDays(-7, true),
+      TimeHorizon.month => dateTime.previousMonth,
+      TimeHorizon.year => dateTime.previousYear,
+    };
   }
 }
 
@@ -23,61 +35,242 @@ enum TimeDirection {
   ascending,
 }
 
-class OpenInterval extends Interval {
-  OpenInterval(DateTime start, this.openEnd)
-      : super(start, openEnd.subtract(const Duration(seconds: 1)));
-
-  final DateTime openEnd;
-
-  String toRangeString() {
-    return "[${start.toUtc().toIso8601String()}, ${openEnd.toUtc().toIso8601String()})";
-  }
-}
-
-class Time {
-  static Interval interval(String db) {
+class DateTimeRange extends Equatable {
+  static DateTimeRange fromString(String db) {
     if (db == 'empty') {
-      final now = DateTime.now();
-      return Interval(now, now);
+      final now = DateTime.now().toLocal();
+      return DateTimeRange(now, now);
     }
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateTimeStrings = stripped.split(',');
     List<DateTime> dateTimes = dateTimeStrings
         .map((timestamp) => DateTime.parse(timestamp.trim()).toLocal())
         .toList();
-    return Interval(dateTimes[0], dateTimes[1]);
+    if (db.endsWith(')')) {
+      return DateTimeRange(dateTimes[0], dateTimes[1]);
+    } else {
+      return DateTimeRange(dateTimes[0], dateTimes[1]);
+    }
   }
 
-  static Interval day(DateTime value) => OpenInterval(
-        value.startOfDay,
-        value.startOfDay.nextDay,
-      );
+  DateTimeRange(this.start, this.end) {
+    if (start.isAfter(end)) {
+      throw RangeError('Invalid Range');
+    }
+  }
 
-  static Interval week(DateTime value) => OpenInterval(
-        value.startOfWeek,
-        value.startOfWeek.nextWeek,
-      );
+  DateTimeRange.day(DateTime value)
+      : this(
+          value.startOfDay,
+          TimeHorizon.day.add(value),
+        );
 
-  static Interval month(DateTime value) => OpenInterval(
-        value.startOfMonth,
-        value.startOfMonth.nextMonth,
-      );
+  DateTimeRange.week(DateTime value)
+      : this(
+          value.startOfWeek,
+          TimeHorizon.week.add(value),
+        );
 
-  static Interval year(DateTime value) => OpenInterval(
-        value.startOfYear,
-        value.startOfYear.nextYear,
-      );
+  DateTimeRange.month(DateTime value)
+      : this(
+          value.startOfMonth,
+          TimeHorizon.month.add(value),
+        );
 
-  static Interval today() => Time.day(DateTime.now());
+  DateTimeRange.year(DateTime value)
+      : this(
+          value.startOfYear,
+          TimeHorizon.year.add(value),
+        );
 
+  DateTimeRange.today() : this.day(DateTime.now().toLocal());
+
+  final DateTime start;
+  final DateTime end;
+
+  @override
+  List<Object> get props => [start, end];
+
+  Duration get duration => end.difference(start);
+
+  bool includes(DateTime date) =>
+      (date.isAfter(start) || date.isAtSameMomentAs(start)) &&
+      (date.isBefore(end));
+
+  bool contains(DateTimeRange interval) =>
+      includes(interval.start) && includes(interval.end);
+
+  bool overlaps(DateTimeRange other) =>
+      includes(other.start) || other.includes(start);
+
+  bool cross(DateTimeRange other) =>
+      overlaps(other) || start == other.end || end == other.start;
+
+  DateTimeRange union(DateTimeRange other) {
+    if (cross(other)) {
+      if (end.isAfter(other.start) || end.isAtSameMomentAs(other.start)) {
+        return DateTimeRange(start, other.end);
+      } else if (other.end.isAfter(start) ||
+          other.end.isAtSameMomentAs(start)) {
+        return DateTimeRange(other.start, end);
+      } else {
+        throw RangeError('Error this: $this; other: $other');
+      }
+    } else {
+      throw RangeError('DateTimeRanges don\'t cross');
+    }
+  }
+
+  DateTimeRange intersection(DateTimeRange other) {
+    if (!cross(other)) {
+      if (other.contains(this)) {
+        return this;
+      }
+
+      throw RangeError('DateTimeRanges don\'t cross');
+    }
+
+    final intersectionStart = Date.max(start, other.start);
+    final intersectionEnd = Date.min(end, other.end);
+
+    return DateTimeRange(intersectionStart, intersectionEnd);
+  }
+
+  DateTimeRange? difference(DateTimeRange other) {
+    if (other == this) {
+      return null;
+    } else if (this <= other) {
+      // | this | | other |
+      if (end.isBefore(other.start)) {
+        return this;
+      } else {
+        return DateTimeRange(start, other.start);
+      }
+    } else if (this >= other) {
+      // | other | | this |
+      if (other.end.isBefore(start)) {
+        return this;
+      } else {
+        return DateTimeRange(other.end, end);
+      }
+    } else {
+      throw RangeError('Error this: $this; other: $other');
+    }
+  }
+
+  List<DateTimeRange?> symetricDiffetence(DateTimeRange other) {
+    final list = <DateTimeRange?>[null, null];
+    try {
+      list[0] = difference(other);
+    } catch (e) {
+      list[0] = null;
+    }
+    try {
+      list[1] = other.difference(this);
+    } catch (e) {
+      list[1] = null;
+    }
+    return list;
+  }
+
+  bool operator <(DateTimeRange other) =>
+      start.isBefore(other.start) ||
+      (start.isAtSameMomentAs(other.start) && end.isBefore(other.end));
+
+  bool operator <=(DateTimeRange other) => this < other || this == other;
+
+  bool operator >(DateTimeRange other) =>
+      start.isAfter(other.start) ||
+      (start.isAtSameMomentAs(other.start) && end.isAfter(other.end));
+
+  bool operator >=(DateTimeRange other) => this > other || this == other;
+
+  bool isBefore(DateTimeRange other) => end.isSameOrBefore(other.start);
+  bool isAfter(DateTimeRange other) => start.isSameOrAfter(other.end);
+
+  @override
+  String toString() =>
+      "[${start.toUtc().toIso8601String()}, ${end.toUtc().toIso8601String()})";
+
+  TimeHorizon? get horizon {
+    if (start == start.startOfDay && start.nextDay.startOfDay == end) {
+      return TimeHorizon.day;
+    } else if (start == start.startOfWeek &&
+        start.nextWeek.startOfWeek == end) {
+      return TimeHorizon.week;
+    }
+    return null;
+  }
+
+  DateTimeRange previous() {
+    return DateTimeRange(
+        start -
+            (duration +
+                (start - duration).timeZoneOffset -
+                start.timeZoneOffset -
+                start.timeZoneOffset +
+                end.timeZoneOffset),
+        start);
+  }
+
+  DateTimeRange next() {
+    return DateTimeRange(
+        end,
+        end +
+            (duration +
+                end.timeZoneOffset -
+                (end + duration).timeZoneOffset -
+                start.timeZoneOffset +
+                end.timeZoneOffset));
+  }
+
+  DateTime at(TimeOfDay time) {
+    return DateTime(
+      start.year,
+      start.month,
+      start.day,
+      time.hour,
+      time.minute,
+    );
+  }
+
+  bool isNow() {
+    return includes(DateTime.now());
+  }
+
+  String toFriendlyString() {
+    final now = DateTime.now();
+    // We shrink the interval to account for DST and exclusive endings
+    final start = this.start.add(const Duration(hours: 1));
+    final end = this.end.sub(const Duration(hours: 1, seconds: 1));
+    if (horizon == TimeHorizon.day) {
+      return start.format('EEEE, MMM d');
+    } else if (horizon == TimeHorizon.week &&
+        start.isAtSameMomentAs(now.startOfWeek)) {
+      return "This week";
+    } else if (horizon == TimeHorizon.week &&
+        start == now.startOfWeek.previousWeek) {
+      return "Last week";
+    } else if (horizon == TimeHorizon.week &&
+        start == now.startOfWeek.nextWeek) {
+      return "Next week";
+    } else if (start.isSameMonth(end)) {
+      return '${start.format('MMM d')} - ${end.format('d')}';
+    } else {
+      return '${start.format('MMM d')} - ${end.format('MMM d')}';
+    }
+  }
+}
+
+class Time {
   static Duration duration(String durationString) {
-    final RegExp postgresIntervalRegExp = RegExp(
+    final RegExp postgresDateTimeRangeRegExp = RegExp(
         r'^(([0-9]+) days? )?([0-9]{2-3}):([0-9]{2}):([0-9]+(\.[0-9]+)?)?$');
     final RegExp iso8601RegExp = RegExp(
         r'^P(([0-9]+)D)?(T(([0-9]+)H)?(([0-9]+)M)?(([0-9]+(\.[0-9]+)?)S)?)?$');
 
-    final Match? postgresIntervalMatch =
-        postgresIntervalRegExp.matchAsPrefix(durationString);
+    final Match? postgresDateTimeRangeMatch =
+        postgresDateTimeRangeRegExp.matchAsPrefix(durationString);
     final Match? iso8601Match = iso8601RegExp.matchAsPrefix(durationString);
 
     String? hours;
@@ -94,11 +287,11 @@ class Time {
         minutes: minutes != null ? int.parse(minutes) : 0,
         seconds: seconds != null ? double.parse(seconds).round() : 0,
       );
-    } else if (postgresIntervalMatch != null) {
-      String? days = postgresIntervalMatch.group(2);
-      hours = postgresIntervalMatch.group(3);
-      minutes = postgresIntervalMatch.group(4);
-      seconds = postgresIntervalMatch.group(5);
+    } else if (postgresDateTimeRangeMatch != null) {
+      String? days = postgresDateTimeRangeMatch.group(2);
+      hours = postgresDateTimeRangeMatch.group(3);
+      minutes = postgresDateTimeRangeMatch.group(4);
+      seconds = postgresDateTimeRangeMatch.group(5);
       return Duration(
         days: days != null ? int.parse(days) : 0,
         hours: hours != null ? int.parse(hours) : 0,
@@ -134,53 +327,6 @@ extension PostgresDateTime on DateTime {
 
   TimeOfDay get timeOfDay {
     return TimeOfDay(hour: hour, minute: minute);
-  }
-}
-
-extension IntervalExtension on Interval {
-  Interval get previous => Interval(start.subtract(duration), start);
-  Interval get next => Interval(end, end.add(duration));
-
-  DateTime at(TimeOfDay time) {
-    return DateTime(
-      start.year,
-      start.month,
-      start.day,
-      time.hour,
-      time.minute,
-    );
-  }
-
-  String get friendly {
-    final now = DateTime.now();
-    final displayEnd = end.subtract(const Duration(seconds: 1));
-    if (start.isSameDay(displayEnd)) {
-      return start.format('EEEE, MMM d');
-    } else if (start == now.startOfWeek && end == now.startOfWeek.nextWeek) {
-      return "This week";
-    } else if (start == now.startOfWeek.previousWeek &&
-        end == now.startOfWeek) {
-      return "Last week";
-    } else if (start == now.startOfWeek.nextWeek &&
-        end == now.startOfWeek.nextWeek.nextWeek) {
-      return "Next week";
-    } else if (start.isSameMonth(end)) {
-      return '${start.format('MMM d')} - ${displayEnd.format('d')}';
-    } else {
-      return '${start.format('MMM d')} - ${displayEnd.format('MMM d')}';
-    }
-  }
-
-  String toRangeString() {
-    return "[${start.toUtc().toIso8601String()}, ${end.toUtc().toIso8601String()})";
-  }
-
-  String toDayString() {
-    return start.toDayString();
-  }
-
-  bool isNow() {
-    return includes(DateTime.now());
   }
 }
 

@@ -22,12 +22,10 @@ FROM
                 ELSE
                     organizer_email
                 END),
-            ('External', CASE WHEN internal = 'internal' THEN
-                    'Interal'
-                WHEN internal = 'external' THEN
+            ('External', CASE WHEN external = TRUE THEN
                     'External'
                 ELSE
-                    NULL
+                    'Internal'
                 END),
             ('Recurring', CASE WHEN recurring THEN
                     'Recurring'
