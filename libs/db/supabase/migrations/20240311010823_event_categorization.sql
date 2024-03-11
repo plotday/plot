@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA "extensions";
+
 DROP TRIGGER IF EXISTS "on_account_created" ON "public"."account";
 
 DROP TRIGGER IF EXISTS "on_contact_created" ON "public"."contact";
@@ -50,6 +52,10 @@ DROP VIEW IF EXISTS "public"."waitlist_admin";
 DROP VIEW IF EXISTS "public"."gap";
 
 DROP VIEW IF EXISTS "public"."insight";
+
+DROP FUNCTION IF EXISTS public.calendar (event_x);
+
+DROP FUNCTION IF EXISTS public.invitee (event_x);
 
 DROP VIEW IF EXISTS "public"."event_x";
 
@@ -541,12 +547,47 @@ CREATE TRIGGER on_contact_created
     FOR EACH ROW
     EXECUTE FUNCTION insert_email_domain ();
 
-ALTER VIEW gap SET ( security_invoker = TRUE);
-ALTER VIEW gap_monthly SET ( security_invoker = TRUE);
-ALTER VIEW gap_daily SET ( security_invoker = TRUE);
-ALTER VIEW insight SET ( security_invoker = TRUE);
-ALTER VIEW insight_weekly SET ( security_invoker = TRUE);
-ALTER VIEW "public"."invitation_admin" SET ( security_invoker = FALSE);
-ALTER VIEW "public"."event_x" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."waitlist_admin" SET ( security_invoker = FALSE);
-ALTER VIEW "public"."sync_admin" SET ( security_invoker = FALSE);
+CREATE OR REPLACE FUNCTION public.calendar (event_x)
+    RETURNS SETOF calendar
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        calendar.*
+    FROM
+        calendar
+    WHERE
+        calendar.id = $1.calendar_id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.invitee (event_x)
+    RETURNS SETOF invitee
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT
+        *
+    FROM
+        invitee
+    WHERE
+        event_id = $1.id
+$function$;
+
+ALTER VIEW gap SET (security_invoker = TRUE);
+
+ALTER VIEW gap_monthly SET (security_invoker = TRUE);
+
+ALTER VIEW gap_daily SET (security_invoker = TRUE);
+
+ALTER VIEW insight SET (security_invoker = TRUE);
+
+ALTER VIEW insight_weekly SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."invitation_admin" SET (security_invoker = FALSE);
+
+ALTER VIEW "public"."event_x" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."waitlist_admin" SET (security_invoker = FALSE);
+
+ALTER VIEW "public"."sync_admin" SET (security_invoker = FALSE);
+
