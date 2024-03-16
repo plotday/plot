@@ -71,7 +71,16 @@ class App extends StatelessWidget {
                     BlocProvider(create: (_) => PrioritiesBloc()),
                     BlocProvider(create: (_) => NowBloc()),
                   ],
-                  child: const Layout(title: 'Plot'),
+                  child: LayoutBuilder(
+                    builder:
+                        (BuildContext context, BoxConstraints constraints) {
+                      if (constraints.maxWidth > 764) {
+                        return const Layout();
+                      } else {
+                        return const NarrowLayout();
+                      }
+                    },
+                  ),
                 );
               },
             );
@@ -83,15 +92,40 @@ class App extends StatelessWidget {
 }
 
 class Layout extends StatefulWidget {
-  const Layout({super.key, required this.title});
-
-  final String title;
+  const Layout({super.key});
 
   @override
   State<Layout> createState() => LayoutState();
 }
 
 class LayoutState extends State<Layout> with SingleTickerProviderStateMixin {
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: [
+        Expanded(
+          child: PrioritiesPage(),
+        ),
+        Expanded(
+          child: NowPage(),
+        ),
+        Expanded(
+          child: SchedulePage(),
+        ),
+      ],
+    );
+  }
+}
+
+class NarrowLayout extends StatefulWidget {
+  const NarrowLayout({super.key});
+
+  @override
+  State<NarrowLayout> createState() => NarrowLayoutState();
+}
+
+class NarrowLayoutState extends State<NarrowLayout>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   @override
