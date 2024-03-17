@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/util/time_widget.dart';
+
 import 'bloc.dart';
 import '../util/clock.dart';
-import '../util/duration_widget.dart';
 
 class PomodoroWidget extends StatelessWidget implements PreferredSizeWidget {
   const PomodoroWidget({super.key});

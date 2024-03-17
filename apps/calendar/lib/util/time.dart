@@ -344,7 +344,7 @@ extension DurationExtension on Duration {
     return 'P${inDays}DT${format(inHours)}H${format(inMinutes)}M${seconds}S';
   }
 
-  String get friendly {
+  String toFriendlyString() {
     return '${inHours > 0 ? inHours : ''}:${inMinutes.remainder(60).toString().padLeft(2, '0')}';
   }
 

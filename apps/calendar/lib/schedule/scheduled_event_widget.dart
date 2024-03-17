@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../util/time.dart';
-import '../util/duration_widget.dart';
+import 'package:plot/util/time_widget.dart';
 
 import 'bloc.dart';
 import 'scheduled_event.dart';
@@ -28,23 +27,7 @@ class ScheduledEventWidget extends StatelessWidget {
               width: 70,
               padding: const EdgeInsets.only(right: 8),
               alignment: Alignment.centerRight,
-              child: Text.rich(
-                TextSpan(
-                  children: <TextSpan>[
-                    TextSpan(
-                      text: event.at.start.clockString,
-                      style: const TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    const TextSpan(text: ' '),
-                    TextSpan(
-                      text: event.at.start.meridiem,
-                      style: const TextStyle(
-                        fontSize: 10,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              child: TimeWidget(time: event.at.start),
             ),
             BlocBuilder<PrioritiesBloc, PrioritiesState>(
               builder: (context, prioritiesState) => Expanded(

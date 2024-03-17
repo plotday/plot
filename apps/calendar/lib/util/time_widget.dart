@@ -1,6 +1,32 @@
 import 'package:flutter/material.dart';
 
-import '../util/time.dart';
+import './time.dart';
+
+class TimeWidget extends StatelessWidget {
+  const TimeWidget({required this.time, super.key});
+  final DateTime time;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        children: <TextSpan>[
+          TextSpan(
+            text: time.clockString,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+          const TextSpan(text: ' '),
+          TextSpan(
+            text: time.meridiem,
+            style: const TextStyle(
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class DurationWidget extends StatelessWidget {
   const DurationWidget({required this.duration, super.key});
@@ -12,6 +38,8 @@ class DurationWidget extends StatelessWidget {
     return Text.rich(
       TextSpan(
         children: <TextSpan>[
+          if (!duration.hasHours && !duration.hasMinutes)
+            const TextSpan(text: '—'),
           if (duration.hasHours)
             TextSpan(
               text: duration.hoursString,

@@ -47,7 +47,13 @@ class CachedReorderableListViewState<T>
   Widget build(BuildContext context) {
     return ReorderableListView.builder(
       itemCount: list.length,
-      itemBuilder: (context, index) => widget.itemBuilder(context, list[index]),
+      primary: true,
+      buildDefaultDragHandles: false,
+      itemBuilder: (context, index) => ReorderableDragStartListener(
+        index: index,
+        key: ValueKey(list[index]),
+        child: widget.itemBuilder(context, list[index]),
+      ),
       onReorder: (int oldIndex, int newIndex) {
         setState(() {
           if (oldIndex < newIndex) {

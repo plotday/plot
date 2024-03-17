@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:plot/util/time.dart';
+
+import 'package:plot/util/time_widget.dart';
 
 import 'activity.dart';
 import 'budget.dart';
@@ -94,14 +97,52 @@ class PriorityWidget extends StatelessWidget {
       onTap: () {
         context.read<NowBloc>().add(ActivitySelected(priority.activity));
       },
-      isThreeLine: true,
-      title: Text(priority.activity.name),
-      subtitle: const Column(children: [
-        LinearProgressIndicator(value: 0.3),
+      title: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(priority.activity.name),
         Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [Text('0:30'), Text('2:30')])
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.arrow_upward, size: 16),
+                Text('0:30'),
+              ],
+            ),
+            const SizedBox(width: 8),
+            MenuAnchor(
+              builder: (BuildContext context, MenuController controller,
+                      Widget? child) =>
+                  InkWell(
+                child: Row(
+                  children: [
+                    const Icon(Icons.arrow_downward, size: 16),
+                    DurationWidget(duration: priority.duration)
+                  ],
+                ),
+                onTap: () {
+                  if (controller.isOpen) {
+                    controller.close();
+                  } else {
+                    controller.open();
+                  }
+                },
+              ),
+              menuChildren: [
+                for (var m = 0; m <= 120; m += 15)
+                  MenuItemButton(
+                    onPressed: () {
+                      context.read<PrioritiesBloc>().add(PriorityChanged(
+                          priority.copyWith(duration: Duration(minutes: m))));
+                    },
+                    child: m == 0
+                        ? const Text('Done')
+                        : DurationWidget(duration: Duration(minutes: m)),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ]),
+      subtitle: const LinearProgressIndicator(value: 0.3),
       selected:
           priority.activity.id == context.watch<NowBloc>().state.selected?.id,
     );
