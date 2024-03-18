@@ -151,6 +151,13 @@ export type Database = {
             referencedColumns: ["activity_id"]
           },
           {
+            foreignKeyName: "budget_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "expenditure"
+            referencedColumns: ["activity_id"]
+          },
+          {
             foreignKeyName: "budget_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -469,6 +476,13 @@ export type Database = {
             referencedColumns: ["activity_id"]
           },
           {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "expenditure"
+            referencedColumns: ["activity_id"]
+          },
+          {
             foreignKeyName: "note_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -571,6 +585,13 @@ export type Database = {
             referencedColumns: ["activity_id"]
           },
           {
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "expenditure"
+            referencedColumns: ["activity_id"]
+          },
+          {
             foreignKeyName: "series_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -629,6 +650,13 @@ export type Database = {
             referencedColumns: ["activity_id"]
           },
           {
+            foreignKeyName: "time_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "expenditure"
+            referencedColumns: ["activity_id"]
+          },
+          {
             foreignKeyName: "time_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
@@ -680,7 +708,6 @@ export type Database = {
       budget_weekly: {
         Row: {
           activity_id: number | null
-          activity_path: unknown | null
           budget: number | null
           count: number | null
           declined_count: number | null
@@ -747,7 +774,6 @@ export type Database = {
       expenditure: {
         Row: {
           activity_id: number | null
-          activity_path: unknown | null
           count: number | null
           day: string | null
           declined_count: number | null
@@ -770,7 +796,6 @@ export type Database = {
       expenditure_weekly: {
         Row: {
           activity_id: number | null
-          activity_path: unknown | null
           count: number | null
           declined_count: number | null
           declined_minutes: number | null
@@ -780,15 +805,7 @@ export type Database = {
           user_id: string | null
           week: unknown | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "event_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       gap: {
         Row: {
@@ -886,6 +903,45 @@ export type Database = {
           synced_at: string | null
         }
         Relationships: []
+      }
+      time_expenditure: {
+        Row: {
+          activity_id: number | null
+          count: number | null
+          day: string | null
+          minutes: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "time_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "expenditure"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "time_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       waitlist_admin: {
         Row: {
