@@ -13,7 +13,9 @@ class TimeWidget extends StatelessWidget {
         children: <TextSpan>[
           TextSpan(
             text: time.clockString,
-            style: const TextStyle(fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const TextSpan(text: ' '),
           TextSpan(

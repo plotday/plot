@@ -102,8 +102,13 @@ class PriorityWidget extends StatelessWidget {
         Row(
           children: [
             const Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Icon(Icons.arrow_upward, size: 16),
+                Padding(
+                  padding: EdgeInsets.only(
+                      bottom: 2.0), // Add 2px padding at the bottom
+                  child: Icon(Icons.hourglass_bottom, size: 14),
+                ),
                 Text('0:30'),
               ],
             ),
@@ -113,8 +118,13 @@ class PriorityWidget extends StatelessWidget {
                       Widget? child) =>
                   InkWell(
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const Icon(Icons.arrow_downward, size: 16),
+                    const Padding(
+                      padding: EdgeInsets.only(
+                          bottom: 2.0), // Add 2px padding at the bottom
+                      child: Icon(Icons.hourglass_top, size: 14),
+                    ),
                     DurationWidget(duration: priority.duration)
                   ],
                 ),
