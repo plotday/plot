@@ -54,31 +54,3 @@ export async function emailToActivity(supabase: SupabaseClient, email: string) {
     path: domain.replaceAll(".", "-"),
   };
 }
-
-export async function createActivities(
-  supabaseAdmin: SupabaseClient,
-  userId: string,
-  email: string
-) {
-  const { path, name } = await emailToActivity(supabaseAdmin, email);
-  return safeQuery(
-    await supabaseAdmin
-      .from("activity")
-      .upsert(
-        [
-          {
-            user_id: userId,
-            name: "Meetings",
-            path: `${path}.meetings`,
-          },
-          {
-            user_id: userId,
-            name,
-            path,
-          },
-        ],
-        { onConflict: "user_id,path", ignoreDuplicates: true }
-      )
-      .select()
-  );
-}

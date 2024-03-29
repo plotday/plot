@@ -2,13 +2,7 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 import { getCalendarConfig, getCalendars, getCredentials } from "@plotday/cal";
 import type { CalendarProvider } from "@plotday/cal";
-import {
-  type Database,
-  createActivities,
-  safeQuery,
-  saveCalendars,
-  saveCredentials,
-} from "@plotday/db";
+import { safeQuery, saveCalendars, saveCredentials } from "@plotday/db";
 
 import type { Bindings } from "./";
 
@@ -45,8 +39,6 @@ export async function addAccount(
   if (!account) {
     throw Error("Failed to create account");
   }
-
-  await createActivities(supabaseAdmin, user.id, email);
 
   // Create or link a contact for the user
   safeQuery(
