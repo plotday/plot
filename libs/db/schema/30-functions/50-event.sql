@@ -1,3 +1,15 @@
+CREATE OR REPLACE FUNCTION is_week (p_week daterange)
+    RETURNS boolean
+    LANGUAGE 'plpgsql'
+    IMMUTABLE
+    AS $$
+BEGIN
+    RETURN p_week IS NULL
+        OR EXTRACT(DOW FROM lower(p_week)) = 0
+        AND upper(p_week) - lower(p_week) = 7;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION calc_minutes (at tstzrange)
     RETURNS integer
     LANGUAGE plpgsql

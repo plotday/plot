@@ -61,27 +61,3 @@ GROUP BY
     week_from_date (COALESCE(e.day, t.day)),
     COALESCE(e.activity_id, t.activity_id);
 
-CREATE OR REPLACE VIEW budget_weekly WITH ( security_invoker = TRUE)
--- for formatting
-AS
-SELECT
-    COALESCE(b.user_id, e.user_id) AS user_id,
-    COALESCE(b.week, e.week) AS week,
-    COALESCE(b.activity_id, e.activity_id) AS activity_id,
-    b.order,
-    b.budget,
-    COALESCE(e.count, 0) AS count,
-    COALESCE(e.minutes, 0) AS minutes,
-    COALESCE(e.tentative_count, 0) AS tentative_count,
-    COALESCE(e.tentative_minutes, 0) AS tentative_minutes,
-    COALESCE(e.declined_count, 0) AS declined_count,
-    COALESCE(e.declined_minutes, 0) AS declined_minutes
-FROM
-    budget b
-    FULL JOIN expenditure_weekly e ON b.user_id = e.user_id
-        AND b.week = e.week
-        AND b.activity_id = e.activity_id
-WHERE
-    b.week IS NOT NULL
-    OR e.week IS NOT NULL;
-

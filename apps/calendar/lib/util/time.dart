@@ -68,19 +68,19 @@ class DateTimeRange extends Equatable {
   DateTimeRange.week(DateTime value)
       : this(
           value.startOfWeek,
-          TimeHorizon.week.add(value),
+          TimeHorizon.week.add(value.startOfWeek),
         );
 
   DateTimeRange.month(DateTime value)
       : this(
           value.startOfMonth,
-          TimeHorizon.month.add(value),
+          TimeHorizon.month.add(value.startOfMonth),
         );
 
   DateTimeRange.year(DateTime value)
       : this(
           value.startOfYear,
-          TimeHorizon.year.add(value),
+          TimeHorizon.year.add(value.startOfYear),
         );
 
   DateTimeRange.today() : this.day(DateTime.now().toLocal());

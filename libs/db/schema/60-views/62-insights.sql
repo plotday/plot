@@ -4,7 +4,7 @@ AS
 SELECT
     user_id,
     day,
-    text2ltree (min(ltree2text (activity_path))) AS activity_path,
+    text2ltree (min(ltree2text (context_path))) AS context_path,
     type,
     response,
     nv.name,
@@ -46,7 +46,7 @@ WHERE
 GROUP BY
     user_id,
     day,
-    activity_path,
+    context_path,
     type,
     response,
     nv.name,
@@ -57,8 +57,8 @@ CREATE OR REPLACE VIEW insight_weekly WITH ( security_invoker = TRUE)
 -- for formatting
 AS
 SELECT
-    c.user_id,
-    c.path,
+    act.user_id,
+    ctx.path,
     week_from_date (i.day) AS week,
     i.type,
     i.name,
@@ -68,11 +68,12 @@ SELECT
     COALESCE(SUM(i.count) FILTER (WHERE i.response IS NULL), 0) AS pending_count,
     COALESCE(SUM(i.minutes) FILTER (WHERE i.response IS NULL), 0) AS pending_minutes
 FROM
-    activity c
-    LEFT JOIN insight i ON c.path = i.activity_path
+    activity act
+    JOIN context ctx ON act.context_id = ctx.id
+    LEFT JOIN insight i ON ctx.path = i.context_path
 GROUP BY
-    c.user_id,
-    c.path,
+    act.user_id,
+    ctx.path,
     week_from_date (i.day),
     i.type,
     i.name,

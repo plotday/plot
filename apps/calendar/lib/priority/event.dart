@@ -11,14 +11,19 @@ final class PrioritiesWeekChanged extends PriorityEvent {
 }
 
 final class PriorityChanged extends PriorityEvent {
-  const PriorityChanged(this.budget);
+  const PriorityChanged(this.priority);
 
-  final Budget budget;
+  final Priority priority;
 }
 
-final class PriorityAdded extends PriorityEvent {
-  const PriorityAdded(this.name, {this.parent});
+final class ContextAdded extends PriorityEvent {
+  const ContextAdded(this.context);
 
-  final String name;
-  final Activity? parent;
+  final Context context;
+}
+
+final class ActivityAdded extends PriorityEvent {
+  const ActivityAdded(this.activity);
+
+  final Activity activity;
 }

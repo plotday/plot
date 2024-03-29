@@ -1,8 +1,9 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
+import 'context.dart';
 import 'activity.dart';
-import 'budget.dart';
+import 'priority.dart';
 import '../util/time.dart';
 
 part 'event.dart';
@@ -13,28 +14,36 @@ class PrioritiesBloc extends Bloc<PriorityEvent, PrioritiesState> {
       : super(PrioritiesLoading(DateTimeRange.week(DateTime.now()))) {
     on<PrioritiesWeekChanged>(_onWeekChanged);
     on<PriorityChanged>(_onPriorityChanged);
-    on<PriorityAdded>(_onPriorityAdded);
+    on<ContextAdded>(_onContextyAdded);
+    on<ActivityAdded>(_onActivityAdded);
     add(PrioritiesWeekChanged(DateTimeRange.week(DateTime.now())));
   }
 
   void _onWeekChanged(
       PrioritiesWeekChanged event, Emitter<PrioritiesState> emit) async {
     emit(PrioritiesLoading(event.week));
-    final budgets = await Budget.list(event.week);
+    final budgets = await Priority.list(event.week);
     emit(PrioritiesLoaded(event.week, budgets));
   }
 
   void _onPriorityChanged(
       PriorityChanged event, Emitter<PrioritiesState> emit) async {
-    await event.budget.save();
-    final newList = await Budget.list(state.week);
+    await event.priority.save();
+    final newList = await Priority.list(state.week);
     emit(PrioritiesLoaded(state.week, newList));
   }
 
-  void _onPriorityAdded(
-      PriorityAdded event, Emitter<PrioritiesState> emit) async {
-    await Activity.add(event.name, event.parent);
-    final newList = await Budget.list(state.week);
+  void _onContextyAdded(
+      ContextAdded event, Emitter<PrioritiesState> emit) async {
+    await event.context.save();
+    final newList = await Priority.list(state.week);
+    emit(PrioritiesLoaded(state.week, newList));
+  }
+
+  void _onActivityAdded(
+      ActivityAdded event, Emitter<PrioritiesState> emit) async {
+    await event.activity.save();
+    final newList = await Priority.list(state.week);
     emit(PrioritiesLoaded(state.week, newList));
   }
 }

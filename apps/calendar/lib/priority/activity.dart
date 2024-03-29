@@ -1,20 +1,18 @@
 import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import './context.dart';
+
 final supabase = Supabase.instance.client;
 
 class Activity extends Equatable {
   static Map<int, Activity> _cache = {};
 
-  static String nameToPath(String name) {
-    return name
-        .replaceAll(RegExp(r'[^a-zA-Z0-9]'), "_")
-        .replaceAll(RegExp(r'_+'), "_")
-        .toLowerCase();
-  }
-
   static Future<void> load() async {
-    final activities = await supabase.from('activity').select();
+    final activities = await supabase
+        .from('activity')
+        .select()
+        .eq("user_id", supabase.auth.currentUser!.id);
     _cache = {
       for (var activity
           in activities.map((activity) => Activity.fromJson(activity)))
@@ -33,51 +31,36 @@ class Activity extends Equatable {
     return _cache.values.toList();
   }
 
-  static Future<Activity> add(String name, Activity? parent) async {
-    String path = nameToPath(name);
-    if (parent != null) {
-      path = '${parent.path}.$path';
-    }
-    final response = await supabase
-        .from('activity')
-        .insert({
-          'user_id': supabase.auth.currentUser!.id,
-          'name': name,
-          'path': path
-        })
-        .select()
-        .single();
-    final activity = Activity.fromJson(response);
-    _cache[activity.id!] = activity;
-    return activity;
-  }
-
-  const Activity(
-      {this.id,
-      required this.name,
-      required this.path,
-      this.pomodoro = const Duration(minutes: 25)});
+  Activity({
+    this.id,
+    required this.name,
+    required Context context,
+    this.pomodoro = const Duration(minutes: 25),
+  }) : _contextId = context.id!;
 
   Activity.fromJson(Map<String, dynamic> json)
       : id = json['id'] as int,
+        _contextId = json['context_id'] as int,
         name = json['name'] as String,
-        path = json['path'] as String,
         pomodoro = Duration(minutes: json['pomodoro'] as int);
 
   final int? id;
+  final int _contextId;
   final String name;
-  final String path;
   final Duration pomodoro;
 
-  Activity copyWith({String? name, Duration? pomodoro}) {
-    var path = this.path;
-    if (name != null) {
-      path = (this.path.split('.') + [(Activity.nameToPath(name))]).join('.');
-    }
+  get context => Context.get(_contextId);
+
+  Activity copyWith({
+    String? name,
+    Duration? pomodoro,
+    int? budget,
+    String? order,
+  }) {
     return Activity(
       id: id,
       name: name ?? this.name,
-      path: path,
+      context: context,
       pomodoro: pomodoro ?? this.pomodoro,
     );
   }
@@ -101,15 +84,17 @@ class Activity extends Equatable {
           .select()
           .single();
     }
-    return Activity.fromJson(result);
+    final activity = Activity.fromJson(result);
+    _cache[activity.id!] = activity;
+    return activity;
   }
 
   @override
-  List<Object> get props => [id ?? 0, name, path, pomodoro];
+  List<Object> get props => [id ?? 0, _contextId, name, pomodoro];
 
   Map<String, dynamic> toJson() => {
         'name': name,
-        'path': path,
+        'context_id': context.id,
         'pomodoro': pomodoro.inMinutes,
       };
 }

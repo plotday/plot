@@ -73,92 +73,40 @@ export type Database = {
       }
       activity: {
         Row: {
+          context_id: number
           created_at: string
           id: number
           name: string
-          path: unknown
           pomodoro: number
           user_id: string
-          budget: unknown | null
+          priority: unknown | null
         }
         Insert: {
+          context_id: number
           created_at?: string
           id?: never
           name: string
-          path: unknown
           pomodoro?: number
           user_id: string
         }
         Update: {
+          context_id?: number
           created_at?: string
           id?: never
           name?: string
-          path?: unknown
           pomodoro?: number
           user_id?: string
         }
         Relationships: [
           {
+            foreignKeyName: "activity_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "context"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "activity_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      budget: {
-        Row: {
-          activity_id: number | null
-          budget: number | null
-          created_at: string
-          id: number
-          order: string | null
-          user_id: string
-          week: unknown | null
-        }
-        Insert: {
-          activity_id?: number | null
-          budget?: number | null
-          created_at?: string
-          id?: never
-          order?: string | null
-          user_id: string
-          week?: unknown | null
-        }
-        Update: {
-          activity_id?: number | null
-          budget?: number | null
-          created_at?: string
-          id?: never
-          order?: string | null
-          user_id?: string
-          week?: unknown | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "budget_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "budget_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["activity_id"]
-          },
-          {
-            foreignKeyName: "budget_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "expenditure"
-            referencedColumns: ["activity_id"]
-          },
-          {
-            foreignKeyName: "budget_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -264,6 +212,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "contact_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      context: {
+        Row: {
+          created_at: string
+          id: number
+          name: string
+          path: unknown
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: never
+          name: string
+          path: unknown
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: never
+          name?: string
+          path?: unknown
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -509,6 +489,68 @@ export type Database = {
         }
         Relationships: []
       }
+      priority: {
+        Row: {
+          activity_id: number | null
+          budget: number | null
+          created_at: string
+          id: number
+          order: string | null
+          type: Database["public"]["Enums"]["budget_type"]
+          user_id: string
+          week: unknown
+        }
+        Insert: {
+          activity_id?: number | null
+          budget?: number | null
+          created_at?: string
+          id?: never
+          order?: string | null
+          type?: Database["public"]["Enums"]["budget_type"]
+          user_id: string
+          week: unknown
+        }
+        Update: {
+          activity_id?: number | null
+          budget?: number | null
+          created_at?: string
+          id?: never
+          order?: string | null
+          type?: Database["public"]["Enums"]["budget_type"]
+          user_id?: string
+          week?: unknown
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "priority_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "expenditure"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "priority_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       raw_event: {
         Row: {
           calendar_id: number | null
@@ -602,7 +644,7 @@ export type Database = {
       }
       time: {
         Row: {
-          activity_id: number | null
+          activity_id: number
           at: unknown
           created_at: string
           event_id: number | null
@@ -613,7 +655,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          activity_id?: number | null
+          activity_id: number
           at: unknown
           created_at?: string
           event_id?: number | null
@@ -624,7 +666,7 @@ export type Database = {
           user_id: string
         }
         Update: {
-          activity_id?: number | null
+          activity_id?: number
           at?: unknown
           created_at?: string
           event_id?: number | null
@@ -705,33 +747,17 @@ export type Database = {
       }
     }
     Views: {
-      budget_weekly: {
-        Row: {
-          activity_id: number | null
-          budget: number | null
-          count: number | null
-          declined_count: number | null
-          declined_minutes: number | null
-          minutes: number | null
-          order: string | null
-          tentative_count: number | null
-          tentative_minutes: number | null
-          user_id: string | null
-          week: unknown | null
-        }
-        Relationships: []
-      }
       event_x: {
         Row: {
           account_id: number | null
           activity_id: number | null
-          activity_path: unknown | null
           all_day: boolean | null
           at: unknown | null
           attendee_count: number | null
           availability: Database["public"]["Enums"]["event_availability"] | null
           calendar_id: number | null
           conferencing_url: string | null
+          context_path: unknown | null
           created_at: string | null
           day: string | null
           description: string | null
@@ -836,7 +862,7 @@ export type Database = {
       }
       insight: {
         Row: {
-          activity_path: unknown | null
+          context_path: unknown | null
           count: number | null
           day: string | null
           minutes: number | null
@@ -975,31 +1001,6 @@ export type Database = {
       all_views_secure: {
         Args: Record<PropertyKey, never>
         Returns: boolean
-      }
-      budget: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          activity_id: number | null
-          budget: number | null
-          created_at: string
-          id: number
-          order: string | null
-          user_id: string
-          week: unknown | null
-        }[]
-      }
-      budget_week: {
-        Args: {
-          user_id: string
-          week: unknown
-        }
-        Returns: {
-          activity_id: number
-          order: string
-          budget: number
-        }[]
       }
       calc_all_day: {
         Args: {
@@ -1191,6 +1192,40 @@ export type Database = {
               name: string
             }[]
           }
+      priorities_for_week: {
+        Args: {
+          user_id: string
+          week: unknown
+        }
+        Returns: {
+          activity_id: number
+          budget: number
+          budget_type: Database["public"]["Enums"]["budget_type"]
+          order: string
+          order_type: Database["public"]["Enums"]["budget_type"]
+          count: number
+          minutes: number
+          tentative_count: number
+          tentative_minutes: number
+          declined_count: number
+          declined_minutes: number
+        }[]
+      }
+      priority: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          activity_id: number | null
+          budget: number | null
+          created_at: string
+          id: number
+          order: string | null
+          type: Database["public"]["Enums"]["budget_type"]
+          user_id: string
+          week: unknown
+        }[]
+      }
       redeem_invitation: {
         Args: {
           _user_id: number
@@ -1231,6 +1266,7 @@ export type Database = {
       }
     }
     Enums: {
+      budget_type: "default" | "balance" | "exception"
       event_availability: "busy" | "away" | "focus" | "free" | "location"
       event_internal: "internal" | "external"
       event_response: "accepted" | "declined" | "tentative"

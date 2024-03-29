@@ -1,115 +1,144 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:plot/util/time.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:plot/util/time_widget.dart';
 
 import 'activity.dart';
-import 'budget.dart';
+import 'context.dart';
+import 'priority.dart';
 import 'bloc.dart';
 import '../now/bloc.dart';
 import '../util/cached_reorderable_list_view.dart';
 
-class NewPriorityModal extends StatefulWidget {
-  const NewPriorityModal({super.key});
+class NewPriorityPage extends StatefulWidget {
+  const NewPriorityPage({super.key});
 
   @override
-  State<NewPriorityModal> createState() => _NewPriorityModalState();
+  State<NewPriorityPage> createState() => _NewPriorityPageState();
 }
 
-class _NewPriorityModalState extends State<NewPriorityModal> {
-  Activity? parent;
+class _NewPriorityPageState extends State<NewPriorityPage> {
+  Context? _context;
+  final TextEditingController _contextController = TextEditingController();
+  final TextEditingController _activityController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
-    final TextEditingController activityController = TextEditingController();
-    return Dialog(
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            TextField(
-              controller: activityController,
-              decoration: const InputDecoration(
-                labelText: 'New priority',
+    return Scaffold(
+        appBar: AppBar(title: const Text('Add Priority')),
+        body: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const SizedBox(height: 8),
+              DropdownMenu<Context>(
+                controller: _contextController,
+                label: const Text('Context'),
+                expandedInsets: const EdgeInsets.all(8),
+                initialSelection: _context,
+                onSelected: (Context? context) {
+                  setState(() {
+                    _context = context;
+                  });
+                },
+                dropdownMenuEntries: Context.list()
+                    .map<DropdownMenuEntry<Context>>((Context context) {
+                  return DropdownMenuEntry<Context>(
+                    value: context,
+                    label: context.name,
+                    // style: MenuItemButton.styleFrom(
+                    //   foregroundColor: context.color,
+                    // ),
+                  );
+                }).toList(),
               ),
-              autofocus: true,
-            ),
-            const SizedBox(height: 24),
-            DropdownMenu<Activity?>(
-              label: const Text('Parent'),
-              initialSelection: parent,
-              onSelected: (Activity? newValue) {
-                setState(() {
-                  parent = newValue;
-                });
-              },
-              dropdownMenuEntries: [
-                    const DropdownMenuEntry<Activity?>(
-                      value: null,
-                      label: 'None',
-                    )
-                  ] +
-                  Activity.list().map<DropdownMenuEntry<Activity?>>((activity) {
-                    return DropdownMenuEntry<Activity?>(
-                      value: activity,
-                      label: activity.name,
-                    );
-                  }).toList(),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: <Widget>[
-                TextButton(
-                  child: const Text('Cancel'),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                ),
-                TextButton(
-                  child: const Text('Add'),
-                  onPressed: () async {
-                    context.read<PrioritiesBloc>().add(
-                        PriorityAdded(activityController.text, parent: parent));
-                    if (context.mounted) Navigator.of(context).pop();
-                  },
-                ),
-              ],
-            )
-          ],
-        ),
-      ),
-    );
+              const SizedBox(height: 8),
+              DropdownMenu<Activity>(
+                controller: _activityController,
+                label: const Text('Activity'),
+                expandedInsets: const EdgeInsets.all(8),
+                onSelected: (Activity? activity) {
+                  setState(() {});
+                },
+                dropdownMenuEntries: Activity.list()
+                    .map<DropdownMenuEntry<Activity>>((Activity activity) {
+                  return DropdownMenuEntry<Activity>(
+                    value: activity,
+                    label: activity.name,
+                    // style: MenuItemButton.styleFrom(
+                    //   foregroundColor: activity.color,
+                    // ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  TextButton(
+                    child: const Text('Cancel'),
+                    onPressed: () {
+                      context.pop();
+                    },
+                  ),
+                  TextButton(
+                    child: const Text('Add'),
+                    onPressed: () async {
+                      if (_context == null) {
+                        _context = Context(name: _contextController.text);
+                        context
+                            .read<PrioritiesBloc>()
+                            .add(ContextAdded(_context!));
+                      }
+                      final activity = Activity(
+                          name: _activityController.text, context: _context!);
+                      context
+                          .read<PrioritiesBloc>()
+                          .add(ActivityAdded(activity));
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/');
+                      }
+                    },
+                  ),
+                ],
+              )
+            ],
+          ),
+        ));
   }
 }
 
 class PriorityWidget extends StatelessWidget {
   const PriorityWidget({required this.priority, super.key});
-  final Budget priority;
+  final Priority priority;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      key: ValueKey(priority.activity.id.toString()),
+      key: ValueKey(priority.activity?.id.toString() ?? 0),
       onTap: () {
-        context.read<NowBloc>().add(ActivitySelected(priority.activity));
+        if (priority.activity == null) {
+          return;
+        }
+        context.read<NowBloc>().add(ActivitySelected(priority.activity!));
       },
       title: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(priority.activity.name),
+        Text(priority.activity?.name ?? 'Other'),
         Row(
           children: [
-            const Row(
+            Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Padding(
+                const Padding(
                   padding: EdgeInsets.only(
                       bottom: 2.0), // Add 2px padding at the bottom
                   child: Icon(Icons.hourglass_bottom, size: 14),
                 ),
-                Text('0:30'),
+                DurationWidget(duration: priority.planned),
               ],
             ),
             const SizedBox(width: 8),
@@ -125,7 +154,7 @@ class PriorityWidget extends StatelessWidget {
                           bottom: 2.0), // Add 2px padding at the bottom
                       child: Icon(Icons.hourglass_top, size: 14),
                     ),
-                    DurationWidget(duration: priority.duration)
+                    DurationWidget(duration: priority.budget)
                   ],
                 ),
                 onTap: () {
@@ -141,7 +170,7 @@ class PriorityWidget extends StatelessWidget {
                   MenuItemButton(
                     onPressed: () {
                       context.read<PrioritiesBloc>().add(PriorityChanged(
-                          priority.copyWith(duration: Duration(minutes: m))));
+                          priority.copyWith(budget: Duration(minutes: m))));
                     },
                     child: m == 0
                         ? const Text('Done')
@@ -154,7 +183,7 @@ class PriorityWidget extends StatelessWidget {
       ]),
       subtitle: const LinearProgressIndicator(value: 0.3),
       selected:
-          priority.activity.id == context.watch<NowBloc>().state.selected?.id,
+          priority.activity?.id == context.watch<NowBloc>().state.selected?.id,
     );
   }
 }
@@ -195,12 +224,7 @@ class PrioritiesPage extends StatelessWidget {
         appBar: AppBar(title: const WeekNavigatorWidget()),
         floatingActionButton: FloatingActionButton(
           onPressed: () {
-            showDialog(
-                context: context,
-                builder: (_) => BlocProvider.value(
-                      value: BlocProvider.of<PrioritiesBloc>(context),
-                      child: const NewPriorityModal(),
-                    ));
+            context.push('/new');
           },
           child: const Icon(Icons.add),
         ),
@@ -213,11 +237,11 @@ class PrioritiesPage extends StatelessWidget {
                 onReorder: (int oldIndex, int newIndex) async {
                   var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
                   var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-                  Budget? previous;
+                  Priority? previous;
                   if (previousIndex >= 0) {
                     previous = prioritiesState.priorities[previousIndex];
                   }
-                  Budget? next;
+                  Priority? next;
                   if (nextIndex < prioritiesState.priorities.length) {
                     next = prioritiesState.priorities[nextIndex];
                   }

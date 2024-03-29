@@ -69,7 +69,7 @@ FROM
 SELECT
     e.*,
     act.id AS activity_id,
-    act.path AS activity_path
+    ctx.path AS context_path
 FROM
     event_x1 e
     LEFT JOIN LATERAL (
@@ -86,7 +86,9 @@ FROM
             embedding <-> e.embedding DESC
         LIMIT 1) AS s ON TRUE
     LEFT JOIN activity act ON (e.user_id = act.user_id
-            AND s.activity_id = act.id);
+            AND s.activity_id = act.id)
+    LEFT JOIN context ctx ON (e.user_id = act.user_id
+            AND ctx.id = act.context_id);
 
 -- Define a computed relation for PostgREST joins
 -- https://postgrest.org/en/stable/references/api/resource_embedding.html#computed-relationships

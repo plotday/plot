@@ -16,7 +16,7 @@ final class PrioritiesLoading extends PrioritiesState {
 final class PrioritiesLoaded extends PrioritiesState {
   const PrioritiesLoaded(super.week, this.priorities);
 
-  final List<Budget> priorities;
+  final List<Priority> priorities;
 
   @override
   List<Object?> get props => super.props + [priorities];

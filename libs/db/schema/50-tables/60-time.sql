@@ -13,7 +13,7 @@ CREATE TABLE "public"."time" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
-    "activity_id" bigint REFERENCES activity ON DELETE SET NULL,
+    "activity_id" bigint NOT NULL REFERENCES activity ON DELETE SET NULL,
     "at" tstzrange NOT NULL CHECK (is_finite (at)),
     "planned" interval NOT NULL CHECK (planned >= '00:00:00'::interval),
     "remaining" interval NOT NULL DEFAULT '00:00:00' CHECK (remaining >= '00:00:00'::interval AND remaining <= planned),

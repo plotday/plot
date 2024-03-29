@@ -77,7 +77,7 @@ class ScheduledEventWidget extends StatelessWidget {
                                   event.copyWith(activity: priority.activity),
                                 ));
                           },
-                          child: Text(priority.activity.name),
+                          child: Text(priority.activity?.name ?? 'Other'),
                         ),
                       )
                   ],
