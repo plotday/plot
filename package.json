@@ -1,6 +1,5 @@
 {
   "name": "@plotday/plot",
-  "packageManager": "pnpm@8.6.6",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {

@@ -1,6 +1,6 @@
 CREATE OR REPLACE FUNCTION priorities_for_week (user_id uuid, week daterange)
     RETURNS TABLE (
-        activity_id bigint,
+        id bigint,
         budget int,
         "budget_type" budget_type,
         "order" text,
@@ -16,7 +16,7 @@ CREATE OR REPLACE FUNCTION priorities_for_week (user_id uuid, week daterange)
 BEGIN
     RETURN QUERY
     SELECT
-        a.id AS activity_id,
+        c.id,
         b.budget,
         b.budget_type,
         o.order,
@@ -29,16 +29,17 @@ BEGIN
         COALESCE(e.declined_minutes, 0)::int AS declined_minutes
     FROM (
         SELECT
-            id
+            c.id
         FROM
-            activity a
+            context c
         WHERE
-            a.user_id = priorities_for_week.user_id
+            c.user_id = priorities_for_week.user_id
+            -- Include uncategorized events
         UNION ALL
         SELECT
-            NULL AS id) AS a
-    LEFT JOIN ( SELECT DISTINCT ON (p.activity_id)
-            p.activity_id,
+            NULL AS id) AS c
+    LEFT JOIN ( SELECT DISTINCT ON (p.context_id)
+            p.context_id,
             p.budget,
             p.type AS budget_type
         FROM
@@ -50,12 +51,12 @@ BEGIN
             AND (p.type = 'default'
                 OR p.week && priorities_for_week.week)
         ORDER BY
-            p.activity_id,
-            p.week DESC) AS b ON (b.activity_id = a.id
-            OR (b.activity_id IS NULL
-                AND a.id IS NULL))
-        LEFT JOIN ( SELECT DISTINCT ON (p.activity_id)
-                p.activity_id,
+            p.context_id,
+            p.week DESC) AS b ON (b.context_id = c.id
+            OR (b.context_id IS NULL
+                AND c.id IS NULL))
+        LEFT JOIN ( SELECT DISTINCT ON (p.context_id)
+                p.context_id,
                 p.order,
                 p.type AS order_type
             FROM
@@ -67,10 +68,10 @@ BEGIN
                 AND (p.type = 'default'
                     OR p.week && priorities_for_week.week)
             ORDER BY
-                p.activity_id,
-                p.week DESC) AS o ON (o.activity_id = a.id
-                OR (b.activity_id IS NULL
-                    AND a.id IS NULL))
+                p.context_id,
+                p.week DESC) AS o ON (o.context_id = c.id
+                OR (b.context_id IS NULL
+                    AND c.id IS NULL))
             LEFT JOIN (
                 SELECT
                     *
@@ -78,9 +79,9 @@ BEGIN
                     expenditure_weekly e
                 WHERE
                     e.user_id = priorities_for_week.user_id
-                    AND e.week && priorities_for_week.week) AS e ON (e.activity_id = a.id
-                    OR (b.activity_id IS NULL
-                        AND a.id IS NULL));
+                    AND e.week && priorities_for_week.week) AS e ON (e.context_id = c.id
+                    OR (b.context_id IS NULL
+                        AND c.id IS NULL));
 END;
 $$
 LANGUAGE plpgsql;

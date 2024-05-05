@@ -1,0 +1,155 @@
+import 'dart:async';
+
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:equatable/equatable.dart';
+
+import 'package:plot/model/context.dart';
+import 'package:plot/model/schedule.dart';
+import 'package:plot/model/session.dart';
+import 'package:plot/util/clock.dart';
+
+part 'now_event.dart';
+part 'now_state.dart';
+
+class NowBloc extends Cubit<NowState> {
+  NowBloc() : super(NowState()) {
+    _secondsSubscription =
+        Clock().seconds.listen((void _) => emit(state.copyWith()));
+    _sessionSubscription = Session.store
+        .stream()
+        .listen((session) => emit(state.copyWith(session: session)));
+    _eventSubscription =
+        ScheduledDay.store.stream().listen((session) => emit(state.copyWith(
+              scheduled: ScheduledEvent.current(),
+              next: ScheduledEvent.next(),
+              previous: ScheduledEvent.previous(),
+            )));
+  }
+
+  StreamSubscription<void>? _secondsSubscription;
+  StreamSubscription<Session?>? _sessionSubscription;
+  StreamSubscription<void>? _eventSubscription;
+
+  @override
+  Future<void> close() {
+    _secondsSubscription?.cancel();
+    _sessionSubscription?.cancel();
+    _eventSubscription?.cancel();
+    return super.close();
+  }
+
+  void setContext(Context? context) {
+    if (state.session?.context == context) return;
+    final session = Session.startOrContinue(context, state.endFor(context));
+    Session.saveList([
+      if (state.session != null && state.session?.id != session.id)
+        state.session!.copyStopped(),
+      session,
+    ]);
+  }
+
+  // Future<void> _newActive(Emitter<NowState> emit, Session block) async {
+  //   emit(ContextActive(
+  //     block,
+  //     selected: state.selected ?? block.context,
+  //   ));
+  //   _contextTimer?.cancel();
+  //   _contextTimer = Timer(block.remaining, () => add(const ContextCompleted()));
+  //   final newBlock = await block.save();
+  //   emit(ContextActive(
+  //     newBlock,
+  //     selected: state.selected ?? newBlock.context,
+  //   ));
+  // }
+  //
+  // void _onStarted(ContextStarted event, Emitter<NowState> emit) async {
+  //   await _newActive(emit,
+  //       Session.now(event.context, duration: event.duration, end: event.end));
+  // }
+  //
+  // void _onStopped(ContextStopped event, Emitter<NowState> emit) async {
+  //   switch (state) {
+  //     case ContextActive s:
+  //       await _newActive(emit, s.active.copyStopped());
+  //       break;
+  //     default:
+  //       break;
+  //   }
+  // }
+  //
+  // void _onResumed(ContextResumed event, Emitter<NowState> emit) async {
+  //   switch (state) {
+  //     case ContextActive s:
+  //       await _newActive(
+  //           emit,
+  //           Session.now(s.active.context,
+  //               planned: s.active.planned,
+  //               duration: event.duration ??
+  //                   (event.end == null ? s.active.remaining : null),
+  //               end: event.end));
+  //       break;
+  //     default:
+  //       break;
+  //   }
+  // }
+  //
+  // void _onTimeIncreased(
+  //     ContextTimeIncreased event, Emitter<NowState> emit) async {
+  //   switch (state) {
+  //     case ContextActive s:
+  //       await _newActive(
+  //           emit,
+  //           s.active.copyWith(
+  //             planned: s.active.planned + const Duration(minutes: 5),
+  //           ));
+  //       break;
+  //     default:
+  //       if (state.selected == null) return;
+  //       final selected = state.selected!.copyWith(
+  //         pomodoro: state.selected!.pomodoro + const Duration(minutes: 5),
+  //       );
+  //       emit(ContextPaused(selected: selected));
+  //       await selected.save();
+  //       break;
+  //   }
+  // }
+  //
+  // void _onTimeDecreased(
+  //     ContextTimeDecreased event, Emitter<NowState> emit) async {
+  //   switch (state) {
+  //     case ContextActive s:
+  //       if (s.active.planned.inMinutes > 5) {
+  //         await _newActive(
+  //             emit,
+  //             s.active.copyWith(
+  //               planned: s.active.planned - const Duration(minutes: 5),
+  //             ));
+  //       }
+  //       break;
+  //     default:
+  //       if (state.selected == null) return;
+  //       final selected = state.selected!.copyWith(
+  //         pomodoro: state.selected!.pomodoro - const Duration(minutes: 5),
+  //       );
+  //       emit(ContextPaused(selected: selected));
+  //       await selected.save();
+  //       break;
+  //   }
+  // }
+  //
+  // void _onCompleted(ContextCompleted event, Emitter<NowState> emit) async {
+  //   emit(ContextPaused(selected: state.selected));
+  // }
+  //
+  // Future<void> _onTicked(_ClockTicked event, Emitter<NowState> emit) async {
+  //   final [current, next] = await Future.wait([
+  //     Event.current(),
+  //     Event.next(),
+  //   ]);
+  //   if (state.current != current.firstOrNull ||
+  //       state.next != next.firstOrNull) {
+  //     emit(
+  //         state.copyWith(current: current.firstOrNull, next: next.firstOrNull));
+  //   }
+  // }
+}

@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 
-import 'account/page.dart';
-import 'now/page.dart';
-import 'priority/page.dart';
-import 'schedule/page.dart';
+import 'page/account.dart';
+import 'page/now.dart';
+import 'page/priority.dart';
+import 'page/schedule.dart';
 
 class Layout extends StatefulWidget {
-  const Layout({this.left = const PrioritiesPage(), super.key});
+  const Layout({this.left = const PriorityPage(), super.key});
 
   final Widget left;
 

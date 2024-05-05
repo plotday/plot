@@ -8,12 +8,12 @@ import 'package:go_router/go_router.dart';
 
 import 'env.dart';
 import 'router.dart';
-import 'account/sign_in_page.dart';
-import 'now/bloc.dart';
-import 'now/time_block.dart';
-import 'priority/activity.dart';
-import 'priority/bloc.dart';
-import 'priority/context.dart';
+import 'page/sign_in.dart';
+import 'model/session.dart' as plot;
+import 'model/context.dart';
+import 'state/priority.dart';
+import 'state/context.dart';
+import 'state/now.dart';
 
 Future<void> main() async {
   GoRouter.optionURLReflectsImperativeAPIs = true;
@@ -57,15 +57,16 @@ class App extends StatelessWidget {
       builder: (theme, darkTheme) => SignInPage(
         builder: (context) {
           return FutureBuilder(
-            future: Future.wait(
-                [Context.load(), Activity.load(), TimeBlock.load()]),
+            future:
+                Future.wait([Context.store.load(), plot.Session.store.load()]),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
               return MultiBlocProvider(
                 providers: [
-                  BlocProvider(create: (_) => PrioritiesBloc()),
+                  BlocProvider(create: (_) => PriorityBloc()),
+                  BlocProvider(create: (_) => ContextBloc()),
                   BlocProvider(create: (_) => NowBloc()),
                 ],
                 child: MaterialApp.router(

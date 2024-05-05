@@ -71,49 +71,6 @@ export type Database = {
           },
         ]
       }
-      activity: {
-        Row: {
-          context_id: number
-          created_at: string
-          id: number
-          name: string
-          pomodoro: number
-          user_id: string
-          priority: unknown | null
-        }
-        Insert: {
-          context_id: number
-          created_at?: string
-          id?: never
-          name: string
-          pomodoro?: number
-          user_id: string
-        }
-        Update: {
-          context_id?: number
-          created_at?: string
-          id?: never
-          name?: string
-          pomodoro?: number
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "activity_context_id_fkey"
-            columns: ["context_id"]
-            isOneToOne: false
-            referencedRelation: "context"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       calendar: {
         Row: {
           account_id: number
@@ -225,13 +182,16 @@ export type Database = {
           id: number
           name: string
           path: unknown
+          pomodoro: number
           user_id: string
+          priority: unknown | null
         }
         Insert: {
           created_at?: string
           id?: never
           name: string
           path: unknown
+          pomodoro?: number
           user_id: string
         }
         Update: {
@@ -239,6 +199,7 @@ export type Database = {
           id?: never
           name?: string
           path?: unknown
+          pomodoro?: number
           user_id?: string
         }
         Relationships: [
@@ -420,47 +381,40 @@ export type Database = {
       }
       note: {
         Row: {
-          activity_id: number | null
           body: string
+          context_id: number | null
           created_at: string
           id: number
           user_id: string
         }
         Insert: {
-          activity_id?: number | null
           body: string
+          context_id?: number | null
           created_at?: string
           id?: never
           user_id: string
         }
         Update: {
-          activity_id?: number | null
           body?: string
+          context_id?: number | null
           created_at?: string
           id?: never
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
+            foreignKeyName: "note_context_id_fkey"
+            columns: ["context_id"]
             isOneToOne: false
-            referencedRelation: "activity"
+            referencedRelation: "context"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
+            foreignKeyName: "note_context_id_fkey"
+            columns: ["context_id"]
             isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["activity_id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "expenditure"
-            referencedColumns: ["activity_id"]
+            referencedColumns: ["context_id"]
           },
           {
             foreignKeyName: "note_user_id_fkey"
@@ -491,8 +445,8 @@ export type Database = {
       }
       priority: {
         Row: {
-          activity_id: number | null
           budget: number | null
+          context_id: number | null
           created_at: string
           id: number
           order: string | null
@@ -501,8 +455,8 @@ export type Database = {
           week: unknown
         }
         Insert: {
-          activity_id?: number | null
           budget?: number | null
+          context_id?: number | null
           created_at?: string
           id?: never
           order?: string | null
@@ -511,8 +465,8 @@ export type Database = {
           week: unknown
         }
         Update: {
-          activity_id?: number | null
           budget?: number | null
+          context_id?: number | null
           created_at?: string
           id?: never
           order?: string | null
@@ -522,25 +476,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "priority_activity_id_fkey"
-            columns: ["activity_id"]
+            foreignKeyName: "priority_context_id_fkey"
+            columns: ["context_id"]
             isOneToOne: false
-            referencedRelation: "activity"
+            referencedRelation: "context"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "priority_activity_id_fkey"
-            columns: ["activity_id"]
+            foreignKeyName: "priority_context_id_fkey"
+            columns: ["context_id"]
             isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["activity_id"]
-          },
-          {
-            foreignKeyName: "priority_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "expenditure"
-            referencedColumns: ["activity_id"]
+            referencedColumns: ["context_id"]
           },
           {
             foreignKeyName: "priority_user_id_fkey"
@@ -585,7 +532,7 @@ export type Database = {
       }
       series: {
         Row: {
-          activity_id: number | null
+          context_id: number | null
           created_at: string
           embedding: string | null
           id: number
@@ -594,7 +541,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          activity_id?: number | null
+          context_id?: number | null
           created_at?: string
           embedding?: string | null
           id?: never
@@ -603,7 +550,7 @@ export type Database = {
           user_id: string
         }
         Update: {
-          activity_id?: number | null
+          context_id?: number | null
           created_at?: string
           embedding?: string | null
           id?: never
@@ -613,25 +560,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "series_activity_id_fkey"
-            columns: ["activity_id"]
+            foreignKeyName: "series_context_id_fkey"
+            columns: ["context_id"]
             isOneToOne: false
-            referencedRelation: "activity"
+            referencedRelation: "context"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "series_activity_id_fkey"
-            columns: ["activity_id"]
+            foreignKeyName: "series_context_id_fkey"
+            columns: ["context_id"]
             isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["activity_id"]
-          },
-          {
-            foreignKeyName: "series_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "expenditure"
-            referencedColumns: ["activity_id"]
+            referencedColumns: ["context_id"]
           },
           {
             foreignKeyName: "series_user_id_fkey"
@@ -642,78 +582,64 @@ export type Database = {
           },
         ]
       }
-      time: {
+      session: {
         Row: {
-          activity_id: number
           at: unknown
+          context_id: number | null
           created_at: string
           event_id: number | null
           id: number
-          planned: unknown
-          remaining: unknown
-          series_id: number | null
+          paused: unknown
+          pomodoro_length: unknown | null
+          pomodoro_start: string | null
           user_id: string
         }
         Insert: {
-          activity_id: number
           at: unknown
+          context_id?: number | null
           created_at?: string
           event_id?: number | null
           id?: never
-          planned: unknown
-          remaining?: unknown
-          series_id?: number | null
+          paused?: unknown
+          pomodoro_length?: unknown | null
+          pomodoro_start?: string | null
           user_id: string
         }
         Update: {
-          activity_id?: number
           at?: unknown
+          context_id?: number | null
           created_at?: string
           event_id?: number | null
           id?: never
-          planned?: unknown
-          remaining?: unknown
-          series_id?: number | null
+          paused?: unknown
+          pomodoro_length?: unknown | null
+          pomodoro_start?: string | null
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "time_activity_id_fkey"
-            columns: ["activity_id"]
+            foreignKeyName: "session_context_id_fkey"
+            columns: ["context_id"]
             isOneToOne: false
-            referencedRelation: "activity"
+            referencedRelation: "context"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "time_activity_id_fkey"
-            columns: ["activity_id"]
+            foreignKeyName: "session_context_id_fkey"
+            columns: ["context_id"]
             isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["activity_id"]
+            referencedColumns: ["context_id"]
           },
           {
-            foreignKeyName: "time_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "expenditure"
-            referencedColumns: ["activity_id"]
-          },
-          {
-            foreignKeyName: "time_event_id_fkey"
+            foreignKeyName: "session_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "event"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "time_series_id_fkey"
-            columns: ["series_id"]
-            isOneToOne: false
-            referencedRelation: "time"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "time_user_id_fkey"
+            foreignKeyName: "session_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -750,13 +676,13 @@ export type Database = {
       event_x: {
         Row: {
           account_id: number | null
-          activity_id: number | null
           all_day: boolean | null
           at: unknown | null
           attendee_count: number | null
           availability: Database["public"]["Enums"]["event_availability"] | null
           calendar_id: number | null
           conferencing_url: string | null
+          context_id: number | null
           context_path: unknown | null
           created_at: string | null
           day: string | null
@@ -799,7 +725,7 @@ export type Database = {
       }
       expenditure: {
         Row: {
-          activity_id: number | null
+          context_id: number | null
           count: number | null
           day: string | null
           declined_count: number | null
@@ -809,19 +735,11 @@ export type Database = {
           tentative_minutes: number | null
           user_id: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "event_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       expenditure_weekly: {
         Row: {
-          activity_id: number | null
+          context_id: number | null
           count: number | null
           declined_count: number | null
           declined_minutes: number | null
@@ -897,7 +815,7 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "activity_user_id_fkey"
+            foreignKeyName: "context_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -929,45 +847,6 @@ export type Database = {
           synced_at: string | null
         }
         Relationships: []
-      }
-      time_expenditure: {
-        Row: {
-          activity_id: number | null
-          count: number | null
-          day: string | null
-          minutes: number | null
-          user_id: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "time_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "time_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["activity_id"]
-          },
-          {
-            foreignKeyName: "time_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "expenditure"
-            referencedColumns: ["activity_id"]
-          },
-          {
-            foreignKeyName: "time_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       waitlist_admin: {
         Row: {
@@ -1198,7 +1077,7 @@ export type Database = {
           week: unknown
         }
         Returns: {
-          activity_id: number
+          id: number
           budget: number
           budget_type: Database["public"]["Enums"]["budget_type"]
           order: string
@@ -1216,8 +1095,8 @@ export type Database = {
           "": unknown
         }
         Returns: {
-          activity_id: number | null
           budget: number | null
+          context_id: number | null
           created_at: string
           id: number
           order: string | null
@@ -1284,20 +1163,20 @@ export type Database = {
     }
     CompositeTypes: {
       contact_upsert: {
-        calendar_id: number
-        email: string
-        name: string
-        avatar_url: string
+        calendar_id: number | null
+        email: string | null
+        name: string | null
+        avatar_url: string | null
       }
       event_ids: {
-        calendar_id: number
-        provider_id: string
+        calendar_id: number | null
+        provider_id: string | null
       }
       invitee_upsert: {
-        event_id: number
-        email: string
-        response: Database["public"]["Enums"]["event_response"]
-        is_optional: boolean
+        event_id: number | null
+        email: string | null
+        response: Database["public"]["Enums"]["event_response"] | null
+        is_optional: boolean | null
       }
     }
   }
@@ -1413,6 +1292,101 @@ export type Database = {
           },
         ]
       }
+      s3_multipart_uploads: {
+        Row: {
+          bucket_id: string
+          created_at: string
+          id: string
+          in_progress_size: number
+          key: string
+          owner_id: string | null
+          upload_signature: string
+          version: string
+        }
+        Insert: {
+          bucket_id: string
+          created_at?: string
+          id: string
+          in_progress_size?: number
+          key: string
+          owner_id?: string | null
+          upload_signature: string
+          version: string
+        }
+        Update: {
+          bucket_id?: string
+          created_at?: string
+          id?: string
+          in_progress_size?: number
+          key?: string
+          owner_id?: string | null
+          upload_signature?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "s3_multipart_uploads_bucket_id_fkey"
+            columns: ["bucket_id"]
+            isOneToOne: false
+            referencedRelation: "buckets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      s3_multipart_uploads_parts: {
+        Row: {
+          bucket_id: string
+          created_at: string
+          etag: string
+          id: string
+          key: string
+          owner_id: string | null
+          part_number: number
+          size: number
+          upload_id: string
+          version: string
+        }
+        Insert: {
+          bucket_id: string
+          created_at?: string
+          etag: string
+          id?: string
+          key: string
+          owner_id?: string | null
+          part_number: number
+          size?: number
+          upload_id: string
+          version: string
+        }
+        Update: {
+          bucket_id?: string
+          created_at?: string
+          etag?: string
+          id?: string
+          key?: string
+          owner_id?: string | null
+          part_number?: number
+          size?: number
+          upload_id?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "s3_multipart_uploads_parts_bucket_id_fkey"
+            columns: ["bucket_id"]
+            isOneToOne: false
+            referencedRelation: "buckets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "s3_multipart_uploads_parts_upload_id_fkey"
+            columns: ["upload_id"]
+            isOneToOne: false
+            referencedRelation: "s3_multipart_uploads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1443,13 +1417,44 @@ export type Database = {
         Args: {
           name: string
         }
-        Returns: unknown
+        Returns: string[]
       }
       get_size_by_bucket: {
         Args: Record<PropertyKey, never>
         Returns: {
           size: number
           bucket_id: string
+        }[]
+      }
+      list_multipart_uploads_with_delimiter: {
+        Args: {
+          bucket_id: string
+          prefix_param: string
+          delimiter_param: string
+          max_keys?: number
+          next_key_token?: string
+          next_upload_token?: string
+        }
+        Returns: {
+          key: string
+          id: string
+          created_at: string
+        }[]
+      }
+      list_objects_with_delimiter: {
+        Args: {
+          bucket_id: string
+          prefix_param: string
+          delimiter_param: string
+          max_keys?: number
+          start_after?: string
+          next_token?: string
+        }
+        Returns: {
+          name: string
+          id: string
+          metadata: Json
+          updated_at: string
         }[]
       }
       search: {

@@ -57,7 +57,7 @@ CREATE OR REPLACE VIEW insight_weekly WITH ( security_invoker = TRUE)
 -- for formatting
 AS
 SELECT
-    act.user_id,
+    ctx.user_id,
     ctx.path,
     week_from_date (i.day) AS week,
     i.type,
@@ -68,11 +68,10 @@ SELECT
     COALESCE(SUM(i.count) FILTER (WHERE i.response IS NULL), 0) AS pending_count,
     COALESCE(SUM(i.minutes) FILTER (WHERE i.response IS NULL), 0) AS pending_minutes
 FROM
-    activity act
-    JOIN context ctx ON act.context_id = ctx.id
+    context ctx
     LEFT JOIN insight i ON ctx.path = i.context_path
 GROUP BY
-    act.user_id,
+    ctx.user_id,
     ctx.path,
     week_from_date (i.day),
     i.type,
