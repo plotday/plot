@@ -28,7 +28,8 @@ class BidirectionalListState extends State<BidirectionalList> {
     return Scrollable(
       viewportBuilder: (BuildContext context, ViewportOffset position) {
         return Viewport(offset: position, center: _centerKey, slivers: [
-          InfiniteList(
+          SliverToBoxAdapter(
+              child: InfiniteList(
             itemCount: _reverseIndex * -1 - 1,
             isLoading: _reverseLoading,
             onFetchData: () async {
@@ -43,23 +44,24 @@ class BidirectionalListState extends State<BidirectionalList> {
             itemBuilder: (context, index) {
               return widget.itemBuilder(context, index * -1 - 1);
             },
-          ),
-          InfiniteList(
-            key: _centerKey,
-            itemCount: _index,
-            isLoading: _loading,
-            onFetchData: () async {
-              _loading = true;
-              try {
-                _index = await widget.onFetch(_index, true);
-              } finally {
-                _loading = false;
-              }
-            },
-            itemBuilder: (context, index) {
-              return widget.itemBuilder(context, index);
-            },
-          ),
+          )),
+          SliverToBoxAdapter(
+              key: _centerKey,
+              child: InfiniteList(
+                itemCount: _index,
+                isLoading: _loading,
+                onFetchData: () async {
+                  _loading = true;
+                  try {
+                    _index = await widget.onFetch(_index, true);
+                  } finally {
+                    _loading = false;
+                  }
+                },
+                itemBuilder: (context, index) {
+                  return widget.itemBuilder(context, index);
+                },
+              )),
         ]);
       },
     );

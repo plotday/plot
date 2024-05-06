@@ -11,7 +11,7 @@ enum TimeDirection {
 }
 
 class Date extends Equatable {
-  static today() => DateTime.now().toDate();
+  static today() => DateTime.now().toLocal().toDate();
 
   const Date(this.year, this.month, this.day);
 
@@ -42,25 +42,24 @@ class Date extends Equatable {
       Duration(days: toDateTime().difference(other.toDateTime()).inDays);
 
   Date operator +(Duration duration) => toDateTime().add(duration).toDate();
-  Date operator -(Object duration) => toDateTime().sub(duration).toDate();
-  addDays(int days, {direction = TimeDirection.ascending}) => toDateTime()
+  Date operator -(Duration duration) => toDateTime().sub(duration).toDate();
+  Date addDays(int days, {direction = TimeDirection.ascending}) => toDateTime()
       .addDays(days * (direction == TimeDirection.ascending ? 1 : -1))
       .toDate();
-  subDays(int days) => toDateTime().subDays(days).toDate();
-  next({direction = TimeDirection.ascending}) =>
+  Date subDays(int days) => toDateTime().subDays(days).toDate();
+  Date next({direction = TimeDirection.ascending}) =>
       addDays(direction == TimeDirection.ascending ? 1 : -1);
 
-  toDateTime({time = const TimeOfDay(hour: 0, minute: 0)}) =>
-      DateTime(year, month, day, time.hour, time.minute);
-  toDateRange() => Day(this);
-  toDateTimeRange() => toDateRange().toDateTimeRange();
+  int get weekday => toDateTime().weekday;
 
-  copyWith({int? year, int? month, int? day}) =>
+  DateTime toDateTime({time = const TimeOfDay(hour: 0, minute: 0)}) =>
+      DateTime(year, month, day, time.hour, time.minute);
+  Day toDateRange() => Day(this);
+  DateTimeRange toDateTimeRange() => toDateRange().toDateTimeRange();
+
+  Date copyWith({int? year, int? month, int? day}) =>
       Date(year ?? this.year, month ?? this.month, day ?? this.day);
-  get startOfMonth => Date(year, month, 1);
-  get closestMonday => toDateTime().weekday >= DateTime.saturday
-      ? addDays((2 - (toDateTime().weekday - DateTime.saturday)).floor())
-      : subDays(toDateTime().weekday - 1);
+  Date get startOfMonth => Date(year, month, 1);
 
   @override
   toString() =>
@@ -167,8 +166,16 @@ class Week extends DateRange {
 
   final Date _monday;
 
-  Week(Date date) : _monday = date.closestMonday;
-  Week.current() : _monday = Date.today().closestMonday;
+  static Date _getMonday(Date date) {
+    if (date.weekday >= startOfWeek) {
+      return date.addDays(8 - date.weekday);
+    } else {
+      return date.subDays(date.weekday - 1);
+    }
+  }
+
+  Week(Date date) : _monday = _getMonday(date);
+  Week.current() : _monday = _getMonday(Date.today());
 
   @override
   Date get start => _monday.subDays((8 - startOfWeek) % 7);
@@ -209,7 +216,7 @@ class Month extends DateRange {
   Month.current() : start = Date.today().startOfMonth;
 
   @override
-  Date get end => start.toDateTime().nextMOnth.toDate();
+  Date get end => start.toDateTime().nextMonth.toDate();
 
   @override
   Month previous() => Month(start.toDateTime().previousMonth.toDate());
@@ -356,13 +363,14 @@ class DateTimeRange extends Equatable {
   }
 }
 
-extension PostgresDateTime on DateTime {
+extension DateTimeExtension2 on DateTime {
   String toDb() {
     return toUtc().toIso8601String();
   }
 
   toDate() => Date(year, month, day);
   toTimeOfDay() => TimeOfDay(hour: hour, minute: minute);
+  at(TimeOfDay time) => DateTime(year, month, day, time.hour, time.minute);
 }
 
 Duration durationFromString(String durationString) {

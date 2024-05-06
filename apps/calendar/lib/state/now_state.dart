@@ -17,24 +17,24 @@ final class NowState extends Equatable {
   @override
   List<Object?> get props => [session, scheduled, next, previous];
 
-  get context => session?.context ?? scheduled.firstOrNull?.context;
+  Context? get context => session?.context ?? scheduled.firstOrNull?.context;
 
-  get pomodoroActive =>
+  bool get pomodoroActive =>
       session?.pomodoroStart != null &&
       session?.pomodoroLength != null &&
-      now.isBefore(pomodoroStart
-          .add(session!.pomodoroLength)
+      now.isBefore(pomodoroStart!
+          .add(session!.pomodoroLength!)
           .add(const Duration(minutes: 1)));
-  get pomodoroStart => pomodoroActive ? session?.pomodoroStart : null;
-  get pomodoroEnd =>
-      pomodoroActive ? pomodoroStart?.add(session?.pomodoroLength) : null;
+  DateTime? get pomodoroStart => pomodoroActive ? session?.pomodoroStart : null;
+  DateTime? get pomodoroEnd =>
+      pomodoroActive ? pomodoroStart?.add(session!.pomodoroLength!) : null;
 
-  get start =>
+  DateTime? get start =>
       pomodoroStart ??
       session?.at.start ??
       scheduled.firstOrNull?.at.start ??
       previous.firstOrNull?.at.end;
-  get end =>
+  DateTime? get end =>
       pomodoroEnd ??
       (session != null &&
               session!.at.end.add(const Duration(minutes: 1)).isBefore(now)
@@ -45,7 +45,7 @@ final class NowState extends Equatable {
           : null) ??
       next.firstOrNull?.at.start;
 
-  endFor(Context? context) {
+  DateTime? endFor(Context? context) {
     if (context == session?.context) {
       return end;
     }
@@ -55,15 +55,15 @@ final class NowState extends Equatable {
         next.firstOrNull?.at.start;
   }
 
-  get elapsed => start != null ? now.difference(start) : null;
-  get remaining =>
-      end != null && end.isBefore(now) ? end.difference(now) : null;
+  Duration? get elapsed => start != null ? now.difference(start!) : null;
+  Duration? get remaining =>
+      end != null && end!.isBefore(now) ? end!.difference(now) : null;
 
-  get finite => start != null && end != null;
-  get duration => finite ? end.difference(start) : null;
-  get progress => finite
-      ? now.isBefore(end)
-          ? elapsed.inSeconds / duration.inSeconds
+  bool get finite => start != null && end != null;
+  Duration? get duration => finite ? end!.difference(start!) : null;
+  double? get progress => finite
+      ? now.isBefore(end!)
+          ? elapsed!.inSeconds / duration!.inSeconds
           : 1
       : null;
 

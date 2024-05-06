@@ -11,7 +11,7 @@ class NowPage extends StatelessWidget {
     return BlocBuilder<NowBloc, NowState>(builder: (context, state) {
       return Scaffold(
         appBar: AppBar(
-          title: state.context.name,
+          title: Text(state.context?.name ?? 'Everything else'),
           actions: const [],
         ),
       );
