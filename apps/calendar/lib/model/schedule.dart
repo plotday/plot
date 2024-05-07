@@ -70,7 +70,7 @@ class ScheduledEvent extends Model {
         super(id: json['id'] as int);
 
   @override
-  Map<String, dynamic> toJson({patch = false}) => {
+  Map<String, dynamic> toJson({bool patch = false}) => {
         'id': id,
         'user_id': base.auth.currentUser?.id,
         if (!patch || _copiedFrom?.name != name) 'name': name,
@@ -105,7 +105,8 @@ class ScheduledEvent extends Model {
   final int? _contextId;
   final ScheduledEvent? _copiedFrom;
 
-  get context => _contextId == null ? null : Context.store.get(_contextId);
+  Context? get context =>
+      _contextId == null ? null : Context.store.get(_contextId);
 
   @override
   List<Object> get props => [id ?? 0, name ?? '', at, _contextId ?? 0];
@@ -132,13 +133,14 @@ class ScheduledEvent extends Model {
       );
     }
 
-    if (series != null &&
+    if (context != null &&
+        series != null &&
         (_copiedFrom?.series == null || _copiedFrom?.context != context)) {
       await base
           .from('series')
           .update(
             {
-              'context_id': context.id,
+              'context_id': context!.id,
             },
           )
           .eq('user_id', base.auth.currentUser!.id)
@@ -146,7 +148,7 @@ class ScheduledEvent extends Model {
     }
 
     return ScheduledEvent(
-      id: result['id'],
+      id: result['id'] as int,
       series: series,
       name: name,
       at: at,
@@ -166,7 +168,7 @@ class ScheduledDay extends Equatable {
 
   // Returns the furthest date fetched
   static Future<Date> fetch(Date start,
-      {direction = TimeDirection.ascending}) async {
+      {TimeDirection direction = TimeDirection.ascending}) async {
     if (_isExhausted(start)) {
       return start.addDays(30, direction: direction);
     }
@@ -181,7 +183,7 @@ class ScheduledDay extends Equatable {
       fetching = _fetch(start, direction);
       _fetchState[direction]!.fetching = fetching;
     }
-    return await fetching!;
+    return await fetching;
   }
 
   static List<ScheduledDay> list(Date start, Date end) {
@@ -222,7 +224,7 @@ class ScheduledDay extends Equatable {
 
   /* Private */
 
-  static _fetch(
+  static Future<Date> _fetch(
     Date start,
     TimeDirection direction,
   ) async {
@@ -318,11 +320,8 @@ class ScheduledDay extends Equatable {
       expanded.add(events[i]);
       if (i + 1 == events.length || events[i].at.end < events[i + 1].at.start) {
         expanded.add(ScheduledEvent(
-          at: DateTimeRange(
-              start.at(events[i].at.end.toTimeOfDay()),
-              start.at(i + 1 == events.length
-                  ? end
-                  : events[i + 1].at.start.toTimeOfDay())),
+          at: DateTimeRange(events[i].at.end,
+              i + 1 == events.length ? end : events[i + 1].at.start),
         ));
       }
     }

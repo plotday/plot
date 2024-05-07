@@ -1,9 +1,6 @@
 import 'package:equatable/equatable.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:plot/util/api.dart' as api;
-
-final supabase = Supabase.instance.client;
 
 enum AccountProvider { google, outlook }
 

@@ -27,11 +27,11 @@ abstract class Model extends Equatable {
     this.id,
   });
 
-  saveToBase<T extends Model>(
+  Future<T> saveToBase<T extends Model>(
     String table,
     T Function(Map<String, dynamic> json) ctor,
-  ) =>
-      saveListToBase([this], table, ctor);
+  ) async =>
+      (await saveListToBase<T>([this as T], table, ctor)).first;
 
   Model.fromJson(Map<String, dynamic> json) : id = json['id'] as int;
 

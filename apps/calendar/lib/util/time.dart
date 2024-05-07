@@ -11,7 +11,7 @@ enum TimeDirection {
 }
 
 class Date extends Equatable {
-  static today() => DateTime.now().toLocal().toDate();
+  static Date today() => DateTime.now().toLocal().toDate();
 
   const Date(this.year, this.month, this.day);
 
@@ -43,16 +43,17 @@ class Date extends Equatable {
 
   Date operator +(Duration duration) => toDateTime().add(duration).toDate();
   Date operator -(Duration duration) => toDateTime().sub(duration).toDate();
-  Date addDays(int days, {direction = TimeDirection.ascending}) => toDateTime()
-      .addDays(days * (direction == TimeDirection.ascending ? 1 : -1))
-      .toDate();
+  Date addDays(int days, {TimeDirection direction = TimeDirection.ascending}) =>
+      toDateTime()
+          .addDays(days * (direction == TimeDirection.ascending ? 1 : -1))
+          .toDate();
   Date subDays(int days) => toDateTime().subDays(days).toDate();
-  Date next({direction = TimeDirection.ascending}) =>
+  Date next({TimeDirection direction = TimeDirection.ascending}) =>
       addDays(direction == TimeDirection.ascending ? 1 : -1);
 
   int get weekday => toDateTime().weekday;
 
-  DateTime toDateTime({time = const TimeOfDay(hour: 0, minute: 0)}) =>
+  DateTime toDateTime({TimeOfDay time = const TimeOfDay(hour: 0, minute: 0)}) =>
       DateTime(year, month, day, time.hour, time.minute);
   Day toDateRange() => Day(this);
   DateTimeRange toDateTimeRange() => toDateRange().toDateTimeRange();
@@ -62,7 +63,7 @@ class Date extends Equatable {
   Date get startOfMonth => Date(year, month, 1);
 
   @override
-  toString() =>
+  String toString() =>
       "$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
 
   String format() {
@@ -118,7 +119,8 @@ abstract class DateRange extends Equatable {
   @override
   String toString() => "[$start, $end)";
 
-  toDateTimeRange() => DateTimeRange(start.toDateTime(), end.toDateTime());
+  DateTimeRange toDateTimeRange() =>
+      DateTimeRange(start.toDateTime(), end.toDateTime());
 
   bool isNow() {
     return includes(Date.today());
@@ -368,9 +370,10 @@ extension DateTimeExtension2 on DateTime {
     return toUtc().toIso8601String();
   }
 
-  toDate() => Date(year, month, day);
-  toTimeOfDay() => TimeOfDay(hour: hour, minute: minute);
-  at(TimeOfDay time) => DateTime(year, month, day, time.hour, time.minute);
+  Date toDate() => Date(year, month, day);
+  TimeOfDay toTimeOfDay() => TimeOfDay(hour: hour, minute: minute);
+  DateTime at(TimeOfDay time) =>
+      DateTime(year, month, day, time.hour, time.minute);
 }
 
 Duration durationFromString(String durationString) {

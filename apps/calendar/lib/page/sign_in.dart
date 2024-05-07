@@ -20,7 +20,7 @@ class SignInPage extends StatefulWidget {
 class _SignInPageState extends State<SignInPage> {
   bool? _signedIn;
 
-  late final StreamSubscription _authSubscription;
+  late final StreamSubscription<AuthState> _authSubscription;
 
   @override
   void initState() {

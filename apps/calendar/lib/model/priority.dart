@@ -147,7 +147,7 @@ class Priority extends Model {
 
   Context? get context =>
       _contextId != null ? Context.store.get(_contextId) : null;
-  get key => _contextId.toString();
+  String get key => _contextId.toString();
 
   @override
   List<Object> get props => [_contextId ?? 0, budget, _order];

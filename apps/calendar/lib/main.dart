@@ -3,17 +3,10 @@ import 'package:adaptive_theme/adaptive_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import 'env.dart';
 import 'router.dart';
-import 'page/sign_in.dart';
-import 'model/session.dart' as plot;
-import 'model/context.dart';
-import 'state/priority.dart';
-import 'state/context.dart';
-import 'state/now.dart';
 
 Future<void> main() async {
   GoRouter.optionURLReflectsImperativeAPIs = true;
@@ -31,8 +24,6 @@ Future<void> main() async {
     },
   );
 }
-
-final supabase = Supabase.instance.client;
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -54,31 +45,11 @@ class App extends StatelessWidget {
       ),
       debugShowFloatingThemeButton: true,
       initial: AdaptiveThemeMode.system,
-      builder: (theme, darkTheme) => SignInPage(
-        builder: (context) {
-          return FutureBuilder(
-            future:
-                Future.wait([Context.store.load(), plot.Session.store.load()]),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              return MultiBlocProvider(
-                providers: [
-                  BlocProvider(create: (_) => PriorityBloc()),
-                  BlocProvider(create: (_) => ContextBloc()),
-                  BlocProvider(create: (_) => NowBloc()),
-                ],
-                child: MaterialApp.router(
-                  title: 'Plot',
-                  theme: theme,
-                  darkTheme: darkTheme,
-                  routerConfig: router,
-                ),
-              );
-            },
-          );
-        },
+      builder: (theme, darkTheme) => MaterialApp.router(
+        title: 'Plot',
+        theme: theme,
+        darkTheme: darkTheme,
+        routerConfig: router,
       ),
     );
   }

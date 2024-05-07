@@ -27,42 +27,46 @@ class BidirectionalListState extends State<BidirectionalList> {
   Widget build(BuildContext context) {
     return Scrollable(
       viewportBuilder: (BuildContext context, ViewportOffset position) {
-        return Viewport(offset: position, center: _centerKey, slivers: [
-          SliverToBoxAdapter(
-              child: InfiniteList(
-            itemCount: _reverseIndex * -1 - 1,
-            isLoading: _reverseLoading,
-            onFetchData: () async {
-              _reverseLoading = true;
-              try {
-                _reverseIndex = await widget.onFetch(_reverseIndex, true);
-              } finally {
-                _reverseLoading = false;
-              }
-            },
-            reverse: true,
-            itemBuilder: (context, index) {
-              return widget.itemBuilder(context, index * -1 - 1);
-            },
-          )),
-          SliverToBoxAdapter(
-              key: _centerKey,
-              child: InfiniteList(
-                itemCount: _index,
-                isLoading: _loading,
-                onFetchData: () async {
-                  _loading = true;
-                  try {
-                    _index = await widget.onFetch(_index, true);
-                  } finally {
-                    _loading = false;
-                  }
-                },
-                itemBuilder: (context, index) {
-                  return widget.itemBuilder(context, index);
-                },
-              )),
-        ]);
+        return Viewport(
+          offset: position,
+          center: _centerKey,
+          slivers: [
+            SliverToBoxAdapter(
+                child: InfiniteList(
+              itemCount: _reverseIndex * -1 - 1,
+              isLoading: _reverseLoading,
+              onFetchData: () async {
+                _reverseLoading = true;
+                try {
+                  _reverseIndex = await widget.onFetch(_reverseIndex, true);
+                } finally {
+                  _reverseLoading = false;
+                }
+              },
+              reverse: true,
+              itemBuilder: (context, index) {
+                return widget.itemBuilder(context, index * -1 - 1);
+              },
+            )),
+            SliverToBoxAdapter(
+                key: _centerKey,
+                child: InfiniteList(
+                  itemCount: _index,
+                  isLoading: _loading,
+                  onFetchData: () async {
+                    _loading = true;
+                    try {
+                      _index = await widget.onFetch(_index, true);
+                    } finally {
+                      _loading = false;
+                    }
+                  },
+                  itemBuilder: (context, index) {
+                    return widget.itemBuilder(context, index);
+                  },
+                )),
+          ],
+        );
       },
     );
   }
