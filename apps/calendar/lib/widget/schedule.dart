@@ -16,17 +16,6 @@ class ScheduleWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, scheduleState) => BidirectionalList(
-        // stream: context.read<ScheduleBloc>().stream.map((state) =>
-        //     PagedItemsState<ScheduledDay>(Map.fromEntries(
-        //         time.TimeDirection.values.map((direction) => MapEntry(
-        //             direction,
-        //             DualList<DateTime, ScheduledDay>(
-        //               state.lists[direction]!.events.entries
-        //                   .map<ScheduledDay>((entry) => ScheduledDay(
-        //                       time.DateTimeRange.day(entry.key), entry.value))
-        //                   .toList(),
-        //               state.lists[direction]!.nextAnchor,
-        //             )))))),
         onFetch: (index, reverse) async {
           final start = anchor.addDays(index);
           final end = await ScheduledDay.fetch(start,
