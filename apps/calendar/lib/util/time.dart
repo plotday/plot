@@ -171,11 +171,10 @@ class Week extends DateRange {
   final Date _monday;
 
   static Date _getMonday(Date date) {
-    if (date.weekday >= startOfWeek) {
-      return date.addDays(8 - date.weekday);
-    } else {
-      return date.subDays(date.weekday - 1);
-    }
+    return date
+        .subDays(
+            date.weekday + (date.weekday < startOfWeek ? 8 : 0) - startOfWeek)
+        .addDays(startOfWeek > DateTime.monday ? 8 - startOfWeek : 0);
   }
 
   Week(Date date) : _monday = _getMonday(date);
