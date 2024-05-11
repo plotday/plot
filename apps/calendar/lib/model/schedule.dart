@@ -270,6 +270,7 @@ class ScheduledDay extends Equatable {
             items;
       }
     }
+    if (items.isEmpty) return start;
     _fetchState[TimeDirection.ascending]!.leftovers.remove(start);
     _fetchState[TimeDirection.descending]!.leftovers.remove(start);
 

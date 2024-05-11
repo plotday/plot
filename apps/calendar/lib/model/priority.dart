@@ -5,7 +5,8 @@ import 'model.dart';
 import 'context.dart';
 
 class Priority extends Model {
-  static final _store = Store<Week, Store<int, Priority>>();
+  static final Store<Week, Store<int, Priority>> _store =
+      Store<Week, Store<int, Priority>>();
 
   static String _between(String? str1, String? str2) {
     if (str1 == null) {
@@ -42,17 +43,20 @@ class Priority extends Model {
     if (_store.has(week)) {
       models = _store.get(week).list();
     } else {
-      final rows = await base.rpc('priorities_for_week', params: {
+      final rows = await base
+          .rpc<List<Map<String, dynamic>>>('priorities_for_week', params: {
         'user_id': base.auth.currentUser!.id,
         'week': week.toString(),
       });
-      models =
-          rows.map<Priority>((json) => Priority.fromJson(week, json)).toList();
+      models = rows.map((json) => Priority.fromJson(week, json)).toList();
+      final innerStore = Store<int, Priority>(
+          values: Map.fromEntries(
+        models.map((model) => MapEntry(model._contextId ?? 0, model)),
+      ));
       _store.put(
-          week,
-          Store(
-              values: Map.fromEntries(models
-                  .map((model) => MapEntry(model._contextId ?? 0, model)))));
+        week,
+        innerStore,
+      );
     }
     final unbudgeted = Context.store
         .list()
@@ -100,7 +104,7 @@ class Priority extends Model {
     this.week, {
     required this.budget,
     required this.scheduled,
-    required order,
+    required String order,
   }) : _order = order;
 
   Priority copyWith({Duration? budget, Priority? after, Priority? before}) {

@@ -5,7 +5,7 @@ class Store<ID, T> {
       {Future<Iterable<MapEntry<ID, T>>> Function()? load,
       Map<ID, T> values = const {}})
       : _load = load,
-        _cache = values,
+        _cache = Map.of(values),
         _streamController = BehaviorSubject<List<T>>.seeded(const []);
 
   final Future<Iterable<MapEntry<ID, T>>> Function()? _load;

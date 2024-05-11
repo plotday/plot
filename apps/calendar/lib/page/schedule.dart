@@ -15,7 +15,7 @@ class SchedulePage extends StatelessWidget {
       ),
       body: BlocProvider(
         create: (context) => ScheduleBloc(),
-        child: ScheduleWidget(),
+        child: Column(children: [Expanded(child: ScheduleWidget())]),
       ),
     );
   }

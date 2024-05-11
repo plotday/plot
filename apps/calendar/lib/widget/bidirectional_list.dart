@@ -1,8 +1,9 @@
-import 'package:flutter/rendering.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:very_good_infinite_list/very_good_infinite_list.dart';
 
 typedef BidirectionalFetcher = Future<int> Function(int index, bool reverse);
+
+typedef ItemBuilder = Widget Function(BuildContext context, int index);
 
 class BidirectionalList extends StatefulWidget {
   const BidirectionalList(
@@ -25,49 +26,42 @@ class BidirectionalListState extends State<BidirectionalList> {
 
   @override
   Widget build(BuildContext context) {
-    return Scrollable(
-      viewportBuilder: (BuildContext context, ViewportOffset position) {
-        return Viewport(
-          offset: position,
-          center: _centerKey,
-          slivers: [
-            SliverToBoxAdapter(
-                child: InfiniteList(
-              itemCount: _reverseIndex * -1 - 1,
-              isLoading: _reverseLoading,
-              onFetchData: () async {
-                _reverseLoading = true;
-                try {
-                  _reverseIndex = await widget.onFetch(_reverseIndex, true);
-                } finally {
-                  _reverseLoading = false;
-                }
-              },
-              reverse: true,
-              itemBuilder: (context, index) {
-                return widget.itemBuilder(context, index * -1 - 1);
-              },
-            )),
-            SliverToBoxAdapter(
-                key: _centerKey,
-                child: InfiniteList(
-                  itemCount: _index,
-                  isLoading: _loading,
-                  onFetchData: () async {
-                    _loading = true;
-                    try {
-                      _index = await widget.onFetch(_index, true);
-                    } finally {
-                      _loading = false;
-                    }
-                  },
-                  itemBuilder: (context, index) {
-                    return widget.itemBuilder(context, index);
-                  },
-                )),
-          ],
-        );
-      },
+    return CustomScrollView(
+      center: _centerKey,
+      slivers: [
+        SliverInfiniteList(
+          itemCount: _reverseIndex * -1 - 1,
+          isLoading: _reverseLoading,
+          onFetchData: () async {
+            _reverseLoading = true;
+            try {
+              _reverseIndex = await widget.onFetch(_reverseIndex, true);
+            } finally {
+              _reverseLoading = false;
+            }
+          },
+          // reverse: true,
+          itemBuilder: (context, index) {
+            return widget.itemBuilder(context, index * -1 - 1);
+          },
+        ),
+        SliverInfiniteList(
+          key: _centerKey,
+          itemCount: _index,
+          isLoading: _loading,
+          onFetchData: () async {
+            _loading = true;
+            try {
+              _index = await widget.onFetch(_index, true);
+            } finally {
+              _loading = false;
+            }
+          },
+          itemBuilder: (context, index) {
+            return widget.itemBuilder(context, index);
+          },
+        )
+      ],
     );
   }
 }
