@@ -33,14 +33,20 @@ class BidirectionalListState extends State<BidirectionalList> {
           itemCount: _reverseIndex * -1 - 1,
           isLoading: _reverseLoading,
           onFetchData: () async {
-            _reverseLoading = true;
+            setState(() {
+              _reverseLoading = true;
+            });
             try {
-              _reverseIndex = await widget.onFetch(_reverseIndex, true);
+              final newIndex = await widget.onFetch(_reverseIndex, true);
+              setState(() {
+                _reverseIndex = newIndex;
+              });
             } finally {
-              _reverseLoading = false;
+              setState(() {
+                _reverseLoading = false;
+              });
             }
           },
-          // reverse: true,
           itemBuilder: (context, index) {
             return widget.itemBuilder(context, index * -1 - 1);
           },
@@ -50,11 +56,18 @@ class BidirectionalListState extends State<BidirectionalList> {
           itemCount: _index,
           isLoading: _loading,
           onFetchData: () async {
-            _loading = true;
+            setState(() {
+              _loading = true;
+            });
             try {
-              _index = await widget.onFetch(_index, true);
+              final newIndex = await widget.onFetch(_index, false);
+              setState(() {
+                _index = newIndex;
+              });
             } finally {
-              _loading = false;
+              setState(() {
+                _loading = false;
+              });
             }
           },
           itemBuilder: (context, index) {

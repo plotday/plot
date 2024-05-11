@@ -270,7 +270,10 @@ class ScheduledDay extends Equatable {
             items;
       }
     }
-    if (items.isEmpty) return start;
+    if (items.isEmpty) {
+      _fetchState[direction]!.exhausted = start;
+      return start + const Duration(days: 7);
+    }
     _fetchState[TimeDirection.ascending]!.leftovers.remove(start);
     _fetchState[TimeDirection.descending]!.leftovers.remove(start);
 
@@ -284,16 +287,7 @@ class ScheduledDay extends Equatable {
         date = date.next(direction: direction)) {
       store.put(date, ScheduledDay(date, groupedItems[date] ?? []));
     }
-    if (items.length < _pageSize) {
-      if (groupedItems.containsKey(end)) {
-        store.put(end, ScheduledDay(end, groupedItems[end] ?? []));
-        _fetchState[direction]!.exhausted = end.next(direction: direction);
-      } else {
-        _fetchState[direction]!.exhausted = end;
-      }
-    } else if (groupedItems.containsKey(end)) {
-      _fetchState[direction]!.leftovers[end] = groupedItems[end] ?? [];
-    }
+    _fetchState[direction]!.leftovers[end] = groupedItems[end] ?? [];
     return end;
   }
 

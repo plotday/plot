@@ -43,11 +43,13 @@ class Date extends Equatable {
 
   Date operator +(Duration duration) => toDateTime().add(duration).toDate();
   Date operator -(Duration duration) => toDateTime().sub(duration).toDate();
-  Date addDays(int days, {TimeDirection direction = TimeDirection.ascending}) =>
-      toDateTime()
-          .addDays(days * (direction == TimeDirection.ascending ? 1 : -1))
-          .toDate();
-  Date subDays(int days) => toDateTime().subDays(days).toDate();
+  Date addDays(int days, {TimeDirection direction = TimeDirection.ascending}) {
+    final m = direction == TimeDirection.ascending ? 1 : -1;
+    // Days are always added as 24 hours, so add a margin for time changes
+    return (toDateTime() + Duration(days: days * m, hours: 3 * m)).toDate();
+  }
+
+  Date subDays(int days) => addDays(-1 * days);
   Date next({TimeDirection direction = TimeDirection.ascending}) =>
       addDays(direction == TimeDirection.ascending ? 1 : -1);
 

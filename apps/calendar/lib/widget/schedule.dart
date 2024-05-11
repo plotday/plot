@@ -21,7 +21,8 @@ class ScheduleWidget extends StatelessWidget {
           final end = await ScheduledDay.fetch(start,
               direction:
                   reverse ? TimeDirection.descending : TimeDirection.ascending);
-          return end.difference(start).inDays.abs();
+          return index +
+              (reverse ? -1 : 1) * end.difference(start).inDays.abs();
         },
         itemBuilder: (context, index) => Column(children: [
           DayWidget(
