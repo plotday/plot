@@ -5,32 +5,27 @@ import 'package:plot/util/time.dart';
 import 'package:plot/model/context.dart';
 import 'package:plot/model/priority.dart';
 
-part 'priority_event.dart';
 part 'priority_state.dart';
 
-class PriorityBloc extends Bloc<PriorityEvent, PriorityState> {
+class PriorityBloc extends Cubit<PriorityState> {
   PriorityBloc() : super(PriorityLoading(Week.current())) {
-    on<PriorityWeekChanged>(_onWeekChanged);
-    on<PriorityChanged>(_onPriorityChanged);
-    on<ContextAdded>(_onContextyAdded);
+    changeWeek(Week.current());
   }
 
-  void _onWeekChanged(
-      PriorityWeekChanged event, Emitter<PriorityState> emit) async {
-    emit(PriorityLoading(event.week));
-    final budgets = await Priority.list(event.week);
-    emit(PriorityLoaded(event.week, budgets));
+  void changeWeek(Week week) async {
+    emit(PriorityLoading(week));
+    final budgets = await Priority.list(week);
+    emit(PriorityLoaded(week, budgets));
   }
 
-  void _onPriorityChanged(
-      PriorityChanged event, Emitter<PriorityState> emit) async {
-    await event.priority.save();
+  void changePriority(Priority priority) async {
+    await priority.save();
     final newList = await Priority.list(state.week);
     emit(PriorityLoaded(state.week, newList));
   }
 
-  void _onContextyAdded(ContextAdded event, Emitter<PriorityState> emit) async {
-    await event.context.save();
+  void addContext(Context context) async {
+    await context.save();
     final newList = await Priority.list(state.week);
     emit(PriorityLoaded(state.week, newList));
   }

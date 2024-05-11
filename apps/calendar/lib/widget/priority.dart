@@ -63,8 +63,8 @@ class PriorityWidget extends StatelessWidget {
                 for (var m = 0; m <= 120; m += 15)
                   MenuItemButton(
                     onPressed: () {
-                      context.read<PriorityBloc>().add(PriorityChanged(
-                          priority.copyWith(budget: Duration(minutes: m))));
+                      context.read<PriorityBloc>().changePriority(
+                          priority.copyWith(budget: Duration(minutes: m)));
                     },
                     child: m == 0
                         ? const Text('Done')

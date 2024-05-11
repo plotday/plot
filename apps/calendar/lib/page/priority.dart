@@ -18,15 +18,13 @@ class WeekNavigatorWidget extends StatelessWidget {
       IconButton(
           icon: const Icon(Icons.chevron_left),
           onPressed: () {
-            context
-                .read<PriorityBloc>()
-                .add(PriorityWeekChanged(week.previous()));
+            context.read<PriorityBloc>().changeWeek(week.previous());
           }),
       Text(week.format()),
       IconButton(
           icon: const Icon(Icons.chevron_right),
           onPressed: () {
-            context.read<PriorityBloc>().add(PriorityWeekChanged(week.next()));
+            context.read<PriorityBloc>().changeWeek(week.next());
           }),
     ]);
   }
@@ -63,9 +61,9 @@ class PriorityPage extends StatelessWidget {
                   if (nextIndex < prioritiesState.priorities.length) {
                     next = prioritiesState.priorities[nextIndex];
                   }
-                  final budget = prioritiesState.priorities[oldIndex]
+                  final priority = prioritiesState.priorities[oldIndex]
                       .copyWith(after: previous, before: next);
-                  context.read<PriorityBloc>().add(PriorityChanged(budget));
+                  context.read<PriorityBloc>().changePriority(priority);
                 },
                 list: prioritiesState.priorities,
                 itemBuilder: (context, priority) {
