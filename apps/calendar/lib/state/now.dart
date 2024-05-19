@@ -7,6 +7,7 @@ import 'package:plot/model/context.dart';
 import 'package:plot/model/schedule.dart';
 import 'package:plot/model/session.dart';
 import 'package:plot/util/clock.dart';
+import 'package:plot/util/time.dart';
 
 part 'now_event.dart';
 part 'now_state.dart';
@@ -18,12 +19,13 @@ class NowBloc extends Cubit<NowState> {
     _sessionSubscription = Session.store
         .stream()
         .listen((session) => emit(state.copyWith(session: session)));
-    _eventSubscription =
-        ScheduledDay.store.stream().listen((session) => emit(state.copyWith(
-              scheduled: ScheduledEvent.current(),
-              next: ScheduledEvent.next(),
-              previous: ScheduledEvent.previous(),
-            )));
+    _eventSubscription = ScheduledDay.store.stream().listen((_) {
+      emit(state.copyWith(
+        scheduled: ScheduledEvent.current(),
+        next: ScheduledEvent.next(),
+        previous: ScheduledEvent.previous(),
+      ));
+    });
   }
 
   StreamSubscription<void>? _secondsSubscription;

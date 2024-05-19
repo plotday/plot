@@ -15,8 +15,10 @@ class ScheduleBloc extends Cubit<ScheduleState> {
     });
   }
 
-  void dispose() {
+  @override
+  Future<void> close() async {
     _subscription?.cancel();
+    await super.close();
   }
 
   StreamSubscription<void>? _subscription;

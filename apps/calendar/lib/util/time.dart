@@ -366,7 +366,7 @@ class DateTimeRange extends Equatable {
   }
 }
 
-extension DateTimeExtension2 on DateTime {
+extension PlotDateTimeExtension on DateTime {
   String toDb() {
     return toUtc().toIso8601String();
   }
@@ -375,6 +375,9 @@ extension DateTimeExtension2 on DateTime {
   TimeOfDay toTimeOfDay() => TimeOfDay(hour: hour, minute: minute);
   DateTime at(TimeOfDay time) =>
       DateTime(year, month, day, time.hour, time.minute);
+
+  DateTime round({int minutes = 30, bool down = true}) => sub(Duration(
+      minutes: down ? minute % minutes : (minute % minutes) - minutes));
 }
 
 Duration durationFromString(String durationString) {

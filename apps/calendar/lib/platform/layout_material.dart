@@ -1,21 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 
-import 'page/account.dart';
-import 'page/now.dart';
-import 'page/priority.dart';
-import 'page/schedule.dart';
+import 'package:plot/page/account.dart';
+import 'package:plot/page/now.dart';
+import 'package:plot/page/schedule.dart';
+import 'layout.dart';
 
-class Layout extends StatefulWidget {
-  const Layout({this.left = const PriorityPage(), super.key});
+class MaterialLayout extends StatefulWidget {
+  static PanelLayout getLayout(BuildContext context) =>
+      Breakpoints.small.isActive(context)
+          ? PanelLayout.single
+          : Breakpoints.medium.isActive(context)
+              ? PanelLayout.double
+              : PanelLayout.triple;
 
-  final Widget left;
+  const MaterialLayout(this.panels, {super.key});
 
   @override
-  State<Layout> createState() => LayoutState();
+  State<MaterialLayout> createState() {
+    return MaterialLayoutState();
+  }
+
+  final List<Widget> panels;
 }
 
-class LayoutState extends State<Layout> with SingleTickerProviderStateMixin {
+class MaterialLayoutState extends State<MaterialLayout>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int selectedNavigation = 0;
 
@@ -36,25 +46,40 @@ class LayoutState extends State<Layout> with SingleTickerProviderStateMixin {
                 body: TabBarView(
               controller: _tabController,
               children: [
-                widget.left,
+                widget.panels[0],
                 const NowPage(),
                 const SchedulePage(),
                 const AccountPage(),
               ],
             )),
           ),
-          Breakpoints.large: SlotLayout.from(
+          Breakpoints.medium: SlotLayout.from(
             key: const Key('Body Medium'),
+            builder: (_) => Scaffold(
+                body: TabBarView(
+              controller: _tabController,
+              children: [
+                Expanded(
+                  child: widget.panels[0],
+                ),
+                Expanded(
+                  child: widget.panels[1],
+                ),
+              ],
+            )),
+          ),
+          Breakpoints.large: SlotLayout.from(
+            key: const Key('Body Large'),
             builder: (_) => Row(
               children: [
                 Expanded(
-                  child: widget.left,
+                  child: widget.panels[0],
                 ),
-                const Expanded(
-                  child: NowPage(),
+                Expanded(
+                  child: widget.panels[1],
                 ),
-                const Expanded(
-                  child: SchedulePage(),
+                Expanded(
+                  child: widget.panels[2],
                 ),
               ],
             ),

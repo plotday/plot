@@ -18,6 +18,12 @@ final class NowState extends Equatable {
   List<Object?> get props => [session, scheduled, next, previous];
 
   Context? get context => session?.context ?? scheduled.firstOrNull?.context;
+  ScheduledEvent get current =>
+      scheduled.firstOrNull ??
+      ScheduledEvent(
+        at: DateTimeRange(previous.firstOrNull?.at.end ?? now.round(),
+            next.firstOrNull?.at.start ?? now.round(down: false)),
+      );
 
   bool get pomodoroActive =>
       session?.pomodoroStart != null &&
