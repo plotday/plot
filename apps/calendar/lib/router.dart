@@ -32,8 +32,11 @@ class NavigationContext extends InheritedWidget {
 
 final _singleRoutes = [
   StatefulShellRoute.indexedStack(
-      builder: (BuildContext context, GoRouterState state,
-          StatefulNavigationShell navigationShell) {
+      builder: (
+        BuildContext context,
+        GoRouterState state,
+        StatefulNavigationShell navigationShell,
+      ) {
         return NavigationContext(
           navigationShell: navigationShell,
           child: navigationShell,
@@ -76,15 +79,53 @@ final _singleRoutes = [
 ];
 
 final _doubleRoutes = [
-  GoRoute(
-    path: '/',
-    pageBuilder: (context, state) {
-      return NoTransitionPage(
-        child: DoubleLayout(NavigationContext.of(context), const SchedulePage(),
-            const PriorityPage()),
-      );
-    },
-  ),
+  StatefulShellRoute.indexedStack(
+      builder: (
+        BuildContext context,
+        GoRouterState state,
+        StatefulNavigationShell navigationShell,
+      ) {
+        return NavigationContext(
+          navigationShell: navigationShell,
+          child: navigationShell,
+        );
+      },
+      branches: <StatefulShellBranch>[
+        StatefulShellBranch(
+          // navigatorKey: _sectionANavigatorKey,
+          routes: <RouteBase>[
+            GoRoute(
+              path: '/priorities',
+              pageBuilder: (context, state) {
+                return NoTransitionPage(
+                  child: DoubleLayout(
+                    NavigationContext.of(context),
+                    const PriorityPage(),
+                    const Text("ContextPage"),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          // navigatorKey: _sectionANavigatorKey,
+          routes: <RouteBase>[
+            GoRoute(
+              path: '/',
+              pageBuilder: (context, state) {
+                return NoTransitionPage(
+                  child: DoubleLayout(
+                    NavigationContext.of(context),
+                    const SchedulePage(),
+                    const EventPage(),
+                  ),
+                );
+              },
+            ),
+          ],
+        )
+      ])
 ];
 
 final _tripleRoutes = [
@@ -149,7 +190,6 @@ GoRouter getRouter(BuildContext context) {
         return null;
       },
     );
-    print('Layout changed to $layout');
   }
   return _layout!;
 }
