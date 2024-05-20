@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import 'package:macos_ui/macos_ui.dart';
+
 class MacLayout extends StatefulWidget {
   const MacLayout(this.drawer, this.primary, this.secondary, {super.key});
 
@@ -21,6 +23,23 @@ class MacLayoutState extends State<MacLayout> {
 
   @override
   Widget build(BuildContext context) {
-    return const Text('Mac Layout');
+    return MacosWindow(
+      sidebar: Sidebar(
+        minWidth: 200,
+        builder: (context, scrollController) {
+          return widget.drawer;
+        },
+      ),
+      endSidebar: Sidebar(
+        startWidth: 200,
+        minWidth: 200,
+        maxWidth: 300,
+        shownByDefault: true,
+        builder: (context, _) {
+          return widget.secondary;
+        },
+      ),
+      child: widget.primary,
+    );
   }
 }
