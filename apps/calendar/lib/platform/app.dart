@@ -22,19 +22,19 @@ class App extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final router = getRouter(context);
-    final app = switch (style) {
-      Style.mac => MacApp(router),
-      Style.ios => const Text("TODO"),
-      Style.material => MaterialApp(router),
-      Style.windows => const Text("TODO"),
-    };
     return BlocProvider<UserBloc>(
-        create: (_) => UserBloc(),
-        child: BlocListener<UserBloc, UserState>(
-          listener: (context, state) {
-            router.refresh();
-          },
-          child: app,
-        ));
+      create: (_) => UserBloc(),
+      child: BlocListener<UserBloc, UserState>(
+        listener: (context, state) {
+          router.refresh();
+        },
+        child: switch (style) {
+          Style.mac => MacApp(router),
+          Style.ios => const Text("TODO"),
+          Style.material => MaterialApp(router),
+          Style.windows => const Text("TODO"),
+        },
+      ),
+    );
   }
 }

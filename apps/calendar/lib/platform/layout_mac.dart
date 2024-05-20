@@ -1,14 +1,16 @@
 import 'package:flutter/widgets.dart';
 
 class MacLayout extends StatefulWidget {
-  const MacLayout(this.panels, {super.key});
+  const MacLayout(this.drawer, this.primary, this.secondary, {super.key});
 
   @override
   State<MacLayout> createState() {
     return MacLayoutState();
   }
 
-  final List<Widget> panels;
+  final Widget primary;
+  final Widget secondary;
+  final Widget drawer;
 }
 
 class MacLayoutState extends State<MacLayout> {

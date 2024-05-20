@@ -1,27 +1,44 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
+import 'package:go_router/go_router.dart';
 
-import 'package:plot/page/account.dart';
-import 'package:plot/page/now.dart';
-import 'package:plot/page/schedule.dart';
 import 'layout.dart';
 
 class MaterialLayout extends StatefulWidget {
+  static const singleBreakpoint = WidthPlatformBreakpoint(end: 600);
+  static const doubleBreakpoint = WidthPlatformBreakpoint(begin: 600, end: 840);
+  static const tripleBreakpoint = WidthPlatformBreakpoint(begin: 840);
+  static const navBreakpoint = WidthPlatformBreakpoint(end: 840);
+  static const allBreakpoints = WidthPlatformBreakpoint();
+  static const secondaryBreakpoint = WidthPlatformBreakpoint(begin: 600);
+
   static PanelLayout getLayout(BuildContext context) =>
-      Breakpoints.small.isActive(context)
+      singleBreakpoint.isActive(context)
           ? PanelLayout.single
-          : Breakpoints.medium.isActive(context)
+          : doubleBreakpoint.isActive(context)
               ? PanelLayout.double
               : PanelLayout.triple;
 
-  const MaterialLayout(this.panels, {super.key});
+  const MaterialLayout(
+      {required this.primary,
+      this.secondary,
+      this.drawer,
+      this.navigationShell,
+      super.key});
 
   @override
   State<MaterialLayout> createState() {
     return MaterialLayoutState();
   }
 
-  final List<Widget> panels;
+  // Displayed at all breakpoints
+  final Widget primary;
+  // Displayed at double and triple breakpoints
+  final Widget? secondary;
+  // Displayed at triple breakpoints
+  final Widget? drawer;
+  // Displayed at single and double breakpoints
+  final StatefulNavigationShell? navigationShell;
 }
 
 class MaterialLayoutState extends State<MaterialLayout>
@@ -38,58 +55,27 @@ class MaterialLayoutState extends State<MaterialLayout>
   @override
   Widget build(BuildContext context) {
     return AdaptiveLayout(
+      key: const Key('Global Layout'),
       body: SlotLayout(
         config: <Breakpoint, SlotLayoutConfig>{
-          Breakpoints.small: SlotLayout.from(
-            key: const Key('Body Small'),
-            builder: (_) => Scaffold(
-                body: TabBarView(
-              controller: _tabController,
-              children: [
-                widget.panels[0],
-                const NowPage(),
-                const SchedulePage(),
-                const AccountPage(),
-              ],
-            )),
+          MaterialLayout.allBreakpoints: SlotLayout.from(
+            key: const Key('Primary'),
+            builder: (_) => widget.primary,
           ),
-          Breakpoints.medium: SlotLayout.from(
-            key: const Key('Body Medium'),
-            builder: (_) => Scaffold(
-                body: TabBarView(
-              controller: _tabController,
-              children: [
-                Expanded(
-                  child: widget.panels[0],
-                ),
-                Expanded(
-                  child: widget.panels[1],
-                ),
-              ],
-            )),
+        },
+      ),
+      secondaryBody: SlotLayout(
+        config: <Breakpoint, SlotLayoutConfig>{
+          MaterialLayout.secondaryBreakpoint: SlotLayout.from(
+            key: const Key('Secondary'),
+            builder: (_) => widget.secondary!,
           ),
-          Breakpoints.large: SlotLayout.from(
-            key: const Key('Body Large'),
-            builder: (_) => Row(
-              children: [
-                Expanded(
-                  child: widget.panels[0],
-                ),
-                Expanded(
-                  child: widget.panels[1],
-                ),
-                Expanded(
-                  child: widget.panels[2],
-                ),
-              ],
-            ),
-          )
         },
       ),
       bottomNavigation: SlotLayout(
         config: <Breakpoint, SlotLayoutConfig>{
-          Breakpoints.small: SlotLayout.from(
-            key: const Key('Bottom Navigation Small'),
+          MaterialLayout.navBreakpoint: SlotLayout.from(
+            key: const Key('Bottom Navigation'),
             inAnimation: AdaptiveScaffold.bottomToTop,
             outAnimation: AdaptiveScaffold.topToBottom,
             builder: (_) => AdaptiveScaffold.standardBottomNavigationBar(

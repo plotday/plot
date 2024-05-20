@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:go_router/go_router.dart';
 
 import 'style.dart';
 import 'layout_material.dart';
@@ -10,7 +11,7 @@ enum PanelLayout {
   triple,
 }
 
-class Layout extends StatelessWidget {
+sealed class Layout extends StatelessWidget {
   static PanelLayout getLayout(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     return switch (style) {
@@ -20,26 +21,75 @@ class Layout extends StatelessWidget {
     };
   }
 
-  const Layout(this.panels, {super.key});
+  const Layout({super.key});
+}
+
+final class SingleLayout extends Layout {
+  const SingleLayout(this.navigationShell, this.page, {super.key});
 
   @override
   Widget build(BuildContext context) {
-    assert(panels.isNotEmpty);
     switch (style) {
-      case Style.mac:
-        assert(panels.length == 3);
-        return MacLayout(panels);
-      case Style.ios:
-        assert(panels.length <= 2);
-        return const Text("TODO");
       case Style.material:
-        assert(panels.length <= 3);
-        return MaterialLayout(panels);
-      case Style.windows:
-        assert(panels.length == 3);
-        return const Text("TODO");
+        return MaterialLayout(
+          primary: page,
+          navigationShell: navigationShell,
+          key: const Key('MaterialLayout'),
+        );
+      default:
+        throw UnsupportedError("SingleLayout not supported for $style");
     }
   }
 
-  final List<Widget> panels;
+  final Widget page;
+  final StatefulNavigationShell navigationShell;
+}
+
+final class DoubleLayout extends Layout {
+  const DoubleLayout(this.navigationShell, this.primary, this.secondary,
+      {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    switch (style) {
+      case Style.material:
+        return MaterialLayout(
+          primary: primary,
+          secondary: secondary,
+          navigationShell: navigationShell,
+          key: const Key('MaterialLayout'),
+        );
+      default:
+        throw UnsupportedError("DoubleLayout not supported for $style");
+    }
+  }
+
+  final Widget primary;
+  final Widget secondary;
+  final StatefulNavigationShell navigationShell;
+}
+
+final class TripleLayout extends Layout {
+  const TripleLayout(this.drawer, this.primary, this.secondary, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    switch (style) {
+      case Style.mac:
+        return MacLayout(drawer, primary, secondary);
+      case Style.material:
+        return MaterialLayout(
+          primary: primary,
+          secondary: secondary,
+          drawer: drawer,
+          key: const Key('MaterialLayout'),
+        );
+      default:
+        throw UnsupportedError("TripleLayout not supported for $style");
+    }
+  }
+
+  final Widget primary;
+  final Widget secondary;
+  final Widget drawer;
 }
