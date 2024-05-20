@@ -40,22 +40,38 @@ final _singleRoutes = [
         );
       },
       branches: <StatefulShellBranch>[
-        // The route branch for the first tab of the bottom navigation bar.
         StatefulShellBranch(
-            // navigatorKey: _sectionANavigatorKey,
-            routes: <RouteBase>[
-              GoRoute(
-                path: '/',
-                pageBuilder: (context, state) {
-                  return NoTransitionPage(
-                    child: SingleLayout(
-                      NavigationContext.of(context),
-                      const SchedulePage(),
-                    ),
-                  );
-                },
-              ),
-            ])
+          // navigatorKey: _sectionANavigatorKey,
+          routes: <RouteBase>[
+            GoRoute(
+              path: '/priorities',
+              pageBuilder: (context, state) {
+                return NoTransitionPage(
+                  child: SingleLayout(
+                    NavigationContext.of(context),
+                    const PriorityPage(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          // navigatorKey: _sectionANavigatorKey,
+          routes: <RouteBase>[
+            GoRoute(
+              path: '/',
+              pageBuilder: (context, state) {
+                return NoTransitionPage(
+                  child: SingleLayout(
+                    NavigationContext.of(context),
+                    const SchedulePage(),
+                  ),
+                );
+              },
+            ),
+          ],
+        )
       ])
 ];
 

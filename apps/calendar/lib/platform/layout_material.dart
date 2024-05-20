@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'layout.dart';
 
-class MaterialLayout extends StatefulWidget {
+class MaterialLayout extends StatelessWidget {
   static const singleBreakpoint = WidthPlatformBreakpoint(end: 600);
   static const doubleBreakpoint = WidthPlatformBreakpoint(begin: 600, end: 840);
   static const tripleBreakpoint = WidthPlatformBreakpoint(begin: 840);
@@ -26,11 +26,6 @@ class MaterialLayout extends StatefulWidget {
       this.navigationShell,
       super.key});
 
-  @override
-  State<MaterialLayout> createState() {
-    return MaterialLayoutState();
-  }
-
   // Displayed at all breakpoints
   final Widget primary;
   // Displayed at double and triple breakpoints
@@ -39,18 +34,6 @@ class MaterialLayout extends StatefulWidget {
   final Widget? drawer;
   // Displayed at single and double breakpoints
   final StatefulNavigationShell? navigationShell;
-}
-
-class MaterialLayoutState extends State<MaterialLayout>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  int selectedNavigation = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 4, vsync: this, initialIndex: 1);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,7 +43,7 @@ class MaterialLayoutState extends State<MaterialLayout>
         config: <Breakpoint, SlotLayoutConfig>{
           MaterialLayout.allBreakpoints: SlotLayout.from(
             key: const Key('Primary'),
-            builder: (_) => widget.primary,
+            builder: (_) => primary,
           ),
         },
       ),
@@ -68,7 +51,7 @@ class MaterialLayoutState extends State<MaterialLayout>
         config: <Breakpoint, SlotLayoutConfig>{
           MaterialLayout.secondaryBreakpoint: SlotLayout.from(
             key: const Key('Secondary'),
-            builder: (_) => widget.secondary!,
+            builder: (_) => secondary!,
           ),
         },
       ),
@@ -84,24 +67,22 @@ class MaterialLayoutState extends State<MaterialLayout>
                   icon: Icon(Icons.crisis_alert),
                   label: 'Priorities',
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.schedule),
-                  label: 'Now',
-                ),
+                // NavigationDestination(
+                //   icon: Icon(Icons.schedule),
+                //   label: 'Now',
+                // ),
                 NavigationDestination(
                   icon: Icon(Icons.calendar_today),
                   label: 'Schedule',
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.settings),
-                  label: 'Settings',
-                ),
+                // NavigationDestination(
+                //   icon: Icon(Icons.settings),
+                //   label: 'Settings',
+                // ),
               ],
-              currentIndex: _tabController.index,
+              currentIndex: navigationShell!.currentIndex,
               onDestinationSelected: (int index) {
-                setState(() {
-                  _tabController.animateTo(index);
-                });
+                navigationShell!.goBranch(index);
               },
             ),
           )
