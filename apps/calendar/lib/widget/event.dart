@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -30,58 +30,17 @@ class EventWidget extends StatelessWidget {
             ),
             BlocBuilder<PriorityBloc, PriorityState>(
               builder: (context, prioritiesState) => Expanded(
-                child: MenuAnchor(
-                  builder: (BuildContext context, MenuController controller,
-                          Widget? child) =>
-                      InkWell(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          event.context?.name ?? 'Open',
-                        ),
-                        if (event.name != null)
-                          Text(
-                            event.name!,
-                            style: const TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                      ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event.context?.name ?? 'Open',
                     ),
-                    onTap: () {
-                      if (controller.isOpen) {
-                        controller.close();
-                      } else {
-                        controller.open();
-                      }
-                    },
-                  ),
-                  menuChildren: [
-                    if (event.id != null &&
-                        event.at.end.isAfter(DateTime.now()))
-                      MenuItemButton(
-                        leadingIcon: const Icon(Icons.event_busy),
-                        onPressed: () {
-                          event
-                              .copyWith(
-                                response: EventResponse.declined,
-                              )
-                              .save();
-                        },
-                        child: const Text('Release time'),
+                    if (event.name != null)
+                      Text(
+                        event.name!,
+                        style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
-                    if (prioritiesState is PriorityLoaded)
-                      ...prioritiesState.priorities.map(
-                        (priority) => MenuItemButton(
-                          onPressed: () {
-                            event
-                                .copyWith(
-                                  context: priority.context,
-                                )
-                                .save();
-                          },
-                          child: Text(priority.context?.name ?? 'Other'),
-                        ),
-                      )
                   ],
                 ),
               ),
@@ -99,3 +58,60 @@ class EventWidget extends StatelessWidget {
     );
   }
 }
+
+// builder: (context, prioritiesState) => Expanded(
+//   child: MenuAnchor(
+//     builder: (BuildContext context, MenuController controller,
+//             Widget? child) =>
+//         InkWell(
+//       child: Column(
+//         crossAxisAlignment: CrossAxisAlignment.start,
+//         children: [
+//           Text(
+//             event.context?.name ?? 'Open',
+//           ),
+//           if (event.name != null)
+//             Text(
+//               event.name!,
+//               style: const TextStyle(fontWeight: FontWeight.w500),
+//             ),
+//         ],
+//       ),
+//       onTap: () {
+//         if (controller.isOpen) {
+//           controller.close();
+//         } else {
+//           controller.open();
+//         }
+//       },
+//     ),
+//     menuChildren: [
+//       if (event.id != null &&
+//           event.at.end.isAfter(DateTime.now()))
+//         MenuItemButton(
+//           leadingIcon: const Icon(Icons.event_busy),
+//           onPressed: () {
+//             event
+//                 .copyWith(
+//                   response: EventResponse.declined,
+//                 )
+//                 .save();
+//           },
+//           child: const Text('Release time'),
+//         ),
+//       if (prioritiesState is PriorityLoaded)
+//         ...prioritiesState.priorities.map(
+//           (priority) => MenuItemButton(
+//             onPressed: () {
+//               event
+//                   .copyWith(
+//                     context: priority.context,
+//                   )
+//                   .save();
+//             },
+//             child: Text(priority.context?.name ?? 'Other'),
+//           ),
+//         )
+//     ],
+//   ),
+// ),
