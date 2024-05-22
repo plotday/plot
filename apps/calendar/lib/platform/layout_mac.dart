@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
-
 import 'package:macos_ui/macos_ui.dart';
+
+import 'scroll_context.dart';
 
 class MacLayout extends StatefulWidget {
   const MacLayout(this.drawer, this.primary, this.secondary, {super.key});
@@ -27,7 +28,10 @@ class MacLayoutState extends State<MacLayout> {
       sidebar: Sidebar(
         minWidth: 200,
         builder: (context, scrollController) {
-          return widget.drawer;
+          return ScrollControllerContext(
+            controller: scrollController,
+            child: widget.drawer,
+          );
         },
       ),
       endSidebar: Sidebar(

@@ -7,10 +7,14 @@ typedef ItemBuilder = Widget Function(BuildContext context, int index);
 
 class BidirectionalList extends StatefulWidget {
   const BidirectionalList(
-      {required this.itemBuilder, required this.onFetch, super.key});
+      {required this.itemBuilder,
+      required this.onFetch,
+      this.scrollController,
+      super.key});
 
   final ItemBuilder itemBuilder;
   final BidirectionalFetcher onFetch;
+  final ScrollController? scrollController;
 
   @override
   State<BidirectionalList> createState() => BidirectionalListState();
@@ -28,6 +32,7 @@ class BidirectionalListState extends State<BidirectionalList> {
   Widget build(BuildContext context) {
     return CustomScrollView(
       center: _centerKey,
+      controller: widget.scrollController,
       slivers: [
         SliverInfiniteList(
           itemCount: _reverseIndex * -1 - 1,
