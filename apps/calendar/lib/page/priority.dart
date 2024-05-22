@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
@@ -7,6 +8,8 @@ import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/model/priority.dart';
 import 'package:plot/widget/priority.dart';
+import 'package:plot/platform/scaffold.dart';
+import 'package:plot/platform/spinner.dart';
 
 class WeekNavigatorWidget extends StatelessWidget {
   const WeekNavigatorWidget({super.key});
@@ -15,14 +18,14 @@ class WeekNavigatorWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final week = context.watch<PriorityBloc>().state.week;
     return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-      IconButton(
-          icon: const Icon(Icons.chevron_left),
+      material.IconButton(
+          icon: const Icon(material.Icons.chevron_left),
           onPressed: () {
             context.read<PriorityBloc>().changeWeek(week.previous());
           }),
       Text(week.format()),
-      IconButton(
-          icon: const Icon(Icons.chevron_right),
+      material.IconButton(
+          icon: const Icon(material.Icons.chevron_right),
           onPressed: () {
             context.read<PriorityBloc>().changeWeek(week.next());
           }),
@@ -37,17 +40,17 @@ class PriorityPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, prioritiesState) => Scaffold(
-        appBar: AppBar(title: const WeekNavigatorWidget()),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () {
-            context.push('/new');
-          },
-          child: const Icon(Icons.add),
-        ),
+        // appBar: AppBar(title: const WeekNavigatorWidget()),
+        // floatingActionButton: material.FloatingActionButton(
+        //   onPressed: () {
+        //     context.push('/new');
+        //   },
+        //   child: const Icon(material.Icons.add),
+        // ),
         body: Builder(builder: (BuildContext context) {
           switch (prioritiesState) {
             case PriorityLoading _:
-              return const CircularProgressIndicator();
+              return const Spinner();
             case PriorityLoaded _:
               return CachedReorderableListView(
                 onReorder: (int oldIndex, int newIndex) async {
