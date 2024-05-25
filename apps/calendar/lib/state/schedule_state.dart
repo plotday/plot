@@ -27,23 +27,24 @@ class EventList {
 final class ScheduleState extends Equatable {
   ScheduleState({
     Date? anchor,
+    this.selected,
   })  : anchor = anchor ?? Date.today(),
         _sequence = 1;
 
-  const ScheduleState._int(
-    this.anchor,
-    this._sequence,
-  );
+  const ScheduleState._int(this._sequence,
+      {required this.anchor, this.selected});
 
-  ScheduleState copyWith({Date? anchor}) {
+  ScheduleState copyWith({Date? anchor, ScheduledEvent? selected}) {
     return ScheduleState._int(
-      anchor ?? this.anchor,
       _sequence + 1,
+      anchor: anchor ?? this.anchor,
+      selected: selected,
     );
   }
 
   final Date anchor;
   final int _sequence;
+  final ScheduledEvent? selected;
 
   @override
   List<Object> get props => [_sequence];

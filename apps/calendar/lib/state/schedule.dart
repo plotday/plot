@@ -15,6 +15,10 @@ class ScheduleBloc extends Cubit<ScheduleState> {
     });
   }
 
+  void setEvent(ScheduledEvent? event) {
+    emit(state.copyWith(selected: event));
+  }
+
   @override
   Future<void> close() async {
     _subscription?.cancel();

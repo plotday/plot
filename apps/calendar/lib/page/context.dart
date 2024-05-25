@@ -1,7 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 
 import 'package:plot/widget/cached_reorderable_list_view.dart';
 import 'package:plot/state/priority.dart';
@@ -11,30 +9,8 @@ import 'package:plot/widget/priority.dart';
 import 'package:plot/platform/scaffold.dart';
 import 'package:plot/platform/spinner.dart';
 
-class WeekNavigatorWidget extends StatelessWidget {
-  const WeekNavigatorWidget({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final week = context.watch<PriorityBloc>().state.week;
-    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-      material.IconButton(
-          icon: const Icon(material.Icons.chevron_left),
-          onPressed: () {
-            context.read<PriorityBloc>().setWeek(week.previous());
-          }),
-      Text(week.format()),
-      material.IconButton(
-          icon: const Icon(material.Icons.chevron_right),
-          onPressed: () {
-            context.read<PriorityBloc>().setWeek(week.next());
-          }),
-    ]);
-  }
-}
-
-class PriorityPage extends StatelessWidget {
-  const PriorityPage({super.key});
+class ContextPage extends StatelessWidget {
+  const ContextPage({super.key});
 
   @override
   Widget build(BuildContext context) {

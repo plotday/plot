@@ -44,7 +44,7 @@ class _AuthButtonState extends State<AuthButton> {
   }
 
   void _initGoogle() {
-    late final String? clientId;
+    late final String clientId;
     String? serverClientId;
     if (kIsWeb) {
       clientId = Env.googleClientId;
@@ -57,6 +57,8 @@ class _AuthButtonState extends State<AuthButton> {
     } else {
       clientId = Env.googleClientId;
     }
+    print(
+        "HERE! ${Env.googleAndroidClientId}, $clientId, ${Env.googleClientId}");
     _googleSignIn = GoogleSignIn(
       clientId: clientId,
       serverClientId: serverClientId,
@@ -105,7 +107,7 @@ class _AuthButtonState extends State<AuthButton> {
     }
 
     const callbackUrlScheme = 'plot-auth';
-    const callbackUrl = kIsWeb ? Env.authCallbackUrl : '$callbackUrlScheme:/';
+    final callbackUrl = kIsWeb ? Env.authCallbackUrl : '$callbackUrlScheme:/';
 
     final url = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
       'response_type': 'code',

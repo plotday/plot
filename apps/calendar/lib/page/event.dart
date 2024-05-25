@@ -17,6 +17,7 @@ class EventPage extends StatelessWidget {
       return Column(children: [
         const Text('Event Page'),
         if (event.name != null) Text(event.name!),
+        Text(event.at.start.toDate().format()),
         Text(event.at.start.toTimeOfDay().format(context)),
         Text(event.at.end.toTimeOfDay().format(context)),
       ]);

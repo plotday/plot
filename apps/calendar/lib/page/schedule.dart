@@ -12,9 +12,11 @@ class SchedulePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: BlocProvider(
-          create: (context) => ScheduleBloc(),
-          child: ScheduleWidget(
-              scrollController: ScrollControllerContext.of(context))),
+        create: (context) => ScheduleBloc(),
+        child: ScheduleWidget(
+          scrollController: ScrollControllerContext.of(context),
+        ),
+      ),
     );
   }
 }

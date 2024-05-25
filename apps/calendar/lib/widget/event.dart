@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:plot/widget/time.dart';
 import 'package:plot/model/schedule.dart';
@@ -17,42 +18,50 @@ class EventWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
-      builder: (context, scheduleState) => Padding(
-        padding: const EdgeInsetsDirectional.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 70,
-              padding: const EdgeInsets.only(right: 8),
-              alignment: Alignment.centerRight,
-              child: TimeWidget(time: event.at.start),
-            ),
-            BlocBuilder<PriorityBloc, PriorityState>(
-              builder: (context, prioritiesState) => Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      event.context?.name ?? 'Open',
-                    ),
-                    if (event.name != null)
+      builder: (context, scheduleState) => GestureDetector(
+        onTap: () {
+          context.goNamed(
+            "event",
+            pathParameters: {"id": event.id.toString()},
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsetsDirectional.symmetric(vertical: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 70,
+                padding: const EdgeInsets.only(right: 8),
+                alignment: Alignment.centerRight,
+                child: TimeWidget(time: event.at.start),
+              ),
+              BlocBuilder<PriorityBloc, PriorityState>(
+                builder: (context, prioritiesState) => Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        event.name!,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
+                        event.context?.name ?? 'Open',
                       ),
-                  ],
+                      if (event.name != null)
+                        Text(
+                          event.name!,
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            Container(
-                width: 70,
-                padding: const EdgeInsets.only(left: 8, right: 4),
-                alignment: Alignment.centerRight,
-                child: DurationWidget(
-                  duration: event.at.duration,
-                )),
-          ],
+              Container(
+                  width: 70,
+                  padding: const EdgeInsets.only(left: 8, right: 4),
+                  alignment: Alignment.centerRight,
+                  child: DurationWidget(
+                    duration: event.at.duration,
+                  )),
+            ],
+          ),
         ),
       ),
     );

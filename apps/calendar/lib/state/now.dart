@@ -9,7 +9,6 @@ import 'package:plot/model/session.dart';
 import 'package:plot/util/clock.dart';
 import 'package:plot/util/time.dart';
 
-part 'now_event.dart';
 part 'now_state.dart';
 
 class NowBloc extends Cubit<NowState> {

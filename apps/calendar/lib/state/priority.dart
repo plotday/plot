@@ -9,16 +9,16 @@ part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
   PriorityBloc() : super(PriorityLoading(Week.current())) {
-    changeWeek(Week.current());
+    setWeek(Week.current());
   }
 
-  void changeWeek(Week week) async {
+  void setWeek(Week week) async {
     emit(PriorityLoading(week));
     final budgets = await Priority.list(week);
     emit(PriorityLoaded(week, budgets));
   }
 
-  void changePriority(Priority priority) async {
+  void updatePriority(Priority priority) async {
     await priority.save();
     final newList = await Priority.list(state.week);
     emit(PriorityLoaded(state.week, newList));

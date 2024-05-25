@@ -1,10 +1,10 @@
 import 'package:flutter/widgets.dart';
 
 class ScrollControllerContext extends InheritedWidget {
-  static ScrollController of(BuildContext context) {
+  static ScrollController? of(BuildContext context) {
     return context
-        .dependOnInheritedWidgetOfExactType<ScrollControllerContext>()!
-        .controller;
+        .dependOnInheritedWidgetOfExactType<ScrollControllerContext>()
+        ?.controller;
   }
 
   const ScrollControllerContext({

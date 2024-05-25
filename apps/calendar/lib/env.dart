@@ -1,18 +1,16 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 abstract class Env {
-  static const String sentryDsn = String.fromEnvironment('SENTRY_DSN');
+  static final String sentryDsn = dotenv.env['SENTRY_DSN']!;
 
-  static const String supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-  static const String supabaseAnonKey =
-      String.fromEnvironment('SUPABASE_ANON_KEY');
+  static final String supabaseUrl = dotenv.env['SUPABASE_URL']!;
+  static final String supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
 
-  static const String apiRoot = String.fromEnvironment('API_ROOT');
-  static const String authCallbackUrl =
-      String.fromEnvironment('AUTH_CALLBACK_URL');
+  static final String apiRoot = dotenv.env['API_ROOT']!;
+  static final String authCallbackUrl = dotenv.env['AUTH_CALLBACK_URL']!;
 
-  static const String googleClientId =
-      String.fromEnvironment('GOOGLE_CLIENT_ID');
-  static const String googleIosClientId =
-      String.fromEnvironment('GOOGLE_IOS_CLIENT_ID');
-  static const String googleAndroidClientId =
-      String.fromEnvironment('GOOGLE_ANDROID_CLIENT_ID');
+  static final String googleClientId = dotenv.env['GOOGLE_CLIENT_ID']!;
+  static final String googleIosClientId = dotenv.env['GOOGLE_IOS_CLIENT_ID']!;
+  static final String googleAndroidClientId =
+      dotenv.env['GOOGLE_ANDROID_CLIENT_ID']!;
 }
