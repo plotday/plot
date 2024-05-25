@@ -82,6 +82,7 @@ class MaterialLayout extends StatelessWidget {
               ],
               currentIndex: navigationShell!.currentIndex,
               onDestinationSelected: (int index) {
+                if (navigationShell == null) return;
                 navigationShell!.goBranch(index);
               },
             ),

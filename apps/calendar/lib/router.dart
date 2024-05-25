@@ -137,59 +137,60 @@ final _tripleRoutes = [
       );
     },
   ),
+  GoRoute(
+    name: 'event',
+    path: '/e/:id',
+    pageBuilder: (context, state) {
+      return const NoTransitionPage(
+        child: TripleLayout(SchedulePage(), PriorityPage(), EventPage()),
+      );
+    },
+  ),
 ];
 
-PanelLayout? _lastLayout;
-GoRouter? _layout;
+RoutingConfig getRoutingConfig(PanelLayout layout) {
+  return RoutingConfig(
+    routes: [
+      ShellRoute(
+        builder: (context, state, child) {
+          return RootProvider(
+            key: const Key('RootProvider'),
+            child: child,
+          );
+        },
+        routes: switch (layout) {
+          PanelLayout.single => _singleRoutes,
+          PanelLayout.double => _doubleRoutes,
+          PanelLayout.triple => _tripleRoutes,
+        },
+      ),
+      GoRoute(
+        path: '/login',
+        pageBuilder: (context, state) {
+          return const NoTransitionPage(
+            child: SignInPage(),
+          );
+        },
+      ),
+    ],
+    redirect: (BuildContext context, GoRouterState state) async {
+      // Using `of` method creates a dependency of StreamAuthScope. It will
+      // cause go_router to reparse current route if StreamAuth has new sign-in
+      // information.
+      final bool loggedIn = context.read<UserBloc>().state is UserSignedIn;
+      final bool loggingIn = state.matchedLocation == '/login';
+      if (!loggedIn) {
+        return '/login';
+      }
 
-GoRouter getRouter(BuildContext context) {
-  final layout = Layout.getLayout(context);
-  if (_lastLayout != layout) {
-    _lastLayout = layout;
-    _layout = GoRouter(
-      routes: [
-        ShellRoute(
-          builder: (context, state, child) {
-            return RootProvider(
-              key: const Key('RootProvider'),
-              child: child,
-            );
-          },
-          routes: switch (layout) {
-            PanelLayout.single => _singleRoutes,
-            PanelLayout.double => _doubleRoutes,
-            PanelLayout.triple => _tripleRoutes,
-          },
-        ),
-        GoRoute(
-          path: '/login',
-          pageBuilder: (context, state) {
-            return const NoTransitionPage(
-              child: SignInPage(),
-            );
-          },
-        ),
-      ],
-      redirect: (BuildContext context, GoRouterState state) async {
-        // Using `of` method creates a dependency of StreamAuthScope. It will
-        // cause go_router to reparse current route if StreamAuth has new sign-in
-        // information.
-        final bool loggedIn = context.read<UserBloc>().state is UserSignedIn;
-        final bool loggingIn = state.matchedLocation == '/login';
-        if (!loggedIn) {
-          return '/login';
-        }
+      // if the user is logged in but still on the login page, send them to
+      // the home page
+      if (loggingIn) {
+        return '/';
+      }
 
-        // if the user is logged in but still on the login page, send them to
-        // the home page
-        if (loggingIn) {
-          return '/';
-        }
-
-        // no need to redirect at all
-        return null;
-      },
-    );
-  }
-  return _layout!;
+      // no need to redirect at all
+      return null;
+    },
+  );
 }
