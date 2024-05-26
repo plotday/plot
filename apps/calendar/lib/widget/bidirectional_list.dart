@@ -66,6 +66,8 @@ class BidirectionalListState extends State<BidirectionalList> {
             });
             try {
               final newIndex = await widget.onFetch(_index, false);
+              assert(
+                  newIndex != _index, "onFetch must fetch at least one item");
               setState(() {
                 _index = newIndex;
               });

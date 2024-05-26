@@ -186,8 +186,10 @@ class ScheduledDay extends Equatable {
       fetching = _fetch(start, direction);
       _fetchState[direction]!.fetching = fetching;
     }
-    final ret = await fetching;
-    return ret;
+    final next = await fetching;
+    _fetchState[direction]!.fetching = null;
+    assert(next != start, "Fetch returned the same date: $start");
+    return next;
   }
 
   static List<ScheduledDay> list(Date start, Date end) {
@@ -237,7 +239,7 @@ class ScheduledDay extends Equatable {
   /* Private */
 
   static Future<Date> _fetch(
-    Date start,
+    final Date start,
     TimeDirection direction,
   ) async {
     var leftovers = _fetchState[direction]!.leftovers[start];
@@ -305,6 +307,8 @@ class ScheduledDay extends Equatable {
                   []));
     }
     _fetchState[direction]!.leftovers[end] = groupedItems[end] ?? [];
+    assert(end != start,
+        "Fetched ${items.length} events over ${groupedItems.length} days");
     return end;
   }
 
