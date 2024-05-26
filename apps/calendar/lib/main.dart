@@ -9,16 +9,16 @@ import 'env.dart';
 import 'platform/app.dart';
 
 Future<void> main() async {
-  await dotenv.load(fileName: ".env");
-  await App.init();
-
-  GoRouter.optionURLReflectsImperativeAPIs = true;
-  usePathUrlStrategy();
   await SentryFlutter.init(
     (options) {
-      options.dsn = Env.sentryDsn;
+      options.dsn =
+          "https://08fa5e400fac463fb57de5e33405db0b@o338620.ingest.sentry.io/4505551857057792";
     },
     appRunner: () async {
+      await dotenv.load(fileName: ".env");
+      await App.init();
+      GoRouter.optionURLReflectsImperativeAPIs = true;
+      usePathUrlStrategy();
       await Supabase.initialize(
         url: Env.supabaseUrl,
         anonKey: Env.supabaseAnonKey,
