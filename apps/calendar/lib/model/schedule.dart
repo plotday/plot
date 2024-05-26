@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:collection/collection.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'package:plot/util/time.dart';
 import 'package:plot/util/api.dart' as api;
@@ -167,8 +168,10 @@ class ScheduledDay extends Equatable {
   }
 
   // Returns the furthest date fetched
-  static Future<Date> fetch(Date start,
-      {TimeDirection direction = TimeDirection.ascending}) async {
+  static Future<Date> fetch(
+    Date start, {
+    TimeDirection direction = TimeDirection.ascending,
+  }) async {
     if (_isExhausted(start)) {
       return start.addDays(30, direction: direction);
     }
@@ -183,7 +186,8 @@ class ScheduledDay extends Equatable {
       fetching = _fetch(start, direction);
       _fetchState[direction]!.fetching = fetching;
     }
-    return await fetching;
+    final ret = await fetching;
+    return ret;
   }
 
   static List<ScheduledDay> list(Date start, Date end) {
@@ -208,10 +212,18 @@ class ScheduledDay extends Equatable {
   }
 
   ScheduledDay(this.date, List<ScheduledEvent> events)
-      : events = _addGaps(date, events);
+      : events = _addGaps(
+            date,
+            events
+                .where((e) => e.at.duration < const Duration(hours: 22))
+                .toList()),
+        allDayEvents = events
+            .where((e) => e.at.duration >= const Duration(hours: 22))
+            .toList();
 
   final Date date;
   final List<ScheduledEvent> events;
+  final List<ScheduledEvent> allDayEvents;
 
   ScheduledDay copyWith(ScheduledEvent event) {
     final list = events.where((e) => e.id != event.id).toList();
@@ -279,13 +291,18 @@ class ScheduledDay extends Equatable {
 
     // Add complete days to the store
     final groupedItems = groupBy(items, (item) => item.at.start.toDate());
-    final end = direction == TimeDirection.ascending
-        ? items.last.at.start.toDate()
-        : items.first.at.start.toDate();
+    final end = items.last.at.start.toDate();
     for (var date = start;
         items.isNotEmpty && date != end;
         date = date.next(direction: direction)) {
-      store.put(date, ScheduledDay(date, groupedItems[date] ?? []));
+      store.put(
+          date,
+          ScheduledDay(
+              date,
+              (direction == TimeDirection.ascending
+                      ? groupedItems[date]
+                      : groupedItems[date]?.reversed.toList()) ??
+                  []));
     }
     _fetchState[direction]!.leftovers[end] = groupedItems[end] ?? [];
     return end;
@@ -315,8 +332,10 @@ class ScheduledDay extends Equatable {
       expanded.add(events[i]);
       if (i + 1 == events.length || events[i].at.end < events[i + 1].at.start) {
         expanded.add(ScheduledEvent(
-          at: DateTimeRange(events[i].at.end,
-              i + 1 == events.length ? end : events[i + 1].at.start),
+          at: DateTimeRange(
+            events[i].at.end,
+            i + 1 == events.length ? end : events[i + 1].at.start,
+          ),
         ));
       }
     }
