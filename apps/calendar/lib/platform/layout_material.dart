@@ -39,6 +39,17 @@ class MaterialLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     return AdaptiveLayout(
       key: const Key('Global Layout'),
+      primaryNavigation: SlotLayout(
+        config: <Breakpoint, SlotLayoutConfig>{
+          MaterialLayout.tripleBreakpoint: SlotLayout.from(
+            key: const Key('Drawer'),
+            builder: (_) => SizedBox(
+              width: 240,
+              child: drawer!,
+            ),
+          ),
+        },
+      ),
       body: SlotLayout(
         config: <Breakpoint, SlotLayoutConfig>{
           MaterialLayout.allBreakpoints: SlotLayout.from(
