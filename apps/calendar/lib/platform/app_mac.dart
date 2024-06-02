@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:macos_ui/macos_ui.dart' as macos;
 
+import 'package:plot/widget/global_menu.dart';
+
 class MacApp extends StatelessWidget {
   static Future<void> init() async {
     await const macos.MacosWindowUtilsConfig().apply();
@@ -12,10 +14,11 @@ class MacApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return macos.MacosApp.router(
+    return GlobalMenu(
+        child: macos.MacosApp.router(
       title: 'Plot',
       debugShowCheckedModeBanner: false,
       routerConfig: router,
-    );
+    ));
   }
 }

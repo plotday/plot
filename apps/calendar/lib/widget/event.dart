@@ -1,10 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:plot/router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:go_router/go_router.dart';
 
 import 'package:plot/widget/time.dart';
-import 'package:plot/model/schedule.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/schedule.dart';
 
@@ -20,10 +19,9 @@ class EventWidget extends StatelessWidget {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, scheduleState) => GestureDetector(
         onTap: () {
-          context.goNamed(
-            "event",
-            pathParameters: {"id": event.id.toString()},
-          );
+          if (event.id != null) {
+            EventRoute(eventId: event.id!).go(context);
+          }
         },
         child: Padding(
           padding: const EdgeInsetsDirectional.symmetric(vertical: 4),

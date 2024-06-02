@@ -6,17 +6,16 @@ import 'package:equatable/equatable.dart';
 import 'package:plot/model/schedule.dart';
 import 'package:plot/util/time.dart';
 
+export 'package:plot/model/schedule.dart';
+
 part 'schedule_state.dart';
 
+// Need to listen to route state, change selected, set error
 class ScheduleBloc extends Cubit<ScheduleState> {
   ScheduleBloc() : super(ScheduleState()) {
     _subscription = ScheduledDay.store.stream().listen((event) {
       emit(state.copyWith());
     });
-  }
-
-  void setEvent(ScheduledEvent? event) {
-    emit(state.copyWith(selected: event));
   }
 
   @override

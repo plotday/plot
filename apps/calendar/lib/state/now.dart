@@ -6,24 +6,35 @@ import 'package:equatable/equatable.dart';
 import 'package:plot/model/context.dart';
 import 'package:plot/model/schedule.dart';
 import 'package:plot/model/session.dart';
+import 'package:plot/state/schedule.dart';
 import 'package:plot/util/clock.dart';
 import 'package:plot/util/time.dart';
 
 part 'now_state.dart';
 
 class NowBloc extends Cubit<NowState> {
-  NowBloc() : super(NowState()) {
+  NowBloc() : super(SelectedEventLoadingState()) {
+    var currentSelected = false;
     _secondsSubscription =
         Clock().seconds.listen((void _) => emit(state.copyWith()));
     _sessionSubscription = Session.store
         .stream()
         .listen((session) => emit(state.copyWith(session: session)));
     _eventSubscription = ScheduledDay.store.stream().listen((_) {
-      emit(state.copyWith(
-        scheduled: ScheduledEvent.current(),
-        next: ScheduledEvent.next(),
-        previous: ScheduledEvent.previous(),
-      ));
+      if (currentSelected) {
+        emit(state.copyWith(
+          scheduled: ScheduledEvent.current(),
+          next: ScheduledEvent.next(),
+          previous: ScheduledEvent.previous(),
+        ));
+      } else {
+        currentSelected = true;
+        emit(SelectedEventState(
+          scheduled: ScheduledEvent.current(),
+          next: ScheduledEvent.next(),
+          previous: ScheduledEvent.previous(),
+        ));
+      }
     });
   }
 
@@ -47,6 +58,24 @@ class NowBloc extends Cubit<NowState> {
         state.session!.copyStopped(),
       session,
     ]);
+  }
+
+  void select(ScheduledEvent event) {
+    emit(SelectedEventState.copy(state, selected: event));
+  }
+
+  Future<ScheduledEvent> selectById(int eventId) async {
+    emit(SelectedEventLoadingState.copy(state));
+    final event = await ScheduledEvent.getOrFetch(eventId);
+    select(event);
+    return event;
+  }
+
+  Future<ScheduledEvent> selectCurrent() async {
+    emit(SelectedEventLoadingState.copy(state));
+    await ScheduledDay.getOrFetchToday();
+    emit(SelectedEventState.copy(state, selected: null));
+    return state.current;
   }
 
   // Future<void> _newActive(Emitter<NowState> emit, Session block) async {

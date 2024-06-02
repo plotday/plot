@@ -30,6 +30,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
   late GoRouter router;
   bool _initialized = false;
   late PanelLayout _lastLayout;
+  late RouteChangeObserver _routeStream;
 
   @override
   void initState() {
@@ -45,10 +46,12 @@ class AppState extends State<App> with WidgetsBindingObserver {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_initialized) return;
+    _routeStream = RouteChangeObserver();
     _lastLayout = _getLayout();
     routingConfig = ValueNotifier<RoutingConfig>(getRoutingConfig(_lastLayout));
     router = GoRouter.routingConfig(
       routingConfig: routingConfig,
+      observers: [_routeStream],
     );
     _initialized = true;
   }
@@ -72,16 +75,19 @@ class AppState extends State<App> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return BlocProvider<UserBloc>(
       create: (_) => UserBloc(),
-      child: BlocListener<UserBloc, UserState>(
-        listener: (context, state) {
-          router.refresh();
-        },
-        child: switch (style) {
-          Style.mac => MacApp(router),
-          Style.ios => const Text("TODO"),
-          Style.material => MaterialApp(router),
-          Style.windows => const Text("TODO"),
-        },
+      child: RouteContext(
+        routeChangeObserver: _routeStream,
+        child: BlocListener<UserBloc, UserState>(
+          listener: (context, state) {
+            router.refresh();
+          },
+          child: switch (style) {
+            Style.mac => MacApp(router),
+            Style.ios => const Text("TODO"),
+            Style.material => MaterialApp(router),
+            Style.windows => const Text("TODO"),
+          },
+        ),
       ),
     );
   }

@@ -1,6 +1,5 @@
 import 'package:equatable/equatable.dart';
 import 'package:collection/collection.dart';
-import 'package:flutter/scheduler.dart';
 
 import 'package:plot/util/time.dart';
 import 'package:plot/util/api.dart' as api;
@@ -10,6 +9,18 @@ import 'model.dart';
 enum EventResponse { accepted, declined, tentative }
 
 class ScheduledEvent extends Model {
+  static final Store<int, ScheduledEvent> store = Store();
+  static const columns = 'id,series,name,at,invitees,context_id,response';
+
+  static Future<ScheduledEvent> fetch(int id) async {
+    final response = await base.from('event_x').select(columns).eq('id', id);
+    return ScheduledEvent.fromJson(response.first);
+  }
+
+  static Future<ScheduledEvent> getOrFetch(int id) async {
+    return store.has(id) ? store.get(id) : await fetch(id);
+  }
+
   static List<ScheduledEvent> current() {
     final all = ScheduledDay.today();
     final now = DateTime.now();
@@ -126,6 +137,7 @@ class ScheduledEvent extends Model {
       );
     } else {
       // TODO Only patch if there are changes
+      store.put(id!, this);
       result = await api.patch(
         "/event/$id",
         body: {
@@ -133,6 +145,7 @@ class ScheduledEvent extends Model {
         },
       );
     }
+    store.put(result['id'] as int, this);
 
     if (context != null &&
         series != null &&
@@ -213,6 +226,11 @@ class ScheduledDay extends Equatable {
     }
   }
 
+  static Future<ScheduledDay> getOrFetchToday() async {
+    await fetch(Date.today());
+    return today();
+  }
+
   ScheduledDay(this.date, List<ScheduledEvent> events)
       : events = _addGaps(
             date,
@@ -253,7 +271,7 @@ class ScheduledDay extends Equatable {
     }
     final response = await base
         .from('event_x')
-        .select(_columns)
+        .select(ScheduledEvent.columns)
         .eq('user_id', base.auth.currentUser!.id)
         .overlaps(
             'at',
@@ -271,17 +289,27 @@ class ScheduledDay extends Equatable {
         return [];
       }
     }).toList();
+    for (final event in items) {
+      ScheduledEvent.store.put(event.id!, event);
+    }
 
     // Merge leftovers, skipping duplicates
     if (leftovers?.isNotEmpty == true) {
       if (items.isEmpty) {
         items = leftovers!;
       } else {
-        items = leftovers!.sublist(
-              0,
-              leftovers.indexWhere((event) => event.id == items.first.id),
-            ) +
-            items;
+        final match =
+            leftovers!.indexWhere((event) => event.id == items.first.id);
+        if (match != -1) {
+          items = leftovers.sublist(
+                0,
+                match,
+              ) +
+              items;
+        } else {
+          print("Could not find match: ${items.first}");
+          print(leftovers);
+        }
       }
     }
     if (items.isEmpty) {
@@ -351,7 +379,6 @@ class ScheduledDay extends Equatable {
     TimeDirection.descending: _FetchState(),
   };
   static const int _pageSize = 50;
-  static const _columns = 'id,series,name,at,invitees,context_id,response';
 }
 
 class _FetchState {

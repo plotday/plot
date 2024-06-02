@@ -26,26 +26,24 @@ class EventList {
 
 final class ScheduleState extends Equatable {
   ScheduleState({
-    Date? anchor,
-    this.selected,
-  })  : anchor = anchor ?? Date.today(),
+    Date? day,
+  })  : day = day ?? Date.today(),
         _sequence = 1;
 
-  const ScheduleState._int(this._sequence,
-      {required this.anchor, this.selected});
+  const ScheduleState._int(this._sequence, {required this.day});
 
-  ScheduleState copyWith({Date? anchor, ScheduledEvent? selected}) {
+  ScheduleState copyWith({Date? day}) {
     return ScheduleState._int(
       _sequence + 1,
-      anchor: anchor ?? this.anchor,
-      selected: selected,
+      day: day ?? this.day,
     );
   }
 
-  final Date anchor;
+  final Date day;
   final int _sequence;
-  final ScheduledEvent? selected;
+
+  Week get week => Week(day);
 
   @override
-  List<Object> get props => [_sequence];
+  List<Object> get props => [day, _sequence];
 }

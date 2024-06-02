@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/router.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/context.dart';
@@ -57,7 +58,9 @@ class RootProviderState extends State<RootProvider> {
         return MultiBlocProvider(
           providers: [
             BlocProvider(create: (_) => PriorityBloc()),
-            BlocProvider(create: (_) => ContextBloc()),
+            BlocProvider(
+                create: (_) =>
+                    ContextBloc(RouteContext.of(context).routeChangeObserver)),
             BlocProvider(create: (_) => NowBloc()),
           ],
           child: widget.child,

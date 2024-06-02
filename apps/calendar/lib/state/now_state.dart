@@ -1,12 +1,19 @@
 part of 'now.dart';
 
-final class NowState extends Equatable {
+sealed class NowState extends Equatable {
   NowState({
     this.session,
     this.scheduled = const [],
     this.next = const [],
     this.previous = const [],
   }) : now = DateTime.now();
+
+  NowState.copy(NowState state)
+      : now = state.now,
+        session = state.session,
+        scheduled = state.scheduled,
+        next = state.next,
+        previous = state.previous;
 
   final DateTime now;
   final Session? session;
@@ -78,8 +85,101 @@ final class NowState extends Equatable {
     List<ScheduledEvent>? scheduled,
     List<ScheduledEvent>? next,
     List<ScheduledEvent>? previous,
+  });
+}
+
+final class SelectedEventState extends NowState {
+  SelectedEventState({
+    super.session,
+    super.scheduled,
+    super.next,
+    super.previous,
+    ScheduledEvent? selected,
+  }) : _selected = selected;
+  SelectedEventState.copy(
+    NowState copy, {
+    ScheduledEvent? selected,
+  })  : _selected = selected,
+        super.copy(copy);
+
+  final ScheduledEvent? _selected;
+
+  ScheduledEvent get selected => _selected ?? current;
+
+  @override
+  SelectedEventState copyWith({
+    ScheduledEvent? selected,
+    Session? session,
+    List<ScheduledEvent>? scheduled,
+    List<ScheduledEvent>? next,
+    List<ScheduledEvent>? previous,
   }) {
-    return NowState(
+    return SelectedEventState(
+      session: session ?? this.session,
+      scheduled: scheduled ?? this.scheduled,
+      next: next ?? this.next,
+      previous: previous ?? this.previous,
+      selected: selected ?? _selected,
+    );
+  }
+
+  @override
+  List<Object?> get props => super.props + [selected];
+}
+
+final class SelectedEventErrorState extends NowState {
+  SelectedEventErrorState({
+    required this.error,
+    super.session,
+    super.scheduled,
+    super.next,
+    super.previous,
+  });
+  SelectedEventErrorState.copy(
+    NowState copy, {
+    required this.error,
+  }) : super.copy(copy);
+
+  final String error;
+
+  @override
+  SelectedEventErrorState copyWith({
+    String? error,
+    Session? session,
+    List<ScheduledEvent>? scheduled,
+    List<ScheduledEvent>? next,
+    List<ScheduledEvent>? previous,
+  }) {
+    return SelectedEventErrorState(
+      session: session ?? this.session,
+      scheduled: scheduled ?? this.scheduled,
+      next: next ?? this.next,
+      previous: previous ?? this.previous,
+      error: error ?? this.error,
+    );
+  }
+
+  @override
+  List<Object?> get props => super.props + [error];
+}
+
+final class SelectedEventLoadingState extends NowState {
+  SelectedEventLoadingState({
+    super.session,
+    super.scheduled,
+    super.next,
+    super.previous,
+  });
+  SelectedEventLoadingState.copy(NowState copy) : super.copy(copy);
+
+  @override
+  SelectedEventLoadingState copyWith({
+    Session? session,
+    List<ScheduledEvent>? scheduled,
+    List<ScheduledEvent>? next,
+    List<ScheduledEvent>? previous,
+  }) {
+    return SelectedEventLoadingState(
       session: session ?? this.session,
       scheduled: scheduled ?? this.scheduled,
       next: next ?? this.next,
