@@ -38,6 +38,18 @@ class EventPageLoaderState extends State<EventPageLoader> {
   @override
   void initState() {
     super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(EventPageLoader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.eventId != oldWidget.eventId) {
+      _load();
+    }
+  }
+
+  void _load() {
     if (widget.eventId == null) {
       _eventLoading = context.read<NowBloc>().selectCurrent();
     } else {

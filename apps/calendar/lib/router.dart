@@ -139,7 +139,11 @@ class EventRoute extends GoRouteData {
   @override
   Page<void> buildPage(BuildContext context, GoRouterState state) {
     return NoTransitionPage(
-      child: EventPageLoader(eventId: eventId),
+      child: TripleLayout(
+        const SchedulePage(),
+        const PriorityPage(),
+        EventPageLoader(eventId: eventId),
+      ),
     );
   }
 }
@@ -242,26 +246,6 @@ final _doubleRoutes = [
       ])
 ];
 
-final _tripleRoutes = [
-  GoRoute(
-    path: '/',
-    pageBuilder: (context, state) {
-      return const NoTransitionPage(
-        child: TripleLayout(SchedulePage(), PriorityPage(), EventPageLoader()),
-      );
-    },
-  ),
-  GoRoute(
-    name: 'event',
-    path: '/e/:id',
-    pageBuilder: (context, state) {
-      return const NoTransitionPage(
-        child: TripleLayout(SchedulePage(), PriorityPage(), EventPageLoader()),
-      );
-    },
-  ),
-];
-
 RoutingConfig getRoutingConfig(PanelLayout layout) {
   return RoutingConfig(
     routes: [
@@ -275,7 +259,7 @@ RoutingConfig getRoutingConfig(PanelLayout layout) {
         routes: switch (layout) {
           PanelLayout.single => _singleRoutes,
           PanelLayout.double => _doubleRoutes,
-          PanelLayout.triple => _tripleRoutes,
+          PanelLayout.triple => $appRoutes,
         },
       ),
       GoRoute(
