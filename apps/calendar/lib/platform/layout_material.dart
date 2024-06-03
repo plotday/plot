@@ -72,31 +72,33 @@ class MaterialLayout extends StatelessWidget {
             key: const Key('Bottom Navigation'),
             inAnimation: AdaptiveScaffold.bottomToTop,
             outAnimation: AdaptiveScaffold.topToBottom,
-            builder: (_) => AdaptiveScaffold.standardBottomNavigationBar(
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.crisis_alert),
-                  label: 'Priorities',
-                ),
-                // NavigationDestination(
-                //   icon: Icon(Icons.schedule),
-                //   label: 'Now',
-                // ),
-                NavigationDestination(
-                  icon: Icon(Icons.calendar_today),
-                  label: 'Schedule',
-                ),
-                // NavigationDestination(
-                //   icon: Icon(Icons.settings),
-                //   label: 'Settings',
-                // ),
-              ],
-              currentIndex: navigationShell!.currentIndex,
-              onDestinationSelected: (int index) {
-                if (navigationShell == null) return;
-                navigationShell!.goBranch(index);
-              },
-            ),
+            builder: navigationShell == null
+                ? null
+                : (_) => AdaptiveScaffold.standardBottomNavigationBar(
+                      destinations: const [
+                        NavigationDestination(
+                          icon: Icon(Icons.calendar_today),
+                          label: 'Schedule',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.crisis_alert),
+                          label: 'Priorities',
+                        ),
+                        // NavigationDestination(
+                        //   icon: Icon(Icons.schedule),
+                        //   label: 'Now',
+                        // ),
+                        // NavigationDestination(
+                        //   icon: Icon(Icons.settings),
+                        //   label: 'Settings',
+                        // ),
+                      ],
+                      currentIndex: navigationShell!.currentIndex,
+                      onDestinationSelected: (int index) {
+                        if (navigationShell == null) return;
+                        navigationShell!.goBranch(index);
+                      },
+                    ),
           )
         },
       ),
