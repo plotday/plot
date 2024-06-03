@@ -58,9 +58,6 @@ class RootProviderState extends State<RootProvider> {
         return MultiBlocProvider(
           providers: [
             BlocProvider(create: (_) => PriorityBloc()),
-            BlocProvider(
-                create: (_) =>
-                    ContextBloc(RouteContext.of(context).routeChangeObserver)),
             BlocProvider(create: (_) => NowBloc()),
           ],
           child: widget.child,
