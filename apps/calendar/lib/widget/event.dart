@@ -29,11 +29,17 @@ class EventWidget extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 70,
-                padding: const EdgeInsets.only(right: 8),
-                alignment: Alignment.centerRight,
-                child: TimeWidget(time: event.at.start),
-              ),
+                  width: 80,
+                  padding: const EdgeInsets.only(right: 8),
+                  alignment: Alignment.centerRight,
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        TimeWidget(time: event.at.start),
+                        DurationWidget(
+                          duration: event.at.duration,
+                        ),
+                      ])),
               BlocBuilder<PriorityBloc, PriorityState>(
                 builder: (context, prioritiesState) => Expanded(
                   child: Column(
@@ -51,13 +57,6 @@ class EventWidget extends StatelessWidget {
                   ),
                 ),
               ),
-              Container(
-                  width: 70,
-                  padding: const EdgeInsets.only(left: 8, right: 4),
-                  alignment: Alignment.centerRight,
-                  child: DurationWidget(
-                    duration: event.at.duration,
-                  )),
             ],
           ),
         ),

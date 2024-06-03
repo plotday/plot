@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/model/schedule.dart';
 import 'package:plot/state/schedule.dart';
 import 'package:plot/widget/bidirectional_list.dart';
 import 'package:plot/widget/day.dart';

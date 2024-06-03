@@ -38,6 +38,48 @@ class DurationWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    double displayValue = (duration.inMinutes / 30).clamp(0.0, 8.0);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: List.generate(displayValue.ceil(), (index) {
+        if (index == 0) {
+          return _buildBlock(displayValue >= 5.0 ? 1.0 : displayValue % 1.0);
+        } else {
+          return _buildBlock(1.0);
+        }
+      }),
+    );
+  }
+
+  Widget _buildBlock(double fillFraction) {
+    return Container(
+      width: 4,
+      height: 4,
+      margin: const EdgeInsets.all(1.0),
+      decoration: const BoxDecoration(
+        color: Colors.transparent,
+      ),
+      child: Align(
+        alignment: Alignment.bottomRight,
+        child: FractionallySizedBox(
+          widthFactor: fillFraction,
+          heightFactor: 1.0,
+          child: Container(
+            color: Colors.accents.first,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class DurationText extends StatelessWidget {
+  const DurationText({required this.duration, super.key});
+
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
     return Text.rich(
       TextSpan(
         children: <TextSpan>[

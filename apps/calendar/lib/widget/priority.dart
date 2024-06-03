@@ -34,7 +34,7 @@ class PriorityWidget extends StatelessWidget {
                         bottom: 2.0), // Add 2px padding at the bottom
                     child: Icon(material.Icons.hourglass_bottom, size: 14),
                   ),
-                  DurationWidget(duration: priority.scheduled),
+                  DurationText(duration: priority.scheduled),
                 ],
               ),
               const SizedBox(width: 8),
@@ -46,7 +46,7 @@ class PriorityWidget extends StatelessWidget {
                         bottom: 2.0), // Add 2px padding at the bottom
                     child: Icon(material.Icons.hourglass_top, size: 14),
                   ),
-                  DurationWidget(duration: priority.budget)
+                  DurationText(duration: priority.budget)
                 ],
               )
               // material.MenuAnchor(
@@ -61,7 +61,7 @@ class PriorityWidget extends StatelessWidget {
               //               bottom: 2.0), // Add 2px padding at the bottom
               //           child: Icon(material.Icons.hourglass_top, size: 14),
               //         ),
-              //         DurationWidget(duration: priority.budget)
+              //         DurationText(duration: priority.budget)
               //       ],
               //     ),
               //     onTap: () {
@@ -81,7 +81,7 @@ class PriorityWidget extends StatelessWidget {
               //         },
               //         child: m == 0
               //             ? const Text('Done')
-              //             : DurationWidget(duration: Duration(minutes: m)),
+              //             : DurationText(duration: Duration(minutes: m)),
               //       ),
               //   ],
               // ),
