@@ -15,14 +15,24 @@ class DateWidget extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Expanded(
-          child: Text(
-            day.date.toDateTime().format('EEEE'),
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Colors.grey,
-                ),
-            textAlign: TextAlign.end,
-          ),
-        ),
+            child: Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 1.0,
+                color: Colors.grey,
+                margin: const EdgeInsets.only(right: 8.0),
+              ),
+            ),
+            Text(
+              day.date.toDateTime().format('EEEE'),
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Colors.grey,
+                  ),
+              textAlign: TextAlign.end,
+            ),
+          ],
+        )),
         const SizedBox(width: 8),
         Stack(
           alignment: Alignment.center,
@@ -43,14 +53,24 @@ class DateWidget extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(
-            day.date.toDateTime().format('MMMM'),
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Colors.grey,
-                ),
-            textAlign: TextAlign.start,
-          ),
-        ),
+            child: Row(
+          children: [
+            Text(
+              day.date.toDateTime().format('MMMM'),
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Colors.grey,
+                  ),
+              textAlign: TextAlign.end,
+            ),
+            Expanded(
+              child: Container(
+                height: 1.0,
+                color: Colors.grey,
+                margin: const EdgeInsets.only(left: 8.0),
+              ),
+            ),
+          ],
+        )),
       ],
     );
   }
