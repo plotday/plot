@@ -15,6 +15,7 @@ class TimeWidget extends StatelessWidget {
           TextSpan(
             text: parts[0],
             style: const TextStyle(
+              fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -22,7 +23,7 @@ class TimeWidget extends StatelessWidget {
           TextSpan(
             text: parts[1],
             style: const TextStyle(
-              fontSize: 10,
+              fontSize: 9,
             ),
           ),
         ],

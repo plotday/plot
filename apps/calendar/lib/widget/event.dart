@@ -45,9 +45,10 @@ class EventWidget extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        event.context?.name ?? 'Open',
-                      ),
+                      if (event.context != null)
+                        Text(
+                          event.context!.name,
+                        ),
                       if (event.name != null)
                         Text(
                           event.name!,
