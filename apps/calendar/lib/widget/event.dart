@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/router.dart';
+import 'package:plot/util/time.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:plot/widget/time.dart';
@@ -29,22 +30,31 @@ class EventWidget extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                  width: 80,
-                  padding: const EdgeInsets.only(right: 8),
-                  alignment: Alignment.centerRight,
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        TimeWidget(time: event.at.start),
-                        DurationWidget(
-                          duration: event.at.duration,
-                        ),
-                      ])),
+                width: 80,
+                padding: const EdgeInsets.only(right: 8),
+                alignment: Alignment.centerRight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (event.id != null ||
+                        !event.at.start.toTimeOfDay().isMidnight)
+                      TimeWidget(time: event.at.start),
+                    if (event.id != null ||
+                        !(event.at.start.toTimeOfDay().isMidnight ||
+                            event.at.end.toTimeOfDay().isMidnight))
+                      DurationWidget(
+                        duration: event.at.duration,
+                      ),
+                  ],
+                ),
+              ),
               BlocBuilder<PriorityBloc, PriorityState>(
                 builder: (context, prioritiesState) => Expanded(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (event.id == null)
+                        const Text("+", textAlign: TextAlign.center),
                       if (event.context != null)
                         Text(
                           event.context!.name,

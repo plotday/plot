@@ -471,4 +471,6 @@ extension TimeOfDayExtension on TimeOfDay {
   bool operator >=(TimeOfDay other) {
     return this == other || this > other;
   }
+
+  bool get isMidnight => hour == 0 && minute == 0;
 }

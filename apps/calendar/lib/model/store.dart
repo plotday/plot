@@ -1,10 +1,10 @@
 import 'package:rxdart/subjects.dart';
 
 class Store<ID, T> {
-  Store(
-      {Future<Iterable<MapEntry<ID, T>>> Function()? load,
-      Map<ID, T> values = const {}})
-      : _load = load,
+  Store({
+    Future<Iterable<MapEntry<ID, T>>> Function()? load,
+    Map<ID, T> values = const {},
+  })  : _load = load,
         _cache = Map.of(values),
         _streamController = BehaviorSubject<List<T>>.seeded(const []);
 

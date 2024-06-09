@@ -15,24 +15,25 @@ class DateWidget extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Expanded(
-            child: Row(
-          children: [
-            Expanded(
-              child: Container(
-                height: 1.0,
-                color: Colors.grey,
-                margin: const EdgeInsets.only(right: 8.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 1.0,
+                  color: Colors.grey,
+                  margin: const EdgeInsets.only(right: 8.0),
+                ),
               ),
-            ),
-            Text(
-              day.date.toDateTime().format('EEEE'),
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Colors.grey,
-                  ),
-              textAlign: TextAlign.end,
-            ),
-          ],
-        )),
+              Text(
+                day.date.toDateTime().format('EEEE'),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Colors.grey,
+                    ),
+                textAlign: TextAlign.end,
+              ),
+            ],
+          ),
+        ),
         const SizedBox(width: 8),
         Stack(
           alignment: Alignment.center,
@@ -53,24 +54,25 @@ class DateWidget extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Expanded(
-            child: Row(
-          children: [
-            Text(
-              day.date.toDateTime().format('MMMM'),
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Colors.grey,
-                  ),
-              textAlign: TextAlign.end,
-            ),
-            Expanded(
-              child: Container(
-                height: 1.0,
-                color: Colors.grey,
-                margin: const EdgeInsets.only(left: 8.0),
+          child: Row(
+            children: [
+              Text(
+                day.date.toDateTime().format('MMMM'),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Colors.grey,
+                    ),
+                textAlign: TextAlign.end,
               ),
-            ),
-          ],
-        )),
+              Expanded(
+                child: Container(
+                  height: 1.0,
+                  color: Colors.grey,
+                  margin: const EdgeInsets.only(left: 8.0),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -84,12 +86,9 @@ class DayWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsetsDirectional.symmetric(horizontal: 8),
-          child: DateWidget(day: day),
-        ),
+        DateWidget(day: day),
         ...day.events.map((event) => EventWidget(event: event)),
       ],
     );

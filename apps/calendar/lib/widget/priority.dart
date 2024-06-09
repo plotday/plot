@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:plot/widget/time.dart';
 import 'package:plot/model/priority.dart';
 import 'package:plot/platform/widgets.dart';
+import 'package:plot/router.dart';
 
 class PriorityWidget extends StatelessWidget {
   const PriorityWidget({required this.priority, super.key});
@@ -12,7 +13,7 @@ class PriorityWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Link(
-      uri: Uri(path: '/priority/${priority.context?.id}'),
+      uri: Uri(path: const SettingsRoute().location),
       child: ListTile(
         key: ValueKey(priority.context?.id.toString() ?? 0),
         // subtitle: LinearProgressIndicator(

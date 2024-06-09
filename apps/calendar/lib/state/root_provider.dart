@@ -2,14 +2,13 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/router.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/state/context.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/model/session.dart' as plot_session;
 import 'package:plot/model/context.dart';
 import 'package:plot/platform/spinner.dart';
+import 'package:plot/widget/global_menu.dart';
 
 class RootProvider extends StatefulWidget {
   const RootProvider({required this.child, super.key});
@@ -60,7 +59,7 @@ class RootProviderState extends State<RootProvider> {
             BlocProvider(create: (_) => PriorityBloc()),
             BlocProvider(create: (_) => NowBloc()),
           ],
-          child: widget.child,
+          child: GlobalMenu(child: widget.child),
         );
       },
     );

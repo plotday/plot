@@ -4,11 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'state/user.dart';
+import 'state/now.dart';
 import 'state/root_provider.dart';
-import 'page/sign_in.dart';
-import 'page/schedule.dart';
-import 'page/priority.dart';
-import 'page/event.dart';
+import 'page/page.dart';
 import 'platform/layout.dart';
 
 part 'router.g.dart';
@@ -44,26 +42,54 @@ class LoginRoute extends GoRouteData {
       );
 }
 
-abstract class AdaptiveRoute extends GoRouteData {
+class SettingsRoute extends GoRouteData {
+  const SettingsRoute();
+
   @override
-  Page<void> buildPage(BuildContext context, GoRouterState state) =>
-      switch (Layout.getLayout(context)) {
-        PanelLayout.single => buildSinglePage(context, state),
-        PanelLayout.double => buildDoublePage(context, state),
-        PanelLayout.triple => buildTriplePage(context, state),
-      };
+  Page<void> buildPage(BuildContext context, GoRouterState state) {
+    return const NoTransitionPage(
+      child: SettingsPage(),
+    );
+  }
+}
+
+abstract class Route extends GoRouteData {
+  void onBuild(BuildContext context) {
+    if (!_init) {
+      _init = true;
+      onEnter(context);
+    }
+  }
+
+  bool _init = false;
+
+  void onEnter(BuildContext context) {}
+}
+
+abstract class AdaptiveRoute extends Route {
+  @override
+  Page<void> buildPage(BuildContext context, GoRouterState state) {
+    onBuild(context);
+    return switch (Layout.getLayout(context)) {
+      PanelLayout.single => buildSinglePage(context, state),
+      PanelLayout.double => buildDoublePage(context, state),
+      PanelLayout.triple => buildTriplePage(context, state),
+    };
+  }
 
   Page<void> buildSinglePage(BuildContext context, GoRouterState state);
   Page<void> buildDoublePage(BuildContext context, GoRouterState state);
   Page<void> buildTriplePage(BuildContext context, GoRouterState state);
 }
 
-@TypedGoRoute<HomeRoute>(path: '/', name: 'home:triple')
+@TypedGoRoute<HomeRoute>(path: '/', name: 'home:triple', routes: [
+  TypedGoRoute<SettingsRoute>(path: 'settings'),
+])
 class HomeRoute extends AdaptiveRoute {
   @override
   Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
       const NoTransitionPage(
-        child: TripleLayout(SchedulePage(), PriorityPage(), EventPageLoader()),
+        child: TripleLayout(SchedulePage(), PriorityPage(), EventPage()),
       );
 
   @override
@@ -72,7 +98,7 @@ class HomeRoute extends AdaptiveRoute {
         child: DoubleLayout(
           NavigationContext.of(context),
           const SchedulePage(),
-          const EventPageLoader(),
+          const EventPage(),
         ),
       );
 
@@ -93,30 +119,37 @@ class EventRoute extends AdaptiveRoute {
   final int eventId;
 
   @override
+  void onEnter(BuildContext context) {
+    context.read<NowBloc>().selectById(eventId);
+  }
+
+  @override
   Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
       NoTransitionPage(
           child: SingleLayout(
         NavigationContext.of(context),
-        EventPageLoader(eventId: eventId),
+        const EventPage(),
       ));
 
   @override
   Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
       NoTransitionPage(
-          child: DoubleLayout(
-        NavigationContext.of(context),
-        const SchedulePage(),
-        EventPageLoader(eventId: eventId),
-      ));
+        child: DoubleLayout(
+          NavigationContext.of(context),
+          const SchedulePage(),
+          const EventPage(),
+        ),
+      );
 
   @override
   Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
-          child: TripleLayout(
-        const SchedulePage(),
-        const PriorityPage(),
-        EventPageLoader(eventId: eventId),
-      ));
+      const NoTransitionPage(
+        child: TripleLayout(
+          SchedulePage(),
+          PriorityPage(),
+          EventPage(),
+        ),
+      );
 }
 
 class PrioritiesRoute extends AdaptiveRoute {
@@ -150,6 +183,39 @@ class PrioritiesRoute extends AdaptiveRoute {
       );
 }
 
+// @TypedGoRoute<ContextRoute>(path: '/e/:eventId', name: 'event:triple')
+// class ContextRoute extends AdaptiveRoute {
+//   ContextRoute({this.contextId});
+//
+//   final int? contextId;
+//
+//   @override
+//   Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
+//       NoTransitionPage(
+//           child: SingleLayout(
+//         NavigationContext.of(context),
+//         ContextPageLoader(contextId: contextId),
+//       ));
+//
+//   @override
+//   Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
+//       NoTransitionPage(
+//           child: DoubleLayout(
+//         NavigationContext.of(context),
+//         const SchedulePage(),
+//         ContextPageLoader(contextId: contextId),
+//       ));
+//
+//   @override
+//   Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
+//       NoTransitionPage(
+//           child: TripleLayout(
+//         const SchedulePage(),
+//         const PriorityPage(),
+//         ContextPageLoader(contextId: contextId),
+//       ));
+// }
+//
 class PrioritiesBranch extends StatefulShellBranchData {
   const PrioritiesBranch();
 }

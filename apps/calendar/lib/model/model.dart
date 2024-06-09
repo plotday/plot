@@ -40,7 +40,7 @@ abstract class Model extends Equatable {
   Future<Model> save();
 
   @override
-  List<Object> get props => [id ?? 0];
+  List<Object?> get props => [id ?? 0];
 
   Map<String, dynamic> toJson();
 }

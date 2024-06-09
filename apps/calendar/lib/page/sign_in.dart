@@ -1,17 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'package:plot/widget/auth_button.dart';
-
-final supabase = Supabase.instance.client;
+import 'package:plot/base.dart';
 
 class SignInPage extends StatefulWidget {
-  const SignInPage({super.key, this.builder});
-
-  final Widget Function(BuildContext)? builder;
+  const SignInPage({super.key});
 
   @override
   State<SignInPage> createState() => _SignInPageState();
@@ -24,7 +20,7 @@ class _SignInPageState extends State<SignInPage> {
 
   @override
   void initState() {
-    _initSupabase();
+    _initbase();
     super.initState();
   }
 
@@ -34,8 +30,8 @@ class _SignInPageState extends State<SignInPage> {
     super.dispose();
   }
 
-  void _initSupabase() {
-    _authSubscription = supabase.auth.onAuthStateChange.listen((data) {
+  void _initbase() {
+    _authSubscription = base.auth.onAuthStateChange.listen((data) {
       switch (data.event) {
         case AuthChangeEvent.initialSession:
           setState(() {
@@ -77,9 +73,6 @@ class _SignInPageState extends State<SignInPage> {
         ),
       );
     }
-    if (_signedIn == true && widget.builder != null) {
-      return widget.builder!(context);
-    }
 
     return Scaffold(
         appBar: AppBar(
@@ -91,7 +84,7 @@ class _SignInPageState extends State<SignInPage> {
             onSignIn: (auth) async {
               if (auth.idToken == null) return;
               try {
-                await supabase.auth.signInWithIdToken(
+                await base.auth.signInWithIdToken(
                   provider: OAuthProvider.google,
                   idToken: auth.idToken!,
                   accessToken: auth.accessToken,

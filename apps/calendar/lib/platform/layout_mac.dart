@@ -26,7 +26,8 @@ class MacLayoutState extends State<MacLayout> {
   Widget build(BuildContext context) {
     return MacosWindow(
       sidebar: Sidebar(
-        minWidth: 200,
+        minWidth: 300,
+        maxWidth: 300,
         builder: (context, scrollController) {
           return ScrollControllerContext(
             controller: scrollController,
@@ -35,9 +36,9 @@ class MacLayoutState extends State<MacLayout> {
         },
       ),
       endSidebar: Sidebar(
-        startWidth: 200,
-        minWidth: 200,
-        maxWidth: 300,
+        startWidth: 300,
+        minWidth: 300,
+        maxWidth: 600,
         shownByDefault: true,
         builder: (context, _) {
           return widget.secondary;
