@@ -57,8 +57,6 @@ class _AuthButtonState extends State<AuthButton> {
     } else {
       clientId = Env.googleClientId;
     }
-    print(
-        "HERE! ${Env.googleAndroidClientId}, $clientId, ${Env.googleClientId}");
     _googleSignIn = GoogleSignIn(
       clientId: clientId,
       serverClientId: serverClientId,
