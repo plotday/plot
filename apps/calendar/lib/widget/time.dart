@@ -44,7 +44,9 @@ class DurationWidget extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.end,
       children: List.generate(displayValue.ceil(), (index) {
         if (index == 0) {
-          return _buildBlock(displayValue >= 5.0 ? 1.0 : displayValue % 1.0);
+          return _buildBlock(displayValue >= 5.0 || displayValue % 1 == 0
+              ? 1.0
+              : displayValue % 1.0);
         } else {
           return _buildBlock(1.0);
         }
