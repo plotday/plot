@@ -8,7 +8,7 @@ import { createClient } from "@plotday/db";
 import type { SyncRequest } from "@plotday/sync";
 
 import { create, respond, update } from "./event";
-import { addAccount } from "./sync";
+import { addAccount, syncCalendar } from "./sync";
 
 export type Bindings = {
   readonly SUPABASE_URL: string;
@@ -77,6 +77,21 @@ app.post("/sync", async (c) => {
   );
 
   const body = await c.req.json();
+
+  const calendarId = (body as any)?.calendarId;
+  if (calendarId) {
+    const calendar = await supabaseAdmin
+      .from("calendar")
+      .select("account(user_id)")
+      .eq("id", calendarId)
+      .single();
+    if (calendar.data?.account?.user_id !== c.var.user.id) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    await syncCalendar(c.env, calendarId);
+    return c.status(200);
+  }
+
   const code = (body as any)?.code;
   if (!code) {
     return new Response("Bad request (missing code)", { status: 400 });

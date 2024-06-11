@@ -13,6 +13,7 @@ interface Env {
   readonly API_KEY: string;
 
   readonly SUPABASE_URL: string;
+  readonly SUPABASE_ANON_KEY: string;
   readonly SUPABASE_SERVICE_KEY: string;
   readonly SENTRY_DSN: string;
   readonly GOOGLE_CLIENT_ID: string;

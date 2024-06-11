@@ -88,6 +88,7 @@ class _AuthButtonState extends State<AuthButton> {
 
   Future<void> nativeAuth() async {
     try {
+      await _googleSignIn.disconnect();
       await _googleSignIn.signIn();
     } on String catch (message) {
       if (mounted) {

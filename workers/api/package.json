@@ -13,7 +13,7 @@
     "@plotday/cal": "workspace:^",
     "@plotday/db": "workspace:^",
     "@supabase/supabase-js": "^2.38.4",
-    "hono": "^3.12.7"
+    "hono": "^4.4.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20231218.0",

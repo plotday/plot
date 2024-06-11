@@ -61,9 +61,11 @@ export async function addAccount(
   await saveCredentials(supabaseAdmin, user.id, credentials);
   const dbCalendars = await saveCalendars(supabaseAdmin, account.id, calendars);
 
+  console.log(`${email}: Found ${dbCalendars?.length ?? 0} calendars`);
   if (dbCalendars) {
     for (const calendar of dbCalendars) {
       if (!calendar.enabled) continue;
+      console.log(`Sync ${email} ${calendar.name}`);
       // Start a partial sync plus a full sync
       await env.SYNC_QUEUE?.send?.({
         calendarId: calendar.id,
@@ -77,4 +79,11 @@ export async function addAccount(
   }
 
   return account;
+}
+
+export async function syncCalendar(env: Bindings, calendarId: number) {
+  await env.SYNC_QUEUE?.send?.({
+    calendarId,
+    syncType: "incremental",
+  });
 }

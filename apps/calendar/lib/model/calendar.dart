@@ -1,4 +1,5 @@
 import 'model.dart';
+import 'package:plot/util/api.dart' as api;
 
 class Calendar extends Model {
   static final store = Store<int, Calendar>();
@@ -19,6 +20,15 @@ class Calendar extends Model {
     final model = await saveToBase("calendar", Calendar.fromJson);
     store.put(model.id!, model);
     return model;
+  }
+
+  Future<void> sync() async {
+    await api.post(
+      "/sync",
+      body: {
+        'calendarId': id,
+      },
+    );
   }
 
   final String name;

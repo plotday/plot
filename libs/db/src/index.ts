@@ -86,21 +86,38 @@ export async function saveCalendars(
 ) {
   const primaryCalendar = calendars.find((c) => c.primary);
   if (!primaryCalendar) throw new Error("No primary calendar");
-  const result = safeQuery(
-    await supabase
-      .from("calendar")
-      .upsert(
-        calendars.map((calendar) => ({
-          account_id: accountId,
-          provider_id: calendar.id,
-          name: calendar.name,
-          enabled: calendar.primary,
-        })),
-        { onConflict: "account_id, provider_id", ignoreDuplicates: true }
-      )
-      .select()
+  safeQuery(
+    await supabase.from("calendar").upsert(
+      calendars.map((calendar) => ({
+        account_id: accountId,
+        provider_id: calendar.id,
+        name: calendar.name,
+        enabled: calendar.primary,
+      })),
+      { onConflict: "account_id, provider_id", ignoreDuplicates: true }
+    )
   );
-  return result;
+  const dbCalendars = safeQuery(
+    await supabase.from("calendar").select().eq("account_id", accountId)
+  );
+  const deletedCalendars = dbCalendars.filter(
+    (dbCalendar) =>
+      !calendars.some((calendar) => calendar.id === dbCalendar.provider_id)
+  );
+  if (deletedCalendars.length > 0) {
+    safeQuery(
+      await supabase
+        .from("calendar")
+        .delete()
+        .in(
+          "id",
+          deletedCalendars.map((calendar) => calendar.id)
+        )
+    );
+  }
+  return dbCalendars.filter(
+    (dbCalendar) => !deletedCalendars.includes(dbCalendar)
+  );
 }
 
 export type {
