@@ -79,7 +79,7 @@ class Session extends Model {
   final Duration? pomodoroLength;
 
   @override
-  List<Object> get props =>
+  List<Object?> get props =>
       super.props +
       [context?.id ?? 0, at, paused, pomodoroStart ?? 0, pomodoroLength ?? 0];
 

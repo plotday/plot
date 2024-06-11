@@ -5,8 +5,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/state/accounts.dart';
+import 'package:plot/state/context.dart';
 import 'package:plot/model/session.dart' as plot_session;
 import 'package:plot/model/context.dart';
+import 'package:plot/model/account.dart';
 import 'package:plot/platform/spinner.dart';
 import 'package:plot/widget/global_menu.dart';
 
@@ -27,6 +30,7 @@ class RootProviderState extends State<RootProvider> {
     if (state is UserSignedIn) {
       setState(() {
         _dataLoading = Future.wait([
+          Account.store.load(),
           Context.store.load(),
           plot_session.Session.store.load(),
         ]);
@@ -51,6 +55,9 @@ class RootProviderState extends State<RootProvider> {
     return FutureBuilder(
       future: _dataLoading,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(child: Text("Error loading data"));
+        }
         if (!snapshot.hasData) {
           return const Center(child: Spinner());
         }
@@ -58,6 +65,8 @@ class RootProviderState extends State<RootProvider> {
           providers: [
             BlocProvider(create: (_) => PriorityBloc()),
             BlocProvider(create: (_) => NowBloc()),
+            BlocProvider(create: (_) => AccountsBloc()),
+            BlocProvider(create: (_) => ContextBloc()),
           ],
           child: GlobalMenu(child: widget.child),
         );

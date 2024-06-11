@@ -1,3 +1,5 @@
+// import 'dart:js_interop';
+
 import 'model.dart';
 import 'calendar.dart';
 import 'package:plot/util/api.dart' as api;
@@ -7,12 +9,12 @@ enum AccountProvider { google, outlook }
 class Account extends Model {
   static final store = Store<int, Account>(
     load: () async {
-      return (await base
-              .from('account')
-              .select("id,provider,email,calendars:calendar(id,name,enabled)")
-              .eq("user_id", base.auth.currentUser!.id))
-          .map(Account.fromJson)
-          .map((m) => MapEntry(m.id!, m));
+      final json = (await base
+          .from('account')
+          .select(
+              "id,credentials->>provider,email,calendars:calendar(id,name,enabled)")
+          .eq("user_id", base.auth.currentUser!.id));
+      return json.map(Account.fromJson).map((m) => MapEntry(m.id!, m));
     },
   );
 
@@ -27,16 +29,19 @@ class Account extends Model {
     return Account.fromJson(response);
   }
 
+  static List<Calendar> _calendarsFromJson(Map<String, dynamic> json) {
+    final data = json['calendars'] as List<dynamic>;
+    return data
+        .map((calendar) => Calendar.fromJson(calendar as Map<String, dynamic>))
+        .toList();
+  }
+
   Account.fromJson(Map<String, dynamic> json)
       : email = json['email'] as String,
         provider = AccountProvider.values
             .firstWhere((e) => e.name == json['provider'] as String),
-        super(id: json['id'] as int) {
-    final calendars = json['calendars'] as List<Map<String, dynamic>>;
-    for (final calendar in calendars) {
-      Calendar.store.put(calendar['id'] as int, Calendar.fromJson(calendar));
-    }
-  }
+        calendars = _calendarsFromJson(json),
+        super(id: json['id'] as int);
 
   @override
   Map<String, dynamic> toJson() => {
@@ -53,6 +58,7 @@ class Account extends Model {
 
   final String email;
   final AccountProvider provider;
+  final List<Calendar> calendars;
 
   @override
   List<Object?> get props => [id, email, provider];

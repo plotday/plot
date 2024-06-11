@@ -75,7 +75,7 @@ class Context extends Model {
   }
 
   @override
-  List<Object> get props => super.props + [name, path, pomodoro];
+  List<Object?> get props => super.props + [name, path, pomodoro];
 
   @override
   Map<String, dynamic> toJson() => {

@@ -17,10 +17,14 @@ class Store<ID, T> {
   Stream<List<T>> stream() => _streamController.asBroadcastStream();
 
   Future<void> load() async {
-    if (_waitForInit != null) {
+    if (_load == null) return;
+    _waitForInit ??= _load().then(set);
+    try {
       await _waitForInit;
-    } else if (_load != null) {
-      _waitForInit = _load().then(set);
+    } catch (e) {
+      print("Error loading store");
+      print(e);
+      rethrow;
     }
   }
 
