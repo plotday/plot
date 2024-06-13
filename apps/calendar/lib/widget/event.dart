@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/router.dart';
 import 'package:plot/util/time.dart';
@@ -30,31 +30,44 @@ class EventWidget extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 80,
-                padding: const EdgeInsets.only(right: 8),
-                alignment: Alignment.centerRight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (event.id != null ||
-                        !event.at.start.toTimeOfDay().isMidnight)
-                      TimeWidget(time: event.at.start),
-                    if (event.id != null ||
-                        !(event.at.start.toTimeOfDay().isMidnight ||
-                            event.at.end.toTimeOfDay().isMidnight))
-                      DurationWidget(
-                        duration: event.at.duration,
-                      ),
-                  ],
-                ),
+                width: 72,
+                alignment: Alignment.topRight,
+                child:
+                    event.id != null || !event.at.start.toTimeOfDay().isMidnight
+                        ? TimeWidget(time: event.at.start)
+                        : SmallCapsWidget(
+                            text: event.at.start.format('EEEE'),
+                          ),
               ),
+              const SizedBox(width: 8),
               BlocBuilder<PriorityBloc, PriorityState>(
                 builder: (context, prioritiesState) => Expanded(
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (event.id == null)
-                        const Text("+", textAlign: TextAlign.center),
+                      SizedBox(
+                        height: 20,
+                        child: Row(
+                          children: [
+                            DurationWidget(
+                              duration: event.id != null ||
+                                      !(event.at.start
+                                              .toTimeOfDay()
+                                              .isMidnight ||
+                                          event.at.end.toTimeOfDay().isMidnight)
+                                  ? event.at.duration
+                                  : Duration.zero,
+                            ),
+                            Expanded(
+                              child: Container(
+                                height: 0.5,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       if (event.context != null)
                         Text(
                           event.context!.name,

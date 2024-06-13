@@ -2,6 +2,37 @@ import 'package:flutter/material.dart';
 
 import 'package:plot/util/time.dart';
 
+class SmallCapsWidget extends StatelessWidget {
+  const SmallCapsWidget({required this.text, super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final words = text.split(' ');
+    return Text.rich(
+      TextSpan(
+        children: words
+            .expand((word) => [
+                  TextSpan(
+                    text: word[0].toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  TextSpan(
+                    text: word.substring(1).toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 9,
+                    ),
+                  ),
+                ])
+            .toList(),
+      ),
+    );
+  }
+}
+
 class TimeWidget extends StatelessWidget {
   const TimeWidget({required this.time, super.key});
   final DateTime time;
@@ -39,16 +70,14 @@ class DurationWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double displayValue = (duration.inMinutes / 30).clamp(0.0, 8.0);
+    int numBlocks = (duration.inMinutes / 15).ceil().clamp(0, 20);
     return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: List.generate(displayValue.ceil(), (index) {
-        if (index == 0) {
-          return _buildBlock(displayValue >= 5.0 || displayValue % 1 == 0
-              ? 1.0
-              : displayValue % 1.0);
-        } else {
+      mainAxisAlignment: MainAxisAlignment.start,
+      children: List.generate(numBlocks * 2, (index) {
+        if (index % 2 == 0) {
           return _buildBlock(1.0);
+        } else {
+          return const SizedBox(width: 4);
         }
       }),
     );
@@ -56,21 +85,11 @@ class DurationWidget extends StatelessWidget {
 
   Widget _buildBlock(double fillFraction) {
     return Container(
-      width: 4,
+      width: 4 * fillFraction,
       height: 4,
-      margin: const EdgeInsets.all(1.0),
-      decoration: const BoxDecoration(
-        color: Colors.transparent,
-      ),
-      child: Align(
-        alignment: Alignment.bottomRight,
-        child: FractionallySizedBox(
-          widthFactor: fillFraction,
-          heightFactor: 1.0,
-          child: Container(
-            color: Colors.accents.first,
-          ),
-        ),
+      decoration: BoxDecoration(
+        color: Colors.accents.first,
+        shape: BoxShape.circle,
       ),
     );
   }
