@@ -89,7 +89,7 @@ class HomeRoute extends AdaptiveRoute {
   @override
   Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
       const NoTransitionPage(
-        child: TripleLayout(SchedulePage(), PriorityPage(), EventPage()),
+        child: TripleLayout(SchedulePage(), ContextPage(), EventPage()),
       );
 
   @override
@@ -146,7 +146,7 @@ class EventRoute extends AdaptiveRoute {
       const NoTransitionPage(
         child: TripleLayout(
           SchedulePage(),
-          PriorityPage(),
+          ContextPage(),
           EventPage(),
         ),
       );
@@ -158,8 +158,8 @@ class PrioritiesRoute extends AdaptiveRoute {
       const NoTransitionPage(
         child: TripleLayout(
           SchedulePage(),
-          PriorityPage(),
-          PriorityPage(),
+          ContextPage(),
+          ContextPage(),
         ),
       );
 
@@ -168,7 +168,7 @@ class PrioritiesRoute extends AdaptiveRoute {
       NoTransitionPage(
         child: DoubleLayout(
           NavigationContext.of(context),
-          const PriorityPage(),
+          const ContextPage(),
           const SchedulePage(),
         ),
       );
@@ -178,7 +178,7 @@ class PrioritiesRoute extends AdaptiveRoute {
       NoTransitionPage(
         child: SingleLayout(
           NavigationContext.of(context),
-          const PriorityPage(),
+          const ContextPage(),
         ),
       );
 }

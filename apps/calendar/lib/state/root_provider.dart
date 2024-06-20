@@ -3,7 +3,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/user.dart';
-import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/accounts.dart';
 import 'package:plot/state/context.dart';
@@ -63,7 +62,6 @@ class RootProviderState extends State<RootProvider> {
         }
         return MultiBlocProvider(
           providers: [
-            BlocProvider(create: (_) => PriorityBloc()),
             BlocProvider(create: (_) => NowBloc()),
             BlocProvider(create: (_) => AccountsBloc()),
             BlocProvider(create: (_) => ContextBloc()),

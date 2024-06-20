@@ -71,6 +71,58 @@ export type Database = {
           },
         ]
       }
+      budget: {
+        Row: {
+          context_id: number | null
+          created_at: string
+          id: number
+          minutes: number | null
+          type: Database["public"]["Enums"]["budget_type"]
+          user_id: string
+          week: unknown
+        }
+        Insert: {
+          context_id?: number | null
+          created_at?: string
+          id?: never
+          minutes?: number | null
+          type?: Database["public"]["Enums"]["budget_type"]
+          user_id: string
+          week: unknown
+        }
+        Update: {
+          context_id?: number | null
+          created_at?: string
+          id?: never
+          minutes?: number | null
+          type?: Database["public"]["Enums"]["budget_type"]
+          user_id?: string
+          week?: unknown
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "context"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["context_id"]
+          },
+          {
+            foreignKeyName: "budget_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calendar: {
         Row: {
           account_id: number
@@ -181,16 +233,20 @@ export type Database = {
           created_at: string
           id: number
           name: string
+          order: string | null
           path: unknown
+          pinned: boolean
           pomodoro: number
           user_id: string
-          priority: unknown | null
+          budget: unknown | null
         }
         Insert: {
           created_at?: string
           id?: never
           name: string
+          order?: string | null
           path: unknown
+          pinned?: boolean
           pomodoro?: number
           user_id: string
         }
@@ -198,7 +254,9 @@ export type Database = {
           created_at?: string
           id?: never
           name?: string
+          order?: string | null
           path?: unknown
+          pinned?: boolean
           pomodoro?: number
           user_id?: string
         }
@@ -442,61 +500,6 @@ export type Database = {
           name?: string
         }
         Relationships: []
-      }
-      priority: {
-        Row: {
-          budget: number | null
-          context_id: number | null
-          created_at: string
-          id: number
-          order: string | null
-          type: Database["public"]["Enums"]["budget_type"]
-          user_id: string
-          week: unknown
-        }
-        Insert: {
-          budget?: number | null
-          context_id?: number | null
-          created_at?: string
-          id?: never
-          order?: string | null
-          type?: Database["public"]["Enums"]["budget_type"]
-          user_id: string
-          week: unknown
-        }
-        Update: {
-          budget?: number | null
-          context_id?: number | null
-          created_at?: string
-          id?: never
-          order?: string | null
-          type?: Database["public"]["Enums"]["budget_type"]
-          user_id?: string
-          week?: unknown
-        }
-        Relationships: [
-          {
-            foreignKeyName: "priority_context_id_fkey"
-            columns: ["context_id"]
-            isOneToOne: false
-            referencedRelation: "context"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_context_id_fkey"
-            columns: ["context_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["context_id"]
-          },
-          {
-            foreignKeyName: "priority_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       raw_event: {
         Row: {
@@ -881,6 +884,37 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
+      balance: {
+        Args: {
+          user_id: string
+          week: unknown
+        }
+        Returns: {
+          id: number
+          budget: number
+          budget_type: Database["public"]["Enums"]["budget_type"]
+          count: number
+          minutes: number
+          tentative_count: number
+          tentative_minutes: number
+          declined_count: number
+          declined_minutes: number
+        }[]
+      }
+      budget: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          context_id: number | null
+          created_at: string
+          id: number
+          minutes: number | null
+          type: Database["public"]["Enums"]["budget_type"]
+          user_id: string
+          week: unknown
+        }[]
+      }
       calc_all_day: {
         Args: {
           at: unknown
@@ -1071,40 +1105,6 @@ export type Database = {
               name: string
             }[]
           }
-      priorities_for_week: {
-        Args: {
-          user_id: string
-          week: unknown
-        }
-        Returns: {
-          id: number
-          budget: number
-          budget_type: Database["public"]["Enums"]["budget_type"]
-          order: string
-          order_type: Database["public"]["Enums"]["budget_type"]
-          count: number
-          minutes: number
-          tentative_count: number
-          tentative_minutes: number
-          declined_count: number
-          declined_minutes: number
-        }[]
-      }
-      priority: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          budget: number | null
-          context_id: number | null
-          created_at: string
-          id: number
-          order: string | null
-          type: Database["public"]["Enums"]["budget_type"]
-          user_id: string
-          week: unknown
-        }[]
-      }
       redeem_invitation: {
         Args: {
           _user_id: number
@@ -1145,7 +1145,7 @@ export type Database = {
       }
     }
     Enums: {
-      budget_type: "default" | "balance" | "exception"
+      budget_type: "default" | "exception"
       event_availability: "busy" | "away" | "focus" | "free" | "location"
       event_internal: "internal" | "external"
       event_response: "accepted" | "declined" | "tentative"

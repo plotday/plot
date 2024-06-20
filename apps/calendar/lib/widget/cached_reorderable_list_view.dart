@@ -4,15 +4,18 @@ typedef ListItemWidgetBuilder<T> = Widget Function(
     BuildContext context, T item);
 
 class CachedReorderableListView<T> extends StatefulWidget {
-  const CachedReorderableListView(
-      {required this.list,
-      required this.itemBuilder,
-      required this.onReorder,
-      super.key});
+  const CachedReorderableListView({
+    required this.list,
+    required this.itemBuilder,
+    required this.onReorder,
+    this.shrinkWrap = false,
+    super.key,
+  });
 
   final List<T> list;
   final ListItemWidgetBuilder<T> itemBuilder;
   final ReorderCallback onReorder;
+  final bool shrinkWrap;
 
   @override
   CachedReorderableListViewState<T> createState() =>
@@ -48,6 +51,7 @@ class CachedReorderableListViewState<T>
     return ReorderableListView.builder(
       itemCount: list.length,
       primary: true,
+      shrinkWrap: widget.shrinkWrap,
       buildDefaultDragHandles: false,
       itemBuilder: (context, index) => ReorderableDragStartListener(
         index: index,

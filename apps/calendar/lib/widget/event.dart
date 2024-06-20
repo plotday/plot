@@ -5,7 +5,7 @@ import 'package:plot/util/time.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:plot/widget/time.dart';
-import 'package:plot/state/priority.dart';
+import 'package:plot/state/context.dart';
 import 'package:plot/state/schedule.dart';
 
 final supabase = Supabase.instance.client;
@@ -40,7 +40,7 @@ class EventWidget extends StatelessWidget {
                           ),
               ),
               const SizedBox(width: 8),
-              BlocBuilder<PriorityBloc, PriorityState>(
+              BlocBuilder<ContextBloc, ContextState>(
                 builder: (context, prioritiesState) => Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.start,
