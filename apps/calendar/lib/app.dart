@@ -1,19 +1,20 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:platform_builder/platform_builder.dart';
+import 'package:adaptive_theme/adaptive_theme.dart';
+import 'package:flutter/material.dart' as material;
+import 'package:macos_ui/macos_ui.dart' as macos;
 
-import 'style.dart';
-import 'app_mac.dart';
-import 'app_material.dart';
-import 'layout.dart';
+import 'widget/layout.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/router.dart';
 
 class App extends StatefulWidget {
   static Future<void> init() async {
-    switch (style) {
-      case Style.mac:
-        await MacApp.init();
+    switch (Platform.instance.currentHost) {
+      case Platforms.macOS:
+        await const macos.MacosWindowUtilsConfig().apply();
       default:
         break;
     }
@@ -76,12 +77,35 @@ class AppState extends State<App> with WidgetsBindingObserver {
         listener: (context, state) {
           router.refresh();
         },
-        child: switch (style) {
-          Style.mac => MacApp(router),
-          Style.ios => const Text("TODO"),
-          Style.material => MaterialApp(router),
-          Style.windows => const Text("TODO"),
-        },
+        child: PlatformBuilder(
+          builder: (context) => AdaptiveTheme(
+            light: material.ThemeData(
+              colorScheme: material.ColorScheme.fromSeed(
+                seedColor: const Color(0x002BDD66),
+                brightness: material.Brightness.light,
+              ),
+            ),
+            dark: material.ThemeData(
+              colorScheme: material.ColorScheme.fromSeed(
+                seedColor: const Color(0x002BDD66),
+                brightness: material.Brightness.dark,
+              ),
+            ),
+            debugShowFloatingThemeButton: true,
+            initial: AdaptiveThemeMode.system,
+            builder: (theme, darkTheme) => material.MaterialApp.router(
+              title: 'Plot',
+              theme: theme,
+              darkTheme: darkTheme,
+              routerConfig: router,
+            ),
+          ),
+          macOSBuilder: (context) => macos.MacosApp.router(
+            title: 'Plot',
+            debugShowCheckedModeBanner: false,
+            routerConfig: router,
+          ),
+        ),
       ),
     );
   }

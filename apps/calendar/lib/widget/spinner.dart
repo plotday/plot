@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 
-import 'style.dart';
+import 'package:platform_builder/platform_builder.dart';
 
 class Spinner extends StatelessWidget {
   const Spinner({super.key});
 
   @override
   Widget build(BuildContext context) {
-    switch (style) {
-      default:
-        return const CircularProgressIndicator();
-    }
+    return PlatformBuilder(builder: (_) => const CircularProgressIndicator());
   }
 }

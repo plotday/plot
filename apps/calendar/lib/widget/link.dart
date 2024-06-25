@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:url_launcher/link.dart' as url_launcher;
 
-// import 'style.dart';
 import 'tapable.dart';
 
 class Link extends StatelessWidget {

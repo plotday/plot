@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/now.dart';
 import 'package:plot/util/time.dart';
-import 'package:plot/platform/spinner.dart';
+import 'package:plot/widget/spinner.dart';
 
 class EventPage extends StatelessWidget {
   const EventPage({super.key});

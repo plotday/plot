@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:macos_ui/macos_ui.dart';
 
-import 'style.dart';
+import 'package:platform_builder/platform_builder.dart';
 
 class Button extends StatelessWidget {
   const Button({required this.child, required this.onTap, super.key});
@@ -11,15 +11,13 @@ class Button extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    switch (style) {
-      case Style.mac:
-        return PushButton(
-          onPressed: onTap,
-          controlSize: ControlSize.regular,
-          child: child,
-        );
-      default:
-        return InkWell(onTap: onTap, child: child);
-    }
+    return PlatformBuilder(
+      macOSBuilder: (_) => PushButton(
+        onPressed: onTap,
+        controlSize: ControlSize.regular,
+        child: child,
+      ),
+      builder: (_) => InkWell(onTap: onTap, child: child),
+    );
   }
 }

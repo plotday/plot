@@ -5,3 +5,4 @@ export 'scaffold.dart';
 export 'scroll_context.dart';
 export 'spinner.dart';
 export 'tapable.dart';
+export 'text_field.dart';

@@ -9,7 +9,7 @@ import 'package:plot/state/context.dart';
 import 'package:plot/model/session.dart' as plot_session;
 import 'package:plot/model/context.dart';
 import 'package:plot/model/account.dart';
-import 'package:plot/platform/spinner.dart';
+import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/global_menu.dart';
 
 class RootProvider extends StatefulWidget {

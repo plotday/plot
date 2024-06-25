@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/base.dart';
-import 'package:plot/platform/widgets.dart';
+import 'package:plot/widget/widget.dart';
 import 'package:plot/state/accounts.dart';
 import 'package:plot/model/account.dart';
 import 'package:plot/widget/auth_button.dart';

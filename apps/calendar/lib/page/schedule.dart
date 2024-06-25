@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/schedule.dart';
 import 'package:plot/widget/schedule.dart';
-import 'package:plot/platform/widgets.dart';
+import 'package:plot/widget/widget.dart';
 
 class SchedulePage extends StatelessWidget {
   const SchedulePage({super.key});

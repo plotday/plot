@@ -4,7 +4,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:plot/widget/time.dart';
 import 'package:plot/model/context.dart';
 import 'package:plot/model/budget.dart';
-import 'package:plot/platform/widgets.dart';
+import 'package:plot/widget/widget.dart';
 import 'package:plot/router.dart';
 
 class PriorityWidget extends StatelessWidget {

@@ -7,7 +7,7 @@ import 'state/user.dart';
 import 'state/now.dart';
 import 'state/root_provider.dart';
 import 'page/page.dart';
-import 'platform/layout.dart';
+import 'widget/layout.dart';
 
 part 'router.g.dart';
 

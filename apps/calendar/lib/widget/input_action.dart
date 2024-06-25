@@ -1,4 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
+
+import 'package:plot/widget/widget.dart';
 
 class InputAction extends StatefulWidget {
   const InputAction({required this.label, required this.onAdd, super.key});
@@ -47,18 +49,19 @@ class InputActionState extends State<InputAction> {
       children: [
         Expanded(
           child: TextField(
-            controller: _controller,
-            decoration: InputDecoration(
-              labelText: widget.label,
-            ),
+            label: widget.label,
+            onChanged: (value) {
+              _controller.text = value;
+              _onTextChanged();
+            },
           ),
         ),
-        if (_showAddButton)
-          IconButton(
-            onPressed: _onAddButtonPressed,
-            icon: const Icon(Icons.add),
-            tooltip: 'Add',
-          ),
+        // if (_showAddButton)
+        //   IconButton(
+        //     onPressed: _onAddButtonPressed,
+        //     icon: const Icon(Icons.add),
+        //     tooltip: 'Add',
+        //   ),
       ],
     );
   }
