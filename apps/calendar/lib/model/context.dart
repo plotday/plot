@@ -91,7 +91,7 @@ class Context extends Model {
         path = json['path'] as String,
         pomodoro = Duration(minutes: json['pomodoro'] as int),
         _order = json['order'] as String? ?? 'Z0000',
-        pinned = json['order'] as bool? ?? false,
+        pinned = json['pinned'] as bool? ?? false,
         super(id: json['id'] as int);
 
   final String name;

@@ -22,7 +22,7 @@ class Store<ID, T> {
     try {
       await _waitForInit;
     } catch (e) {
-      print("Error loading store");
+      print("Error loading $T store");
       print(e);
       rethrow;
     }

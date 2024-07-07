@@ -54,6 +54,10 @@ class InputActionState extends State<InputAction> {
               _controller.text = value;
               _onTextChanged();
             },
+            onSubmitted: (value) {
+              _onAddButtonPressed();
+            },
+            controller: _controller,
           ),
         ),
         // if (_showAddButton)

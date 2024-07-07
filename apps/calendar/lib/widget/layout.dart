@@ -33,7 +33,7 @@ sealed class Layout extends StatelessWidget {
 }
 
 final class SingleLayout extends Layout {
-  const SingleLayout(this.navigationShell, this.page, {super.key});
+  const SingleLayout(this.page, {this.navigationShell, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -47,52 +47,57 @@ final class SingleLayout extends Layout {
   }
 
   final Widget page;
-  final StatefulNavigationShell navigationShell;
+  final StatefulNavigationShell? navigationShell;
 }
 
 final class DoubleLayout extends Layout {
-  const DoubleLayout(this.navigationShell, this.primary, this.secondary,
-      {super.key});
+  const DoubleLayout(this.left, this.right, {this.navigationShell, super.key});
 
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
+      macOSBuilder: (_) => MacLayout(
+        left,
+        right,
+        null,
+        key: const Key('MacLayout'),
+      ),
       builder: (_) => MaterialLayout(
-        primary: primary,
-        secondary: secondary,
+        primary: left,
+        secondary: right,
         navigationShell: navigationShell,
         key: const Key('MaterialLayout'),
       ),
     );
   }
 
-  final Widget primary;
-  final Widget secondary;
-  final StatefulNavigationShell navigationShell;
+  final Widget left;
+  final Widget right;
+  final StatefulNavigationShell? navigationShell;
 }
 
 final class TripleLayout extends Layout {
-  const TripleLayout(this.drawer, this.primary, this.secondary, {super.key});
+  const TripleLayout(this.first, this.second, this.third, {super.key});
 
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
       macOSBuilder: (_) => MacLayout(
-        drawer,
-        primary,
-        secondary,
+        first,
+        second,
+        third,
         key: const Key('MacLayout'),
       ),
       builder: (_) => MaterialLayout(
-        primary: primary,
-        secondary: secondary,
-        drawer: drawer,
+        drawer: first,
+        primary: second,
+        secondary: third,
         key: const Key('MaterialLayout'),
       ),
     );
   }
 
-  final Widget primary;
-  final Widget secondary;
-  final Widget drawer;
+  final Widget first;
+  final Widget second;
+  final Widget third;
 }

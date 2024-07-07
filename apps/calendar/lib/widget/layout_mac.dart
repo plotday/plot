@@ -12,7 +12,7 @@ class MacLayout extends StatefulWidget {
   }
 
   final Widget primary;
-  final Widget secondary;
+  final Widget? secondary;
   final Widget drawer;
 }
 
@@ -35,15 +35,17 @@ class MacLayoutState extends State<MacLayout> {
           );
         },
       ),
-      endSidebar: Sidebar(
-        startWidth: 300,
-        minWidth: 300,
-        maxWidth: 600,
-        shownByDefault: true,
-        builder: (context, _) {
-          return widget.secondary;
-        },
-      ),
+      endSidebar: widget.secondary == null
+          ? null
+          : Sidebar(
+              startWidth: 300,
+              minWidth: 300,
+              maxWidth: 600,
+              shownByDefault: true,
+              builder: (context, _) {
+                return widget.secondary!;
+              },
+            ),
       child: widget.primary,
     );
   }

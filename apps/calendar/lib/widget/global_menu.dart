@@ -7,7 +7,9 @@ enum MenuSelection {
 }
 
 class GlobalMenu extends StatefulWidget {
-  const GlobalMenu({required this.child, super.key});
+  static final _globalKey = GlobalKey();
+
+  GlobalMenu({required this.child}) : super(key: _globalKey);
 
   @override
   State<GlobalMenu> createState() => _GlobalMenuState();

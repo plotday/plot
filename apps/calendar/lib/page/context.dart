@@ -27,11 +27,16 @@ class ContextPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ContextBloc, ContextState>(
-      builder: (buildContext, state) => InputAction(
-        onAdd: (p) {
-          print(p);
-        },
-        label: "Add a priority",
+      builder: (buildContext, state) => Column(
+        children: [
+          ...state.children.map((context) => ContextHeader(context: context)),
+          InputAction(
+            onAdd: (name) {
+              context.read<ContextBloc>().add(Context(name: name));
+            },
+            label: "Add a priority",
+          ),
+        ],
       ),
     );
   }

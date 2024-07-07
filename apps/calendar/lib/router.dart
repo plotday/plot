@@ -94,11 +94,10 @@ class HomeRoute extends AdaptiveRoute {
 
   @override
   Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
+      const NoTransitionPage(
         child: DoubleLayout(
-          NavigationContext.of(context),
-          const SchedulePage(),
-          const EventPage(),
+          SchedulePage(),
+          EventPage(),
         ),
       );
 
@@ -106,8 +105,8 @@ class HomeRoute extends AdaptiveRoute {
   Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
       NoTransitionPage(
         child: SingleLayout(
-          NavigationContext.of(context),
           const SchedulePage(),
+          navigationShell: NavigationContext.of(context),
         ),
       );
 }
@@ -127,17 +126,17 @@ class EventRoute extends AdaptiveRoute {
   Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
       NoTransitionPage(
           child: SingleLayout(
-        NavigationContext.of(context),
         const EventPage(),
+        navigationShell: NavigationContext.of(context),
       ));
 
   @override
   Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
       NoTransitionPage(
         child: DoubleLayout(
-          NavigationContext.of(context),
           const SchedulePage(),
           const EventPage(),
+          navigationShell: NavigationContext.of(context),
         ),
       );
 
@@ -167,9 +166,9 @@ class PrioritiesRoute extends AdaptiveRoute {
   Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
       NoTransitionPage(
         child: DoubleLayout(
-          NavigationContext.of(context),
           const ContextPage(),
           const SchedulePage(),
+          navigationShell: NavigationContext.of(context),
         ),
       );
 
@@ -177,8 +176,8 @@ class PrioritiesRoute extends AdaptiveRoute {
   Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
       NoTransitionPage(
         child: SingleLayout(
-          NavigationContext.of(context),
           const ContextPage(),
+          navigationShell: NavigationContext.of(context),
         ),
       );
 }
