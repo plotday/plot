@@ -12,11 +12,8 @@ import 'package:plot/router.dart';
 
 class App extends StatefulWidget {
   static Future<void> init() async {
-    switch (Platform.instance.currentHost) {
-      case Platforms.macOS:
-        await const macos.MacosWindowUtilsConfig().apply();
-      default:
-        break;
+    if (Platform.instance.isMacOS) {
+      await const macos.MacosWindowUtilsConfig().apply();
     }
   }
 
