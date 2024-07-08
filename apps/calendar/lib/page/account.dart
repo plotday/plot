@@ -13,7 +13,7 @@ class AccountPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      title: 'Settings',
+      title: const Text('Settings'),
       body: BlocBuilder<AccountsBloc, AccountsState>(
         builder: (context, state) => Padding(
           padding: const EdgeInsets.all(16),

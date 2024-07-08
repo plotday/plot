@@ -66,6 +66,14 @@ class Context extends Model {
 
   static final Map<String, int> _pathToId = {};
 
+  static const unchanged = Context._(
+      id: -1,
+      name: "",
+      path: "",
+      order: "",
+      pomodoro: Duration(),
+      pinned: false);
+
   Context({
     super.id,
     required this.name,

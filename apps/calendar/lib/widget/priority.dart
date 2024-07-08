@@ -14,8 +14,8 @@ class PriorityWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Link(
-      uri: Uri(path: const SettingsRoute().location),
+    return Button(
+      onTap: () => PriorityRoute(contextId: this.context.id!).go(context),
       child: ListTile(
         key: ValueKey(this.context.id.toString()),
         // subtitle: LinearProgressIndicator(

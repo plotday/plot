@@ -36,7 +36,7 @@ final class BudgetsLoadingState extends ContextState {
   ContextState copyWith({
     List<Context>? contexts,
     List<Budget>? budgets = const [],
-    Context? current,
+    Context? current = Context.unchanged,
     Week? week,
   }) {
     if (budgets?.isNotEmpty == true) {
@@ -49,7 +49,7 @@ final class BudgetsLoadingState extends ContextState {
     }
     return BudgetsLoadingState(
       contexts: contexts ?? all,
-      current: current ?? this.current,
+      current: current == Context.unchanged ? this.current : current,
       week: week ?? this.week,
     );
   }

@@ -3,8 +3,10 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'model/context.dart';
 import 'state/user.dart';
 import 'state/now.dart';
+import 'state/context.dart';
 import 'state/root_provider.dart';
 import 'page/page.dart';
 import 'widget/layout.dart';
@@ -153,6 +155,54 @@ class EventRoute extends AdaptiveRoute {
 
 class PrioritiesRoute extends AdaptiveRoute {
   @override
+  void onEnter(BuildContext context) {
+    context.read<ContextBloc>().setCurrent(null);
+  }
+
+  @override
+  Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
+      const NoTransitionPage(
+        child: TripleLayout(
+          SchedulePage(),
+          ContextPage(),
+          ContextPage(),
+        ),
+      );
+
+  @override
+  Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
+      NoTransitionPage(
+        child: DoubleLayout(
+          const ContextPage(),
+          const SchedulePage(),
+          navigationShell: NavigationContext.of(context),
+        ),
+      );
+
+  @override
+  Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
+      NoTransitionPage(
+        child: SingleLayout(
+          const ContextPage(),
+          navigationShell: NavigationContext.of(context),
+        ),
+      );
+}
+
+@TypedGoRoute<PriorityRoute>(path: '/p/:contextId', name: 'priority:triple')
+class PriorityRoute extends AdaptiveRoute {
+  PriorityRoute({required this.contextId})
+      : context = Context.store.get(contextId);
+
+  final int contextId;
+  final Context context;
+
+  @override
+  void onEnter(BuildContext context) {
+    context.read<ContextBloc>().setCurrent(this.context);
+  }
+
+  @override
   Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
       const NoTransitionPage(
         child: TripleLayout(
@@ -242,8 +292,14 @@ class ScheduleBranch extends StatefulShellBranchData {
     TypedStatefulShellBranch<PrioritiesBranch>(
       routes: <TypedGoRoute<GoRouteData>>[
         TypedGoRoute<PrioritiesRoute>(
-          path: '/priorities',
+          path: '/p',
           name: 'priorities:single',
+          routes: [
+            TypedGoRoute<PriorityRoute>(
+              path: ':contextId',
+              name: 'priority:single',
+            ),
+          ],
         ),
       ],
     ),

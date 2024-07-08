@@ -13,7 +13,7 @@ class Scaffold extends StatelessWidget {
         toolBar: title == null
             ? null
             : macos.ToolBar(
-                title: Text(title!),
+                title: title!,
               ),
         children: [
           macos.ContentArea(
@@ -25,7 +25,7 @@ class Scaffold extends StatelessWidget {
         appBar: title == null
             ? null
             : material.AppBar(
-                title: Text(title!),
+                title: title!,
               ),
         body: body,
       ),
@@ -33,5 +33,5 @@ class Scaffold extends StatelessWidget {
   }
 
   final Widget body;
-  final String? title;
+  final Widget? title;
 }

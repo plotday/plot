@@ -10,6 +10,7 @@ List<RouteBase> get $appRoutes => [
       $loginRoute,
       $homeRoute,
       $eventRoute,
+      $priorityRoute,
       $_SingleRoutes,
     ];
 
@@ -106,6 +107,31 @@ extension $EventRouteExtension on EventRoute {
   void replace(BuildContext context) => context.replace(location);
 }
 
+RouteBase get $priorityRoute => GoRouteData.$route(
+      path: '/p/:contextId',
+      name: 'priority:triple',
+      factory: $PriorityRouteExtension._fromState,
+    );
+
+extension $PriorityRouteExtension on PriorityRoute {
+  static PriorityRoute _fromState(GoRouterState state) => PriorityRoute(
+        contextId: int.parse(state.pathParameters['contextId']!),
+      );
+
+  String get location => GoRouteData.$location(
+        '/p/${Uri.encodeComponent(contextId.toString())}',
+      );
+
+  void go(BuildContext context) => context.go(location);
+
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  void replace(BuildContext context) => context.replace(location);
+}
+
 RouteBase get $_SingleRoutes => StatefulShellRouteData.$route(
       factory: $_SingleRoutesExtension._fromState,
       branches: [
@@ -128,9 +154,16 @@ RouteBase get $_SingleRoutes => StatefulShellRouteData.$route(
         StatefulShellBranchData.$branch(
           routes: [
             GoRouteData.$route(
-              path: '/priorities',
+              path: '/p',
               name: 'priorities:single',
               factory: $PrioritiesRouteExtension._fromState,
+              routes: [
+                GoRouteData.$route(
+                  path: ':contextId',
+                  name: 'priority:single',
+                  factory: $PriorityRouteExtension._fromState,
+                ),
+              ],
             ),
           ],
         ),
@@ -145,7 +178,7 @@ extension $PrioritiesRouteExtension on PrioritiesRoute {
   static PrioritiesRoute _fromState(GoRouterState state) => PrioritiesRoute();
 
   String get location => GoRouteData.$location(
-        '/priorities',
+        '/p',
       );
 
   void go(BuildContext context) => context.go(location);
