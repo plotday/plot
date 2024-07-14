@@ -21,3 +21,21 @@ class Button extends StatelessWidget {
     );
   }
 }
+
+class IconButton extends StatelessWidget {
+  const IconButton({required this.child, required this.onTap, super.key});
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return PlatformBuilder(
+      macOSBuilder: (_) => MacosIconButton(
+        onPressed: onTap,
+        icon: child,
+      ),
+      builder: (_) => IconButton(onTap: onTap, child: child),
+    );
+  }
+}
