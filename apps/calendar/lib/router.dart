@@ -89,6 +89,11 @@ abstract class AdaptiveRoute extends Route {
 ])
 class HomeRoute extends AdaptiveRoute {
   @override
+  void onEnter(BuildContext context) {
+    context.read<ContextBloc>().setCurrent(null);
+  }
+
+  @override
   Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
       const NoTransitionPage(
         child: TripleLayout(SchedulePage(), ContextPage(), EventPage()),
