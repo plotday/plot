@@ -165,7 +165,7 @@ class PrioritiesRoute extends AdaptiveRoute {
         child: TripleLayout(
           SchedulePage(),
           ContextPage(),
-          ContextPage(),
+          NotesPage(),
         ),
       );
 
@@ -208,7 +208,7 @@ class PriorityRoute extends AdaptiveRoute {
         child: TripleLayout(
           SchedulePage(),
           ContextPage(),
-          ContextPage(),
+          NotesPage(),
         ),
       );
 
