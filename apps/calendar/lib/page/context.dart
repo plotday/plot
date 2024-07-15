@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/widget/cached_reorderable_list_view.dart';
+import 'package:plot/widget/reorderable_list_view.dart';
 import 'package:plot/state/context.dart';
 import 'package:plot/model/context.dart';
 import 'package:plot/widget/widget.dart';
@@ -49,7 +49,7 @@ class ContextPage extends StatelessWidget {
         title: const ContextHeader(),
         body: Column(
           children: [
-            CachedReorderableListView(
+            ReorderableListView(
               list: state.children,
               itemBuilder: (buildContext, item) =>
                   PriorityWidget(context: item),

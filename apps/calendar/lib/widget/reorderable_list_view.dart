@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart' as material;
+import 'package:platform_builder/platform_builder.dart';
 
 typedef ListItemWidgetBuilder<T> = Widget Function(
     BuildContext context, T item);
 
-class CachedReorderableListView<T> extends StatefulWidget {
-  const CachedReorderableListView({
+class ReorderableListView<T> extends StatefulWidget {
+  const ReorderableListView({
     required this.list,
     required this.itemBuilder,
     required this.onReorder,
@@ -18,12 +20,10 @@ class CachedReorderableListView<T> extends StatefulWidget {
   final bool shrinkWrap;
 
   @override
-  CachedReorderableListViewState<T> createState() =>
-      CachedReorderableListViewState<T>();
+  ReorderableListViewState<T> createState() => ReorderableListViewState<T>();
 }
 
-class CachedReorderableListViewState<T>
-    extends State<CachedReorderableListView<T>> {
+class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
   late List<T> list;
 
   @override
@@ -33,26 +33,25 @@ class CachedReorderableListViewState<T>
   }
 
   @override
-  void didUpdateWidget(covariant CachedReorderableListView<T> oldWidget) {
+  void didUpdateWidget(covariant ReorderableListView<T> oldWidget) {
     if (widget.list != oldWidget.list) {
-      list = [...widget.list];
+      setState(() {
+        list = [...widget.list];
+      });
     }
     super.didUpdateWidget(oldWidget);
   }
 
-  void updateList(List<T> value) {
-    setState(() {
-      list = value;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return ReorderableListView.builder(
+    return material.ReorderableListView.builder(
       itemCount: list.length,
       primary: true,
       shrinkWrap: widget.shrinkWrap,
       buildDefaultDragHandles: false,
+      proxyDecorator: Platform.instance.isNative
+          ? (Widget child, int index, Animation<double> animation) => child
+          : null,
       itemBuilder: (context, index) => ReorderableDragStartListener(
         index: index,
         key: ValueKey(list[index]),
