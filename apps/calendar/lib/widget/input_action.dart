@@ -14,31 +14,18 @@ class InputAction extends StatefulWidget {
 
 class InputActionState extends State<InputAction> {
   final TextEditingController _controller = TextEditingController();
-  bool _showAddButton = false;
-
-  void _onTextChanged() {
-    setState(() {
-      _showAddButton = _controller.text.isNotEmpty;
-    });
-  }
-
-  void _onAddButtonPressed() {
+  void _onSubmit() {
     widget.onAdd(_controller.text);
     _controller.clear();
-    setState(() {
-      _showAddButton = false;
-    });
   }
 
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
-    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     super.dispose();
   }
@@ -50,22 +37,12 @@ class InputActionState extends State<InputAction> {
         Expanded(
           child: TextField(
             label: widget.label,
-            onChanged: (value) {
-              _controller.text = value;
-              _onTextChanged();
-            },
             onSubmitted: (value) {
-              _onAddButtonPressed();
+              _onSubmit();
             },
             controller: _controller,
           ),
         ),
-        // if (_showAddButton)
-        //   IconButton(
-        //     onPressed: _onAddButtonPressed,
-        //     icon: const Icon(Icons.add),
-        //     tooltip: 'Add',
-        //   ),
       ],
     );
   }

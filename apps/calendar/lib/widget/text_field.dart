@@ -7,13 +7,13 @@ import 'package:platform_builder/platform_builder.dart';
 class TextField extends StatelessWidget {
   const TextField({
     required this.label,
-    required this.onChanged,
+    this.onChanged,
     this.onSubmitted,
     this.controller,
     super.key,
   });
 
-  final ValueChanged<String> onChanged;
+  final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
   final TextEditingController? controller;
   final String label;
