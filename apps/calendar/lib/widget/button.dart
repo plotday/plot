@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
-import 'package:macos_ui/macos_ui.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart' as material;
+import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'package:platform_builder/platform_builder.dart';
 
@@ -12,30 +13,33 @@ class Button extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      macOSBuilder: (_) => PushButton(
+      macOSBuilder: (_) => macos.PushButton(
         onPressed: onTap,
-        controlSize: ControlSize.regular,
+        controlSize: macos.ControlSize.regular,
         child: child,
       ),
-      builder: (_) => InkWell(onTap: onTap, child: child),
+      builder: (_) => material.InkWell(onTap: onTap, child: child),
     );
   }
 }
 
 class IconButton extends StatelessWidget {
-  const IconButton({required this.child, required this.onTap, super.key});
+  const IconButton({required this.icon, required this.onPressed, super.key});
 
-  final VoidCallback onTap;
-  final Widget child;
+  final VoidCallback onPressed;
+  final Widget icon;
 
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      macOSBuilder: (_) => MacosIconButton(
-        onPressed: onTap,
-        icon: child,
+      macOSBuilder: (_) => macos.MacosIconButton(
+        onPressed: onPressed,
+        icon: icon,
       ),
-      builder: (_) => IconButton(onTap: onTap, child: child),
+      builder: (_) => material.IconButton(
+        onPressed: onPressed,
+        icon: icon,
+      ),
     );
   }
 }

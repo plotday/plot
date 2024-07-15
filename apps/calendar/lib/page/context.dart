@@ -19,15 +19,20 @@ class ContextHeader extends StatelessWidget {
         children: [
           if (state.current != null)
             IconButton(
-              child: const BackButtonIcon(),
-              onTap: () {
+              icon: const BackButtonIcon(),
+              onPressed: () {
                 state.current?.parent == null
                     ? PrioritiesRoute().go(context)
                     : PriorityRoute(contextId: state.current!.parent!.id!)
                         .go(context);
               },
             ),
-          Text(state.current?.name ?? 'Everything else'),
+          Expanded(
+            child: Text(
+              state.current?.name ?? 'Everything else',
+              overflow: TextOverflow.ellipsis,
+            ),
+          )
         ],
       ),
     );
