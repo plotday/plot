@@ -1,6 +1,7 @@
 CREATE TABLE "public"."event" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "calendar_id" bigint REFERENCES calendar ON DELETE CASCADE,
     "provider_id" text NOT NULL DEFAULT gen_random_uuid () ::text,
@@ -28,4 +29,9 @@ ALTER publication supabase_realtime
     ADD TABLE public.event;
 
 CREATE INDEX event_at_idx ON event USING spgist (at);
+
+CREATE TRIGGER set_event_modified_at
+    BEFORE UPDATE ON "public"."event"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_at ();
 

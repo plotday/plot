@@ -12,6 +12,7 @@ $$;
 CREATE TABLE "public"."session" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "context_id" bigint REFERENCES context ON DELETE SET NULL,
     "event_id" bigint REFERENCES event ON DELETE SET NULL,
@@ -29,4 +30,9 @@ ALTER publication supabase_realtime
     ADD TABLE public."session";
 
 CREATE INDEX session_at_idx ON "session" USING spgist (at);
+
+CREATE TRIGGER set_session_modified_at
+    BEFORE UPDATE ON "public"."session"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_at ();
 

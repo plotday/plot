@@ -41,6 +41,7 @@ export type Database = {
           credentials: Json | null
           email: string
           id: number
+          modified_at: string
           user_id: string
           calendars: unknown | null
           organization: unknown | null
@@ -51,6 +52,7 @@ export type Database = {
           credentials?: Json | null
           email: string
           id?: never
+          modified_at?: string
           user_id: string
         }
         Update: {
@@ -59,6 +61,7 @@ export type Database = {
           credentials?: Json | null
           email?: string
           id?: never
+          modified_at?: string
           user_id?: string
         }
         Relationships: [
@@ -77,6 +80,7 @@ export type Database = {
           created_at: string
           id: number
           minutes: number | null
+          modified_at: string
           type: Database["public"]["Enums"]["budget_type"]
           user_id: string
           week: unknown
@@ -86,6 +90,7 @@ export type Database = {
           created_at?: string
           id?: never
           minutes?: number | null
+          modified_at?: string
           type?: Database["public"]["Enums"]["budget_type"]
           user_id: string
           week: unknown
@@ -95,6 +100,7 @@ export type Database = {
           created_at?: string
           id?: never
           minutes?: number | null
+          modified_at?: string
           type?: Database["public"]["Enums"]["budget_type"]
           user_id?: string
           week?: unknown
@@ -131,6 +137,7 @@ export type Database = {
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
+          modified_at: string
           name: string | null
           provider_id: string
           ready: boolean
@@ -151,6 +158,7 @@ export type Database = {
           full_sync_at?: string | null
           full_sync_started_at?: string | null
           id?: never
+          modified_at?: string
           name?: string | null
           provider_id: string
           ready?: boolean
@@ -170,6 +178,7 @@ export type Database = {
           full_sync_at?: string | null
           full_sync_started_at?: string | null
           id?: never
+          modified_at?: string
           name?: string | null
           provider_id?: string
           ready?: boolean
@@ -232,6 +241,7 @@ export type Database = {
         Row: {
           created_at: string
           id: number
+          modified_at: string
           name: string
           order: string | null
           path: unknown
@@ -243,6 +253,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: never
+          modified_at?: string
           name: string
           order?: string | null
           path: unknown
@@ -253,6 +264,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: never
+          modified_at?: string
           name?: string
           order?: string | null
           path?: unknown
@@ -309,6 +321,7 @@ export type Database = {
           description: string | null
           id: number
           invitees_hidden: boolean
+          modified_at: string
           name: string | null
           optional: boolean
           organizer_email: string | null
@@ -331,6 +344,7 @@ export type Database = {
           description?: string | null
           id?: never
           invitees_hidden?: boolean
+          modified_at?: string
           name?: string | null
           optional?: boolean
           organizer_email?: string | null
@@ -353,6 +367,7 @@ export type Database = {
           description?: string | null
           id?: never
           invitees_hidden?: boolean
+          modified_at?: string
           name?: string | null
           optional?: boolean
           organizer_email?: string | null
@@ -443,6 +458,7 @@ export type Database = {
           context_id: number | null
           created_at: string
           id: number
+          modified_at: string
           user_id: string
         }
         Insert: {
@@ -450,6 +466,7 @@ export type Database = {
           context_id?: number | null
           created_at?: string
           id?: never
+          modified_at?: string
           user_id: string
         }
         Update: {
@@ -457,6 +474,7 @@ export type Database = {
           context_id?: number | null
           created_at?: string
           id?: never
+          modified_at?: string
           user_id?: string
         }
         Relationships: [
@@ -540,6 +558,7 @@ export type Database = {
           embedding: string | null
           id: number
           invitees: string[] | null
+          modified_at: string
           series: string
           user_id: string
         }
@@ -549,6 +568,7 @@ export type Database = {
           embedding?: string | null
           id?: never
           invitees?: string[] | null
+          modified_at?: string
           series: string
           user_id: string
         }
@@ -558,6 +578,7 @@ export type Database = {
           embedding?: string | null
           id?: never
           invitees?: string[] | null
+          modified_at?: string
           series?: string
           user_id?: string
         }
@@ -592,6 +613,7 @@ export type Database = {
           created_at: string
           event_id: number | null
           id: number
+          modified_at: string
           paused: unknown
           pomodoro_length: unknown | null
           pomodoro_start: string | null
@@ -603,6 +625,7 @@ export type Database = {
           created_at?: string
           event_id?: number | null
           id?: never
+          modified_at?: string
           paused?: unknown
           pomodoro_length?: unknown | null
           pomodoro_start?: string | null
@@ -614,6 +637,7 @@ export type Database = {
           created_at?: string
           event_id?: number | null
           id?: never
+          modified_at?: string
           paused?: unknown
           pomodoro_length?: unknown | null
           pomodoro_start?: string | null
@@ -877,6 +901,7 @@ export type Database = {
           credentials: Json | null
           email: string
           id: number
+          modified_at: string
           user_id: string
         }[]
       }
@@ -910,6 +935,7 @@ export type Database = {
           created_at: string
           id: number
           minutes: number | null
+          modified_at: string
           type: Database["public"]["Enums"]["budget_type"]
           user_id: string
           week: unknown
@@ -980,6 +1006,7 @@ export type Database = {
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
+          modified_at: string
           name: string | null
           provider_id: string
           ready: boolean
@@ -1004,6 +1031,7 @@ export type Database = {
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
+          modified_at: string
           name: string | null
           provider_id: string
           ready: boolean

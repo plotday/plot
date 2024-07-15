@@ -6,6 +6,7 @@ CREATE TYPE "public"."budget_type" AS ENUM (
 CREATE TABLE "public"."budget" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "context_id" bigint REFERENCES context ON DELETE CASCADE,
     "week" daterange NOT NULL CHECK (is_week (week)),
@@ -30,4 +31,9 @@ CREATE OR REPLACE FUNCTION public.budget (context)
     WHERE
         context_id = $1.id;
 $function$;
+
+CREATE TRIGGER set_budget_modified_at
+    BEFORE UPDATE ON "public"."budget"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_at ();
 
