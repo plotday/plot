@@ -9,7 +9,7 @@ class ContextOrder {
   final Context? before;
 }
 
-class Context extends Model {
+class Context extends Model implements Comparable<Context> {
   static final store = Store<int, Context>(
     load: () async {
       final contexts = (await base
@@ -101,6 +101,11 @@ class Context extends Model {
         _order = json['order'] as String? ?? 'Z0000',
         pinned = json['pinned'] as bool? ?? false,
         super(id: json['id'] as int);
+
+  @override
+  int compareTo(Context other) {
+    return _order.compareTo(other._order);
+  }
 
   final String name;
   final String path;

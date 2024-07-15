@@ -44,13 +44,35 @@ class ContextPage extends StatelessWidget {
         title: const ContextHeader(),
         body: Column(
           children: [
-            ...state.children
-                .map((context) => PriorityWidget(context: context)),
+            CachedReorderableListView(
+              list: state.children,
+              itemBuilder: (buildContext, item) =>
+                  PriorityWidget(context: item),
+              shrinkWrap: true,
+              onReorder: (int oldIndex, int newIndex) async {
+                var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+                var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+                Context? previous;
+                if (previousIndex >= 0) {
+                  previous = state.children[previousIndex];
+                }
+                Context? next;
+                if (nextIndex < state.children.length) {
+                  next = state.children[nextIndex];
+                }
+                final context = state.children[oldIndex].copyWith(
+                  order: ContextOrder(previous, next),
+                );
+                buildContext.read<ContextBloc>().update(context);
+              },
+            ),
             InputAction(
               onAdd: (name) {
-                context
-                    .read<ContextBloc>()
-                    .add(Context(name: name, parent: state.current));
+                context.read<ContextBloc>().add(Context(
+                      name: name,
+                      parent: state.current,
+                      order: ContextOrder(state.children.lastOrNull, null),
+                    ));
               },
               label: "Add a priority",
             ),

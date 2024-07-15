@@ -7,7 +7,10 @@ CREATE TABLE "public"."context" (
     "order" text,
     "pomodoro" integer NOT NULL DEFAULT 25,
     "pinned" boolean NOT NULL DEFAULT FALSE,
-    CONSTRAINT user_path_unique UNIQUE (user_id, path)
+    CONSTRAINT user_path_unique UNIQUE (user_id, path),
+    CONSTRAINT user_parent_path_order_unique
+    EXCLUDE USING gist (user_id WITH =, parent_path (path
+) WITH =, "order" WITH =)
 );
 
 ALTER TABLE "public"."context" ENABLE ROW LEVEL SECURITY;

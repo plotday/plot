@@ -1105,6 +1105,12 @@ export type Database = {
               name: string
             }[]
           }
+      parent_path: {
+        Args: {
+          p: unknown
+        }
+        Returns: unknown
+      }
       redeem_invitation: {
         Args: {
           _user_id: number

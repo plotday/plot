@@ -2,7 +2,9 @@ part of 'context.dart';
 
 sealed class ContextState extends Equatable {
   static List<Context> _filterChildren(List<Context> all, Context? current) {
-    return all.where((context) => context.parent == current).toList();
+    final children = all.where((context) => context.parent == current).toList();
+    children.sort();
+    return children;
   }
 
   ContextState({

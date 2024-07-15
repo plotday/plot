@@ -10,17 +10,39 @@ abstract class Model extends Equatable {
     String table,
     T Function(Map<String, dynamic> json) ctor,
   ) async {
-    return (await base
+    try {
+      final newItems = items.where((item) => item.id == null).toList();
+      final updatedItems = items.where((item) => item.id != null).toList();
+      List<Map<String, dynamic>> dbItems = [];
+      if (newItems.isNotEmpty) {
+        dbItems = await base
             .from(table)
-            .upsert(items
+            .insert(newItems
                 .map((item) => {
                       ...item.toJson(),
                       'user_id': base.auth.currentUser?.id,
                     })
                 .toList())
-            .select())
-        .map((json) => ctor(json))
-        .toList();
+            .select();
+      }
+      if (updatedItems.isNotEmpty) {
+        dbItems = dbItems +
+            await Future.wait(updatedItems.map((item) => base
+                .from(table)
+                .update({
+                  ...item.toJson(),
+                  'user_id': base.auth.currentUser?.id,
+                })
+                .eq('id', item.id!)
+                .select()
+                .single()));
+      }
+      return dbItems.map((json) => ctor(json)).toList();
+    } catch (e) {
+      print("Error saving $items");
+      print(e);
+      rethrow;
+    }
   }
 
   const Model({

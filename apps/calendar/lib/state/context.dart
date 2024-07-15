@@ -31,12 +31,18 @@ class ContextBloc extends Cubit<ContextState> {
   }
 
   void update(Context context) async {
+    final currentContexts = state.all;
+    final contexts =
+        currentContexts.replace(context, (c1, c2) => c1.id == c2.id);
     emit(
-      state.copyWith(
-        contexts: state.all.replace(context, (c1, c2) => c1.id == c2.id),
-      ),
+      state.copyWith(contexts: contexts),
     );
-    await context.save();
+    try {
+      await context.save();
+    } catch (e) {
+      emit(state.copyWith(contexts: currentContexts));
+      rethrow;
+    }
   }
 
   void setWeek(Week week) async {
