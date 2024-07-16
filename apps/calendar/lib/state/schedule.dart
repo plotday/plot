@@ -18,6 +18,41 @@ class ScheduleBloc extends Cubit<ScheduleState> {
     });
   }
 
+  void select(ScheduledEvent event) {
+    emit(state.copyWith(selected: event));
+  }
+
+  Future<ScheduledEvent> selectById(int eventId) async {
+    emit(SelectedEventLoadingState.copy(state));
+    final event = await ScheduledEvent.getOrFetch(eventId);
+    select(event);
+    return event;
+  }
+
+  Future<ScheduledEvent?> selectCurrent() async {
+    emit(SelectedEventLoadingState.copy(state));
+    await ScheduledDay.getOrFetchToday();
+    final current = ScheduledEvent.current();
+    if (current.isEmpty) {
+      emit(ScheduleState.copy(state));
+      return null;
+    } else {
+      select(current.first);
+      return current.first;
+    }
+  }
+
+  Future<ScheduledEvent> update(ScheduledEvent event) async {
+    return await event.save();
+  }
+
+  ScheduledEvent? get selected {
+    if (state is SelectedEventState) {
+      return (state as SelectedEventState).selected;
+    }
+    return null;
+  }
+
   @override
   Future<void> close() async {
     _subscription?.cancel();

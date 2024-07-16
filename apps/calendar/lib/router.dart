@@ -5,7 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'model/context.dart';
 import 'state/user.dart';
-import 'state/now.dart';
+import 'state/schedule.dart';
 import 'state/context.dart';
 import 'state/root_provider.dart';
 import 'page/page.dart';
@@ -125,8 +125,10 @@ class EventRoute extends AdaptiveRoute {
   final int eventId;
 
   @override
-  void onEnter(BuildContext context) {
-    context.read<NowBloc>().selectById(eventId);
+  void onEnter(BuildContext context) async {
+    final event = await context.read<ScheduleBloc>().selectById(eventId);
+    if (!context.mounted) return;
+    context.read<ContextBloc>().setCurrent(event.context);
   }
 
   @override
@@ -162,6 +164,7 @@ class PrioritiesRoute extends AdaptiveRoute {
   @override
   void onEnter(BuildContext context) {
     context.read<ContextBloc>().setCurrent(null);
+    context.read<ScheduleBloc>().selected?.copyWith(context: null).save();
   }
 
   @override
@@ -205,6 +208,11 @@ class PriorityRoute extends AdaptiveRoute {
   @override
   void onEnter(BuildContext context) {
     context.read<ContextBloc>().setCurrent(this.context);
+    context
+        .read<ScheduleBloc>()
+        .selected
+        ?.copyWith(context: this.context)
+        .save();
   }
 
   @override

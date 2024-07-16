@@ -94,7 +94,7 @@ class ScheduledEvent extends Model {
   ScheduledEvent copyWith({
     String? name,
     DateTimeRange? at,
-    Context? context,
+    Context? context = Context.unchanged,
     EventResponse? response,
   }) {
     return ScheduledEvent(
@@ -104,7 +104,7 @@ class ScheduledEvent extends Model {
       name: name ?? this.name,
       at: at ?? this.at,
       invitees: invitees,
-      context: context ?? this.context,
+      context: context == Context.unchanged ? this.context : context,
       response: response ?? this.response,
     );
   }

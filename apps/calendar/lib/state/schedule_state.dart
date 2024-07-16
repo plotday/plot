@@ -1,42 +1,41 @@
 part of 'schedule.dart';
 
-class EventList {
-  const EventList(this.events, this.nextAnchor);
-
-  EventList copyWith(ScheduledEvent event) {
-    final events = {...this.events};
-    final day = events[event.at.start.startOfDay] ?? [];
-    // Remove the event if it already exists
-    day.removeWhere(
-        (e) => event.id != null ? e.id == event.id : e.at == event.at);
-    // Insert the event in the correct order
-    final index = day.indexWhere((e) => e.at.start.isAfter(event.at.start));
-    if (index == -1) {
-      day.add(event);
-    } else {
-      day.insert(index, event);
-    }
-    events[event.at.start.startOfDay] = day;
-    return EventList(events, nextAnchor);
-  }
-
-  final Map<DateTime, List<ScheduledEvent>> events;
-  final DateTime? nextAnchor;
-}
-
 final class ScheduleState extends Equatable {
   ScheduleState({
     Date? day,
   })  : day = day ?? Date.today(),
         _sequence = 1;
 
-  const ScheduleState._int(this._sequence, {required this.day});
+  ScheduleState.copy(ScheduleState copy, {Date? day})
+      : day = day ?? copy.day,
+        _sequence = copy._sequence + 1;
 
-  ScheduleState copyWith({Date? day}) {
-    return ScheduleState._int(
-      _sequence + 1,
+  ScheduleState copyWith({
+    Date? day,
+    ScheduledEvent? selected,
+    String? error,
+    bool loading = false,
+  }) {
+    final state = ScheduleState.copy(
+      this,
       day: day ?? this.day,
     );
+    if (error != null) {
+      return SelectedEventErrorState.copy(
+        state,
+        error: error,
+      );
+    }
+    if (loading) {
+      return SelectedEventLoadingState.copy(state);
+    }
+    if (selected != null) {
+      return SelectedEventState.copy(
+        state,
+        selected: selected,
+      );
+    }
+    return state;
   }
 
   final Date day;
@@ -45,5 +44,35 @@ final class ScheduleState extends Equatable {
   Week get week => Week(day);
 
   @override
-  List<Object> get props => [day, _sequence];
+  List<Object?> get props => [day, _sequence];
+}
+
+final class SelectedEventState extends ScheduleState {
+  SelectedEventState.copy(
+    ScheduleState copy, {
+    required this.selected,
+  }) : super.copy(copy);
+
+  final ScheduledEvent selected;
+
+  @override
+  List<Object?> get props => super.props + [selected];
+}
+
+final class SelectedEventErrorState extends ScheduleState {
+  SelectedEventErrorState.copy(
+    ScheduleState copy, {
+    required this.error,
+  }) : super.copy(copy);
+
+  final String error;
+
+  @override
+  List<Object?> get props => super.props + [error];
+}
+
+final class SelectedEventLoadingState extends ScheduleState {
+  SelectedEventLoadingState.copy(
+    ScheduleState copy,
+  ) : super.copy(copy);
 }

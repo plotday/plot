@@ -1,7 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/state/schedule.dart';
 import 'package:plot/widget/schedule.dart';
 import 'package:plot/widget/widget.dart';
 
@@ -11,11 +9,8 @@ class SchedulePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: BlocProvider(
-        create: (context) => ScheduleBloc(),
-        child: ScheduleWidget(
-          scrollController: ScrollControllerContext.of(context),
-        ),
+      body: ScheduleWidget(
+        scrollController: ScrollControllerContext.of(context),
       ),
     );
   }

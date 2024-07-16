@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/state/schedule.dart';
 import 'package:plot/state/accounts.dart';
 import 'package:plot/state/context.dart';
 import 'package:plot/model/session.dart' as plot_session;
@@ -63,6 +64,7 @@ class RootProviderState extends State<RootProvider> {
         return MultiBlocProvider(
           providers: [
             BlocProvider(create: (_) => NowBloc()),
+            BlocProvider(create: (_) => ScheduleBloc()),
             BlocProvider(create: (_) => AccountsBloc()),
             BlocProvider(create: (_) => ContextBloc()),
           ],
