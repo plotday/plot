@@ -1,6 +1,6 @@
 part of 'schedule.dart';
 
-final class ScheduleState extends Equatable {
+sealed class ScheduleState extends Equatable {
   ScheduleState({
     Date? day,
   })  : day = day ?? Date.today(),
@@ -12,30 +12,51 @@ final class ScheduleState extends Equatable {
 
   ScheduleState copyWith({
     Date? day,
-    ScheduledEvent? selected,
+    Optional<ScheduledEvent> selected = const Optional.absent(),
     String? error,
     bool loading = false,
   }) {
-    final state = ScheduleState.copy(
-      this,
-      day: day ?? this.day,
-    );
+    if (selected.isPresent) {
+      if (selected.isNotNull) {
+        return SelectedEventState.copy(
+          this,
+          selected: selected.value!,
+        );
+      } else {
+        return ScheduleListState.copy(
+          this,
+          day: day ?? this.day,
+        );
+      }
+    }
     if (error != null) {
       return SelectedEventErrorState.copy(
-        state,
+        this,
         error: error,
       );
     }
     if (loading) {
-      return SelectedEventLoadingState.copy(state);
+      return SelectedEventLoadingState.copy(this);
     }
-    if (selected != null) {
-      return SelectedEventState.copy(
-        state,
-        selected: selected,
-      );
+    switch (this) {
+      case SelectedEventState state:
+        return SelectedEventState.copy(
+          this,
+          selected: state.selected,
+        );
+      case SelectedEventErrorState state:
+        return SelectedEventErrorState.copy(
+          this,
+          error: state.error,
+        );
+      case SelectedEventLoadingState _:
+        return SelectedEventLoadingState.copy(this);
+      case ScheduleListState state:
+        return ScheduleListState.copy(
+          this,
+          day: day ?? state.day,
+        );
     }
-    return state;
   }
 
   final Date day;
@@ -45,6 +66,17 @@ final class ScheduleState extends Equatable {
 
   @override
   List<Object?> get props => [day, _sequence];
+}
+
+final class ScheduleListState extends ScheduleState {
+  ScheduleListState({
+    super.day,
+  });
+
+  ScheduleListState.copy(
+    ScheduleState copy, {
+    Date? day,
+  }) : super.copy(copy, day: day);
 }
 
 final class SelectedEventState extends ScheduleState {
@@ -72,6 +104,8 @@ final class SelectedEventErrorState extends ScheduleState {
 }
 
 final class SelectedEventLoadingState extends ScheduleState {
+  SelectedEventLoadingState();
+
   SelectedEventLoadingState.copy(
     ScheduleState copy,
   ) : super.copy(copy);

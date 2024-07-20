@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:collection/collection.dart';
 
 import 'package:plot/util/time.dart';
+import 'package:plot/util/optional.dart';
 import 'package:plot/util/api.dart' as api;
 import 'context.dart';
 import 'model.dart';
@@ -27,7 +28,14 @@ class ScheduledEvent extends Model {
     final current = all.events.where((ScheduledEvent event) {
       return event.at.includes(now);
     }).toList();
-    return current;
+    if (current.isNotEmpty) {
+      return current;
+    }
+    return [
+      ScheduledEvent(
+        at: DateTimeRange(now, now.add(const Duration(minutes: 30))),
+      )
+    ];
   }
 
   static List<ScheduledEvent> next() {
@@ -94,7 +102,7 @@ class ScheduledEvent extends Model {
   ScheduledEvent copyWith({
     String? name,
     DateTimeRange? at,
-    Context? context = Context.unchanged,
+    Optional<Context> context = const Optional.absent(),
     EventResponse? response,
   }) {
     return ScheduledEvent(
@@ -104,7 +112,7 @@ class ScheduledEvent extends Model {
       name: name ?? this.name,
       at: at ?? this.at,
       invitees: invitees,
-      context: context == Context.unchanged ? this.context : context,
+      context: context.or(this.context),
       response: response ?? this.response,
     );
   }
