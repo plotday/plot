@@ -3,7 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/schedule.dart';
 import 'package:plot/util/time.dart';
-import 'package:plot/widget/spinner.dart';
+import 'package:plot/widget/widget.dart';
+import 'package:plot/router.dart';
 
 class EventPage extends StatelessWidget {
   const EventPage({super.key});
@@ -11,22 +12,28 @@ class EventPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(builder: (context, state) {
-      switch (state) {
-        case SelectedEventErrorState _:
-          return const Center(child: Text("Error"));
-        case SelectedEventState state:
-          return Column(children: [
-            const Text('Event Page'),
-            if (state.selected.name != null) Text(state.selected.name!),
-            Text(state.selected.at.start.toDate().format()),
-            Text(state.selected.at.start.toTimeOfDay().format(context)),
-            Text(state.selected.at.end.toTimeOfDay().format(context)),
-          ]);
-        case SelectedEventLoadingState _:
-          return const Center(child: Spinner());
-        case ScheduleState _:
-          return const Center(child: Text("No event selected"));
-      }
+      return Scaffold(
+          title: switch (state) {
+            ScheduleListState _ => const Text("Schedule"),
+            ScheduleState state => IconButton(
+                icon: const BackButtonIcon(),
+                onPressed: () {
+                  ScheduleRoute.day(day: state.day).go(context);
+                },
+              ),
+          },
+          body: switch (state) {
+            SelectedEventErrorState _ => const Center(child: Text("Error")),
+            SelectedEventState state => Column(children: [
+                const Text('Event Page'),
+                if (state.selected.name != null) Text(state.selected.name!),
+                Text(state.selected.at.start.toDate().format()),
+                Text(state.selected.at.start.toTimeOfDay().format(context)),
+                Text(state.selected.at.end.toTimeOfDay().format(context)),
+              ]),
+            SelectedEventLoadingState _ => const Center(child: Spinner()),
+            ScheduleState _ => const Center(child: Text("No event selected")),
+          });
     });
   }
 }

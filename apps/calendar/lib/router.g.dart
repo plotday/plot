@@ -9,6 +9,7 @@ part of 'router.dart';
 List<RouteBase> get $appRoutes => [
       $loginRoute,
       $homeRoute,
+      $scheduleRoute,
       $eventRoute,
       $priorityRoute,
       $_SingleRoutes,
@@ -70,6 +71,31 @@ extension $SettingsRouteExtension on SettingsRoute {
 
   String get location => GoRouteData.$location(
         '/settings',
+      );
+
+  void go(BuildContext context) => context.go(location);
+
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  void replace(BuildContext context) => context.replace(location);
+}
+
+RouteBase get $scheduleRoute => GoRouteData.$route(
+      path: '/d/:dayString',
+      name: 'schedule:triple',
+      factory: $ScheduleRouteExtension._fromState,
+    );
+
+extension $ScheduleRouteExtension on ScheduleRoute {
+  static ScheduleRoute _fromState(GoRouterState state) => ScheduleRoute(
+        dayString: state.pathParameters['dayString']!,
+      );
+
+  String get location => GoRouteData.$location(
+        '/d/${Uri.encodeComponent(dayString)}',
       );
 
   void go(BuildContext context) => context.go(location);

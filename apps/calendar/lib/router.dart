@@ -126,11 +126,13 @@ class HomeRoute extends AdaptiveRoute {
       );
 }
 
-@TypedGoRoute<ScheduleRoute>(path: '/d/:day', name: 'schedule:triple')
+@TypedGoRoute<ScheduleRoute>(path: '/d/:dayString', name: 'schedule:triple')
 class ScheduleRoute extends AdaptiveRoute {
-  ScheduleRoute({required this.day});
+  ScheduleRoute({required this.dayString}) : day = Date.fromString(dayString);
+  ScheduleRoute.day({required this.day}) : dayString = day.toString();
 
   final Date day;
+  final String dayString;
 
   @override
   void onEnter(BuildContext context) async {
