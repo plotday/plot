@@ -1,6 +1,11 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/state/schedule.dart';
+import 'package:plot/router.dart';
+import 'context_nav.dart';
 import 'scroll_context.dart';
 
 class MacLayout extends StatefulWidget {
@@ -24,29 +29,56 @@ class MacLayoutState extends State<MacLayout> {
 
   @override
   Widget build(BuildContext context) {
-    return MacosWindow(
-      sidebar: Sidebar(
-        minWidth: 300,
-        maxWidth: 300,
-        builder: (context, scrollController) {
-          return ScrollControllerContext(
-            controller: scrollController,
-            child: widget.drawer,
-          );
-        },
-      ),
-      endSidebar: widget.secondary == null
-          ? null
-          : Sidebar(
-              startWidth: 300,
-              minWidth: 300,
-              maxWidth: 600,
-              shownByDefault: true,
-              builder: (context, _) {
-                return widget.secondary!;
-              },
+    return BlocBuilder<ScheduleBloc, ScheduleState>(
+      builder: (context, state) {
+        return MacosWindow(
+          child: MacosScaffold(
+            toolBar: ToolBar(
+              title: const ContextNav(),
+              actions: [
+                ToolBarIconButton(
+                  icon: const material.Icon(material.Icons.calendar_today),
+                  label: 'Schedule',
+                  showLabel: false,
+                  onPressed: () {
+                    ScheduleRoute.day(day: state.day).go(context);
+                  },
+                ),
+              ],
             ),
-      child: widget.primary,
+            children: [
+              ResizablePane(
+                builder: (context, scrollController) => ScrollControllerContext(
+                  controller: scrollController,
+                  child: widget.drawer,
+                ),
+                startSize: 300,
+                minSize: 300,
+                maxSize: 400,
+                resizableSide: ResizableSide.right,
+              ),
+              ResizablePane(
+                builder: (context, scrollController) => ScrollControllerContext(
+                  controller: scrollController,
+                  child: widget.primary,
+                ),
+                startSize: 300,
+                minSize: 300,
+                maxSize: 400,
+                resizableSide: ResizableSide.right,
+              ),
+              if (widget.secondary != null)
+                ContentArea(
+                  builder: (context, scrollController) =>
+                      ScrollControllerContext(
+                    controller: scrollController,
+                    child: widget.secondary!,
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

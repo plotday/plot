@@ -7,37 +7,6 @@ import 'package:plot/model/context.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/input_action.dart';
-import 'package:plot/router.dart';
-
-class ContextHeader extends StatelessWidget {
-  const ContextHeader({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return BlocBuilder<ContextBloc, ContextState>(
-      builder: (buildContext, state) => Row(
-        children: [
-          if (state.current != null)
-            IconButton(
-              icon: const BackButtonIcon(),
-              onPressed: () {
-                state.current?.parent == null
-                    ? PrioritiesRoute().go(context)
-                    : PriorityRoute(contextId: state.current!.parent!.id!)
-                        .go(context);
-              },
-            ),
-          Expanded(
-            child: Text(
-              state.current?.name ?? 'Everything else',
-              overflow: TextOverflow.ellipsis,
-            ),
-          )
-        ],
-      ),
-    );
-  }
-}
 
 class ContextPage extends StatelessWidget {
   const ContextPage({super.key});
@@ -46,7 +15,6 @@ class ContextPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<ContextBloc, ContextState>(
       builder: (buildContext, state) => Scaffold(
-        title: const ContextHeader(),
         body: Column(
           children: [
             ReorderableListView(

@@ -77,6 +77,8 @@ final class DoubleLayout extends Layout {
 }
 
 final class TripleLayout extends Layout {
+  static final _key = GlobalKey();
+
   const TripleLayout(this.first, this.second, this.third, {super.key});
 
   @override
@@ -86,13 +88,12 @@ final class TripleLayout extends Layout {
         first,
         second,
         third,
-        key: const Key('MacLayout'),
       ),
       builder: (_) => MaterialLayout(
         drawer: first,
         primary: second,
         secondary: third,
-        key: const Key('MaterialLayout'),
+        key: _key,
       ),
     );
   }

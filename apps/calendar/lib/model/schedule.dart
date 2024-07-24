@@ -255,7 +255,11 @@ class ScheduledDay extends Equatable {
 
   ScheduledDay copyWith(ScheduledEvent event) {
     final list = events.where((e) => e.id != event.id).toList();
-    list.insert(list.indexWhere((i) => i.at < event.at), event);
+    var index = list.indexWhere((i) => i.at < event.at);
+    if (index == -1) {
+      index = list.length;
+    }
+    list.insert(index, event);
     return ScheduledDay(date, list);
   }
 

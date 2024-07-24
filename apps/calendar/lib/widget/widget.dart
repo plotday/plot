@@ -1,4 +1,6 @@
 export 'button.dart';
+export 'context_nav.dart';
+export 'header.dart';
 export 'icon.dart';
 export 'link.dart';
 export 'list_tile.dart';
