@@ -47,7 +47,6 @@ dependencies:
       url: git@github.com:plotday/dart_date.git
       ref: c77f713
   http: ^1.2.0
-  sentry_flutter: ^8.2.0
   sentry_dart_plugin: ^2.0.0
   flutter_web_auth_2: ^4.0.0-alpha.0
   go_router: ^14.0.2
@@ -60,6 +59,7 @@ dependencies:
   url_launcher: ^6.2.6
   go_router_builder: ^2.7.0
   platform_builder: ^3.0.0
+  sentry_flutter: ^8.5.0
 
 dev_dependencies:
   flutter_test:
