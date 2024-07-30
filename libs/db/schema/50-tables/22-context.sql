@@ -5,9 +5,8 @@ CREATE TABLE "public"."context" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "name" text NOT NULL,
     "path" ltree NOT NULL,
-    "order" text,
+    "order" text NOT NULL,
     "pomodoro" integer NOT NULL DEFAULT 25,
-    "pinned" boolean NOT NULL DEFAULT FALSE,
     CONSTRAINT user_path_unique UNIQUE (user_id, path),
     CONSTRAINT user_parent_path_order_unique
     EXCLUDE USING gist (user_id WITH =, parent_path (path

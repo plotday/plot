@@ -243,9 +243,8 @@ export type Database = {
           id: number
           modified_at: string
           name: string
-          order: string | null
+          order: string
           path: unknown
-          pinned: boolean
           pomodoro: number
           user_id: string
           budget: unknown | null
@@ -255,9 +254,8 @@ export type Database = {
           id?: never
           modified_at?: string
           name: string
-          order?: string | null
+          order: string
           path: unknown
-          pinned?: boolean
           pomodoro?: number
           user_id: string
         }
@@ -266,9 +264,8 @@ export type Database = {
           id?: never
           modified_at?: string
           name?: string
-          order?: string | null
+          order?: string
           path?: unknown
-          pinned?: boolean
           pomodoro?: number
           user_id?: string
         }
@@ -459,6 +456,10 @@ export type Database = {
           created_at: string
           id: number
           modified_at: string
+          order: string
+          private: boolean
+          root: boolean
+          topic_id: number
           user_id: string
         }
         Insert: {
@@ -467,6 +468,10 @@ export type Database = {
           created_at?: string
           id?: never
           modified_at?: string
+          order: string
+          private?: boolean
+          root?: boolean
+          topic_id?: number
           user_id: string
         }
         Update: {
@@ -475,6 +480,10 @@ export type Database = {
           created_at?: string
           id?: never
           modified_at?: string
+          order?: string
+          private?: boolean
+          root?: boolean
+          topic_id?: number
           user_id?: string
         }
         Relationships: [
@@ -674,6 +683,52 @@ export type Database = {
           },
         ]
       }
+      tag: {
+        Row: {
+          created_at: string
+          emoji: string
+          id: number
+          note_id: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          emoji: string
+          id?: never
+          note_id?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          id?: never
+          note_id?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tag_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tag_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "note_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tag_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       waitlist: {
         Row: {
           activated_at: string | null
@@ -859,6 +914,45 @@ export type Database = {
           uses: number | null
         }
         Relationships: []
+      }
+      note_x: {
+        Row: {
+          body: string | null
+          context_id: number | null
+          context_path: unknown | null
+          created_at: string | null
+          id: number | null
+          modified_at: string | null
+          order: string | null
+          private: boolean | null
+          root: boolean | null
+          tags: Json | null
+          topic_id: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "context"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["context_id"]
+          },
+          {
+            foreignKeyName: "note_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sync_admin: {
         Row: {
@@ -1143,6 +1237,12 @@ export type Database = {
         Args: {
           _user_id: number
           _invitation: string
+        }
+        Returns: undefined
+      }
+      update_topic_root: {
+        Args: {
+          note_id: number
         }
         Returns: undefined
       }

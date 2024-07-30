@@ -265,11 +265,12 @@ class PriorityRoute extends AdaptiveRoute {
   @override
   void onEnter(BuildContext context) {
     context.read<ContextBloc>().setCurrent(this.context);
-    context
-        .read<ScheduleBloc>()
-        .selected
-        ?.copyWith(context: Optional.of(this.context))
-        .save();
+    final event = context.read<ScheduleBloc>().selected;
+    if (event != null) {
+      context
+          .read<ScheduleBloc>()
+          .update(event.copyWith(context: Optional.of(this.context)));
+    }
   }
 
   @override

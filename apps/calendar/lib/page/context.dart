@@ -34,7 +34,7 @@ class ContextPage extends StatelessWidget {
                   next = state.children[nextIndex];
                 }
                 final context = state.children[oldIndex].copyWith(
-                  order: ContextOrder(previous, next),
+                  order: Order.between(previous?.order, next?.order),
                 );
                 buildContext.read<ContextBloc>().update(context);
               },
@@ -44,7 +44,8 @@ class ContextPage extends StatelessWidget {
                 context.read<ContextBloc>().add(Context(
                       name: name,
                       parent: state.current,
-                      order: ContextOrder(state.children.lastOrNull, null),
+                      order:
+                          Order.between(state.children.lastOrNull?.order, null),
                     ));
               },
               label: "Add a priority",

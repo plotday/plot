@@ -9,6 +9,7 @@ class NotesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ContextBloc, ContextState>(
-        builder: (buildContext, state) => const Text('Notes'));
+      builder: (buildContext, state) => const Text('Notes'),
+    );
   }
 }

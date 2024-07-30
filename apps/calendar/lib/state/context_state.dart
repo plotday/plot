@@ -1,6 +1,6 @@
 part of 'context.dart';
 
-sealed class ContextState extends Equatable {
+final class ContextState extends Equatable {
   static List<Context> _filterChildren(List<Context> all, Context? current) {
     final children = all.where((context) => context.parent == current).toList();
     children.sort();
@@ -9,100 +9,99 @@ sealed class ContextState extends Equatable {
 
   ContextState({
     required List<Context> contexts,
+    required this.week,
     this.current,
   })  : all = contexts,
-        children = _filterChildren(contexts, current);
+        children = _filterChildren(contexts, current),
+        notes = const [],
+        moreNotes = true,
+        pinnedNotes = const [],
+        topic = null,
+        topicNotes = const [],
+        pinnedTopicNotes = const [],
+        moreTopicNotes = false,
+        _budgets = null;
+
+  ContextState._({
+    required List<Context> contexts,
+    required this.week,
+    this.current,
+    List<Note> notes = const [],
+    this.moreNotes = true,
+    this.topic,
+    List<Note> topicNotes = const [],
+    this.moreTopicNotes = true,
+    List<Budget>? budgets,
+  })  : all = contexts,
+        children = _filterChildren(contexts, current),
+        notes = _filterPinnedNotes(notes, false),
+        pinnedNotes = _filterPinnedNotes(notes, false),
+        topicNotes = _filterPinnedNotes(notes, false),
+        pinnedTopicNotes = _filterPinnedNotes(notes, false),
+        _budgets = budgets
+            ?.asMap()
+            .map((index, budget) => MapEntry(budget.context!.id!, budget));
+
+  static List<Note> _filterPinnedNotes(List<Note> notes, bool pinned) {
+    return notes.where((note) => note.order.pinned == pinned).toList();
+  }
 
   final List<Context> all;
   final Context? current;
   final List<Context> children;
 
-  ContextState copyWith({
-    List<Context>? contexts,
-    List<Budget>? budgets = const [],
-    Context? current,
-    Week? week,
-  });
+  final List<Note> notes;
+  final List<Note> pinnedNotes;
+  final bool moreNotes;
 
-  @override
-  List<Object?> get props => [all, current];
-}
-
-final class BudgetsLoadingState extends ContextState {
-  BudgetsLoadingState({required super.contexts, Week? week, super.current})
-      : week = week ?? Week.current();
+  final int? topic;
+  final List<Note> topicNotes;
+  final List<Note> pinnedTopicNotes;
+  final bool moreTopicNotes;
+  Note get topicNote => topicNotes.first;
 
   final Week week;
+  final Map<int, Budget>? _budgets;
+  List<Budget>? get budgets => _budgets?.values.toList();
+  Budget? budgetFor(Context context) => _budgets?[context.id];
 
-  @override
   ContextState copyWith({
     List<Context>? contexts,
-    List<Budget>? budgets = const [],
-    Context? current = Context.unchanged,
+    Optional<List<Budget>> budgets = const Optional.absent(),
+    Optional<Context> current = const Optional.absent(),
     Week? week,
+    List<Note>? notes,
+    bool? moreNotes,
+    Optional<int> topic = const Optional.absent(),
+    List<Note>? topicNotes,
+    bool? moreTopicNotes,
   }) {
-    if (budgets?.isNotEmpty == true) {
-      return BudgetsLoadedState(
-        contexts: contexts ?? all,
-        budgets: budgets!,
-        current: current ?? this.current,
-        week: week ?? this.week,
-      );
-    }
-    return BudgetsLoadingState(
+    return ContextState._(
       contexts: contexts ?? all,
-      current: current == Context.unchanged ? this.current : current,
+      budgets: budgets.or(this.budgets),
+      current: current.or(this.current),
       week: week ?? this.week,
+      notes: notes ?? this.notes,
+      moreNotes: moreNotes ?? this.moreNotes,
+      topic: topic.or(this.topic),
+      topicNotes: topicNotes ?? this.topicNotes,
+      moreTopicNotes: moreTopicNotes ?? this.moreTopicNotes,
     );
   }
 
   @override
-  List<Object?> get props => super.props + [week];
-}
-
-final class BudgetsLoadedState extends ContextState {
-  BudgetsLoadedState({
-    required List<Budget> budgets,
-    required super.contexts,
-    super.current,
-    required this.week,
-  }) : _budgets =
-            Map.fromEntries(budgets.map((b) => MapEntry(b.context!.id!, b)));
-
-  final Week week;
-  final Map<int, Budget> _budgets;
-
-  Budget? budgetFor(Context context) => _budgets[context.id];
-
-  @override
-  ContextState copyWith({
-    List<Context>? contexts,
-    List<Budget>? budgets = const [],
-    Budget? budget,
-    Context? current,
-    Week? week,
-  }) {
-    if (budgets?.isEmpty == true) {
-      budgets = _budgets.values.toList();
-      if (budget != null) {
-        budgets = budgets.replace(budget, (b1, b2) => b1.id == b2.id);
-      }
-    }
-    if (budgets == null || week != this.week) {
-      return BudgetsLoadingState(
-        contexts: contexts ?? all,
-        current: current ?? this.current,
-        week: week ?? this.week,
-      );
-    }
-    return BudgetsLoadedState(
-      contexts: all,
-      budgets: budgets,
-      current: current ?? this.current,
-      week: week ?? this.week,
-    );
-  }
-
-  @override
-  List<Object?> get props => super.props + [week];
+  List<Object?> get props => [
+        all,
+        current,
+        children,
+        week,
+        _budgets,
+        notes,
+        moreNotes,
+        pinnedNotes,
+        topic,
+        topicNotes,
+        pinnedTopicNotes,
+        moreTopicNotes,
+      ];
 }
