@@ -7,6 +7,10 @@ final class ContextState extends Equatable {
     return children;
   }
 
+  static List<Note> _filterPinnedNotes(List<Note> notes, bool pinned) {
+    return notes.where((note) => note.order.pinned == pinned).toList();
+  }
+
   ContextState({
     required List<Context> contexts,
     required this.week,
@@ -41,10 +45,6 @@ final class ContextState extends Equatable {
         _budgets = budgets
             ?.asMap()
             .map((index, budget) => MapEntry(budget.context!.id!, budget));
-
-  static List<Note> _filterPinnedNotes(List<Note> notes, bool pinned) {
-    return notes.where((note) => note.order.pinned == pinned).toList();
-  }
 
   final List<Context> all;
   final Context? current;

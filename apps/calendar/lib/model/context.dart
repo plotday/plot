@@ -89,6 +89,10 @@ class Context extends Model implements Comparable<Context> {
     return store.get(parentId);
   }
 
+  bool isParent(Context other) => other.path.startsWith("$path.");
+  bool isChild(Context? other) =>
+      other == null || path.startsWith("${other.path}.");
+
   Context copyWith({
     String? name,
     Duration? pomodoro,

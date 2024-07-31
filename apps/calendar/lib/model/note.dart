@@ -13,7 +13,7 @@ class Note extends Model implements Comparable<Note> {
   static final Set<int?> _topicDone = {};
 
   static List<Note> _filter(List<Note> notes, Context? context) => notes
-      .where((note) => context?.id == null || note._contextId == context!.id)
+      .where((note) => context == null || context.isParent(note.context))
       .sorted();
 
   static Stream<List<Note>> stream(Context? context) =>
@@ -32,9 +32,9 @@ class Note extends Model implements Comparable<Note> {
     if (list.isNotEmpty) {
       lastOrder = list.last.order;
     }
-    var query = base.from('note').select().eq("root", true);
+    var query = base.from('note_x').select().eq("root", true);
     if (context != null) {
-      query = query.eq('context_id', context.id!);
+      query = query.filter('context_path', 'cs', context.path);
     }
     if (lastOrder != null) {
       query = query.gt('order', lastOrder.value);
@@ -143,6 +143,8 @@ class Note extends Model implements Comparable<Note> {
   final Order order;
   final bool root;
   final bool private;
+
+  Context get context => Context.store.get(_contextId);
 
   Note copyWith({
     String? body,
