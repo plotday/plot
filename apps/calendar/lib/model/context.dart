@@ -90,7 +90,8 @@ class Context extends LocalModel implements Comparable<Context> {
     return store.get(parentId);
   }
 
-  bool isParent(Context other) => other.path.startsWith("$path.");
+  bool isParent(Context other) =>
+      other == this || other.path.startsWith("$path.");
   bool isChild(Context? other) =>
       other == null || path.startsWith("${other.path}.");
 

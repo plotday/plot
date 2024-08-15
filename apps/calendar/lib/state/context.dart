@@ -21,6 +21,8 @@ class ContextBloc extends Cubit<ContextState> {
     _contextSubscription = Context.store.stream().listen((contexts) {
       emit(state.copyWith(contexts: contexts));
     });
+    loadBudgets();
+    loadNotes();
   }
 
   void dispose() {
