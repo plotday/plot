@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'model/model.dart';
 import 'model/context.dart';
 import 'state/user.dart';
 import 'state/schedule.dart';
@@ -174,11 +175,12 @@ class ScheduleRoute extends AdaptiveRoute {
 class EventRoute extends AdaptiveRoute {
   EventRoute({required this.eventId});
 
-  final int eventId;
+  final String eventId;
 
   @override
   void onEnter(BuildContext context) async {
-    final event = await context.read<ScheduleBloc>().selectById(eventId);
+    final event =
+        await context.read<ScheduleBloc>().selectById(parseUUID(eventId));
     if (!context.mounted) return;
     context.read<ContextBloc>().setCurrent(event.context);
   }
@@ -257,9 +259,9 @@ class PrioritiesRoute extends AdaptiveRoute {
 @TypedGoRoute<PriorityRoute>(path: '/p/:contextId', name: 'priority:triple')
 class PriorityRoute extends AdaptiveRoute {
   PriorityRoute({required this.contextId})
-      : context = Context.store.get(contextId);
+      : context = Context.store.get(parseUUID(contextId));
 
-  final int contextId;
+  final String contextId;
   final Context context;
 
   @override

@@ -19,7 +19,8 @@ class Header extends StatelessWidget {
               onPressed: () {
                 state.current?.parent == null
                     ? PrioritiesRoute().go(context)
-                    : PriorityRoute(contextId: state.current!.parent!.id!)
+                    : PriorityRoute(
+                            contextId: state.current!.parent!.id!.toString())
                         .go(context);
               },
             ),

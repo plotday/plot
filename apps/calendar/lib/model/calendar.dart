@@ -1,7 +1,9 @@
 import 'model.dart';
 import 'package:plot/util/api.dart' as api;
 
-class Calendar extends Model {
+typedef CalendarID = int;
+
+class Calendar extends RemoteModel<CalendarID> {
   static final store = Store<int, Calendar>();
 
   Calendar.fromJson(Map<String, dynamic> json)

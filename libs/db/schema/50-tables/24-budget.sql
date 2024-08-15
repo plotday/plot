@@ -8,7 +8,7 @@ CREATE TABLE "public"."budget" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
-    "context_id" bigint REFERENCES context ON DELETE CASCADE,
+    "context_id" uuid REFERENCES context ON DELETE CASCADE,
     "week" daterange NOT NULL CHECK (is_week (week)),
     "minutes" integer,
     "type" budget_type NOT NULL DEFAULT 'default' ::budget_type,

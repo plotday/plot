@@ -1,5 +1,5 @@
 CREATE TABLE "public"."event" (
-    "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
+    "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,

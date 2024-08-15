@@ -2,18 +2,9 @@ CREATE OR REPLACE VIEW note_x WITH ( security_invoker = TRUE)
 -- for formatting
 AS
 SELECT
-    note.id,
-    note.created_at,
-    note.modified_at,
-    note.user_id,
-    note.context_id,
-    note.topic_id,
-    note.body,
-    note.order,
-    note.root,
-    note.private,
+    note.*,
     context.path AS context_path,
-    jsonb_object_agg(tag_users.emoji, tag_users.user_ids) AS tags
+    COALESCE(jsonb_object_agg(tag_users.emoji, tag_users.user_ids) FILTER (WHERE tag_users.emoji IS NOT NULL), '{}'::jsonb) AS tags
 FROM
     note
     LEFT JOIN context ON note.context_id = context.id
@@ -21,7 +12,7 @@ FROM
         SELECT
             note_id,
             emoji,
-            jsonb_agg(user_id) AS user_ids
+            array_agg(user_id ORDER BY user_id) AS user_ids
         FROM
             tag
         GROUP BY

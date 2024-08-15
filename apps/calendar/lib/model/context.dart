@@ -5,8 +5,10 @@ import 'package:plot/util/order.dart';
 
 export 'package:plot/util/order.dart';
 
-class Context extends Model implements Comparable<Context> {
-  static final store = Store<int, Context>(
+typedef ContextID = UUID;
+
+class Context extends LocalModel implements Comparable<Context> {
+  static final store = Store<ContextID, Context>(
     load: () async {
       final contexts = (await base
               .from('context')
@@ -14,9 +16,9 @@ class Context extends Model implements Comparable<Context> {
               .eq("user_id", base.auth.currentUser!.id))
           .map(Context.fromJson);
       for (var context in contexts) {
-        _pathToId[context.path] = context.id!;
+        _pathToId[context.path] = context.id;
       }
-      return contexts.map((m) => MapEntry(m.id!, m));
+      return contexts.map((m) => MapEntry(m.id, m));
     },
   );
 
@@ -35,10 +37,9 @@ class Context extends Model implements Comparable<Context> {
         ));
   }
 
-  static final Map<String, int> _pathToId = {};
+  static final Map<String, ContextID> _pathToId = {};
 
   Context({
-    super.id,
     required this.name,
     Order? order,
     Context? parent,
@@ -48,13 +49,13 @@ class Context extends Model implements Comparable<Context> {
         order = order ?? Order();
 
   const Context._({
-    super.id,
+    required UUID id,
     required this.name,
     required this.path,
     required this.order,
     required this.pomodoro,
     required this.pinned,
-  });
+  }) : super.withId(id);
 
   @override
   Context.fromJson(Map<String, dynamic> json)
@@ -63,7 +64,7 @@ class Context extends Model implements Comparable<Context> {
         pomodoro = Duration(minutes: json['pomodoro'] as int),
         order = Order.fromString(json['order'] as String),
         pinned = json['pinned'] as bool? ?? false,
-        super(id: json['id'] as int);
+        super.fromJson(json);
 
   @override
   int compareTo(Context other) {
@@ -112,8 +113,8 @@ class Context extends Model implements Comparable<Context> {
   @override
   Future<Context> save() async {
     final model = await saveToBase("context", Context.fromJson);
-    store.put(model.id!, model);
-    _pathToId[model.path] = model.id!;
+    store.put(model.id, model);
+    _pathToId[model.path] = model.id;
     return model;
   }
 
@@ -123,6 +124,7 @@ class Context extends Model implements Comparable<Context> {
 
   @override
   Map<String, dynamic> toJson() => {
+        ...super.toJson(),
         'name': name,
         'path': path,
         'pomodoro': pomodoro.inMinutes,

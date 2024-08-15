@@ -24,7 +24,7 @@ class ScheduleBloc extends Cubit<ScheduleState> {
     emit(state.copyWith(selected: Optional.of(event)));
   }
 
-  Future<ScheduledEvent> selectById(int eventId) async {
+  Future<ScheduledEvent> selectById(ScheduledEventID eventId) async {
     emit(SelectedEventLoadingState.copy(state));
     final event = await ScheduledEvent.getOrFetch(eventId);
     select(event);

@@ -1,14 +1,17 @@
 import 'package:flutter/widgets.dart';
 
-import 'text_field.dart';
+import 'package:plot/model/note.dart';
 
-class Note extends StatelessWidget {
-  const Note({
+class NoteWidget extends StatelessWidget {
+  const NoteWidget({
+    required this.note,
     super.key,
   });
 
+  final Note note;
+
   @override
   Widget build(BuildContext context) {
-    return const TextField(label: 'Add a note');
+    return Text(note.body);
   }
 }

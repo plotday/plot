@@ -6,7 +6,9 @@ import 'package:plot/util/api.dart' as api;
 
 enum AccountProvider { google, outlook }
 
-class Account extends Model {
+typedef AccountID = int;
+
+class Account extends RemoteModel<AccountID> {
   static final store = Store<int, Account>(
     load: () async {
       final json = (await base
@@ -41,10 +43,11 @@ class Account extends Model {
         provider = AccountProvider.values
             .firstWhere((e) => e.name == json['provider'] as String),
         calendars = _calendarsFromJson(json),
-        super(id: json['id'] as int);
+        super.fromJson(json);
 
   @override
   Map<String, dynamic> toJson() => {
+        ...super.toJson(),
         'email': email,
         'provider': provider.name,
       };
@@ -61,5 +64,5 @@ class Account extends Model {
   final List<Calendar> calendars;
 
   @override
-  List<Object?> get props => [id, email, provider];
+  List<Object?> get props => super.props + [email, provider];
 }

@@ -9,16 +9,18 @@ import 'model.dart';
 
 enum EventResponse { accepted, declined, tentative }
 
-class ScheduledEvent extends Model {
-  static final Store<int, ScheduledEvent> store = Store();
+typedef ScheduledEventID = UUID;
+
+class ScheduledEvent extends LocalModel {
+  static final Store<ScheduledEventID, ScheduledEvent> store = Store();
   static const columns = 'id,series,name,at,invitees,context_id,response';
 
-  static Future<ScheduledEvent> fetch(int id) async {
+  static Future<ScheduledEvent> fetch(ScheduledEventID id) async {
     final response = await base.from('event_x').select(columns).eq('id', id);
     return ScheduledEvent.fromJson(response.first);
   }
 
-  static Future<ScheduledEvent> getOrFetch(int id) async {
+  static Future<ScheduledEvent> getOrFetch(ScheduledEventID id) async {
     return store.has(id) ? store.get(id) : await fetch(id);
   }
 
@@ -69,25 +71,36 @@ class ScheduledEvent extends Model {
   ScheduledEvent({
     this.name,
     required this.at,
-    super.id,
+    Context? context,
+    this.response = EventResponse.accepted,
+    this.series,
+    this.invitees = const [],
+  })  : _contextId = context?.id,
+        _copiedFrom = null;
+
+  ScheduledEvent._({
+    this.name,
+    required this.at,
+    required UUID id,
     Context? context,
     this.response = EventResponse.accepted,
     this.series,
     this.invitees = const [],
     ScheduledEvent? copiedFrom,
   })  : _contextId = context?.id,
-        _copiedFrom = copiedFrom?._copiedFrom ?? copiedFrom;
+        _copiedFrom = copiedFrom?._copiedFrom ?? copiedFrom,
+        super.withId(id);
 
   ScheduledEvent.fromJson(Map<String, dynamic> json)
       : series = json['series'] as String?,
         name = json['name'] as String?,
         at = DateTimeRange.fromString(json['at'] as String),
         invitees = (json['invitees'] as List).map((i) => i as String).toList(),
-        _contextId = json['context_id'] as int?,
+        _contextId = json['context_id'] as ContextID?,
         _copiedFrom = null,
         response = EventResponse.values
             .byName((json['response'] as String?) ?? 'tentative'),
-        super(id: json['id'] as int);
+        super.fromJson(json);
 
   @override
   Map<String, dynamic> toJson({bool patch = false}) => {
@@ -105,7 +118,7 @@ class ScheduledEvent extends Model {
     Optional<Context> context = const Optional.absent(),
     EventResponse? response,
   }) {
-    return ScheduledEvent(
+    return ScheduledEvent._(
       copiedFrom: this,
       id: id,
       series: series,
@@ -122,14 +135,14 @@ class ScheduledEvent extends Model {
   final DateTimeRange at;
   final List<String> invitees;
   final EventResponse response;
-  final int? _contextId;
+  final ContextID? _contextId;
   final ScheduledEvent? _copiedFrom;
 
   Context? get context =>
       _contextId == null ? null : Context.store.get(_contextId);
 
   @override
-  List<Object> get props => [id ?? 0, name ?? '', at, _contextId ?? 0];
+  List<Object?> get props => [id, name, at, _contextId];
 
   @override
   Future<ScheduledEvent> save() async {
@@ -145,7 +158,7 @@ class ScheduledEvent extends Model {
       );
     } else {
       // TODO Only patch if there are changes
-      store.put(id!, this);
+      store.put(id, this);
       result = await api.patch(
         "/event/$id",
         body: {
@@ -153,7 +166,7 @@ class ScheduledEvent extends Model {
         },
       );
     }
-    store.put(result['id'] as int, this);
+    store.put(result['id'] as ScheduledEventID, this);
 
     if (context != null &&
         series != null &&
@@ -169,8 +182,8 @@ class ScheduledEvent extends Model {
           .eq('series', series!);
     }
 
-    return ScheduledEvent(
-      id: result['id'] as int,
+    return ScheduledEvent._(
+      id: result['id'] as ScheduledEventID,
       series: series,
       name: name,
       at: at,
@@ -302,7 +315,7 @@ class ScheduledDay extends Equatable {
       }
     }).toList();
     for (final event in items) {
-      ScheduledEvent.store.put(event.id!, event);
+      ScheduledEvent.store.put(event.id, event);
     }
 
     // Merge leftovers, skipping duplicates

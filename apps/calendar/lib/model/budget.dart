@@ -2,13 +2,15 @@ import 'package:plot/util/time.dart';
 import 'model.dart';
 import 'context.dart';
 
-class Budget extends Model {
-  static final Store<Week, Store<int, Budget>> _store =
-      Store<Week, Store<int, Budget>>();
+typedef BudgetID = int;
 
-  static Future<Budget> get(Week week, int contextId) async {
-    final models = await list(week);
-    return models[contextId];
+class Budget extends RemoteModel<BudgetID> {
+  static final Store<Week, Store<ContextID?, Budget>> _store =
+      Store<Week, Store<ContextID?, Budget>>();
+
+  static Future<Budget> get(Week week, ContextID contextId) async {
+    await list(week);
+    return _store.get(week).get(contextId);
   }
 
   static Future<List<Budget>> list(Week week) async {
@@ -24,9 +26,9 @@ class Budget extends Model {
         },
       );
       models = rows.map((json) => Budget.fromJson(week, json)).toList();
-      final innerStore = Store<int, Budget>(
+      final innerStore = Store<ContextID?, Budget>(
           values: Map.fromEntries(
-        models.map((model) => MapEntry(model._contextId ?? 0, model)),
+        models.map((model) => MapEntry(model._contextId, model)),
       ));
       _store.put(
         week,
@@ -39,7 +41,7 @@ class Budget extends Model {
             !models.any((budget) => budget.context?.id == context.id))
         .map((context) {
       return Budget(
-        context.id!,
+        context.id,
         week,
         budget: Duration.zero,
         scheduled: Duration.zero, // TODO
@@ -47,9 +49,7 @@ class Budget extends Model {
     }).toList();
 
     final budgets = (models + unbudgeted);
-    _store
-        .get(week)
-        .set({for (var b in budgets) (b._contextId ?? 0): b}.entries);
+    _store.get(week).set({for (var b in budgets) (b._contextId): b}.entries);
 
     return _store.get(week).list();
   }
@@ -63,7 +63,7 @@ class Budget extends Model {
   });
 
   Budget.fromJson(this.week, Map<String, dynamic> json, {Duration? scheduled})
-      : _contextId = json['context_id'] as int?,
+      : _contextId = json['context_id'] as ContextID?,
         budget = Duration(minutes: json['budget'] as int? ?? 0),
         scheduled =
             scheduled ?? Duration(minutes: json['minutes'] as int? ?? 0);
@@ -99,21 +99,21 @@ class Budget extends Model {
     return model;
   }
 
-  final int? _contextId;
+  final ContextID? _contextId;
   final Week week;
   final Duration budget;
   final Duration scheduled;
 
   Context? get context =>
       _contextId != null ? Context.store.get(_contextId) : null;
-  String get key => _contextId.toString();
+  String get key => _contextId?.toString() ?? 'null';
 
   @override
-  List<Object> get props => [_contextId ?? 0, budget];
+  List<Object?> get props => super.props + [_contextId, budget];
 
   @override
   Map<String, dynamic> toJson() => {
-        'user_id': base.auth.currentUser!.id,
+        ...super.toJson(),
         'context_id': _contextId,
         'week': week.toString(),
         'budget': budget.inMinutes,

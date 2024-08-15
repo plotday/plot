@@ -21,7 +21,7 @@ class EventWidget extends StatelessWidget {
       builder: (context, scheduleState) => GestureDetector(
         onTap: () {
           if (event.id != null) {
-            EventRoute(eventId: event.id!).go(context);
+            EventRoute(eventId: event.id!.toString()).go(context);
           }
         },
         child: Padding(

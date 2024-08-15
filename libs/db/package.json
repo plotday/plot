@@ -8,7 +8,7 @@
   "private": true,
   "scripts": {
     "gen-env": "../../scripts/gen-env $npm_package_env_vars",
-    "start": "export $(pnpm --silent gen-env) && supabase start",
+    "start": "export $(pnpm --silent gen-env) && export OPENAI_API_KEY=$(cat ~/.config/openai.token) && supabase start",
     "stop": "export $(pnpm --silent gen-env) && supabase stop",
     "status": "export $(pnpm --silent gen-env) && supabase status",
     "gen-types": "export $(pnpm --silent gen-env) && supabase gen types typescript --local > src/types.ts",

@@ -2,7 +2,9 @@ import 'model.dart';
 import 'context.dart';
 import 'package:plot/util/time.dart';
 
-class Session extends Model {
+typedef SessionID = int;
+
+class Session extends RemoteModel<SessionID> {
   static const threshold = Duration(minutes: 5);
 
   // We keep one session above the threshold and everything newer, with the
@@ -59,18 +61,18 @@ class Session extends Model {
   }) : paused = paused ?? Duration.zero;
 
   Session.fromJson(Map<String, dynamic> json)
-      : context = json['context_id']
-            ? Context.store.get(json['context_id'] as int)
+      : context = json['context_id'] != null
+            ? Context.store.get(parseUUID(json['context_id'] as String))
             : null,
         at = DateTimeRange.fromString(json['at'] as String),
         paused = durationFromString(json['planned'] as String),
-        pomodoroStart = json['pomodoro_start']
+        pomodoroStart = json['pomodoro_start'] != null
             ? DateTime.parse(json['pomodoro_start'] as String)
             : null,
-        pomodoroLength = json['pomodoro_length']
+        pomodoroLength = json['pomodoro_length'] != null
             ? durationFromString(json['pomodoro_length'] as String)
             : null,
-        super(id: json['id'] as int);
+        super.fromJson(json);
 
   final Context? context;
   final DateTimeRange at;
@@ -80,8 +82,7 @@ class Session extends Model {
 
   @override
   List<Object?> get props =>
-      super.props +
-      [context?.id ?? 0, at, paused, pomodoroStart ?? 0, pomodoroLength ?? 0];
+      super.props + [at, paused, pomodoroStart, pomodoroLength];
 
   Session copyWith({
     DateTime? end,
@@ -123,8 +124,8 @@ class Session extends Model {
 
   static Future<List<Session>> saveList(List<Session> items) async {
     _updateCache(items);
-    final newItems =
-        await Model.saveListToBase(items, 'session', Session.fromJson);
+    final newItems = await RemoteModel.saveListToBase<SessionID, Session>(
+        items, 'session', Session.fromJson);
     _updateCache(newItems);
     return newItems;
   }
@@ -139,8 +140,7 @@ class Session extends Model {
 
   @override
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'user_id': base.auth.currentUser!.id,
+        ...super.toJson(),
         'context_id': context?.id,
         'at': at.toString(),
         'pomodoro_start': pomodoroStart?.toIso8601String(),

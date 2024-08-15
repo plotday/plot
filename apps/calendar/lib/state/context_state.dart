@@ -20,7 +20,7 @@ final class ContextState extends Equatable {
         notes = const [],
         moreNotes = true,
         pinnedNotes = const [],
-        topic = null,
+        topicId = null,
         topicNotes = const [],
         pinnedTopicNotes = const [],
         moreTopicNotes = false,
@@ -32,7 +32,7 @@ final class ContextState extends Equatable {
     this.current,
     List<Note> notes = const [],
     this.moreNotes = true,
-    this.topic,
+    this.topicId,
     List<Note> topicNotes = const [],
     this.moreTopicNotes = true,
     List<Budget>? budgets,
@@ -54,14 +54,14 @@ final class ContextState extends Equatable {
   final List<Note> pinnedNotes;
   final bool moreNotes;
 
-  final int? topic;
+  final TopicID? topicId;
   final List<Note> topicNotes;
   final List<Note> pinnedTopicNotes;
   final bool moreTopicNotes;
   Note get topicNote => topicNotes.first;
 
   final Week week;
-  final Map<int, Budget>? _budgets;
+  final Map<ContextID, Budget>? _budgets;
   List<Budget>? get budgets => _budgets?.values.toList();
   Budget? budgetFor(Context context) => _budgets?[context.id];
 
@@ -72,7 +72,7 @@ final class ContextState extends Equatable {
     Week? week,
     List<Note>? notes,
     bool? moreNotes,
-    Optional<int> topic = const Optional.absent(),
+    Optional<TopicID> topicId = const Optional.absent(),
     List<Note>? topicNotes,
     bool? moreTopicNotes,
   }) {
@@ -83,7 +83,7 @@ final class ContextState extends Equatable {
       week: week ?? this.week,
       notes: notes ?? this.notes,
       moreNotes: moreNotes ?? this.moreNotes,
-      topic: topic.or(this.topic),
+      topicId: topicId.or(this.topicId),
       topicNotes: topicNotes ?? this.topicNotes,
       moreTopicNotes: moreTopicNotes ?? this.moreTopicNotes,
     );
@@ -99,7 +99,7 @@ final class ContextState extends Equatable {
         notes,
         moreNotes,
         pinnedNotes,
-        topic,
+        topicId,
         topicNotes,
         pinnedTopicNotes,
         moreTopicNotes,

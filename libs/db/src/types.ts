@@ -76,7 +76,7 @@ export type Database = {
       }
       budget: {
         Row: {
-          context_id: number | null
+          context_id: string | null
           created_at: string
           id: number
           minutes: number | null
@@ -86,7 +86,7 @@ export type Database = {
           week: unknown
         }
         Insert: {
-          context_id?: number | null
+          context_id?: string | null
           created_at?: string
           id?: never
           minutes?: number | null
@@ -96,7 +96,7 @@ export type Database = {
           week: unknown
         }
         Update: {
-          context_id?: number | null
+          context_id?: string | null
           created_at?: string
           id?: never
           minutes?: number | null
@@ -240,7 +240,7 @@ export type Database = {
       context: {
         Row: {
           created_at: string
-          id: number
+          id: string
           modified_at: string
           name: string
           order: string
@@ -251,7 +251,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          id?: never
+          id?: string
           modified_at?: string
           name: string
           order: string
@@ -261,7 +261,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          id?: never
+          id?: string
           modified_at?: string
           name?: string
           order?: string
@@ -316,7 +316,7 @@ export type Database = {
           conferencing_url: string | null
           created_at: string
           description: string | null
-          id: number
+          id: string
           invitees_hidden: boolean
           modified_at: string
           name: string | null
@@ -339,7 +339,7 @@ export type Database = {
           conferencing_url?: string | null
           created_at?: string
           description?: string | null
-          id?: never
+          id?: string
           invitees_hidden?: boolean
           modified_at?: string
           name?: string | null
@@ -362,7 +362,7 @@ export type Database = {
           conferencing_url?: string | null
           created_at?: string
           description?: string | null
-          id?: never
+          id?: string
           invitees_hidden?: boolean
           modified_at?: string
           name?: string | null
@@ -420,7 +420,7 @@ export type Database = {
         Row: {
           created_at: string
           email: string
-          event_id: number | null
+          event_id: string | null
           is_optional: boolean
           response: Database["public"]["Enums"]["event_response"] | null
           contact: unknown | null
@@ -428,14 +428,14 @@ export type Database = {
         Insert: {
           created_at?: string
           email: string
-          event_id?: number | null
+          event_id?: string | null
           is_optional?: boolean
           response?: Database["public"]["Enums"]["event_response"] | null
         }
         Update: {
           created_at?: string
           email?: string
-          event_id?: number | null
+          event_id?: string | null
           is_optional?: boolean
           response?: Database["public"]["Enums"]["event_response"] | null
         }
@@ -447,43 +447,50 @@ export type Database = {
             referencedRelation: "event"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "invitee_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["id"]
+          },
         ]
       }
       note: {
         Row: {
           body: string
-          context_id: number | null
+          context_id: string | null
           created_at: string
-          id: number
+          id: string
           modified_at: string
           order: string
           private: boolean
           root: boolean
-          topic_id: number
+          topic_id: string
           user_id: string
         }
         Insert: {
           body: string
-          context_id?: number | null
+          context_id?: string | null
           created_at?: string
-          id?: never
+          id?: string
           modified_at?: string
           order: string
           private?: boolean
           root?: boolean
-          topic_id?: number
+          topic_id: string
           user_id: string
         }
         Update: {
           body?: string
-          context_id?: number | null
+          context_id?: string | null
           created_at?: string
-          id?: never
+          id?: string
           modified_at?: string
           order?: string
           private?: boolean
           root?: boolean
-          topic_id?: number
+          topic_id?: string
           user_id?: string
         }
         Relationships: [
@@ -562,7 +569,7 @@ export type Database = {
       }
       series: {
         Row: {
-          context_id: number | null
+          context_id: string | null
           created_at: string
           embedding: string | null
           id: number
@@ -572,7 +579,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          context_id?: number | null
+          context_id?: string | null
           created_at?: string
           embedding?: string | null
           id?: never
@@ -582,7 +589,7 @@ export type Database = {
           user_id: string
         }
         Update: {
-          context_id?: number | null
+          context_id?: string | null
           created_at?: string
           embedding?: string | null
           id?: never
@@ -618,9 +625,9 @@ export type Database = {
       session: {
         Row: {
           at: unknown
-          context_id: number | null
+          context_id: string | null
           created_at: string
-          event_id: number | null
+          event_id: string | null
           id: number
           modified_at: string
           paused: unknown
@@ -630,9 +637,9 @@ export type Database = {
         }
         Insert: {
           at: unknown
-          context_id?: number | null
+          context_id?: string | null
           created_at?: string
-          event_id?: number | null
+          event_id?: string | null
           id?: never
           modified_at?: string
           paused?: unknown
@@ -642,9 +649,9 @@ export type Database = {
         }
         Update: {
           at?: unknown
-          context_id?: number | null
+          context_id?: string | null
           created_at?: string
-          event_id?: number | null
+          event_id?: string | null
           id?: never
           modified_at?: string
           paused?: unknown
@@ -675,6 +682,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "session_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "session_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -688,21 +702,21 @@ export type Database = {
           created_at: string
           emoji: string
           id: number
-          note_id: number | null
+          note_id: string
           user_id: string
         }
         Insert: {
           created_at?: string
           emoji: string
           id?: never
-          note_id?: number | null
+          note_id: string
           user_id: string
         }
         Update: {
           created_at?: string
           emoji?: string
           id?: never
-          note_id?: number | null
+          note_id?: string
           user_id?: string
         }
         Relationships: [
@@ -755,6 +769,34 @@ export type Database = {
       }
     }
     Views: {
+      event_invitees: {
+        Row: {
+          attendee_count: number | null
+          event_id: string | null
+          freemail_invitees: boolean | null
+          invitee_count: number | null
+          invitee_domains: string[] | null
+          invitee_organization_ids: number[] | null
+          invitees: string[] | null
+          size: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invitee_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "event"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invitee_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_x: {
         Row: {
           account_id: number | null
@@ -764,14 +806,14 @@ export type Database = {
           availability: Database["public"]["Enums"]["event_availability"] | null
           calendar_id: number | null
           conferencing_url: string | null
-          context_id: number | null
+          context_id: string | null
           context_path: unknown | null
           created_at: string | null
           day: string | null
           description: string | null
           embedding: string | null
           external: boolean | null
-          id: number | null
+          id: string | null
           initiated: boolean | null
           invitee_count: number | null
           invitee_domains: string[] | null
@@ -797,6 +839,20 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "calendar_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "account"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_calendar_id_fkey"
+            columns: ["calendar_id"]
+            isOneToOne: false
+            referencedRelation: "calendar"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "event_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -807,7 +863,7 @@ export type Database = {
       }
       expenditure: {
         Row: {
-          context_id: number | null
+          context_id: string | null
           count: number | null
           day: string | null
           declined_count: number | null
@@ -821,7 +877,7 @@ export type Database = {
       }
       expenditure_weekly: {
         Row: {
-          context_id: number | null
+          context_id: string | null
           count: number | null
           declined_count: number | null
           declined_minutes: number | null
@@ -918,16 +974,16 @@ export type Database = {
       note_x: {
         Row: {
           body: string | null
-          context_id: number | null
+          context_id: string | null
           context_path: unknown | null
           created_at: string | null
-          id: number | null
+          id: string | null
           modified_at: string | null
           order: string | null
           private: boolean | null
           root: boolean | null
           tags: Json | null
-          topic_id: number | null
+          topic_id: string | null
           user_id: string | null
         }
         Relationships: [
@@ -1025,7 +1081,7 @@ export type Database = {
           "": unknown
         }
         Returns: {
-          context_id: number | null
+          context_id: string | null
           created_at: string
           id: number
           minutes: number | null
@@ -1183,7 +1239,7 @@ export type Database = {
         Returns: {
           created_at: string
           email: string
-          event_id: number | null
+          event_id: string | null
           is_optional: boolean
           response: Database["public"]["Enums"]["event_response"] | null
         }[]
@@ -1242,7 +1298,7 @@ export type Database = {
       }
       update_topic_root: {
         Args: {
-          note_id: number
+          note_id: string
         }
         Returns: undefined
       }
@@ -1254,7 +1310,7 @@ export type Database = {
       }
       upsert_invitees: {
         Args: {
-          _event_ids: number[]
+          _event_ids: string[]
           _invitees: Database["public"]["CompositeTypes"]["invitee_upsert"][]
         }
         Returns: undefined
@@ -1307,7 +1363,7 @@ export type Database = {
         provider_id: string | null
       }
       invitee_upsert: {
-        event_id: number | null
+        event_id: string | null
         email: string | null
         response: Database["public"]["Enums"]["event_response"] | null
         is_optional: boolean | null

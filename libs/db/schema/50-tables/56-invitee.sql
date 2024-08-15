@@ -1,6 +1,6 @@
 CREATE TABLE "public"."invitee" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "event_id" bigint REFERENCES "event" ON DELETE CASCADE,
+    "event_id" uuid REFERENCES "event" ON DELETE CASCADE,
     "email" text NOT NULL CHECK (is_lower ("email")),
     "response" event_response,
     "is_optional" boolean NOT NULL DEFAULT FALSE,

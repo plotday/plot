@@ -116,11 +116,11 @@ RouteBase get $eventRoute => GoRouteData.$route(
 
 extension $EventRouteExtension on EventRoute {
   static EventRoute _fromState(GoRouterState state) => EventRoute(
-        eventId: int.parse(state.pathParameters['eventId']!),
+        eventId: state.pathParameters['eventId']!,
       );
 
   String get location => GoRouteData.$location(
-        '/e/${Uri.encodeComponent(eventId.toString())}',
+        '/e/${Uri.encodeComponent(eventId)}',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -141,11 +141,11 @@ RouteBase get $priorityRoute => GoRouteData.$route(
 
 extension $PriorityRouteExtension on PriorityRoute {
   static PriorityRoute _fromState(GoRouterState state) => PriorityRoute(
-        contextId: int.parse(state.pathParameters['contextId']!),
+        contextId: state.pathParameters['contextId']!,
       );
 
   String get location => GoRouteData.$location(
-        '/p/${Uri.encodeComponent(contextId.toString())}',
+        '/p/${Uri.encodeComponent(contextId)}',
       );
 
   void go(BuildContext context) => context.go(location);

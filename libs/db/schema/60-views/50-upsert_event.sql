@@ -58,13 +58,13 @@ END;
 $$;
 
 CREATE TYPE invitee_upsert AS (
-    event_id bigint,
+    event_id uuid,
     email text,
     response event_response,
     is_optional boolean
 );
 
-CREATE OR REPLACE FUNCTION public.upsert_invitees (_event_ids bigint[], _invitees invitee_upsert[])
+CREATE OR REPLACE FUNCTION public.upsert_invitees (_event_ids uuid[], _invitees invitee_upsert[])
     RETURNS VOID
     AS $$
 BEGIN

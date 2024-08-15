@@ -40,12 +40,12 @@ class ContextBloc extends Cubit<ContextState> {
     loadNotes();
   }
 
-  void add(Context context) async {
+  Future<void> add(Context context) async {
     emit(state.copyWith(contexts: state.all + [context]));
-    await context.save();
+    await update(await context.save());
   }
 
-  void update(Context context) async {
+  Future<void> update(Context context) async {
     final currentContexts = state.all;
     final contexts =
         currentContexts.replace(context, (c1, c2) => c1.id == c2.id);
@@ -79,7 +79,7 @@ class ContextBloc extends Cubit<ContextState> {
         moreNotes: Note.more(state.current),
       ));
     });
-    final topic = state.topic;
+    final topic = state.topicId;
     if (topic != null) {
       _topicSubscription = Note.streamTopic(topic).listen((notes) {
         emit(state.copyWith(
@@ -100,6 +100,27 @@ class ContextBloc extends Cubit<ContextState> {
       );
     }
     await budget.save();
+  }
+
+  Future<void> addNote(Note note) async {
+    print("Adding note");
+    emit(state.copyWith(notes: state.notes + [note]));
+    await updateNote(await note.save());
+  }
+
+  Future<void> updateNote(Note note) async {
+    print("Updating note ${note.id}");
+    final currentNotes = state.notes;
+    final notes = currentNotes.replace(note, (n1, n2) => n1.id == n2.id);
+    emit(
+      state.copyWith(notes: notes),
+    );
+    try {
+      await note.save();
+    } catch (e) {
+      emit(state.copyWith(notes: currentNotes));
+      rethrow;
+    }
   }
 
   late StreamSubscription<List<Context>> _contextSubscription;
