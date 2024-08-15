@@ -38,8 +38,6 @@ class Note extends LocalModel implements Comparable<Note> {
   static Future<List<Note>> fetch(Context? context) async {
     try {
       var list = _filter(_contextStore.list(), context);
-      print(
-          "Fetching notes for context: ${context?.name} (${list.length}, ${_contextDone.contains(context?.id)})");
       if (_contextDone.contains(context?.id)) return list;
       Order? lastOrder;
       if (list.isNotEmpty) {
@@ -54,7 +52,6 @@ class Note extends LocalModel implements Comparable<Note> {
       }
       final response = await query.order('order').limit(pageSize);
       final models = response.map((r) => Note.fromJson(r)).toList();
-      print("Fetched notes: ${models.length}");
       for (final note in models) {
         _insert(note);
       }
@@ -148,7 +145,9 @@ class Note extends LocalModel implements Comparable<Note> {
       : createdAt = DateTime.parse(json['created_at'] as String),
         modifiedAt = DateTime.parse(json['modified_at'] as String),
         _userId = json['user_id'] as String,
-        _contextId = parseUUID(json['context_id'] as String),
+        _contextId = json['context_id'] != null
+            ? parseUUID(json['context_id'] as String)
+            : null,
         topicId = parseUUID(json['topic_id'] as String),
         body = json['body'] as String,
         root = json['root'] as bool,
@@ -199,10 +198,8 @@ class Note extends LocalModel implements Comparable<Note> {
   @override
   Future<Note> save() async {
     try {
-      print("Saving note: ${toJson()}");
       _insert(this);
       final model = await saveToBase("note", Note.fromJson);
-      print("Saved note: $model");
       _insert(model);
       return model;
     } catch (e, stacktrace) {
@@ -250,7 +247,7 @@ class Note extends LocalModel implements Comparable<Note> {
   Map<String, dynamic> toJson() => {
         ...super.toJson(),
         'user_id': _userId ?? base.auth.currentUser?.id,
-        'context_id': _contextId.toString(),
+        'context_id': _contextId?.toString(),
         'topic_id': topicId.toString(),
         'body': body,
         'root': root,
