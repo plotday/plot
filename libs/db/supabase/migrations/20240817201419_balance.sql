@@ -1,16 +1,18 @@
-CREATE OR REPLACE FUNCTION balance (user_id uuid, week daterange)
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE FUNCTION public.balance (user_id uuid, week daterange)
     RETURNS TABLE (
         id bigint,
-        budget int,
-        "budget_type" budget_type,
-        count int,
-        minutes int,
-        tentative_count int,
-        tentative_minutes int,
-        declined_count int,
-        declined_minutes int
-    )
-    AS $$
+        budget integer,
+        budget_type budget_type,
+        count integer,
+        minutes integer,
+        tentative_count integer,
+        tentative_minutes integer,
+        declined_count integer,
+        declined_minutes integer)
+    LANGUAGE plpgsql
+    AS $function$
 BEGIN
     RETURN QUERY
     SELECT
@@ -62,6 +64,5 @@ BEGIN
                 OR (b.context_id IS NULL
                     AND c.id IS NULL));
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 
