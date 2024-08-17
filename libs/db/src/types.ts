@@ -243,7 +243,7 @@ export type Database = {
           id: string
           modified_at: string
           name: string
-          order: string
+          order: number
           path: unknown
           pomodoro: number
           user_id: string
@@ -254,7 +254,7 @@ export type Database = {
           id?: string
           modified_at?: string
           name: string
-          order: string
+          order: number
           path: unknown
           pomodoro?: number
           user_id: string
@@ -264,7 +264,7 @@ export type Database = {
           id?: string
           modified_at?: string
           name?: string
-          order?: string
+          order?: number
           path?: unknown
           pomodoro?: number
           user_id?: string
@@ -463,7 +463,7 @@ export type Database = {
           created_at: string
           id: string
           modified_at: string
-          order: string
+          order: number
           private: boolean
           root: boolean
           topic_id: string
@@ -475,7 +475,7 @@ export type Database = {
           created_at?: string
           id?: string
           modified_at?: string
-          order: string
+          order: number
           private?: boolean
           root?: boolean
           topic_id: string
@@ -487,7 +487,7 @@ export type Database = {
           created_at?: string
           id?: string
           modified_at?: string
-          order?: string
+          order?: number
           private?: boolean
           root?: boolean
           topic_id?: string
@@ -979,7 +979,7 @@ export type Database = {
           created_at: string | null
           id: string | null
           modified_at: string | null
-          order: string | null
+          order: number | null
           private: boolean | null
           root: boolean | null
           tags: Json | null

@@ -27,9 +27,10 @@ class Store<ID, T> {
     _waitForInit ??= _load().then(set);
     try {
       await _waitForInit;
-    } catch (e) {
+    } catch (e, stacktrace) {
       print("Error loading $T store");
       print(e);
+      print(stacktrace);
       rethrow;
     }
   }

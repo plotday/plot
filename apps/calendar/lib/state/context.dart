@@ -105,13 +105,15 @@ class ContextBloc extends Cubit<ContextState> {
   }
 
   Future<void> addNote(Note note) async {
-    print("Adding note");
-    emit(state.copyWith(notes: state.notes + [note]));
-    await updateNote(await note.save());
+    print("Adding note: ${note.order}");
+    emit(state.copyWith(newNote: note));
+    final newNote = await note.save();
+    emit(
+      state.copyWith(newNote: newNote),
+    );
   }
 
   Future<void> updateNote(Note note) async {
-    print("Updating note ${note.id}");
     final currentNotes = state.notes;
     final notes = currentNotes.replace(note, (n1, n2) => n1.id == n2.id);
     emit(

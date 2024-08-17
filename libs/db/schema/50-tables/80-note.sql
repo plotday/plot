@@ -6,7 +6,7 @@ CREATE TABLE "public"."note" (
     "context_id" uuid REFERENCES context ON DELETE CASCADE,
     "topic_id" uuid NOT NULL,
     "body" text NOT NULL,
-    "order" text NOT NULL,
+    "order" double precision NOT NULL,
     "root" boolean NOT NULL DEFAULT TRUE,
     "private" boolean NOT NULL DEFAULT FALSE
 );

@@ -13,6 +13,14 @@ import 'package:plot/model/account.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/global_menu.dart';
 
+class BlocErrorLogger extends BlocObserver {
+  @override
+  void onError(BlocBase<dynamic> bloc, Object error, StackTrace stackTrace) {
+    print('onError -- ${bloc.runtimeType}, $error');
+    super.onError(bloc, error, stackTrace);
+  }
+}
+
 class RootProvider extends StatefulWidget {
   const RootProvider({required this.child, super.key});
 
@@ -45,6 +53,7 @@ class RootProviderState extends State<RootProvider> {
   @override
   void initState() {
     super.initState();
+    Bloc.observer = BlocErrorLogger();
     _onUserStateChange(context.read<UserBloc>().state);
     _blocSubscription =
         context.read<UserBloc>().stream.listen(_onUserStateChange);

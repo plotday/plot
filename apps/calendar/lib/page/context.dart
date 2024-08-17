@@ -57,8 +57,7 @@ class ContextPage extends StatelessWidget {
                 context.read<ContextBloc>().addNote(Note(
                       context: state.current,
                       body: body,
-                      order:
-                          Order.between(state.children.lastOrNull?.order, null),
+                      order: Order.first(),
                     ));
               },
               label: "Add a note",

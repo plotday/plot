@@ -1,7 +1,6 @@
-import 'package:collection/collection.dart';
-
 import 'model.dart';
 import 'context.dart';
+import 'package:plot/util/list.dart';
 
 export 'package:plot/util/order.dart';
 
@@ -19,7 +18,7 @@ class Note extends LocalModel implements Comparable<Note> {
       .where((note) =>
           context == null ||
           (note.context != null && context.isParent(note.context!)))
-      .sorted();
+      .toList();
 
   static Stream<List<Note>> stream(Context? context) {
     fetch(context);
@@ -48,17 +47,17 @@ class Note extends LocalModel implements Comparable<Note> {
         query = query.filter('context_path', 'cs', context.path);
       }
       if (lastOrder != null) {
-        query = query.gt('"order"', lastOrder.value);
+        query = query.gt('"order"', lastOrder.toDouble());
       }
       final response = await query.order('order').limit(pageSize);
       final models = response.map((r) => Note.fromJson(r)).toList();
       for (final note in models) {
-        _insert(note);
+        list = _insert(note);
       }
       if (models.length < pageSize) {
         _contextDone.add(context?.id);
       }
-      return list + models;
+      return list;
     } catch (e, stacktrace) {
       print("Error fetching notes: $e");
       print(stacktrace);
@@ -79,7 +78,7 @@ class Note extends LocalModel implements Comparable<Note> {
     }
     var query = base.from('note').select().eq("topic_id", topicId);
     if (lastOrder != null) {
-      query = query.gt('order', lastOrder.value);
+      query = query.gt('order', lastOrder.toDouble());
     }
     final response = await query
         .order('root', ascending: false)
@@ -151,7 +150,7 @@ class Note extends LocalModel implements Comparable<Note> {
         topicId = parseUUID(json['topic_id'] as String),
         body = json['body'] as String,
         root = json['root'] as bool,
-        order = Order.fromString(json['order'] as String),
+        order = Order.fromNumber(json['order']),
         private = json['private'] as bool,
         super.fromJson(json);
 
@@ -199,6 +198,7 @@ class Note extends LocalModel implements Comparable<Note> {
   Future<Note> save() async {
     try {
       _insert(this);
+      print("Saving ${toJson()}");
       final model = await saveToBase("note", Note.fromJson);
       _insert(model);
       return model;
@@ -209,15 +209,14 @@ class Note extends LocalModel implements Comparable<Note> {
     }
   }
 
-  static void _insert(Note note) {
+  static List<Note> _insert(Note note) {
     if (note.root) {
       _contextStore.put(note.id, note);
     }
     List<Note> topicNotes = List<Note>.from(getTopic(note.topicId));
-    topicNotes.removeWhere((n) => n.id == note.id);
-    final newPos = lowerBound(topicNotes, note);
-    topicNotes.insert(newPos, note);
+    topicNotes.replace(note, (n1, n2) => n1.id == n2.id);
     _topicStore.put(note.topicId, topicNotes);
+    return topicNotes;
   }
 
   static void _appendToTopic(List<Note> notes) {
@@ -251,7 +250,7 @@ class Note extends LocalModel implements Comparable<Note> {
         'topic_id': topicId.toString(),
         'body': body,
         'root': root,
-        'order': order.value,
+        'order': order.toDouble(),
         'private': private,
       };
 }

@@ -189,7 +189,7 @@ CREATE TABLE "public"."context" (
     "user_id" uuid NOT NULL,
     "name" text NOT NULL,
     "path" ltree NOT NULL,
-    "order" text NOT NULL,
+    "order" double precision NOT NULL,
     "pomodoro" integer NOT NULL DEFAULT 25
 );
 
@@ -257,7 +257,7 @@ CREATE TABLE "public"."note" (
     "context_id" uuid,
     "topic_id" uuid NOT NULL,
     "body" text NOT NULL,
-    "order" text NOT NULL,
+    "order" double precision NOT NULL,
     "root" boolean NOT NULL DEFAULT TRUE,
     "private" boolean NOT NULL DEFAULT FALSE
 );

@@ -62,7 +62,7 @@ class Context extends LocalModel implements Comparable<Context> {
       : name = json['name'] as String,
         path = json['path'] as String,
         pomodoro = Duration(minutes: json['pomodoro'] as int),
-        order = Order.fromString(json['order'] as String),
+        order = Order.fromNumber(json['order']),
         pinned = json['pinned'] as bool? ?? false,
         super.fromJson(json);
 
@@ -129,6 +129,6 @@ class Context extends LocalModel implements Comparable<Context> {
         'name': name,
         'path': path,
         'pomodoro': pomodoro.inMinutes,
-        'order': order.value,
+        'order': order.toDouble(),
       };
 }

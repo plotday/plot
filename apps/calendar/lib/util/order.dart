@@ -1,59 +1,54 @@
-import 'dart:math';
 import 'package:equatable/equatable.dart';
 
 class Order extends Equatable implements Comparable<Order> {
-  static String _generate() {
-    return "O${DateTime.now().millisecondsSinceEpoch.toString()}";
+  static double _last() =>
+      DateTime.now().millisecondsSinceEpoch.toDouble() * 10;
+  static double _first() =>
+      (10000000000000 - DateTime.now().millisecondsSinceEpoch).toDouble();
+  static double _firstPinned() =>
+      DateTime.now().millisecondsSinceEpoch.toDouble() * -10;
+  static double _lastPinned() =>
+      (10000000000000 - DateTime.now().millisecondsSinceEpoch).toDouble() * -1;
+
+  static double _between(Order? after, Order? before) {
+    var a = after?._value;
+    var b = before?._value;
+    if (a == null) {
+      if (b == null) return _last();
+      return b > 0 ? _first() : _firstPinned();
+    } else if (b == null) {
+      return a > 0 ? _last() : _lastPinned();
+    }
+    return a + (b - a) / 2;
   }
 
-  static String _between(Order? after, Order? before) {
-    var str1 = after?.value;
-    var str2 = before?.value;
-    if (str1 == null) {
-      if (str2 == null) return _generate();
-      str1 = String.fromCharCode(max(32, str2.codeUnitAt(0) - 1));
-    } else {
-      str2 ??= String.fromCharCode(min(126, str1.codeUnitAt(0) + 1));
-    }
+  Order() : _value = _last();
+  Order.first() : _value = _first();
+  Order.firstPinned() : _value = _firstPinned();
+  Order.pinned() : _value = _lastPinned();
 
-    String newStr = "";
-    for (int i = 0; true; i++) {
-      final c1 = i < str1.length ? str1.codeUnitAt(i) : 32;
-      final c2 = i < str2.length ? str2.codeUnitAt(i) : 126;
-      final cn = ((c1 + c2) / 2).floor();
+  Order.between(Order? after, Order? before) : _value = _between(after, before);
 
-      if (c1 == cn || c2 == cn) {
-        newStr += str1[i];
-        continue;
-      }
-
-      newStr += String.fromCharCode(cn);
-      break;
-    }
-    return newStr;
+  const Order.fromDouble(this._value);
+  Order.fromNumber(dynamic value)
+      : _value = value is int
+            ? value.toDouble()
+            : value is double
+                ? value
+                : 0 {
+    if (_value == 0) throw ArgumentError('Order must be a number');
   }
-
-  Order() : value = _generate();
-
-  const Order.fromString(this.value);
-
-  Order.between(Order? after, Order? before) : value = _between(after, before);
-  Order.firstPinned({required Order? firstPinned})
-      : value = _between(null, firstPinned);
-  Order.lastPinned({required Order? lastPinned})
-      : value = _between(lastPinned ?? const Order.fromString('!'), null);
-  Order.first({required Order? first}) : value = _between(null, first);
-  Order.last({required Order? last}) : value = _between(last, null);
 
   @override
   int compareTo(Order other) {
-    return value.compareTo(other.value);
+    return _value.compareTo(other._value);
   }
 
-  bool get pinned => value.startsWith('!');
+  bool get pinned => _value < 0;
+  double toDouble() => _value;
 
-  final String value;
+  final double _value;
 
   @override
-  List<Object?> get props => [value];
+  List<Object?> get props => [_value];
 }

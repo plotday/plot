@@ -75,13 +75,26 @@ final class ContextState extends Equatable {
     Optional<TopicID> topicId = const Optional.absent(),
     List<Note>? topicNotes,
     bool? moreTopicNotes,
+    Note? newNote,
+    List<Note> newNotes = const [],
   }) {
+    if (newNote != null) {
+      newNotes = newNotes + [newNote];
+    }
+    notes ??= this.notes;
+    for (var note in newNotes) {
+      List<Note>.from(notes).replaceSorted(
+        note,
+        (n1, n2) => n1.id == n2.id,
+      );
+    }
+
     return ContextState._(
       contexts: contexts ?? all,
       budgets: budgets.or(this.budgets),
       current: current.or(this.current),
       week: week ?? this.week,
-      notes: notes ?? this.notes,
+      notes: notes,
       moreNotes: moreNotes ?? this.moreNotes,
       topicId: topicId.or(this.topicId),
       topicNotes: topicNotes ?? this.topicNotes,
