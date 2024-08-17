@@ -1,16 +1,18 @@
-CREATE OR REPLACE FUNCTION balance (user_id uuid, week daterange)
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE FUNCTION public.balance (user_id uuid, week daterange)
     RETURNS TABLE (
         id bigint,
-        budget int,
-        "budget_type" budget_type,
-        count int,
-        minutes int,
-        tentative_count int,
-        tentative_minutes int,
-        declined_count int,
-        declined_minutes int
-    )
-    AS $$
+        budget integer,
+        budget_type budget_type,
+        count integer,
+        minutes integer,
+        tentative_count integer,
+        tentative_minutes integer,
+        declined_count integer,
+        declined_minutes integer)
+    LANGUAGE plpgsql
+    AS $function$
 BEGIN
     RETURN QUERY
     SELECT
@@ -62,6 +64,18 @@ BEGIN
                 OR (b.context_id IS NULL
                     AND c.id IS NULL));
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 
+ALTER VIEW note_x SET ( security_invoker = TRUE);
+ALTER VIEW gap SET ( security_invoker = TRUE);
+ALTER VIEW gap_monthly SET ( security_invoker = TRUE);
+ALTER VIEW gap_daily SET ( security_invoker = TRUE);
+ALTER VIEW insight SET ( security_invoker = TRUE);
+ALTER VIEW insight_weekly SET ( security_invoker = TRUE);
+ALTER VIEW "public"."invitation_admin" SET ( security_invoker = FALSE);
+ALTER VIEW "public"."event_invitees" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."event_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."waitlist_admin" SET ( security_invoker = FALSE);
+ALTER VIEW expenditure SET ( security_invoker = TRUE);
+ALTER VIEW expenditure_weekly SET ( security_invoker = TRUE);
+ALTER VIEW "public"."sync_admin" SET ( security_invoker = FALSE);
