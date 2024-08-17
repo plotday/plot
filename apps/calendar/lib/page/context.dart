@@ -63,7 +63,7 @@ class ContextPage extends StatelessWidget {
               label: "Add a note",
             ),
             ReorderableListView(
-              list: state.notes,
+              list: state.pinnedNotes,
               itemBuilder: (buildContext, item) => NoteWidget(note: item),
               shrinkWrap: true,
               onReorder: (int oldIndex, int newIndex) async {
@@ -83,6 +83,7 @@ class ContextPage extends StatelessWidget {
                 buildContext.read<ContextBloc>().updateNote(note);
               },
             ),
+            ...state.notes.map((note) => NoteWidget(note: note)),
           ],
         ),
       ),
