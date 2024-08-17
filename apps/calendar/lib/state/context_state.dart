@@ -39,9 +39,9 @@ final class ContextState extends Equatable {
   })  : all = contexts,
         children = _filterChildren(contexts, current),
         notes = _filterPinnedNotes(notes, false),
-        pinnedNotes = _filterPinnedNotes(notes, false),
+        pinnedNotes = _filterPinnedNotes(notes, true),
         topicNotes = _filterPinnedNotes(notes, false),
-        pinnedTopicNotes = _filterPinnedNotes(notes, false),
+        pinnedTopicNotes = _filterPinnedNotes(notes, true),
         _budgets = budgets
             ?.asMap()
             .map((index, budget) => MapEntry(budget.context!.id!, budget));
