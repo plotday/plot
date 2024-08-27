@@ -8,3 +8,13 @@ END;
 $$
 LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION update_created_by ()
+    RETURNS TRIGGER
+    AS $$
+BEGIN
+    NEW.created_by = auth.uid ();
+    RETURN NEW;
+END;
+$$
+LANGUAGE plpgsql;
+

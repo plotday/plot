@@ -99,8 +99,7 @@ FROM
             invitees = e.invitees DESC,
             embedding <-> e.embedding DESC
         LIMIT 1) AS s ON TRUE
-    LEFT JOIN context ctx ON (ctx.user_id = e.user_id
-            AND ctx.id = s.context_id);
+    LEFT JOIN context ctx ON ctx.id = s.context_id;
 
 -- Define a computed relation for PostgREST joins
 -- https://postgrest.org/en/stable/references/api/resource_embedding.html#computed-relationships

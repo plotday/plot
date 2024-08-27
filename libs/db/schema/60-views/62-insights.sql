@@ -52,29 +52,28 @@ GROUP BY
     nv.name,
     value;
 
--- All categories, but not necessarily all weeks
-CREATE OR REPLACE VIEW insight_weekly WITH ( security_invoker = TRUE)
--- for formatting
-AS
-SELECT
-    ctx.user_id,
-    ctx.path,
-    week_from_date (i.day) AS week,
-    i.type,
-    i.name,
-    i.value,
-    COALESCE(SUM(i.count) FILTER (WHERE i.response = 'accepted'), 0) AS count,
-    COALESCE(SUM(i.minutes) FILTER (WHERE i.response = 'accepted'), 0) AS minutes,
-    COALESCE(SUM(i.count) FILTER (WHERE i.response IS NULL), 0) AS pending_count,
-    COALESCE(SUM(i.minutes) FILTER (WHERE i.response IS NULL), 0) AS pending_minutes
-FROM
-    context ctx
-    LEFT JOIN insight i ON ctx.path = i.context_path
-GROUP BY
-    ctx.user_id,
-    ctx.path,
-    week_from_date (i.day),
-    i.type,
-    i.name,
-    i.value;
-
+-- -- All categories, but not necessarily all weeks
+-- CREATE OR REPLACE VIEW insight_weekly WITH ( security_invoker = TRUE)
+-- -- for formatting
+-- AS
+-- SELECT
+--     ctx.user_id,
+--     ctx.path,
+--     week_from_date (i.day) AS week,
+--     i.type,
+--     i.name,
+--     i.value,
+--     COALESCE(SUM(i.count) FILTER (WHERE i.response = 'accepted'), 0) AS count,
+--     COALESCE(SUM(i.minutes) FILTER (WHERE i.response = 'accepted'), 0) AS minutes,
+--     COALESCE(SUM(i.count) FILTER (WHERE i.response IS NULL), 0) AS pending_count,
+--     COALESCE(SUM(i.minutes) FILTER (WHERE i.response IS NULL), 0) AS pending_minutes
+-- FROM
+--     context ctx
+--     LEFT JOIN insight i ON ctx.path = i.context_path
+-- GROUP BY
+--     ctx.user_id,
+--     ctx.path,
+--     week_from_date (i.day),
+--     i.type,
+--     i.name,
+--     i.value;

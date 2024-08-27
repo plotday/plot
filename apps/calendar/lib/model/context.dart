@@ -1,9 +1,24 @@
 import 'dart:math';
+import 'package:drift/drift.dart';
 
 import 'model.dart';
 import 'package:plot/util/order.dart';
 
 export 'package:plot/util/order.dart';
+
+class Contexts extends Table {
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get modifiedAt => dateTime()();
+
+  TextColumn get userId => text()();
+  TextColumn get body => text()();
+  RealColumn get order => real()();
+  BoolColumn get root => boolean()();
+  BoolColumn get private => boolean()();
+
+  IntColumn get contextId => integer().nullable().references(Contexts, #id)();
+  IntColumn get topicId => integer()();
+}
 
 typedef ContextID = UUID;
 
@@ -11,7 +26,7 @@ class Context extends LocalModel implements Comparable<Context> {
   static final store = Store<ContextID, Context>(
     load: () async {
       final contexts = (await base
-              .from('context')
+              .from('context_x')
               .select()
               .eq("user_id", base.auth.currentUser!.id))
           .map(Context.fromJson);
@@ -44,7 +59,6 @@ class Context extends LocalModel implements Comparable<Context> {
     Order? order,
     Context? parent,
     this.pomodoro = const Duration(minutes: 25),
-    this.pinned = false,
   })  : path = _makePath(parent),
         order = order ?? Order();
 
@@ -54,7 +68,6 @@ class Context extends LocalModel implements Comparable<Context> {
     required this.path,
     required this.order,
     required this.pomodoro,
-    required this.pinned,
   }) : super.withId(id);
 
   @override
@@ -63,7 +76,6 @@ class Context extends LocalModel implements Comparable<Context> {
         path = json['path'] as String,
         pomodoro = Duration(minutes: json['pomodoro'] as int),
         order = Order.fromNumber(json['order']),
-        pinned = json['pinned'] as bool? ?? false,
         super.fromJson(json);
 
   @override
@@ -75,7 +87,6 @@ class Context extends LocalModel implements Comparable<Context> {
   final String path;
   final Duration pomodoro;
   final Order order;
-  final bool pinned;
 
   Context? get parent {
     var segments = path.split('.');
@@ -99,7 +110,6 @@ class Context extends LocalModel implements Comparable<Context> {
     String? name,
     Duration? pomodoro,
     Order? order,
-    bool? pinned,
   }) {
     return Context._(
       id: id,
@@ -107,21 +117,35 @@ class Context extends LocalModel implements Comparable<Context> {
       path: path,
       pomodoro: pomodoro ?? this.pomodoro,
       order: order ?? this.order,
-      pinned: pinned ?? this.pinned,
     );
   }
 
   @override
   Future<Context> save() async {
-    final model = await saveToBase("context", Context.fromJson);
-    store.put(model.id, model);
-    _pathToId[model.path] = model.id;
-    return model;
+    try {
+      store.put(id, this);
+      _pathToId[path] = id;
+      await base.from("context").upsert({
+        'id': id.toString(),
+        'name': name,
+        'path': path,
+      });
+      await base.from("context_settings").upsert({
+        'context_id': id.toString(),
+        'user_id': base.auth.currentUser!.id,
+        'pomodoro': pomodoro.inMinutes,
+        'order': order.toDouble(),
+      }, onConflict: 'user_id,context_id');
+      return this;
+    } catch (e) {
+      print("Error saving ${toJson()}");
+      print(e);
+      rethrow;
+    }
   }
 
   @override
-  List<Object?> get props =>
-      super.props + [name, path, pomodoro, order, pinned];
+  List<Object?> get props => super.props + [name, path, pomodoro, order];
 
   @override
   Map<String, dynamic> toJson() => {

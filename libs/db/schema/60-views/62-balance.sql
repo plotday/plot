@@ -1,6 +1,6 @@
 CREATE OR REPLACE FUNCTION balance (user_id uuid, week daterange)
     RETURNS TABLE (
-        id bigint,
+        id uuid,
         budget int,
         "budget_type" budget_type,
         count int,
@@ -15,7 +15,7 @@ BEGIN
     RETURN QUERY
     SELECT
         c.id,
-        b.budget,
+        b.minutes AS budget,
         b.budget_type,
         COALESCE(e.count, 0)::int AS count,
         COALESCE(e.minutes, 0)::int AS minutes,
@@ -27,7 +27,7 @@ BEGIN
         SELECT
             c.id
         FROM
-            context c
+            context_x c
         WHERE
             c.user_id = balance.user_id
             -- Include uncategorized events

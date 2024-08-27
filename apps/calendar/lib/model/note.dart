@@ -1,8 +1,23 @@
 import 'model.dart';
 import 'context.dart';
 import 'package:plot/util/list.dart';
+import 'package:drift/drift.dart';
 
 export 'package:plot/util/order.dart';
+
+class Notes extends Table {
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get modifiedAt => dateTime()();
+
+  TextColumn get userId => text()();
+  TextColumn get body => text()();
+  RealColumn get order => real()();
+  BoolColumn get root => boolean()();
+  BoolColumn get private => boolean()();
+
+  IntColumn get contextId => integer().nullable().references(Contexts, #id)();
+  IntColumn get topicId => integer()();
+}
 
 typedef NoteID = UUID;
 typedef TopicID = NoteID;

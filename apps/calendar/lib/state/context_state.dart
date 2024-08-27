@@ -44,7 +44,7 @@ final class ContextState extends Equatable {
         pinnedTopicNotes = _filterPinnedNotes(notes, true),
         _budgets = budgets
             ?.asMap()
-            .map((index, budget) => MapEntry(budget.context!.id!, budget));
+            .map((index, budget) => MapEntry(budget.context?.id, budget));
 
   final List<Context> all;
   final Context? current;
@@ -61,7 +61,7 @@ final class ContextState extends Equatable {
   Note get topicNote => topicNotes.first;
 
   final Week week;
-  final Map<ContextID, Budget>? _budgets;
+  final Map<ContextID?, Budget>? _budgets;
   List<Budget>? get budgets => _budgets?.values.toList();
   Budget? budgetFor(Context context) => _budgets?[context.id];
 

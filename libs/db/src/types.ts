@@ -117,6 +117,13 @@ export type Database = {
             foreignKeyName: "budget_context_id_fkey"
             columns: ["context_id"]
             isOneToOne: false
+            referencedRelation: "context_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["context_id"]
           },
@@ -240,38 +247,138 @@ export type Database = {
       context: {
         Row: {
           created_at: string
+          created_by: string
           id: string
           modified_at: string
           name: string
-          order: number
           path: unknown
-          pomodoro: number
-          user_id: string
           budget: unknown | null
         }
         Insert: {
           created_at?: string
+          created_by: string
           id?: string
           modified_at?: string
           name: string
-          order: number
           path: unknown
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          modified_at?: string
+          name?: string
+          path?: unknown
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      context_settings: {
+        Row: {
+          context_id: string
+          modified_at: string
+          order: number
+          pomodoro: number
+          user_id: string
+        }
+        Insert: {
+          context_id: string
+          modified_at?: string
+          order: number
           pomodoro?: number
           user_id: string
         }
         Update: {
-          created_at?: string
-          id?: string
+          context_id?: string
           modified_at?: string
-          name?: string
           order?: number
-          path?: unknown
           pomodoro?: number
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "context_user_id_fkey"
+            foreignKeyName: "context_settings_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "context"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "context_settings_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "context_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "context_settings_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["context_id"]
+          },
+          {
+            foreignKeyName: "context_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      context_user: {
+        Row: {
+          context_id: string
+          created_at: string
+          modified_at: string
+          path: unknown | null
+          user_id: string
+        }
+        Insert: {
+          context_id: string
+          created_at?: string
+          modified_at?: string
+          path?: unknown | null
+          user_id: string
+        }
+        Update: {
+          context_id?: string
+          created_at?: string
+          modified_at?: string
+          path?: unknown | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_user_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "context"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "context_user_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "context_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "context_user_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["context_id"]
+          },
+          {
+            foreignKeyName: "context_user_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -505,6 +612,13 @@ export type Database = {
             foreignKeyName: "note_context_id_fkey"
             columns: ["context_id"]
             isOneToOne: false
+            referencedRelation: "context_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["context_id"]
           },
@@ -610,6 +724,13 @@ export type Database = {
             foreignKeyName: "series_context_id_fkey"
             columns: ["context_id"]
             isOneToOne: false
+            referencedRelation: "context_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["context_id"]
           },
@@ -665,6 +786,13 @@ export type Database = {
             columns: ["context_id"]
             isOneToOne: false
             referencedRelation: "context"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "context_x"
             referencedColumns: ["id"]
           },
           {
@@ -769,6 +897,26 @@ export type Database = {
       }
     }
     Views: {
+      context_x: {
+        Row: {
+          id: string | null
+          modified_at: string | null
+          name: string | null
+          order: number | null
+          path: unknown | null
+          pomodoro: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_invitees: {
         Row: {
           attendee_count: number | null
@@ -938,29 +1086,6 @@ export type Database = {
           },
         ]
       }
-      insight_weekly: {
-        Row: {
-          count: number | null
-          minutes: number | null
-          name: string | null
-          path: unknown | null
-          pending_count: number | null
-          pending_minutes: number | null
-          type: Database["public"]["Enums"]["event_type"] | null
-          user_id: string | null
-          value: string | null
-          week: unknown | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "context_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       invitation_admin: {
         Row: {
           code: string | null
@@ -992,6 +1117,13 @@ export type Database = {
             columns: ["context_id"]
             isOneToOne: false
             referencedRelation: "context"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_context_id_fkey"
+            columns: ["context_id"]
+            isOneToOne: false
+            referencedRelation: "context_x"
             referencedColumns: ["id"]
           },
           {
@@ -1065,7 +1197,7 @@ export type Database = {
           week: unknown
         }
         Returns: {
-          id: number
+          id: string
           budget: number
           budget_type: Database["public"]["Enums"]["budget_type"]
           count: number
@@ -1195,6 +1327,19 @@ export type Database = {
           watch_secret: string | null
         }[]
       }
+      can_access_context:
+        | {
+            Args: {
+              _context_id: string
+            }
+            Returns: boolean
+          }
+        | {
+            Args: {
+              _context_path: unknown
+            }
+            Returns: boolean
+          }
       cancel_events: {
         Args: {
           _events: Database["public"]["CompositeTypes"]["event_ids"][]
@@ -1295,6 +1440,14 @@ export type Database = {
           _invitation: string
         }
         Returns: undefined
+      }
+      replace_parent_path: {
+        Args: {
+          parent_path: unknown
+          child_path: unknown
+          new_parent_path: unknown
+        }
+        Returns: unknown
       }
       update_topic_root: {
         Args: {
