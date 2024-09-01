@@ -5,7 +5,6 @@ import 'package:plot/util/uuid.dart';
 
 export 'package:plot/base.dart';
 export 'package:plot/util/uuid.dart';
-export 'store.dart';
 
 abstract class Model extends Equatable {
   const Model();

@@ -1,42 +1,14 @@
 import 'dart:math';
-import 'package:drift/drift.dart';
 
 import 'model.dart';
 import 'package:plot/util/order.dart';
+import 'package:plot/store/store.dart' as store;
 
 export 'package:plot/util/order.dart';
-
-class Contexts extends Table {
-  DateTimeColumn get createdAt => dateTime()();
-  DateTimeColumn get modifiedAt => dateTime()();
-
-  TextColumn get userId => text()();
-  TextColumn get body => text()();
-  RealColumn get order => real()();
-  BoolColumn get root => boolean()();
-  BoolColumn get private => boolean()();
-
-  IntColumn get contextId => integer().nullable().references(Contexts, #id)();
-  IntColumn get topicId => integer()();
-}
 
 typedef ContextID = UUID;
 
 class Context extends LocalModel implements Comparable<Context> {
-  static final store = Store<ContextID, Context>(
-    load: () async {
-      final contexts = (await base
-              .from('context_x')
-              .select()
-              .eq("user_id", base.auth.currentUser!.id))
-          .map(Context.fromJson);
-      for (var context in contexts) {
-        _pathToId[context.path] = context.id;
-      }
-      return contexts.map((m) => MapEntry(m.id, m));
-    },
-  );
-
   static String _makePath(Context? parent) {
     const characters =
         'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -51,8 +23,6 @@ class Context extends LocalModel implements Comparable<Context> {
           (_) => characters.codeUnitAt(random.nextInt(characters.length)),
         ));
   }
-
-  static final Map<String, ContextID> _pathToId = {};
 
   Context({
     required this.name,
@@ -70,12 +40,11 @@ class Context extends LocalModel implements Comparable<Context> {
     required this.pomodoro,
   }) : super.withId(id);
 
-  @override
-  Context.fromJson(Map<String, dynamic> json)
-      : name = json['name'] as String,
-        path = json['path'] as String,
-        pomodoro = Duration(minutes: json['pomodoro'] as int),
-        order = Order.fromNumber(json['order']),
+  Context.fromStore(store.Context row)
+      : name = row.name,
+        path = row.path,
+        pomodoro = Duration(minutes: row.pomodoro),
+        order = Order.fromNumber(row.order),
         super.fromJson(json);
 
   @override
@@ -88,17 +57,16 @@ class Context extends LocalModel implements Comparable<Context> {
   final Duration pomodoro;
   final Order order;
 
-  Context? get parent {
+  Future<Context?> get parent async {
     var segments = path.split('.');
     if (segments.length == 1) {
       return null;
     }
     final parentPath = segments.sublist(0, segments.length - 1).join('.');
-    final parentId = _pathToId[parentPath];
-    if (parentId == null) {
-      return null;
-    }
-    return store.get(parentId);
+    return await (store.Store.get.select(store.Store.get.contexts)
+          ..where((t) => t.path.equals(parentPath)))
+        .map((row) => Context.fromJson(row.toJson()))
+        .getSingle();
   }
 
   bool isParent(Context other) =>
@@ -123,19 +91,20 @@ class Context extends LocalModel implements Comparable<Context> {
   @override
   Future<Context> save() async {
     try {
-      store.put(id, this);
-      _pathToId[path] = id;
-      await base.from("context").upsert({
-        'id': id.toString(),
-        'name': name,
-        'path': path,
-      });
-      await base.from("context_settings").upsert({
-        'context_id': id.toString(),
-        'user_id': base.auth.currentUser!.id,
-        'pomodoro': pomodoro.inMinutes,
-        'order': order.toDouble(),
-      }, onConflict: 'user_id,context_id');
+      await (store.Store.get
+          .into(store.Store.get.contexts)
+          .insertOnConflictUpdate(toStore()));
+      // await base.from("context").upsert({
+      //   'id': id.toString(),
+      //   'name': name,
+      //   'path': path,
+      // });
+      // await base.from("context_settings").upsert({
+      //   'context_id': id.toString(),
+      //   'user_id': base.auth.currentUser!.id,
+      //   'pomodoro': pomodoro.inMinutes,
+      //   'order': order.toDouble(),
+      // }, onConflict: 'user_id,context_id');
       return this;
     } catch (e) {
       print("Error saving ${toJson()}");
@@ -147,12 +116,12 @@ class Context extends LocalModel implements Comparable<Context> {
   @override
   List<Object?> get props => super.props + [name, path, pomodoro, order];
 
-  @override
-  Map<String, dynamic> toJson() => {
-        ...super.toJson(),
-        'name': name,
-        'path': path,
-        'pomodoro': pomodoro.inMinutes,
-        'order': order.toDouble(),
-      };
+  store.Context toStore() => store.Context(
+        id: id.toBytes(),
+        name: name,
+        path: path,
+        order: order.toDouble(),
+        pomodoro: pomodoro.inMinutes,
+        modifiedAt: DateTime.now(),
+      );
 }

@@ -1,23 +1,8 @@
 import 'model.dart';
 import 'context.dart';
 import 'package:plot/util/list.dart';
-import 'package:drift/drift.dart';
 
 export 'package:plot/util/order.dart';
-
-class Notes extends Table {
-  DateTimeColumn get createdAt => dateTime()();
-  DateTimeColumn get modifiedAt => dateTime()();
-
-  TextColumn get userId => text()();
-  TextColumn get body => text()();
-  RealColumn get order => real()();
-  BoolColumn get root => boolean()();
-  BoolColumn get private => boolean()();
-
-  IntColumn get contextId => integer().nullable().references(Contexts, #id)();
-  IntColumn get topicId => integer()();
-}
 
 typedef NoteID = UUID;
 typedef TopicID = NoteID;
@@ -27,6 +12,7 @@ class Note extends LocalModel implements Comparable<Note> {
   static final _contextStore = Store<NoteID, Note>();
   static final _topicStore = Store<NoteID, List<Note>>();
   static final Set<ContextID?> _contextDone = {};
+  static final Map<ContextID?, Order> _contextLastOrder = {};
   static final Set<NoteID?> _topicDone = {};
 
   static List<Note> _filter(List<Note> notes, Context? context) => notes
@@ -53,18 +39,16 @@ class Note extends LocalModel implements Comparable<Note> {
     try {
       var list = _filter(_contextStore.list(), context);
       if (_contextDone.contains(context?.id)) return list;
-      Order? lastOrder;
-      if (list.isNotEmpty) {
-        lastOrder = list.last.order;
-      }
       var query = base.from('note_x').select().eq("root", true);
       if (context != null) {
         query = query.filter('context_path', 'cs', context.path);
       }
+      Order? lastOrder = _contextLastOrder[context?.id];
       if (lastOrder != null) {
         query = query.gt('"order"', lastOrder.toDouble());
       }
-      final response = await query.order('order').limit(pageSize);
+      final response =
+          await query.order('order', ascending: true).limit(pageSize);
       final models = response.map((r) => Note.fromJson(r)).toList();
       for (final note in models) {
         list = _insert(note);

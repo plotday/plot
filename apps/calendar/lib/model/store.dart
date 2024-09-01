@@ -1,16 +1,17 @@
 import 'package:rxdart/subjects.dart';
+import 'dart:collection';
 
 class Store<ID, T> {
   Store({
     Future<Iterable<MapEntry<ID, T>>> Function()? load,
     Map<ID, T> values = const {},
   })  : _load = load,
-        _cache = Map.of(values),
+        _cache = LinkedHashMap.of(values),
         _streamController = BehaviorSubject<Map<ID, T>>.seeded(const {});
 
   final Future<Iterable<MapEntry<ID, T>>> Function()? _load;
   Future<void>? _waitForInit;
-  Map<ID, T> _cache;
+  LinkedHashMap<ID, T> _cache;
   final BehaviorSubject<Map<ID, T>> _streamController;
 
   List<T> list() => _streamController.value.values.toList();
@@ -36,7 +37,7 @@ class Store<ID, T> {
   }
 
   void set(Iterable<MapEntry<ID, T>> values) async {
-    _cache = Map.fromEntries(values);
+    _cache = LinkedHashMap.fromEntries(values);
     _streamController.add(_cache);
   }
 
