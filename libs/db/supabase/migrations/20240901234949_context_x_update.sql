@@ -1,25 +1,9 @@
-CREATE OR REPLACE VIEW "public"."context_x" WITH ( security_invoker = TRUE)
--- for formatting
-AS
-SELECT
-    c2.id,
-    cu.user_id,
-    GREATEST (cs.modified_at, cu.modified_at, c2.modified_at) AS modified_at,
-    c2.name,
-    replace_parent_path (c1.path, c2.path, COALESCE(cu.path, c1.path)) AS path,
-    COALESCE(cs.order, (extract(epoch FROM CURRENT_TIMESTAMP) * 1000)::double PRECISION * 10) AS
-ORDER,
-COALESCE(cs.pomodoro, 25) AS pomodoro
-FROM
-    context_user cu
-    JOIN context c1 ON cu.context_id = c1.id
-    JOIN context c2 ON c1.path @> c2.path
-    LEFT JOIN context_settings cs ON cs.user_id = cu.user_id
-        AND c2.id = cs.context_id;
+SET check_function_bodies = OFF;
 
-CREATE FUNCTION handle_context_x_insert ()
+CREATE OR REPLACE FUNCTION public.handle_context_x_insert ()
     RETURNS TRIGGER
-    AS $$
+    LANGUAGE plpgsql
+    AS $function$
 DECLARE
     context_id uuid;
 BEGIN
@@ -35,12 +19,12 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 
-CREATE FUNCTION handle_context_x_update ()
+CREATE OR REPLACE FUNCTION public.handle_context_x_update ()
     RETURNS TRIGGER
-    AS $$
+    LANGUAGE plpgsql
+    AS $function$
 BEGIN
     IF NEW.name IS DISTINCT FROM OLD.name OR NEW.path IS DISTINCT FROM OLD.path THEN
         UPDATE
@@ -61,16 +45,29 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 
 CREATE TRIGGER insert_context_x
-    INSTEAD OF INSERT ON context_x
+    INSTEAD OF INSERT ON public.context_x
     FOR EACH ROW
     EXECUTE FUNCTION handle_context_x_insert ();
 
 CREATE TRIGGER update_context_x
-    INSTEAD OF UPDATE ON context_x
+    INSTEAD OF UPDATE ON public.context_x
     FOR EACH ROW
     EXECUTE FUNCTION handle_context_x_update ();
 
+ALTER VIEW note_x SET ( security_invoker = TRUE);
+ALTER VIEW gap SET ( security_invoker = TRUE);
+ALTER VIEW gap_monthly SET ( security_invoker = TRUE);
+ALTER VIEW gap_daily SET ( security_invoker = TRUE);
+ALTER VIEW insight SET ( security_invoker = TRUE);
+-- ALTER VIEW insight_weekly SET ( security_invoker = TRUE);
+ALTER VIEW "public"."invitation_admin" SET ( security_invoker = FALSE);
+ALTER VIEW "public"."event_invitees" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."event_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."context_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."waitlist_admin" SET ( security_invoker = FALSE);
+ALTER VIEW expenditure SET ( security_invoker = TRUE);
+ALTER VIEW expenditure_weekly SET ( security_invoker = TRUE);
+ALTER VIEW "public"."sync_admin" SET ( security_invoker = FALSE);
