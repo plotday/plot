@@ -3,45 +3,47 @@
 part of 'store.dart';
 
 // ignore_for_file: type=lint
-class $PullStatesTable extends PullStates
-    with TableInfo<$PullStatesTable, PullState> {
+class $SyncStatesTable extends SyncStates
+    with TableInfo<$SyncStatesTable, SyncState> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $PullStatesTable(this.attachedDatabase, [this._alias]);
+  $SyncStatesTable(this.attachedDatabase, [this._alias]);
   static const VerificationMeta _entityMeta = const VerificationMeta('entity');
   @override
   late final GeneratedColumn<String> entity = GeneratedColumn<String>(
       'entity', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _atMeta = const VerificationMeta('at');
+  static const VerificationMeta _pushedAtMeta =
+      const VerificationMeta('pushedAt');
   @override
-  late final GeneratedColumn<DateTime> at = GeneratedColumn<DateTime>(
-      'at', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
-  static const VerificationMeta _lastMeta = const VerificationMeta('last');
+  late final GeneratedColumn<DateTime> pushedAt = GeneratedColumn<DateTime>(
+      'pushed_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _lastPulledMeta =
+      const VerificationMeta('lastPulled');
   @override
-  late final GeneratedColumn<String> last = GeneratedColumn<String>(
-      'last', aliasedName, true,
+  late final GeneratedColumn<String> lastPulled = GeneratedColumn<String>(
+      'last_pulled', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _doneMeta = const VerificationMeta('done');
+  static const VerificationMeta _moreMeta = const VerificationMeta('more');
   @override
-  late final GeneratedColumn<bool> done = GeneratedColumn<bool>(
-      'done', aliasedName, false,
+  late final GeneratedColumn<bool> more = GeneratedColumn<bool>(
+      'more', aliasedName, false,
       type: DriftSqlType.bool,
       requiredDuringInsert: false,
       defaultConstraints:
-          GeneratedColumn.constraintIsAlways('CHECK ("done" IN (0, 1))'),
-      defaultValue: const Constant(false));
+          GeneratedColumn.constraintIsAlways('CHECK ("more" IN (0, 1))'),
+      defaultValue: const Constant(true));
   @override
-  List<GeneratedColumn> get $columns => [entity, at, last, done];
+  List<GeneratedColumn> get $columns => [entity, pushedAt, lastPulled, more];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'pull_states';
+  static const String $name = 'sync_states';
   @override
-  VerificationContext validateIntegrity(Insertable<PullState> instance,
+  VerificationContext validateIntegrity(Insertable<SyncState> instance,
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
@@ -51,18 +53,19 @@ class $PullStatesTable extends PullStates
     } else if (isInserting) {
       context.missing(_entityMeta);
     }
-    if (data.containsKey('at')) {
-      context.handle(_atMeta, at.isAcceptableOrUnknown(data['at']!, _atMeta));
-    } else if (isInserting) {
-      context.missing(_atMeta);
+    if (data.containsKey('pushed_at')) {
+      context.handle(_pushedAtMeta,
+          pushedAt.isAcceptableOrUnknown(data['pushed_at']!, _pushedAtMeta));
     }
-    if (data.containsKey('last')) {
+    if (data.containsKey('last_pulled')) {
       context.handle(
-          _lastMeta, last.isAcceptableOrUnknown(data['last']!, _lastMeta));
+          _lastPulledMeta,
+          lastPulled.isAcceptableOrUnknown(
+              data['last_pulled']!, _lastPulledMeta));
     }
-    if (data.containsKey('done')) {
+    if (data.containsKey('more')) {
       context.handle(
-          _doneMeta, done.isAcceptableOrUnknown(data['done']!, _doneMeta));
+          _moreMeta, more.isAcceptableOrUnknown(data['more']!, _moreMeta));
     }
     return context;
   }
@@ -70,62 +73,71 @@ class $PullStatesTable extends PullStates
   @override
   Set<GeneratedColumn> get $primaryKey => {entity};
   @override
-  PullState map(Map<String, dynamic> data, {String? tablePrefix}) {
+  SyncState map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return PullState(
+    return SyncState(
       entity: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}entity'])!,
-      at: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}at'])!,
-      last: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}last']),
-      done: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}done'])!,
+      pushedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}pushed_at']),
+      lastPulled: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_pulled']),
+      more: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}more'])!,
     );
   }
 
   @override
-  $PullStatesTable createAlias(String alias) {
-    return $PullStatesTable(attachedDatabase, alias);
+  $SyncStatesTable createAlias(String alias) {
+    return $SyncStatesTable(attachedDatabase, alias);
   }
 }
 
-class PullState extends DataClass implements Insertable<PullState> {
+class SyncState extends DataClass implements Insertable<SyncState> {
   final String entity;
-  final DateTime at;
-  final String? last;
-  final bool done;
-  const PullState(
-      {required this.entity, required this.at, this.last, required this.done});
+  final DateTime? pushedAt;
+  final String? lastPulled;
+  final bool more;
+  const SyncState(
+      {required this.entity,
+      this.pushedAt,
+      this.lastPulled,
+      required this.more});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['entity'] = Variable<String>(entity);
-    map['at'] = Variable<DateTime>(at);
-    if (!nullToAbsent || last != null) {
-      map['last'] = Variable<String>(last);
+    if (!nullToAbsent || pushedAt != null) {
+      map['pushed_at'] = Variable<DateTime>(pushedAt);
     }
-    map['done'] = Variable<bool>(done);
+    if (!nullToAbsent || lastPulled != null) {
+      map['last_pulled'] = Variable<String>(lastPulled);
+    }
+    map['more'] = Variable<bool>(more);
     return map;
   }
 
-  PullStatesCompanion toCompanion(bool nullToAbsent) {
-    return PullStatesCompanion(
+  SyncStatesCompanion toCompanion(bool nullToAbsent) {
+    return SyncStatesCompanion(
       entity: Value(entity),
-      at: Value(at),
-      last: last == null && nullToAbsent ? const Value.absent() : Value(last),
-      done: Value(done),
+      pushedAt: pushedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pushedAt),
+      lastPulled: lastPulled == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastPulled),
+      more: Value(more),
     );
   }
 
-  factory PullState.fromJson(Map<String, dynamic> json,
+  factory SyncState.fromJson(Map<String, dynamic> json,
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return PullState(
+    return SyncState(
       entity: serializer.fromJson<String>(json['entity']),
-      at: serializer.fromJson<DateTime>(json['at']),
-      last: serializer.fromJson<String?>(json['last']),
-      done: serializer.fromJson<bool>(json['done']),
+      pushedAt: serializer.fromJson<DateTime?>(json['pushedAt']),
+      lastPulled: serializer.fromJson<String?>(json['lastPulled']),
+      more: serializer.fromJson<bool>(json['more']),
     );
   }
   @override
@@ -133,103 +145,103 @@ class PullState extends DataClass implements Insertable<PullState> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'entity': serializer.toJson<String>(entity),
-      'at': serializer.toJson<DateTime>(at),
-      'last': serializer.toJson<String?>(last),
-      'done': serializer.toJson<bool>(done),
+      'pushedAt': serializer.toJson<DateTime?>(pushedAt),
+      'lastPulled': serializer.toJson<String?>(lastPulled),
+      'more': serializer.toJson<bool>(more),
     };
   }
 
-  PullState copyWith(
+  SyncState copyWith(
           {String? entity,
-          DateTime? at,
-          Value<String?> last = const Value.absent(),
-          bool? done}) =>
-      PullState(
+          Value<DateTime?> pushedAt = const Value.absent(),
+          Value<String?> lastPulled = const Value.absent(),
+          bool? more}) =>
+      SyncState(
         entity: entity ?? this.entity,
-        at: at ?? this.at,
-        last: last.present ? last.value : this.last,
-        done: done ?? this.done,
+        pushedAt: pushedAt.present ? pushedAt.value : this.pushedAt,
+        lastPulled: lastPulled.present ? lastPulled.value : this.lastPulled,
+        more: more ?? this.more,
       );
-  PullState copyWithCompanion(PullStatesCompanion data) {
-    return PullState(
+  SyncState copyWithCompanion(SyncStatesCompanion data) {
+    return SyncState(
       entity: data.entity.present ? data.entity.value : this.entity,
-      at: data.at.present ? data.at.value : this.at,
-      last: data.last.present ? data.last.value : this.last,
-      done: data.done.present ? data.done.value : this.done,
+      pushedAt: data.pushedAt.present ? data.pushedAt.value : this.pushedAt,
+      lastPulled:
+          data.lastPulled.present ? data.lastPulled.value : this.lastPulled,
+      more: data.more.present ? data.more.value : this.more,
     );
   }
 
   @override
   String toString() {
-    return (StringBuffer('PullState(')
+    return (StringBuffer('SyncState(')
           ..write('entity: $entity, ')
-          ..write('at: $at, ')
-          ..write('last: $last, ')
-          ..write('done: $done')
+          ..write('pushedAt: $pushedAt, ')
+          ..write('lastPulled: $lastPulled, ')
+          ..write('more: $more')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(entity, at, last, done);
+  int get hashCode => Object.hash(entity, pushedAt, lastPulled, more);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is PullState &&
+      (other is SyncState &&
           other.entity == this.entity &&
-          other.at == this.at &&
-          other.last == this.last &&
-          other.done == this.done);
+          other.pushedAt == this.pushedAt &&
+          other.lastPulled == this.lastPulled &&
+          other.more == this.more);
 }
 
-class PullStatesCompanion extends UpdateCompanion<PullState> {
+class SyncStatesCompanion extends UpdateCompanion<SyncState> {
   final Value<String> entity;
-  final Value<DateTime> at;
-  final Value<String?> last;
-  final Value<bool> done;
+  final Value<DateTime?> pushedAt;
+  final Value<String?> lastPulled;
+  final Value<bool> more;
   final Value<int> rowid;
-  const PullStatesCompanion({
+  const SyncStatesCompanion({
     this.entity = const Value.absent(),
-    this.at = const Value.absent(),
-    this.last = const Value.absent(),
-    this.done = const Value.absent(),
+    this.pushedAt = const Value.absent(),
+    this.lastPulled = const Value.absent(),
+    this.more = const Value.absent(),
     this.rowid = const Value.absent(),
   });
-  PullStatesCompanion.insert({
+  SyncStatesCompanion.insert({
     required String entity,
-    required DateTime at,
-    this.last = const Value.absent(),
-    this.done = const Value.absent(),
+    this.pushedAt = const Value.absent(),
+    this.lastPulled = const Value.absent(),
+    this.more = const Value.absent(),
     this.rowid = const Value.absent(),
-  })  : entity = Value(entity),
-        at = Value(at);
-  static Insertable<PullState> custom({
+  }) : entity = Value(entity);
+  static Insertable<SyncState> custom({
     Expression<String>? entity,
-    Expression<DateTime>? at,
-    Expression<String>? last,
-    Expression<bool>? done,
+    Expression<DateTime>? pushedAt,
+    Expression<String>? lastPulled,
+    Expression<bool>? more,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (entity != null) 'entity': entity,
-      if (at != null) 'at': at,
-      if (last != null) 'last': last,
-      if (done != null) 'done': done,
+      if (pushedAt != null) 'pushed_at': pushedAt,
+      if (lastPulled != null) 'last_pulled': lastPulled,
+      if (more != null) 'more': more,
       if (rowid != null) 'rowid': rowid,
     });
   }
 
-  PullStatesCompanion copyWith(
+  SyncStatesCompanion copyWith(
       {Value<String>? entity,
-      Value<DateTime>? at,
-      Value<String?>? last,
-      Value<bool>? done,
+      Value<DateTime?>? pushedAt,
+      Value<String?>? lastPulled,
+      Value<bool>? more,
       Value<int>? rowid}) {
-    return PullStatesCompanion(
+    return SyncStatesCompanion(
       entity: entity ?? this.entity,
-      at: at ?? this.at,
-      last: last ?? this.last,
-      done: done ?? this.done,
+      pushedAt: pushedAt ?? this.pushedAt,
+      lastPulled: lastPulled ?? this.lastPulled,
+      more: more ?? this.more,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -240,14 +252,14 @@ class PullStatesCompanion extends UpdateCompanion<PullState> {
     if (entity.present) {
       map['entity'] = Variable<String>(entity.value);
     }
-    if (at.present) {
-      map['at'] = Variable<DateTime>(at.value);
+    if (pushedAt.present) {
+      map['pushed_at'] = Variable<DateTime>(pushedAt.value);
     }
-    if (last.present) {
-      map['last'] = Variable<String>(last.value);
+    if (lastPulled.present) {
+      map['last_pulled'] = Variable<String>(lastPulled.value);
     }
-    if (done.present) {
-      map['done'] = Variable<bool>(done.value);
+    if (more.present) {
+      map['more'] = Variable<bool>(more.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -257,201 +269,314 @@ class PullStatesCompanion extends UpdateCompanion<PullState> {
 
   @override
   String toString() {
-    return (StringBuffer('PullStatesCompanion(')
+    return (StringBuffer('SyncStatesCompanion(')
           ..write('entity: $entity, ')
-          ..write('at: $at, ')
-          ..write('last: $last, ')
-          ..write('done: $done, ')
+          ..write('pushedAt: $pushedAt, ')
+          ..write('lastPulled: $lastPulled, ')
+          ..write('more: $more, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
 }
 
-class $PushStatesTable extends PushStates
-    with TableInfo<$PushStatesTable, PushState> {
+class $AccountsTable extends Accounts with TableInfo<$AccountsTable, Account> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $PushStatesTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _entityMeta = const VerificationMeta('entity');
+  $AccountsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
-  late final GeneratedColumn<String> entity = GeneratedColumn<String>(
-      'entity', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _atMeta = const VerificationMeta('at');
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
   @override
-  late final GeneratedColumn<DateTime> at = GeneratedColumn<DateTime>(
-      'at', aliasedName, false,
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
       type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  static const VerificationMeta _modifiedAtMeta =
+      const VerificationMeta('modifiedAt');
   @override
-  List<GeneratedColumn> get $columns => [entity, at];
+  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
+      'modified_at', aliasedName, false,
+      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  static const VerificationMeta _emailMeta = const VerificationMeta('email');
+  @override
+  late final GeneratedColumn<String> email = GeneratedColumn<String>(
+      'email', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _providerMeta =
+      const VerificationMeta('provider');
+  @override
+  late final GeneratedColumnWithTypeConverter<AccountProvider, int> provider =
+      GeneratedColumn<int>('provider', aliasedName, false,
+              type: DriftSqlType.int, requiredDuringInsert: true)
+          .withConverter<AccountProvider>($AccountsTable.$converterprovider);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, createdAt, modifiedAt, email, provider];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'push_states';
+  static const String $name = 'accounts';
   @override
-  VerificationContext validateIntegrity(Insertable<PushState> instance,
+  VerificationContext validateIntegrity(Insertable<Account> instance,
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    if (data.containsKey('entity')) {
-      context.handle(_entityMeta,
-          entity.isAcceptableOrUnknown(data['entity']!, _entityMeta));
-    } else if (isInserting) {
-      context.missing(_entityMeta);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    if (data.containsKey('at')) {
-      context.handle(_atMeta, at.isAcceptableOrUnknown(data['at']!, _atMeta));
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
     } else if (isInserting) {
-      context.missing(_atMeta);
+      context.missing(_createdAtMeta);
     }
+    if (data.containsKey('modified_at')) {
+      context.handle(
+          _modifiedAtMeta,
+          modifiedAt.isAcceptableOrUnknown(
+              data['modified_at']!, _modifiedAtMeta));
+    } else if (isInserting) {
+      context.missing(_modifiedAtMeta);
+    }
+    if (data.containsKey('email')) {
+      context.handle(
+          _emailMeta, email.isAcceptableOrUnknown(data['email']!, _emailMeta));
+    } else if (isInserting) {
+      context.missing(_emailMeta);
+    }
+    context.handle(_providerMeta, const VerificationResult.success());
     return context;
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {entity};
+  Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  PushState map(Map<String, dynamic> data, {String? tablePrefix}) {
+  Account map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return PushState(
-      entity: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}entity'])!,
-      at: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}at'])!,
+    return Account(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      modifiedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
+      email: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}email'])!,
+      provider: $AccountsTable.$converterprovider.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}provider'])!),
     );
   }
 
   @override
-  $PushStatesTable createAlias(String alias) {
-    return $PushStatesTable(attachedDatabase, alias);
+  $AccountsTable createAlias(String alias) {
+    return $AccountsTable(attachedDatabase, alias);
   }
+
+  static JsonTypeConverter2<AccountProvider, int, int> $converterprovider =
+      const EnumIndexConverter<AccountProvider>(AccountProvider.values);
 }
 
-class PushState extends DataClass implements Insertable<PushState> {
-  final String entity;
-  final DateTime at;
-  const PushState({required this.entity, required this.at});
+class Account extends DataClass implements Insertable<Account> {
+  final int id;
+  final DateTime createdAt;
+  final DateTime modifiedAt;
+  final String email;
+  final AccountProvider provider;
+  const Account(
+      {required this.id,
+      required this.createdAt,
+      required this.modifiedAt,
+      required this.email,
+      required this.provider});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['entity'] = Variable<String>(entity);
-    map['at'] = Variable<DateTime>(at);
+    map['id'] = Variable<int>(id);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['modified_at'] = Variable<DateTime>(modifiedAt);
+    map['email'] = Variable<String>(email);
+    {
+      map['provider'] =
+          Variable<int>($AccountsTable.$converterprovider.toSql(provider));
+    }
     return map;
   }
 
-  PushStatesCompanion toCompanion(bool nullToAbsent) {
-    return PushStatesCompanion(
-      entity: Value(entity),
-      at: Value(at),
+  AccountsCompanion toCompanion(bool nullToAbsent) {
+    return AccountsCompanion(
+      id: Value(id),
+      createdAt: Value(createdAt),
+      modifiedAt: Value(modifiedAt),
+      email: Value(email),
+      provider: Value(provider),
     );
   }
 
-  factory PushState.fromJson(Map<String, dynamic> json,
+  factory Account.fromJson(Map<String, dynamic> json,
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return PushState(
-      entity: serializer.fromJson<String>(json['entity']),
-      at: serializer.fromJson<DateTime>(json['at']),
+    return Account(
+      id: serializer.fromJson<int>(json['id']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
+      email: serializer.fromJson<String>(json['email']),
+      provider: $AccountsTable.$converterprovider
+          .fromJson(serializer.fromJson<int>(json['provider'])),
     );
   }
   @override
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'entity': serializer.toJson<String>(entity),
-      'at': serializer.toJson<DateTime>(at),
+      'id': serializer.toJson<int>(id),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
+      'email': serializer.toJson<String>(email),
+      'provider': serializer
+          .toJson<int>($AccountsTable.$converterprovider.toJson(provider)),
     };
   }
 
-  PushState copyWith({String? entity, DateTime? at}) => PushState(
-        entity: entity ?? this.entity,
-        at: at ?? this.at,
+  Account copyWith(
+          {int? id,
+          DateTime? createdAt,
+          DateTime? modifiedAt,
+          String? email,
+          AccountProvider? provider}) =>
+      Account(
+        id: id ?? this.id,
+        createdAt: createdAt ?? this.createdAt,
+        modifiedAt: modifiedAt ?? this.modifiedAt,
+        email: email ?? this.email,
+        provider: provider ?? this.provider,
       );
-  PushState copyWithCompanion(PushStatesCompanion data) {
-    return PushState(
-      entity: data.entity.present ? data.entity.value : this.entity,
-      at: data.at.present ? data.at.value : this.at,
+  Account copyWithCompanion(AccountsCompanion data) {
+    return Account(
+      id: data.id.present ? data.id.value : this.id,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      modifiedAt:
+          data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      email: data.email.present ? data.email.value : this.email,
+      provider: data.provider.present ? data.provider.value : this.provider,
     );
   }
 
   @override
   String toString() {
-    return (StringBuffer('PushState(')
-          ..write('entity: $entity, ')
-          ..write('at: $at')
+    return (StringBuffer('Account(')
+          ..write('id: $id, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('modifiedAt: $modifiedAt, ')
+          ..write('email: $email, ')
+          ..write('provider: $provider')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(entity, at);
+  int get hashCode => Object.hash(id, createdAt, modifiedAt, email, provider);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is PushState &&
-          other.entity == this.entity &&
-          other.at == this.at);
+      (other is Account &&
+          other.id == this.id &&
+          other.createdAt == this.createdAt &&
+          other.modifiedAt == this.modifiedAt &&
+          other.email == this.email &&
+          other.provider == this.provider);
 }
 
-class PushStatesCompanion extends UpdateCompanion<PushState> {
-  final Value<String> entity;
-  final Value<DateTime> at;
-  final Value<int> rowid;
-  const PushStatesCompanion({
-    this.entity = const Value.absent(),
-    this.at = const Value.absent(),
-    this.rowid = const Value.absent(),
+class AccountsCompanion extends UpdateCompanion<Account> {
+  final Value<int> id;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> modifiedAt;
+  final Value<String> email;
+  final Value<AccountProvider> provider;
+  const AccountsCompanion({
+    this.id = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.modifiedAt = const Value.absent(),
+    this.email = const Value.absent(),
+    this.provider = const Value.absent(),
   });
-  PushStatesCompanion.insert({
-    required String entity,
-    required DateTime at,
-    this.rowid = const Value.absent(),
-  })  : entity = Value(entity),
-        at = Value(at);
-  static Insertable<PushState> custom({
-    Expression<String>? entity,
-    Expression<DateTime>? at,
-    Expression<int>? rowid,
+  AccountsCompanion.insert({
+    this.id = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime modifiedAt,
+    required String email,
+    required AccountProvider provider,
+  })  : createdAt = Value(createdAt),
+        modifiedAt = Value(modifiedAt),
+        email = Value(email),
+        provider = Value(provider);
+  static Insertable<Account> custom({
+    Expression<int>? id,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? modifiedAt,
+    Expression<String>? email,
+    Expression<int>? provider,
   }) {
     return RawValuesInsertable({
-      if (entity != null) 'entity': entity,
-      if (at != null) 'at': at,
-      if (rowid != null) 'rowid': rowid,
+      if (id != null) 'id': id,
+      if (createdAt != null) 'created_at': createdAt,
+      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (email != null) 'email': email,
+      if (provider != null) 'provider': provider,
     });
   }
 
-  PushStatesCompanion copyWith(
-      {Value<String>? entity, Value<DateTime>? at, Value<int>? rowid}) {
-    return PushStatesCompanion(
-      entity: entity ?? this.entity,
-      at: at ?? this.at,
-      rowid: rowid ?? this.rowid,
+  AccountsCompanion copyWith(
+      {Value<int>? id,
+      Value<DateTime>? createdAt,
+      Value<DateTime>? modifiedAt,
+      Value<String>? email,
+      Value<AccountProvider>? provider}) {
+    return AccountsCompanion(
+      id: id ?? this.id,
+      createdAt: createdAt ?? this.createdAt,
+      modifiedAt: modifiedAt ?? this.modifiedAt,
+      email: email ?? this.email,
+      provider: provider ?? this.provider,
     );
   }
 
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (entity.present) {
-      map['entity'] = Variable<String>(entity.value);
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
     }
-    if (at.present) {
-      map['at'] = Variable<DateTime>(at.value);
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
     }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
+    if (modifiedAt.present) {
+      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+    }
+    if (email.present) {
+      map['email'] = Variable<String>(email.value);
+    }
+    if (provider.present) {
+      map['provider'] = Variable<int>(
+          $AccountsTable.$converterprovider.toSql(provider.value));
     }
     return map;
   }
 
   @override
   String toString() {
-    return (StringBuffer('PushStatesCompanion(')
-          ..write('entity: $entity, ')
-          ..write('at: $at, ')
-          ..write('rowid: $rowid')
+    return (StringBuffer('AccountsCompanion(')
+          ..write('id: $id, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('modifiedAt: $modifiedAt, ')
+          ..write('email: $email, ')
+          ..write('provider: $provider')
           ..write(')'))
         .toString();
   }
@@ -491,15 +616,21 @@ class $ContextsTable extends Contexts with TableInfo<$ContextsTable, Context> {
       type: DriftSqlType.string, requiredDuringInsert: true);
   static const VerificationMeta _orderMeta = const VerificationMeta('order');
   @override
-  late final GeneratedColumn<double> order = GeneratedColumn<double>(
-      'order', aliasedName, false,
-      type: DriftSqlType.double, requiredDuringInsert: true);
+  late final GeneratedColumnWithTypeConverter<Order, double> order =
+      GeneratedColumn<double>('order', aliasedName, false,
+              type: DriftSqlType.double,
+              requiredDuringInsert: false,
+              clientDefault: () => Order().toDouble())
+          .withConverter<Order>($ContextsTable.$converterorder);
   static const VerificationMeta _pomodoroMeta =
       const VerificationMeta('pomodoro');
   @override
-  late final GeneratedColumn<int> pomodoro = GeneratedColumn<int>(
-      'pomodoro', aliasedName, false,
-      type: DriftSqlType.int, requiredDuringInsert: true);
+  late final GeneratedColumnWithTypeConverter<Duration, int> pomodoro =
+      GeneratedColumn<int>('pomodoro', aliasedName, false,
+              type: DriftSqlType.int,
+              requiredDuringInsert: false,
+              defaultValue: const Constant(25))
+          .withConverter<Duration>($ContextsTable.$converterpomodoro);
   @override
   List<GeneratedColumn> get $columns =>
       [id, createdAt, modifiedAt, name, path, order, pomodoro];
@@ -544,18 +675,8 @@ class $ContextsTable extends Contexts with TableInfo<$ContextsTable, Context> {
     } else if (isInserting) {
       context.missing(_pathMeta);
     }
-    if (data.containsKey('order')) {
-      context.handle(
-          _orderMeta, order.isAcceptableOrUnknown(data['order']!, _orderMeta));
-    } else if (isInserting) {
-      context.missing(_orderMeta);
-    }
-    if (data.containsKey('pomodoro')) {
-      context.handle(_pomodoroMeta,
-          pomodoro.isAcceptableOrUnknown(data['pomodoro']!, _pomodoroMeta));
-    } else if (isInserting) {
-      context.missing(_pomodoroMeta);
-    }
+    context.handle(_orderMeta, const VerificationResult.success());
+    context.handle(_pomodoroMeta, const VerificationResult.success());
     return context;
   }
 
@@ -575,10 +696,11 @@ class $ContextsTable extends Contexts with TableInfo<$ContextsTable, Context> {
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       path: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}path'])!,
-      order: attachedDatabase.typeMapping
-          .read(DriftSqlType.double, data['${effectivePrefix}order'])!,
-      pomodoro: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}pomodoro'])!,
+      order: $ContextsTable.$converterorder.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}order'])!),
+      pomodoro: $ContextsTable.$converterpomodoro.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}pomodoro'])!),
     );
   }
 
@@ -586,6 +708,10 @@ class $ContextsTable extends Contexts with TableInfo<$ContextsTable, Context> {
   $ContextsTable createAlias(String alias) {
     return $ContextsTable(attachedDatabase, alias);
   }
+
+  static TypeConverter<Order, double> $converterorder = const OrderConverter();
+  static TypeConverter<Duration, int> $converterpomodoro =
+      const MinutesConverter();
 }
 
 class Context extends DataClass implements Insertable<Context> {
@@ -594,8 +720,8 @@ class Context extends DataClass implements Insertable<Context> {
   final DateTime modifiedAt;
   final String name;
   final String path;
-  final double order;
-  final int pomodoro;
+  final Order order;
+  final Duration pomodoro;
   const Context(
       {required this.id,
       required this.createdAt,
@@ -612,8 +738,14 @@ class Context extends DataClass implements Insertable<Context> {
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     map['name'] = Variable<String>(name);
     map['path'] = Variable<String>(path);
-    map['order'] = Variable<double>(order);
-    map['pomodoro'] = Variable<int>(pomodoro);
+    {
+      map['order'] =
+          Variable<double>($ContextsTable.$converterorder.toSql(order));
+    }
+    {
+      map['pomodoro'] =
+          Variable<int>($ContextsTable.$converterpomodoro.toSql(pomodoro));
+    }
     return map;
   }
 
@@ -638,8 +770,8 @@ class Context extends DataClass implements Insertable<Context> {
       modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
       name: serializer.fromJson<String>(json['name']),
       path: serializer.fromJson<String>(json['path']),
-      order: serializer.fromJson<double>(json['order']),
-      pomodoro: serializer.fromJson<int>(json['pomodoro']),
+      order: serializer.fromJson<Order>(json['order']),
+      pomodoro: serializer.fromJson<Duration>(json['pomodoro']),
     );
   }
   @override
@@ -651,8 +783,8 @@ class Context extends DataClass implements Insertable<Context> {
       'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
       'name': serializer.toJson<String>(name),
       'path': serializer.toJson<String>(path),
-      'order': serializer.toJson<double>(order),
-      'pomodoro': serializer.toJson<int>(pomodoro),
+      'order': serializer.toJson<Order>(order),
+      'pomodoro': serializer.toJson<Duration>(pomodoro),
     };
   }
 
@@ -662,8 +794,8 @@ class Context extends DataClass implements Insertable<Context> {
           DateTime? modifiedAt,
           String? name,
           String? path,
-          double? order,
-          int? pomodoro}) =>
+          Order? order,
+          Duration? pomodoro}) =>
       Context(
         id: id ?? this.id,
         createdAt: createdAt ?? this.createdAt,
@@ -722,8 +854,8 @@ class ContextsCompanion extends UpdateCompanion<Context> {
   final Value<DateTime> modifiedAt;
   final Value<String> name;
   final Value<String> path;
-  final Value<double> order;
-  final Value<int> pomodoro;
+  final Value<Order> order;
+  final Value<Duration> pomodoro;
   final Value<int> rowid;
   const ContextsCompanion({
     this.id = const Value.absent(),
@@ -741,16 +873,14 @@ class ContextsCompanion extends UpdateCompanion<Context> {
     required DateTime modifiedAt,
     required String name,
     required String path,
-    required double order,
-    required int pomodoro,
+    this.order = const Value.absent(),
+    this.pomodoro = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : id = Value(id),
         createdAt = Value(createdAt),
         modifiedAt = Value(modifiedAt),
         name = Value(name),
-        path = Value(path),
-        order = Value(order),
-        pomodoro = Value(pomodoro);
+        path = Value(path);
   static Insertable<Context> custom({
     Expression<Uint8List>? id,
     Expression<DateTime>? createdAt,
@@ -779,8 +909,8 @@ class ContextsCompanion extends UpdateCompanion<Context> {
       Value<DateTime>? modifiedAt,
       Value<String>? name,
       Value<String>? path,
-      Value<double>? order,
-      Value<int>? pomodoro,
+      Value<Order>? order,
+      Value<Duration>? pomodoro,
       Value<int>? rowid}) {
     return ContextsCompanion(
       id: id ?? this.id,
@@ -813,10 +943,12 @@ class ContextsCompanion extends UpdateCompanion<Context> {
       map['path'] = Variable<String>(path.value);
     }
     if (order.present) {
-      map['order'] = Variable<double>(order.value);
+      map['order'] =
+          Variable<double>($ContextsTable.$converterorder.toSql(order.value));
     }
     if (pomodoro.present) {
-      map['pomodoro'] = Variable<int>(pomodoro.value);
+      map['pomodoro'] = Variable<int>(
+          $ContextsTable.$converterpomodoro.toSql(pomodoro.value));
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -1365,8 +1497,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
 abstract class _$Store extends GeneratedDatabase {
   _$Store(QueryExecutor e) : super(e);
   $StoreManager get managers => $StoreManager(this);
-  late final $PullStatesTable pullStates = $PullStatesTable(this);
-  late final $PushStatesTable pushStates = $PushStatesTable(this);
+  late final $SyncStatesTable syncStates = $SyncStatesTable(this);
+  late final $AccountsTable accounts = $AccountsTable(this);
   late final $ContextsTable contexts = $ContextsTable(this);
   late final $NotesTable notes = $NotesTable(this);
   @override
@@ -1374,117 +1506,117 @@ abstract class _$Store extends GeneratedDatabase {
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities =>
-      [pullStates, pushStates, contexts, notes];
+      [syncStates, accounts, contexts, notes];
 }
 
-typedef $$PullStatesTableCreateCompanionBuilder = PullStatesCompanion Function({
+typedef $$SyncStatesTableCreateCompanionBuilder = SyncStatesCompanion Function({
   required String entity,
-  required DateTime at,
-  Value<String?> last,
-  Value<bool> done,
+  Value<DateTime?> pushedAt,
+  Value<String?> lastPulled,
+  Value<bool> more,
   Value<int> rowid,
 });
-typedef $$PullStatesTableUpdateCompanionBuilder = PullStatesCompanion Function({
+typedef $$SyncStatesTableUpdateCompanionBuilder = SyncStatesCompanion Function({
   Value<String> entity,
-  Value<DateTime> at,
-  Value<String?> last,
-  Value<bool> done,
+  Value<DateTime?> pushedAt,
+  Value<String?> lastPulled,
+  Value<bool> more,
   Value<int> rowid,
 });
 
-class $$PullStatesTableFilterComposer
-    extends FilterComposer<_$Store, $PullStatesTable> {
-  $$PullStatesTableFilterComposer(super.$state);
+class $$SyncStatesTableFilterComposer
+    extends FilterComposer<_$Store, $SyncStatesTable> {
+  $$SyncStatesTableFilterComposer(super.$state);
   ColumnFilters<String> get entity => $state.composableBuilder(
       column: $state.table.entity,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  ColumnFilters<DateTime> get at => $state.composableBuilder(
-      column: $state.table.at,
+  ColumnFilters<DateTime> get pushedAt => $state.composableBuilder(
+      column: $state.table.pushedAt,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  ColumnFilters<String> get last => $state.composableBuilder(
-      column: $state.table.last,
+  ColumnFilters<String> get lastPulled => $state.composableBuilder(
+      column: $state.table.lastPulled,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  ColumnFilters<bool> get done => $state.composableBuilder(
-      column: $state.table.done,
+  ColumnFilters<bool> get more => $state.composableBuilder(
+      column: $state.table.more,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 }
 
-class $$PullStatesTableOrderingComposer
-    extends OrderingComposer<_$Store, $PullStatesTable> {
-  $$PullStatesTableOrderingComposer(super.$state);
+class $$SyncStatesTableOrderingComposer
+    extends OrderingComposer<_$Store, $SyncStatesTable> {
+  $$SyncStatesTableOrderingComposer(super.$state);
   ColumnOrderings<String> get entity => $state.composableBuilder(
       column: $state.table.entity,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<DateTime> get at => $state.composableBuilder(
-      column: $state.table.at,
+  ColumnOrderings<DateTime> get pushedAt => $state.composableBuilder(
+      column: $state.table.pushedAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<String> get last => $state.composableBuilder(
-      column: $state.table.last,
+  ColumnOrderings<String> get lastPulled => $state.composableBuilder(
+      column: $state.table.lastPulled,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<bool> get done => $state.composableBuilder(
-      column: $state.table.done,
+  ColumnOrderings<bool> get more => $state.composableBuilder(
+      column: $state.table.more,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 }
 
-class $$PullStatesTableTableManager extends RootTableManager<
+class $$SyncStatesTableTableManager extends RootTableManager<
     _$Store,
-    $PullStatesTable,
-    PullState,
-    $$PullStatesTableFilterComposer,
-    $$PullStatesTableOrderingComposer,
-    $$PullStatesTableCreateCompanionBuilder,
-    $$PullStatesTableUpdateCompanionBuilder,
-    (PullState, BaseReferences<_$Store, $PullStatesTable, PullState>),
-    PullState,
+    $SyncStatesTable,
+    SyncState,
+    $$SyncStatesTableFilterComposer,
+    $$SyncStatesTableOrderingComposer,
+    $$SyncStatesTableCreateCompanionBuilder,
+    $$SyncStatesTableUpdateCompanionBuilder,
+    (SyncState, BaseReferences<_$Store, $SyncStatesTable, SyncState>),
+    SyncState,
     PrefetchHooks Function()> {
-  $$PullStatesTableTableManager(_$Store db, $PullStatesTable table)
+  $$SyncStatesTableTableManager(_$Store db, $SyncStatesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
           filteringComposer:
-              $$PullStatesTableFilterComposer(ComposerState(db, table)),
+              $$SyncStatesTableFilterComposer(ComposerState(db, table)),
           orderingComposer:
-              $$PullStatesTableOrderingComposer(ComposerState(db, table)),
+              $$SyncStatesTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
             Value<String> entity = const Value.absent(),
-            Value<DateTime> at = const Value.absent(),
-            Value<String?> last = const Value.absent(),
-            Value<bool> done = const Value.absent(),
+            Value<DateTime?> pushedAt = const Value.absent(),
+            Value<String?> lastPulled = const Value.absent(),
+            Value<bool> more = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
-              PullStatesCompanion(
+              SyncStatesCompanion(
             entity: entity,
-            at: at,
-            last: last,
-            done: done,
+            pushedAt: pushedAt,
+            lastPulled: lastPulled,
+            more: more,
             rowid: rowid,
           ),
           createCompanionCallback: ({
             required String entity,
-            required DateTime at,
-            Value<String?> last = const Value.absent(),
-            Value<bool> done = const Value.absent(),
+            Value<DateTime?> pushedAt = const Value.absent(),
+            Value<String?> lastPulled = const Value.absent(),
+            Value<bool> more = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
-              PullStatesCompanion.insert(
+              SyncStatesCompanion.insert(
             entity: entity,
-            at: at,
-            last: last,
-            done: done,
+            pushedAt: pushedAt,
+            lastPulled: lastPulled,
+            more: more,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -1494,94 +1626,138 @@ class $$PullStatesTableTableManager extends RootTableManager<
         ));
 }
 
-typedef $$PullStatesTableProcessedTableManager = ProcessedTableManager<
+typedef $$SyncStatesTableProcessedTableManager = ProcessedTableManager<
     _$Store,
-    $PullStatesTable,
-    PullState,
-    $$PullStatesTableFilterComposer,
-    $$PullStatesTableOrderingComposer,
-    $$PullStatesTableCreateCompanionBuilder,
-    $$PullStatesTableUpdateCompanionBuilder,
-    (PullState, BaseReferences<_$Store, $PullStatesTable, PullState>),
-    PullState,
+    $SyncStatesTable,
+    SyncState,
+    $$SyncStatesTableFilterComposer,
+    $$SyncStatesTableOrderingComposer,
+    $$SyncStatesTableCreateCompanionBuilder,
+    $$SyncStatesTableUpdateCompanionBuilder,
+    (SyncState, BaseReferences<_$Store, $SyncStatesTable, SyncState>),
+    SyncState,
     PrefetchHooks Function()>;
-typedef $$PushStatesTableCreateCompanionBuilder = PushStatesCompanion Function({
-  required String entity,
-  required DateTime at,
-  Value<int> rowid,
+typedef $$AccountsTableCreateCompanionBuilder = AccountsCompanion Function({
+  Value<int> id,
+  required DateTime createdAt,
+  required DateTime modifiedAt,
+  required String email,
+  required AccountProvider provider,
 });
-typedef $$PushStatesTableUpdateCompanionBuilder = PushStatesCompanion Function({
-  Value<String> entity,
-  Value<DateTime> at,
-  Value<int> rowid,
+typedef $$AccountsTableUpdateCompanionBuilder = AccountsCompanion Function({
+  Value<int> id,
+  Value<DateTime> createdAt,
+  Value<DateTime> modifiedAt,
+  Value<String> email,
+  Value<AccountProvider> provider,
 });
 
-class $$PushStatesTableFilterComposer
-    extends FilterComposer<_$Store, $PushStatesTable> {
-  $$PushStatesTableFilterComposer(super.$state);
-  ColumnFilters<String> get entity => $state.composableBuilder(
-      column: $state.table.entity,
+class $$AccountsTableFilterComposer
+    extends FilterComposer<_$Store, $AccountsTable> {
+  $$AccountsTableFilterComposer(super.$state);
+  ColumnFilters<int> get id => $state.composableBuilder(
+      column: $state.table.id,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  ColumnFilters<DateTime> get at => $state.composableBuilder(
-      column: $state.table.at,
+  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
+      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
+      column: $state.table.modifiedAt,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnFilters<String> get email => $state.composableBuilder(
+      column: $state.table.email,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnWithTypeConverterFilters<AccountProvider, AccountProvider, int>
+      get provider => $state.composableBuilder(
+          column: $state.table.provider,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
 }
 
-class $$PushStatesTableOrderingComposer
-    extends OrderingComposer<_$Store, $PushStatesTable> {
-  $$PushStatesTableOrderingComposer(super.$state);
-  ColumnOrderings<String> get entity => $state.composableBuilder(
-      column: $state.table.entity,
+class $$AccountsTableOrderingComposer
+    extends OrderingComposer<_$Store, $AccountsTable> {
+  $$AccountsTableOrderingComposer(super.$state);
+  ColumnOrderings<int> get id => $state.composableBuilder(
+      column: $state.table.id,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<DateTime> get at => $state.composableBuilder(
-      column: $state.table.at,
+  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
+      column: $state.table.createdAt,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
+      column: $state.table.modifiedAt,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<String> get email => $state.composableBuilder(
+      column: $state.table.email,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<int> get provider => $state.composableBuilder(
+      column: $state.table.provider,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 }
 
-class $$PushStatesTableTableManager extends RootTableManager<
+class $$AccountsTableTableManager extends RootTableManager<
     _$Store,
-    $PushStatesTable,
-    PushState,
-    $$PushStatesTableFilterComposer,
-    $$PushStatesTableOrderingComposer,
-    $$PushStatesTableCreateCompanionBuilder,
-    $$PushStatesTableUpdateCompanionBuilder,
-    (PushState, BaseReferences<_$Store, $PushStatesTable, PushState>),
-    PushState,
+    $AccountsTable,
+    Account,
+    $$AccountsTableFilterComposer,
+    $$AccountsTableOrderingComposer,
+    $$AccountsTableCreateCompanionBuilder,
+    $$AccountsTableUpdateCompanionBuilder,
+    (Account, BaseReferences<_$Store, $AccountsTable, Account>),
+    Account,
     PrefetchHooks Function()> {
-  $$PushStatesTableTableManager(_$Store db, $PushStatesTable table)
+  $$AccountsTableTableManager(_$Store db, $AccountsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
           filteringComposer:
-              $$PushStatesTableFilterComposer(ComposerState(db, table)),
+              $$AccountsTableFilterComposer(ComposerState(db, table)),
           orderingComposer:
-              $$PushStatesTableOrderingComposer(ComposerState(db, table)),
+              $$AccountsTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
-            Value<String> entity = const Value.absent(),
-            Value<DateTime> at = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
+            Value<int> id = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<String> email = const Value.absent(),
+            Value<AccountProvider> provider = const Value.absent(),
           }) =>
-              PushStatesCompanion(
-            entity: entity,
-            at: at,
-            rowid: rowid,
+              AccountsCompanion(
+            id: id,
+            createdAt: createdAt,
+            modifiedAt: modifiedAt,
+            email: email,
+            provider: provider,
           ),
           createCompanionCallback: ({
-            required String entity,
-            required DateTime at,
-            Value<int> rowid = const Value.absent(),
+            Value<int> id = const Value.absent(),
+            required DateTime createdAt,
+            required DateTime modifiedAt,
+            required String email,
+            required AccountProvider provider,
           }) =>
-              PushStatesCompanion.insert(
-            entity: entity,
-            at: at,
-            rowid: rowid,
+              AccountsCompanion.insert(
+            id: id,
+            createdAt: createdAt,
+            modifiedAt: modifiedAt,
+            email: email,
+            provider: provider,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
@@ -1590,16 +1766,16 @@ class $$PushStatesTableTableManager extends RootTableManager<
         ));
 }
 
-typedef $$PushStatesTableProcessedTableManager = ProcessedTableManager<
+typedef $$AccountsTableProcessedTableManager = ProcessedTableManager<
     _$Store,
-    $PushStatesTable,
-    PushState,
-    $$PushStatesTableFilterComposer,
-    $$PushStatesTableOrderingComposer,
-    $$PushStatesTableCreateCompanionBuilder,
-    $$PushStatesTableUpdateCompanionBuilder,
-    (PushState, BaseReferences<_$Store, $PushStatesTable, PushState>),
-    PushState,
+    $AccountsTable,
+    Account,
+    $$AccountsTableFilterComposer,
+    $$AccountsTableOrderingComposer,
+    $$AccountsTableCreateCompanionBuilder,
+    $$AccountsTableUpdateCompanionBuilder,
+    (Account, BaseReferences<_$Store, $AccountsTable, Account>),
+    Account,
     PrefetchHooks Function()>;
 typedef $$ContextsTableCreateCompanionBuilder = ContextsCompanion Function({
   required Uint8List id,
@@ -1607,8 +1783,8 @@ typedef $$ContextsTableCreateCompanionBuilder = ContextsCompanion Function({
   required DateTime modifiedAt,
   required String name,
   required String path,
-  required double order,
-  required int pomodoro,
+  Value<Order> order,
+  Value<Duration> pomodoro,
   Value<int> rowid,
 });
 typedef $$ContextsTableUpdateCompanionBuilder = ContextsCompanion Function({
@@ -1617,8 +1793,8 @@ typedef $$ContextsTableUpdateCompanionBuilder = ContextsCompanion Function({
   Value<DateTime> modifiedAt,
   Value<String> name,
   Value<String> path,
-  Value<double> order,
-  Value<int> pomodoro,
+  Value<Order> order,
+  Value<Duration> pomodoro,
   Value<int> rowid,
 });
 
@@ -1669,15 +1845,19 @@ class $$ContextsTableFilterComposer
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  ColumnFilters<double> get order => $state.composableBuilder(
-      column: $state.table.order,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnWithTypeConverterFilters<Order, Order, double> get order =>
+      $state.composableBuilder(
+          column: $state.table.order,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
 
-  ColumnFilters<int> get pomodoro => $state.composableBuilder(
-      column: $state.table.pomodoro,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnWithTypeConverterFilters<Duration, Duration, int> get pomodoro =>
+      $state.composableBuilder(
+          column: $state.table.pomodoro,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
 
   ComposableFilter notesRefs(
       ComposableFilter Function($$NotesTableFilterComposer f) f) {
@@ -1757,8 +1937,8 @@ class $$ContextsTableTableManager extends RootTableManager<
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<String> name = const Value.absent(),
             Value<String> path = const Value.absent(),
-            Value<double> order = const Value.absent(),
-            Value<int> pomodoro = const Value.absent(),
+            Value<Order> order = const Value.absent(),
+            Value<Duration> pomodoro = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               ContextsCompanion(
@@ -1777,8 +1957,8 @@ class $$ContextsTableTableManager extends RootTableManager<
             required DateTime modifiedAt,
             required String name,
             required String path,
-            required double order,
-            required int pomodoro,
+            Value<Order> order = const Value.absent(),
+            Value<Duration> pomodoro = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               ContextsCompanion.insert(
@@ -2123,10 +2303,10 @@ typedef $$NotesTableProcessedTableManager = ProcessedTableManager<
 class $StoreManager {
   final _$Store _db;
   $StoreManager(this._db);
-  $$PullStatesTableTableManager get pullStates =>
-      $$PullStatesTableTableManager(_db, _db.pullStates);
-  $$PushStatesTableTableManager get pushStates =>
-      $$PushStatesTableTableManager(_db, _db.pushStates);
+  $$SyncStatesTableTableManager get syncStates =>
+      $$SyncStatesTableTableManager(_db, _db.syncStates);
+  $$AccountsTableTableManager get accounts =>
+      $$AccountsTableTableManager(_db, _db.accounts);
   $$ContextsTableTableManager get contexts =>
       $$ContextsTableTableManager(_db, _db.contexts);
   $$NotesTableTableManager get notes =>

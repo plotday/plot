@@ -1,20 +1,13 @@
 import 'package:drift/drift.dart';
 
-class PushStates extends Table {
+class SyncStates extends Table {
   TextColumn get entity => text()();
+
   // Local timestamp of the most recent row pushed
-  DateTimeColumn get at => dateTime()();
-
-  @override
-  Set<Column> get primaryKey => {entity};
-}
-
-class PullStates extends Table {
-  TextColumn get entity => text()();
-  // Server timestamp of the most recent row pulled
-  DateTimeColumn get at => dateTime()();
-  TextColumn get last => text().nullable()();
-  BoolColumn get done => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get pushedAt => dateTime().nullable()();
+  // Value of the order field of the last item pulled
+  TextColumn get lastPulled => text().nullable()();
+  BoolColumn get more => boolean().withDefault(const Constant(true))();
 
   @override
   Set<Column> get primaryKey => {entity};
