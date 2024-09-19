@@ -1,25 +1,12 @@
-// import 'dart:js_interop';
-
 import 'model.dart';
-import 'calendar.dart';
 import 'package:plot/util/api.dart' as api;
+import 'package:plot/store/store.dart' as store;
 
-enum AccountProvider { google, outlook }
-
+typedef AccountProvider = store.AccountProvider;
 typedef AccountID = int;
 
-class Account extends RemoteModel<AccountID> {
-  static final store = Store<int, Account>(
-    load: () async {
-      final json = (await base
-          .from('account')
-          .select(
-              "id,credentials->>provider,email,calendars:calendar(id,name,enabled)")
-          .eq("user_id", base.auth.currentUser!.id));
-      return json.map(Account.fromJson).map((m) => MapEntry(m.id!, m));
-    },
-  );
-
+class Account extends RemoteModel<AccountID>
+    with store.AccountStorable, store.AccountSaveable {
   static Future<Account> add(AccountProvider provider, String code) async {
     final response = await api.post(
       "/sync",
@@ -28,40 +15,39 @@ class Account extends RemoteModel<AccountID> {
         'code': code,
       },
     );
-    return Account.fromJson(response);
-  }
-
-  static List<Calendar> _calendarsFromJson(Map<String, dynamic> json) {
-    final data = json['calendars'] as List<dynamic>;
-    return data
-        .map((calendar) => Calendar.fromJson(calendar as Map<String, dynamic>))
-        .toList();
-  }
-
-  Account.fromJson(Map<String, dynamic> json)
-      : email = json['email'] as String,
-        provider = AccountProvider.values
-            .firstWhere((e) => e.name == json['provider'] as String),
-        calendars = _calendarsFromJson(json),
-        super.fromJson(json);
-
-  @override
-  Map<String, dynamic> toJson() => {
-        ...super.toJson(),
-        'email': email,
-        'provider': provider.name,
-      };
-
-  @override
-  Future<Account> save() async {
-    final model = await saveToBase("account", Account.fromJson);
-    store.put(model.id!, model);
-    return model;
+    final account = Account.fromStore(store.Account.fromJson(response));
+    await account.save();
+    return account;
   }
 
   final String email;
   final AccountProvider provider;
-  final List<Calendar> calendars;
+
+  /* Internal */
+
+  const Account._({
+    required super.id,
+    required super.createdAt,
+    required super.modifiedAt,
+    required this.email,
+    required this.provider,
+  });
+
+  factory Account.fromStore(store.Account row) => Account._(
+        id: row.id,
+        createdAt: row.createdAt,
+        modifiedAt: row.modifiedAt,
+        email: row.email,
+        provider: row.provider,
+      );
+
+  @override
+  store.Insertable<store.Account> toStore() => store.AccountsCompanion.custom(
+        id: store.Constant(id),
+        modifiedAt: store.currentDateAndTime,
+        email: store.Constant(email),
+        provider: store.Constant(provider.name),
+      );
 
   @override
   List<Object?> get props => super.props + [email, provider];

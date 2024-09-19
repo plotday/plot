@@ -3,11 +3,9 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
-import 'package:plot/model/schedule.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/util/time.dart';
 import 'package:plot/util/optional.dart';
-
-export 'package:plot/model/schedule.dart';
 
 part 'schedule_state.dart';
 
@@ -20,31 +18,31 @@ class ScheduleBloc extends Cubit<ScheduleState> {
     selectCurrent();
   }
 
-  void select(ScheduledEvent event) {
+  void select(Event event) {
     emit(state.copyWith(selected: Optional.of(event)));
   }
 
-  Future<ScheduledEvent> selectById(ScheduledEventID eventId) async {
+  Future<Event> selectById(EventID eventId) async {
     emit(SelectedEventLoadingState.copy(state));
-    final event = await ScheduledEvent.getOrFetch(eventId);
+    final event = await Event.getOrFetch(eventId);
     select(event);
     return event;
   }
 
-  Future<ScheduledEvent> selectCurrent() async {
+  Future<Event> selectCurrent() async {
     emit(SelectedEventLoadingState.copy(state));
     await ScheduledDay.getOrFetchToday();
-    final current = ScheduledEvent.current();
+    final current = Event.current();
     assert(current.isNotEmpty);
     select(current.first);
     return current.first;
   }
 
-  Future<ScheduledEvent> update(ScheduledEvent event) async {
+  Future<Event> update(Event event) async {
     return await event.save();
   }
 
-  ScheduledEvent? get selected {
+  Event? get selected {
     if (state is SelectedEventState) {
       return (state as SelectedEventState).selected;
     }

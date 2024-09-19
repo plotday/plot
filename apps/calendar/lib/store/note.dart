@@ -1,28 +1,36 @@
-import 'package:drift/drift.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+part of 'store.dart';
 
-import 'package:plot/util/uuid.dart';
-import 'table.dart';
-import 'context.dart';
-
+@DataClassName('NoteRow')
 class Notes extends UuidStoreTable {
-  BlobColumn get userId => blob()();
+  BlobColumn get userId => blob()
+      .clientDefault(() => generateUuid().toBytes())
+      .map(const UuidConverter())();
   TextColumn get body => text()();
-  RealColumn get order => real()();
-  BoolColumn get root => boolean()();
-  BoolColumn get private => boolean()();
-  BlobColumn get topicId => blob()();
-  BlobColumn get contextId => blob().nullable().references(Contexts, #id)();
+  RealColumn get order => real()
+      .clientDefault(() => Order.first().toDouble())
+      .map(const OrderConverter())();
+  BoolColumn get root => boolean().withDefault(const Constant(false))();
+  BoolColumn get private => boolean().withDefault(const Constant(false))();
+  BlobColumn get topicId => blob().map(const UuidConverter())();
+  BlobColumn get contextId =>
+      blob().nullable().map(const UuidConverter()).references(Contexts, #id)();
 }
 
 class NotesBase extends BaseTable {
-  NotesBase() : super(table: 'notes');
+  NotesBase({
+    super.order,
+    super.limit,
+    super.name,
+  }) : super(table: 'note');
+
+  @override
+  Insertable<DataClass> fromBase(Map<String, dynamic> json) =>
+      NoteRow.fromJson(json);
 }
 
-class ContextNotesBase extends BaseTable {
+class ContextNotesBase extends NotesBase {
   ContextNotesBase(this.contextPath)
       : super(
-          table: 'note',
           name: 'notes:$contextPath',
           order: 'order',
           limit: 40,
@@ -37,16 +45,15 @@ class ContextNotesBase extends BaseTable {
   }
 }
 
-class TopicNotesBase extends BaseTable {
+class TopicNotesBase extends NotesBase {
   TopicNotesBase(this.topicId)
       : super(
-          table: 'note',
           name: 'notes:topic:$topicId',
           order: 'order',
           limit: 40,
         );
 
-  final UUID topicId;
+  final Uuid topicId;
 
   @override
   PostgrestFilterBuilder<T> filter<T>(PostgrestFilterBuilder<T> query) {
@@ -58,4 +65,95 @@ class TopicNotesBase extends BaseTable {
     // Sort the root note before the rest of the topic notes
     return super.sort(query.order('root', ascending: false));
   }
+}
+
+class Note extends NoteRow {
+  static TableInfo<Notes, NoteRow> get table => Store.get.notes;
+
+  static Future<void> push() => Store.get.push(table, NotesBase());
+  static Future<bool> pull() async => Store.get.pull(table, NotesBase());
+  static Future<bool> pullContext(String? contextPath) async =>
+      Store.get.pull(table, ContextNotesBase(contextPath));
+  static Future<bool> pullTopic(Uuid topicId) async =>
+      Store.get.pull(table, TopicNotesBase(topicId));
+
+  static Stream<List<Note>> watchContext(String? path) {
+    final query = Store.get.select(table);
+    if (path != null) {
+      query.join([
+        innerJoin(Store.get.contexts,
+            Store.get.contexts.id.equalsExp(Store.get.notes.contextId))
+      ]).where(Store.get.contexts.path.like('$path%'));
+    }
+    query.orderBy(
+        [(t) => OrderingTerm.desc(t.root), (t) => OrderingTerm.asc(t.order)]);
+    return query
+        .watch()
+        .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
+  }
+
+  static Stream<List<Note>> watchTopic(TopicId topicId) =>
+      (Store.get.select(table)
+            ..where((t) => t.topicId.equals(topicId.toBytes()))
+            ..orderBy([(t) => OrderingTerm.asc(t.order)]))
+          .watch()
+          .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
+
+  factory Note({
+    required Uuid? contextId,
+    required String body,
+    required Order order,
+    bool private = false,
+  }) {
+    final id = generateUuid();
+    final now = DateTime.now();
+    return Note.fromStore(NoteRow(
+      id: id,
+      contextId: contextId,
+      userId: Uuid.fromString(base.auth.currentUser!.id),
+      root: true,
+      topicId: id,
+      createdAt: now,
+      modifiedAt: now,
+      body: body,
+      order: order,
+      private: private,
+    ));
+  }
+
+  factory Note.inTopic({
+    required Note parent,
+    required String body,
+    required Order order,
+    bool private = false,
+  }) {
+    final id = generateUuid();
+    final now = DateTime.now();
+    return Note.fromStore(NoteRow(
+      id: id,
+      userId: Uuid.fromString(base.auth.currentUser!.id),
+      root: false,
+      contextId: parent.contextId,
+      topicId: parent.topicId,
+      createdAt: now,
+      modifiedAt: now,
+      body: body,
+      order: order,
+      private: private,
+    ));
+  }
+
+  Note.fromStore(NoteRow row)
+      : super(
+          id: row.id,
+          userId: row.userId,
+          root: row.root,
+          contextId: row.contextId,
+          topicId: row.topicId,
+          createdAt: row.createdAt,
+          modifiedAt: row.modifiedAt,
+          body: row.body,
+          order: row.order,
+          private: row.private,
+        );
 }

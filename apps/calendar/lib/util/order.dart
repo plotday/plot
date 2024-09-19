@@ -1,6 +1,4 @@
-import 'package:equatable/equatable.dart';
-
-class Order extends Equatable implements Comparable<Order> {
+extension type Order._(double value) {
   static double _last() =>
       DateTime.now().millisecondsSinceEpoch.toDouble() * 10;
   static double _first() =>
@@ -9,10 +7,9 @@ class Order extends Equatable implements Comparable<Order> {
       DateTime.now().millisecondsSinceEpoch.toDouble() * -10;
   static double _lastPinned() =>
       (10000000000000 - DateTime.now().millisecondsSinceEpoch).toDouble() * -1;
-
   static double _between(Order? after, Order? before) {
-    var a = after?._value;
-    var b = before?._value;
+    var a = after?.value;
+    var b = before?.value;
     if (a == null) {
       if (b == null) return _last();
       return b > 0 ? _first() : _firstPinned();
@@ -22,33 +19,20 @@ class Order extends Equatable implements Comparable<Order> {
     return a + (b - a) / 2;
   }
 
-  Order() : _value = _last();
-  Order.first() : _value = _first();
-  Order.firstPinned() : _value = _firstPinned();
-  Order.pinned() : _value = _lastPinned();
+  const Order(this.value);
+  Order.last() : this(_last());
+  Order.first() : this(_first());
+  Order.firstPinned() : this(_firstPinned());
+  Order.pinned() : this(_lastPinned());
+  Order.between(Order? after, Order? before) : this(_between(after, before));
+  Order.fromNumber(dynamic number)
+      : this(number is int
+            ? number.toDouble()
+            : number is double
+                ? number
+                : throw ArgumentError('Order must be a number'));
 
-  Order.between(Order? after, Order? before) : _value = _between(after, before);
+  bool get pinned => value < 0;
 
-  const Order.fromDouble(this._value);
-  Order.fromNumber(dynamic value)
-      : _value = value is int
-            ? value.toDouble()
-            : value is double
-                ? value
-                : 0 {
-    if (_value == 0) throw ArgumentError('Order must be a number');
-  }
-
-  @override
-  int compareTo(Order other) {
-    return _value.compareTo(other._value);
-  }
-
-  bool get pinned => _value < 0;
-  double toDouble() => _value;
-
-  final double _value;
-
-  @override
-  List<Object?> get props => [_value];
+  int compareTo(Order other) => value.compareTo(other.value);
 }

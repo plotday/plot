@@ -17,17 +17,17 @@ final class NowState extends Equatable {
 
   final DateTime now;
   final Session? session;
-  final List<ScheduledEvent> scheduled;
-  final List<ScheduledEvent> next;
-  final List<ScheduledEvent> previous;
+  final List<Event> scheduled;
+  final List<Event> next;
+  final List<Event> previous;
 
   @override
   List<Object?> get props => [session, scheduled, next, previous];
 
   Context? get context => session?.context ?? scheduled.firstOrNull?.context;
-  ScheduledEvent get current =>
+  Event get current =>
       scheduled.firstOrNull ??
-      ScheduledEvent(
+      Event(
         at: DateTimeRange(previous.firstOrNull?.at.end ?? now.round(),
             next.firstOrNull?.at.start ?? now.round(down: false)),
       );
@@ -82,9 +82,9 @@ final class NowState extends Equatable {
 
   NowState copyWith({
     Session? session,
-    List<ScheduledEvent>? scheduled,
-    List<ScheduledEvent>? next,
-    List<ScheduledEvent>? previous,
+    List<Event>? scheduled,
+    List<Event>? next,
+    List<Event>? previous,
   }) {
     return NowState(
       session: session ?? this.session,

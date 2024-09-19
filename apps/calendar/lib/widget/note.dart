@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:plot/model/note.dart';
+import 'package:plot/store/store.dart';
 
 class NoteWidget extends StatelessWidget {
   const NoteWidget({

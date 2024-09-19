@@ -3,8 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/widget/reorderable_list_view.dart';
 import 'package:plot/state/context.dart';
-import 'package:plot/model/context.dart';
-import 'package:plot/model/note.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/note.dart';

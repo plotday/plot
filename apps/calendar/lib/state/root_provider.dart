@@ -7,9 +7,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/schedule.dart';
 import 'package:plot/state/accounts.dart';
 import 'package:plot/state/context.dart';
-import 'package:plot/model/session.dart' as plot_session;
-import 'package:plot/model/context.dart';
-import 'package:plot/model/account.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/global_menu.dart';
 
@@ -37,11 +35,7 @@ class RootProviderState extends State<RootProvider> {
   void _onUserStateChange(UserState state) {
     if (state is UserSignedIn) {
       setState(() {
-        _dataLoading = Future.wait([
-          Account.store.load(),
-          Context.store.load(),
-          plot_session.Session.store.load(),
-        ]);
+        _dataLoading = Store.get.sync();
       });
     } else {
       setState(() {

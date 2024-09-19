@@ -1,6 +1,14 @@
-import 'package:uuid/uuid.dart';
+import 'dart:typed_data';
+import 'package:uuid/uuid.dart' as uuid;
 
-typedef UUID = UuidValue;
+extension type Uuid(uuid.UuidValue value) {
+  factory Uuid.generate() => Uuid(const uuid.Uuid().v4obj());
+  factory Uuid.nil() => Uuid(uuid.Namespace.nil.uuidValue);
 
-UUID generateUUID() => const Uuid().v4obj();
-UUID parseUUID(String uuid) => UuidValue.fromString(uuid);
+  factory Uuid.fromString(String value) =>
+      Uuid(uuid.UuidValue.fromString(value));
+  factory Uuid.fromBytes(Uint8List byteList) =>
+      Uuid(uuid.UuidValue.fromByteList(byteList));
+
+  Uint8List toBytes() => value.toBytes();
+}

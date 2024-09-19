@@ -4,7 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/base.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/accounts.dart';
-import 'package:plot/model/account.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/widget/auth_button.dart';
 
 class AccountPage extends StatelessWidget {
@@ -24,7 +24,7 @@ class AccountPage extends StatelessWidget {
               const SizedBox(height: 8),
               ...state.accounts.expand(
                 (account) => [
-                  Text(account.email),
+                  Text(account.account.email),
                   ...account.calendars.map(
                     (calendar) => Column(
                       children: [
@@ -57,7 +57,8 @@ class AccountPage extends StatelessWidget {
                     print("Missing auth code");
                     return;
                   }
-                  await Account.add(AccountProvider.google, providerAuth.code!);
+                  await Accounts.add(
+                      AccountProvider.google, providerAuth.code!);
                 },
                 scopes: const [
                   'openid',

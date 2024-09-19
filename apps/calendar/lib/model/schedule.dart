@@ -11,7 +11,7 @@ enum EventResponse { accepted, declined, tentative }
 
 typedef ScheduledEventID = UUID;
 
-class ScheduledEvent extends LocalModel {
+class ScheduledEvent extends UuidModel {
   static final Store<ScheduledEventID, ScheduledEvent> store = Store();
   static const columns = 'id,series,name,at,invitees,context_id,response';
 

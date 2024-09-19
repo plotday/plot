@@ -16,12 +16,14 @@ class Header extends StatelessWidget {
           if (state.current != null)
             IconButton(
               icon: const BackButtonIcon(),
-              onPressed: () {
-                state.current?.parent == null
-                    ? PrioritiesRoute().go(context)
-                    : PriorityRoute(
-                            contextId: state.current!.parent!.id!.toString())
-                        .go(context);
+              onPressed: () async {
+                final parent = await state.current!.parent;
+                if (!context.mounted) return;
+                if (parent == null) {
+                  PrioritiesRoute().go(context);
+                } else {
+                  PriorityRoute(contextId: parent.id.toString()).go(context);
+                }
               },
             ),
           Expanded(

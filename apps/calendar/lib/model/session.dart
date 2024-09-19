@@ -4,7 +4,7 @@ import 'package:plot/util/time.dart';
 
 typedef SessionID = int;
 
-class Session extends RemoteModel<SessionID> {
+class Session extends IdModel<SessionID> {
   static const threshold = Duration(minutes: 5);
 
   // We keep one session above the threshold and everything newer, with the
@@ -124,7 +124,7 @@ class Session extends RemoteModel<SessionID> {
 
   static Future<List<Session>> saveList(List<Session> items) async {
     _updateCache(items);
-    final newItems = await RemoteModel.saveListToBase<SessionID, Session>(
+    final newItems = await IdModel.saveListToBase<SessionID, Session>(
         items, 'session', Session.fromJson);
     _updateCache(newItems);
     return newItems;

@@ -4,7 +4,7 @@ import 'context.dart';
 
 typedef BudgetID = int;
 
-class Budget extends RemoteModel<BudgetID> {
+class Budget extends IdModel<BudgetID> {
   static final Store<Week, Store<ContextID?, Budget>> _store =
       Store<Week, Store<ContextID?, Budget>>();
 

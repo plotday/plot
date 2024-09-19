@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/now.dart';
-import 'package:plot/model/schedule.dart';
+import 'package:plot/store/store.dart';
 
-class ScheduledEventMenu extends StatelessWidget {
-  const ScheduledEventMenu({required this.event, super.key});
+class EventMenu extends StatelessWidget {
+  const EventMenu({required this.event, super.key});
 
-  final ScheduledEvent event;
+  final Event event;
 
   Future<void> _rsvp(EventResponse response) async {
     await event.copyWith(response: response).save();

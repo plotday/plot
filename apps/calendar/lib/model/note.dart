@@ -1,19 +1,14 @@
 import 'model.dart';
 import 'context.dart';
-import 'package:plot/util/list.dart';
+import 'package:plot/store/store.dart' as store;
 
 export 'package:plot/util/order.dart';
 
-typedef NoteID = UUID;
+typedef NoteID = Uuid;
 typedef TopicID = NoteID;
 
 class Note extends LocalModel implements Comparable<Note> {
   static const pageSize = 25;
-  static final _contextStore = Store<NoteID, Note>();
-  static final _topicStore = Store<NoteID, List<Note>>();
-  static final Set<ContextID?> _contextDone = {};
-  static final Map<ContextID?, Order> _contextLastOrder = {};
-  static final Set<NoteID?> _topicDone = {};
 
   static List<Note> _filter(List<Note> notes, Context? context) => notes
       .where((note) =>
@@ -97,7 +92,7 @@ class Note extends LocalModel implements Comparable<Note> {
     required Order order,
     bool private = false,
   }) {
-    final id = generateUUID();
+    final id = generateUuid();
     final DateTime now = DateTime.now();
 
     return Note._(
@@ -122,36 +117,32 @@ class Note extends LocalModel implements Comparable<Note> {
         topicId = parent.topicId,
         root = false,
         _contextId = parent._contextId,
-        createdAt = DateTime.now(),
-        modifiedAt = DateTime.now();
+        super.create();
 
   const Note._({
-    required this.createdAt,
-    required this.modifiedAt,
     required this.topicId,
     required ContextID? contextId,
     required this.body,
     required this.root,
     required this.order,
     required this.private,
-    required UUID id,
+    required super.id,
+    required super.createdAt,
+    required super.modifiedAt,
   })  : _userId = null,
-        _contextId = contextId,
-        super.withId(id);
+        _contextId = contextId;
 
-  Note.fromJson(Map<String, dynamic> json)
-      : createdAt = DateTime.parse(json['created_at'] as String),
-        modifiedAt = DateTime.parse(json['modified_at'] as String),
-        _userId = json['user_id'] as String,
-        _contextId = json['context_id'] != null
-            ? parseUUID(json['context_id'] as String)
-            : null,
-        topicId = parseUUID(json['topic_id'] as String),
-        body = json['body'] as String,
-        root = json['root'] as bool,
-        order = Order.fromNumber(json['order']),
-        private = json['private'] as bool,
-        super.fromJson(json);
+  factory Note.fromStore(store.Note row) => Note._(
+        topicId: row.topicId,
+        contextId: row.contextId,
+        body: row.body,
+        root: row.root,
+        order: row.order,
+        private: row.private,
+        id: row.id,
+        createdAt: row.createdAt,
+        modifiedAt: row.modifiedAt,
+      );
 
   @override
   int compareTo(Note other) {
@@ -161,8 +152,6 @@ class Note extends LocalModel implements Comparable<Note> {
   bool before(Note other) => compareTo(other) < 0;
   bool after(Note other) => compareTo(other) > 0;
 
-  final DateTime createdAt;
-  final DateTime modifiedAt;
   final String? _userId;
   final ContextID? _contextId;
   final TopicID topicId;
@@ -194,42 +183,6 @@ class Note extends LocalModel implements Comparable<Note> {
   }
 
   @override
-  Future<Note> save() async {
-    try {
-      _insert(this);
-      print("Saving ${toJson()}");
-      final model = await saveToBase("note", Note.fromJson);
-      _insert(model);
-      return model;
-    } catch (e, stacktrace) {
-      print("Error saving note: $e");
-      print(stacktrace);
-      rethrow;
-    }
-  }
-
-  static List<Note> _insert(Note note) {
-    if (note.root) {
-      _contextStore.put(note.id, note);
-    }
-    List<Note> topicNotes = List<Note>.from(getTopic(note.topicId));
-    topicNotes.replace(note, (n1, n2) => n1.id == n2.id);
-    _topicStore.put(note.topicId, topicNotes);
-    return topicNotes;
-  }
-
-  static void _appendToTopic(List<Note> notes) {
-    if (notes.isEmpty) return;
-    if (notes.first.root) {
-      _contextStore.put(notes.first.id, notes.first);
-    }
-    List<Note> topicNotes = _topicStore.has(notes.first.topicId)
-        ? _topicStore.get(notes.first.topicId)
-        : const [];
-    _topicStore.put(notes.first.topicId, topicNotes + notes);
-  }
-
-  @override
   List<Object?> get props =>
       super.props +
       [
@@ -241,7 +194,6 @@ class Note extends LocalModel implements Comparable<Note> {
         private,
       ];
 
-  @override
   Map<String, dynamic> toJson() => {
         ...super.toJson(),
         'user_id': _userId ?? base.auth.currentUser?.id,
@@ -252,4 +204,13 @@ class Note extends LocalModel implements Comparable<Note> {
         'order': order.toDouble(),
         'private': private,
       };
+  @override
+  store.Insertable<store.Note> toStore() => store.NotesCompanion.custom(
+        id: store.Constant(id.toBytes()),
+        modifiedAt: store.currentDateAndTime,
+        body: store.Constant(body),
+        root: store.Constant(root),
+        order: store.Constant(order.toDouble()),
+        private: store.Constant(private),
+      );
 }

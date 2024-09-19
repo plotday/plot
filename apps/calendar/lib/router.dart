@@ -3,8 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'model/model.dart';
-import 'model/context.dart';
+import 'store/store.dart';
 import 'state/user.dart';
 import 'state/schedule.dart';
 import 'state/context.dart';

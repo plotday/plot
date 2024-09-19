@@ -3,9 +3,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
-import 'package:plot/model/context.dart';
-import 'package:plot/model/session.dart';
-import 'package:plot/state/schedule.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/util/clock.dart';
 import 'package:plot/util/time.dart';
 
@@ -20,9 +18,9 @@ class NowBloc extends Cubit<NowState> {
         .listen((session) => emit(state.copyWith(session: session)));
     _eventSubscription = ScheduledDay.store.stream().listen((_) {
       emit(state.copyWith(
-        scheduled: ScheduledEvent.current(),
-        next: ScheduledEvent.next(),
-        previous: ScheduledEvent.previous(),
+        scheduled: Event.current(),
+        next: Event.next(),
+        previous: Event.previous(),
       ));
     });
   }

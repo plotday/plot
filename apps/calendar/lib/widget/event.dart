@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:plot/router.dart';
-import 'package:plot/util/time.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:plot/router.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/widget/time.dart';
 import 'package:plot/state/context.dart';
 import 'package:plot/state/schedule.dart';
@@ -13,16 +13,14 @@ final supabase = Supabase.instance.client;
 class EventWidget extends StatelessWidget {
   const EventWidget({required this.event, super.key});
 
-  final ScheduledEvent event;
+  final Event event;
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, scheduleState) => GestureDetector(
         onTap: () {
-          if (event.id != null) {
-            EventRoute(eventId: event.id!.toString()).go(context);
-          }
+          EventRoute(eventId: event.id.toString()).go(context);
         },
         child: Padding(
           padding: const EdgeInsetsDirectional.symmetric(vertical: 4),

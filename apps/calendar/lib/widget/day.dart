@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:plot/model/schedule.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/util/time.dart';
 import 'event.dart';
 

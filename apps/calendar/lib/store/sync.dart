@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart';
+part of 'store.dart';
 
 class SyncStates extends Table {
   TextColumn get entity => text()();

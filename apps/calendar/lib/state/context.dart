@@ -3,9 +3,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
-import 'package:plot/model/context.dart';
-import 'package:plot/model/note.dart';
-import 'package:plot/model/budget.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/util/time.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/util/optional.dart';
@@ -15,10 +13,10 @@ part 'context_state.dart';
 class ContextBloc extends Cubit<ContextState> {
   ContextBloc()
       : super(ContextState(
-          contexts: Context.store.list(),
+          contexts: const [],
           week: Week.current(),
         )) {
-    _contextSubscription = Context.store.stream().listen((contexts) {
+    _contextSubscription = Contexts.watch().listen((contexts) {
       emit(state.copyWith(contexts: contexts));
     });
     loadBudgets();
@@ -34,7 +32,7 @@ class ContextBloc extends Cubit<ContextState> {
   void setCurrent(Context? current) {
     if (current == state.current) return;
     emit(ContextState(
-      contexts: Context.store.list(),
+      contexts: const [],
       week: Week.current(),
       current: current,
     ));
@@ -42,24 +40,8 @@ class ContextBloc extends Cubit<ContextState> {
     loadNotes();
   }
 
-  Future<void> add(Context context) async {
-    emit(state.copyWith(contexts: state.all + [context]));
-    await update(await context.save());
-  }
-
-  Future<void> update(Context context) async {
-    final currentContexts = state.all;
-    final contexts =
-        currentContexts.replace(context, (c1, c2) => c1.id == c2.id);
-    emit(
-      state.copyWith(contexts: contexts),
-    );
-    try {
-      await context.save();
-    } catch (e) {
-      emit(state.copyWith(contexts: currentContexts));
-      rethrow;
-    }
+  Future<void> save(Context context) async {
+    await context.save();
   }
 
   void setWeek(Week week) async {
@@ -75,7 +57,7 @@ class ContextBloc extends Cubit<ContextState> {
   void loadNotes() async {
     _noteSubscription?.cancel();
     _topicSubscription?.cancel();
-    _noteSubscription = Note.stream(state.current).listen((notes) {
+    _noteSubscription = Notes.watchContext(state.current?.path).listen((notes) {
       emit(state.copyWith(
         notes: notes,
         moreNotes: Note.more(state.current),
@@ -83,7 +65,7 @@ class ContextBloc extends Cubit<ContextState> {
     });
     final topic = state.topicId;
     if (topic != null) {
-      _topicSubscription = Note.streamTopic(topic).listen((notes) {
+      _topicSubscription = Notes.watchTopic(topic).listen((notes) {
         emit(state.copyWith(
           topicNotes: notes,
           moreTopicNotes: Note.moreTopic(topic),

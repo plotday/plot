@@ -241,7 +241,7 @@ class Month extends DateRange {
 }
 
 class DateTimeRange extends Equatable {
-  static DateTimeRange fromString(String db) {
+  factory DateTimeRange.fromString(String db) {
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateTimeStrings = stripped.split(',');
     List<DateTime> dateTimes = dateTimeStrings
