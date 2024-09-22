@@ -43,7 +43,7 @@ class Account extends AccountRow {
       .map((rows) => rows.map((row) => Account.fromStore(row)).toList());
   static Stream<List<Account>> watchWithCalendars() => Rx.combineLatest2(
       Account.watch(),
-      Calendars.watch(),
+      Calendar.watch(),
       (List<Account> accounts, List<Calendar> calendars) =>
           accounts.map((account) {
             final accountCalendars = calendars

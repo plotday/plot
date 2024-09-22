@@ -12,6 +12,7 @@ import 'package:plot/util/api.dart' as api;
 import 'package:plot/base.dart';
 import 'types.dart';
 
+export 'package:plot/util/time.dart';
 export 'package:plot/util/uuid.dart';
 export 'package:plot/util/order.dart';
 
@@ -40,7 +41,7 @@ class IdStoreTable extends StoreTable {
 
 class UuidStoreTable extends StoreTable {
   BlobColumn get id => blob()
-      .clientDefault(() => generateUuid().toBytes())
+      .clientDefault(() => Uuid.generate().toBytes())
       .map(const UuidConverter())();
 
   @override
@@ -112,6 +113,11 @@ abstract class BaseTable {
 class Store extends _$Store {
   static final Store _store = Store._();
   static Store get get => _store;
+
+  static void init() {
+    driftRuntimeOptions.defaultSerializer =
+        const ValueSerializer.defaults(serializeDateTimeValuesAsString: true);
+  }
 
   Future<DATA> add<TABLE extends StoreTable, DATA extends DataClass>(
       TableInfo<TABLE, DATA> table, Insertable<DATA> data) async {

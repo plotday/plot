@@ -40,7 +40,7 @@ FROM (
             (lower(at) at time zone user_timezone ())::date AS day,
             context_id,
             count(*) AS count,
-            sum(EXTRACT(epoch FROM upper(at) - lower(at) - paused) / 60)::integer AS minutes
+            sum(EXTRACT(epoch FROM upper(at) - lower(at)) / 60)::integer AS minutes
         FROM
             session
         GROUP BY

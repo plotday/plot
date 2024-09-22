@@ -4,12 +4,15 @@ part of 'store.dart';
 class Sessions extends IdStoreTable {
   BlobColumn get contextId =>
       blob().nullable().map(const UuidConverter()).references(Contexts, #id)();
+
   DateTimeColumn get start => dateTime()();
   DateTimeColumn get end => dateTime()();
+  IntColumn get priority => integer().withDefault(const Constant(0))();
 
-  // final Duration paused;
-  // final DateTime? pomodoroStart;
-  // final Duration? pomodoroLength;
+  IntColumn get pomodoro =>
+      integer().nullable().map(const DurationConverter())();
+  IntColumn get pomodoroRemaining =>
+      integer().nullable().map(const DurationConverter())();
 }
 
 class SessionsBase extends BaseTable {
@@ -26,11 +29,29 @@ class Session extends SessionRow {
   static Future<void> push() => Store.get.push(table, SessionsBase());
   static Future<bool> pull() => Store.get.pull(table, SessionsBase());
 
-  static Stream<List<Session>> watch() => Store.get.select(table).watch().map(
+  static Stream<List<Session>> watch() => (Store.get.select(table)
+        ..orderBy(
+            [(t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc)])
+        ..limit(10))
+      .watch()
+      .map(
         (rows) => rows.map((row) => Session.fromStore(row)).toList(),
       );
+  static Stream<List<Session>> watchWithContext() => Rx.combineLatest2(
+      Session.watch(),
+      Context.watch(),
+      (List<Session> sessions, Map<Uuid, Context> contexts) => sessions
+          .map((session) => Session.fromStore(session,
+              context: session.contextId == null
+                  ? null
+                  : contexts[session.contextId]))
+          .toList());
+  static Stream<Session?> watchCurrent() => watchWithContext().map((sessions) {
+        final session = sessions.firstOrNull;
+        return session?.at.isNow() == true ? session : null;
+      });
 
-  Session.fromStore(SessionRow row)
+  Session.fromStore(SessionRow row, {this.context})
       : super(
           id: row.id,
           createdAt: row.createdAt,
@@ -38,7 +59,12 @@ class Session extends SessionRow {
           contextId: row.contextId,
           start: row.start,
           end: row.end,
+          paused: row.paused,
+          planned: row.planned,
+          priority: row.priority,
         );
+
+  final Context? context;
 
   Future<void> save() => Store.get.save(table, this);
 

@@ -4,7 +4,7 @@ enum EventResponse { accepted, declined, tentative }
 
 @DataClassName('EventRow')
 class Events extends UuidStoreTable {
-  TextColumn get name => text()();
+  TextColumn get name => text().nullable()();
   DateTimeColumn get start => dateTime()();
   DateTimeColumn get end => dateTime()();
   TextColumn get series => text().nullable()();
@@ -39,8 +39,33 @@ class Event extends EventRow {
 
   static Future<void> push() => Store.get.push(table, EventsBase());
   static Future<bool> pull() async => Store.get.pull(table, EventsBase());
+  // TODO: fetch more
 
-  Event.fromStore(EventRow row)
+  static Stream<List<Event>> watch(Date from, Date to) {
+    final order = from <= to ? OrderingMode.asc : OrderingMode.desc;
+    return (Store.get.select(table)
+          ..where((t) => t.start.isBiggerOrEqualValue(from.toStart()))
+          ..where((t) => t.start.isSmallerThanValue(to.toEnd()))
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.start, mode: order),
+            (t) => OrderingTerm(expression: t.end, mode: order)
+          ]))
+        .watch()
+        .map((rows) => rows.map((row) => Event.fromStore(row)).toList());
+  }
+
+  static Stream<List<Event>> watchWithContext(Date from, Date to) =>
+      Rx.combineLatest2(
+          Event.watch(from, to),
+          Context.watch(),
+          (List<Event> events, Map<Uuid, Context> contexts) => events
+              .map((event) => Event.fromStore(event,
+                  context: event.contextId == null
+                      ? null
+                      : contexts[event.contextId]))
+              .toList());
+
+  Event.fromStore(EventRow row, {this.context})
       : super(
           id: row.id,
           modifiedAt: row.createdAt,
@@ -52,6 +77,8 @@ class Event extends EventRow {
           response: row.response,
           contextId: row.contextId,
         );
+
+  final Context? context;
 
   Future<void> save() => Store.get.save(table, this);
 

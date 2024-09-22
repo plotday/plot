@@ -3,10 +3,10 @@ part of 'accounts.dart';
 final class AccountsState extends Equatable {
   const AccountsState(this.accounts);
 
-  final List<AccountWithCalendars> accounts;
+  final List<Account> accounts;
 
   AccountsState copyWith({
-    List<AccountWithCalendars>? accounts,
+    List<Account>? accounts,
   }) {
     return AccountsState(
       accounts ?? this.accounts,

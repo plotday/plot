@@ -10,8 +10,9 @@ class Contexts extends UuidStoreTable {
   RealColumn get order => real()
       .clientDefault(() => Order.last().value)
       .map(const OrderConverter())();
-  IntColumn get pomodoro =>
-      integer().withDefault(const Constant(25)).map(const MinutesConverter())();
+  IntColumn get pomodoro => integer()
+      .withDefault(const Constant(25 * 60))
+      .map(const DurationConverter())();
 }
 
 class ContextsBase extends BaseTable {
@@ -28,15 +29,19 @@ class Context extends ContextRow implements Comparable<Context> {
   static Future<void> push() => Store.get.push(table, ContextsBase());
   static Future<bool> pull() => Store.get.pull(table, ContextsBase());
 
-  static Stream<List<Context>> watchRoots() {
-    return _watch();
+  static Stream<Map<Uuid, Context>> watch() {
+    final query = Store.get.select(table);
+    return query.watch().map((rows) {
+      final contexts = <Uuid, Context>{};
+      for (var row in rows) {
+        final context = Context.fromStore(row);
+        contexts[context.id] = context;
+      }
+      return contexts;
+    });
   }
 
-  static Stream<Context> watch(Path path) {
-    return _watch(path: path).map((match) => match.first);
-  }
-
-  static Stream<List<Context>> _watch({Path? path}) {
+  static Stream<List<Context>> watchChildren({Path? path}) {
     final query = Store.get.select(table);
     if (path != null) {
       query.where((t) => t.path.like("${path.root}%"));

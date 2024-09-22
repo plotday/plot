@@ -46,16 +46,16 @@ class OrderConverter extends TypeConverter<Order, double> {
   }
 }
 
-class MinutesConverter extends TypeConverter<Duration, int> {
-  const MinutesConverter();
+class DurationConverter extends TypeConverter<Duration, int> {
+  const DurationConverter();
 
   @override
   Duration fromSql(int fromDb) {
-    return Duration(minutes: fromDb);
+    return Duration(seconds: fromDb);
   }
 
   @override
   int toSql(Duration value) {
-    return value.inMinutes;
+    return value.inSeconds;
   }
 }

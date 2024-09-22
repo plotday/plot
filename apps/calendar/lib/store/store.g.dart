@@ -135,8 +135,8 @@ class SyncState extends DataClass implements Insertable<SyncState> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return SyncState(
       entity: serializer.fromJson<String>(json['entity']),
-      pushedAt: serializer.fromJson<DateTime?>(json['pushedAt']),
-      lastPulled: serializer.fromJson<String?>(json['lastPulled']),
+      pushedAt: serializer.fromJson<DateTime?>(json['pushed_at']),
+      lastPulled: serializer.fromJson<String?>(json['last_pulled']),
       more: serializer.fromJson<bool>(json['more']),
     );
   }
@@ -145,8 +145,8 @@ class SyncState extends DataClass implements Insertable<SyncState> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'entity': serializer.toJson<String>(entity),
-      'pushedAt': serializer.toJson<DateTime?>(pushedAt),
-      'lastPulled': serializer.toJson<String?>(lastPulled),
+      'pushed_at': serializer.toJson<DateTime?>(pushedAt),
+      'last_pulled': serializer.toJson<String?>(lastPulled),
       'more': serializer.toJson<bool>(more),
     };
   }
@@ -426,8 +426,8 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return AccountRow(
       id: serializer.fromJson<int>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
+      createdAt: serializer.fromJson<DateTime>(json['created_at']),
+      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       email: serializer.fromJson<String>(json['email']),
       provider: $AccountsTable.$converterprovider
           .fromJson(serializer.fromJson<String>(json['provider'])),
@@ -438,8 +438,8 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
+      'created_at': serializer.toJson<DateTime>(createdAt),
+      'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'email': serializer.toJson<String>(email),
       'provider': serializer
           .toJson<String>($AccountsTable.$converterprovider.toJson(provider)),
@@ -583,7 +583,7 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
 }
 
 class $CalendarsTable extends Calendars
-    with TableInfo<$CalendarsTable, Calendar> {
+    with TableInfo<$CalendarsTable, CalendarRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
@@ -641,7 +641,7 @@ class $CalendarsTable extends Calendars
   String get actualTableName => $name;
   static const String $name = 'calendars';
   @override
-  VerificationContext validateIntegrity(Insertable<Calendar> instance,
+  VerificationContext validateIntegrity(Insertable<CalendarRow> instance,
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
@@ -682,9 +682,9 @@ class $CalendarsTable extends Calendars
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  Calendar map(Map<String, dynamic> data, {String? tablePrefix}) {
+  CalendarRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return Calendar(
+    return CalendarRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
       createdAt: attachedDatabase.typeMapping
@@ -706,14 +706,14 @@ class $CalendarsTable extends Calendars
   }
 }
 
-class Calendar extends DataClass implements Insertable<Calendar> {
+class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   final int id;
   final DateTime createdAt;
   final DateTime modifiedAt;
   final String name;
   final bool enabled;
   final int accountId;
-  const Calendar(
+  const CalendarRow(
       {required this.id,
       required this.createdAt,
       required this.modifiedAt,
@@ -743,16 +743,16 @@ class Calendar extends DataClass implements Insertable<Calendar> {
     );
   }
 
-  factory Calendar.fromJson(Map<String, dynamic> json,
+  factory CalendarRow.fromJson(Map<String, dynamic> json,
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return Calendar(
+    return CalendarRow(
       id: serializer.fromJson<int>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
+      createdAt: serializer.fromJson<DateTime>(json['created_at']),
+      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       name: serializer.fromJson<String>(json['name']),
       enabled: serializer.fromJson<bool>(json['enabled']),
-      accountId: serializer.fromJson<int>(json['accountId']),
+      accountId: serializer.fromJson<int>(json['account_id']),
     );
   }
   @override
@@ -760,22 +760,22 @@ class Calendar extends DataClass implements Insertable<Calendar> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
+      'created_at': serializer.toJson<DateTime>(createdAt),
+      'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'name': serializer.toJson<String>(name),
       'enabled': serializer.toJson<bool>(enabled),
-      'accountId': serializer.toJson<int>(accountId),
+      'account_id': serializer.toJson<int>(accountId),
     };
   }
 
-  Calendar copyWith(
+  CalendarRow copyWith(
           {int? id,
           DateTime? createdAt,
           DateTime? modifiedAt,
           String? name,
           bool? enabled,
           int? accountId}) =>
-      Calendar(
+      CalendarRow(
         id: id ?? this.id,
         createdAt: createdAt ?? this.createdAt,
         modifiedAt: modifiedAt ?? this.modifiedAt,
@@ -783,8 +783,8 @@ class Calendar extends DataClass implements Insertable<Calendar> {
         enabled: enabled ?? this.enabled,
         accountId: accountId ?? this.accountId,
       );
-  Calendar copyWithCompanion(CalendarsCompanion data) {
-    return Calendar(
+  CalendarRow copyWithCompanion(CalendarsCompanion data) {
+    return CalendarRow(
       id: data.id.present ? data.id.value : this.id,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       modifiedAt:
@@ -797,7 +797,7 @@ class Calendar extends DataClass implements Insertable<Calendar> {
 
   @override
   String toString() {
-    return (StringBuffer('Calendar(')
+    return (StringBuffer('CalendarRow(')
           ..write('id: $id, ')
           ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
@@ -814,7 +814,7 @@ class Calendar extends DataClass implements Insertable<Calendar> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is Calendar &&
+      (other is CalendarRow &&
           other.id == this.id &&
           other.createdAt == this.createdAt &&
           other.modifiedAt == this.modifiedAt &&
@@ -823,7 +823,7 @@ class Calendar extends DataClass implements Insertable<Calendar> {
           other.accountId == this.accountId);
 }
 
-class CalendarsCompanion extends UpdateCompanion<Calendar> {
+class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   final Value<int> id;
   final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
@@ -848,7 +848,7 @@ class CalendarsCompanion extends UpdateCompanion<Calendar> {
   })  : name = Value(name),
         enabled = Value(enabled),
         accountId = Value(accountId);
-  static Insertable<Calendar> custom({
+  static Insertable<CalendarRow> custom({
     Expression<int>? id,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
@@ -933,7 +933,7 @@ class $ContextsTable extends Contexts
       GeneratedColumn<Uint8List>('id', aliasedName, false,
               type: DriftSqlType.blob,
               requiredDuringInsert: false,
-              clientDefault: () => generateUuid().toBytes())
+              clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($ContextsTable.$converterid);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
@@ -977,7 +977,7 @@ class $ContextsTable extends Contexts
       GeneratedColumn<int>('pomodoro', aliasedName, false,
               type: DriftSqlType.int,
               requiredDuringInsert: false,
-              defaultValue: const Constant(25))
+              defaultValue: const Constant(25 * 60))
           .withConverter<Duration>($ContextsTable.$converterpomodoro);
   @override
   List<GeneratedColumn> get $columns =>
@@ -1048,7 +1048,7 @@ class $ContextsTable extends Contexts
   static TypeConverter<Path, String> $converterpath = const PathConverter();
   static TypeConverter<Order, double> $converterorder = const OrderConverter();
   static TypeConverter<Duration, int> $converterpomodoro =
-      const MinutesConverter();
+      const DurationConverter();
 }
 
 class ContextRow extends DataClass implements Insertable<ContextRow> {
@@ -1107,8 +1107,8 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return ContextRow(
       id: serializer.fromJson<Uuid>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
+      createdAt: serializer.fromJson<DateTime>(json['created_at']),
+      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       name: serializer.fromJson<String>(json['name']),
       path: serializer.fromJson<Path>(json['path']),
       order: serializer.fromJson<Order>(json['order']),
@@ -1120,8 +1120,8 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
+      'created_at': serializer.toJson<DateTime>(createdAt),
+      'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'name': serializer.toJson<String>(name),
       'path': serializer.toJson<Path>(path),
       'order': serializer.toJson<Order>(order),
@@ -1323,7 +1323,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       GeneratedColumn<Uint8List>('id', aliasedName, false,
               type: DriftSqlType.blob,
               requiredDuringInsert: false,
-              clientDefault: () => generateUuid().toBytes())
+              clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($NotesTable.$converterid);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
@@ -1347,7 +1347,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       GeneratedColumn<Uint8List>('user_id', aliasedName, false,
               type: DriftSqlType.blob,
               requiredDuringInsert: false,
-              clientDefault: () => generateUuid().toBytes())
+              clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($NotesTable.$converteruserId);
   static const VerificationMeta _bodyMeta = const VerificationMeta('body');
   @override
@@ -1360,7 +1360,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       GeneratedColumn<double>('order', aliasedName, false,
               type: DriftSqlType.double,
               requiredDuringInsert: false,
-              clientDefault: () => Order.first().toDouble())
+              clientDefault: () => Order.first().value)
           .withConverter<Order>($NotesTable.$converterorder);
   static const VerificationMeta _rootMeta = const VerificationMeta('root');
   @override
@@ -1574,15 +1574,15 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return NoteRow(
       id: serializer.fromJson<Uuid>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
-      userId: serializer.fromJson<Uuid>(json['userId']),
+      createdAt: serializer.fromJson<DateTime>(json['created_at']),
+      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      userId: serializer.fromJson<Uuid>(json['user_id']),
       body: serializer.fromJson<String>(json['body']),
       order: serializer.fromJson<Order>(json['order']),
       root: serializer.fromJson<bool>(json['root']),
       private: serializer.fromJson<bool>(json['private']),
-      topicId: serializer.fromJson<Uuid>(json['topicId']),
-      contextId: serializer.fromJson<Uuid?>(json['contextId']),
+      topicId: serializer.fromJson<Uuid>(json['topic_id']),
+      contextId: serializer.fromJson<Uuid?>(json['context_id']),
     );
   }
   @override
@@ -1590,15 +1590,15 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
-      'userId': serializer.toJson<Uuid>(userId),
+      'created_at': serializer.toJson<DateTime>(createdAt),
+      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'user_id': serializer.toJson<Uuid>(userId),
       'body': serializer.toJson<String>(body),
       'order': serializer.toJson<Order>(order),
       'root': serializer.toJson<bool>(root),
       'private': serializer.toJson<bool>(private),
-      'topicId': serializer.toJson<Uuid>(topicId),
-      'contextId': serializer.toJson<Uuid?>(contextId),
+      'topic_id': serializer.toJson<Uuid>(topicId),
+      'context_id': serializer.toJson<Uuid?>(contextId),
     };
   }
 
@@ -1844,7 +1844,7 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       GeneratedColumn<Uint8List>('id', aliasedName, false,
               type: DriftSqlType.blob,
               requiredDuringInsert: false,
-              clientDefault: () => generateUuid().toBytes())
+              clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($EventsTable.$converterid);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
@@ -1865,8 +1865,8 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
-      'name', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
+      'name', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _startMeta = const VerificationMeta('start');
   @override
   late final GeneratedColumn<DateTime> start = GeneratedColumn<DateTime>(
@@ -1935,8 +1935,6 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
     if (data.containsKey('name')) {
       context.handle(
           _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
-    } else if (isInserting) {
-      context.missing(_nameMeta);
     }
     if (data.containsKey('start')) {
       context.handle(
@@ -1972,7 +1970,7 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
       name: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+          .read(DriftSqlType.string, data['${effectivePrefix}name']),
       start: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}start'])!,
       end: attachedDatabase.typeMapping
@@ -2006,7 +2004,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   final Uuid id;
   final DateTime createdAt;
   final DateTime modifiedAt;
-  final String name;
+  final String? name;
   final DateTime start;
   final DateTime end;
   final String? series;
@@ -2016,7 +2014,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       {required this.id,
       required this.createdAt,
       required this.modifiedAt,
-      required this.name,
+      this.name,
       required this.start,
       required this.end,
       this.series,
@@ -2030,7 +2028,9 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
-    map['name'] = Variable<String>(name);
+    if (!nullToAbsent || name != null) {
+      map['name'] = Variable<String>(name);
+    }
     map['start'] = Variable<DateTime>(start);
     map['end'] = Variable<DateTime>(end);
     if (!nullToAbsent || series != null) {
@@ -2052,7 +2052,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       id: Value(id),
       createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
-      name: Value(name),
+      name: name == null && nullToAbsent ? const Value.absent() : Value(name),
       start: Value(start),
       end: Value(end),
       series:
@@ -2069,15 +2069,15 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return EventRow(
       id: serializer.fromJson<Uuid>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
-      name: serializer.fromJson<String>(json['name']),
+      createdAt: serializer.fromJson<DateTime>(json['created_at']),
+      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      name: serializer.fromJson<String?>(json['name']),
       start: serializer.fromJson<DateTime>(json['start']),
       end: serializer.fromJson<DateTime>(json['end']),
       series: serializer.fromJson<String?>(json['series']),
       response: $EventsTable.$converterresponse
           .fromJson(serializer.fromJson<String>(json['response'])),
-      contextId: serializer.fromJson<Uuid?>(json['contextId']),
+      contextId: serializer.fromJson<Uuid?>(json['context_id']),
     );
   }
   @override
@@ -2085,15 +2085,15 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
-      'name': serializer.toJson<String>(name),
+      'created_at': serializer.toJson<DateTime>(createdAt),
+      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'name': serializer.toJson<String?>(name),
       'start': serializer.toJson<DateTime>(start),
       'end': serializer.toJson<DateTime>(end),
       'series': serializer.toJson<String?>(series),
       'response': serializer
           .toJson<String>($EventsTable.$converterresponse.toJson(response)),
-      'contextId': serializer.toJson<Uuid?>(contextId),
+      'context_id': serializer.toJson<Uuid?>(contextId),
     };
   }
 
@@ -2101,7 +2101,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           {Uuid? id,
           DateTime? createdAt,
           DateTime? modifiedAt,
-          String? name,
+          Value<String?> name = const Value.absent(),
           DateTime? start,
           DateTime? end,
           Value<String?> series = const Value.absent(),
@@ -2111,7 +2111,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
         id: id ?? this.id,
         createdAt: createdAt ?? this.createdAt,
         modifiedAt: modifiedAt ?? this.modifiedAt,
-        name: name ?? this.name,
+        name: name.present ? name.value : this.name,
         start: start ?? this.start,
         end: end ?? this.end,
         series: series.present ? series.value : this.series,
@@ -2171,7 +2171,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   final Value<Uuid> id;
   final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
-  final Value<String> name;
+  final Value<String?> name;
   final Value<DateTime> start;
   final Value<DateTime> end;
   final Value<String?> series;
@@ -2194,15 +2194,14 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     this.id = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
-    required String name,
+    this.name = const Value.absent(),
     required DateTime start,
     required DateTime end,
     this.series = const Value.absent(),
     required EventResponse response,
     this.contextId = const Value.absent(),
     this.rowid = const Value.absent(),
-  })  : name = Value(name),
-        start = Value(start),
+  })  : start = Value(start),
         end = Value(end),
         response = Value(response);
   static Insertable<EventRow> custom({
@@ -2235,7 +2234,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       {Value<Uuid>? id,
       Value<DateTime>? createdAt,
       Value<DateTime>? modifiedAt,
-      Value<String>? name,
+      Value<String?>? name,
       Value<DateTime>? start,
       Value<DateTime>? end,
       Value<String?>? series,
@@ -2446,9 +2445,9 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return BudgetRow(
       id: serializer.fromJson<int>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
-      contextId: serializer.fromJson<Uuid?>(json['contextId']),
+      createdAt: serializer.fromJson<DateTime>(json['created_at']),
+      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      contextId: serializer.fromJson<Uuid?>(json['context_id']),
     );
   }
   @override
@@ -2456,9 +2455,9 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
-      'contextId': serializer.toJson<Uuid?>(contextId),
+      'created_at': serializer.toJson<DateTime>(createdAt),
+      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'context_id': serializer.toJson<Uuid?>(contextId),
     };
   }
 
@@ -2628,9 +2627,42 @@ class $SessionsTable extends Sessions
   late final GeneratedColumn<DateTime> end = GeneratedColumn<DateTime>(
       'end', aliasedName, false,
       type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  static const VerificationMeta _priorityMeta =
+      const VerificationMeta('priority');
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, createdAt, modifiedAt, contextId, start, end];
+  late final GeneratedColumn<int> priority = GeneratedColumn<int>(
+      'priority', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _pomodoroMeta =
+      const VerificationMeta('pomodoro');
+  @override
+  late final GeneratedColumnWithTypeConverter<Duration?, int> pomodoro =
+      GeneratedColumn<int>('pomodoro', aliasedName, true,
+              type: DriftSqlType.int, requiredDuringInsert: false)
+          .withConverter<Duration?>($SessionsTable.$converterpomodoron);
+  static const VerificationMeta _pomodoroRemainingMeta =
+      const VerificationMeta('pomodoroRemaining');
+  @override
+  late final GeneratedColumnWithTypeConverter<Duration?, int>
+      pomodoroRemaining = GeneratedColumn<int>(
+              'pomodoro_remaining', aliasedName, true,
+              type: DriftSqlType.int, requiredDuringInsert: false)
+          .withConverter<Duration?>(
+              $SessionsTable.$converterpomodoroRemainingn);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        createdAt,
+        modifiedAt,
+        contextId,
+        start,
+        end,
+        priority,
+        pomodoro,
+        pomodoroRemaining
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2667,6 +2699,12 @@ class $SessionsTable extends Sessions
     } else if (isInserting) {
       context.missing(_endMeta);
     }
+    if (data.containsKey('priority')) {
+      context.handle(_priorityMeta,
+          priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta));
+    }
+    context.handle(_pomodoroMeta, const VerificationResult.success());
+    context.handle(_pomodoroRemainingMeta, const VerificationResult.success());
     return context;
   }
 
@@ -2689,6 +2727,14 @@ class $SessionsTable extends Sessions
           .read(DriftSqlType.dateTime, data['${effectivePrefix}start'])!,
       end: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}end'])!,
+      priority: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}priority'])!,
+      pomodoro: $SessionsTable.$converterpomodoron.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}pomodoro'])),
+      pomodoroRemaining: $SessionsTable.$converterpomodoroRemainingn.fromSql(
+          attachedDatabase.typeMapping.read(
+              DriftSqlType.int, data['${effectivePrefix}pomodoro_remaining'])),
     );
   }
 
@@ -2701,6 +2747,14 @@ class $SessionsTable extends Sessions
       const UuidConverter();
   static TypeConverter<Uuid?, Uint8List?> $convertercontextIdn =
       NullAwareTypeConverter.wrap($convertercontextId);
+  static TypeConverter<Duration, int> $converterpomodoro =
+      const DurationConverter();
+  static TypeConverter<Duration?, int?> $converterpomodoron =
+      NullAwareTypeConverter.wrap($converterpomodoro);
+  static TypeConverter<Duration, int> $converterpomodoroRemaining =
+      const DurationConverter();
+  static TypeConverter<Duration?, int?> $converterpomodoroRemainingn =
+      NullAwareTypeConverter.wrap($converterpomodoroRemaining);
 }
 
 class SessionRow extends DataClass implements Insertable<SessionRow> {
@@ -2710,13 +2764,19 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   final Uuid? contextId;
   final DateTime start;
   final DateTime end;
+  final int priority;
+  final Duration? pomodoro;
+  final Duration? pomodoroRemaining;
   const SessionRow(
       {required this.id,
       required this.createdAt,
       required this.modifiedAt,
       this.contextId,
       required this.start,
-      required this.end});
+      required this.end,
+      required this.priority,
+      this.pomodoro,
+      this.pomodoroRemaining});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -2729,6 +2789,15 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     }
     map['start'] = Variable<DateTime>(start);
     map['end'] = Variable<DateTime>(end);
+    map['priority'] = Variable<int>(priority);
+    if (!nullToAbsent || pomodoro != null) {
+      map['pomodoro'] =
+          Variable<int>($SessionsTable.$converterpomodoron.toSql(pomodoro));
+    }
+    if (!nullToAbsent || pomodoroRemaining != null) {
+      map['pomodoro_remaining'] = Variable<int>(
+          $SessionsTable.$converterpomodoroRemainingn.toSql(pomodoroRemaining));
+    }
     return map;
   }
 
@@ -2742,6 +2811,13 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           : Value(contextId),
       start: Value(start),
       end: Value(end),
+      priority: Value(priority),
+      pomodoro: pomodoro == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pomodoro),
+      pomodoroRemaining: pomodoroRemaining == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pomodoroRemaining),
     );
   }
 
@@ -2750,11 +2826,15 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return SessionRow(
       id: serializer.fromJson<int>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
-      contextId: serializer.fromJson<Uuid?>(json['contextId']),
+      createdAt: serializer.fromJson<DateTime>(json['created_at']),
+      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      contextId: serializer.fromJson<Uuid?>(json['context_id']),
       start: serializer.fromJson<DateTime>(json['start']),
       end: serializer.fromJson<DateTime>(json['end']),
+      priority: serializer.fromJson<int>(json['priority']),
+      pomodoro: serializer.fromJson<Duration?>(json['pomodoro']),
+      pomodoroRemaining:
+          serializer.fromJson<Duration?>(json['pomodoro_remaining']),
     );
   }
   @override
@@ -2762,11 +2842,14 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
-      'contextId': serializer.toJson<Uuid?>(contextId),
+      'created_at': serializer.toJson<DateTime>(createdAt),
+      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'context_id': serializer.toJson<Uuid?>(contextId),
       'start': serializer.toJson<DateTime>(start),
       'end': serializer.toJson<DateTime>(end),
+      'priority': serializer.toJson<int>(priority),
+      'pomodoro': serializer.toJson<Duration?>(pomodoro),
+      'pomodoro_remaining': serializer.toJson<Duration?>(pomodoroRemaining),
     };
   }
 
@@ -2776,7 +2859,10 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           DateTime? modifiedAt,
           Value<Uuid?> contextId = const Value.absent(),
           DateTime? start,
-          DateTime? end}) =>
+          DateTime? end,
+          int? priority,
+          Value<Duration?> pomodoro = const Value.absent(),
+          Value<Duration?> pomodoroRemaining = const Value.absent()}) =>
       SessionRow(
         id: id ?? this.id,
         createdAt: createdAt ?? this.createdAt,
@@ -2784,6 +2870,11 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
         contextId: contextId.present ? contextId.value : this.contextId,
         start: start ?? this.start,
         end: end ?? this.end,
+        priority: priority ?? this.priority,
+        pomodoro: pomodoro.present ? pomodoro.value : this.pomodoro,
+        pomodoroRemaining: pomodoroRemaining.present
+            ? pomodoroRemaining.value
+            : this.pomodoroRemaining,
       );
   SessionRow copyWithCompanion(SessionsCompanion data) {
     return SessionRow(
@@ -2794,6 +2885,11 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       contextId: data.contextId.present ? data.contextId.value : this.contextId,
       start: data.start.present ? data.start.value : this.start,
       end: data.end.present ? data.end.value : this.end,
+      priority: data.priority.present ? data.priority.value : this.priority,
+      pomodoro: data.pomodoro.present ? data.pomodoro.value : this.pomodoro,
+      pomodoroRemaining: data.pomodoroRemaining.present
+          ? data.pomodoroRemaining.value
+          : this.pomodoroRemaining,
     );
   }
 
@@ -2805,14 +2901,17 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           ..write('modifiedAt: $modifiedAt, ')
           ..write('contextId: $contextId, ')
           ..write('start: $start, ')
-          ..write('end: $end')
+          ..write('end: $end, ')
+          ..write('priority: $priority, ')
+          ..write('pomodoro: $pomodoro, ')
+          ..write('pomodoroRemaining: $pomodoroRemaining')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, createdAt, modifiedAt, contextId, start, end);
+  int get hashCode => Object.hash(id, createdAt, modifiedAt, contextId, start,
+      end, priority, pomodoro, pomodoroRemaining);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2822,7 +2921,10 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           other.modifiedAt == this.modifiedAt &&
           other.contextId == this.contextId &&
           other.start == this.start &&
-          other.end == this.end);
+          other.end == this.end &&
+          other.priority == this.priority &&
+          other.pomodoro == this.pomodoro &&
+          other.pomodoroRemaining == this.pomodoroRemaining);
 }
 
 class SessionsCompanion extends UpdateCompanion<SessionRow> {
@@ -2832,6 +2934,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   final Value<Uuid?> contextId;
   final Value<DateTime> start;
   final Value<DateTime> end;
+  final Value<int> priority;
+  final Value<Duration?> pomodoro;
+  final Value<Duration?> pomodoroRemaining;
   const SessionsCompanion({
     this.id = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -2839,6 +2944,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     this.contextId = const Value.absent(),
     this.start = const Value.absent(),
     this.end = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.pomodoro = const Value.absent(),
+    this.pomodoroRemaining = const Value.absent(),
   });
   SessionsCompanion.insert({
     this.id = const Value.absent(),
@@ -2847,6 +2955,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     this.contextId = const Value.absent(),
     required DateTime start,
     required DateTime end,
+    this.priority = const Value.absent(),
+    this.pomodoro = const Value.absent(),
+    this.pomodoroRemaining = const Value.absent(),
   })  : start = Value(start),
         end = Value(end);
   static Insertable<SessionRow> custom({
@@ -2856,6 +2967,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     Expression<Uint8List>? contextId,
     Expression<DateTime>? start,
     Expression<DateTime>? end,
+    Expression<int>? priority,
+    Expression<int>? pomodoro,
+    Expression<int>? pomodoroRemaining,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -2864,6 +2978,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       if (contextId != null) 'context_id': contextId,
       if (start != null) 'start': start,
       if (end != null) 'end': end,
+      if (priority != null) 'priority': priority,
+      if (pomodoro != null) 'pomodoro': pomodoro,
+      if (pomodoroRemaining != null) 'pomodoro_remaining': pomodoroRemaining,
     });
   }
 
@@ -2873,7 +2990,10 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       Value<DateTime>? modifiedAt,
       Value<Uuid?>? contextId,
       Value<DateTime>? start,
-      Value<DateTime>? end}) {
+      Value<DateTime>? end,
+      Value<int>? priority,
+      Value<Duration?>? pomodoro,
+      Value<Duration?>? pomodoroRemaining}) {
     return SessionsCompanion(
       id: id ?? this.id,
       createdAt: createdAt ?? this.createdAt,
@@ -2881,6 +3001,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       contextId: contextId ?? this.contextId,
       start: start ?? this.start,
       end: end ?? this.end,
+      priority: priority ?? this.priority,
+      pomodoro: pomodoro ?? this.pomodoro,
+      pomodoroRemaining: pomodoroRemaining ?? this.pomodoroRemaining,
     );
   }
 
@@ -2906,6 +3029,18 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     if (end.present) {
       map['end'] = Variable<DateTime>(end.value);
     }
+    if (priority.present) {
+      map['priority'] = Variable<int>(priority.value);
+    }
+    if (pomodoro.present) {
+      map['pomodoro'] = Variable<int>(
+          $SessionsTable.$converterpomodoron.toSql(pomodoro.value));
+    }
+    if (pomodoroRemaining.present) {
+      map['pomodoro_remaining'] = Variable<int>($SessionsTable
+          .$converterpomodoroRemainingn
+          .toSql(pomodoroRemaining.value));
+    }
     return map;
   }
 
@@ -2917,7 +3052,10 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
           ..write('modifiedAt: $modifiedAt, ')
           ..write('contextId: $contextId, ')
           ..write('start: $start, ')
-          ..write('end: $end')
+          ..write('end: $end, ')
+          ..write('priority: $priority, ')
+          ..write('pomodoro: $pomodoro, ')
+          ..write('pomodoroRemaining: $pomodoroRemaining')
           ..write(')'))
         .toString();
   }
@@ -3100,7 +3238,7 @@ final class $$AccountsTableReferences
     extends BaseReferences<_$Store, $AccountsTable, AccountRow> {
   $$AccountsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static MultiTypedResultKey<$CalendarsTable, List<Calendar>>
+  static MultiTypedResultKey<$CalendarsTable, List<CalendarRow>>
       _calendarsRefsTable(_$Store db) => MultiTypedResultKey.fromTable(
           db.calendars,
           aliasName:
@@ -3295,7 +3433,7 @@ typedef $$CalendarsTableUpdateCompanionBuilder = CalendarsCompanion Function({
 });
 
 final class $$CalendarsTableReferences
-    extends BaseReferences<_$Store, $CalendarsTable, Calendar> {
+    extends BaseReferences<_$Store, $CalendarsTable, CalendarRow> {
   $$CalendarsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static $AccountsTable _accountIdTable(_$Store db) => db.accounts.createAlias(
@@ -3397,13 +3535,13 @@ class $$CalendarsTableOrderingComposer
 class $$CalendarsTableTableManager extends RootTableManager<
     _$Store,
     $CalendarsTable,
-    Calendar,
+    CalendarRow,
     $$CalendarsTableFilterComposer,
     $$CalendarsTableOrderingComposer,
     $$CalendarsTableCreateCompanionBuilder,
     $$CalendarsTableUpdateCompanionBuilder,
-    (Calendar, $$CalendarsTableReferences),
-    Calendar,
+    (CalendarRow, $$CalendarsTableReferences),
+    CalendarRow,
     PrefetchHooks Function({bool accountId})> {
   $$CalendarsTableTableManager(_$Store db, $CalendarsTable table)
       : super(TableManagerState(
@@ -3491,13 +3629,13 @@ class $$CalendarsTableTableManager extends RootTableManager<
 typedef $$CalendarsTableProcessedTableManager = ProcessedTableManager<
     _$Store,
     $CalendarsTable,
-    Calendar,
+    CalendarRow,
     $$CalendarsTableFilterComposer,
     $$CalendarsTableOrderingComposer,
     $$CalendarsTableCreateCompanionBuilder,
     $$CalendarsTableUpdateCompanionBuilder,
-    (Calendar, $$CalendarsTableReferences),
-    Calendar,
+    (CalendarRow, $$CalendarsTableReferences),
+    CalendarRow,
     PrefetchHooks Function({bool accountId})>;
 typedef $$ContextsTableCreateCompanionBuilder = ContextsCompanion Function({
   Value<Uuid> id,
@@ -4172,7 +4310,7 @@ typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
   Value<Uuid> id,
   Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
-  required String name,
+  Value<String?> name,
   required DateTime start,
   required DateTime end,
   Value<String?> series,
@@ -4184,7 +4322,7 @@ typedef $$EventsTableUpdateCompanionBuilder = EventsCompanion Function({
   Value<Uuid> id,
   Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
-  Value<String> name,
+  Value<String?> name,
   Value<DateTime> start,
   Value<DateTime> end,
   Value<String?> series,
@@ -4350,7 +4488,7 @@ class $$EventsTableTableManager extends RootTableManager<
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
-            Value<String> name = const Value.absent(),
+            Value<String?> name = const Value.absent(),
             Value<DateTime> start = const Value.absent(),
             Value<DateTime> end = const Value.absent(),
             Value<String?> series = const Value.absent(),
@@ -4374,7 +4512,7 @@ class $$EventsTableTableManager extends RootTableManager<
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
-            required String name,
+            Value<String?> name = const Value.absent(),
             required DateTime start,
             required DateTime end,
             Value<String?> series = const Value.absent(),
@@ -4641,6 +4779,9 @@ typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
   Value<Uuid?> contextId,
   required DateTime start,
   required DateTime end,
+  Value<int> priority,
+  Value<Duration?> pomodoro,
+  Value<Duration?> pomodoroRemaining,
 });
 typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
   Value<int> id,
@@ -4649,6 +4790,9 @@ typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
   Value<Uuid?> contextId,
   Value<DateTime> start,
   Value<DateTime> end,
+  Value<int> priority,
+  Value<Duration?> pomodoro,
+  Value<Duration?> pomodoroRemaining,
 });
 
 final class $$SessionsTableReferences
@@ -4697,6 +4841,25 @@ class $$SessionsTableFilterComposer
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
+  ColumnFilters<int> get priority => $state.composableBuilder(
+      column: $state.table.priority,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnWithTypeConverterFilters<Duration?, Duration, int> get pomodoro =>
+      $state.composableBuilder(
+          column: $state.table.pomodoro,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
+
+  ColumnWithTypeConverterFilters<Duration?, Duration, int>
+      get pomodoroRemaining => $state.composableBuilder(
+          column: $state.table.pomodoroRemaining,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
+
   $$ContextsTableFilterComposer get contextId {
     final $$ContextsTableFilterComposer composer = $state.composerBuilder(
         composer: this,
@@ -4735,6 +4898,21 @@ class $$SessionsTableOrderingComposer
 
   ColumnOrderings<DateTime> get end => $state.composableBuilder(
       column: $state.table.end,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<int> get priority => $state.composableBuilder(
+      column: $state.table.priority,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<int> get pomodoro => $state.composableBuilder(
+      column: $state.table.pomodoro,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<int> get pomodoroRemaining => $state.composableBuilder(
+      column: $state.table.pomodoroRemaining,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -4777,6 +4955,9 @@ class $$SessionsTableTableManager extends RootTableManager<
             Value<Uuid?> contextId = const Value.absent(),
             Value<DateTime> start = const Value.absent(),
             Value<DateTime> end = const Value.absent(),
+            Value<int> priority = const Value.absent(),
+            Value<Duration?> pomodoro = const Value.absent(),
+            Value<Duration?> pomodoroRemaining = const Value.absent(),
           }) =>
               SessionsCompanion(
             id: id,
@@ -4785,6 +4966,9 @@ class $$SessionsTableTableManager extends RootTableManager<
             contextId: contextId,
             start: start,
             end: end,
+            priority: priority,
+            pomodoro: pomodoro,
+            pomodoroRemaining: pomodoroRemaining,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -4793,6 +4977,9 @@ class $$SessionsTableTableManager extends RootTableManager<
             Value<Uuid?> contextId = const Value.absent(),
             required DateTime start,
             required DateTime end,
+            Value<int> priority = const Value.absent(),
+            Value<Duration?> pomodoro = const Value.absent(),
+            Value<Duration?> pomodoroRemaining = const Value.absent(),
           }) =>
               SessionsCompanion.insert(
             id: id,
@@ -4801,6 +4988,9 @@ class $$SessionsTableTableManager extends RootTableManager<
             contextId: contextId,
             start: start,
             end: end,
+            priority: priority,
+            pomodoro: pomodoro,
+            pomodoroRemaining: pomodoroRemaining,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) =>

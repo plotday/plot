@@ -3,11 +3,11 @@ part of 'store.dart';
 @DataClassName('NoteRow')
 class Notes extends UuidStoreTable {
   BlobColumn get userId => blob()
-      .clientDefault(() => generateUuid().toBytes())
+      .clientDefault(() => Uuid.generate().toBytes())
       .map(const UuidConverter())();
   TextColumn get body => text()();
   RealColumn get order => real()
-      .clientDefault(() => Order.first().toDouble())
+      .clientDefault(() => Order.first().value)
       .map(const OrderConverter())();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
@@ -57,7 +57,7 @@ class TopicNotesBase extends NotesBase {
 
   @override
   PostgrestFilterBuilder<T> filter<T>(PostgrestFilterBuilder<T> query) {
-    return query.eq('topic_id', topicId);
+    return query.eq('topic_id', topicId.value);
   }
 
   @override
@@ -105,7 +105,7 @@ class Note extends NoteRow {
     required Order order,
     bool private = false,
   }) {
-    final id = generateUuid();
+    final id = Uuid.generate();
     final now = DateTime.now();
     return Note.fromStore(NoteRow(
       id: id,
@@ -127,7 +127,7 @@ class Note extends NoteRow {
     required Order order,
     bool private = false,
   }) {
-    final id = generateUuid();
+    final id = Uuid.generate();
     final now = DateTime.now();
     return Note.fromStore(NoteRow(
       id: id,

@@ -40,7 +40,7 @@ CREATE TABLE "public"."context_settings" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "context_id" uuid NOT NULL REFERENCES public.context ON DELETE CASCADE,
     "order" double precision NOT NULL,
-    "pomodoro" integer NOT NULL DEFAULT 25,
+    "pomodoro" integer NOT NULL DEFAULT 25 * 60,
     CONSTRAINT user_context_unique UNIQUE ("user_id", "context_id")
 );
 

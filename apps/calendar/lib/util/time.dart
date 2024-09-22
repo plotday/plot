@@ -59,6 +59,8 @@ class Date extends Equatable {
       DateTime(year, month, day, time.hour, time.minute);
   Day toDateRange() => Day(this);
   DateTimeRange toDateTimeRange() => toDateRange().toDateTimeRange();
+  DateTime toStart() => toDateTimeRange().start;
+  DateTime toEnd() => toDateTimeRange().end;
 
   Date copyWith({int? year, int? month, int? day}) =>
       Date(year ?? this.year, month ?? this.month, day ?? this.day);

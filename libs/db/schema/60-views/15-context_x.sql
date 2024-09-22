@@ -4,6 +4,7 @@ AS
 SELECT
     c2.id,
     cu.user_id,
+    c2.created_at,
     GREATEST (cs.modified_at, cu.modified_at, c2.modified_at) AS modified_at,
     c2.name,
     replace_parent_path (c1.path, c2.path, COALESCE(cu.path, c1.path)) AS path,

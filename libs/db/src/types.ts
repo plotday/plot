@@ -748,36 +748,33 @@ export type Database = {
           at: unknown
           context_id: string | null
           created_at: string
-          event_id: string | null
           id: number
           modified_at: string
-          paused: unknown
-          pomodoro_length: unknown | null
-          pomodoro_start: string | null
+          pomodoro: number | null
+          pomodoro_remaining: number | null
+          priority: number
           user_id: string
         }
         Insert: {
           at: unknown
           context_id?: string | null
           created_at?: string
-          event_id?: string | null
           id?: never
           modified_at?: string
-          paused?: unknown
-          pomodoro_length?: unknown | null
-          pomodoro_start?: string | null
+          pomodoro?: number | null
+          pomodoro_remaining?: number | null
+          priority?: number
           user_id: string
         }
         Update: {
           at?: unknown
           context_id?: string | null
           created_at?: string
-          event_id?: string | null
           id?: never
           modified_at?: string
-          paused?: unknown
-          pomodoro_length?: unknown | null
-          pomodoro_start?: string | null
+          pomodoro?: number | null
+          pomodoro_remaining?: number | null
+          priority?: number
           user_id?: string
         }
         Relationships: [
@@ -801,20 +798,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["context_id"]
-          },
-          {
-            foreignKeyName: "session_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "event"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "session_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "session_user_id_fkey"
@@ -899,6 +882,7 @@ export type Database = {
     Views: {
       context_x: {
         Row: {
+          created_at: string | null
           id: string | null
           modified_at: string | null
           name: string | null

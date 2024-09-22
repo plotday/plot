@@ -12,7 +12,7 @@ sealed class ScheduleState extends Equatable {
 
   ScheduleState copyWith({
     Date? day,
-    Optional<ScheduledEvent> selected = const Optional.absent(),
+    Optional<Event> selected = const Optional.absent(),
     String? error,
     bool loading = false,
   }) {
@@ -85,7 +85,7 @@ final class SelectedEventState extends ScheduleState {
     required this.selected,
   }) : super.copy(copy);
 
-  final ScheduledEvent selected;
+  final Event selected;
 
   @override
   List<Object?> get props => super.props + [selected];
