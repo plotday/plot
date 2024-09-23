@@ -5,6 +5,8 @@ typedef TopicId = Uuid;
 
 @DataClassName('ContextRow')
 class Contexts extends UuidStoreTable {
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
   TextColumn get name => text()();
   TextColumn get path => text().map(const PathConverter())();
   RealColumn get order => real()

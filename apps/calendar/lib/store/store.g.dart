@@ -291,14 +291,6 @@ class $AccountsTable extends Accounts
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
       'id', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
@@ -320,8 +312,7 @@ class $AccountsTable extends Accounts
               type: DriftSqlType.string, requiredDuringInsert: true)
           .withConverter<AccountProvider>($AccountsTable.$converterprovider);
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, createdAt, modifiedAt, email, provider];
+  List<GeneratedColumn> get $columns => [id, modifiedAt, email, provider];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -334,10 +325,6 @@ class $AccountsTable extends Accounts
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
     }
     if (data.containsKey('modified_at')) {
       context.handle(
@@ -363,8 +350,6 @@ class $AccountsTable extends Accounts
     return AccountRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
       email: attachedDatabase.typeMapping
@@ -387,13 +372,11 @@ class $AccountsTable extends Accounts
 
 class AccountRow extends DataClass implements Insertable<AccountRow> {
   final int id;
-  final DateTime createdAt;
   final DateTime modifiedAt;
   final String email;
   final AccountProvider provider;
   const AccountRow(
       {required this.id,
-      required this.createdAt,
       required this.modifiedAt,
       required this.email,
       required this.provider});
@@ -401,7 +384,6 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     map['email'] = Variable<String>(email);
     {
@@ -414,7 +396,6 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   AccountsCompanion toCompanion(bool nullToAbsent) {
     return AccountsCompanion(
       id: Value(id),
-      createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
       email: Value(email),
       provider: Value(provider),
@@ -426,7 +407,6 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return AccountRow(
       id: serializer.fromJson<int>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['created_at']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       email: serializer.fromJson<String>(json['email']),
       provider: $AccountsTable.$converterprovider
@@ -438,7 +418,6 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'created_at': serializer.toJson<DateTime>(createdAt),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'email': serializer.toJson<String>(email),
       'provider': serializer
@@ -448,13 +427,11 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
 
   AccountRow copyWith(
           {int? id,
-          DateTime? createdAt,
           DateTime? modifiedAt,
           String? email,
           AccountProvider? provider}) =>
       AccountRow(
         id: id ?? this.id,
-        createdAt: createdAt ?? this.createdAt,
         modifiedAt: modifiedAt ?? this.modifiedAt,
         email: email ?? this.email,
         provider: provider ?? this.provider,
@@ -462,7 +439,6 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   AccountRow copyWithCompanion(AccountsCompanion data) {
     return AccountRow(
       id: data.id.present ? data.id.value : this.id,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
       email: data.email.present ? data.email.value : this.email,
@@ -474,7 +450,6 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   String toString() {
     return (StringBuffer('AccountRow(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('email: $email, ')
           ..write('provider: $provider')
@@ -483,13 +458,12 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, createdAt, modifiedAt, email, provider);
+  int get hashCode => Object.hash(id, modifiedAt, email, provider);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is AccountRow &&
           other.id == this.id &&
-          other.createdAt == this.createdAt &&
           other.modifiedAt == this.modifiedAt &&
           other.email == this.email &&
           other.provider == this.provider);
@@ -497,20 +471,17 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
 
 class AccountsCompanion extends UpdateCompanion<AccountRow> {
   final Value<int> id;
-  final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
   final Value<String> email;
   final Value<AccountProvider> provider;
   const AccountsCompanion({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.email = const Value.absent(),
     this.provider = const Value.absent(),
   });
   AccountsCompanion.insert({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     required String email,
     required AccountProvider provider,
@@ -518,14 +489,12 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
         provider = Value(provider);
   static Insertable<AccountRow> custom({
     Expression<int>? id,
-    Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
     Expression<String>? email,
     Expression<String>? provider,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (createdAt != null) 'created_at': createdAt,
       if (modifiedAt != null) 'modified_at': modifiedAt,
       if (email != null) 'email': email,
       if (provider != null) 'provider': provider,
@@ -534,13 +503,11 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
 
   AccountsCompanion copyWith(
       {Value<int>? id,
-      Value<DateTime>? createdAt,
       Value<DateTime>? modifiedAt,
       Value<String>? email,
       Value<AccountProvider>? provider}) {
     return AccountsCompanion(
       id: id ?? this.id,
-      createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
       email: email ?? this.email,
       provider: provider ?? this.provider,
@@ -552,9 +519,6 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
     }
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
@@ -573,7 +537,6 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
   String toString() {
     return (StringBuffer('AccountsCompanion(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('email: $email, ')
           ..write('provider: $provider')
@@ -593,14 +556,6 @@ class $CalendarsTable extends Calendars
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
       'id', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
@@ -634,7 +589,7 @@ class $CalendarsTable extends Calendars
           GeneratedColumn.constraintIsAlways('REFERENCES accounts (id)'));
   @override
   List<GeneratedColumn> get $columns =>
-      [id, createdAt, modifiedAt, name, enabled, accountId];
+      [id, modifiedAt, name, enabled, accountId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -647,10 +602,6 @@ class $CalendarsTable extends Calendars
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
     }
     if (data.containsKey('modified_at')) {
       context.handle(
@@ -687,8 +638,6 @@ class $CalendarsTable extends Calendars
     return CalendarRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
       name: attachedDatabase.typeMapping
@@ -708,14 +657,12 @@ class $CalendarsTable extends Calendars
 
 class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   final int id;
-  final DateTime createdAt;
   final DateTime modifiedAt;
   final String name;
   final bool enabled;
   final int accountId;
   const CalendarRow(
       {required this.id,
-      required this.createdAt,
       required this.modifiedAt,
       required this.name,
       required this.enabled,
@@ -724,7 +671,6 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     map['name'] = Variable<String>(name);
     map['enabled'] = Variable<bool>(enabled);
@@ -735,7 +681,6 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   CalendarsCompanion toCompanion(bool nullToAbsent) {
     return CalendarsCompanion(
       id: Value(id),
-      createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
       name: Value(name),
       enabled: Value(enabled),
@@ -748,7 +693,6 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return CalendarRow(
       id: serializer.fromJson<int>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['created_at']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       name: serializer.fromJson<String>(json['name']),
       enabled: serializer.fromJson<bool>(json['enabled']),
@@ -760,7 +704,6 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'created_at': serializer.toJson<DateTime>(createdAt),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'name': serializer.toJson<String>(name),
       'enabled': serializer.toJson<bool>(enabled),
@@ -770,14 +713,12 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
 
   CalendarRow copyWith(
           {int? id,
-          DateTime? createdAt,
           DateTime? modifiedAt,
           String? name,
           bool? enabled,
           int? accountId}) =>
       CalendarRow(
         id: id ?? this.id,
-        createdAt: createdAt ?? this.createdAt,
         modifiedAt: modifiedAt ?? this.modifiedAt,
         name: name ?? this.name,
         enabled: enabled ?? this.enabled,
@@ -786,7 +727,6 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   CalendarRow copyWithCompanion(CalendarsCompanion data) {
     return CalendarRow(
       id: data.id.present ? data.id.value : this.id,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
       name: data.name.present ? data.name.value : this.name,
@@ -799,7 +739,6 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   String toString() {
     return (StringBuffer('CalendarRow(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('name: $name, ')
           ..write('enabled: $enabled, ')
@@ -809,14 +748,12 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, createdAt, modifiedAt, name, enabled, accountId);
+  int get hashCode => Object.hash(id, modifiedAt, name, enabled, accountId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is CalendarRow &&
           other.id == this.id &&
-          other.createdAt == this.createdAt &&
           other.modifiedAt == this.modifiedAt &&
           other.name == this.name &&
           other.enabled == this.enabled &&
@@ -825,14 +762,12 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
 
 class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   final Value<int> id;
-  final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
   final Value<String> name;
   final Value<bool> enabled;
   final Value<int> accountId;
   const CalendarsCompanion({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.name = const Value.absent(),
     this.enabled = const Value.absent(),
@@ -840,7 +775,6 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   });
   CalendarsCompanion.insert({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     required String name,
     required bool enabled,
@@ -850,7 +784,6 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
         accountId = Value(accountId);
   static Insertable<CalendarRow> custom({
     Expression<int>? id,
-    Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
     Expression<String>? name,
     Expression<bool>? enabled,
@@ -858,7 +791,6 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (createdAt != null) 'created_at': createdAt,
       if (modifiedAt != null) 'modified_at': modifiedAt,
       if (name != null) 'name': name,
       if (enabled != null) 'enabled': enabled,
@@ -868,14 +800,12 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
 
   CalendarsCompanion copyWith(
       {Value<int>? id,
-      Value<DateTime>? createdAt,
       Value<DateTime>? modifiedAt,
       Value<String>? name,
       Value<bool>? enabled,
       Value<int>? accountId}) {
     return CalendarsCompanion(
       id: id ?? this.id,
-      createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
       name: name ?? this.name,
       enabled: enabled ?? this.enabled,
@@ -888,9 +818,6 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
     }
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
@@ -911,7 +838,6 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   String toString() {
     return (StringBuffer('CalendarsCompanion(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('name: $name, ')
           ..write('enabled: $enabled, ')
@@ -935,19 +861,19 @@ class $ContextsTable extends Contexts
               requiredDuringInsert: false,
               clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($ContextsTable.$converterid);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
   late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
       'modified_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
       type: DriftSqlType.dateTime,
       requiredDuringInsert: false,
       defaultValue: currentDateAndTime);
@@ -981,7 +907,7 @@ class $ContextsTable extends Contexts
           .withConverter<Duration>($ContextsTable.$converterpomodoro);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, createdAt, modifiedAt, name, path, order, pomodoro];
+      [id, modifiedAt, createdAt, name, path, order, pomodoro];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -993,15 +919,15 @@ class $ContextsTable extends Contexts
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
-    }
     if (data.containsKey('modified_at')) {
       context.handle(
           _modifiedAtMeta,
           modifiedAt.isAcceptableOrUnknown(
               data['modified_at']!, _modifiedAtMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -1023,10 +949,10 @@ class $ContextsTable extends Contexts
     return ContextRow(
       id: $ContextsTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       path: $ContextsTable.$converterpath.fromSql(attachedDatabase.typeMapping
@@ -1053,16 +979,16 @@ class $ContextsTable extends Contexts
 
 class ContextRow extends DataClass implements Insertable<ContextRow> {
   final Uuid id;
-  final DateTime createdAt;
   final DateTime modifiedAt;
+  final DateTime createdAt;
   final String name;
   final Path path;
   final Order order;
   final Duration pomodoro;
   const ContextRow(
       {required this.id,
-      required this.createdAt,
       required this.modifiedAt,
+      required this.createdAt,
       required this.name,
       required this.path,
       required this.order,
@@ -1073,8 +999,8 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
     {
       map['id'] = Variable<Uint8List>($ContextsTable.$converterid.toSql(id));
     }
-    map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
+    map['created_at'] = Variable<DateTime>(createdAt);
     map['name'] = Variable<String>(name);
     {
       map['path'] = Variable<String>($ContextsTable.$converterpath.toSql(path));
@@ -1093,8 +1019,8 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
   ContextsCompanion toCompanion(bool nullToAbsent) {
     return ContextsCompanion(
       id: Value(id),
-      createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
+      createdAt: Value(createdAt),
       name: Value(name),
       path: Value(path),
       order: Value(order),
@@ -1107,8 +1033,8 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return ContextRow(
       id: serializer.fromJson<Uuid>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['created_at']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      createdAt: serializer.fromJson<DateTime>(json['created_at']),
       name: serializer.fromJson<String>(json['name']),
       path: serializer.fromJson<Path>(json['path']),
       order: serializer.fromJson<Order>(json['order']),
@@ -1120,8 +1046,8 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
-      'created_at': serializer.toJson<DateTime>(createdAt),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'created_at': serializer.toJson<DateTime>(createdAt),
       'name': serializer.toJson<String>(name),
       'path': serializer.toJson<Path>(path),
       'order': serializer.toJson<Order>(order),
@@ -1131,16 +1057,16 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
 
   ContextRow copyWith(
           {Uuid? id,
-          DateTime? createdAt,
           DateTime? modifiedAt,
+          DateTime? createdAt,
           String? name,
           Path? path,
           Order? order,
           Duration? pomodoro}) =>
       ContextRow(
         id: id ?? this.id,
-        createdAt: createdAt ?? this.createdAt,
         modifiedAt: modifiedAt ?? this.modifiedAt,
+        createdAt: createdAt ?? this.createdAt,
         name: name ?? this.name,
         path: path ?? this.path,
         order: order ?? this.order,
@@ -1149,9 +1075,9 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
   ContextRow copyWithCompanion(ContextsCompanion data) {
     return ContextRow(
       id: data.id.present ? data.id.value : this.id,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       name: data.name.present ? data.name.value : this.name,
       path: data.path.present ? data.path.value : this.path,
       order: data.order.present ? data.order.value : this.order,
@@ -1163,8 +1089,8 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
   String toString() {
     return (StringBuffer('ContextRow(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
+          ..write('createdAt: $createdAt, ')
           ..write('name: $name, ')
           ..write('path: $path, ')
           ..write('order: $order, ')
@@ -1175,14 +1101,14 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
 
   @override
   int get hashCode =>
-      Object.hash(id, createdAt, modifiedAt, name, path, order, pomodoro);
+      Object.hash(id, modifiedAt, createdAt, name, path, order, pomodoro);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ContextRow &&
           other.id == this.id &&
-          other.createdAt == this.createdAt &&
           other.modifiedAt == this.modifiedAt &&
+          other.createdAt == this.createdAt &&
           other.name == this.name &&
           other.path == this.path &&
           other.order == this.order &&
@@ -1191,8 +1117,8 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
 
 class ContextsCompanion extends UpdateCompanion<ContextRow> {
   final Value<Uuid> id;
-  final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
+  final Value<DateTime> createdAt;
   final Value<String> name;
   final Value<Path> path;
   final Value<Order> order;
@@ -1200,8 +1126,8 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
   final Value<int> rowid;
   const ContextsCompanion({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
     this.name = const Value.absent(),
     this.path = const Value.absent(),
     this.order = const Value.absent(),
@@ -1210,8 +1136,8 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
   });
   ContextsCompanion.insert({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
     required String name,
     required Path path,
     this.order = const Value.absent(),
@@ -1221,8 +1147,8 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
         path = Value(path);
   static Insertable<ContextRow> custom({
     Expression<Uint8List>? id,
-    Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? createdAt,
     Expression<String>? name,
     Expression<String>? path,
     Expression<double>? order,
@@ -1231,8 +1157,8 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (createdAt != null) 'created_at': createdAt,
       if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (createdAt != null) 'created_at': createdAt,
       if (name != null) 'name': name,
       if (path != null) 'path': path,
       if (order != null) 'order': order,
@@ -1243,8 +1169,8 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
 
   ContextsCompanion copyWith(
       {Value<Uuid>? id,
-      Value<DateTime>? createdAt,
       Value<DateTime>? modifiedAt,
+      Value<DateTime>? createdAt,
       Value<String>? name,
       Value<Path>? path,
       Value<Order>? order,
@@ -1252,8 +1178,8 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
       Value<int>? rowid}) {
     return ContextsCompanion(
       id: id ?? this.id,
-      createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
+      createdAt: createdAt ?? this.createdAt,
       name: name ?? this.name,
       path: path ?? this.path,
       order: order ?? this.order,
@@ -1269,11 +1195,11 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
       map['id'] =
           Variable<Uint8List>($ContextsTable.$converterid.toSql(id.value));
     }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
-    }
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -1300,8 +1226,8 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
   String toString() {
     return (StringBuffer('ContextsCompanion(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
+          ..write('createdAt: $createdAt, ')
           ..write('name: $name, ')
           ..write('path: $path, ')
           ..write('order: $order, ')
@@ -1325,19 +1251,19 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
               requiredDuringInsert: false,
               clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($NotesTable.$converterid);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
   late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
       'modified_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
       type: DriftSqlType.dateTime,
       requiredDuringInsert: false,
       defaultValue: currentDateAndTime);
@@ -1401,8 +1327,8 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
   @override
   List<GeneratedColumn> get $columns => [
         id,
-        createdAt,
         modifiedAt,
+        createdAt,
         userId,
         body,
         order,
@@ -1422,15 +1348,15 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
-    }
     if (data.containsKey('modified_at')) {
       context.handle(
           _modifiedAtMeta,
           modifiedAt.isAcceptableOrUnknown(
               data['modified_at']!, _modifiedAtMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
     }
     context.handle(_userIdMeta, const VerificationResult.success());
     if (data.containsKey('body')) {
@@ -1461,10 +1387,10 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     return NoteRow(
       id: $NotesTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       userId: $NotesTable.$converteruserId.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}user_id'])!),
       body: attachedDatabase.typeMapping
@@ -1503,8 +1429,8 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
 
 class NoteRow extends DataClass implements Insertable<NoteRow> {
   final Uuid id;
-  final DateTime createdAt;
   final DateTime modifiedAt;
+  final DateTime createdAt;
   final Uuid userId;
   final String body;
   final Order order;
@@ -1514,8 +1440,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   final Uuid? contextId;
   const NoteRow(
       {required this.id,
-      required this.createdAt,
       required this.modifiedAt,
+      required this.createdAt,
       required this.userId,
       required this.body,
       required this.order,
@@ -1529,8 +1455,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     {
       map['id'] = Variable<Uint8List>($NotesTable.$converterid.toSql(id));
     }
-    map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
+    map['created_at'] = Variable<DateTime>(createdAt);
     {
       map['user_id'] =
           Variable<Uint8List>($NotesTable.$converteruserId.toSql(userId));
@@ -1555,8 +1481,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   NotesCompanion toCompanion(bool nullToAbsent) {
     return NotesCompanion(
       id: Value(id),
-      createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
+      createdAt: Value(createdAt),
       userId: Value(userId),
       body: Value(body),
       order: Value(order),
@@ -1574,8 +1500,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return NoteRow(
       id: serializer.fromJson<Uuid>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['created_at']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      createdAt: serializer.fromJson<DateTime>(json['created_at']),
       userId: serializer.fromJson<Uuid>(json['user_id']),
       body: serializer.fromJson<String>(json['body']),
       order: serializer.fromJson<Order>(json['order']),
@@ -1590,8 +1516,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
-      'created_at': serializer.toJson<DateTime>(createdAt),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'created_at': serializer.toJson<DateTime>(createdAt),
       'user_id': serializer.toJson<Uuid>(userId),
       'body': serializer.toJson<String>(body),
       'order': serializer.toJson<Order>(order),
@@ -1604,8 +1530,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
 
   NoteRow copyWith(
           {Uuid? id,
-          DateTime? createdAt,
           DateTime? modifiedAt,
+          DateTime? createdAt,
           Uuid? userId,
           String? body,
           Order? order,
@@ -1615,8 +1541,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           Value<Uuid?> contextId = const Value.absent()}) =>
       NoteRow(
         id: id ?? this.id,
-        createdAt: createdAt ?? this.createdAt,
         modifiedAt: modifiedAt ?? this.modifiedAt,
+        createdAt: createdAt ?? this.createdAt,
         userId: userId ?? this.userId,
         body: body ?? this.body,
         order: order ?? this.order,
@@ -1628,9 +1554,9 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   NoteRow copyWithCompanion(NotesCompanion data) {
     return NoteRow(
       id: data.id.present ? data.id.value : this.id,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       userId: data.userId.present ? data.userId.value : this.userId,
       body: data.body.present ? data.body.value : this.body,
       order: data.order.present ? data.order.value : this.order,
@@ -1645,8 +1571,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   String toString() {
     return (StringBuffer('NoteRow(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
+          ..write('createdAt: $createdAt, ')
           ..write('userId: $userId, ')
           ..write('body: $body, ')
           ..write('order: $order, ')
@@ -1659,15 +1585,15 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, createdAt, modifiedAt, userId, body,
+  int get hashCode => Object.hash(id, modifiedAt, createdAt, userId, body,
       order, root, private, topicId, contextId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is NoteRow &&
           other.id == this.id &&
-          other.createdAt == this.createdAt &&
           other.modifiedAt == this.modifiedAt &&
+          other.createdAt == this.createdAt &&
           other.userId == this.userId &&
           other.body == this.body &&
           other.order == this.order &&
@@ -1679,8 +1605,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
 
 class NotesCompanion extends UpdateCompanion<NoteRow> {
   final Value<Uuid> id;
-  final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
+  final Value<DateTime> createdAt;
   final Value<Uuid> userId;
   final Value<String> body;
   final Value<Order> order;
@@ -1691,8 +1617,8 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   final Value<int> rowid;
   const NotesCompanion({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
     this.userId = const Value.absent(),
     this.body = const Value.absent(),
     this.order = const Value.absent(),
@@ -1704,8 +1630,8 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   });
   NotesCompanion.insert({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
     this.userId = const Value.absent(),
     required String body,
     this.order = const Value.absent(),
@@ -1718,8 +1644,8 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
         topicId = Value(topicId);
   static Insertable<NoteRow> custom({
     Expression<Uint8List>? id,
-    Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? createdAt,
     Expression<Uint8List>? userId,
     Expression<String>? body,
     Expression<double>? order,
@@ -1731,8 +1657,8 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (createdAt != null) 'created_at': createdAt,
       if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (createdAt != null) 'created_at': createdAt,
       if (userId != null) 'user_id': userId,
       if (body != null) 'body': body,
       if (order != null) 'order': order,
@@ -1746,8 +1672,8 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
 
   NotesCompanion copyWith(
       {Value<Uuid>? id,
-      Value<DateTime>? createdAt,
       Value<DateTime>? modifiedAt,
+      Value<DateTime>? createdAt,
       Value<Uuid>? userId,
       Value<String>? body,
       Value<Order>? order,
@@ -1758,8 +1684,8 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       Value<int>? rowid}) {
     return NotesCompanion(
       id: id ?? this.id,
-      createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
+      createdAt: createdAt ?? this.createdAt,
       userId: userId ?? this.userId,
       body: body ?? this.body,
       order: order ?? this.order,
@@ -1777,11 +1703,11 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     if (id.present) {
       map['id'] = Variable<Uint8List>($NotesTable.$converterid.toSql(id.value));
     }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
-    }
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
     }
     if (userId.present) {
       map['user_id'] =
@@ -1818,8 +1744,8 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   String toString() {
     return (StringBuffer('NotesCompanion(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
+          ..write('createdAt: $createdAt, ')
           ..write('userId: $userId, ')
           ..write('body: $body, ')
           ..write('order: $order, ')
@@ -1846,14 +1772,6 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
               requiredDuringInsert: false,
               clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($EventsTable.$converterid);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
@@ -1900,17 +1818,8 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
                   'REFERENCES contexts (id)'))
           .withConverter<Uuid?>($EventsTable.$convertercontextIdn);
   @override
-  List<GeneratedColumn> get $columns => [
-        id,
-        createdAt,
-        modifiedAt,
-        name,
-        start,
-        end,
-        series,
-        response,
-        contextId
-      ];
+  List<GeneratedColumn> get $columns =>
+      [id, modifiedAt, name, start, end, series, response, contextId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1922,10 +1831,6 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
-    }
     if (data.containsKey('modified_at')) {
       context.handle(
           _modifiedAtMeta,
@@ -1965,8 +1870,6 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
     return EventRow(
       id: $EventsTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
       name: attachedDatabase.typeMapping
@@ -2002,7 +1905,6 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
 
 class EventRow extends DataClass implements Insertable<EventRow> {
   final Uuid id;
-  final DateTime createdAt;
   final DateTime modifiedAt;
   final String? name;
   final DateTime start;
@@ -2012,7 +1914,6 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   final Uuid? contextId;
   const EventRow(
       {required this.id,
-      required this.createdAt,
       required this.modifiedAt,
       this.name,
       required this.start,
@@ -2026,7 +1927,6 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     {
       map['id'] = Variable<Uint8List>($EventsTable.$converterid.toSql(id));
     }
-    map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     if (!nullToAbsent || name != null) {
       map['name'] = Variable<String>(name);
@@ -2050,7 +1950,6 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   EventsCompanion toCompanion(bool nullToAbsent) {
     return EventsCompanion(
       id: Value(id),
-      createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
       name: name == null && nullToAbsent ? const Value.absent() : Value(name),
       start: Value(start),
@@ -2069,7 +1968,6 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return EventRow(
       id: serializer.fromJson<Uuid>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['created_at']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       name: serializer.fromJson<String?>(json['name']),
       start: serializer.fromJson<DateTime>(json['start']),
@@ -2085,7 +1983,6 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
-      'created_at': serializer.toJson<DateTime>(createdAt),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'name': serializer.toJson<String?>(name),
       'start': serializer.toJson<DateTime>(start),
@@ -2099,7 +1996,6 @@ class EventRow extends DataClass implements Insertable<EventRow> {
 
   EventRow copyWith(
           {Uuid? id,
-          DateTime? createdAt,
           DateTime? modifiedAt,
           Value<String?> name = const Value.absent(),
           DateTime? start,
@@ -2109,7 +2005,6 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           Value<Uuid?> contextId = const Value.absent()}) =>
       EventRow(
         id: id ?? this.id,
-        createdAt: createdAt ?? this.createdAt,
         modifiedAt: modifiedAt ?? this.modifiedAt,
         name: name.present ? name.value : this.name,
         start: start ?? this.start,
@@ -2121,7 +2016,6 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   EventRow copyWithCompanion(EventsCompanion data) {
     return EventRow(
       id: data.id.present ? data.id.value : this.id,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
       name: data.name.present ? data.name.value : this.name,
@@ -2137,7 +2031,6 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   String toString() {
     return (StringBuffer('EventRow(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('name: $name, ')
           ..write('start: $start, ')
@@ -2151,13 +2044,12 @@ class EventRow extends DataClass implements Insertable<EventRow> {
 
   @override
   int get hashCode => Object.hash(
-      id, createdAt, modifiedAt, name, start, end, series, response, contextId);
+      id, modifiedAt, name, start, end, series, response, contextId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is EventRow &&
           other.id == this.id &&
-          other.createdAt == this.createdAt &&
           other.modifiedAt == this.modifiedAt &&
           other.name == this.name &&
           other.start == this.start &&
@@ -2169,7 +2061,6 @@ class EventRow extends DataClass implements Insertable<EventRow> {
 
 class EventsCompanion extends UpdateCompanion<EventRow> {
   final Value<Uuid> id;
-  final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
   final Value<String?> name;
   final Value<DateTime> start;
@@ -2180,7 +2071,6 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   final Value<int> rowid;
   const EventsCompanion({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.name = const Value.absent(),
     this.start = const Value.absent(),
@@ -2192,7 +2082,6 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   });
   EventsCompanion.insert({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.name = const Value.absent(),
     required DateTime start,
@@ -2206,7 +2095,6 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
         response = Value(response);
   static Insertable<EventRow> custom({
     Expression<Uint8List>? id,
-    Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
     Expression<String>? name,
     Expression<DateTime>? start,
@@ -2218,7 +2106,6 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (createdAt != null) 'created_at': createdAt,
       if (modifiedAt != null) 'modified_at': modifiedAt,
       if (name != null) 'name': name,
       if (start != null) 'start': start,
@@ -2232,7 +2119,6 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
 
   EventsCompanion copyWith(
       {Value<Uuid>? id,
-      Value<DateTime>? createdAt,
       Value<DateTime>? modifiedAt,
       Value<String?>? name,
       Value<DateTime>? start,
@@ -2243,7 +2129,6 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       Value<int>? rowid}) {
     return EventsCompanion(
       id: id ?? this.id,
-      createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
       name: name ?? this.name,
       start: start ?? this.start,
@@ -2261,9 +2146,6 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     if (id.present) {
       map['id'] =
           Variable<Uint8List>($EventsTable.$converterid.toSql(id.value));
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
     }
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
@@ -2298,7 +2180,6 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   String toString() {
     return (StringBuffer('EventsCompanion(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('name: $name, ')
           ..write('start: $start, ')
@@ -2322,14 +2203,6 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, BudgetRow> {
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
       'id', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
@@ -2349,7 +2222,7 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, BudgetRow> {
                   'REFERENCES contexts (id)'))
           .withConverter<Uuid?>($BudgetsTable.$convertercontextIdn);
   @override
-  List<GeneratedColumn> get $columns => [id, createdAt, modifiedAt, contextId];
+  List<GeneratedColumn> get $columns => [id, modifiedAt, contextId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2362,10 +2235,6 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, BudgetRow> {
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
     }
     if (data.containsKey('modified_at')) {
       context.handle(
@@ -2385,8 +2254,6 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, BudgetRow> {
     return BudgetRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
       contextId: $BudgetsTable.$convertercontextIdn.fromSql(attachedDatabase
@@ -2408,19 +2275,13 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, BudgetRow> {
 
 class BudgetRow extends DataClass implements Insertable<BudgetRow> {
   final int id;
-  final DateTime createdAt;
   final DateTime modifiedAt;
   final Uuid? contextId;
-  const BudgetRow(
-      {required this.id,
-      required this.createdAt,
-      required this.modifiedAt,
-      this.contextId});
+  const BudgetRow({required this.id, required this.modifiedAt, this.contextId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     if (!nullToAbsent || contextId != null) {
       map['context_id'] = Variable<Uint8List>(
@@ -2432,7 +2293,6 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
   BudgetsCompanion toCompanion(bool nullToAbsent) {
     return BudgetsCompanion(
       id: Value(id),
-      createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
       contextId: contextId == null && nullToAbsent
           ? const Value.absent()
@@ -2445,7 +2305,6 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return BudgetRow(
       id: serializer.fromJson<int>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['created_at']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       contextId: serializer.fromJson<Uuid?>(json['context_id']),
     );
@@ -2455,7 +2314,6 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'created_at': serializer.toJson<DateTime>(createdAt),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'context_id': serializer.toJson<Uuid?>(contextId),
     };
@@ -2463,19 +2321,16 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
 
   BudgetRow copyWith(
           {int? id,
-          DateTime? createdAt,
           DateTime? modifiedAt,
           Value<Uuid?> contextId = const Value.absent()}) =>
       BudgetRow(
         id: id ?? this.id,
-        createdAt: createdAt ?? this.createdAt,
         modifiedAt: modifiedAt ?? this.modifiedAt,
         contextId: contextId.present ? contextId.value : this.contextId,
       );
   BudgetRow copyWithCompanion(BudgetsCompanion data) {
     return BudgetRow(
       id: data.id.present ? data.id.value : this.id,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
       contextId: data.contextId.present ? data.contextId.value : this.contextId,
@@ -2486,7 +2341,6 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
   String toString() {
     return (StringBuffer('BudgetRow(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('contextId: $contextId')
           ..write(')'))
@@ -2494,56 +2348,46 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, createdAt, modifiedAt, contextId);
+  int get hashCode => Object.hash(id, modifiedAt, contextId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is BudgetRow &&
           other.id == this.id &&
-          other.createdAt == this.createdAt &&
           other.modifiedAt == this.modifiedAt &&
           other.contextId == this.contextId);
 }
 
 class BudgetsCompanion extends UpdateCompanion<BudgetRow> {
   final Value<int> id;
-  final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
   final Value<Uuid?> contextId;
   const BudgetsCompanion({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.contextId = const Value.absent(),
   });
   BudgetsCompanion.insert({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.contextId = const Value.absent(),
   });
   static Insertable<BudgetRow> custom({
     Expression<int>? id,
-    Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
     Expression<Uint8List>? contextId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (createdAt != null) 'created_at': createdAt,
       if (modifiedAt != null) 'modified_at': modifiedAt,
       if (contextId != null) 'context_id': contextId,
     });
   }
 
   BudgetsCompanion copyWith(
-      {Value<int>? id,
-      Value<DateTime>? createdAt,
-      Value<DateTime>? modifiedAt,
-      Value<Uuid?>? contextId}) {
+      {Value<int>? id, Value<DateTime>? modifiedAt, Value<Uuid?>? contextId}) {
     return BudgetsCompanion(
       id: id ?? this.id,
-      createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
       contextId: contextId ?? this.contextId,
     );
@@ -2554,9 +2398,6 @@ class BudgetsCompanion extends UpdateCompanion<BudgetRow> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
     }
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
@@ -2572,7 +2413,6 @@ class BudgetsCompanion extends UpdateCompanion<BudgetRow> {
   String toString() {
     return (StringBuffer('BudgetsCompanion(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('contextId: $contextId')
           ..write(')'))
@@ -2591,14 +2431,6 @@ class $SessionsTable extends Sessions
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
       'id', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
@@ -2654,7 +2486,6 @@ class $SessionsTable extends Sessions
   @override
   List<GeneratedColumn> get $columns => [
         id,
-        createdAt,
         modifiedAt,
         contextId,
         start,
@@ -2675,10 +2506,6 @@ class $SessionsTable extends Sessions
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
     }
     if (data.containsKey('modified_at')) {
       context.handle(
@@ -2716,8 +2543,6 @@ class $SessionsTable extends Sessions
     return SessionRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
       contextId: $SessionsTable.$convertercontextIdn.fromSql(attachedDatabase
@@ -2759,7 +2584,6 @@ class $SessionsTable extends Sessions
 
 class SessionRow extends DataClass implements Insertable<SessionRow> {
   final int id;
-  final DateTime createdAt;
   final DateTime modifiedAt;
   final Uuid? contextId;
   final DateTime start;
@@ -2769,7 +2593,6 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   final Duration? pomodoroRemaining;
   const SessionRow(
       {required this.id,
-      required this.createdAt,
       required this.modifiedAt,
       this.contextId,
       required this.start,
@@ -2781,7 +2604,6 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     if (!nullToAbsent || contextId != null) {
       map['context_id'] = Variable<Uint8List>(
@@ -2804,7 +2626,6 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   SessionsCompanion toCompanion(bool nullToAbsent) {
     return SessionsCompanion(
       id: Value(id),
-      createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
       contextId: contextId == null && nullToAbsent
           ? const Value.absent()
@@ -2826,7 +2647,6 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return SessionRow(
       id: serializer.fromJson<int>(json['id']),
-      createdAt: serializer.fromJson<DateTime>(json['created_at']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       contextId: serializer.fromJson<Uuid?>(json['context_id']),
       start: serializer.fromJson<DateTime>(json['start']),
@@ -2842,7 +2662,6 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'created_at': serializer.toJson<DateTime>(createdAt),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'context_id': serializer.toJson<Uuid?>(contextId),
       'start': serializer.toJson<DateTime>(start),
@@ -2855,7 +2674,6 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
 
   SessionRow copyWith(
           {int? id,
-          DateTime? createdAt,
           DateTime? modifiedAt,
           Value<Uuid?> contextId = const Value.absent(),
           DateTime? start,
@@ -2865,7 +2683,6 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           Value<Duration?> pomodoroRemaining = const Value.absent()}) =>
       SessionRow(
         id: id ?? this.id,
-        createdAt: createdAt ?? this.createdAt,
         modifiedAt: modifiedAt ?? this.modifiedAt,
         contextId: contextId.present ? contextId.value : this.contextId,
         start: start ?? this.start,
@@ -2879,7 +2696,6 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   SessionRow copyWithCompanion(SessionsCompanion data) {
     return SessionRow(
       id: data.id.present ? data.id.value : this.id,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
       contextId: data.contextId.present ? data.contextId.value : this.contextId,
@@ -2897,7 +2713,6 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   String toString() {
     return (StringBuffer('SessionRow(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('contextId: $contextId, ')
           ..write('start: $start, ')
@@ -2910,14 +2725,13 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, createdAt, modifiedAt, contextId, start,
-      end, priority, pomodoro, pomodoroRemaining);
+  int get hashCode => Object.hash(id, modifiedAt, contextId, start, end,
+      priority, pomodoro, pomodoroRemaining);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is SessionRow &&
           other.id == this.id &&
-          other.createdAt == this.createdAt &&
           other.modifiedAt == this.modifiedAt &&
           other.contextId == this.contextId &&
           other.start == this.start &&
@@ -2929,7 +2743,6 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
 
 class SessionsCompanion extends UpdateCompanion<SessionRow> {
   final Value<int> id;
-  final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
   final Value<Uuid?> contextId;
   final Value<DateTime> start;
@@ -2939,7 +2752,6 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   final Value<Duration?> pomodoroRemaining;
   const SessionsCompanion({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.contextId = const Value.absent(),
     this.start = const Value.absent(),
@@ -2950,7 +2762,6 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   });
   SessionsCompanion.insert({
     this.id = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.contextId = const Value.absent(),
     required DateTime start,
@@ -2962,7 +2773,6 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
         end = Value(end);
   static Insertable<SessionRow> custom({
     Expression<int>? id,
-    Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
     Expression<Uint8List>? contextId,
     Expression<DateTime>? start,
@@ -2973,7 +2783,6 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (createdAt != null) 'created_at': createdAt,
       if (modifiedAt != null) 'modified_at': modifiedAt,
       if (contextId != null) 'context_id': contextId,
       if (start != null) 'start': start,
@@ -2986,7 +2795,6 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
 
   SessionsCompanion copyWith(
       {Value<int>? id,
-      Value<DateTime>? createdAt,
       Value<DateTime>? modifiedAt,
       Value<Uuid?>? contextId,
       Value<DateTime>? start,
@@ -2996,7 +2804,6 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       Value<Duration?>? pomodoroRemaining}) {
     return SessionsCompanion(
       id: id ?? this.id,
-      createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
       contextId: contextId ?? this.contextId,
       start: start ?? this.start,
@@ -3012,9 +2819,6 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
     }
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
@@ -3048,7 +2852,6 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   String toString() {
     return (StringBuffer('SessionsCompanion(')
           ..write('id: $id, ')
-          ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('contextId: $contextId, ')
           ..write('start: $start, ')
@@ -3056,6 +2859,366 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
           ..write('priority: $priority, ')
           ..write('pomodoro: $pomodoro, ')
           ..write('pomodoroRemaining: $pomodoroRemaining')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $BalancesTable extends Balances
+    with TableInfo<$BalancesTable, BalanceRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BalancesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _modifiedAtMeta =
+      const VerificationMeta('modifiedAt');
+  @override
+  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
+      'modified_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
+  @override
+  late final GeneratedColumn<String> day = GeneratedColumn<String>(
+      'day', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _contextIdMeta =
+      const VerificationMeta('contextId');
+  @override
+  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> contextId =
+      GeneratedColumn<Uint8List>('context_id', aliasedName, true,
+              type: DriftSqlType.blob,
+              requiredDuringInsert: false,
+              defaultConstraints: GeneratedColumn.constraintIsAlways(
+                  'REFERENCES contexts (id)'))
+          .withConverter<Uuid?>($BalancesTable.$convertercontextIdn);
+  static const VerificationMeta _typeMeta = const VerificationMeta('type');
+  @override
+  late final GeneratedColumnWithTypeConverter<BalanceType, int> type =
+      GeneratedColumn<int>('type', aliasedName, false,
+              type: DriftSqlType.int, requiredDuringInsert: true)
+          .withConverter<BalanceType>($BalancesTable.$convertertype);
+  static const VerificationMeta _balancesMeta =
+      const VerificationMeta('balances');
+  @override
+  late final GeneratedColumn<int> balances = GeneratedColumn<int>(
+      'balances', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _secondsMeta =
+      const VerificationMeta('seconds');
+  @override
+  late final GeneratedColumn<int> seconds = GeneratedColumn<int>(
+      'seconds', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [modifiedAt, day, contextId, type, balances, seconds];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'balances';
+  @override
+  VerificationContext validateIntegrity(Insertable<BalanceRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('modified_at')) {
+      context.handle(
+          _modifiedAtMeta,
+          modifiedAt.isAcceptableOrUnknown(
+              data['modified_at']!, _modifiedAtMeta));
+    }
+    if (data.containsKey('day')) {
+      context.handle(
+          _dayMeta, day.isAcceptableOrUnknown(data['day']!, _dayMeta));
+    } else if (isInserting) {
+      context.missing(_dayMeta);
+    }
+    context.handle(_contextIdMeta, const VerificationResult.success());
+    context.handle(_typeMeta, const VerificationResult.success());
+    if (data.containsKey('balances')) {
+      context.handle(_balancesMeta,
+          balances.isAcceptableOrUnknown(data['balances']!, _balancesMeta));
+    }
+    if (data.containsKey('seconds')) {
+      context.handle(_secondsMeta,
+          seconds.isAcceptableOrUnknown(data['seconds']!, _secondsMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => const {};
+  @override
+  BalanceRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BalanceRow(
+      modifiedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
+      day: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}day'])!,
+      contextId: $BalancesTable.$convertercontextIdn.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.blob, data['${effectivePrefix}context_id'])),
+      type: $BalancesTable.$convertertype.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}type'])!),
+      balances: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}balances'])!,
+      seconds: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}seconds'])!,
+    );
+  }
+
+  @override
+  $BalancesTable createAlias(String alias) {
+    return $BalancesTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<Uuid, Uint8List> $convertercontextId =
+      const UuidConverter();
+  static TypeConverter<Uuid?, Uint8List?> $convertercontextIdn =
+      NullAwareTypeConverter.wrap($convertercontextId);
+  static JsonTypeConverter2<BalanceType, int, int> $convertertype =
+      const EnumIndexConverter<BalanceType>(BalanceType.values);
+}
+
+class BalanceRow extends DataClass implements Insertable<BalanceRow> {
+  final DateTime modifiedAt;
+  final String day;
+  final Uuid? contextId;
+  final BalanceType type;
+  final int balances;
+  final int seconds;
+  const BalanceRow(
+      {required this.modifiedAt,
+      required this.day,
+      this.contextId,
+      required this.type,
+      required this.balances,
+      required this.seconds});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['modified_at'] = Variable<DateTime>(modifiedAt);
+    map['day'] = Variable<String>(day);
+    if (!nullToAbsent || contextId != null) {
+      map['context_id'] = Variable<Uint8List>(
+          $BalancesTable.$convertercontextIdn.toSql(contextId));
+    }
+    {
+      map['type'] = Variable<int>($BalancesTable.$convertertype.toSql(type));
+    }
+    map['balances'] = Variable<int>(balances);
+    map['seconds'] = Variable<int>(seconds);
+    return map;
+  }
+
+  BalancesCompanion toCompanion(bool nullToAbsent) {
+    return BalancesCompanion(
+      modifiedAt: Value(modifiedAt),
+      day: Value(day),
+      contextId: contextId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(contextId),
+      type: Value(type),
+      balances: Value(balances),
+      seconds: Value(seconds),
+    );
+  }
+
+  factory BalanceRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BalanceRow(
+      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      day: serializer.fromJson<String>(json['day']),
+      contextId: serializer.fromJson<Uuid?>(json['context_id']),
+      type: $BalancesTable.$convertertype
+          .fromJson(serializer.fromJson<int>(json['type'])),
+      balances: serializer.fromJson<int>(json['balances']),
+      seconds: serializer.fromJson<int>(json['seconds']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'day': serializer.toJson<String>(day),
+      'context_id': serializer.toJson<Uuid?>(contextId),
+      'type':
+          serializer.toJson<int>($BalancesTable.$convertertype.toJson(type)),
+      'balances': serializer.toJson<int>(balances),
+      'seconds': serializer.toJson<int>(seconds),
+    };
+  }
+
+  BalanceRow copyWith(
+          {DateTime? modifiedAt,
+          String? day,
+          Value<Uuid?> contextId = const Value.absent(),
+          BalanceType? type,
+          int? balances,
+          int? seconds}) =>
+      BalanceRow(
+        modifiedAt: modifiedAt ?? this.modifiedAt,
+        day: day ?? this.day,
+        contextId: contextId.present ? contextId.value : this.contextId,
+        type: type ?? this.type,
+        balances: balances ?? this.balances,
+        seconds: seconds ?? this.seconds,
+      );
+  BalanceRow copyWithCompanion(BalancesCompanion data) {
+    return BalanceRow(
+      modifiedAt:
+          data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      day: data.day.present ? data.day.value : this.day,
+      contextId: data.contextId.present ? data.contextId.value : this.contextId,
+      type: data.type.present ? data.type.value : this.type,
+      balances: data.balances.present ? data.balances.value : this.balances,
+      seconds: data.seconds.present ? data.seconds.value : this.seconds,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BalanceRow(')
+          ..write('modifiedAt: $modifiedAt, ')
+          ..write('day: $day, ')
+          ..write('contextId: $contextId, ')
+          ..write('type: $type, ')
+          ..write('balances: $balances, ')
+          ..write('seconds: $seconds')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(modifiedAt, day, contextId, type, balances, seconds);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BalanceRow &&
+          other.modifiedAt == this.modifiedAt &&
+          other.day == this.day &&
+          other.contextId == this.contextId &&
+          other.type == this.type &&
+          other.balances == this.balances &&
+          other.seconds == this.seconds);
+}
+
+class BalancesCompanion extends UpdateCompanion<BalanceRow> {
+  final Value<DateTime> modifiedAt;
+  final Value<String> day;
+  final Value<Uuid?> contextId;
+  final Value<BalanceType> type;
+  final Value<int> balances;
+  final Value<int> seconds;
+  final Value<int> rowid;
+  const BalancesCompanion({
+    this.modifiedAt = const Value.absent(),
+    this.day = const Value.absent(),
+    this.contextId = const Value.absent(),
+    this.type = const Value.absent(),
+    this.balances = const Value.absent(),
+    this.seconds = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  BalancesCompanion.insert({
+    this.modifiedAt = const Value.absent(),
+    required String day,
+    this.contextId = const Value.absent(),
+    required BalanceType type,
+    this.balances = const Value.absent(),
+    this.seconds = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : day = Value(day),
+        type = Value(type);
+  static Insertable<BalanceRow> custom({
+    Expression<DateTime>? modifiedAt,
+    Expression<String>? day,
+    Expression<Uint8List>? contextId,
+    Expression<int>? type,
+    Expression<int>? balances,
+    Expression<int>? seconds,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (day != null) 'day': day,
+      if (contextId != null) 'context_id': contextId,
+      if (type != null) 'type': type,
+      if (balances != null) 'balances': balances,
+      if (seconds != null) 'seconds': seconds,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  BalancesCompanion copyWith(
+      {Value<DateTime>? modifiedAt,
+      Value<String>? day,
+      Value<Uuid?>? contextId,
+      Value<BalanceType>? type,
+      Value<int>? balances,
+      Value<int>? seconds,
+      Value<int>? rowid}) {
+    return BalancesCompanion(
+      modifiedAt: modifiedAt ?? this.modifiedAt,
+      day: day ?? this.day,
+      contextId: contextId ?? this.contextId,
+      type: type ?? this.type,
+      balances: balances ?? this.balances,
+      seconds: seconds ?? this.seconds,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (modifiedAt.present) {
+      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+    }
+    if (day.present) {
+      map['day'] = Variable<String>(day.value);
+    }
+    if (contextId.present) {
+      map['context_id'] = Variable<Uint8List>(
+          $BalancesTable.$convertercontextIdn.toSql(contextId.value));
+    }
+    if (type.present) {
+      map['type'] =
+          Variable<int>($BalancesTable.$convertertype.toSql(type.value));
+    }
+    if (balances.present) {
+      map['balances'] = Variable<int>(balances.value);
+    }
+    if (seconds.present) {
+      map['seconds'] = Variable<int>(seconds.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BalancesCompanion(')
+          ..write('modifiedAt: $modifiedAt, ')
+          ..write('day: $day, ')
+          ..write('contextId: $contextId, ')
+          ..write('type: $type, ')
+          ..write('balances: $balances, ')
+          ..write('seconds: $seconds, ')
+          ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
@@ -3072,6 +3235,7 @@ abstract class _$Store extends GeneratedDatabase {
   late final $EventsTable events = $EventsTable(this);
   late final $BudgetsTable budgets = $BudgetsTable(this);
   late final $SessionsTable sessions = $SessionsTable(this);
+  late final $BalancesTable balances = $BalancesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3084,7 +3248,8 @@ abstract class _$Store extends GeneratedDatabase {
         notes,
         events,
         budgets,
-        sessions
+        sessions,
+        balances
       ];
   @override
   DriftDatabaseOptions get options =>
@@ -3221,14 +3386,12 @@ typedef $$SyncStatesTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function()>;
 typedef $$AccountsTableCreateCompanionBuilder = AccountsCompanion Function({
   Value<int> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
   required String email,
   required AccountProvider provider,
 });
 typedef $$AccountsTableUpdateCompanionBuilder = AccountsCompanion Function({
   Value<int> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
   Value<String> email,
   Value<AccountProvider> provider,
@@ -3259,11 +3422,6 @@ class $$AccountsTableFilterComposer
   $$AccountsTableFilterComposer(super.$state);
   ColumnFilters<int> get id => $state.composableBuilder(
       column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
@@ -3306,11 +3464,6 @@ class $$AccountsTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
   ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
       column: $state.table.modifiedAt,
       builder: (column, joinBuilders) =>
@@ -3348,28 +3501,24 @@ class $$AccountsTableTableManager extends RootTableManager<
               $$AccountsTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<String> email = const Value.absent(),
             Value<AccountProvider> provider = const Value.absent(),
           }) =>
               AccountsCompanion(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
             email: email,
             provider: provider,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             required String email,
             required AccountProvider provider,
           }) =>
               AccountsCompanion.insert(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
             email: email,
             provider: provider,
@@ -3417,7 +3566,6 @@ typedef $$AccountsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool calendarsRefs})>;
 typedef $$CalendarsTableCreateCompanionBuilder = CalendarsCompanion Function({
   Value<int> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
   required String name,
   required bool enabled,
@@ -3425,7 +3573,6 @@ typedef $$CalendarsTableCreateCompanionBuilder = CalendarsCompanion Function({
 });
 typedef $$CalendarsTableUpdateCompanionBuilder = CalendarsCompanion Function({
   Value<int> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
   Value<String> name,
   Value<bool> enabled,
@@ -3455,11 +3602,6 @@ class $$CalendarsTableFilterComposer
   $$CalendarsTableFilterComposer(super.$state);
   ColumnFilters<int> get id => $state.composableBuilder(
       column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
@@ -3496,11 +3638,6 @@ class $$CalendarsTableOrderingComposer
   $$CalendarsTableOrderingComposer(super.$state);
   ColumnOrderings<int> get id => $state.composableBuilder(
       column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -3553,7 +3690,6 @@ class $$CalendarsTableTableManager extends RootTableManager<
               $$CalendarsTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<String> name = const Value.absent(),
             Value<bool> enabled = const Value.absent(),
@@ -3561,7 +3697,6 @@ class $$CalendarsTableTableManager extends RootTableManager<
           }) =>
               CalendarsCompanion(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
             name: name,
             enabled: enabled,
@@ -3569,7 +3704,6 @@ class $$CalendarsTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             required String name,
             required bool enabled,
@@ -3577,7 +3711,6 @@ class $$CalendarsTableTableManager extends RootTableManager<
           }) =>
               CalendarsCompanion.insert(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
             name: name,
             enabled: enabled,
@@ -3639,8 +3772,8 @@ typedef $$CalendarsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool accountId})>;
 typedef $$ContextsTableCreateCompanionBuilder = ContextsCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
+  Value<DateTime> createdAt,
   required String name,
   required Path path,
   Value<Order> order,
@@ -3649,8 +3782,8 @@ typedef $$ContextsTableCreateCompanionBuilder = ContextsCompanion Function({
 });
 typedef $$ContextsTableUpdateCompanionBuilder = ContextsCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
+  Value<DateTime> createdAt,
   Value<String> name,
   Value<Path> path,
   Value<Order> order,
@@ -3719,6 +3852,21 @@ final class $$ContextsTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$BalancesTable, List<BalanceRow>>
+      _balancesRefsTable(_$Store db) =>
+          MultiTypedResultKey.fromTable(db.balances,
+              aliasName:
+                  $_aliasNameGenerator(db.contexts.id, db.balances.contextId));
+
+  $$BalancesTableProcessedTableManager get balancesRefs {
+    final manager = $$BalancesTableTableManager($_db, $_db.balances)
+        .filter((f) => f.contextId.id($_item.id));
+
+    final cache = $_typedResult.readTableOrNull(_balancesRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$ContextsTableFilterComposer
@@ -3731,13 +3879,13 @@ class $$ContextsTableFilterComposer
               column,
               joinBuilders: joinBuilders));
 
-  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
+  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
+      column: $state.table.modifiedAt,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
+  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
+      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
@@ -3818,6 +3966,19 @@ class $$ContextsTableFilterComposer
                 $state.db, $state.db.sessions, joinBuilder, parentComposers)));
     return f(composer);
   }
+
+  ComposableFilter balancesRefs(
+      ComposableFilter Function($$BalancesTableFilterComposer f) f) {
+    final $$BalancesTableFilterComposer composer = $state.composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $state.db.balances,
+        getReferencedColumn: (t) => t.contextId,
+        builder: (joinBuilder, parentComposers) =>
+            $$BalancesTableFilterComposer(ComposerState(
+                $state.db, $state.db.balances, joinBuilder, parentComposers)));
+    return f(composer);
+  }
 }
 
 class $$ContextsTableOrderingComposer
@@ -3828,13 +3989,13 @@ class $$ContextsTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
+  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
+      column: $state.table.modifiedAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
+  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
+      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -3873,7 +4034,8 @@ class $$ContextsTableTableManager extends RootTableManager<
         {bool notesRefs,
         bool eventsRefs,
         bool budgetsRefs,
-        bool sessionsRefs})> {
+        bool sessionsRefs,
+        bool balancesRefs})> {
   $$ContextsTableTableManager(_$Store db, $ContextsTable table)
       : super(TableManagerState(
           db: db,
@@ -3884,8 +4046,8 @@ class $$ContextsTableTableManager extends RootTableManager<
               $$ContextsTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
             Value<String> name = const Value.absent(),
             Value<Path> path = const Value.absent(),
             Value<Order> order = const Value.absent(),
@@ -3894,8 +4056,8 @@ class $$ContextsTableTableManager extends RootTableManager<
           }) =>
               ContextsCompanion(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
+            createdAt: createdAt,
             name: name,
             path: path,
             order: order,
@@ -3904,8 +4066,8 @@ class $$ContextsTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
             required String name,
             required Path path,
             Value<Order> order = const Value.absent(),
@@ -3914,8 +4076,8 @@ class $$ContextsTableTableManager extends RootTableManager<
           }) =>
               ContextsCompanion.insert(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
+            createdAt: createdAt,
             name: name,
             path: path,
             order: order,
@@ -3930,14 +4092,16 @@ class $$ContextsTableTableManager extends RootTableManager<
               {notesRefs = false,
               eventsRefs = false,
               budgetsRefs = false,
-              sessionsRefs = false}) {
+              sessionsRefs = false,
+              balancesRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (notesRefs) db.notes,
                 if (eventsRefs) db.events,
                 if (budgetsRefs) db.budgets,
-                if (sessionsRefs) db.sessions
+                if (sessionsRefs) db.sessions,
+                if (balancesRefs) db.balances
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -3987,6 +4151,18 @@ class $$ContextsTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.contextId == item.id),
+                        typedResults: items),
+                  if (balancesRefs)
+                    await $_getPrefetchedData(
+                        currentTable: table,
+                        referencedTable:
+                            $$ContextsTableReferences._balancesRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$ContextsTableReferences(db, table, p0)
+                                .balancesRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.contextId == item.id),
                         typedResults: items)
                 ];
               },
@@ -4009,11 +4185,12 @@ typedef $$ContextsTableProcessedTableManager = ProcessedTableManager<
         {bool notesRefs,
         bool eventsRefs,
         bool budgetsRefs,
-        bool sessionsRefs})>;
+        bool sessionsRefs,
+        bool balancesRefs})>;
 typedef $$NotesTableCreateCompanionBuilder = NotesCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
+  Value<DateTime> createdAt,
   Value<Uuid> userId,
   required String body,
   Value<Order> order,
@@ -4025,8 +4202,8 @@ typedef $$NotesTableCreateCompanionBuilder = NotesCompanion Function({
 });
 typedef $$NotesTableUpdateCompanionBuilder = NotesCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
+  Value<DateTime> createdAt,
   Value<Uuid> userId,
   Value<String> body,
   Value<Order> order,
@@ -4064,13 +4241,13 @@ class $$NotesTableFilterComposer extends FilterComposer<_$Store, $NotesTable> {
               column,
               joinBuilders: joinBuilders));
 
-  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
+  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
+      column: $state.table.modifiedAt,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
+  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
+      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
@@ -4131,13 +4308,13 @@ class $$NotesTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
+  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
+      column: $state.table.modifiedAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
+  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
+      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -4205,8 +4382,8 @@ class $$NotesTableTableManager extends RootTableManager<
               $$NotesTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
             Value<Uuid> userId = const Value.absent(),
             Value<String> body = const Value.absent(),
             Value<Order> order = const Value.absent(),
@@ -4218,8 +4395,8 @@ class $$NotesTableTableManager extends RootTableManager<
           }) =>
               NotesCompanion(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
+            createdAt: createdAt,
             userId: userId,
             body: body,
             order: order,
@@ -4231,8 +4408,8 @@ class $$NotesTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
             Value<Uuid> userId = const Value.absent(),
             required String body,
             Value<Order> order = const Value.absent(),
@@ -4244,8 +4421,8 @@ class $$NotesTableTableManager extends RootTableManager<
           }) =>
               NotesCompanion.insert(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
+            createdAt: createdAt,
             userId: userId,
             body: body,
             order: order,
@@ -4308,7 +4485,6 @@ typedef $$NotesTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool contextId})>;
 typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
   Value<String?> name,
   required DateTime start,
@@ -4320,7 +4496,6 @@ typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
 });
 typedef $$EventsTableUpdateCompanionBuilder = EventsCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
   Value<String?> name,
   Value<DateTime> start,
@@ -4358,11 +4533,6 @@ class $$EventsTableFilterComposer
           builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
               column,
               joinBuilders: joinBuilders));
-
-  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
 
   ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
       column: $state.table.modifiedAt,
@@ -4414,11 +4584,6 @@ class $$EventsTableOrderingComposer
   $$EventsTableOrderingComposer(super.$state);
   ColumnOrderings<Uint8List> get id => $state.composableBuilder(
       column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -4486,7 +4651,6 @@ class $$EventsTableTableManager extends RootTableManager<
               $$EventsTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<String?> name = const Value.absent(),
             Value<DateTime> start = const Value.absent(),
@@ -4498,7 +4662,6 @@ class $$EventsTableTableManager extends RootTableManager<
           }) =>
               EventsCompanion(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
             name: name,
             start: start,
@@ -4510,7 +4673,6 @@ class $$EventsTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<String?> name = const Value.absent(),
             required DateTime start,
@@ -4522,7 +4684,6 @@ class $$EventsTableTableManager extends RootTableManager<
           }) =>
               EventsCompanion.insert(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
             name: name,
             start: start,
@@ -4586,13 +4747,11 @@ typedef $$EventsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool contextId})>;
 typedef $$BudgetsTableCreateCompanionBuilder = BudgetsCompanion Function({
   Value<int> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
   Value<Uuid?> contextId,
 });
 typedef $$BudgetsTableUpdateCompanionBuilder = BudgetsCompanion Function({
   Value<int> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
   Value<Uuid?> contextId,
 });
@@ -4623,11 +4782,6 @@ class $$BudgetsTableFilterComposer
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
   ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
       column: $state.table.modifiedAt,
       builder: (column, joinBuilders) =>
@@ -4651,11 +4805,6 @@ class $$BudgetsTableOrderingComposer
   $$BudgetsTableOrderingComposer(super.$state);
   ColumnOrderings<int> get id => $state.composableBuilder(
       column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -4698,25 +4847,21 @@ class $$BudgetsTableTableManager extends RootTableManager<
               $$BudgetsTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<Uuid?> contextId = const Value.absent(),
           }) =>
               BudgetsCompanion(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
             contextId: contextId,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<Uuid?> contextId = const Value.absent(),
           }) =>
               BudgetsCompanion.insert(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
             contextId: contextId,
           ),
@@ -4774,7 +4919,6 @@ typedef $$BudgetsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool contextId})>;
 typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
   Value<int> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
   Value<Uuid?> contextId,
   required DateTime start,
@@ -4785,7 +4929,6 @@ typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
 });
 typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
   Value<int> id,
-  Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
   Value<Uuid?> contextId,
   Value<DateTime> start,
@@ -4818,11 +4961,6 @@ class $$SessionsTableFilterComposer
   $$SessionsTableFilterComposer(super.$state);
   ColumnFilters<int> get id => $state.composableBuilder(
       column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
@@ -4878,11 +5016,6 @@ class $$SessionsTableOrderingComposer
   $$SessionsTableOrderingComposer(super.$state);
   ColumnOrderings<int> get id => $state.composableBuilder(
       column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -4950,7 +5083,6 @@ class $$SessionsTableTableManager extends RootTableManager<
               $$SessionsTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<Uuid?> contextId = const Value.absent(),
             Value<DateTime> start = const Value.absent(),
@@ -4961,7 +5093,6 @@ class $$SessionsTableTableManager extends RootTableManager<
           }) =>
               SessionsCompanion(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
             contextId: contextId,
             start: start,
@@ -4972,7 +5103,6 @@ class $$SessionsTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<Uuid?> contextId = const Value.absent(),
             required DateTime start,
@@ -4983,7 +5113,6 @@ class $$SessionsTableTableManager extends RootTableManager<
           }) =>
               SessionsCompanion.insert(
             id: id,
-            createdAt: createdAt,
             modifiedAt: modifiedAt,
             contextId: contextId,
             start: start,
@@ -5044,6 +5173,234 @@ typedef $$SessionsTableProcessedTableManager = ProcessedTableManager<
     (SessionRow, $$SessionsTableReferences),
     SessionRow,
     PrefetchHooks Function({bool contextId})>;
+typedef $$BalancesTableCreateCompanionBuilder = BalancesCompanion Function({
+  Value<DateTime> modifiedAt,
+  required String day,
+  Value<Uuid?> contextId,
+  required BalanceType type,
+  Value<int> balances,
+  Value<int> seconds,
+  Value<int> rowid,
+});
+typedef $$BalancesTableUpdateCompanionBuilder = BalancesCompanion Function({
+  Value<DateTime> modifiedAt,
+  Value<String> day,
+  Value<Uuid?> contextId,
+  Value<BalanceType> type,
+  Value<int> balances,
+  Value<int> seconds,
+  Value<int> rowid,
+});
+
+final class $$BalancesTableReferences
+    extends BaseReferences<_$Store, $BalancesTable, BalanceRow> {
+  $$BalancesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $ContextsTable _contextIdTable(_$Store db) => db.contexts
+      .createAlias($_aliasNameGenerator(db.balances.contextId, db.contexts.id));
+
+  $$ContextsTableProcessedTableManager? get contextId {
+    if ($_item.contextId == null) return null;
+    final manager = $$ContextsTableTableManager($_db, $_db.contexts)
+        .filter((f) => f.id($_item.contextId!));
+    final item = $_typedResult.readTableOrNull(_contextIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$BalancesTableFilterComposer
+    extends FilterComposer<_$Store, $BalancesTable> {
+  $$BalancesTableFilterComposer(super.$state);
+  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
+      column: $state.table.modifiedAt,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnFilters<String> get day => $state.composableBuilder(
+      column: $state.table.day,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnWithTypeConverterFilters<BalanceType, BalanceType, int> get type =>
+      $state.composableBuilder(
+          column: $state.table.type,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
+
+  ColumnFilters<int> get balances => $state.composableBuilder(
+      column: $state.table.balances,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnFilters<int> get seconds => $state.composableBuilder(
+      column: $state.table.seconds,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  $$ContextsTableFilterComposer get contextId {
+    final $$ContextsTableFilterComposer composer = $state.composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.contextId,
+        referencedTable: $state.db.contexts,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder, parentComposers) =>
+            $$ContextsTableFilterComposer(ComposerState(
+                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+    return composer;
+  }
+}
+
+class $$BalancesTableOrderingComposer
+    extends OrderingComposer<_$Store, $BalancesTable> {
+  $$BalancesTableOrderingComposer(super.$state);
+  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
+      column: $state.table.modifiedAt,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<String> get day => $state.composableBuilder(
+      column: $state.table.day,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<int> get type => $state.composableBuilder(
+      column: $state.table.type,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<int> get balances => $state.composableBuilder(
+      column: $state.table.balances,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<int> get seconds => $state.composableBuilder(
+      column: $state.table.seconds,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  $$ContextsTableOrderingComposer get contextId {
+    final $$ContextsTableOrderingComposer composer = $state.composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.contextId,
+        referencedTable: $state.db.contexts,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder, parentComposers) =>
+            $$ContextsTableOrderingComposer(ComposerState(
+                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+    return composer;
+  }
+}
+
+class $$BalancesTableTableManager extends RootTableManager<
+    _$Store,
+    $BalancesTable,
+    BalanceRow,
+    $$BalancesTableFilterComposer,
+    $$BalancesTableOrderingComposer,
+    $$BalancesTableCreateCompanionBuilder,
+    $$BalancesTableUpdateCompanionBuilder,
+    (BalanceRow, $$BalancesTableReferences),
+    BalanceRow,
+    PrefetchHooks Function({bool contextId})> {
+  $$BalancesTableTableManager(_$Store db, $BalancesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          filteringComposer:
+              $$BalancesTableFilterComposer(ComposerState(db, table)),
+          orderingComposer:
+              $$BalancesTableOrderingComposer(ComposerState(db, table)),
+          updateCompanionCallback: ({
+            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<String> day = const Value.absent(),
+            Value<Uuid?> contextId = const Value.absent(),
+            Value<BalanceType> type = const Value.absent(),
+            Value<int> balances = const Value.absent(),
+            Value<int> seconds = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BalancesCompanion(
+            modifiedAt: modifiedAt,
+            day: day,
+            contextId: contextId,
+            type: type,
+            balances: balances,
+            seconds: seconds,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            Value<DateTime> modifiedAt = const Value.absent(),
+            required String day,
+            Value<Uuid?> contextId = const Value.absent(),
+            required BalanceType type,
+            Value<int> balances = const Value.absent(),
+            Value<int> seconds = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BalancesCompanion.insert(
+            modifiedAt: modifiedAt,
+            day: day,
+            contextId: contextId,
+            type: type,
+            balances: balances,
+            seconds: seconds,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) =>
+                  (e.readTable(table), $$BalancesTableReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: ({contextId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (contextId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.contextId,
+                    referencedTable:
+                        $$BalancesTableReferences._contextIdTable(db),
+                    referencedColumn:
+                        $$BalancesTableReferences._contextIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$BalancesTableProcessedTableManager = ProcessedTableManager<
+    _$Store,
+    $BalancesTable,
+    BalanceRow,
+    $$BalancesTableFilterComposer,
+    $$BalancesTableOrderingComposer,
+    $$BalancesTableCreateCompanionBuilder,
+    $$BalancesTableUpdateCompanionBuilder,
+    (BalanceRow, $$BalancesTableReferences),
+    BalanceRow,
+    PrefetchHooks Function({bool contextId})>;
 
 class $StoreManager {
   final _$Store _db;
@@ -5064,4 +5421,6 @@ class $StoreManager {
       $$BudgetsTableTableManager(_db, _db.budgets);
   $$SessionsTableTableManager get sessions =>
       $$SessionsTableTableManager(_db, _db.sessions);
+  $$BalancesTableTableManager get balances =>
+      $$BalancesTableTableManager(_db, _db.balances);
 }

@@ -2,6 +2,8 @@ part of 'store.dart';
 
 @DataClassName('NoteRow')
 class Notes extends UuidStoreTable {
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
   BlobColumn get userId => blob()
       .clientDefault(() => Uuid.generate().toBytes())
       .map(const UuidConverter())();

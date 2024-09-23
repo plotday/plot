@@ -54,13 +54,12 @@ class Session extends SessionRow {
   Session.fromStore(SessionRow row, {this.context})
       : super(
           id: row.id,
-          createdAt: row.createdAt,
           modifiedAt: row.modifiedAt,
           contextId: row.contextId,
           start: row.start,
           end: row.end,
-          paused: row.paused,
-          planned: row.planned,
+          pomodoro: row.pomodoro,
+          pomodoroRemaining: row.pomodoroRemaining,
           priority: row.priority,
         );
 

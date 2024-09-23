@@ -24,11 +24,11 @@ part 'note.dart';
 part 'event.dart';
 part 'budget.dart';
 part 'session.dart';
+part 'balance.dart';
 
 part 'store.g.dart';
 
 class StoreTable extends Table {
-  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get modifiedAt => dateTime().withDefault(currentDateAndTime)();
 }
 
@@ -49,7 +49,6 @@ class UuidStoreTable extends StoreTable {
 }
 
 abstract class StoreDataClass extends DataClass {
-  DateTime get createdAt;
   DateTime get modifiedAt;
 }
 
@@ -108,7 +107,8 @@ abstract class BaseTable {
   Notes,
   Events,
   Budgets,
-  Sessions
+  Sessions,
+  Balances,
 ])
 class Store extends _$Store {
   static final Store _store = Store._();

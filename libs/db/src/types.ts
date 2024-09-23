@@ -996,12 +996,12 @@ export type Database = {
       expenditure: {
         Row: {
           context_id: string | null
-          count: number | null
           day: string | null
-          declined_count: number | null
+          declined_events: number | null
           declined_minutes: number | null
+          events: number | null
           minutes: number | null
-          tentative_count: number | null
+          tentative_events: number | null
           tentative_minutes: number | null
           user_id: string | null
         }
@@ -1010,11 +1010,11 @@ export type Database = {
       expenditure_weekly: {
         Row: {
           context_id: string | null
-          count: number | null
-          declined_count: number | null
+          declined_events: number | null
           declined_minutes: number | null
+          events: number | null
           minutes: number | null
-          tentative_count: number | null
+          tentative_events: number | null
           tentative_minutes: number | null
           user_id: string | null
           week: unknown | null

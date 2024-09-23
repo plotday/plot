@@ -68,8 +68,7 @@ class Event extends EventRow {
   Event.fromStore(EventRow row, {this.context})
       : super(
           id: row.id,
-          modifiedAt: row.createdAt,
-          createdAt: row.createdAt,
+          modifiedAt: row.modifiedAt,
           name: row.name,
           start: row.start,
           end: row.end,

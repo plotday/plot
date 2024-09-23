@@ -24,7 +24,6 @@ class Budget extends BudgetRow {
   Budget.fromStore(BudgetRow row)
       : super(
           id: row.id,
-          createdAt: row.createdAt,
           modifiedAt: row.modifiedAt,
           contextId: row.contextId,
         );
