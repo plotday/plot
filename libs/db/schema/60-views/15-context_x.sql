@@ -26,7 +26,7 @@ DECLARE
 BEGIN
     context_id := NEW.id;
     IF context_id IS NULL THEN
-        context_id := uuid_generate_v4 ();
+        context_id := gen_random_uuid_v7 ();
     END IF;
     INSERT INTO context (id, name, path, created_by)
         VALUES (context_id, NEW.name, NEW.path, auth.uid ());
