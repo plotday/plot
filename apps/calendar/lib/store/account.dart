@@ -37,25 +37,29 @@ class Account extends AccountRow {
   static Future<void> push() => Store.get.push(table, AccountsBase());
   static Future<void> pull() => Store.get.pull(table, AccountsBase());
 
-  static Stream<List<Account>> watch() => Store.get
-      .select(table)
-      .watch()
-      .map((rows) => rows.map((row) => Account.fromStore(row)).toList());
-  static Stream<List<Account>> watchWithCalendars() => Rx.combineLatest2(
-      Account.watch(),
-      Calendar.watch(),
-      (List<Account> accounts, List<Calendar> calendars) =>
-          accounts.map((account) {
-            final accountCalendars = calendars
-                .where((calendar) => calendar.accountId == account.id)
-                .toList();
-            return Account.fromStore(account, calendars: accountCalendars);
-          }).toList());
+  static Stream<List<Account>> watch({bool withCalendars = false}) {
+    final accountStream = Store.get
+        .select(table)
+        .watch()
+        .map((rows) => rows.map((row) => Account.fromStore(row)).toList());
+    if (withCalendars) {
+      return Rx.combineLatest2(
+          accountStream,
+          Calendar.watch(),
+          (List<Account> accounts, List<Calendar> calendars) =>
+              accounts.map((account) {
+                final accountCalendars = calendars
+                    .where((calendar) => calendar.accountId == account.id)
+                    .toList();
+                return Account.fromStore(account, calendars: accountCalendars);
+              }).toList());
+    }
+    return accountStream;
+  }
 
   Account.fromStore(AccountRow row, {this.calendars})
       : super(
           id: row.id,
-          createdAt: row.createdAt,
           modifiedAt: row.modifiedAt,
           email: row.email,
           provider: row.provider,

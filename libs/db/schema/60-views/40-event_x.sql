@@ -44,7 +44,7 @@ WITH event_x1 AS (
         e.conferencing_url AS conferencing_url,
         e.organizer_email AS organizer_email,
         e.response AS response,
-        calc_minutes (e.at) AS minutes,
+        calc_seconds (e.at) AS seconds,
         CASE WHEN EXTRACT(epoch FROM (upper(e.at) - lower(e.at))) >= 60 * 60 * 23 THEN
             timezone(user_timezone (), timezone('UTC', lower(e.at)))::date
         ELSE

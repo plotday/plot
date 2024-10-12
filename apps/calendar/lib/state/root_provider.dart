@@ -59,6 +59,8 @@ class RootProviderState extends State<RootProvider> {
       future: _dataLoading,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
+          print(snapshot.error);
+          print(snapshot.stackTrace);
           return const Center(child: Text("Error loading data"));
         }
         if (!snapshot.hasData) {

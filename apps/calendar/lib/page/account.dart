@@ -24,28 +24,29 @@ class AccountPage extends StatelessWidget {
               const SizedBox(height: 8),
               ...state.accounts.expand(
                 (account) => [
-                  Text(account.account.email),
-                  ...account.calendars.map(
-                    (calendar) => Column(
-                      children: [
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Text(calendar.name),
-                            const SizedBox(width: 8),
-                            Button(
-                              child: calendar.enabled
-                                  ? const Text('Re-sync')
-                                  : const Text('Sync'),
-                              onTap: () {
-                                calendar.sync();
-                              },
-                            ),
-                          ],
-                        )
-                      ],
+                  Text(account.email),
+                  if (account.calendars != null)
+                    ...account.calendars!.map(
+                      (calendar) => Column(
+                        children: [
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Text(calendar.name),
+                              const SizedBox(width: 8),
+                              Button(
+                                child: calendar.enabled
+                                    ? const Text('Re-sync')
+                                    : const Text('Sync'),
+                                onTap: () {
+                                  calendar.sync();
+                                },
+                              ),
+                            ],
+                          )
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -57,8 +58,7 @@ class AccountPage extends StatelessWidget {
                     print("Missing auth code");
                     return;
                   }
-                  await Accounts.add(
-                      AccountProvider.google, providerAuth.code!);
+                  await Account.add(AccountProvider.google, providerAuth.code!);
                 },
                 scopes: const [
                   'openid',

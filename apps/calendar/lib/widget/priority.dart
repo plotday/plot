@@ -7,9 +7,9 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/router.dart';
 
 class PriorityWidget extends StatelessWidget {
-  const PriorityWidget({required this.context, this.budget, super.key});
+  const PriorityWidget({required this.context, this.balance, super.key});
   final Context context;
-  final Budget? budget;
+  final Balance? balance;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +27,7 @@ class PriorityWidget extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(this.context.name),
-          if (budget != null)
+          if (balance != null)
             Row(
               children: [
                 Row(
@@ -37,20 +37,20 @@ class PriorityWidget extends StatelessWidget {
                       padding: EdgeInsets.only(bottom: 2.0),
                       child: Icon(material.Icons.hourglass_bottom, size: 14),
                     ),
-                    DurationText(duration: budget!.scheduled),
+                    DurationText(duration: balance!.time),
                   ],
                 ),
                 const SizedBox(width: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 2.0),
-                      child: Icon(material.Icons.hourglass_top, size: 14),
-                    ),
-                    DurationText(duration: budget!.budget)
-                  ],
-                )
+                // Row(
+                //   crossAxisAlignment: CrossAxisAlignment.center,
+                //   children: [
+                //     const Padding(
+                //       padding: EdgeInsets.only(bottom: 2.0),
+                //       child: Icon(material.Icons.hourglass_top, size: 14),
+                //     ),
+                //     DurationText(duration: balance!.budget)
+                //   ],
+                // )
                 // material.MenuAnchor(
                 //   builder: (BuildContext context,
                 //           material.MenuController controller, Widget? child) =>

@@ -23,7 +23,7 @@ SELECT
     user_id,
     day,
     at * tstzrange((day + work_day_start ()) AT TIME ZONE user_timezone (), (day + work_day_end ()) AT TIME ZONE user_timezone (), '[]') AS at,
-    extract_minutes (at * tstzrange((day + work_day_start ()) AT TIME ZONE user_timezone (), (day + work_day_end ()) AT TIME ZONE user_timezone (), '[]')) AS minutes
+    calc_seconds (at * tstzrange((day + work_day_start ()) AT TIME ZONE user_timezone (), (day + work_day_end ()) AT TIME ZONE user_timezone (), '[]')) AS seconds
 FROM (
     SELECT
         user_id,
@@ -68,8 +68,8 @@ AS
 SELECT
     user_id,
     date_trunc('month', "day")::date AS "month",
-    SUM(minutes) AS total,
-    SUM(minutes) FILTER (WHERE minutes >= 60) AS focus
+    SUM(seconds) AS total,
+    SUM(seconds) FILTER (WHERE seconds >= 60) AS focus
 FROM
     gap
 GROUP BY
@@ -82,8 +82,8 @@ AS
 SELECT
     user_id,
     day,
-    SUM(minutes) AS total,
-    SUM(minutes) FILTER (WHERE minutes >= 60) AS focus
+    SUM(seconds) AS total,
+    SUM(seconds) FILTER (WHERE seconds >= 60) AS focus
 FROM
     gap
 GROUP BY

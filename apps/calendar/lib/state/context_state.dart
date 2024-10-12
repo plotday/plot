@@ -1,22 +1,15 @@
 part of 'context.dart';
 
 final class ContextState extends Equatable {
-  static List<Context> _filterChildren(List<Context> all, Context? current) {
-    final children = all.where((context) => context.parent == current).toList();
-    children.sort();
-    return children;
-  }
-
   static List<Note> _filterPinnedNotes(List<Note> notes, bool pinned) {
     return notes.where((note) => note.order.pinned == pinned).toList();
   }
 
   ContextState({
-    required List<Context> contexts,
     required this.week,
     this.current,
-  })  : all = contexts,
-        children = _filterChildren(contexts, current),
+    List<Context>? children,
+  })  : children = current?.children ?? children ?? const [],
         notes = const [],
         moreNotes = true,
         pinnedNotes = const [],
@@ -24,28 +17,24 @@ final class ContextState extends Equatable {
         topicNotes = const [],
         pinnedTopicNotes = const [],
         moreTopicNotes = false,
-        _budgets = null;
+        balances = null;
 
   ContextState._({
-    required List<Context> contexts,
     required this.week,
     this.current,
+    List<Context>? children,
     List<Note> notes = const [],
     this.moreNotes = true,
     this.topicId,
     List<Note> topicNotes = const [],
     this.moreTopicNotes = true,
-    List<Budget>? budgets,
-  })  : all = contexts,
-        children = _filterChildren(contexts, current),
+    this.balances,
+  })  : children = current?.children ?? children ?? const [],
         notes = _filterPinnedNotes(notes, false),
         pinnedNotes = _filterPinnedNotes(notes, true),
         topicNotes = _filterPinnedNotes(notes, false),
-        pinnedTopicNotes = _filterPinnedNotes(notes, true),
-        _budgets = Map.fromEntries((budgets ?? const [])
-            .map((budget) => MapEntry(budget.contextId, budget)));
+        pinnedTopicNotes = _filterPinnedNotes(notes, true);
 
-  final List<Context> all;
   final Context? current;
   final List<Context> children;
 
@@ -60,15 +49,13 @@ final class ContextState extends Equatable {
   Note get topicNote => topicNotes.first;
 
   final Week week;
-  final Map<ContextId?, Budget>? _budgets;
-  List<Budget>? get budgets => _budgets?.values.toList();
-  Budget? budgetFor(Context context) => _budgets?[context.id];
+  final Map<ContextId?, Balance>? balances;
 
   ContextState copyWith({
-    List<Context>? contexts,
-    Optional<List<Budget>> budgets = const Optional.absent(),
     Optional<Context> current = const Optional.absent(),
+    List<Context>? children,
     Week? week,
+    Optional<Map<Uuid?, Balance>> balances = const Optional.absent(),
     List<Note>? notes,
     bool? moreNotes,
     Optional<TopicId> topicId = const Optional.absent(),
@@ -89,9 +76,9 @@ final class ContextState extends Equatable {
     }
 
     return ContextState._(
-      contexts: contexts ?? all,
-      budgets: budgets.or(this.budgets),
+      balances: balances.or(this.balances),
       current: current.or(this.current),
+      children: current.or(this.current)?.children ?? children ?? const [],
       week: week ?? this.week,
       notes: notes,
       moreNotes: moreNotes ?? this.moreNotes,
@@ -103,11 +90,10 @@ final class ContextState extends Equatable {
 
   @override
   List<Object?> get props => [
-        all,
         current,
         children,
         week,
-        _budgets,
+        balances,
         notes,
         moreNotes,
         pinnedNotes,

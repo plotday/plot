@@ -2428,9 +2428,12 @@ class $SessionsTable extends Sessions
   $SessionsTable(this.attachedDatabase, [this._alias]);
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      type: DriftSqlType.int, requiredDuringInsert: false);
+  late final GeneratedColumnWithTypeConverter<Uuid, Uint8List> id =
+      GeneratedColumn<Uint8List>('id', aliasedName, false,
+              type: DriftSqlType.blob,
+              requiredDuringInsert: false,
+              clientDefault: () => Uuid.generate().toBytes())
+          .withConverter<Uuid>($SessionsTable.$converterid);
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
@@ -2474,26 +2477,15 @@ class $SessionsTable extends Sessions
       GeneratedColumn<int>('pomodoro', aliasedName, true,
               type: DriftSqlType.int, requiredDuringInsert: false)
           .withConverter<Duration?>($SessionsTable.$converterpomodoron);
-  static const VerificationMeta _pomodoroRemainingMeta =
-      const VerificationMeta('pomodoroRemaining');
+  static const VerificationMeta _pomodoroAtMeta =
+      const VerificationMeta('pomodoroAt');
   @override
-  late final GeneratedColumnWithTypeConverter<Duration?, int>
-      pomodoroRemaining = GeneratedColumn<int>(
-              'pomodoro_remaining', aliasedName, true,
-              type: DriftSqlType.int, requiredDuringInsert: false)
-          .withConverter<Duration?>(
-              $SessionsTable.$converterpomodoroRemainingn);
+  late final GeneratedColumn<DateTime> pomodoroAt = GeneratedColumn<DateTime>(
+      'pomodoro_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
   @override
-  List<GeneratedColumn> get $columns => [
-        id,
-        modifiedAt,
-        contextId,
-        start,
-        end,
-        priority,
-        pomodoro,
-        pomodoroRemaining
-      ];
+  List<GeneratedColumn> get $columns =>
+      [id, modifiedAt, contextId, start, end, priority, pomodoro, pomodoroAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2504,9 +2496,7 @@ class $SessionsTable extends Sessions
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
+    context.handle(_idMeta, const VerificationResult.success());
     if (data.containsKey('modified_at')) {
       context.handle(
           _modifiedAtMeta,
@@ -2531,7 +2521,12 @@ class $SessionsTable extends Sessions
           priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta));
     }
     context.handle(_pomodoroMeta, const VerificationResult.success());
-    context.handle(_pomodoroRemainingMeta, const VerificationResult.success());
+    if (data.containsKey('pomodoro_at')) {
+      context.handle(
+          _pomodoroAtMeta,
+          pomodoroAt.isAcceptableOrUnknown(
+              data['pomodoro_at']!, _pomodoroAtMeta));
+    }
     return context;
   }
 
@@ -2541,8 +2536,8 @@ class $SessionsTable extends Sessions
   SessionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SessionRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      id: $SessionsTable.$converterid.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
       contextId: $SessionsTable.$convertercontextIdn.fromSql(attachedDatabase
@@ -2557,9 +2552,8 @@ class $SessionsTable extends Sessions
       pomodoro: $SessionsTable.$converterpomodoron.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}pomodoro'])),
-      pomodoroRemaining: $SessionsTable.$converterpomodoroRemainingn.fromSql(
-          attachedDatabase.typeMapping.read(
-              DriftSqlType.int, data['${effectivePrefix}pomodoro_remaining'])),
+      pomodoroAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}pomodoro_at']),
     );
   }
 
@@ -2568,6 +2562,7 @@ class $SessionsTable extends Sessions
     return $SessionsTable(attachedDatabase, alias);
   }
 
+  static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
   static TypeConverter<Uuid, Uint8List> $convertercontextId =
       const UuidConverter();
   static TypeConverter<Uuid?, Uint8List?> $convertercontextIdn =
@@ -2576,21 +2571,17 @@ class $SessionsTable extends Sessions
       const DurationConverter();
   static TypeConverter<Duration?, int?> $converterpomodoron =
       NullAwareTypeConverter.wrap($converterpomodoro);
-  static TypeConverter<Duration, int> $converterpomodoroRemaining =
-      const DurationConverter();
-  static TypeConverter<Duration?, int?> $converterpomodoroRemainingn =
-      NullAwareTypeConverter.wrap($converterpomodoroRemaining);
 }
 
 class SessionRow extends DataClass implements Insertable<SessionRow> {
-  final int id;
+  final Uuid id;
   final DateTime modifiedAt;
   final Uuid? contextId;
   final DateTime start;
   final DateTime end;
   final int priority;
   final Duration? pomodoro;
-  final Duration? pomodoroRemaining;
+  final DateTime? pomodoroAt;
   const SessionRow(
       {required this.id,
       required this.modifiedAt,
@@ -2599,11 +2590,13 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       required this.end,
       required this.priority,
       this.pomodoro,
-      this.pomodoroRemaining});
+      this.pomodoroAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
+    {
+      map['id'] = Variable<Uint8List>($SessionsTable.$converterid.toSql(id));
+    }
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     if (!nullToAbsent || contextId != null) {
       map['context_id'] = Variable<Uint8List>(
@@ -2616,9 +2609,8 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       map['pomodoro'] =
           Variable<int>($SessionsTable.$converterpomodoron.toSql(pomodoro));
     }
-    if (!nullToAbsent || pomodoroRemaining != null) {
-      map['pomodoro_remaining'] = Variable<int>(
-          $SessionsTable.$converterpomodoroRemainingn.toSql(pomodoroRemaining));
+    if (!nullToAbsent || pomodoroAt != null) {
+      map['pomodoro_at'] = Variable<DateTime>(pomodoroAt);
     }
     return map;
   }
@@ -2636,9 +2628,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       pomodoro: pomodoro == null && nullToAbsent
           ? const Value.absent()
           : Value(pomodoro),
-      pomodoroRemaining: pomodoroRemaining == null && nullToAbsent
+      pomodoroAt: pomodoroAt == null && nullToAbsent
           ? const Value.absent()
-          : Value(pomodoroRemaining),
+          : Value(pomodoroAt),
     );
   }
 
@@ -2646,41 +2638,40 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return SessionRow(
-      id: serializer.fromJson<int>(json['id']),
+      id: serializer.fromJson<Uuid>(json['id']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       contextId: serializer.fromJson<Uuid?>(json['context_id']),
       start: serializer.fromJson<DateTime>(json['start']),
       end: serializer.fromJson<DateTime>(json['end']),
       priority: serializer.fromJson<int>(json['priority']),
       pomodoro: serializer.fromJson<Duration?>(json['pomodoro']),
-      pomodoroRemaining:
-          serializer.fromJson<Duration?>(json['pomodoro_remaining']),
+      pomodoroAt: serializer.fromJson<DateTime?>(json['pomodoro_at']),
     );
   }
   @override
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
+      'id': serializer.toJson<Uuid>(id),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'context_id': serializer.toJson<Uuid?>(contextId),
       'start': serializer.toJson<DateTime>(start),
       'end': serializer.toJson<DateTime>(end),
       'priority': serializer.toJson<int>(priority),
       'pomodoro': serializer.toJson<Duration?>(pomodoro),
-      'pomodoro_remaining': serializer.toJson<Duration?>(pomodoroRemaining),
+      'pomodoro_at': serializer.toJson<DateTime?>(pomodoroAt),
     };
   }
 
   SessionRow copyWith(
-          {int? id,
+          {Uuid? id,
           DateTime? modifiedAt,
           Value<Uuid?> contextId = const Value.absent(),
           DateTime? start,
           DateTime? end,
           int? priority,
           Value<Duration?> pomodoro = const Value.absent(),
-          Value<Duration?> pomodoroRemaining = const Value.absent()}) =>
+          Value<DateTime?> pomodoroAt = const Value.absent()}) =>
       SessionRow(
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
@@ -2689,9 +2680,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
         end: end ?? this.end,
         priority: priority ?? this.priority,
         pomodoro: pomodoro.present ? pomodoro.value : this.pomodoro,
-        pomodoroRemaining: pomodoroRemaining.present
-            ? pomodoroRemaining.value
-            : this.pomodoroRemaining,
+        pomodoroAt: pomodoroAt.present ? pomodoroAt.value : this.pomodoroAt,
       );
   SessionRow copyWithCompanion(SessionsCompanion data) {
     return SessionRow(
@@ -2703,9 +2692,8 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       end: data.end.present ? data.end.value : this.end,
       priority: data.priority.present ? data.priority.value : this.priority,
       pomodoro: data.pomodoro.present ? data.pomodoro.value : this.pomodoro,
-      pomodoroRemaining: data.pomodoroRemaining.present
-          ? data.pomodoroRemaining.value
-          : this.pomodoroRemaining,
+      pomodoroAt:
+          data.pomodoroAt.present ? data.pomodoroAt.value : this.pomodoroAt,
     );
   }
 
@@ -2719,14 +2707,14 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           ..write('end: $end, ')
           ..write('priority: $priority, ')
           ..write('pomodoro: $pomodoro, ')
-          ..write('pomodoroRemaining: $pomodoroRemaining')
+          ..write('pomodoroAt: $pomodoroAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, modifiedAt, contextId, start, end,
-      priority, pomodoro, pomodoroRemaining);
+  int get hashCode => Object.hash(
+      id, modifiedAt, contextId, start, end, priority, pomodoro, pomodoroAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2738,18 +2726,19 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           other.end == this.end &&
           other.priority == this.priority &&
           other.pomodoro == this.pomodoro &&
-          other.pomodoroRemaining == this.pomodoroRemaining);
+          other.pomodoroAt == this.pomodoroAt);
 }
 
 class SessionsCompanion extends UpdateCompanion<SessionRow> {
-  final Value<int> id;
+  final Value<Uuid> id;
   final Value<DateTime> modifiedAt;
   final Value<Uuid?> contextId;
   final Value<DateTime> start;
   final Value<DateTime> end;
   final Value<int> priority;
   final Value<Duration?> pomodoro;
-  final Value<Duration?> pomodoroRemaining;
+  final Value<DateTime?> pomodoroAt;
+  final Value<int> rowid;
   const SessionsCompanion({
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
@@ -2758,7 +2747,8 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     this.end = const Value.absent(),
     this.priority = const Value.absent(),
     this.pomodoro = const Value.absent(),
-    this.pomodoroRemaining = const Value.absent(),
+    this.pomodoroAt = const Value.absent(),
+    this.rowid = const Value.absent(),
   });
   SessionsCompanion.insert({
     this.id = const Value.absent(),
@@ -2768,18 +2758,20 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     required DateTime end,
     this.priority = const Value.absent(),
     this.pomodoro = const Value.absent(),
-    this.pomodoroRemaining = const Value.absent(),
+    this.pomodoroAt = const Value.absent(),
+    this.rowid = const Value.absent(),
   })  : start = Value(start),
         end = Value(end);
   static Insertable<SessionRow> custom({
-    Expression<int>? id,
+    Expression<Uint8List>? id,
     Expression<DateTime>? modifiedAt,
     Expression<Uint8List>? contextId,
     Expression<DateTime>? start,
     Expression<DateTime>? end,
     Expression<int>? priority,
     Expression<int>? pomodoro,
-    Expression<int>? pomodoroRemaining,
+    Expression<DateTime>? pomodoroAt,
+    Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -2789,19 +2781,21 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       if (end != null) 'end': end,
       if (priority != null) 'priority': priority,
       if (pomodoro != null) 'pomodoro': pomodoro,
-      if (pomodoroRemaining != null) 'pomodoro_remaining': pomodoroRemaining,
+      if (pomodoroAt != null) 'pomodoro_at': pomodoroAt,
+      if (rowid != null) 'rowid': rowid,
     });
   }
 
   SessionsCompanion copyWith(
-      {Value<int>? id,
+      {Value<Uuid>? id,
       Value<DateTime>? modifiedAt,
       Value<Uuid?>? contextId,
       Value<DateTime>? start,
       Value<DateTime>? end,
       Value<int>? priority,
       Value<Duration?>? pomodoro,
-      Value<Duration?>? pomodoroRemaining}) {
+      Value<DateTime?>? pomodoroAt,
+      Value<int>? rowid}) {
     return SessionsCompanion(
       id: id ?? this.id,
       modifiedAt: modifiedAt ?? this.modifiedAt,
@@ -2810,7 +2804,8 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       end: end ?? this.end,
       priority: priority ?? this.priority,
       pomodoro: pomodoro ?? this.pomodoro,
-      pomodoroRemaining: pomodoroRemaining ?? this.pomodoroRemaining,
+      pomodoroAt: pomodoroAt ?? this.pomodoroAt,
+      rowid: rowid ?? this.rowid,
     );
   }
 
@@ -2818,7 +2813,8 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (id.present) {
-      map['id'] = Variable<int>(id.value);
+      map['id'] =
+          Variable<Uint8List>($SessionsTable.$converterid.toSql(id.value));
     }
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
@@ -2840,10 +2836,11 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       map['pomodoro'] = Variable<int>(
           $SessionsTable.$converterpomodoron.toSql(pomodoro.value));
     }
-    if (pomodoroRemaining.present) {
-      map['pomodoro_remaining'] = Variable<int>($SessionsTable
-          .$converterpomodoroRemainingn
-          .toSql(pomodoroRemaining.value));
+    if (pomodoroAt.present) {
+      map['pomodoro_at'] = Variable<DateTime>(pomodoroAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
     }
     return map;
   }
@@ -2858,7 +2855,8 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
           ..write('end: $end, ')
           ..write('priority: $priority, ')
           ..write('pomodoro: $pomodoro, ')
-          ..write('pomodoroRemaining: $pomodoroRemaining')
+          ..write('pomodoroAt: $pomodoroAt, ')
+          ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
@@ -2899,25 +2897,24 @@ class $BalancesTable extends Balances
       GeneratedColumn<int>('type', aliasedName, false,
               type: DriftSqlType.int, requiredDuringInsert: true)
           .withConverter<BalanceType>($BalancesTable.$convertertype);
-  static const VerificationMeta _balancesMeta =
-      const VerificationMeta('balances');
+  static const VerificationMeta _countMeta = const VerificationMeta('count');
   @override
-  late final GeneratedColumn<int> balances = GeneratedColumn<int>(
-      'balances', aliasedName, false,
+  late final GeneratedColumn<int> count = GeneratedColumn<int>(
+      'count', aliasedName, false,
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
-  static const VerificationMeta _secondsMeta =
-      const VerificationMeta('seconds');
+  static const VerificationMeta _timeMeta = const VerificationMeta('time');
   @override
-  late final GeneratedColumn<int> seconds = GeneratedColumn<int>(
-      'seconds', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultValue: const Constant(0));
+  late final GeneratedColumnWithTypeConverter<Duration, int> time =
+      GeneratedColumn<int>('time', aliasedName, false,
+              type: DriftSqlType.int,
+              requiredDuringInsert: false,
+              defaultValue: const Constant(0))
+          .withConverter<Duration>($BalancesTable.$convertertime);
   @override
   List<GeneratedColumn> get $columns =>
-      [modifiedAt, day, contextId, type, balances, seconds];
+      [modifiedAt, day, contextId, type, count, time];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2942,14 +2939,11 @@ class $BalancesTable extends Balances
     }
     context.handle(_contextIdMeta, const VerificationResult.success());
     context.handle(_typeMeta, const VerificationResult.success());
-    if (data.containsKey('balances')) {
-      context.handle(_balancesMeta,
-          balances.isAcceptableOrUnknown(data['balances']!, _balancesMeta));
+    if (data.containsKey('count')) {
+      context.handle(
+          _countMeta, count.isAcceptableOrUnknown(data['count']!, _countMeta));
     }
-    if (data.containsKey('seconds')) {
-      context.handle(_secondsMeta,
-          seconds.isAcceptableOrUnknown(data['seconds']!, _secondsMeta));
-    }
+    context.handle(_timeMeta, const VerificationResult.success());
     return context;
   }
 
@@ -2968,10 +2962,10 @@ class $BalancesTable extends Balances
           .read(DriftSqlType.blob, data['${effectivePrefix}context_id'])),
       type: $BalancesTable.$convertertype.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}type'])!),
-      balances: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}balances'])!,
-      seconds: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}seconds'])!,
+      count: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}count'])!,
+      time: $BalancesTable.$convertertime.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}time'])!),
     );
   }
 
@@ -2986,6 +2980,8 @@ class $BalancesTable extends Balances
       NullAwareTypeConverter.wrap($convertercontextId);
   static JsonTypeConverter2<BalanceType, int, int> $convertertype =
       const EnumIndexConverter<BalanceType>(BalanceType.values);
+  static TypeConverter<Duration, int> $convertertime =
+      const DurationConverter();
 }
 
 class BalanceRow extends DataClass implements Insertable<BalanceRow> {
@@ -2993,15 +2989,15 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
   final String day;
   final Uuid? contextId;
   final BalanceType type;
-  final int balances;
-  final int seconds;
+  final int count;
+  final Duration time;
   const BalanceRow(
       {required this.modifiedAt,
       required this.day,
       this.contextId,
       required this.type,
-      required this.balances,
-      required this.seconds});
+      required this.count,
+      required this.time});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -3014,8 +3010,10 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
     {
       map['type'] = Variable<int>($BalancesTable.$convertertype.toSql(type));
     }
-    map['balances'] = Variable<int>(balances);
-    map['seconds'] = Variable<int>(seconds);
+    map['count'] = Variable<int>(count);
+    {
+      map['time'] = Variable<int>($BalancesTable.$convertertime.toSql(time));
+    }
     return map;
   }
 
@@ -3027,8 +3025,8 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
           ? const Value.absent()
           : Value(contextId),
       type: Value(type),
-      balances: Value(balances),
-      seconds: Value(seconds),
+      count: Value(count),
+      time: Value(time),
     );
   }
 
@@ -3041,8 +3039,8 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
       contextId: serializer.fromJson<Uuid?>(json['context_id']),
       type: $BalancesTable.$convertertype
           .fromJson(serializer.fromJson<int>(json['type'])),
-      balances: serializer.fromJson<int>(json['balances']),
-      seconds: serializer.fromJson<int>(json['seconds']),
+      count: serializer.fromJson<int>(json['count']),
+      time: serializer.fromJson<Duration>(json['seconds']),
     );
   }
   @override
@@ -3054,8 +3052,8 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
       'context_id': serializer.toJson<Uuid?>(contextId),
       'type':
           serializer.toJson<int>($BalancesTable.$convertertype.toJson(type)),
-      'balances': serializer.toJson<int>(balances),
-      'seconds': serializer.toJson<int>(seconds),
+      'count': serializer.toJson<int>(count),
+      'seconds': serializer.toJson<Duration>(time),
     };
   }
 
@@ -3064,15 +3062,15 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
           String? day,
           Value<Uuid?> contextId = const Value.absent(),
           BalanceType? type,
-          int? balances,
-          int? seconds}) =>
+          int? count,
+          Duration? time}) =>
       BalanceRow(
         modifiedAt: modifiedAt ?? this.modifiedAt,
         day: day ?? this.day,
         contextId: contextId.present ? contextId.value : this.contextId,
         type: type ?? this.type,
-        balances: balances ?? this.balances,
-        seconds: seconds ?? this.seconds,
+        count: count ?? this.count,
+        time: time ?? this.time,
       );
   BalanceRow copyWithCompanion(BalancesCompanion data) {
     return BalanceRow(
@@ -3081,8 +3079,8 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
       day: data.day.present ? data.day.value : this.day,
       contextId: data.contextId.present ? data.contextId.value : this.contextId,
       type: data.type.present ? data.type.value : this.type,
-      balances: data.balances.present ? data.balances.value : this.balances,
-      seconds: data.seconds.present ? data.seconds.value : this.seconds,
+      count: data.count.present ? data.count.value : this.count,
+      time: data.time.present ? data.time.value : this.time,
     );
   }
 
@@ -3093,15 +3091,15 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
           ..write('day: $day, ')
           ..write('contextId: $contextId, ')
           ..write('type: $type, ')
-          ..write('balances: $balances, ')
-          ..write('seconds: $seconds')
+          ..write('count: $count, ')
+          ..write('time: $time')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode =>
-      Object.hash(modifiedAt, day, contextId, type, balances, seconds);
+      Object.hash(modifiedAt, day, contextId, type, count, time);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -3110,8 +3108,8 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
           other.day == this.day &&
           other.contextId == this.contextId &&
           other.type == this.type &&
-          other.balances == this.balances &&
-          other.seconds == this.seconds);
+          other.count == this.count &&
+          other.time == this.time);
 }
 
 class BalancesCompanion extends UpdateCompanion<BalanceRow> {
@@ -3119,16 +3117,16 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   final Value<String> day;
   final Value<Uuid?> contextId;
   final Value<BalanceType> type;
-  final Value<int> balances;
-  final Value<int> seconds;
+  final Value<int> count;
+  final Value<Duration> time;
   final Value<int> rowid;
   const BalancesCompanion({
     this.modifiedAt = const Value.absent(),
     this.day = const Value.absent(),
     this.contextId = const Value.absent(),
     this.type = const Value.absent(),
-    this.balances = const Value.absent(),
-    this.seconds = const Value.absent(),
+    this.count = const Value.absent(),
+    this.time = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   BalancesCompanion.insert({
@@ -3136,8 +3134,8 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
     required String day,
     this.contextId = const Value.absent(),
     required BalanceType type,
-    this.balances = const Value.absent(),
-    this.seconds = const Value.absent(),
+    this.count = const Value.absent(),
+    this.time = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : day = Value(day),
         type = Value(type);
@@ -3146,8 +3144,8 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
     Expression<String>? day,
     Expression<Uint8List>? contextId,
     Expression<int>? type,
-    Expression<int>? balances,
-    Expression<int>? seconds,
+    Expression<int>? count,
+    Expression<int>? time,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3155,8 +3153,8 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
       if (day != null) 'day': day,
       if (contextId != null) 'context_id': contextId,
       if (type != null) 'type': type,
-      if (balances != null) 'balances': balances,
-      if (seconds != null) 'seconds': seconds,
+      if (count != null) 'count': count,
+      if (time != null) 'time': time,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3166,16 +3164,16 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
       Value<String>? day,
       Value<Uuid?>? contextId,
       Value<BalanceType>? type,
-      Value<int>? balances,
-      Value<int>? seconds,
+      Value<int>? count,
+      Value<Duration>? time,
       Value<int>? rowid}) {
     return BalancesCompanion(
       modifiedAt: modifiedAt ?? this.modifiedAt,
       day: day ?? this.day,
       contextId: contextId ?? this.contextId,
       type: type ?? this.type,
-      balances: balances ?? this.balances,
-      seconds: seconds ?? this.seconds,
+      count: count ?? this.count,
+      time: time ?? this.time,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3197,11 +3195,12 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
       map['type'] =
           Variable<int>($BalancesTable.$convertertype.toSql(type.value));
     }
-    if (balances.present) {
-      map['balances'] = Variable<int>(balances.value);
+    if (count.present) {
+      map['count'] = Variable<int>(count.value);
     }
-    if (seconds.present) {
-      map['seconds'] = Variable<int>(seconds.value);
+    if (time.present) {
+      map['time'] =
+          Variable<int>($BalancesTable.$convertertime.toSql(time.value));
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -3216,8 +3215,8 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
           ..write('day: $day, ')
           ..write('contextId: $contextId, ')
           ..write('type: $type, ')
-          ..write('balances: $balances, ')
-          ..write('seconds: $seconds, ')
+          ..write('count: $count, ')
+          ..write('time: $time, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4918,24 +4917,26 @@ typedef $$BudgetsTableProcessedTableManager = ProcessedTableManager<
     BudgetRow,
     PrefetchHooks Function({bool contextId})>;
 typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
-  Value<int> id,
+  Value<Uuid> id,
   Value<DateTime> modifiedAt,
   Value<Uuid?> contextId,
   required DateTime start,
   required DateTime end,
   Value<int> priority,
   Value<Duration?> pomodoro,
-  Value<Duration?> pomodoroRemaining,
+  Value<DateTime?> pomodoroAt,
+  Value<int> rowid,
 });
 typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
-  Value<int> id,
+  Value<Uuid> id,
   Value<DateTime> modifiedAt,
   Value<Uuid?> contextId,
   Value<DateTime> start,
   Value<DateTime> end,
   Value<int> priority,
   Value<Duration?> pomodoro,
-  Value<Duration?> pomodoroRemaining,
+  Value<DateTime?> pomodoroAt,
+  Value<int> rowid,
 });
 
 final class $$SessionsTableReferences
@@ -4959,10 +4960,12 @@ final class $$SessionsTableReferences
 class $$SessionsTableFilterComposer
     extends FilterComposer<_$Store, $SessionsTable> {
   $$SessionsTableFilterComposer(super.$state);
-  ColumnFilters<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnWithTypeConverterFilters<Uuid, Uuid, Uint8List> get id =>
+      $state.composableBuilder(
+          column: $state.table.id,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
 
   ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
       column: $state.table.modifiedAt,
@@ -4991,12 +4994,10 @@ class $$SessionsTableFilterComposer
               column,
               joinBuilders: joinBuilders));
 
-  ColumnWithTypeConverterFilters<Duration?, Duration, int>
-      get pomodoroRemaining => $state.composableBuilder(
-          column: $state.table.pomodoroRemaining,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get pomodoroAt => $state.composableBuilder(
+      column: $state.table.pomodoroAt,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
 
   $$ContextsTableFilterComposer get contextId {
     final $$ContextsTableFilterComposer composer = $state.composerBuilder(
@@ -5014,7 +5015,7 @@ class $$SessionsTableFilterComposer
 class $$SessionsTableOrderingComposer
     extends OrderingComposer<_$Store, $SessionsTable> {
   $$SessionsTableOrderingComposer(super.$state);
-  ColumnOrderings<int> get id => $state.composableBuilder(
+  ColumnOrderings<Uint8List> get id => $state.composableBuilder(
       column: $state.table.id,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
@@ -5044,8 +5045,8 @@ class $$SessionsTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<int> get pomodoroRemaining => $state.composableBuilder(
-      column: $state.table.pomodoroRemaining,
+  ColumnOrderings<DateTime> get pomodoroAt => $state.composableBuilder(
+      column: $state.table.pomodoroAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -5082,14 +5083,15 @@ class $$SessionsTableTableManager extends RootTableManager<
           orderingComposer:
               $$SessionsTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
+            Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<Uuid?> contextId = const Value.absent(),
             Value<DateTime> start = const Value.absent(),
             Value<DateTime> end = const Value.absent(),
             Value<int> priority = const Value.absent(),
             Value<Duration?> pomodoro = const Value.absent(),
-            Value<Duration?> pomodoroRemaining = const Value.absent(),
+            Value<DateTime?> pomodoroAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
           }) =>
               SessionsCompanion(
             id: id,
@@ -5099,17 +5101,19 @@ class $$SessionsTableTableManager extends RootTableManager<
             end: end,
             priority: priority,
             pomodoro: pomodoro,
-            pomodoroRemaining: pomodoroRemaining,
+            pomodoroAt: pomodoroAt,
+            rowid: rowid,
           ),
           createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
+            Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<Uuid?> contextId = const Value.absent(),
             required DateTime start,
             required DateTime end,
             Value<int> priority = const Value.absent(),
             Value<Duration?> pomodoro = const Value.absent(),
-            Value<Duration?> pomodoroRemaining = const Value.absent(),
+            Value<DateTime?> pomodoroAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
           }) =>
               SessionsCompanion.insert(
             id: id,
@@ -5119,7 +5123,8 @@ class $$SessionsTableTableManager extends RootTableManager<
             end: end,
             priority: priority,
             pomodoro: pomodoro,
-            pomodoroRemaining: pomodoroRemaining,
+            pomodoroAt: pomodoroAt,
+            rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) =>
@@ -5178,8 +5183,8 @@ typedef $$BalancesTableCreateCompanionBuilder = BalancesCompanion Function({
   required String day,
   Value<Uuid?> contextId,
   required BalanceType type,
-  Value<int> balances,
-  Value<int> seconds,
+  Value<int> count,
+  Value<Duration> time,
   Value<int> rowid,
 });
 typedef $$BalancesTableUpdateCompanionBuilder = BalancesCompanion Function({
@@ -5187,8 +5192,8 @@ typedef $$BalancesTableUpdateCompanionBuilder = BalancesCompanion Function({
   Value<String> day,
   Value<Uuid?> contextId,
   Value<BalanceType> type,
-  Value<int> balances,
-  Value<int> seconds,
+  Value<int> count,
+  Value<Duration> time,
   Value<int> rowid,
 });
 
@@ -5230,15 +5235,17 @@ class $$BalancesTableFilterComposer
               column,
               joinBuilders: joinBuilders));
 
-  ColumnFilters<int> get balances => $state.composableBuilder(
-      column: $state.table.balances,
+  ColumnFilters<int> get count => $state.composableBuilder(
+      column: $state.table.count,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  ColumnFilters<int> get seconds => $state.composableBuilder(
-      column: $state.table.seconds,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnWithTypeConverterFilters<Duration, Duration, int> get time =>
+      $state.composableBuilder(
+          column: $state.table.time,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
 
   $$ContextsTableFilterComposer get contextId {
     final $$ContextsTableFilterComposer composer = $state.composerBuilder(
@@ -5271,13 +5278,13 @@ class $$BalancesTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<int> get balances => $state.composableBuilder(
-      column: $state.table.balances,
+  ColumnOrderings<int> get count => $state.composableBuilder(
+      column: $state.table.count,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<int> get seconds => $state.composableBuilder(
-      column: $state.table.seconds,
+  ColumnOrderings<int> get time => $state.composableBuilder(
+      column: $state.table.time,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -5318,8 +5325,8 @@ class $$BalancesTableTableManager extends RootTableManager<
             Value<String> day = const Value.absent(),
             Value<Uuid?> contextId = const Value.absent(),
             Value<BalanceType> type = const Value.absent(),
-            Value<int> balances = const Value.absent(),
-            Value<int> seconds = const Value.absent(),
+            Value<int> count = const Value.absent(),
+            Value<Duration> time = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               BalancesCompanion(
@@ -5327,8 +5334,8 @@ class $$BalancesTableTableManager extends RootTableManager<
             day: day,
             contextId: contextId,
             type: type,
-            balances: balances,
-            seconds: seconds,
+            count: count,
+            time: time,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -5336,8 +5343,8 @@ class $$BalancesTableTableManager extends RootTableManager<
             required String day,
             Value<Uuid?> contextId = const Value.absent(),
             required BalanceType type,
-            Value<int> balances = const Value.absent(),
-            Value<int> seconds = const Value.absent(),
+            Value<int> count = const Value.absent(),
+            Value<Duration> time = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               BalancesCompanion.insert(
@@ -5345,8 +5352,8 @@ class $$BalancesTableTableManager extends RootTableManager<
             day: day,
             contextId: contextId,
             type: type,
-            balances: balances,
-            seconds: seconds,
+            count: count,
+            time: time,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0

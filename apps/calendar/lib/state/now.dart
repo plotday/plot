@@ -5,24 +5,24 @@ import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/util/clock.dart';
-import 'package:plot/util/time.dart';
 
 part 'now_state.dart';
 
 class NowBloc extends Cubit<NowState> {
   NowBloc() : super(NowState()) {
-    _secondsSubscription =
-        Clock().seconds.listen((void _) => emit(state.copyWith()));
-    _sessionSubscription = Session.store
-        .stream()
-        .listen((session) => emit(state.copyWith(session: session)));
-    _eventSubscription = ScheduledDay.store.stream().listen((_) {
-      emit(state.copyWith(
-        scheduled: Event.current(),
-        next: Event.next(),
-        previous: Event.previous(),
-      ));
+    _secondsSubscription = Clock().seconds.listen((now) {
+      emit(state.copyWith());
+      if (_eventSubscription == null || !state.now.isSameDay(now)) {
+        _eventSubscription =
+            ScheduledDay.watch(Day(now.toDate())).listen((day) {
+          emit(state.copyWith(
+            day: day[now.toDate()],
+          ));
+        });
+      }
     });
+    _sessionSubscription = Session.watchCurrent()
+        .listen((session) => emit(state.copyWith(session: session)));
   }
 
   StreamSubscription<void>? _secondsSubscription;
@@ -37,14 +37,11 @@ class NowBloc extends Cubit<NowState> {
     return super.close();
   }
 
-  void setContext(Context? context) {
+  void setContext(Context? context) async {
     if (state.session?.context == context) return;
-    final session = Session.startOrContinue(context, state.endFor(context));
-    Session.saveList([
-      if (state.session != null && state.session?.id != session.id)
-        state.session!.copyStopped(),
-      session,
-    ]);
+    // TODO properly set and extend time
+    await Session.resume(context,
+        end: state.endFor(context) ?? DateTime.now().addMinutes(5));
   }
 
   // Future<void> _newActive(Emitter<NowState> emit, Session block) async {

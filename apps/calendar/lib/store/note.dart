@@ -38,7 +38,7 @@ class ContextNotesBase extends NotesBase {
           limit: 40,
         );
 
-  final String? contextPath;
+  final Path? contextPath;
 
   @override
   PostgrestFilterBuilder<T> filter<T>(PostgrestFilterBuilder<T> query) {
@@ -74,12 +74,16 @@ class Note extends NoteRow {
 
   static Future<void> push() => Store.get.push(table, NotesBase());
   static Future<bool> pull() async => Store.get.pull(table, NotesBase());
-  static Future<bool> pullContext(String? contextPath) async =>
+  static Future<bool> pullContext(Path? contextPath) async =>
       Store.get.pull(table, ContextNotesBase(contextPath));
-  static Future<bool> pullTopic(Uuid topicId) async =>
+  static bool hasMoreContext(Path? contextPath) =>
+      Store.get.hasMore(ContextNotesBase(contextPath));
+  static Future<bool> pullTopic(TopicId topicId) async =>
       Store.get.pull(table, TopicNotesBase(topicId));
+  static bool hasMoreTopic(TopicId topicId) =>
+      Store.get.hasMore(TopicNotesBase(topicId));
 
-  static Stream<List<Note>> watchContext(String? path) {
+  static Stream<List<Note>> watchContext(Path? path) {
     final query = Store.get.select(table);
     if (path != null) {
       query.join([
@@ -158,4 +162,6 @@ class Note extends NoteRow {
           order: row.order,
           private: row.private,
         );
+
+  Future<void> save() => Store.get.save(table, this);
 }

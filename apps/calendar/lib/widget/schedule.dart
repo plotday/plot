@@ -17,22 +17,31 @@ class ScheduleWidget extends StatelessWidget {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, scheduleState) => BidirectionalList(
         scrollController: scrollController,
-        onFetch: (index, reverse) async {
-          final start = anchor.addDays(index);
-          final end = await ScheduledDay.fetch(start,
-              direction:
-                  reverse ? TimeDirection.descending : TimeDirection.ascending);
-          return index +
-              (reverse ? -1 : 1) * end.difference(start).inDays.abs();
+        fetcher: (move, count) async {
+          final start = scheduleState.range.start.addDays(move);
+          final end = start.addDays(count);
+          final schedule = await context
+              .read<ScheduleBloc>()
+              .watch(DateRangeCustom(start, end));
+          return ItemFetchResult(
+            count: schedule.length,
+            doneStart: schedule.keys.first != start,
+            doneEnd: schedule.keys.last != end,
+          );
         },
-        itemBuilder: (context, index) => Column(children: [
-          DayWidget(
-            day: ScheduledDay.get(anchor.addDays(index)),
-          ),
-          const SizedBox(
-            height: 8,
-          ),
-        ]),
+        builder: (context, index) {
+          final day =
+              scheduleState.schedule[scheduleState.range.start.addDays(index)];
+          if (day == null) return null;
+          return Column(children: [
+            DayWidget(
+              day: day,
+            ),
+            const SizedBox(
+              height: 8,
+            ),
+          ]);
+        },
       ),
     );
   }

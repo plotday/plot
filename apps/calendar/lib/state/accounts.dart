@@ -9,7 +9,7 @@ part 'accounts_state.dart';
 
 class AccountsBloc extends Cubit<AccountsState> {
   AccountsBloc() : super(const AccountsState([])) {
-    _subscription = Accounts.watchWithCalendars().listen((accounts) {
+    _subscription = Account.watch(withCalendars: true).listen((accounts) {
       emit(state.copyWith(accounts: accounts));
     });
   }
@@ -18,5 +18,5 @@ class AccountsBloc extends Cubit<AccountsState> {
     _subscription.cancel();
   }
 
-  late StreamSubscription<List<AccountWithCalendars>> _subscription;
+  late StreamSubscription<List<Account>> _subscription;
 }

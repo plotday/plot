@@ -3,23 +3,55 @@ part of 'now.dart';
 final class NowState extends Equatable {
   NowState({
     this.session,
-    this.scheduled = const [],
-    this.next = const [],
-    this.previous = const [],
-  }) : now = DateTime.now();
-
-  NowState.copy(NowState state)
-      : now = state.now,
-        session = state.session,
-        scheduled = state.scheduled,
-        next = state.next,
-        previous = state.previous;
+    ScheduledDay? day,
+  })  : now = DateTime.now(),
+        _day = day;
 
   final DateTime now;
   final Session? session;
-  final List<Event> scheduled;
-  final List<Event> next;
-  final List<Event> previous;
+  final ScheduledDay? _day;
+
+  List<Event> get scheduled =>
+      _day?.events.where((event) => event.at.includes(now)).toList() ?? [];
+
+  List<Event> get next {
+    if (_day == null) return const [];
+    final events = _day.events;
+    int first = -1;
+    int last = events.length;
+    for (int i = 0; i < events.length; i++) {
+      if (events[i].start.isAfter(now)) {
+        if (first == -1) {
+          first = i;
+        } else if (!events[i].start.isAtSameMomentAs(events[first].start)) {
+          last = i;
+          break;
+        }
+      }
+    }
+    if (first == -1) {
+      return [];
+    }
+    return events.sublist(first, last);
+  }
+
+  List<Event> get previous {
+    if (_day == null) return const [];
+    final events = _day.events;
+    int first = 0;
+    int last = events.length;
+    for (int i = events.length - 1; i >= 0; i--) {
+      if (events[i].start.isBefore(now)) {
+        if (!events[i].start.isAtSameMomentAs(events[first].start)) {
+          first = i;
+        }
+      } else {
+        last = i;
+        break;
+      }
+    }
+    return events.sublist(first, last);
+  }
 
   @override
   List<Object?> get props => [session, scheduled, next, previous];
@@ -30,42 +62,33 @@ final class NowState extends Equatable {
       Event(
         at: DateTimeRange(previous.firstOrNull?.at.end ?? now.round(),
             next.firstOrNull?.at.start ?? now.round(down: false)),
+        context: context,
       );
 
-  bool get pomodoroActive =>
-      session?.pomodoroStart != null &&
-      session?.pomodoroLength != null &&
-      now.isBefore(pomodoroStart!
-          .add(session!.pomodoroLength!)
-          .add(const Duration(minutes: 1)));
-  DateTime? get pomodoroStart => pomodoroActive ? session?.pomodoroStart : null;
-  DateTime? get pomodoroEnd =>
-      pomodoroActive ? pomodoroStart?.add(session!.pomodoroLength!) : null;
+  DateTimeRange? get pomodoro {
+    if (session?.pomodoro == null || session?.pomodoroAt == null) return null;
+    return DateTimeRange(
+        session!.pomodoroAt!, session!.pomodoroAt!.add(session!.pomodoro!));
+  }
 
+  // TODO change to range
   DateTime? get start =>
-      pomodoroStart ??
-      session?.at.start ??
+      pomodoro?.start ??
+      session?.at.start ?? // TODO: follow back
       scheduled.firstOrNull?.at.start ??
       previous.firstOrNull?.at.end;
   DateTime? get end =>
-      pomodoroEnd ??
-      (session != null &&
-              session!.at.end.add(const Duration(minutes: 1)).isBefore(now)
-          ? session!.at.end
-          : null) ??
+      pomodoro?.end ??
       (scheduled.firstOrNull?.context == context
           ? scheduled.firstOrNull?.at.end
           : null) ??
       next.firstOrNull?.at.start;
 
   DateTime? endFor(Context? context) {
-    if (context == session?.context) {
+    if (context == this.context && end != null) {
       return end;
     }
-    return (scheduled.firstOrNull?.context == context
-            ? scheduled.firstOrNull?.at.end
-            : null) ??
-        next.firstOrNull?.at.start;
+    return next.firstOrNull?.at.start;
   }
 
   Duration? get elapsed => start != null ? now.difference(start!) : null;
@@ -82,15 +105,11 @@ final class NowState extends Equatable {
 
   NowState copyWith({
     Session? session,
-    List<Event>? scheduled,
-    List<Event>? next,
-    List<Event>? previous,
+    ScheduledDay? day,
   }) {
     return NowState(
       session: session ?? this.session,
-      scheduled: scheduled ?? this.scheduled,
-      next: next ?? this.next,
-      previous: previous ?? this.previous,
+      day: day ?? _day,
     );
   }
 }

@@ -79,8 +79,8 @@ export type Database = {
           context_id: string | null
           created_at: string
           id: number
-          minutes: number | null
           modified_at: string
+          seconds: number | null
           type: Database["public"]["Enums"]["budget_type"]
           user_id: string
           week: unknown
@@ -89,8 +89,8 @@ export type Database = {
           context_id?: string | null
           created_at?: string
           id?: never
-          minutes?: number | null
           modified_at?: string
+          seconds?: number | null
           type?: Database["public"]["Enums"]["budget_type"]
           user_id: string
           week: unknown
@@ -99,8 +99,8 @@ export type Database = {
           context_id?: string | null
           created_at?: string
           id?: never
-          minutes?: number | null
           modified_at?: string
+          seconds?: number | null
           type?: Database["public"]["Enums"]["budget_type"]
           user_id?: string
           week?: unknown
@@ -748,10 +748,10 @@ export type Database = {
           at: unknown
           context_id: string | null
           created_at: string
-          id: number
+          id: string
           modified_at: string
           pomodoro: number | null
-          pomodoro_remaining: number | null
+          pomodoro_at: string | null
           priority: number
           user_id: string
         }
@@ -759,10 +759,10 @@ export type Database = {
           at: unknown
           context_id?: string | null
           created_at?: string
-          id?: never
+          id?: string
           modified_at?: string
           pomodoro?: number | null
-          pomodoro_remaining?: number | null
+          pomodoro_at?: string | null
           priority?: number
           user_id: string
         }
@@ -770,10 +770,10 @@ export type Database = {
           at?: unknown
           context_id?: string | null
           created_at?: string
-          id?: never
+          id?: string
           modified_at?: string
           pomodoro?: number | null
-          pomodoro_remaining?: number | null
+          pomodoro_at?: string | null
           priority?: number
           user_id?: string
         }
@@ -880,6 +880,17 @@ export type Database = {
       }
     }
     Views: {
+      balance: {
+        Row: {
+          context_id: string | null
+          day: string | null
+          events: number | null
+          seconds: number | null
+          type: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       context_x: {
         Row: {
           created_at: string | null
@@ -951,7 +962,6 @@ export type Database = {
           invitee_domains: string[] | null
           invitees: string[] | null
           invitees_hidden: boolean | null
-          minutes: number | null
           name: string | null
           notice: number | null
           organizer_email: string | null
@@ -960,6 +970,7 @@ export type Database = {
           recurring: boolean | null
           response: Database["public"]["Enums"]["event_response"] | null
           rounded_length: number | null
+          seconds: number | null
           series: string | null
           size: string | null
           speedy: boolean | null
@@ -993,39 +1004,11 @@ export type Database = {
           },
         ]
       }
-      expenditure: {
-        Row: {
-          context_id: string | null
-          day: string | null
-          declined_events: number | null
-          declined_minutes: number | null
-          events: number | null
-          minutes: number | null
-          tentative_events: number | null
-          tentative_minutes: number | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      expenditure_weekly: {
-        Row: {
-          context_id: string | null
-          declined_events: number | null
-          declined_minutes: number | null
-          events: number | null
-          minutes: number | null
-          tentative_events: number | null
-          tentative_minutes: number | null
-          user_id: string | null
-          week: unknown | null
-        }
-        Relationships: []
-      }
       gap: {
         Row: {
           at: unknown | null
           day: string | null
-          minutes: number | null
+          seconds: number | null
           user_id: string | null
         }
         Relationships: []
@@ -1053,9 +1036,9 @@ export type Database = {
           context_path: unknown | null
           count: number | null
           day: string | null
-          minutes: number | null
           name: string | null
           response: Database["public"]["Enums"]["event_response"] | null
+          seconds: number | null
           type: Database["public"]["Enums"]["event_type"] | null
           user_id: string | null
           value: string | null
@@ -1175,23 +1158,6 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
-      balance: {
-        Args: {
-          user_id: string
-          week: unknown
-        }
-        Returns: {
-          id: string
-          budget: number
-          budget_type: Database["public"]["Enums"]["budget_type"]
-          count: number
-          minutes: number
-          tentative_count: number
-          tentative_minutes: number
-          declined_count: number
-          declined_minutes: number
-        }[]
-      }
       budget: {
         Args: {
           "": unknown
@@ -1200,8 +1166,8 @@ export type Database = {
           context_id: string | null
           created_at: string
           id: number
-          minutes: number | null
           modified_at: string
+          seconds: number | null
           type: Database["public"]["Enums"]["budget_type"]
           user_id: string
           week: unknown
@@ -1236,12 +1202,6 @@ export type Database = {
         }
         Returns: string
       }
-      calc_minutes: {
-        Args: {
-          at: unknown
-        }
-        Returns: number
-      }
       calc_notice: {
         Args: {
           created_at: string
@@ -1252,6 +1212,12 @@ export type Database = {
       calc_rounded_length: {
         Args: {
           at: unknown
+        }
+        Returns: number
+      }
+      calc_seconds: {
+        Args: {
+          r: unknown
         }
         Returns: number
       }
@@ -1342,12 +1308,6 @@ export type Database = {
           name: string | null
           user_id: string
         }[]
-      }
-      extract_minutes: {
-        Args: {
-          r: unknown
-        }
-        Returns: number
       }
       get_domain: {
         Args: {

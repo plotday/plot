@@ -10,8 +10,6 @@ import 'state/context.dart';
 import 'state/root_provider.dart';
 import 'page/page.dart';
 import 'widget/layout.dart';
-import 'util/time.dart';
-import 'util/optional.dart';
 
 part 'router.g.dart';
 
@@ -94,7 +92,7 @@ class HomeRoute extends AdaptiveRoute {
   void onEnter(BuildContext context) async {
     final event = await context.read<ScheduleBloc>().selectCurrent();
     if (!context.mounted) return;
-    context.read<ContextBloc>().setCurrent(event.context);
+    context.read<ContextBloc>().setCurrent(event?.contextId);
   }
 
   @override
@@ -179,9 +177,9 @@ class EventRoute extends AdaptiveRoute {
   @override
   void onEnter(BuildContext context) async {
     final event =
-        await context.read<ScheduleBloc>().selectById(parseUUID(eventId));
+        await context.read<ScheduleBloc>().selectById(Uuid.fromString(eventId));
     if (!context.mounted) return;
-    context.read<ContextBloc>().setCurrent(event.context);
+    context.read<ContextBloc>().setCurrent(event.contextId);
   }
 
   @override
@@ -221,7 +219,7 @@ class PrioritiesRoute extends AdaptiveRoute {
     context
         .read<ScheduleBloc>()
         .selected
-        ?.copyWith(context: Optional.of(null))
+        ?.copyWith(contextId: const Value(null))
         .save();
   }
 
@@ -257,20 +255,18 @@ class PrioritiesRoute extends AdaptiveRoute {
 
 @TypedGoRoute<PriorityRoute>(path: '/p/:contextId', name: 'priority:triple')
 class PriorityRoute extends AdaptiveRoute {
-  PriorityRoute({required this.contextId})
-      : context = Context.store.get(parseUUID(contextId));
+  PriorityRoute({required this.contextId});
 
   final String contextId;
-  final Context context;
 
   @override
   void onEnter(BuildContext context) {
-    context.read<ContextBloc>().setCurrent(this.context);
+    context.read<ContextBloc>().setCurrent(Uuid.fromString(contextId));
     final event = context.read<ScheduleBloc>().selected;
     if (event != null) {
       context
           .read<ScheduleBloc>()
-          .update(event.copyWith(context: Optional.of(this.context)));
+          .update(event.copyWith(contextId: Value(Uuid.fromString(contextId))));
     }
   }
 

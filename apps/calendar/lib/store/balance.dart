@@ -13,8 +13,11 @@ class Balances extends StoreTable {
       blob().nullable().map(const UuidConverter()).references(Contexts, #id)();
   IntColumn get type => intEnum<BalanceType>()();
 
-  IntColumn get balances => integer().withDefault(const Constant(0))();
-  IntColumn get seconds => integer().withDefault(const Constant(0))();
+  IntColumn get count => integer().withDefault(const Constant(0))();
+
+  @JsonKey('seconds')
+  IntColumn get time =>
+      integer().withDefault(const Constant(0)).map(const DurationConverter())();
 }
 
 class BalancesBase extends BaseTable {
@@ -26,32 +29,46 @@ class BalancesBase extends BaseTable {
 }
 
 class Balance extends BalanceRow {
-  static TableInfo<Balances, BalanceRow> get table => Store.get.balances;
+  static $BalancesTable get table => Store.get.balances;
 
-  static Future<bool> pull() => Store.get.pull(table, BalancesBase());
+  static Future<bool> pull(
+    Date from,
+    Date to, {
+    Path? path,
+    int? depth = 1, // number of child levels to include
+  }) =>
+      Store.get.pull(table, BalancesBase());
 
-  static Stream<List<Balance>> watch(Date from, Date to) {
+  static Stream<Map<Uuid?, Balance>> watch(
+    Date from,
+    Date to, {
+    Path? path,
+    int? depth = 1, // number of child levels to include
+  }) {
+    final query = Store.get.select(table).join([
+      leftOuterJoin(Context.table, Context.table.id.equalsExp(table.contextId)),
+    ])
+      ..where(table.day.isBiggerOrEqualValue(from.toString()))
+      ..where(table.day.isSmallerThanValue(to.toString()));
+
+    if (path != null) {
+      query.where(Context.table.path.like("$path%"));
+    }
+    if (depth != null) {
+      query.where(Context.pathDepth(path, depth));
+    }
+
     final order = from <= to ? OrderingMode.asc : OrderingMode.desc;
-    return (Store.get.select(table)
-          ..where((t) => t.day.isBiggerOrEqualValue(from.toString()))
-          ..where((t) => t.day.isSmallerThanValue(to.toString()))
-          ..orderBy([
-            (t) => OrderingTerm(expression: t.day, mode: order),
-          ]))
-        .watch()
-        .map((rows) => rows.map((row) => Balance.fromStore(row)).toList());
-  }
+    query.orderBy([
+      OrderingTerm(expression: table.day, mode: order),
+    ]);
 
-  static Stream<List<Balance>> watchWithContext(Date from, Date to) =>
-      Rx.combineLatest2(
-          Balance.watch(from, to),
-          Context.watch(),
-          (List<Balance> balances, Map<Uuid, Context> contexts) => balances
-              .map((balance) => Balance.fromStore(balance,
-                  context: balance.contextId == null
-                      ? null
-                      : contexts[balance.contextId]))
-              .toList());
+    return query.watch().map((rows) => {
+          for (final row in rows)
+            row.readTable(table).contextId:
+                Balance.fromStore(row.readTable(table))
+        });
+  }
 
   Balance.fromStore(BalanceRow row, {this.context})
       : super(
@@ -59,8 +76,8 @@ class Balance extends BalanceRow {
           day: row.day,
           contextId: row.contextId,
           type: row.type,
-          balances: row.balances,
-          seconds: row.seconds,
+          count: row.count,
+          time: row.time,
         );
 
   final Context? context;

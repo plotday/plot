@@ -28,7 +28,6 @@ class Calendar extends CalendarRow {
   Calendar.fromStore(CalendarRow row)
       : super(
           id: row.id,
-          createdAt: row.createdAt,
           modifiedAt: row.modifiedAt,
           name: row.name,
           enabled: row.enabled,

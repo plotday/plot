@@ -4,7 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/util/time.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/util/optional.dart';
 
@@ -13,31 +12,33 @@ part 'context_state.dart';
 class ContextBloc extends Cubit<ContextState> {
   ContextBloc()
       : super(ContextState(
-          contexts: const [],
           week: Week.current(),
         )) {
-    _contextSubscription = Contexts.watch().listen((contexts) {
-      emit(state.copyWith(contexts: contexts));
-    });
-    loadBudgets();
-    loadNotes();
+    setCurrent(null);
   }
 
   void dispose() {
-    _contextSubscription.cancel();
+    _contextSubscription?.cancel();
+    _balanceSubscription?.cancel();
     _noteSubscription?.cancel();
     _topicSubscription?.cancel();
   }
 
-  void setCurrent(Context? current) {
-    if (current == state.current) return;
-    emit(ContextState(
-      contexts: const [],
-      week: Week.current(),
-      current: current,
-    ));
-    loadBudgets();
-    loadNotes();
+  void setCurrent(ContextId? current) {
+    if (current == state.current?.id) return;
+    _contextSubscription?.cancel();
+    if (current == null) {
+      _contextSubscription = Context.watchRoot().listen((contexts) {
+        emit(state.copyWith(current: Optional.of(null), children: contexts));
+      });
+    } else {
+      _contextSubscription =
+          Context.watchOne(current, depth: 1).listen((context) {
+        emit(state.copyWith(current: Optional.of(context)));
+      });
+    }
+    _loadBalances();
+    _loadNotes();
   }
 
   Future<void> save(Context context) async {
@@ -45,54 +46,44 @@ class ContextBloc extends Cubit<ContextState> {
   }
 
   void setWeek(Week week) async {
-    emit(state.copyWith(week: week, budgets: Optional.of(null)));
-    loadBudgets();
+    emit(state.copyWith(week: week, balances: Optional.of(null)));
+    _loadBalances();
   }
 
-  void loadBudgets() async {
-    final budgets = await Budget.list(state.week);
-    emit(state.copyWith(budgets: Optional.of(budgets)));
+  void _loadBalances() async {
+    _balanceSubscription?.cancel();
+    _balanceSubscription =
+        Balance.watch(state.week.start, state.week.end).listen(
+      (balances) {
+        emit(state.copyWith(balances: Optional.of(balances)));
+      },
+    );
   }
 
-  void loadNotes() async {
+  void _loadNotes() async {
     _noteSubscription?.cancel();
     _topicSubscription?.cancel();
-    _noteSubscription = Notes.watchContext(state.current?.path).listen((notes) {
+    _noteSubscription = Note.watchContext(state.current?.path).listen((notes) {
       emit(state.copyWith(
         notes: notes,
-        moreNotes: Note.more(state.current),
+        moreNotes: Note.hasMoreContext(state.current?.path),
       ));
     });
     final topic = state.topicId;
     if (topic != null) {
-      _topicSubscription = Notes.watchTopic(topic).listen((notes) {
+      _topicSubscription = Note.watchTopic(topic).listen((notes) {
         emit(state.copyWith(
           topicNotes: notes,
-          moreTopicNotes: Note.moreTopic(topic),
+          moreTopicNotes: Note.hasMoreTopic(topic),
         ));
       });
     }
   }
 
-  void setBudget(Budget budget) async {
-    if (state.week == budget.week) {
-      emit(
-        state.copyWith(
-          budgets: Optional.of(
-              state.budgets?.replace(budget, (b1, b2) => b1.id == b2.id)),
-        ),
-      );
-    }
-    await budget.save();
-  }
-
   Future<void> addNote(Note note) async {
     print("Adding note: ${note.order}");
     emit(state.copyWith(newNote: note));
-    final newNote = await note.save();
-    emit(
-      state.copyWith(newNote: newNote),
-    );
+    await note.save();
   }
 
   Future<void> updateNote(Note note) async {
@@ -109,7 +100,8 @@ class ContextBloc extends Cubit<ContextState> {
     }
   }
 
-  late StreamSubscription<List<Context>> _contextSubscription;
+  StreamSubscription<dynamic>? _contextSubscription;
+  StreamSubscription<Map<Uuid?, Balance>>? _balanceSubscription;
   StreamSubscription<List<Note>>? _noteSubscription;
   StreamSubscription<List<Note>>? _topicSubscription;
 }

@@ -3,15 +3,17 @@ part of 'schedule.dart';
 sealed class ScheduleState extends Equatable {
   ScheduleState({
     Date? day,
-  })  : day = day ?? Date.today(),
-        _sequence = 1;
+    this.schedule = const {},
+  }) : day = day ?? Date.today();
 
-  ScheduleState.copy(ScheduleState copy, {Date? day})
+  ScheduleState.copy(ScheduleState copy,
+      {Date? day, Map<Date, ScheduledDay>? schedule})
       : day = day ?? copy.day,
-        _sequence = copy._sequence + 1;
+        schedule = schedule ?? copy.schedule;
 
   ScheduleState copyWith({
     Date? day,
+    Map<Date, ScheduledDay>? schedule,
     Optional<Event> selected = const Optional.absent(),
     String? error,
     bool loading = false,
@@ -21,11 +23,13 @@ sealed class ScheduleState extends Equatable {
         return SelectedEventState.copy(
           this,
           selected: selected.value!,
+          schedule: schedule ?? this.schedule,
         );
       } else {
         return ScheduleListState.copy(
           this,
           day: day ?? this.day,
+          schedule: schedule ?? this.schedule,
         );
       }
     }
@@ -33,6 +37,7 @@ sealed class ScheduleState extends Equatable {
       return SelectedEventErrorState.copy(
         this,
         error: error,
+        schedule: schedule ?? this.schedule,
       );
     }
     if (loading) {
@@ -43,47 +48,60 @@ sealed class ScheduleState extends Equatable {
         return SelectedEventState.copy(
           this,
           selected: state.selected,
+          schedule: schedule ?? state.schedule,
         );
       case SelectedEventErrorState state:
         return SelectedEventErrorState.copy(
           this,
           error: state.error,
+          schedule: schedule ?? state.schedule,
         );
       case SelectedEventLoadingState _:
-        return SelectedEventLoadingState.copy(this);
+        return SelectedEventLoadingState.copy(
+          this,
+          schedule: schedule ?? this.schedule,
+        );
       case ScheduleListState state:
         return ScheduleListState.copy(
           this,
           day: day ?? state.day,
+          schedule: schedule ?? state.schedule,
         );
     }
   }
 
   final Date day;
-  final int _sequence;
-
   Week get week => Week(day);
 
+  final Map<Date, ScheduledDay> schedule;
+  DateRange get range => DateRangeCustom(
+        schedule.keys.firstOrNull ?? day,
+        schedule.keys.lastOrNull?.next() ?? day,
+      );
+
   @override
-  List<Object?> get props => [day, _sequence];
+  List<Object?> get props => [day, schedule];
 }
 
 final class ScheduleListState extends ScheduleState {
   ScheduleListState({
     super.day,
+    super.schedule,
   });
 
   ScheduleListState.copy(
-    ScheduleState copy, {
-    Date? day,
-  }) : super.copy(copy, day: day);
+    super.copy, {
+    super.day,
+    super.schedule,
+  }) : super.copy();
 }
 
 final class SelectedEventState extends ScheduleState {
   SelectedEventState.copy(
-    ScheduleState copy, {
+    super.copy, {
     required this.selected,
-  }) : super.copy(copy);
+    super.schedule,
+  }) : super.copy();
 
   final Event selected;
 
@@ -93,9 +111,10 @@ final class SelectedEventState extends ScheduleState {
 
 final class SelectedEventErrorState extends ScheduleState {
   SelectedEventErrorState.copy(
-    ScheduleState copy, {
+    super.copy, {
     required this.error,
-  }) : super.copy(copy);
+    super.schedule,
+  }) : super.copy();
 
   final String error;
 
@@ -107,6 +126,7 @@ final class SelectedEventLoadingState extends ScheduleState {
   SelectedEventLoadingState();
 
   SelectedEventLoadingState.copy(
-    ScheduleState copy,
-  ) : super.copy(copy);
+    super.copy, {
+    super.schedule,
+  }) : super.copy();
 }

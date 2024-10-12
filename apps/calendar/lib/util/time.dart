@@ -104,10 +104,11 @@ abstract class DateRange extends Equatable {
   DateRange next();
 
   Duration get duration => end.difference(start);
+  (Date, Date) get bounds => (start, end);
 
   bool includes(Date date) => date >= start && date < end;
   bool contains(DateRange interval) =>
-      includes(interval.start) && includes(interval.end);
+      includes(interval.start) && interval.end <= end;
   bool overlaps(DateRange other) =>
       includes(other.start) || other.includes(start);
   bool cross(DateRange other) =>
@@ -242,6 +243,26 @@ class Month extends DateRange {
   }
 }
 
+class DateRangeCustom extends DateRange {
+  const DateRangeCustom(this.start, this.end);
+
+  @override
+  final Date start;
+  @override
+  final Date end;
+
+  @override
+  DateRangeCustom previous() =>
+      DateRangeCustom(start - end.difference(start), end);
+
+  @override
+  DateRangeCustom next() =>
+      DateRangeCustom(start + end.difference(start), start);
+
+  @override
+  List<Object> get props => [start, end];
+}
+
 class DateTimeRange extends Equatable {
   factory DateTimeRange.fromString(String db) {
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
@@ -260,6 +281,8 @@ class DateTimeRange extends Equatable {
 
   final DateTime start;
   final DateTime end;
+
+  (DateTime, DateTime) get bounds => (start, end);
 
   @override
   List<Object> get props => [start, end];

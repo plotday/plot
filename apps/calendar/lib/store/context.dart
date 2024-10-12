@@ -26,7 +26,11 @@ class ContextsBase extends BaseTable {
 }
 
 class Context extends ContextRow implements Comparable<Context> {
-  static TableInfo<Contexts, ContextRow> get table => Store.get.contexts;
+  static $ContextsTable get table => Store.get.contexts;
+  static CustomExpression<
+      bool> pathDepth(Path? path, int depth) => CustomExpression<
+          bool>(
+      "LENGTH(path) - LENGTH(REPLACE(path, '.', '')) <= ${path == null ? depth - 1 : path.depth + depth}");
 
   static Future<void> push() => Store.get.push(table, ContextsBase());
   static Future<bool> pull() => Store.get.pull(table, ContextsBase());
@@ -43,16 +47,27 @@ class Context extends ContextRow implements Comparable<Context> {
     });
   }
 
-  static Stream<List<Context>> watchChildren({Path? path}) {
+  static Stream<Context> watchOne(ContextId id, {int depth = 0}) {
+    final query = Store.get.select(table);
+    query.where((t) => t.id.equals(id.toBytes()));
+    return query.watchSingle().asyncExpand((row) =>
+        watchPath(row.path, depth: depth).map((contexts) => contexts.first));
+  }
+
+  static Stream<List<Context>> watchRoot() => watchPath(null);
+  static Stream<List<Context>> watchPath(Path? path, {int? depth = 1}) {
     final query = Store.get.select(table);
     if (path != null) {
       query.where((t) => t.path.like("${path.root}%"));
+    }
+    if (depth != null) {
+      query.where((t) => pathDepth(path, depth));
     }
     // order by path so parents always precede children
     query.orderBy([(t) => OrderingTerm(expression: t.path)]);
 
     return query.watch().map((rows) {
-      List<Context> children = [];
+      List<Context> matches = [];
       List<({Context parent, List<Context> children})> stack = [];
 
       void popStack(int depth) {
@@ -67,9 +82,9 @@ class Context extends ContextRow implements Comparable<Context> {
         final context =
             Context.fromStore(row, parent: stack.firstOrNull?.parent);
         if (path == null && context.path.isRoot) {
-          children.add(context);
+          matches.add(context);
         } else if (context.path == path) {
-          children = [context];
+          matches = [context];
         }
         if (stack.isNotEmpty && stack.last.parent.path == context.path.parent) {
           stack.last.children.add(context);
@@ -80,8 +95,8 @@ class Context extends ContextRow implements Comparable<Context> {
         stack.add((parent: context, children: []));
       }
       popStack(0);
-      children.sort();
-      return children;
+      matches.sort();
+      return matches;
     });
   }
 

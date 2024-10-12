@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:equatable/equatable.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
@@ -12,6 +13,7 @@ import 'package:plot/util/api.dart' as api;
 import 'package:plot/base.dart';
 import 'types.dart';
 
+export 'package:drift/drift.dart' show Value;
 export 'package:plot/util/time.dart';
 export 'package:plot/util/uuid.dart';
 export 'package:plot/util/order.dart';
@@ -95,7 +97,7 @@ abstract class BaseTable {
   }
 
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
-    await (base.from(table).upsert(rows));
+    await base.from(table).upsert(rows.toList());
   }
 }
 

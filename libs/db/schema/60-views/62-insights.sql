@@ -10,7 +10,7 @@ SELECT
     nv.name,
     value,
     count(*)::integer AS count,
-    sum(minutes)::integer AS minutes
+    sum(seconds)::integer AS seconds
 FROM
     event_x e
     CROSS JOIN LATERAL (
@@ -64,9 +64,9 @@ GROUP BY
 --     i.name,
 --     i.value,
 --     COALESCE(SUM(i.count) FILTER (WHERE i.response = 'accepted'), 0) AS count,
---     COALESCE(SUM(i.minutes) FILTER (WHERE i.response = 'accepted'), 0) AS minutes,
+--     COALESCE(SUM(i.seconds) FILTER (WHERE i.response = 'accepted'), 0) AS seconds,
 --     COALESCE(SUM(i.count) FILTER (WHERE i.response IS NULL), 0) AS pending_count,
---     COALESCE(SUM(i.minutes) FILTER (WHERE i.response IS NULL), 0) AS pending_minutes
+--     COALESCE(SUM(i.seconds) FILTER (WHERE i.response IS NULL), 0) AS pending_seconds
 -- FROM
 --     context ctx
 --     LEFT JOIN insight i ON ctx.path = i.context_path

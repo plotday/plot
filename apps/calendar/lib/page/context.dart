@@ -34,27 +34,25 @@ class ContextPage extends StatelessWidget {
                 if (nextIndex < state.children.length) {
                   next = state.children[nextIndex];
                 }
-                final context = state.children[oldIndex].copyWith(
+                Context.fromStore(state.children[oldIndex].copyWith(
                   order: Order.between(previous?.order, next?.order),
-                );
-                buildContext.read<ContextBloc>().update(context);
+                )).save();
               },
             ),
             InputAction(
               onAdd: (name) {
-                context.read<ContextBloc>().add(Context(
-                      name: name,
-                      parent: state.current,
-                      order:
-                          Order.between(state.children.lastOrNull?.order, null),
-                    ));
+                Context(
+                  name: name,
+                  parent: state.current,
+                  order: Order.between(state.children.lastOrNull?.order, null),
+                ).save();
               },
               label: "Add a priority",
             ),
             InputAction(
               onAdd: (body) {
                 context.read<ContextBloc>().addNote(Note(
-                      context: state.current,
+                      contextId: state.current?.id,
                       body: body,
                       order: Order.first(),
                     ));
@@ -76,9 +74,9 @@ class ContextPage extends StatelessWidget {
                 if (nextIndex < state.notes.length) {
                   next = state.notes[nextIndex];
                 }
-                final note = state.notes[oldIndex].copyWith(
+                final note = Note.fromStore(state.notes[oldIndex].copyWith(
                   order: Order.between(previous?.order, next?.order),
-                );
+                ));
                 buildContext.read<ContextBloc>().updateNote(note);
               },
             ),

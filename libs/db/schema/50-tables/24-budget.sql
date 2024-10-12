@@ -10,7 +10,7 @@ CREATE TABLE "public"."budget" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "context_id" uuid REFERENCES context ON DELETE CASCADE,
     "week" daterange NOT NULL CHECK (is_week (week)),
-    "minutes" integer,
+    "seconds" integer,
     "type" budget_type NOT NULL DEFAULT 'default' ::budget_type,
     CONSTRAINT priority_user_context_week_unique UNIQUE NULLS NOT DISTINCT (user_id, context_id, week)
 );

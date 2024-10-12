@@ -10,15 +10,14 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION calc_minutes (at tstzrange)
+CREATE FUNCTION calc_seconds (r tstzrange)
     RETURNS integer
     LANGUAGE plpgsql
-    IMMUTABLE
-    AS $$
+    AS $function$
 BEGIN
-    RETURN (round((EXTRACT(epoch FROM (upper(at) - lower(at))) / (60)::numeric)))::integer;
+    RETURN round(EXTRACT(epoch FROM (upper(r) - lower(r))))::integer;
 END;
-$$;
+$function$;
 
 CREATE OR REPLACE FUNCTION calc_all_day (at tstzrange)
     RETURNS boolean
@@ -26,9 +25,9 @@ CREATE OR REPLACE FUNCTION calc_all_day (at tstzrange)
     IMMUTABLE
     AS $$
 DECLARE
-    minutes integer = calc_minutes (at);
+    seconds integer = calc_seconds (at);
 BEGIN
-    RETURN minutes >= 60 * 23;
+    RETURN seconds >= 60 * 23;
 END;
 $$;
 
@@ -107,27 +106,27 @@ CREATE OR REPLACE FUNCTION calc_rounded_length (at tstzrange)
     IMMUTABLE
     AS $$
 DECLARE
-    minutes integer = calc_minutes (at);
+    seconds integer = calc_seconds (at);
 BEGIN
-    RETURN CASE WHEN minutes <= 20 THEN
+    RETURN CASE WHEN seconds <= 20 THEN
         15
-    WHEN minutes < 40 THEN
+    WHEN seconds < 40 THEN
         30
-    WHEN minutes < 50 THEN
+    WHEN seconds < 50 THEN
         45
-    WHEN minutes < 75 THEN
+    WHEN seconds < 75 THEN
         60
-    WHEN minutes < 101 THEN
+    WHEN seconds < 101 THEN
         90
-    WHEN minutes < 131 THEN
+    WHEN seconds < 131 THEN
         120
-    WHEN minutes < 161 THEN
+    WHEN seconds < 161 THEN
         150
-    WHEN minutes <= 180 THEN
+    WHEN seconds <= 180 THEN
         180
-    WHEN minutes <= 300 THEN
+    WHEN seconds <= 300 THEN
         240
-    WHEN minutes <= 420 THEN
+    WHEN seconds <= 420 THEN
         360
     ELSE
         480
@@ -157,11 +156,11 @@ CREATE OR REPLACE FUNCTION calc_speedy (at tstzrange)
     IMMUTABLE
     AS $$
 DECLARE
-    minutes integer = calc_minutes (at);
+    seconds integer = calc_seconds (at);
 BEGIN
-    RETURN minutes < 30
-        OR (MOD(minutes, 30) >= 10
-            AND MOD(minutes, 30) <= 15);
+    RETURN seconds < 30
+        OR (MOD(seconds, 30) >= 10
+            AND MOD(seconds, 30) <= 15);
 END;
 $$;
 
