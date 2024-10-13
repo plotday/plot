@@ -23,6 +23,13 @@ class ContextsBase extends BaseTable {
   @override
   Insertable<ContextRow> fromBase(Map<String, dynamic> json) =>
       ContextRow.fromJson(json);
+
+  @override
+  Future<void> put(Iterable<Map<String, dynamic>> rows) async {
+    // Upsert isn't supported on views because they don't have uniqueness
+    // constraints. Insert is overridden to upsert.
+    await base.from(table).insert(rows.toList());
+  }
 }
 
 class Context extends ContextRow implements Comparable<Context> {
@@ -128,7 +135,9 @@ class Context extends ContextRow implements Comparable<Context> {
   final Context? parent;
   final List<Context> children;
 
-  Future<void> save() => Store.get.save(table, this);
+  Future<void> save() {
+    return Store.get.save(table, this);
+  }
 
   void setChildren(List<Context> children) {
     children

@@ -1,26 +1,17 @@
-CREATE OR REPLACE VIEW "public"."context_x" WITH ( security_invoker = TRUE)
--- for formatting
-AS
-SELECT
-    c2.id,
-    cu.user_id,
-    c2.created_at,
-    GREATEST (cs.modified_at, cu.modified_at, c2.modified_at) AS modified_at,
-    c2.name,
-    replace_parent_path (c1.path, c2.path, COALESCE(cu.path, c1.path)) AS path,
-    COALESCE(cs.order, (extract(epoch FROM CURRENT_TIMESTAMP) * 1000)::double PRECISION * 10) AS
-ORDER,
-COALESCE(cs.pomodoro, 25) AS pomodoro
-FROM
-    context_user cu
-    JOIN context c1 ON cu.context_id = c1.id
-    JOIN context c2 ON c1.path @> c2.path
-    LEFT JOIN context_settings cs ON cs.user_id = cu.user_id
-        AND c2.id = cs.context_id;
+DROP TRIGGER IF EXISTS "insert_context_x" ON "public"."context_x";
 
-CREATE OR REPLACE FUNCTION handle_context_x_upsert ()
+DROP TRIGGER IF EXISTS "update_context_x" ON "public"."context_x";
+
+DROP FUNCTION IF EXISTS "public"."handle_context_x_insert" ();
+
+DROP FUNCTION IF EXISTS "public"."handle_context_x_update" ();
+
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE FUNCTION public.handle_context_x_upsert ()
     RETURNS TRIGGER
-    AS $$
+    LANGUAGE plpgsql
+    AS $function$
 DECLARE
     _context_id uuid;
 BEGIN
@@ -43,11 +34,10 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 
 CREATE TRIGGER upsert_context_x
-    INSTEAD OF INSERT OR UPDATE ON context_x
+    INSTEAD OF INSERT OR UPDATE ON public.context_x
     FOR EACH ROW
     EXECUTE FUNCTION handle_context_x_upsert ();
 

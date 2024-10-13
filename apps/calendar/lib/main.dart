@@ -7,6 +7,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'env.dart';
 import 'app.dart';
+import 'store/store.dart';
 
 Future<void> main() async {
   // await SentryFlutter.init(
@@ -23,6 +24,7 @@ Future<void> main() async {
     url: Env.supabaseUrl,
     anonKey: Env.supabaseAnonKey,
   );
+  Store.init();
   return runApp(const App());
   //   },
   // );

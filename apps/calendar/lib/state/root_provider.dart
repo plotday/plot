@@ -29,13 +29,13 @@ class RootProvider extends StatefulWidget {
 }
 
 class RootProviderState extends State<RootProvider> {
-  Future<void>? _dataLoading;
+  Future<bool>? _dataLoading;
   late StreamSubscription<UserState> _blocSubscription;
 
   void _onUserStateChange(UserState state) {
     if (state is UserSignedIn) {
       setState(() {
-        _dataLoading = Store.get.sync();
+        _dataLoading = Store.get.sync().then((_) => true);
       });
     } else {
       setState(() {

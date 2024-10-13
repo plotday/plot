@@ -12,17 +12,17 @@ class EventPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(builder: (context, state) {
       return switch (state) {
-            SelectedEventErrorState _ => const Center(child: Text("Error")),
-            SelectedEventState state => Column(children: [
-                const Text('Event Page'),
-                if (state.selected.name != null) Text(state.selected.name!),
-                Text(state.selected.at.start.toDate().format()),
-                Text(state.selected.at.start.toTimeOfDay().format(context)),
-                Text(state.selected.at.end.toTimeOfDay().format(context)),
-              ]),
-            SelectedEventLoadingState _ => const Center(child: Spinner()),
-            ScheduleState _ => const Center(child: Text("No event selected")),
-          };
+        SelectedEventErrorState _ => const Center(child: Text("Error")),
+        SelectedEventState state => Column(children: [
+            const Text('Event Page'),
+            if (state.selected.name != null) Text(state.selected.name!),
+            Text(state.selected.at.start.toDate().format()),
+            Text(state.selected.at.start.toTimeOfDay().format(context)),
+            Text(state.selected.at.end.toTimeOfDay().format(context)),
+          ]),
+        SelectedEventLoadingState _ => const Center(child: Spinner()),
+        ScheduleState _ => const Center(child: Text("No event selected")),
+      };
     });
   }
 }

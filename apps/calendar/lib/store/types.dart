@@ -3,6 +3,32 @@ import 'package:drift/drift.dart';
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
+import 'package:uuid/uuid.dart' as uuid;
+
+class CustomSerializer extends ValueSerializer {
+  final ValueSerializer _inner;
+
+  const CustomSerializer(
+      [this._inner = const ValueSerializer.defaults(
+          serializeDateTimeValuesAsString: true)]);
+
+  @override
+  T fromJson<T>(dynamic json) {
+    return _inner.fromJson<T>(json);
+  }
+
+  @override
+  dynamic toJson<T>(T value) {
+    if (value is uuid.UuidValue) {
+      return (value as uuid.UuidValue).toFormattedString();
+    }
+    if (value is Duration) {
+      return (value as Duration).inSeconds;
+    }
+
+    return _inner.toJson(value);
+  }
+}
 
 class UuidConverter extends TypeConverter<Uuid, Uint8List> {
   const UuidConverter();

@@ -16,7 +16,8 @@ class ScheduleBloc extends Cubit<ScheduleState> {
   void select(Event event) {
     emit(state.copyWith(
         selected: Optional.of(event), day: event.start.toDate()));
-    _watchEvent(event.id);
+    // TODO watch for event changes
+    // _watchEvent(event.id);
   }
 
   Future<Event> selectById(EventId id) {
@@ -26,7 +27,7 @@ class ScheduleBloc extends Cubit<ScheduleState> {
 
   Future<Event> _watchEvent(EventId id) {
     _eventSubscription?.cancel();
-    final stream = Event.watchOne(id);
+    final stream = Event.watchOne(id).asBroadcastStream();
     _eventSubscription = stream.listen((event) {
       emit(state.copyWith(
           selected: Optional.of(event), day: event.start.toDate()));
@@ -41,7 +42,7 @@ class ScheduleBloc extends Cubit<ScheduleState> {
     var schedule = state.schedule;
     if (!state.range.includes(today)) {
       emit(SelectedEventLoadingState.copy(state.copyWith(day: now.toDate())));
-      schedule = await watch(state.range);
+      schedule = await watch(Day.today());
     }
 
     final current = schedule[today]?.getAt(now);
@@ -58,7 +59,7 @@ class ScheduleBloc extends Cubit<ScheduleState> {
   Future<Map<Date, ScheduledDay>> watch(DateRange range) {
     _subscription?.cancel();
 
-    final stream = ScheduledDay.watch(range);
+    final stream = ScheduledDay.watch(range).asBroadcastStream();
     _subscription = stream.listen((schedule) {
       emit(state.copyWith(schedule: schedule));
     });
