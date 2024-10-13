@@ -238,7 +238,7 @@ class Store extends _$Store {
   Future<void> sync() async {
     await Future.wait([
       Account.push().then((_) => Account.pull()),
-      Context.push().then((_) => Account.pull()),
+      Context.push().then((_) => Context.pull()),
       // TODO add rest
     ]);
   }

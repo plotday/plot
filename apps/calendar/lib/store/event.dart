@@ -71,7 +71,6 @@ class Event extends EventRow {
   }
 
   static Stream<Event> watchOne(EventId id) {
-    print("watchOne($id)");
     final query = Store.get.select(table)
       ..where((t) => t.id.equals(id.toBytes()));
     return query.watchSingle().map((row) => Event.fromStore(row));
@@ -138,7 +137,6 @@ class Event extends EventRow {
 class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> watch(DateRange range) {
     var (start, end) = range.bounds;
-    print("A: $start to $end");
     final direction =
         start < end ? TimeDirection.ascending : TimeDirection.descending;
     return Event.watch(range, withContext: true).map((events) {
@@ -146,7 +144,6 @@ class ScheduledDay extends Equatable {
       List<Event> dayEvents = [];
       Iterator<Event> eventIterator = events.iterator;
 
-      print("B: $start to $end");
       while (start != end) {
         while (eventIterator.moveNext() &&
             eventIterator.current.start.toDate() == start) {

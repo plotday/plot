@@ -14,6 +14,13 @@ class CustomSerializer extends ValueSerializer {
 
   @override
   T fromJson<T>(dynamic json) {
+    if (T == uuid.UuidValue) {
+      return uuid.UuidValue.fromString(json as String) as T;
+    }
+    if (T == Duration) {
+      return Duration(seconds: json as int) as T;
+    }
+
     return _inner.fromJson<T>(json);
   }
 

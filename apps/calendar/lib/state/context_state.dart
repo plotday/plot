@@ -29,7 +29,7 @@ final class ContextState extends Equatable {
     List<Note> topicNotes = const [],
     this.moreTopicNotes = true,
     this.balances,
-  })  : children = current?.children ?? children ?? const [],
+  })  : children = children ?? current?.children ?? const [],
         notes = _filterPinnedNotes(notes, false),
         pinnedNotes = _filterPinnedNotes(notes, true),
         topicNotes = _filterPinnedNotes(notes, false),
@@ -78,7 +78,7 @@ final class ContextState extends Equatable {
     return ContextState._(
       balances: balances.or(this.balances),
       current: current.or(this.current),
-      children: current.or(this.current)?.children ?? children ?? const [],
+      children: children ?? current.orNull?.children ?? this.children,
       week: week ?? this.week,
       notes: notes,
       moreNotes: moreNotes ?? this.moreNotes,
