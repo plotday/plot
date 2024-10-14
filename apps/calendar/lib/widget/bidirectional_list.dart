@@ -26,6 +26,7 @@ class BidirectionalList extends StatefulWidget {
   final int estimatedItemExtent; // used to calculate the initial fetch
   final double overflow; // prefetch at least this multiple of the visible items
   final ScrollController scrollController;
+  final bool userProvidedScrollController;
 
   BidirectionalList({
     required this.builder,
@@ -34,7 +35,8 @@ class BidirectionalList extends StatefulWidget {
     this.estimatedItemExtent = 75,
     this.overflow = 2,
     super.key,
-  }) : scrollController = scrollController ?? ScrollController();
+  })  : scrollController = scrollController ?? ScrollController(),
+        userProvidedScrollController = scrollController != null;
 
   @override
   BidirectionalListState createState() => BidirectionalListState();
@@ -191,7 +193,9 @@ class BidirectionalListState extends State<BidirectionalList> {
 
   @override
   void dispose() {
-    widget.scrollController.dispose();
+    if (!widget.userProvidedScrollController) {
+      widget.scrollController.dispose();
+    }
     super.dispose();
   }
 
