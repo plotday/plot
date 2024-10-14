@@ -25,8 +25,8 @@ class ScheduleWidget extends StatelessWidget {
               .watch(DateRangeCustom(start, end));
           return ItemFetchResult(
             count: schedule.length,
-            doneStart: schedule.keys.first != start,
-            doneEnd: schedule.keys.last != end,
+            doneStart: false,
+            doneEnd: false,
           );
         },
         builder: (context, index) {
