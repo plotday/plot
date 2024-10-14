@@ -9,6 +9,7 @@ import 'package:macos_ui/macos_ui.dart' as macos;
 import 'widget/layout.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/router.dart';
+import 'package:plot/widget/global_menu.dart';
 
 class App extends StatefulWidget {
   static Future<void> init() async {
@@ -68,39 +69,41 @@ class AppState extends State<App> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider<UserBloc>(
-      create: (_) => UserBloc(),
-      child: BlocListener<UserBloc, UserState>(
-        listener: (context, state) {
-          router.refresh();
-        },
-        child: PlatformBuilder(
-          builder: (context) => AdaptiveTheme(
-            light: material.ThemeData(
-              colorScheme: material.ColorScheme.fromSeed(
-                seedColor: const Color(0x002BDD66),
-                brightness: material.Brightness.light,
+    return GlobalMenu(
+      child: BlocProvider<UserBloc>(
+        create: (_) => UserBloc(),
+        child: BlocListener<UserBloc, UserState>(
+          listener: (context, state) {
+            router.refresh();
+          },
+          child: PlatformBuilder(
+            builder: (context) => AdaptiveTheme(
+              light: material.ThemeData(
+                colorScheme: material.ColorScheme.fromSeed(
+                  seedColor: const Color(0x002BDD66),
+                  brightness: material.Brightness.light,
+                ),
+              ),
+              dark: material.ThemeData(
+                colorScheme: material.ColorScheme.fromSeed(
+                  seedColor: const Color(0x002BDD66),
+                  brightness: material.Brightness.dark,
+                ),
+              ),
+              debugShowFloatingThemeButton: true,
+              initial: AdaptiveThemeMode.system,
+              builder: (theme, darkTheme) => material.MaterialApp.router(
+                title: 'Plot',
+                theme: theme,
+                darkTheme: darkTheme,
+                routerConfig: router,
               ),
             ),
-            dark: material.ThemeData(
-              colorScheme: material.ColorScheme.fromSeed(
-                seedColor: const Color(0x002BDD66),
-                brightness: material.Brightness.dark,
-              ),
-            ),
-            debugShowFloatingThemeButton: true,
-            initial: AdaptiveThemeMode.system,
-            builder: (theme, darkTheme) => material.MaterialApp.router(
+            macOSBuilder: (context) => macos.MacosApp.router(
               title: 'Plot',
-              theme: theme,
-              darkTheme: darkTheme,
+              debugShowCheckedModeBanner: false,
               routerConfig: router,
             ),
-          ),
-          macOSBuilder: (context) => macos.MacosApp.router(
-            title: 'Plot',
-            debugShowCheckedModeBanner: false,
-            routerConfig: router,
           ),
         ),
       ),

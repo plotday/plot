@@ -9,7 +9,6 @@ import 'package:plot/state/accounts.dart';
 import 'package:plot/state/context.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/spinner.dart';
-import 'package:plot/widget/global_menu.dart';
 
 class BlocErrorLogger extends BlocObserver {
   @override
@@ -56,27 +55,26 @@ class RootProviderState extends State<RootProvider> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder(
-      future: _dataLoading,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          print(snapshot.error);
-          print(snapshot.stackTrace);
-          return const Center(child: Text("Error loading data"));
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: Spinner());
-        }
-        return MultiBlocProvider(
-          providers: [
-            BlocProvider(create: (_) => NowBloc()),
-            BlocProvider(create: (_) => ScheduleBloc()),
-            BlocProvider(create: (_) => AccountsBloc()),
-            BlocProvider(create: (_) => ContextBloc()),
-          ],
-          child: GlobalMenu(child: widget.child),
-        );
-      },
-    );
+        future: _dataLoading,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            print(snapshot.error);
+            print(snapshot.stackTrace);
+            return const Center(child: Text("Error loading data"));
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: Spinner());
+          }
+          return MultiBlocProvider(
+            providers: [
+              BlocProvider(create: (_) => NowBloc()),
+              BlocProvider(create: (_) => ScheduleBloc()),
+              BlocProvider(create: (_) => AccountsBloc()),
+              BlocProvider(create: (_) => ContextBloc()),
+            ],
+            child: widget.child,
+          );
+        });
   }
 
   @override
