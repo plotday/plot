@@ -69,7 +69,7 @@ class TopicNotesBase extends NotesBase {
   }
 }
 
-class Note extends NoteRow {
+class Note extends NoteRow implements Comparable<Note> {
   static TableInfo<Notes, NoteRow> get table => Store.get.notes;
 
   static Future<void> push() => Store.get.push(table, NotesBase());
@@ -164,4 +164,9 @@ class Note extends NoteRow {
         );
 
   Future<void> save() => Store.get.save(table, this);
+
+  @override
+  int compareTo(Note other) {
+    return order.compareTo(other.order);
+  }
 }

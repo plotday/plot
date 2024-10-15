@@ -239,6 +239,7 @@ class Store extends _$Store {
     await Future.wait([
       Account.push().then((_) => Account.pull()),
       Context.push().then((_) => Context.pull()),
+      Note.push().then((_) => Note.pull()),
       // TODO add rest
     ]);
   }

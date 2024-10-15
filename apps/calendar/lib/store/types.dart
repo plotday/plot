@@ -5,6 +5,9 @@ import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
 import 'package:uuid/uuid.dart' as uuid;
 
+bool __isType<T, Y>() => T == Y;
+bool _isType<T, Y>() => __isType<T, Y>() || __isType<T, Y?>();
+
 class CustomSerializer extends ValueSerializer {
   final ValueSerializer _inner;
 
@@ -14,7 +17,10 @@ class CustomSerializer extends ValueSerializer {
 
   @override
   T fromJson<T>(dynamic json) {
-    if (T == uuid.UuidValue) {
+    if (json == null) {
+      return null as T;
+    }
+    if (_isType<T, uuid.UuidValue>()) {
       return uuid.UuidValue.fromString(json as String) as T;
     }
     if (T == Duration) {
