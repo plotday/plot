@@ -214,6 +214,8 @@ class BidirectionalListState extends State<BidirectionalList> {
       physics: BidirectionalListScrollPhysics(
         getScrollAdjustment: _getScrollAdjustment,
       ),
+      scrollBehavior:
+          ScrollConfiguration.of(context).copyWith(scrollbars: false),
       viewportBuilder: (BuildContext context, ViewportOffset position) {
         return Viewport(
           offset: position,
