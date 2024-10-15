@@ -12,6 +12,10 @@ class NoteWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(note.body);
+    return Row(
+      children: [
+        Text(note.body),
+      ],
+    );
   }
 }
