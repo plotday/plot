@@ -83,13 +83,12 @@ class Note extends NoteRow implements Comparable<Note> {
   static bool hasMoreTopic(TopicId topicId) =>
       Store.get.hasMore(TopicNotesBase(topicId));
 
-  static Stream<List<Note>> watchContext(Path? path) {
+  static Stream<List<Note>> watchContext(Context? context) {
     final query = Store.get.select(table);
-    if (path != null) {
-      query.join([
-        innerJoin(Store.get.contexts,
-            Store.get.contexts.id.equalsExp(Store.get.notes.contextId))
-      ]).where(Store.get.contexts.path.like('$path%'));
+    if (context == null) {
+      query.where((t) => t.contextId.isNull());
+    } else {
+      query.where((t) => t.contextId.equals(context.id.toBytes()));
     }
     query.orderBy(
         [(t) => OrderingTerm.desc(t.root), (t) => OrderingTerm.asc(t.order)]);

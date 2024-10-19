@@ -30,15 +30,17 @@ class ContextBloc extends Cubit<ContextState> {
     if (current == null) {
       _contextSubscription = Context.watchRoot().listen((contexts) {
         emit(state.copyWith(current: Optional.of(null), children: contexts));
+        _loadBalances();
+        _loadNotes();
       });
     } else {
       _contextSubscription =
           Context.watchOne(current, depth: 1).listen((context) {
         emit(state.copyWith(current: Optional.of(context)));
+        _loadBalances();
+        _loadNotes();
       });
     }
-    _loadBalances();
-    _loadNotes();
   }
 
   Future<void> save(Context context) async {
@@ -63,7 +65,7 @@ class ContextBloc extends Cubit<ContextState> {
   void _loadNotes() async {
     _noteSubscription?.cancel();
     _topicSubscription?.cancel();
-    _noteSubscription = Note.watchContext(state.current?.path).listen((notes) {
+    _noteSubscription = Note.watchContext(state.current).listen((notes) {
       emit(state.copyWith(
         notes: notes,
         moreNotes: Note.hasMoreContext(state.current?.path),

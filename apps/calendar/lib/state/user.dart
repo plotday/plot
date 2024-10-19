@@ -26,6 +26,8 @@ class UserBloc extends Cubit<UserState> {
   UserBloc() : super(const UserLoading()) {
     // TODO store user and handle offline
     _authSubscription = base.auth.onAuthStateChange.listen((data) {
+      print("user state change");
+      print(data.session?.user);
       if (data.session?.user == null) {
         emit(const UserSignedOut());
         Sentry.configureScope((scope) => scope.setUser(null));
