@@ -43,6 +43,12 @@ class ContextBloc extends Cubit<ContextState> {
     }
   }
 
+  void setTopic(TopicId? topicId) {
+    if (_topicSubscription != null && topicId == state.topicId) return;
+    emit(state.copyWith(topicId: Optional.of(topicId), topicNotes: []));
+    _loadTopicNotes();
+  }
+
   Future<void> save(Context context) async {
     await context.save();
   }
@@ -62,15 +68,19 @@ class ContextBloc extends Cubit<ContextState> {
     );
   }
 
-  void _loadNotes() async {
+  void _loadNotes() {
     _noteSubscription?.cancel();
-    _topicSubscription?.cancel();
     _noteSubscription = Note.watchContext(state.current).listen((notes) {
       emit(state.copyWith(
         notes: notes,
         moreNotes: Note.hasMoreContext(state.current?.path),
       ));
     });
+    _loadTopicNotes();
+  }
+
+  void _loadTopicNotes() {
+    _topicSubscription?.cancel();
     final topic = state.topicId;
     if (topic != null) {
       _topicSubscription = Note.watchTopic(topic).listen((notes) {
@@ -83,7 +93,6 @@ class ContextBloc extends Cubit<ContextState> {
   }
 
   Future<void> addNote(Note note) async {
-    print("Adding note: ${note.order}");
     emit(state.copyWith(newNote: note));
     await note.save();
   }

@@ -84,7 +84,7 @@ class Note extends NoteRow implements Comparable<Note> {
       Store.get.hasMore(TopicNotesBase(topicId));
 
   static Stream<List<Note>> watchContext(Context? context) {
-    final query = Store.get.select(table);
+    final query = Store.get.select(table)..where((t) => t.root.equals(true));
     if (context == null) {
       query.where((t) => t.contextId.isNull());
     } else {

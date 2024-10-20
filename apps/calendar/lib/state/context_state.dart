@@ -32,8 +32,8 @@ final class ContextState extends Equatable {
   })  : children = children ?? current?.children ?? const [],
         notes = _filterPinnedNotes(notes, false),
         pinnedNotes = _filterPinnedNotes(notes, true),
-        topicNotes = _filterPinnedNotes(notes, false),
-        pinnedTopicNotes = _filterPinnedNotes(notes, true);
+        topicNotes = _filterPinnedNotes(topicNotes, false),
+        pinnedTopicNotes = _filterPinnedNotes(topicNotes, true);
 
   final Context? current;
   final List<Context> children;
@@ -46,7 +46,7 @@ final class ContextState extends Equatable {
   final List<Note> topicNotes;
   final List<Note> pinnedTopicNotes;
   final bool moreTopicNotes;
-  Note get topicNote => topicNotes.first;
+  Note? get topicNote => topicNotes.firstOrNull;
 
   final Week week;
   final Map<ContextId?, Balance>? balances;

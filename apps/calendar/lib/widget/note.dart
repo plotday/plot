@@ -1,6 +1,9 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/widget/widget.dart';
+import 'package:plot/state/context.dart';
 
 class NoteWidget extends StatelessWidget {
   const NoteWidget({
@@ -12,10 +15,15 @@ class NoteWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(note.body),
-      ],
+    return Tapable(
+      onTap: () => context.read<ContextBloc>().setTopic(note.topicId),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(note.body),
+          ),
+        ],
+      ),
     );
   }
 }

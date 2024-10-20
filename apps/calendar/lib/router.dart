@@ -101,7 +101,7 @@ class HomeRoute extends AdaptiveRoute {
         child: TripleLayout(
           EventPage(),
           ContextPage(),
-          NotesPage(),
+          TopicPage(),
         ),
       );
 
@@ -163,7 +163,7 @@ class ScheduleRoute extends AdaptiveRoute {
         child: TripleLayout(
           SchedulePage(),
           ContextPage(),
-          NotesPage(),
+          TopicPage(),
         ),
       );
 }
@@ -207,7 +207,7 @@ class EventRoute extends AdaptiveRoute {
         child: TripleLayout(
           EventPage(),
           ContextPage(),
-          NotesPage(),
+          TopicPage(),
         ),
       );
 }
@@ -229,7 +229,7 @@ class PrioritiesRoute extends AdaptiveRoute {
         child: TripleLayout(
           SchedulePage(),
           ContextPage(),
-          NotesPage(),
+          TopicPage(),
         ),
       );
 
@@ -276,7 +276,7 @@ class PriorityRoute extends AdaptiveRoute {
         child: TripleLayout(
           SchedulePage(),
           ContextPage(),
-          NotesPage(),
+          TopicPage(),
         ),
       );
 
