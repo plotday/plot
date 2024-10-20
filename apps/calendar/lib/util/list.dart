@@ -17,7 +17,6 @@ extension ReplaceListItem<T> on List<T> {
   List<T> replaceSorted(T item, bool Function(T, T) match) {
     removeWhere((n) => match(n, item));
     final newPos = lowerBound(this, item);
-    print("newPos: $newPos");
     insert(newPos, item);
     return this;
   }
