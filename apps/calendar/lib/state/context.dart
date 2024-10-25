@@ -106,6 +106,7 @@ class ContextBloc extends Cubit<ContextState> {
     try {
       await note.save();
     } catch (e) {
+      print(e);
       emit(state.copyWith(notes: currentNotes));
       rethrow;
     }

@@ -59,7 +59,7 @@ class ContextPage extends StatelessWidget {
                         order: Order.first(),
                       ));
                 },
-                label: "Add a note",
+                label: "Add a topic",
               ),
               ReorderableListView(
                 list: state.pinnedNotes,

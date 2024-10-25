@@ -136,7 +136,7 @@ class Context extends ContextRow implements Comparable<Context> {
   final List<Context> children;
 
   Future<void> save() {
-    return Store.get.save(table, this);
+    return Store.get.save(table, copyWith(modifiedAt: DateTime.now()));
   }
 
   void setChildren(List<Context> children) {

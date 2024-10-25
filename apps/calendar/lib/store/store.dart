@@ -50,10 +50,6 @@ class UuidStoreTable extends StoreTable {
   Set<Column> get primaryKey => {id};
 }
 
-abstract class StoreDataClass extends DataClass {
-  DateTime get modifiedAt;
-}
-
 abstract class BaseTable {
   BaseTable({
     required this.table,

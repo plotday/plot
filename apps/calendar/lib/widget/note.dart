@@ -15,14 +15,17 @@ class NoteWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tapable(
+    return ListTile(
       onTap: () => context.read<ContextBloc>().setTopic(note.topicId),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(note.body),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(note.body),
+            ),
+          ],
+        ),
       ),
     );
   }
