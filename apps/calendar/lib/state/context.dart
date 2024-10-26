@@ -26,6 +26,7 @@ class ContextBloc extends Cubit<ContextState> {
 
   void setCurrent(ContextId? current) {
     if (_contextSubscription != null && current == state.current?.id) return;
+    setTopic(null);
     _contextSubscription?.cancel();
     if (current == null) {
       _contextSubscription = Context.watchRoot().listen((contexts) {
