@@ -57,51 +57,48 @@ class Context extends ContextRow implements Comparable<Context> {
   static Stream<Context> watchOne(ContextId id, {int depth = 0}) {
     final query = Store.get.select(table);
     query.where((t) => t.id.equals(id.toBytes()));
-    return query.watchSingle().asyncExpand((row) =>
-        watchPath(row.path, depth: depth).map((contexts) => contexts.first));
+    return query.watchSingle().asyncExpand((row) {
+      return watchPath(row.path, depth: depth)
+          .map((contexts) => contexts.first);
+    });
   }
 
   static Stream<List<Context>> watchRoot() => watchPath(null);
   static Stream<List<Context>> watchPath(Path? path, {int? depth = 1}) {
     final query = Store.get.select(table);
     if (path != null) {
-      query.where((t) => t.path.like("${path.root}%"));
+      query.where((t) =>
+          Variable<String>(path.toString())
+              .likeExp(t.path + const Constant('%')) |
+          t.path.like("$path.%"));
     }
     if (depth != null) {
-      query.where((t) => pathDepth(path, depth));
+      query.where((t) => pathDepth(path, (path?.depth ?? 0) + depth));
     }
     // order by path so parents always precede children
     query.orderBy([(t) => OrderingTerm(expression: t.path)]);
 
     return query.watch().map((rows) {
       List<Context> matches = [];
-      List<({Context parent, List<Context> children})> stack = [];
-
-      void popStack(int depth) {
-        for (var i = stack.length - 1; i >= max(1, depth); i--) {
-          stack[i].children.sort();
-          stack[i].parent.setChildren(stack[i].children);
-        }
-        stack.removeRange(depth, stack.length);
-      }
+      List<Context> stack = [];
 
       for (var row in rows) {
-        final context =
-            Context.fromStore(row, parent: stack.firstOrNull?.parent);
-        if (path == null && context.path.isRoot) {
+        var context =
+            Context.fromStore(row, parent: stack.isEmpty ? null : stack.last);
+
+        if ((path == null && context.path.isRoot) || context.path == path) {
           matches.add(context);
-        } else if (context.path == path) {
-          matches = [context];
-        }
-        if (stack.isNotEmpty && stack.last.parent.path == context.path.parent) {
-          stack.last.children.add(context);
         } else if (stack.isNotEmpty &&
-            !stack.last.parent.path.isParent(context.path)) {
-          popStack(context.path.depth);
+            !stack.last.path.isParent(context.path)) {
+          stack.removeWhere((c) => !c.path.isParent(context.path));
         }
-        stack.add((parent: context, children: []));
+
+        if (stack.isNotEmpty) {
+          context = context.copyWith(parent: stack.last);
+        }
+        stack.add(context);
       }
-      popStack(0);
+
       matches.sort();
       return matches;
     });
@@ -118,10 +115,12 @@ class Context extends ContextRow implements Comparable<Context> {
           createdAt: DateTime.now(),
           modifiedAt: DateTime.now(),
           path: Path.generate(parent: parent?.path),
-        );
+        ) {
+    parent?._addChild(this);
+  }
 
-  Context.fromStore(ContextRow row, {this.parent})
-      : children = [],
+  Context.fromStore(ContextRow row, {this.parent, List<Context>? children})
+      : children = children ?? [],
         super(
           id: row.id,
           createdAt: row.createdAt,
@@ -130,20 +129,44 @@ class Context extends ContextRow implements Comparable<Context> {
           pomodoro: row.pomodoro,
           order: row.order,
           path: row.path,
-        );
+        ) {
+    parent?._addChild(this);
+  }
 
   final Context? parent;
   final List<Context> children;
 
-  Future<void> save() {
-    return Store.get.save(table, copyWith(modifiedAt: DateTime.now()));
+  @override
+  Context copyWith({
+    Uuid? id,
+    DateTime? modifiedAt,
+    DateTime? createdAt,
+    String? name,
+    Path? path,
+    Order? order,
+    Duration? pomodoro,
+    Context? parent,
+  }) =>
+      Context.fromStore(
+        super.copyWith(
+          id: id,
+          modifiedAt: modifiedAt,
+          createdAt: createdAt,
+          name: name,
+          path: path,
+          order: order,
+          pomodoro: pomodoro,
+        ),
+        parent: parent ?? this.parent,
+        children: children,
+      );
+
+  void _addChild(Context child) {
+    children.replaceSorted(child, (a, b) => a.id == b.id);
   }
 
-  void setChildren(List<Context> children) {
-    children
-      ..clear()
-      ..addAll(children)
-      ..sort();
+  Future<void> save() {
+    return Store.get.save(table, copyWith(modifiedAt: DateTime.now()));
   }
 
   @override

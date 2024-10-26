@@ -49,7 +49,7 @@ class ContextPage extends StatelessWidget {
                         Order.between(state.children.lastOrNull?.order, null),
                   ).save();
                 },
-                label: "Add a priority",
+                label: "Add an actvity",
               ),
               InputAction(
                 onAdd: (body) {
