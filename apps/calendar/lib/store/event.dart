@@ -136,10 +136,10 @@ class Event extends EventRow {
 
 class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> watch(DateRange range) {
-    var (start, end) = range.bounds;
-    final direction =
-        start < end ? TimeDirection.ascending : TimeDirection.descending;
     return Event.watch(range, withContext: true).map((events) {
+      var (start, end) = range.bounds;
+      final direction =
+          start < end ? TimeDirection.ascending : TimeDirection.descending;
       Map<Date, ScheduledDay> days = {};
       List<Event> dayEvents = [];
       Iterator<Event> eventIterator = events.iterator;
