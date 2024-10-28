@@ -46,7 +46,7 @@ class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
   Widget build(BuildContext context) {
     return material.ReorderableListView.builder(
       itemCount: list.length,
-      primary: true,
+      primary: false,
       shrinkWrap: widget.shrinkWrap,
       buildDefaultDragHandles: false,
       proxyDecorator: Platform.instance.isNative

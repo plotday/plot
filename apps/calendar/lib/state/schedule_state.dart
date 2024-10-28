@@ -4,11 +4,13 @@ sealed class ScheduleState extends Equatable {
   ScheduleState({
     Date? day,
     this.schedule = const {},
-  }) : day = day ?? Date.today();
+  })  : day = day ?? Date.today(),
+        anchor = Date.today();
 
   ScheduleState.copy(ScheduleState copy,
       {Date? day, Map<Date, ScheduledDay>? schedule})
       : day = day ?? copy.day,
+        anchor = copy.anchor,
         schedule = schedule ?? copy.schedule;
 
   ScheduleState copyWith({
@@ -70,7 +72,8 @@ sealed class ScheduleState extends Equatable {
     }
   }
 
-  final Date day;
+  final Date day; // selected day
+  final Date anchor; // used to calculate relative offset of watch range
   Week get week => Week(day);
 
   final Map<Date, ScheduledDay> schedule;

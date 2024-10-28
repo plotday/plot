@@ -5,38 +5,37 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/rendering.dart';
 import 'package:plot/widget/widget.dart';
 
-class ItemFetchResult {
-  final int count;
-  final bool doneStart;
-  final bool doneEnd;
-
-  const ItemFetchResult({
-    required this.count,
-    this.doneStart = false,
-    this.doneEnd = false,
-  });
-}
-
 typedef ItemBuilder = Widget? Function(BuildContext context, int index);
-typedef ItemFetcher = Future<ItemFetchResult> Function(int move, int count);
+typedef ItemFetcher = void Function(int move, int count);
 
 class BidirectionalList extends StatefulWidget {
   final ItemBuilder builder;
-  final ItemFetcher fetcher;
-  final int estimatedItemExtent; // used to calculate the initial fetch
-  final double overflow; // prefetch at least this multiple of the visible items
-  final ScrollController scrollController;
-  final bool userProvidedScrollController;
+  final ItemFetcher? fetcher;
+  final int count;
+  // arbitrary, relative value representing the position of the first item in
+  // the list
+  final int offset;
+  final bool doneStart;
+  final bool doneEnd;
+  final int estimatedItemExtent;
+  final double overflow;
+  final ScrollController? scrollController;
+  final Widget? header;
 
-  BidirectionalList({
+  const BidirectionalList({
     required this.builder,
-    required this.fetcher,
-    ScrollController? scrollController,
+    required this.count,
+    this.fetcher,
+    this.offset = 0,
+    bool? doneStart,
+    bool? doneEnd,
+    this.scrollController,
     this.estimatedItemExtent = 75,
     this.overflow = 2,
+    this.header,
     super.key,
-  })  : scrollController = scrollController ?? ScrollController(),
-        userProvidedScrollController = scrollController != null;
+  })  : doneStart = doneStart ?? fetcher == null,
+        doneEnd = doneEnd ?? fetcher == null;
 
   @override
   BidirectionalListState createState() => BidirectionalListState();
@@ -45,6 +44,9 @@ class BidirectionalList extends StatefulWidget {
 class BidirectionalListState extends State<BidirectionalList> {
   final GlobalKey _upListKey = GlobalKey();
   final GlobalKey _downListKey = GlobalKey();
+  final GlobalKey _headerKey = GlobalKey();
+
+  late final ScrollController _scrollController;
 
   bool _loading = false;
   // Prevent the list from growing on the first frame in order to calculate the
@@ -54,8 +56,6 @@ class BidirectionalListState extends State<BidirectionalList> {
   int _upCount = 0;
   int _downCount = 0;
   int get _count => _upCount + _downCount;
-  bool _doneStart = false;
-  bool _doneEnd = false;
   late double _averageItemExtent = widget.estimatedItemExtent.toDouble();
   (double?, double?) _lastListExtents = (null, null);
 
@@ -108,29 +108,28 @@ class BidirectionalListState extends State<BidirectionalList> {
   }
 
   double averageItemsPerPage() {
-    return widget.scrollController.position.viewportDimension /
-        _averageItemExtent;
+    return _scrollController.position.viewportDimension / _averageItemExtent;
   }
 
   double pagesBefore() {
-    return (widget.scrollController.position.pixels -
-            widget.scrollController.position.minScrollExtent) /
-        widget.scrollController.position.viewportDimension;
+    return (_scrollController.position.pixels -
+            _scrollController.position.minScrollExtent) /
+        _scrollController.position.viewportDimension;
   }
 
   double pagesAfter() {
-    return (widget.scrollController.position.maxScrollExtent -
-            widget.scrollController.position.pixels) /
-        widget.scrollController.position.viewportDimension;
+    return (_scrollController.position.maxScrollExtent -
+            _scrollController.position.pixels) /
+        _scrollController.position.viewportDimension;
   }
 
   void _loadInitialItems() {
     _loadMoreItems(
-        ((widget.scrollController.position.viewportDimension /
+        ((_scrollController.position.viewportDimension /
                     widget.estimatedItemExtent) *
                 widget.overflow)
             .ceil(),
-        ((widget.scrollController.position.viewportDimension /
+        ((_scrollController.position.viewportDimension /
                     widget.estimatedItemExtent) *
                 widget.overflow)
             .ceil());
@@ -138,13 +137,13 @@ class BidirectionalListState extends State<BidirectionalList> {
 
   void _loadIfNecessary() {
     if (_loading) return;
-    if (_doneStart && _doneEnd) return;
+    if (widget.doneStart && widget.doneEnd) return;
     if (pagesBefore() >= widget.overflow && pagesAfter() >= widget.overflow) {
       return;
     }
-    bool scrollingUp = widget.scrollController.position.userScrollDirection ==
+    bool scrollingUp = _scrollController.position.userScrollDirection ==
         ScrollDirection.forward;
-    bool scrollingDown = widget.scrollController.position.userScrollDirection ==
+    bool scrollingDown = _scrollController.position.userScrollDirection ==
         ScrollDirection.reverse;
     final moveUp =
         ((widget.overflow * (scrollingUp ? 1.5 : 1) - pagesBefore()) *
@@ -158,17 +157,56 @@ class BidirectionalListState extends State<BidirectionalList> {
   }
 
   Future<void> _loadMoreItems(int moveUp, int moveDown) async {
-    if (_loading) return;
+    if (widget.fetcher == null || _loading) return;
     _loading = true;
-    final result = await widget.fetcher(-moveUp, _count + moveUp + moveDown);
+    widget.fetcher!(-moveUp, _count + moveUp + moveDown);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = widget.scrollController ?? ScrollController();
+
+    // Wait until the widget is properly mounted and has a position
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_scrollController.hasClients) {
+        _loadInitialItems();
+        _scrollController.addListener(_loadIfNecessary);
+      } else {
+        // If no client is attached yet, wait for the controller to be attached
+        _scrollController.addListener(() {
+          if (_scrollController.hasClients) {
+            _loadInitialItems();
+            _scrollController.addListener(_loadIfNecessary);
+          }
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    if (widget.scrollController == null) {
+      _scrollController.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant BidirectionalList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.offset == widget.offset && oldWidget.count == widget.count) {
+      return;
+    }
+    int moveUp = widget.offset - oldWidget.offset;
+    int moveDown = widget.count - oldWidget.count - moveUp;
     setState(() {
       _shrinkUp = max(0, moveUp);
       _shrinkDown = max(0, moveDown);
       // TODO handle the ends of lists
-      _upCount = min(max(_upCount + moveUp, 0), result.count);
-      _downCount = min(max(_downCount + moveDown, 0), result.count);
-      _doneStart = result.doneStart;
-      _doneEnd = result.doneEnd;
+      _upCount = min(max(_upCount + moveUp, 0), widget.count);
+      _downCount = min(max(_downCount + moveDown, 0), widget.count);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       setState(() {
@@ -183,23 +221,6 @@ class BidirectionalListState extends State<BidirectionalList> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadInitialItems();
-      widget.scrollController.addListener(_loadIfNecessary);
-    });
-  }
-
-  @override
-  void dispose() {
-    if (!widget.userProvidedScrollController) {
-      widget.scrollController.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     const spinner = SliverToBoxAdapter(
       child: Padding(
@@ -209,35 +230,32 @@ class BidirectionalListState extends State<BidirectionalList> {
         ),
       ),
     );
-    return Scrollable(
-      controller: widget.scrollController,
+
+    return CustomScrollView(
+      controller: _scrollController,
       physics: BidirectionalListScrollPhysics(
         getScrollAdjustment: _getScrollAdjustment,
       ),
-      scrollBehavior:
-          ScrollConfiguration.of(context).copyWith(scrollbars: false),
-      viewportBuilder: (BuildContext context, ViewportOffset position) {
-        return Viewport(
-          offset: position,
-          center: _downListKey,
-          slivers: [
-            if (_count > 0 && !_doneStart) spinner,
-            SliverList.builder(
-              key: _upListKey,
-              itemCount: _upCount - _shrinkUp,
-              itemBuilder: (context, index) =>
-                  widget.builder(context, _upCount - index - 1),
-            ),
-            SliverList.builder(
-              key: _downListKey,
-              itemCount: _downCount - _shrinkDown,
-              itemBuilder: (context, index) =>
-                  widget.builder(context, _upCount + index),
-            ),
-            if (!_doneEnd) spinner,
-          ],
-        );
-      },
+      center:
+          widget.doneStart && widget.header != null ? _headerKey : _downListKey,
+      slivers: [
+        if (widget.header != null)
+          SliverToBoxAdapter(key: _headerKey, child: widget.header),
+        if (_count > 0 && !widget.doneStart) spinner,
+        SliverList.builder(
+          key: _upListKey,
+          itemCount: _upCount - _shrinkUp,
+          itemBuilder: (context, index) =>
+              widget.builder(context, _upCount - index - 1),
+        ),
+        SliverList.builder(
+          key: _downListKey,
+          itemCount: _downCount - _shrinkDown,
+          itemBuilder: (context, index) =>
+              widget.builder(context, _upCount + index),
+        ),
+        if (!widget.doneEnd) spinner,
+      ],
     );
   }
 }

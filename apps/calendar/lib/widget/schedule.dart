@@ -16,18 +16,13 @@ class ScheduleWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, scheduleState) => BidirectionalList(
+        count: scheduleState.schedule.length,
+        offset: anchor.difference(scheduleState.range.start).inDays,
         scrollController: scrollController,
-        fetcher: (move, count) async {
+        fetcher: (move, count) {
           final start = scheduleState.range.start.addDays(move);
           final end = start.addDays(count);
-          final schedule = await context
-              .read<ScheduleBloc>()
-              .watch(DateRangeCustom(start, end));
-          return ItemFetchResult(
-            count: schedule.length,
-            doneStart: false,
-            doneEnd: false,
-          );
+          context.read<ScheduleBloc>().watch(DateRangeCustom(start, end));
         },
         builder: (context, index) {
           final day =
