@@ -6,7 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:plot/widget/widget.dart';
 
 typedef ItemBuilder = Widget? Function(BuildContext context, int index);
-typedef ItemFetcher = void Function(int move, int count);
+typedef ItemFetcher = Future<void> Function(int move, int count);
 
 class BidirectionalList extends StatefulWidget {
   final ItemBuilder builder;
@@ -53,9 +53,8 @@ class BidirectionalListState extends State<BidirectionalList> {
   // amount of shrinkage, which is used to adjust the scroll position.
   int _shrinkUp = 0;
   int _shrinkDown = 0;
-  int _upCount = 0;
-  int _downCount = 0;
-  int get _count => _upCount + _downCount;
+  late int _upCount = widget.count ~/ 2;
+  late int _downCount = widget.count - widget.count ~/ 2;
   late double _averageItemExtent = widget.estimatedItemExtent.toDouble();
   (double?, double?) _lastListExtents = (null, null);
 
@@ -158,8 +157,12 @@ class BidirectionalListState extends State<BidirectionalList> {
 
   Future<void> _loadMoreItems(int moveUp, int moveDown) async {
     if (widget.fetcher == null || _loading) return;
-    _loading = true;
-    widget.fetcher!(-moveUp, _count + moveUp + moveDown);
+    try {
+      _loading = true;
+      await widget.fetcher!(-moveUp, widget.count + moveUp + moveDown);
+    } finally {
+      _loading = false;
+    }
   }
 
   @override
@@ -210,7 +213,6 @@ class BidirectionalListState extends State<BidirectionalList> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       setState(() {
-        _loading = false;
         _shrinkUp = 0;
         _shrinkDown = 0;
       });
@@ -241,7 +243,7 @@ class BidirectionalListState extends State<BidirectionalList> {
       slivers: [
         if (widget.header != null)
           SliverToBoxAdapter(key: _headerKey, child: widget.header),
-        if (_count > 0 && !widget.doneStart) spinner,
+        if (widget.count > 0 && !widget.doneStart) spinner,
         SliverList.builder(
           key: _upListKey,
           itemCount: _upCount - _shrinkUp,

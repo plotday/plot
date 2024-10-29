@@ -7,9 +7,8 @@ import 'package:plot/widget/day.dart';
 import 'package:plot/util/time.dart';
 
 class ScheduleWidget extends StatelessWidget {
-  ScheduleWidget({this.scrollController, super.key}) : anchor = Date.today();
+  const ScheduleWidget({this.scrollController, super.key});
 
-  final Date anchor;
   final ScrollController? scrollController;
 
   @override
@@ -17,12 +16,13 @@ class ScheduleWidget extends StatelessWidget {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, scheduleState) => BidirectionalList(
         count: scheduleState.schedule.length,
-        offset: anchor.difference(scheduleState.range.start).inDays,
+        offset:
+            scheduleState.anchor.difference(scheduleState.range.start).inDays,
         scrollController: scrollController,
-        fetcher: (move, count) {
+        fetcher: (move, count) async {
           final start = scheduleState.range.start.addDays(move);
           final end = start.addDays(count);
-          context.read<ScheduleBloc>().watch(DateRangeCustom(start, end));
+          await context.read<ScheduleBloc>().watch(DateRangeCustom(start, end));
         },
         builder: (context, index) {
           final day =
