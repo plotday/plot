@@ -96,6 +96,7 @@ class ContextBloc extends Cubit<ContextState> {
   }
 
   void newTopic(BuildContext context) {
+    emit(state.copyWith(topicId: Optional.of(null), topicNotes: []));
     if (state.current == null) {
       HomeRoute().go(context);
     } else {
@@ -104,8 +105,14 @@ class ContextBloc extends Cubit<ContextState> {
   }
 
   Future<void> addNote(Note note) async {
-    emit(state.copyWith(newNote: note));
     await note.save();
+    if (note.root) {
+      emit(state.copyWith(
+          newNote: note,
+          topicId: Optional.of(note.topicId),
+          topicNotes: [note]));
+      _loadTopicNotes();
+    }
   }
 
   Future<void> updateNote(Note note) async {

@@ -31,7 +31,7 @@ class TopicPage extends StatelessWidget {
                     ));
               }
             },
-            label: "Add a note",
+            label: state.topicNotes.isEmpty ? "Start a topic" : "Add a note",
           ),
         ],
       ),
