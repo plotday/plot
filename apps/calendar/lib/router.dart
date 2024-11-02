@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:equatable/equatable.dart';
 
 import 'store/store.dart';
 import 'state/user.dart';
@@ -13,164 +14,86 @@ import 'widget/layout.dart';
 
 part 'router.g.dart';
 
-class NavigationContext extends InheritedWidget {
-  static StatefulNavigationShell of(BuildContext context) {
-    return context
-        .dependOnInheritedWidgetOfExactType<NavigationContext>()!
-        .navigationShell;
-  }
+@immutable
+abstract class Route extends GoRouteData with EquatableMixin {
+  static Route? _last;
 
-  const NavigationContext({
-    required this.navigationShell,
-    required super.child,
-    super.key,
-  });
-  final StatefulNavigationShell navigationShell;
+  const Route();
 
   @override
-  bool updateShouldNotify(NavigationContext oldWidget) {
-    return navigationShell != oldWidget.navigationShell;
+  Widget build(BuildContext context, GoRouterState state) {
+    _onBuild(context);
+    // TODO get layout from context
+    return buildAdaptive(context, state);
   }
-}
 
-@TypedGoRoute<LoginRoute>(path: '/login')
-class LoginRoute extends GoRouteData {
-  const LoginRoute();
+  Widget buildAdaptive(BuildContext context, GoRouterState state);
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      buildAdaptive(context, state);
 
-  @override
-  Page<void> buildPage(BuildContext context, GoRouterState state) =>
-      const NoTransitionPage(
-        child: SignInPage(),
-      );
-}
+  void onEnter(BuildContext context) {}
 
-class SettingsRoute extends GoRouteData {
-  const SettingsRoute();
-
-  @override
-  Page<void> buildPage(BuildContext context, GoRouterState state) {
-    return const NoTransitionPage(
-      child: AccountPage(),
-    );
-  }
-}
-
-abstract class Route extends GoRouteData {
-  void onBuild(BuildContext context) {
-    if (!_init) {
-      _init = true;
+  void _onBuild(BuildContext context) {
+    if (_last != this) {
+      _last = this;
       onEnter(context);
     }
   }
-
-  bool _init = false;
-
-  void onEnter(BuildContext context) {}
 }
 
-abstract class AdaptiveRoute extends Route {
-  @override
-  Page<void> buildPage(BuildContext context, GoRouterState state) {
-    onBuild(context);
-    return switch (Layout.getLayout(context)) {
-      PanelLayout.single => buildSinglePage(context, state),
-      PanelLayout.double => buildDoublePage(context, state),
-      PanelLayout.triple => buildTriplePage(context, state),
-    };
-  }
+@immutable
+class LoginRoute extends Route {
+  static const path = '/login';
 
-  Page<void> buildSinglePage(BuildContext context, GoRouterState state);
-  Page<void> buildDoublePage(BuildContext context, GoRouterState state);
-  Page<void> buildTriplePage(BuildContext context, GoRouterState state);
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const SignInPage();
+
+  @override
+  List<Object?> get props => [];
 }
 
-@TypedGoRoute<HomeRoute>(path: '/', name: 'home:triple', routes: [
-  TypedGoRoute<SettingsRoute>(path: 'settings'),
-])
-class HomeRoute extends AdaptiveRoute {
-  @override
-  void onEnter(BuildContext context) async {
-    final event = await context.read<ScheduleBloc>().selectCurrent();
-    if (!context.mounted) return;
-    context.read<ContextBloc>().setCurrent(event?.contextId);
-  }
+@immutable
+class SettingsRoute extends Route {
+  static const path = '/settings';
+
+  const SettingsRoute();
 
   @override
-  Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
-      const NoTransitionPage(
-        child: TripleLayout(
-          EventPage(),
-          ContextPage(),
-          TopicPage(),
-        ),
-      );
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const AccountPage();
 
   @override
-  Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
-      const NoTransitionPage(
-        child: DoubleLayout(
-          EventPage(),
-          ContextPage(),
-        ),
-      );
-
-  @override
-  Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
-        child: SingleLayout(
-          const EventPage(),
-          navigationShell: NavigationContext.of(context),
-        ),
-      );
+  List<Object?> get props => [];
 }
 
-@TypedGoRoute<ScheduleRoute>(path: '/d/:dayString', name: 'schedule:triple')
-class ScheduleRoute extends AdaptiveRoute {
-  ScheduleRoute({required this.dayString}) : day = Date.fromString(dayString);
-  ScheduleRoute.day({required this.day}) : dayString = day.toString();
+@immutable
+class HomeRoute extends Route {
+  static const path = '/';
+
+  HomeRoute({this.d}) : day = d == null ? Date.today() : Date.fromString(d);
+  const HomeRoute.day(this.day) : d = null;
 
   final Date day;
-  final String dayString;
+  final String? d;
 
   @override
-  void onEnter(BuildContext context) async {
-    // TODO
-    print(day);
-  }
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const TopicPage();
 
   @override
-  Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
-        child: SingleLayout(
-          const SchedulePage(),
-          navigationShell: NavigationContext.of(context),
-        ),
-      );
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const SchedulePage();
 
   @override
-  Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
-        child: DoubleLayout(
-          const SchedulePage(),
-          const ContextPage(),
-          navigationShell: NavigationContext.of(context),
-        ),
-      );
-
-  @override
-  Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
-      const NoTransitionPage(
-        child: TripleLayout(
-          SchedulePage(),
-          ContextPage(),
-          TopicPage(),
-        ),
-      );
+  List<Object?> get props => [];
 }
 
-@TypedGoRoute<EventRoute>(path: '/e/:eventId', name: 'event:triple')
-class EventRoute extends AdaptiveRoute {
-  EventRoute({required this.eventId});
+@immutable
+class EventRoute extends Route {
+  static const path = '/schedule/:eventId';
+
+  const EventRoute({required this.eventId});
 
   final String eventId;
 
@@ -183,85 +106,26 @@ class EventRoute extends AdaptiveRoute {
   }
 
   @override
-  Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
-        child: SingleLayout(
-          const EventPage(),
-          navigationShell: NavigationContext.of(context),
-        ),
-      );
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const EventPage();
 
   @override
-  Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
-        child: DoubleLayout(
-          const EventPage(),
-          const ContextPage(),
-          navigationShell: NavigationContext.of(context),
-        ),
-      );
-
-  @override
-  Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
-      const NoTransitionPage(
-        child: TripleLayout(
-          EventPage(),
-          ContextPage(),
-          TopicPage(),
-        ),
-      );
+  List<Object?> get props => [eventId];
 }
 
-class PrioritiesRoute extends AdaptiveRoute {
-  @override
-  void onEnter(BuildContext context) {
-    context.read<ContextBloc>().setCurrent(null);
-    context
-        .read<ScheduleBloc>()
-        .selected
-        ?.copyWith(contextId: const Value(null))
-        .save();
-  }
+@immutable
+class ActivityRoute extends Route {
+  static const path = '/activity/:contextId';
+  static const all = 'all';
 
-  @override
-  Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
-      const NoTransitionPage(
-        child: TripleLayout(
-          SchedulePage(),
-          ContextPage(),
-          TopicPage(),
-        ),
-      );
-
-  @override
-  Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
-        child: DoubleLayout(
-          const ContextPage(),
-          const SchedulePage(),
-          navigationShell: NavigationContext.of(context),
-        ),
-      );
-
-  @override
-  Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
-        child: SingleLayout(
-          const ContextPage(),
-          navigationShell: NavigationContext.of(context),
-        ),
-      );
-}
-
-@TypedGoRoute<PriorityRoute>(path: '/p/:contextId', name: 'priority:triple')
-class PriorityRoute extends AdaptiveRoute {
-  PriorityRoute({required this.contextId});
+  const ActivityRoute({this.contextId = ActivityRoute.all});
 
   final String contextId;
 
   @override
   void onEnter(BuildContext context) {
-    context.read<ContextBloc>().setCurrent(Uuid.fromString(contextId));
+    final id = contextId == all ? null : Uuid.fromString(contextId);
+    context.read<ContextBloc>().setCurrent(id);
     final event = context.read<ScheduleBloc>().selected;
     if (event != null) {
       context
@@ -271,77 +135,146 @@ class PriorityRoute extends AdaptiveRoute {
   }
 
   @override
-  Page<void> buildTriplePage(BuildContext context, GoRouterState state) =>
-      const NoTransitionPage(
-        child: TripleLayout(
-          SchedulePage(),
-          ContextPage(),
-          TopicPage(),
-        ),
-      );
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const TopicPage();
 
   @override
-  Page<void> buildDoublePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
-        child: DoubleLayout(
-          const ContextPage(),
-          const SchedulePage(),
-          navigationShell: NavigationContext.of(context),
-        ),
-      );
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const ContextPage();
 
   @override
-  Page<void> buildSinglePage(BuildContext context, GoRouterState state) =>
-      NoTransitionPage(
-        child: SingleLayout(
-          const ContextPage(),
-          navigationShell: NavigationContext.of(context),
-        ),
-      );
+  List<Object?> get props => [contextId];
 }
 
-class PrioritiesBranch extends StatefulShellBranchData {
-  const PrioritiesBranch();
+@immutable
+class TopicRoute extends Route {
+  static const path = '${ActivityRoute.path}/$subPath';
+  static const subPath = ':topicId';
+
+  const TopicRoute({required this.contextId, required this.topicId});
+
+  final String contextId;
+  final String topicId;
+
+  @override
+  void onEnter(BuildContext context) {
+    final id = contextId == 'root' ? null : Uuid.fromString(contextId);
+    context.read<ContextBloc>().setCurrent(id);
+    final event = context.read<ScheduleBloc>().selected;
+    if (event != null) {
+      context
+          .read<ScheduleBloc>()
+          .update(event.copyWith(contextId: Value(Uuid.fromString(contextId))));
+    }
+  }
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const TopicPage();
+
+  @override
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const ContextPage();
+
+  @override
+  List<Object?> get props => [contextId];
+}
+
+class ActivityBranch extends StatefulShellBranchData {
+  const ActivityBranch();
 }
 
 class ScheduleBranch extends StatefulShellBranchData {
   const ScheduleBranch();
 }
 
-@TypedStatefulShellRoute<_SingleRoutes>(
-  branches: [
-    TypedStatefulShellBranch<ScheduleBranch>(
-      routes: <TypedGoRoute<GoRouteData>>[
-        TypedGoRoute<HomeRoute>(
-          path: '/',
-          name: 'home:single',
-          routes: [
-            TypedGoRoute<EventRoute>(
-              path: 'e/:eventId',
-              name: 'event:single',
-            ),
-          ],
-        ),
-      ],
-    ),
-    TypedStatefulShellBranch<PrioritiesBranch>(
-      routes: <TypedGoRoute<GoRouteData>>[
-        TypedGoRoute<PrioritiesRoute>(
-          path: '/p',
-          name: 'priorities:single',
-          routes: [
-            TypedGoRoute<PriorityRoute>(
-              path: ':contextId',
-              name: 'priority:single',
-            ),
-          ],
-        ),
-      ],
-    ),
-  ],
-)
-class _SingleRoutes extends StatefulShellRouteData {
+class MoreBranch extends StatefulShellBranchData {
+  const MoreBranch();
+}
+
+@TypedShellRoute<_AdaptiveRoutes>(routes: <TypedRoute<RouteData>>[
+  TypedGoRoute<LoginRoute>(path: LoginRoute.path),
+  TypedGoRoute<SettingsRoute>(path: SettingsRoute.path),
+  TypedShellRoute<_TripleRoutes>(routes: <TypedRoute<RouteData>>[
+    TypedGoRoute<HomeRoute>(path: HomeRoute.path),
+    TypedGoRoute<EventRoute>(path: EventRoute.path),
+    TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
+    TypedGoRoute<TopicRoute>(path: TopicRoute.path),
+  ]),
+])
+@immutable
+class _AdaptiveRoutes extends ShellRouteData {
+  const _AdaptiveRoutes();
+
+  @override
+  Widget builder(BuildContext context, GoRouterState state, Widget child) {
+    return child;
+  }
+}
+
+@immutable
+class _TripleRoutes extends ShellRouteData {
+  const _TripleRoutes();
+
+  @override
+  Widget builder(BuildContext context, GoRouterState state, Widget child) {
+    return AdaptiveLayout(
+      const SchedulePage(),
+      const ContextPage(),
+      child,
+    );
+  }
+}
+
+@TypedShellRoute<_SingleRoutes>(routes: <TypedRoute<RouteData>>[
+  TypedGoRoute<LoginRoute>(path: LoginRoute.path),
+  TypedStatefulShellRoute<_TabbedRoutes>(
+    branches: [
+      TypedStatefulShellBranch<ScheduleBranch>(
+        routes: <TypedGoRoute<GoRouteData>>[
+          TypedGoRoute<HomeRoute>(
+            path: HomeRoute.path,
+            routes: [
+              TypedGoRoute<EventRoute>(
+                path: EventRoute.path,
+              ),
+            ],
+          ),
+        ],
+      ),
+      TypedStatefulShellBranch<ActivityBranch>(
+        routes: <TypedGoRoute<GoRouteData>>[
+          TypedGoRoute<ActivityRoute>(
+            path: ActivityRoute.path,
+            routes: [
+              TypedGoRoute<TopicRoute>(
+                path: TopicRoute.subPath,
+              ),
+            ],
+          ),
+        ],
+      ),
+      TypedStatefulShellBranch<MoreBranch>(
+        routes: <TypedGoRoute<GoRouteData>>[
+          TypedGoRoute<SettingsRoute>(path: SettingsRoute.path),
+        ],
+      ),
+    ],
+  ),
+])
+@immutable
+class _SingleRoutes extends ShellRouteData {
   const _SingleRoutes();
+
+  @override
+  Widget builder(BuildContext context, GoRouterState state, Widget child) {
+    return child;
+  }
+}
+
+@immutable
+class _TabbedRoutes extends StatefulShellRouteData {
+  const _TabbedRoutes();
 
   @override
   Widget builder(
@@ -349,22 +282,15 @@ class _SingleRoutes extends StatefulShellRouteData {
     GoRouterState state,
     StatefulNavigationShell navigationShell,
   ) {
-    return NavigationContext(
+    return TabbedLayout(
+      navigationShell,
       navigationShell: navigationShell,
-      child: navigationShell,
     );
   }
 }
 
-List<RouteBase> _filterRoutes(PanelLayout layout) => $appRoutes
-    .where((route) =>
-        route is! GoRoute ||
-        route.name?.contains(':') != true ||
-        route.name?.endsWith(":${layout.name}") == true)
-    .toList();
-
-RoutingConfig getRoutingConfig(PanelLayout layout) {
-  return RoutingConfig(
+GoRouter getRouter(PanelLayout layout) {
+  return GoRouter(
     routes: [
       ShellRoute(
         builder: (context, state, child) {
@@ -373,7 +299,9 @@ RoutingConfig getRoutingConfig(PanelLayout layout) {
             child: child,
           );
         },
-        routes: _filterRoutes(layout),
+        routes: layout == PanelLayout.adaptive
+            ? [$_AdaptiveRoutes]
+            : [$_SingleRoutes],
       ),
     ],
     redirect: (BuildContext context, GoRouterState state) async {
@@ -383,13 +311,13 @@ RoutingConfig getRoutingConfig(PanelLayout layout) {
       final bool loggedIn = context.read<UserBloc>().state is UserSignedIn;
       final bool loggingIn = state.matchedLocation == '/login';
       if (!loggedIn) {
-        return '/login';
+        return LoginRoute.path;
       }
 
       // if the user is logged in but still on the login page, send them to
       // the home page
       if (loggingIn) {
-        return '/';
+        return HomeRoute.path;
       }
 
       // no need to redirect at all

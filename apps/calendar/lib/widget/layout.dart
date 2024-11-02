@@ -1,30 +1,32 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:platform_builder/platform_builder.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 import "layout_material.dart";
 import "layout_mac.dart";
 
 enum PanelLayout {
   single,
-  double,
-  triple,
+  adaptive,
 }
 
 sealed class Layout extends StatelessWidget {
-  static PanelLayout getLayout(BuildContext context) {
+  static Future<PanelLayout> getLayout(BuildContext context) async {
     return PlatformResolver.current(
-      nativeResolver: () {
-        final size = MediaQuery.sizeOf(context);
-        return size.width > 1024 ? PanelLayout.triple : PanelLayout.double;
+      iOSResolver: () async {
+        final deviceInfo = DeviceInfoPlugin();
+        final iosDeviceInfo = await deviceInfo.iosInfo;
+        return iosDeviceInfo.model.toLowerCase().contains('iphone')
+            ? PanelLayout.single
+            : PanelLayout.adaptive;
+      },
+      androidResolver: () {
+        double screenWidth = MediaQuery.of(context).size.shortestSide;
+        return screenWidth <= 600 ? PanelLayout.single : PanelLayout.adaptive;
       },
       defaultResolver: () {
-        final size = MediaQuery.sizeOf(context);
-        return size.width > 1024
-            ? PanelLayout.triple
-            : size.width > 600
-                ? PanelLayout.double
-                : PanelLayout.single;
+        return PanelLayout.adaptive;
       },
     );
   }
@@ -32,8 +34,8 @@ sealed class Layout extends StatelessWidget {
   const Layout({super.key});
 }
 
-final class SingleLayout extends Layout {
-  const SingleLayout(this.page, {this.navigationShell, super.key});
+final class TabbedLayout extends Layout {
+  const TabbedLayout(this.page, {required this.navigationShell, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -41,43 +43,31 @@ final class SingleLayout extends Layout {
       builder: (_) => MaterialLayout(
         primary: page,
         navigationShell: navigationShell,
-        key: const Key('MaterialLayout'),
       ),
     );
   }
 
   final Widget page;
-  final StatefulNavigationShell? navigationShell;
+  final StatefulNavigationShell navigationShell;
 }
 
-final class DoubleLayout extends Layout {
-  const DoubleLayout(this.left, this.right, {this.navigationShell, super.key});
+final class FullPageLayout extends Layout {
+  const FullPageLayout(this.page, {super.key});
 
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      macOSBuilder: (_) => MacLayout(
-        left,
-        right,
-        null,
-        key: const Key('MacLayout'),
-      ),
       builder: (_) => MaterialLayout(
-        primary: left,
-        secondary: right,
-        navigationShell: navigationShell,
-        key: const Key('MaterialLayout'),
+        primary: page,
       ),
     );
   }
 
-  final Widget left;
-  final Widget right;
-  final StatefulNavigationShell? navigationShell;
+  final Widget page;
 }
 
-final class TripleLayout extends Layout {
-  const TripleLayout(this.first, this.second, this.third, {super.key});
+final class AdaptiveLayout extends Layout {
+  const AdaptiveLayout(this.first, this.second, this.third, {super.key});
 
   @override
   Widget build(BuildContext context) {

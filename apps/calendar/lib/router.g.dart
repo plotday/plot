@@ -7,53 +7,55 @@ part of 'router.dart';
 // **************************************************************************
 
 List<RouteBase> get $appRoutes => [
-      $loginRoute,
-      $homeRoute,
-      $scheduleRoute,
-      $eventRoute,
-      $priorityRoute,
+      $_AdaptiveRoutes,
       $_SingleRoutes,
     ];
 
-RouteBase get $loginRoute => GoRouteData.$route(
-      path: '/login',
-      factory: $LoginRouteExtension._fromState,
-    );
-
-extension $LoginRouteExtension on LoginRoute {
-  static LoginRoute _fromState(GoRouterState state) => const LoginRoute();
-
-  String get location => GoRouteData.$location(
-        '/login',
-      );
-
-  void go(BuildContext context) => context.go(location);
-
-  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
-
-  void pushReplacement(BuildContext context) =>
-      context.pushReplacement(location);
-
-  void replace(BuildContext context) => context.replace(location);
-}
-
-RouteBase get $homeRoute => GoRouteData.$route(
-      path: '/',
-      name: 'home:triple',
-      factory: $HomeRouteExtension._fromState,
+RouteBase get $_AdaptiveRoutes => ShellRouteData.$route(
+      factory: $_AdaptiveRoutesExtension._fromState,
       routes: [
         GoRouteData.$route(
-          path: 'settings',
+          path: '/login',
+          factory: $LoginRouteExtension._fromState,
+        ),
+        GoRouteData.$route(
+          path: '/settings',
           factory: $SettingsRouteExtension._fromState,
+        ),
+        ShellRouteData.$route(
+          factory: $_TripleRoutesExtension._fromState,
+          routes: [
+            GoRouteData.$route(
+              path: '/',
+              factory: $HomeRouteExtension._fromState,
+            ),
+            GoRouteData.$route(
+              path: '/schedule/:eventId',
+              factory: $EventRouteExtension._fromState,
+            ),
+            GoRouteData.$route(
+              path: '/activity/:contextId',
+              factory: $ActivityRouteExtension._fromState,
+            ),
+            GoRouteData.$route(
+              path: '/activity/:contextId/:topicId',
+              factory: $TopicRouteExtension._fromState,
+            ),
+          ],
         ),
       ],
     );
 
-extension $HomeRouteExtension on HomeRoute {
-  static HomeRoute _fromState(GoRouterState state) => HomeRoute();
+extension $_AdaptiveRoutesExtension on _AdaptiveRoutes {
+  static _AdaptiveRoutes _fromState(GoRouterState state) =>
+      const _AdaptiveRoutes();
+}
+
+extension $LoginRouteExtension on LoginRoute {
+  static LoginRoute _fromState(GoRouterState state) => LoginRoute();
 
   String get location => GoRouteData.$location(
-        '/',
+        '/login',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -83,19 +85,20 @@ extension $SettingsRouteExtension on SettingsRoute {
   void replace(BuildContext context) => context.replace(location);
 }
 
-RouteBase get $scheduleRoute => GoRouteData.$route(
-      path: '/d/:dayString',
-      name: 'schedule:triple',
-      factory: $ScheduleRouteExtension._fromState,
-    );
+extension $_TripleRoutesExtension on _TripleRoutes {
+  static _TripleRoutes _fromState(GoRouterState state) => const _TripleRoutes();
+}
 
-extension $ScheduleRouteExtension on ScheduleRoute {
-  static ScheduleRoute _fromState(GoRouterState state) => ScheduleRoute(
-        dayString: state.pathParameters['dayString']!,
+extension $HomeRouteExtension on HomeRoute {
+  static HomeRoute _fromState(GoRouterState state) => HomeRoute(
+        d: state.uri.queryParameters['d'],
       );
 
   String get location => GoRouteData.$location(
-        '/d/${Uri.encodeComponent(dayString)}',
+        '/',
+        queryParams: {
+          if (d != null) 'd': d,
+        },
       );
 
   void go(BuildContext context) => context.go(location);
@@ -107,12 +110,6 @@ extension $ScheduleRouteExtension on ScheduleRoute {
 
   void replace(BuildContext context) => context.replace(location);
 }
-
-RouteBase get $eventRoute => GoRouteData.$route(
-      path: '/e/:eventId',
-      name: 'event:triple',
-      factory: $EventRouteExtension._fromState,
-    );
 
 extension $EventRouteExtension on EventRoute {
   static EventRoute _fromState(GoRouterState state) => EventRoute(
@@ -120,7 +117,7 @@ extension $EventRouteExtension on EventRoute {
       );
 
   String get location => GoRouteData.$location(
-        '/e/${Uri.encodeComponent(eventId)}',
+        '/schedule/${Uri.encodeComponent(eventId)}',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -133,19 +130,13 @@ extension $EventRouteExtension on EventRoute {
   void replace(BuildContext context) => context.replace(location);
 }
 
-RouteBase get $priorityRoute => GoRouteData.$route(
-      path: '/p/:contextId',
-      name: 'priority:triple',
-      factory: $PriorityRouteExtension._fromState,
-    );
-
-extension $PriorityRouteExtension on PriorityRoute {
-  static PriorityRoute _fromState(GoRouterState state) => PriorityRoute(
-        contextId: state.pathParameters['contextId']!,
+extension $ActivityRouteExtension on ActivityRoute {
+  static ActivityRoute _fromState(GoRouterState state) => ActivityRoute(
+        contextId: state.pathParameters['contextId']! ?? ActivityRoute.all,
       );
 
   String get location => GoRouteData.$location(
-        '/p/${Uri.encodeComponent(contextId)}',
+        '/activity/${Uri.encodeComponent(contextId)}',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -158,36 +149,69 @@ extension $PriorityRouteExtension on PriorityRoute {
   void replace(BuildContext context) => context.replace(location);
 }
 
-RouteBase get $_SingleRoutes => StatefulShellRouteData.$route(
+extension $TopicRouteExtension on TopicRoute {
+  static TopicRoute _fromState(GoRouterState state) => TopicRoute(
+        contextId: state.pathParameters['contextId']!,
+        topicId: state.pathParameters['topicId']!,
+      );
+
+  String get location => GoRouteData.$location(
+        '/activity/${Uri.encodeComponent(contextId)}/${Uri.encodeComponent(topicId)}',
+      );
+
+  void go(BuildContext context) => context.go(location);
+
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  void replace(BuildContext context) => context.replace(location);
+}
+
+RouteBase get $_SingleRoutes => ShellRouteData.$route(
       factory: $_SingleRoutesExtension._fromState,
-      branches: [
-        StatefulShellBranchData.$branch(
-          routes: [
-            GoRouteData.$route(
-              path: '/',
-              name: 'home:single',
-              factory: $HomeRouteExtension._fromState,
+      routes: [
+        GoRouteData.$route(
+          path: '/login',
+          factory: $LoginRouteExtension._fromState,
+        ),
+        StatefulShellRouteData.$route(
+          factory: $_TabbedRoutesExtension._fromState,
+          branches: [
+            StatefulShellBranchData.$branch(
               routes: [
                 GoRouteData.$route(
-                  path: 'e/:eventId',
-                  name: 'event:single',
-                  factory: $EventRouteExtension._fromState,
+                  path: '/',
+                  factory: $HomeRouteExtension._fromState,
+                  routes: [
+                    GoRouteData.$route(
+                      path: '/schedule/:eventId',
+                      factory: $EventRouteExtension._fromState,
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-        StatefulShellBranchData.$branch(
-          routes: [
-            GoRouteData.$route(
-              path: '/p',
-              name: 'priorities:single',
-              factory: $PrioritiesRouteExtension._fromState,
+            StatefulShellBranchData.$branch(
               routes: [
                 GoRouteData.$route(
-                  path: ':contextId',
-                  name: 'priority:single',
-                  factory: $PriorityRouteExtension._fromState,
+                  path: '/activity/:contextId',
+                  factory: $ActivityRouteExtension._fromState,
+                  routes: [
+                    GoRouteData.$route(
+                      path: ':topicId',
+                      factory: $TopicRouteExtension._fromState,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            StatefulShellBranchData.$branch(
+              routes: [
+                GoRouteData.$route(
+                  path: '/settings',
+                  factory: $SettingsRouteExtension._fromState,
                 ),
               ],
             ),
@@ -200,19 +224,6 @@ extension $_SingleRoutesExtension on _SingleRoutes {
   static _SingleRoutes _fromState(GoRouterState state) => const _SingleRoutes();
 }
 
-extension $PrioritiesRouteExtension on PrioritiesRoute {
-  static PrioritiesRoute _fromState(GoRouterState state) => PrioritiesRoute();
-
-  String get location => GoRouteData.$location(
-        '/p',
-      );
-
-  void go(BuildContext context) => context.go(location);
-
-  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
-
-  void pushReplacement(BuildContext context) =>
-      context.pushReplacement(location);
-
-  void replace(BuildContext context) => context.replace(location);
+extension $_TabbedRoutesExtension on _TabbedRoutes {
+  static _TabbedRoutes _fromState(GoRouterState state) => const _TabbedRoutes();
 }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 import 'package:go_router/go_router.dart';
 
-import 'layout.dart';
 import 'context_nav.dart';
 
 class MaterialLayout extends StatelessWidget {
@@ -13,12 +12,12 @@ class MaterialLayout extends StatelessWidget {
   static const allBreakpoints = WidthPlatformBreakpoint();
   static const secondaryBreakpoint = WidthPlatformBreakpoint(begin: 600);
 
-  static PanelLayout getLayout(BuildContext context) =>
+  static int numPanels(BuildContext context) =>
       singleBreakpoint.isActive(context)
-          ? PanelLayout.single
+          ? 1
           : doubleBreakpoint.isActive(context)
-              ? PanelLayout.double
-              : PanelLayout.triple;
+              ? 2
+              : 3;
 
   const MaterialLayout(
       {required this.primary,

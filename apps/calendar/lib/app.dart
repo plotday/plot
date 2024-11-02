@@ -10,6 +10,7 @@ import 'widget/layout.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/router.dart';
 import 'package:plot/widget/global_menu.dart';
+import 'package:plot/widget/spinner.dart';
 
 class App extends StatefulWidget {
   static Future<void> init() async {
@@ -25,88 +26,67 @@ class App extends StatefulWidget {
 }
 
 class AppState extends State<App> with WidgetsBindingObserver {
-  late ValueNotifier<RoutingConfig> routingConfig;
-  late GoRouter router;
-  bool _initialized = false;
-  late PanelLayout _lastLayout;
+  late Future<GoRouter> router;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  PanelLayout _getLayout() {
-    return Layout.getLayout(context);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_initialized) return;
-    _lastLayout = _getLayout();
-    routingConfig = ValueNotifier<RoutingConfig>(getRoutingConfig(_lastLayout));
-    router = GoRouter.routingConfig(
-      routingConfig: routingConfig,
-    );
-    _initialized = true;
-  }
-
-  @override
-  void didChangeMetrics() {
-    final layout = _getLayout();
-    if (layout == _lastLayout) return;
-    _lastLayout = layout;
-    routingConfig.value = getRoutingConfig(_lastLayout);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    routingConfig.dispose();
-    super.dispose();
+    router = Layout.getLayout(context).then((layout) => getRouter(layout));
   }
 
   @override
   Widget build(BuildContext context) {
-    return GlobalMenu(
-      child: BlocProvider<UserBloc>(
-        create: (_) => UserBloc(),
-        child: BlocListener<UserBloc, UserState>(
-          listener: (context, state) {
-            router.refresh();
-          },
-          child: PlatformBuilder(
-            builder: (context) => AdaptiveTheme(
-              light: material.ThemeData(
-                colorScheme: material.ColorScheme.fromSeed(
-                  seedColor: const Color(0x002BDD66),
-                  brightness: material.Brightness.light,
+    return FutureBuilder(
+      future: router,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          print(snapshot.error);
+          print(snapshot.stackTrace);
+          return const Center(child: Text("Something went wrong"));
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: Spinner());
+        }
+        return GlobalMenu(
+          child: BlocProvider<UserBloc>(
+            create: (_) => UserBloc(),
+            child: BlocListener<UserBloc, UserState>(
+              listener: (context, state) {
+                snapshot.data?.refresh();
+              },
+              child: PlatformBuilder(
+                builder: (context) => AdaptiveTheme(
+                  light: material.ThemeData(
+                    colorScheme: material.ColorScheme.fromSeed(
+                      seedColor: const Color(0x002BDD66),
+                      brightness: material.Brightness.light,
+                    ),
+                  ),
+                  dark: material.ThemeData(
+                    colorScheme: material.ColorScheme.fromSeed(
+                      seedColor: const Color(0x002BDD66),
+                      brightness: material.Brightness.dark,
+                    ),
+                  ),
+                  debugShowFloatingThemeButton: true,
+                  initial: AdaptiveThemeMode.system,
+                  builder: (theme, darkTheme) => material.MaterialApp.router(
+                    title: 'Plot',
+                    theme: theme,
+                    darkTheme: darkTheme,
+                    routerConfig: snapshot.data,
+                  ),
+                ),
+                macOSBuilder: (context) => macos.MacosApp.router(
+                  title: 'Plot',
+                  debugShowCheckedModeBanner: false,
+                  routerConfig: snapshot.data,
                 ),
               ),
-              dark: material.ThemeData(
-                colorScheme: material.ColorScheme.fromSeed(
-                  seedColor: const Color(0x002BDD66),
-                  brightness: material.Brightness.dark,
-                ),
-              ),
-              debugShowFloatingThemeButton: true,
-              initial: AdaptiveThemeMode.system,
-              builder: (theme, darkTheme) => material.MaterialApp.router(
-                title: 'Plot',
-                theme: theme,
-                darkTheme: darkTheme,
-                routerConfig: router,
-              ),
-            ),
-            macOSBuilder: (context) => macos.MacosApp.router(
-              title: 'Plot',
-              debugShowCheckedModeBanner: false,
-              routerConfig: router,
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

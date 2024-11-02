@@ -54,16 +54,11 @@ class ContextPage extends StatelessWidget {
               },
               label: "Add an actvity",
             ),
-            InputAction(
-              onAdd: (body) {
-                context.read<ContextBloc>().addNote(Note(
-                      contextId: state.current?.id,
-                      body: body,
-                      order: Order.first(),
-                    ));
-              },
-              label: "Add a topic",
-            ),
+            Button(
+                onTap: () {
+                  context.read<ContextBloc>().newTopic(context);
+                },
+                child: const Text('Add a Topic')),
             ReorderableListView(
               list: state.pinnedNotes,
               itemBuilder: (buildContext, item) => NoteWidget(note: item),

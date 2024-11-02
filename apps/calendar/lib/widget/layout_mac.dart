@@ -41,7 +41,7 @@ class MacLayoutState extends State<MacLayout> {
                   label: 'Schedule',
                   showLabel: false,
                   onPressed: () {
-                    ScheduleRoute.day(day: state.day).go(context);
+                    HomeRoute.day(state.day).go(context);
                   },
                 ),
               ],

@@ -17,13 +17,13 @@ class Header extends StatelessWidget {
             IconButton(
               icon: const BackButtonIcon(),
               onPressed: () async {
-                final parent = await state.current!.parent;
+                final parent = state.current!.parent;
                 if (!context.mounted) return;
-                if (parent == null) {
-                  PrioritiesRoute().go(context);
-                } else {
-                  PriorityRoute(contextId: parent.id.toString()).go(context);
-                }
+                ActivityRoute(
+                        contextId: parent == null
+                            ? ActivityRoute.all
+                            : parent.id.toString())
+                    .go(context);
               },
             ),
           Expanded(
