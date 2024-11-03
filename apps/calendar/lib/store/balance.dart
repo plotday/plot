@@ -9,8 +9,10 @@ enum BalanceType {
 @DataClassName('BalanceRow')
 class Balances extends StoreTable {
   TextColumn get day => text()();
-  BlobColumn get contextId =>
-      blob().nullable().map(const UuidConverter()).references(Contexts, #id)();
+  BlobColumn get activityId => blob()
+      .nullable()
+      .map(const UuidConverter())
+      .references(Activities, #id)();
   IntColumn get type => intEnum<BalanceType>()();
 
   IntColumn get count => integer().withDefault(const Constant(0))();
@@ -46,16 +48,17 @@ class Balance extends BalanceRow {
     int? depth = 1, // number of child levels to include
   }) {
     final query = Store.get.select(table).join([
-      leftOuterJoin(Context.table, Context.table.id.equalsExp(table.contextId)),
+      leftOuterJoin(
+          Activity.table, Activity.table.id.equalsExp(table.activityId)),
     ])
       ..where(table.day.isBiggerOrEqualValue(from.toString()))
       ..where(table.day.isSmallerThanValue(to.toString()));
 
     if (path != null) {
-      query.where(Context.table.path.like("$path%"));
+      query.where(Activity.table.path.like("$path%"));
     }
     if (depth != null) {
-      query.where(Context.pathDepth(path, depth));
+      query.where(Activity.pathDepth(path, depth));
     }
 
     final order = from <= to ? OrderingMode.asc : OrderingMode.desc;
@@ -65,7 +68,7 @@ class Balance extends BalanceRow {
 
     return query.watch().map((rows) => {
           for (final row in rows)
-            row.readTable(table).contextId:
+            row.readTable(table).activityId:
                 Balance.fromStore(row.readTable(table))
         });
   }
@@ -74,11 +77,11 @@ class Balance extends BalanceRow {
       : super(
           modifiedAt: row.modifiedAt,
           day: row.day,
-          contextId: row.contextId,
+          activityId: row.activityId,
           type: row.type,
           count: row.count,
           time: row.time,
         );
 
-  final Context? context;
+  final Activity? context;
 }

@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/time.dart';
-import 'package:plot/state/context.dart';
+import 'package:plot/state/activity.dart';
 import 'package:plot/state/schedule.dart';
 
 final supabase = Supabase.instance.client;
@@ -38,7 +38,7 @@ class EventWidget extends StatelessWidget {
                           ),
               ),
               const SizedBox(width: 8),
-              BlocBuilder<ContextBloc, ContextState>(
+              BlocBuilder<ActivityBloc, ActivityState>(
                 builder: (context, prioritiesState) => Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.start,
@@ -66,9 +66,9 @@ class EventWidget extends StatelessWidget {
                           ],
                         ),
                       ),
-                      if (event.context != null)
+                      if (event.activity != null)
                         Text(
-                          event.context!.name,
+                          event.activity!.name,
                         ),
                       if (event.name != null)
                         Text(

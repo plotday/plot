@@ -1,6 +1,6 @@
 export 'account.dart';
-export 'context.dart';
-export 'context_settings.dart';
+export 'activity.dart';
+export 'activity_edit.dart';
 export 'event.dart';
 export 'schedule.dart';
 export 'sign_in.dart';

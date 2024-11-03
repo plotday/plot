@@ -3,19 +3,19 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/router.dart';
 import 'package:plot/widget/reorderable_list_view.dart';
-import 'package:plot/state/context.dart';
+import 'package:plot/state/activity.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/note.dart';
 import 'package:plot/widget/bidirectional_list.dart';
 
-class ContextPage extends StatelessWidget {
-  const ContextPage({super.key});
+class ActivityPage extends StatelessWidget {
+  const ActivityPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ContextBloc, ContextState>(
+    return BlocBuilder<ActivityBloc, ActivityState>(
       builder: (buildContext, state) => Scaffold(
           body: BidirectionalList(
         scrollController: ScrollControllerContext.of(context),
@@ -31,15 +31,15 @@ class ContextPage extends StatelessWidget {
               onReorder: (int oldIndex, int newIndex) async {
                 var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
                 var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-                Context? previous;
+                Activity? previous;
                 if (previousIndex >= 0) {
                   previous = state.children[previousIndex];
                 }
-                Context? next;
+                Activity? next;
                 if (nextIndex < state.children.length) {
                   next = state.children[nextIndex];
                 }
-                Context.fromStore(state.children[oldIndex].copyWith(
+                Activity.fromStore(state.children[oldIndex].copyWith(
                   order: Order.between(previous?.order, next?.order),
                 )).save();
               },
@@ -82,7 +82,7 @@ class ContextPage extends StatelessWidget {
                 final note = Note.fromStore(state.notes[oldIndex].copyWith(
                   order: Order.between(previous?.order, next?.order),
                 ));
-                buildContext.read<ContextBloc>().updateNote(note);
+                buildContext.read<ActivityBloc>().updateNote(note);
               },
             ),
           ],

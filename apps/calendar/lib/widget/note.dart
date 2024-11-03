@@ -15,7 +15,7 @@ class NoteWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      onTap: () => TopicRoute.byId(note.contextId, note.topicId).go(context),
+      onTap: () => TopicRoute.byId(note.activityId, note.topicId).go(context),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
         child: Row(

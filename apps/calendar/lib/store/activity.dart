@@ -1,10 +1,10 @@
 part of 'store.dart';
 
-typedef ContextId = Uuid;
+typedef ActivityId = Uuid;
 typedef TopicId = Uuid;
 
-@DataClassName('ContextRow')
-class Contexts extends UuidStoreTable {
+@DataClassName('ActivityRow')
+class Activities extends UuidStoreTable {
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 
   TextColumn get name => text()();
@@ -18,11 +18,11 @@ class Contexts extends UuidStoreTable {
 }
 
 class ContextsBase extends BaseTable {
-  ContextsBase() : super(table: 'context_x', name: "contexts");
+  ContextsBase() : super(table: 'activity_x', name: "activities");
 
   @override
-  Insertable<ContextRow> fromBase(Map<String, dynamic> json) =>
-      ContextRow.fromJson(json);
+  Insertable<ActivityRow> fromBase(Map<String, dynamic> json) =>
+      ActivityRow.fromJson(json);
 
   @override
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
@@ -32,8 +32,8 @@ class ContextsBase extends BaseTable {
   }
 }
 
-class Context extends ContextRow implements Comparable<Context> {
-  static $ContextsTable get table => Store.get.contexts;
+class Activity extends ActivityRow implements Comparable<Activity> {
+  static $ActivitiesTable get table => Store.get.activities;
   static CustomExpression<
       bool> pathDepth(Path? path, int depth) => CustomExpression<
           bool>(
@@ -42,19 +42,19 @@ class Context extends ContextRow implements Comparable<Context> {
   static Future<void> push() => Store.get.push(table, ContextsBase());
   static Future<bool> pull() => Store.get.pull(table, ContextsBase());
 
-  static Stream<Map<Uuid, Context>> watch() {
+  static Stream<Map<Uuid, Activity>> watch() {
     final query = Store.get.select(table);
     return query.watch().map((rows) {
-      final contexts = <Uuid, Context>{};
+      final contexts = <Uuid, Activity>{};
       for (var row in rows) {
-        final context = Context.fromStore(row);
+        final context = Activity.fromStore(row);
         contexts[context.id] = context;
       }
       return contexts;
     });
   }
 
-  static Stream<Context> watchOne(ContextId id, {int depth = 0}) {
+  static Stream<Activity> watchOne(ActivityId id, {int depth = 0}) {
     final query = Store.get.select(table);
     query.where((t) => t.id.equals(id.toBytes()));
     return query.watchSingle().asyncExpand((row) {
@@ -63,8 +63,8 @@ class Context extends ContextRow implements Comparable<Context> {
     });
   }
 
-  static Stream<List<Context>> watchRoot() => watchPath(null);
-  static Stream<List<Context>> watchPath(Path? path, {int? depth = 1}) {
+  static Stream<List<Activity>> watchRoot() => watchPath(null);
+  static Stream<List<Activity>> watchPath(Path? path, {int? depth = 1}) {
     final query = Store.get.select(table);
     if (path != null) {
       query.where((t) =>
@@ -79,12 +79,12 @@ class Context extends ContextRow implements Comparable<Context> {
     query.orderBy([(t) => OrderingTerm(expression: t.path)]);
 
     return query.watch().map((rows) {
-      List<Context> matches = [];
-      List<Context> stack = [];
+      List<Activity> matches = [];
+      List<Activity> stack = [];
 
       for (var row in rows) {
         var context =
-            Context.fromStore(row, parent: stack.isEmpty ? null : stack.last);
+            Activity.fromStore(row, parent: stack.isEmpty ? null : stack.last);
 
         if ((path == null && context.path.isRoot) || context.path == path) {
           matches.add(context);
@@ -104,7 +104,7 @@ class Context extends ContextRow implements Comparable<Context> {
     });
   }
 
-  Context({
+  Activity({
     required super.name,
     required super.order,
     this.parent,
@@ -119,7 +119,7 @@ class Context extends ContextRow implements Comparable<Context> {
     parent?._addChild(this);
   }
 
-  Context.fromStore(ContextRow row, {this.parent, List<Context>? children})
+  Activity.fromStore(ActivityRow row, {this.parent, List<Activity>? children})
       : children = children ?? [],
         super(
           id: row.id,
@@ -133,11 +133,11 @@ class Context extends ContextRow implements Comparable<Context> {
     parent?._addChild(this);
   }
 
-  final Context? parent;
-  List<Context> children;
+  final Activity? parent;
+  List<Activity> children;
 
   @override
-  Context copyWith({
+  Activity copyWith({
     Uuid? id,
     DateTime? modifiedAt,
     DateTime? createdAt,
@@ -145,9 +145,9 @@ class Context extends ContextRow implements Comparable<Context> {
     Path? path,
     Order? order,
     Duration? pomodoro,
-    Context? parent,
+    Activity? parent,
   }) =>
-      Context.fromStore(
+      Activity.fromStore(
         super.copyWith(
           id: id,
           modifiedAt: modifiedAt,
@@ -161,8 +161,8 @@ class Context extends ContextRow implements Comparable<Context> {
         children: children,
       );
 
-  void _addChild(Context child) {
-    children = List<Context>.from(children)
+  void _addChild(Activity child) {
+    children = List<Activity>.from(children)
         .replaceSorted(child, (a, b) => a.id == b.id);
   }
 
@@ -171,7 +171,7 @@ class Context extends ContextRow implements Comparable<Context> {
   }
 
   @override
-  int compareTo(Context other) {
+  int compareTo(Activity other) {
     return order.compareTo(other.order);
   }
 }

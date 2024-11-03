@@ -56,13 +56,13 @@ final class NowState extends Equatable {
   @override
   List<Object?> get props => [session, scheduled, next, previous];
 
-  Context? get context => session?.context ?? scheduled.firstOrNull?.context;
+  Activity? get context => session?.activity ?? scheduled.firstOrNull?.activity;
   Event get current =>
       scheduled.firstOrNull ??
       Event(
         at: DateTimeRange(previous.firstOrNull?.at.end ?? now.round(),
             next.firstOrNull?.at.start ?? now.round(down: false)),
-        context: context,
+        activity: context,
       );
 
   DateTimeRange? get pomodoro {
@@ -79,12 +79,12 @@ final class NowState extends Equatable {
       previous.firstOrNull?.at.end;
   DateTime? get end =>
       pomodoro?.end ??
-      (scheduled.firstOrNull?.context == context
+      (scheduled.firstOrNull?.activity == context
           ? scheduled.firstOrNull?.at.end
           : null) ??
       next.firstOrNull?.at.start;
 
-  DateTime? endFor(Context? context) {
+  DateTime? endFor(Activity? context) {
     if (context == this.context && end != null) {
       return end;
     }

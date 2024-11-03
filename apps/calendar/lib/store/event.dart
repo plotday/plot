@@ -11,8 +11,10 @@ class Events extends UuidStoreTable {
   DateTimeColumn get end => dateTime()();
   TextColumn get series => text().nullable()();
   TextColumn get response => textEnum<EventResponse>()();
-  BlobColumn get contextId =>
-      blob().nullable().map(const UuidConverter()).references(Contexts, #id)();
+  BlobColumn get activityId => blob()
+      .nullable()
+      .map(const UuidConverter())
+      .references(Activities, #id)();
 }
 
 class EventsBase extends BaseTable {
@@ -44,7 +46,7 @@ class Event extends EventRow {
   // TODO: fetch more
 
   static Stream<List<Event>> watch(DateRange range,
-      {bool withContext = false}) {
+      {bool withActivity = false}) {
     final order =
         range.start <= range.end ? OrderingMode.asc : OrderingMode.desc;
     final eventStream = (Store.get.select(table)
@@ -56,15 +58,15 @@ class Event extends EventRow {
           ]))
         .watch()
         .map((rows) => rows.map((row) => Event.fromStore(row)).toList());
-    if (withContext) {
+    if (withActivity) {
       return Rx.combineLatest2(
           eventStream,
-          Context.watch(),
-          (List<Event> events, Map<Uuid, Context> contexts) => events
+          Activity.watch(),
+          (List<Event> events, Map<Uuid, Activity> activities) => events
               .map((event) => Event.fromStore(event,
-                  context: event.contextId == null
+                  activity: event.activityId == null
                       ? null
-                      : contexts[event.contextId]))
+                      : activities[event.activityId]))
               .toList());
     }
     return eventStream;
@@ -80,16 +82,16 @@ class Event extends EventRow {
       {required DateTimeRange at,
       super.name,
       super.response = EventResponse.accepted,
-      this.context})
+      this.activity})
       : super(
           id: Uuid.generate(),
           modifiedAt: DateTime.now(),
-          contextId: context?.id,
+          activityId: activity?.id,
           start: at.start,
           end: at.end,
         );
 
-  Event.fromStore(EventRow row, {this.context})
+  Event.fromStore(EventRow row, {this.activity})
       : super(
           id: row.id,
           modifiedAt: row.modifiedAt,
@@ -98,15 +100,15 @@ class Event extends EventRow {
           end: row.end,
           series: row.series,
           response: row.response,
-          contextId: context?.id ?? row.contextId,
+          activityId: activity?.id ?? row.activityId,
         );
 
   @override
   Event copyWith({
     Uuid? id,
     DateTime? modifiedAt,
-    Value<Uuid?> contextId = const Value.absent(),
-    Value<Context?> context = const Value.absent(),
+    Value<Uuid?> activityId = const Value.absent(),
+    Value<Activity?> activity = const Value.absent(),
     DateTime? start,
     DateTime? end,
     Value<String?> name = const Value.absent(),
@@ -116,18 +118,18 @@ class Event extends EventRow {
     return Event.fromStore(
       super.copyWith(
         id: id,
-        contextId: contextId,
+        activityId: activityId,
         start: start,
         end: end,
         name: name,
         response: response,
         series: series,
       ),
-      context: context.present ? context.value : null,
+      activity: activity.present ? activity.value : null,
     );
   }
 
-  final Context? context;
+  final Activity? activity;
 
   Future<void> save() => Store.get.save(table, this);
 
@@ -136,7 +138,7 @@ class Event extends EventRow {
 
 class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> watch(DateRange range) {
-    return Event.watch(range, withContext: true).map((events) {
+    return Event.watch(range, withActivity: true).map((events) {
       var (start, end) = range.bounds;
       final direction =
           start < end ? TimeDirection.ascending : TimeDirection.descending;

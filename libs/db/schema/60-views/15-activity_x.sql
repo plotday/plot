@@ -1,4 +1,4 @@
-CREATE OR REPLACE VIEW "public"."context_x" WITH ( security_invoker = TRUE)
+CREATE OR REPLACE VIEW "public"."activity_x" WITH ( security_invoker = TRUE)
 -- for formatting
 AS
 SELECT
@@ -12,42 +12,42 @@ SELECT
 ORDER,
 COALESCE(cs.pomodoro, 25) AS pomodoro
 FROM
-    context_user cu
-    JOIN context c1 ON cu.context_id = c1.id
-    JOIN context c2 ON c1.path @> c2.path
-    LEFT JOIN context_settings cs ON cs.user_id = cu.user_id
-        AND c2.id = cs.context_id;
+    activity_user cu
+    JOIN activity c1 ON cu.activity_id = c1.id
+    JOIN activity c2 ON c1.path @> c2.path
+    LEFT JOIN activity_settings cs ON cs.user_id = cu.user_id
+        AND c2.id = cs.activity_id;
 
-CREATE OR REPLACE FUNCTION handle_context_x_upsert ()
+CREATE OR REPLACE FUNCTION handle_activity_x_upsert ()
     RETURNS TRIGGER
     AS $$
 DECLARE
-    _context_id uuid;
+    _activity_id uuid;
 BEGIN
-    _context_id := NEW.id;
+    _activity_id := NEW.id;
     IF (OLD IS NULL OR (NEW.name IS DISTINCT FROM OLD.name OR NEW.path IS DISTINCT FROM OLD.path)) THEN
-        INSERT INTO context (id, name, path, created_by)
+        INSERT INTO activity (id, name, path, created_by)
             VALUES (NEW.id, NEW.name, NEW.path, auth.uid ())
         ON CONFLICT (id)
             DO UPDATE SET
                 name = NEW.name, path = NEW.path
             RETURNING
-                id INTO _context_id;
+                id INTO _activity_id;
     END IF;
     IF (OLD IS NULL AND (NEW.order IS NOT NULL OR NEW.pomodoro IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."order" IS DISTINCT FROM OLD."order" OR NEW.pomodoro IS DISTINCT FROM OLD.pomodoro)) THEN
-        INSERT INTO context_settings (user_id, context_id, "order", pomodoro)
-            VALUES (auth.uid (), _context_id, NEW.order, COALESCE(NEW.pomodoro, 25))
-        ON CONFLICT (user_id, context_id)
+        INSERT INTO activity_settings (user_id, activity_id, "order", pomodoro)
+            VALUES (auth.uid (), _activity_id, NEW.order, COALESCE(NEW.pomodoro, 25))
+        ON CONFLICT (user_id, activity_id)
             DO UPDATE SET
-                "order" = COALESCE(NEW.order, context_settings."order"), pomodoro = COALESCE(NEW.pomodoro, context_settings.pomodoro);
+                "order" = COALESCE(NEW.order, activity_settings."order"), pomodoro = COALESCE(NEW.pomodoro, activity_settings.pomodoro);
     END IF;
     RETURN NEW;
 END;
 $$
 LANGUAGE plpgsql;
 
-CREATE TRIGGER upsert_context_x
-    INSTEAD OF INSERT OR UPDATE ON context_x
+CREATE TRIGGER upsert_activity_x
+    INSTEAD OF INSERT OR UPDATE ON activity_x
     FOR EACH ROW
-    EXECUTE FUNCTION handle_context_x_upsert ();
+    EXECUTE FUNCTION handle_activity_x_upsert ();
 

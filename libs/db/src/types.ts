@@ -74,9 +74,151 @@ export type Database = {
           },
         ]
       }
+      activity: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          modified_at: string
+          name: string
+          path: unknown
+          budget: unknown | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          modified_at?: string
+          name: string
+          path: unknown
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          modified_at?: string
+          name?: string
+          path?: unknown
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      activity_settings: {
+        Row: {
+          activity_id: string
+          modified_at: string
+          order: number
+          pomodoro: number
+          user_id: string
+        }
+        Insert: {
+          activity_id: string
+          modified_at?: string
+          order: number
+          pomodoro?: number
+          user_id: string
+        }
+        Update: {
+          activity_id?: string
+          modified_at?: string
+          order?: number
+          pomodoro?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_settings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_settings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_settings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "activity_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      activity_user: {
+        Row: {
+          activity_id: string
+          created_at: string
+          modified_at: string
+          path: unknown | null
+          user_id: string
+        }
+        Insert: {
+          activity_id: string
+          created_at?: string
+          modified_at?: string
+          path?: unknown | null
+          user_id: string
+        }
+        Update: {
+          activity_id?: string
+          created_at?: string
+          modified_at?: string
+          path?: unknown | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_user_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_user_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_user_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "activity_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       budget: {
         Row: {
-          context_id: string | null
+          activity_id: string | null
           created_at: string
           id: number
           modified_at: string
@@ -86,7 +228,7 @@ export type Database = {
           week: unknown
         }
         Insert: {
-          context_id?: string | null
+          activity_id?: string | null
           created_at?: string
           id?: never
           modified_at?: string
@@ -96,7 +238,7 @@ export type Database = {
           week: unknown
         }
         Update: {
-          context_id?: string | null
+          activity_id?: string | null
           created_at?: string
           id?: never
           modified_at?: string
@@ -107,25 +249,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "budget_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "budget_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "context"
+            referencedRelation: "activity"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "budget_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "budget_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "context_x"
+            referencedRelation: "activity_x"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "budget_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "budget_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["context_id"]
+            referencedColumns: ["activity_id"]
           },
           {
             foreignKeyName: "budget_user_id_fkey"
@@ -237,148 +379,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "contact_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      context: {
-        Row: {
-          created_at: string
-          created_by: string
-          id: string
-          modified_at: string
-          name: string
-          path: unknown
-          budget: unknown | null
-        }
-        Insert: {
-          created_at?: string
-          created_by: string
-          id?: string
-          modified_at?: string
-          name: string
-          path: unknown
-        }
-        Update: {
-          created_at?: string
-          created_by?: string
-          id?: string
-          modified_at?: string
-          name?: string
-          path?: unknown
-        }
-        Relationships: [
-          {
-            foreignKeyName: "context_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      context_settings: {
-        Row: {
-          context_id: string
-          modified_at: string
-          order: number
-          pomodoro: number
-          user_id: string
-        }
-        Insert: {
-          context_id: string
-          modified_at?: string
-          order: number
-          pomodoro?: number
-          user_id: string
-        }
-        Update: {
-          context_id?: string
-          modified_at?: string
-          order?: number
-          pomodoro?: number
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "context_settings_context_id_fkey"
-            columns: ["context_id"]
-            isOneToOne: false
-            referencedRelation: "context"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "context_settings_context_id_fkey"
-            columns: ["context_id"]
-            isOneToOne: false
-            referencedRelation: "context_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "context_settings_context_id_fkey"
-            columns: ["context_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["context_id"]
-          },
-          {
-            foreignKeyName: "context_settings_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      context_user: {
-        Row: {
-          context_id: string
-          created_at: string
-          modified_at: string
-          path: unknown | null
-          user_id: string
-        }
-        Insert: {
-          context_id: string
-          created_at?: string
-          modified_at?: string
-          path?: unknown | null
-          user_id: string
-        }
-        Update: {
-          context_id?: string
-          created_at?: string
-          modified_at?: string
-          path?: unknown | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "context_user_context_id_fkey"
-            columns: ["context_id"]
-            isOneToOne: false
-            referencedRelation: "context"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "context_user_context_id_fkey"
-            columns: ["context_id"]
-            isOneToOne: false
-            referencedRelation: "context_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "context_user_context_id_fkey"
-            columns: ["context_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["context_id"]
-          },
-          {
-            foreignKeyName: "context_user_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -565,8 +565,8 @@ export type Database = {
       }
       note: {
         Row: {
+          activity_id: string | null
           body: string
-          context_id: string | null
           created_at: string
           id: string
           modified_at: string
@@ -577,8 +577,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          activity_id?: string | null
           body: string
-          context_id?: string | null
           created_at?: string
           id?: string
           modified_at?: string
@@ -589,8 +589,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          activity_id?: string | null
           body?: string
-          context_id?: string | null
           created_at?: string
           id?: string
           modified_at?: string
@@ -602,25 +602,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "note_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "context"
+            referencedRelation: "activity"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "note_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "context_x"
+            referencedRelation: "activity_x"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "note_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["context_id"]
+            referencedColumns: ["activity_id"]
           },
           {
             foreignKeyName: "note_user_id_fkey"
@@ -683,7 +683,7 @@ export type Database = {
       }
       series: {
         Row: {
-          context_id: string | null
+          activity_id: string | null
           created_at: string
           embedding: string | null
           id: number
@@ -693,7 +693,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          context_id?: string | null
+          activity_id?: string | null
           created_at?: string
           embedding?: string | null
           id?: never
@@ -703,7 +703,7 @@ export type Database = {
           user_id: string
         }
         Update: {
-          context_id?: string | null
+          activity_id?: string | null
           created_at?: string
           embedding?: string | null
           id?: never
@@ -714,25 +714,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "series_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "context"
+            referencedRelation: "activity"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "series_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "context_x"
+            referencedRelation: "activity_x"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "series_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["context_id"]
+            referencedColumns: ["activity_id"]
           },
           {
             foreignKeyName: "series_user_id_fkey"
@@ -745,8 +745,8 @@ export type Database = {
       }
       session: {
         Row: {
+          activity_id: string | null
           at: unknown
-          context_id: string | null
           created_at: string
           id: string
           modified_at: string
@@ -756,8 +756,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          activity_id?: string | null
           at: unknown
-          context_id?: string | null
           created_at?: string
           id?: string
           modified_at?: string
@@ -767,8 +767,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          activity_id?: string | null
           at?: unknown
-          context_id?: string | null
           created_at?: string
           id?: string
           modified_at?: string
@@ -779,25 +779,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "session_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "session_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "context"
+            referencedRelation: "activity"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "session_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "session_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "context_x"
+            referencedRelation: "activity_x"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "session_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "session_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["context_id"]
+            referencedColumns: ["activity_id"]
           },
           {
             foreignKeyName: "session_user_id_fkey"
@@ -880,18 +880,7 @@ export type Database = {
       }
     }
     Views: {
-      balance: {
-        Row: {
-          context_id: string | null
-          day: string | null
-          events: number | null
-          seconds: number | null
-          type: string | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
-      context_x: {
+      activity_x: {
         Row: {
           created_at: string | null
           id: string | null
@@ -904,13 +893,24 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "context_user_user_id_fkey"
+            foreignKeyName: "activity_user_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
+      }
+      balance: {
+        Row: {
+          activity_id: string | null
+          day: string | null
+          events: number | null
+          seconds: number | null
+          type: string | null
+          user_id: string | null
+        }
+        Relationships: []
       }
       event_invitees: {
         Row: {
@@ -943,14 +943,14 @@ export type Database = {
       event_x: {
         Row: {
           account_id: number | null
+          activity_id: string | null
+          activity_path: unknown | null
           all_day: boolean | null
           at: unknown | null
           attendee_count: number | null
           availability: Database["public"]["Enums"]["event_availability"] | null
           calendar_id: number | null
           conferencing_url: string | null
-          context_id: string | null
-          context_path: unknown | null
           created_at: string | null
           day: string | null
           description: string | null
@@ -1033,7 +1033,7 @@ export type Database = {
       }
       insight: {
         Row: {
-          context_path: unknown | null
+          activity_path: unknown | null
           count: number | null
           day: string | null
           name: string | null
@@ -1065,9 +1065,9 @@ export type Database = {
       }
       note_x: {
         Row: {
+          activity_id: string | null
+          activity_path: unknown | null
           body: string | null
-          context_id: string | null
-          context_path: unknown | null
           created_at: string | null
           id: string | null
           modified_at: string | null
@@ -1080,25 +1080,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "note_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "context"
+            referencedRelation: "activity"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "note_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
-            referencedRelation: "context_x"
+            referencedRelation: "activity_x"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "note_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "event_x"
-            referencedColumns: ["context_id"]
+            referencedColumns: ["activity_id"]
           },
           {
             foreignKeyName: "note_user_id_fkey"
@@ -1163,7 +1163,7 @@ export type Database = {
           "": unknown
         }
         Returns: {
-          context_id: string | null
+          activity_id: string | null
           created_at: string
           id: number
           modified_at: string
@@ -1227,31 +1227,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      calendar: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          account_id: number
-          created_at: string
-          enabled: boolean
-          full_sync_at: string | null
-          full_sync_started_at: string | null
-          id: number
-          modified_at: string
-          name: string | null
-          provider_id: string
-          ready: boolean
-          sequence: number
-          sync_error: string | null
-          sync_state: string | null
-          synced_at: string | null
-          synced_dates: unknown | null
-          watch_expires_at: string | null
-          watch_id: string | null
-          watch_secret: string | null
-        }[]
-      }
       calendars: {
         Args: {
           "": unknown
@@ -1277,16 +1252,16 @@ export type Database = {
           watch_secret: string | null
         }[]
       }
-      can_access_context:
+      can_access_activity:
         | {
             Args: {
-              _context_id: string
+              _activity_id: string
             }
             Returns: boolean
           }
         | {
             Args: {
-              _context_path: unknown
+              _activity_path: unknown
             }
             Returns: boolean
           }
@@ -1320,18 +1295,6 @@ export type Database = {
           email: string
         }
         Returns: number
-      }
-      invitee: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          created_at: string
-          email: string
-          event_id: string | null
-          is_optional: boolean
-          response: Database["public"]["Enums"]["event_response"] | null
-        }[]
       }
       is_finite: {
         Args: {
@@ -1541,6 +1504,7 @@ export type Database = {
           owner_id: string | null
           path_tokens: string[] | null
           updated_at: string | null
+          user_metadata: Json | null
           version: string | null
         }
         Insert: {
@@ -1554,6 +1518,7 @@ export type Database = {
           owner_id?: string | null
           path_tokens?: string[] | null
           updated_at?: string | null
+          user_metadata?: Json | null
           version?: string | null
         }
         Update: {
@@ -1567,6 +1532,7 @@ export type Database = {
           owner_id?: string | null
           path_tokens?: string[] | null
           updated_at?: string | null
+          user_metadata?: Json | null
           version?: string | null
         }
         Relationships: [
@@ -1588,6 +1554,7 @@ export type Database = {
           key: string
           owner_id: string | null
           upload_signature: string
+          user_metadata: Json | null
           version: string
         }
         Insert: {
@@ -1598,6 +1565,7 @@ export type Database = {
           key: string
           owner_id?: string | null
           upload_signature: string
+          user_metadata?: Json | null
           version: string
         }
         Update: {
@@ -1608,6 +1576,7 @@ export type Database = {
           key?: string
           owner_id?: string | null
           upload_signature?: string
+          user_metadata?: Json | null
           version?: string
         }
         Relationships: [
@@ -1743,6 +1712,10 @@ export type Database = {
           metadata: Json
           updated_at: string
         }[]
+      }
+      operation: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
       search: {
         Args: {

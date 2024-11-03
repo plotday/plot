@@ -7,37 +7,37 @@ import 'package:plot/store/store.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/util/optional.dart';
 
-part 'context_state.dart';
+part 'activity_state.dart';
 
-class ContextBloc extends Cubit<ContextState> {
-  ContextBloc()
-      : super(ContextState(
+class ActivityBloc extends Cubit<ActivityState> {
+  ActivityBloc()
+      : super(ActivityState(
           week: Week.current(),
         )) {
     setCurrent(null);
   }
 
   void dispose() {
-    _contextSubscription?.cancel();
+    _activitySubscription?.cancel();
     _balanceSubscription?.cancel();
     _noteSubscription?.cancel();
     _topicSubscription?.cancel();
   }
 
-  void setCurrent(ContextId? current) {
+  void setCurrent(ActivityId? current) {
     setTopic(null);
-    if (_contextSubscription != null && current == state.current?.id) return;
-    _contextSubscription?.cancel();
+    if (_activitySubscription != null && current == state.current?.id) return;
+    _activitySubscription?.cancel();
     if (current == null) {
-      _contextSubscription = Context.watchRoot().listen((contexts) {
-        emit(state.copyWith(current: Optional.of(null), children: contexts));
+      _activitySubscription = Activity.watchRoot().listen((activities) {
+        emit(state.copyWith(current: Optional.of(null), children: activities));
         _loadBalances();
         _loadNotes();
       });
     } else {
-      _contextSubscription =
-          Context.watchOne(current, depth: 1).listen((context) {
-        emit(state.copyWith(current: Optional.of(context)));
+      _activitySubscription =
+          Activity.watchOne(current, depth: 1).listen((activity) {
+        emit(state.copyWith(current: Optional.of(activity)));
         _loadBalances();
         _loadNotes();
       });
@@ -50,8 +50,8 @@ class ContextBloc extends Cubit<ContextState> {
     _loadTopicNotes();
   }
 
-  Future<void> save(Context context) async {
-    await context.save();
+  Future<void> save(Activity activity) async {
+    await activity.save();
   }
 
   void setWeek(Week week) async {
@@ -71,10 +71,10 @@ class ContextBloc extends Cubit<ContextState> {
 
   void _loadNotes() {
     _noteSubscription?.cancel();
-    _noteSubscription = Note.watchContext(state.current).listen((notes) {
+    _noteSubscription = Note.watchActivity(state.current).listen((notes) {
       emit(state.copyWith(
         notes: notes,
-        moreNotes: Note.hasMoreContext(state.current?.path),
+        moreNotes: Note.hasMoreActivity(state.current?.path),
       ));
     });
     _loadTopicNotes();
@@ -119,7 +119,7 @@ class ContextBloc extends Cubit<ContextState> {
     }
   }
 
-  StreamSubscription<dynamic>? _contextSubscription;
+  StreamSubscription<dynamic>? _activitySubscription;
   StreamSubscription<Map<Uuid?, Balance>>? _balanceSubscription;
   StreamSubscription<List<Note>>? _noteSubscription;
   StreamSubscription<List<Note>>? _topicSubscription;

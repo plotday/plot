@@ -14,7 +14,7 @@ CREATE TABLE "public"."session" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
-    "context_id" uuid REFERENCES context ON DELETE SET NULL,
+    "activity_id" uuid REFERENCES activity ON DELETE SET NULL,
     "at" tstzrange NOT NULL CHECK (is_finite (at)),
     "priority" smallint NOT NULL DEFAULT 0,
     "pomodoro" smallint CHECK (pomodoro IS NULL OR pomodoro > 0),

@@ -6,7 +6,7 @@ import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/schedule.dart';
 import 'package:plot/state/accounts.dart';
-import 'package:plot/state/context.dart';
+import 'package:plot/state/activity.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/spinner.dart';
 
@@ -70,7 +70,7 @@ class RootProviderState extends State<RootProvider> {
               BlocProvider(create: (_) => NowBloc()),
               BlocProvider(create: (_) => ScheduleBloc()),
               BlocProvider(create: (_) => AccountsBloc()),
-              BlocProvider(create: (_) => ContextBloc()),
+              BlocProvider(create: (_) => ActivityBloc()),
             ],
             child: widget.child,
           );

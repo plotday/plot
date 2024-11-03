@@ -1,14 +1,14 @@
-part of 'context.dart';
+part of 'activity.dart';
 
-final class ContextState extends Equatable {
+final class ActivityState extends Equatable {
   static List<Note> _filterPinnedNotes(List<Note> notes, bool pinned) {
     return notes.where((note) => note.order.pinned == pinned).toList();
   }
 
-  ContextState({
+  ActivityState({
     required this.week,
     this.current,
-    List<Context>? children,
+    List<Activity>? children,
   })  : children = current?.children ?? children ?? const [],
         notes = const [],
         moreNotes = true,
@@ -19,10 +19,10 @@ final class ContextState extends Equatable {
         moreTopicNotes = false,
         balances = null;
 
-  ContextState._({
+  ActivityState._({
     required this.week,
     this.current,
-    List<Context>? children,
+    List<Activity>? children,
     List<Note> notes = const [],
     this.moreNotes = true,
     this.topicId,
@@ -35,8 +35,8 @@ final class ContextState extends Equatable {
         topicNotes = _filterPinnedNotes(topicNotes, false),
         pinnedTopicNotes = _filterPinnedNotes(topicNotes, true);
 
-  final Context? current;
-  final List<Context> children;
+  final Activity? current;
+  final List<Activity> children;
 
   final List<Note> notes;
   final List<Note> pinnedNotes;
@@ -49,11 +49,11 @@ final class ContextState extends Equatable {
   Note? get topicNote => topicNotes.firstOrNull;
 
   final Week week;
-  final Map<ContextId?, Balance>? balances;
+  final Map<ActivityId?, Balance>? balances;
 
-  ContextState copyWith({
-    Optional<Context> current = const Optional.absent(),
-    List<Context>? children,
+  ActivityState copyWith({
+    Optional<Activity> current = const Optional.absent(),
+    List<Activity>? children,
     Week? week,
     Optional<Map<Uuid?, Balance>> balances = const Optional.absent(),
     List<Note>? notes,
@@ -75,7 +75,7 @@ final class ContextState extends Equatable {
       );
     }
 
-    return ContextState._(
+    return ActivityState._(
       balances: balances.or(this.balances),
       current: current.or(this.current),
       children: children ?? current.orNull?.children ?? this.children,

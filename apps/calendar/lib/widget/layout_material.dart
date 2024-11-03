@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 import 'package:go_router/go_router.dart';
 
-import 'context_nav.dart';
+import 'activity_nav.dart';
 
 class MaterialLayout extends StatelessWidget {
   static const singleBreakpoint = WidthPlatformBreakpoint(end: 600);
@@ -39,7 +39,7 @@ class MaterialLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const ContextNav(),
+        title: const ActivityNav(),
       ),
       body: AdaptiveLayout(
         key: const Key('Global Layout'),

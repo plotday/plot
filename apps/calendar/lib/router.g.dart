@@ -34,19 +34,19 @@ RouteBase get $_AdaptiveRoutes => ShellRouteData.$route(
               factory: $EventRouteExtension._fromState,
             ),
             GoRouteData.$route(
-              path: '/activity/:contextIdString',
+              path: '/activity/:activityIdString',
               factory: $ActivityRouteExtension._fromState,
             ),
             GoRouteData.$route(
-              path: '/activity/:contextIdString/edit',
+              path: '/activity/:activityIdString/edit',
               factory: $ActivityEditRouteExtension._fromState,
             ),
             GoRouteData.$route(
-              path: '/activity/:contextIdString/new',
+              path: '/activity/:activityIdString/new',
               factory: $ActivityAddRouteExtension._fromState,
             ),
             GoRouteData.$route(
-              path: '/activity/:contextIdString/:topicIdString',
+              path: '/activity/:activityIdString/:topicIdString',
               factory: $TopicRouteExtension._fromState,
             ),
           ],
@@ -140,11 +140,11 @@ extension $EventRouteExtension on EventRoute {
 
 extension $ActivityRouteExtension on ActivityRoute {
   static ActivityRoute _fromState(GoRouterState state) => ActivityRoute(
-        contextIdString: state.pathParameters['contextIdString']!,
+        activityIdString: state.pathParameters['activityIdString']!,
       );
 
   String get location => GoRouteData.$location(
-        '/activity/${Uri.encodeComponent(contextIdString)}',
+        '/activity/${Uri.encodeComponent(activityIdString)}',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -159,11 +159,11 @@ extension $ActivityRouteExtension on ActivityRoute {
 
 extension $ActivityEditRouteExtension on ActivityEditRoute {
   static ActivityEditRoute _fromState(GoRouterState state) => ActivityEditRoute(
-        contextIdString: state.pathParameters['contextIdString']!,
+        activityIdString: state.pathParameters['activityIdString']!,
       );
 
   String get location => GoRouteData.$location(
-        '/activity/${Uri.encodeComponent(contextIdString)}/edit',
+        '/activity/${Uri.encodeComponent(activityIdString)}/edit',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -178,11 +178,11 @@ extension $ActivityEditRouteExtension on ActivityEditRoute {
 
 extension $ActivityAddRouteExtension on ActivityAddRoute {
   static ActivityAddRoute _fromState(GoRouterState state) => ActivityAddRoute(
-        contextIdString: state.pathParameters['contextIdString']!,
+        activityIdString: state.pathParameters['activityIdString']!,
       );
 
   String get location => GoRouteData.$location(
-        '/activity/${Uri.encodeComponent(contextIdString)}/new',
+        '/activity/${Uri.encodeComponent(activityIdString)}/new',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -197,12 +197,12 @@ extension $ActivityAddRouteExtension on ActivityAddRoute {
 
 extension $TopicRouteExtension on TopicRoute {
   static TopicRoute _fromState(GoRouterState state) => TopicRoute(
-        contextIdString: state.pathParameters['contextIdString']!,
+        activityIdString: state.pathParameters['activityIdString']!,
         topicIdString: state.pathParameters['topicIdString']!,
       );
 
   String get location => GoRouteData.$location(
-        '/activity/${Uri.encodeComponent(contextIdString)}/${Uri.encodeComponent(topicIdString)}',
+        '/activity/${Uri.encodeComponent(activityIdString)}/${Uri.encodeComponent(topicIdString)}',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -242,7 +242,7 @@ RouteBase get $_SingleRoutes => ShellRouteData.$route(
             StatefulShellBranchData.$branch(
               routes: [
                 GoRouteData.$route(
-                  path: '/activity/:contextIdString',
+                  path: '/activity/:activityIdString',
                   factory: $ActivityRouteExtension._fromState,
                   routes: [
                     GoRouteData.$route(

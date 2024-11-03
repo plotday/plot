@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:rxdart/rxdart.dart';
@@ -22,7 +20,7 @@ export 'package:plot/util/order.dart';
 part 'sync.dart';
 part 'account.dart';
 part 'calendar.dart';
-part 'context.dart';
+part 'activity.dart';
 part 'note.dart';
 part 'event.dart';
 part 'budget.dart';
@@ -102,7 +100,7 @@ abstract class BaseTable {
   SyncStates,
   Accounts,
   Calendars,
-  Contexts,
+  Activities,
   Notes,
   Events,
   Budgets,
@@ -235,7 +233,7 @@ class Store extends _$Store {
   Future<void> sync() async {
     await Future.wait([
       Account.push().then((_) => Account.pull()),
-      Context.push().then((_) => Context.pull()),
+      Activity.push().then((_) => Activity.pull()),
       Note.push().then((_) => Note.pull()),
       // TODO add rest
     ]);
@@ -245,6 +243,17 @@ class Store extends _$Store {
 
   @override
   int get schemaVersion => 1;
+
+  // @override
+  // MigrationStrategy get migration {
+  //   return MigrationStrategy(beforeOpen: (openingDetails) async {
+  //     final m = createMigrator(); // changed to this
+  //     for (final table in allTables) {
+  //       await m.deleteTable(table.actualTableName);
+  //       await m.createTable(table);
+  //     }
+  //   });
+  // }
 
   static QueryExecutor _openConnection() {
     return driftDatabase(name: 'plot');

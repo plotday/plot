@@ -5,7 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/schedule.dart';
 import 'package:plot/router.dart';
-import 'context_nav.dart';
+import 'activity_nav.dart';
 import 'scroll_context.dart';
 
 class MacLayout extends StatefulWidget {
@@ -34,7 +34,7 @@ class MacLayoutState extends State<MacLayout> {
         return MacosWindow(
           child: MacosScaffold(
             toolBar: ToolBar(
-              title: const ContextNav(),
+              title: const ActivityNav(),
               actions: [
                 ToolBarIconButton(
                   icon: const material.Icon(material.Icons.calendar_today),

@@ -4,7 +4,7 @@ AS
 SELECT
     user_id,
     day,
-    text2ltree (min(ltree2text (context_path))) AS context_path,
+    text2ltree (min(ltree2text (activity_path))) AS activity_path,
     type,
     response,
     nv.name,
@@ -46,7 +46,7 @@ WHERE
 GROUP BY
     user_id,
     day,
-    context_path,
+    activity_path,
     type,
     response,
     nv.name,
@@ -68,8 +68,8 @@ GROUP BY
 --     COALESCE(SUM(i.count) FILTER (WHERE i.response IS NULL), 0) AS pending_count,
 --     COALESCE(SUM(i.seconds) FILTER (WHERE i.response IS NULL), 0) AS pending_seconds
 -- FROM
---     context ctx
---     LEFT JOIN insight i ON ctx.path = i.context_path
+--     activity ctx
+--     LEFT JOIN insight i ON ctx.path = i.activity_path
 -- GROUP BY
 --     ctx.user_id,
 --     ctx.path,

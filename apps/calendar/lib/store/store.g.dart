@@ -847,12 +847,12 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   }
 }
 
-class $ContextsTable extends Contexts
-    with TableInfo<$ContextsTable, ContextRow> {
+class $ActivitiesTable extends Activities
+    with TableInfo<$ActivitiesTable, ActivityRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $ContextsTable(this.attachedDatabase, [this._alias]);
+  $ActivitiesTable(this.attachedDatabase, [this._alias]);
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumnWithTypeConverter<Uuid, Uint8List> id =
@@ -860,7 +860,7 @@ class $ContextsTable extends Contexts
               type: DriftSqlType.blob,
               requiredDuringInsert: false,
               clientDefault: () => Uuid.generate().toBytes())
-          .withConverter<Uuid>($ContextsTable.$converterid);
+          .withConverter<Uuid>($ActivitiesTable.$converterid);
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
@@ -887,7 +887,7 @@ class $ContextsTable extends Contexts
   late final GeneratedColumnWithTypeConverter<Path, String> path =
       GeneratedColumn<String>('path', aliasedName, false,
               type: DriftSqlType.string, requiredDuringInsert: true)
-          .withConverter<Path>($ContextsTable.$converterpath);
+          .withConverter<Path>($ActivitiesTable.$converterpath);
   static const VerificationMeta _orderMeta = const VerificationMeta('order');
   @override
   late final GeneratedColumnWithTypeConverter<Order, double> order =
@@ -895,7 +895,7 @@ class $ContextsTable extends Contexts
               type: DriftSqlType.double,
               requiredDuringInsert: false,
               clientDefault: () => Order.last().value)
-          .withConverter<Order>($ContextsTable.$converterorder);
+          .withConverter<Order>($ActivitiesTable.$converterorder);
   static const VerificationMeta _pomodoroMeta =
       const VerificationMeta('pomodoro');
   @override
@@ -904,7 +904,7 @@ class $ContextsTable extends Contexts
               type: DriftSqlType.int,
               requiredDuringInsert: false,
               defaultValue: const Constant(25 * 60))
-          .withConverter<Duration>($ContextsTable.$converterpomodoro);
+          .withConverter<Duration>($ActivitiesTable.$converterpomodoro);
   @override
   List<GeneratedColumn> get $columns =>
       [id, modifiedAt, createdAt, name, path, order, pomodoro];
@@ -912,9 +912,9 @@ class $ContextsTable extends Contexts
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'contexts';
+  static const String $name = 'activities';
   @override
-  VerificationContext validateIntegrity(Insertable<ContextRow> instance,
+  VerificationContext validateIntegrity(Insertable<ActivityRow> instance,
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
@@ -944,10 +944,10 @@ class $ContextsTable extends Contexts
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  ContextRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+  ActivityRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return ContextRow(
-      id: $ContextsTable.$converterid.fromSql(attachedDatabase.typeMapping
+    return ActivityRow(
+      id: $ActivitiesTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
@@ -955,19 +955,20 @@ class $ContextsTable extends Contexts
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
-      path: $ContextsTable.$converterpath.fromSql(attachedDatabase.typeMapping
+      path: $ActivitiesTable.$converterpath.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}path'])!),
-      order: $ContextsTable.$converterorder.fromSql(attachedDatabase.typeMapping
+      order: $ActivitiesTable.$converterorder.fromSql(attachedDatabase
+          .typeMapping
           .read(DriftSqlType.double, data['${effectivePrefix}order'])!),
-      pomodoro: $ContextsTable.$converterpomodoro.fromSql(attachedDatabase
+      pomodoro: $ActivitiesTable.$converterpomodoro.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}pomodoro'])!),
     );
   }
 
   @override
-  $ContextsTable createAlias(String alias) {
-    return $ContextsTable(attachedDatabase, alias);
+  $ActivitiesTable createAlias(String alias) {
+    return $ActivitiesTable(attachedDatabase, alias);
   }
 
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
@@ -977,7 +978,7 @@ class $ContextsTable extends Contexts
       const DurationConverter();
 }
 
-class ContextRow extends DataClass implements Insertable<ContextRow> {
+class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final Uuid id;
   final DateTime modifiedAt;
   final DateTime createdAt;
@@ -985,7 +986,7 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
   final Path path;
   final Order order;
   final Duration pomodoro;
-  const ContextRow(
+  const ActivityRow(
       {required this.id,
       required this.modifiedAt,
       required this.createdAt,
@@ -997,27 +998,28 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     {
-      map['id'] = Variable<Uint8List>($ContextsTable.$converterid.toSql(id));
+      map['id'] = Variable<Uint8List>($ActivitiesTable.$converterid.toSql(id));
     }
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['name'] = Variable<String>(name);
     {
-      map['path'] = Variable<String>($ContextsTable.$converterpath.toSql(path));
+      map['path'] =
+          Variable<String>($ActivitiesTable.$converterpath.toSql(path));
     }
     {
       map['order'] =
-          Variable<double>($ContextsTable.$converterorder.toSql(order));
+          Variable<double>($ActivitiesTable.$converterorder.toSql(order));
     }
     {
       map['pomodoro'] =
-          Variable<int>($ContextsTable.$converterpomodoro.toSql(pomodoro));
+          Variable<int>($ActivitiesTable.$converterpomodoro.toSql(pomodoro));
     }
     return map;
   }
 
-  ContextsCompanion toCompanion(bool nullToAbsent) {
-    return ContextsCompanion(
+  ActivitiesCompanion toCompanion(bool nullToAbsent) {
+    return ActivitiesCompanion(
       id: Value(id),
       modifiedAt: Value(modifiedAt),
       createdAt: Value(createdAt),
@@ -1028,10 +1030,10 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
     );
   }
 
-  factory ContextRow.fromJson(Map<String, dynamic> json,
+  factory ActivityRow.fromJson(Map<String, dynamic> json,
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return ContextRow(
+    return ActivityRow(
       id: serializer.fromJson<Uuid>(json['id']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       createdAt: serializer.fromJson<DateTime>(json['created_at']),
@@ -1055,7 +1057,7 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
     };
   }
 
-  ContextRow copyWith(
+  ActivityRow copyWith(
           {Uuid? id,
           DateTime? modifiedAt,
           DateTime? createdAt,
@@ -1063,7 +1065,7 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
           Path? path,
           Order? order,
           Duration? pomodoro}) =>
-      ContextRow(
+      ActivityRow(
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
         createdAt: createdAt ?? this.createdAt,
@@ -1072,8 +1074,8 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
         order: order ?? this.order,
         pomodoro: pomodoro ?? this.pomodoro,
       );
-  ContextRow copyWithCompanion(ContextsCompanion data) {
-    return ContextRow(
+  ActivityRow copyWithCompanion(ActivitiesCompanion data) {
+    return ActivityRow(
       id: data.id.present ? data.id.value : this.id,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
@@ -1087,7 +1089,7 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
 
   @override
   String toString() {
-    return (StringBuffer('ContextRow(')
+    return (StringBuffer('ActivityRow(')
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('createdAt: $createdAt, ')
@@ -1105,7 +1107,7 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is ContextRow &&
+      (other is ActivityRow &&
           other.id == this.id &&
           other.modifiedAt == this.modifiedAt &&
           other.createdAt == this.createdAt &&
@@ -1115,7 +1117,7 @@ class ContextRow extends DataClass implements Insertable<ContextRow> {
           other.pomodoro == this.pomodoro);
 }
 
-class ContextsCompanion extends UpdateCompanion<ContextRow> {
+class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<Uuid> id;
   final Value<DateTime> modifiedAt;
   final Value<DateTime> createdAt;
@@ -1124,7 +1126,7 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
   final Value<Order> order;
   final Value<Duration> pomodoro;
   final Value<int> rowid;
-  const ContextsCompanion({
+  const ActivitiesCompanion({
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -1134,7 +1136,7 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
     this.pomodoro = const Value.absent(),
     this.rowid = const Value.absent(),
   });
-  ContextsCompanion.insert({
+  ActivitiesCompanion.insert({
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -1145,7 +1147,7 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
     this.rowid = const Value.absent(),
   })  : name = Value(name),
         path = Value(path);
-  static Insertable<ContextRow> custom({
+  static Insertable<ActivityRow> custom({
     Expression<Uint8List>? id,
     Expression<DateTime>? modifiedAt,
     Expression<DateTime>? createdAt,
@@ -1167,7 +1169,7 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
     });
   }
 
-  ContextsCompanion copyWith(
+  ActivitiesCompanion copyWith(
       {Value<Uuid>? id,
       Value<DateTime>? modifiedAt,
       Value<DateTime>? createdAt,
@@ -1176,7 +1178,7 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
       Value<Order>? order,
       Value<Duration>? pomodoro,
       Value<int>? rowid}) {
-    return ContextsCompanion(
+    return ActivitiesCompanion(
       id: id ?? this.id,
       modifiedAt: modifiedAt ?? this.modifiedAt,
       createdAt: createdAt ?? this.createdAt,
@@ -1193,7 +1195,7 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] =
-          Variable<Uint8List>($ContextsTable.$converterid.toSql(id.value));
+          Variable<Uint8List>($ActivitiesTable.$converterid.toSql(id.value));
     }
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
@@ -1206,15 +1208,15 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
     }
     if (path.present) {
       map['path'] =
-          Variable<String>($ContextsTable.$converterpath.toSql(path.value));
+          Variable<String>($ActivitiesTable.$converterpath.toSql(path.value));
     }
     if (order.present) {
       map['order'] =
-          Variable<double>($ContextsTable.$converterorder.toSql(order.value));
+          Variable<double>($ActivitiesTable.$converterorder.toSql(order.value));
     }
     if (pomodoro.present) {
       map['pomodoro'] = Variable<int>(
-          $ContextsTable.$converterpomodoro.toSql(pomodoro.value));
+          $ActivitiesTable.$converterpomodoro.toSql(pomodoro.value));
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -1224,7 +1226,7 @@ class ContextsCompanion extends UpdateCompanion<ContextRow> {
 
   @override
   String toString() {
-    return (StringBuffer('ContextsCompanion(')
+    return (StringBuffer('ActivitiesCompanion(')
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('createdAt: $createdAt, ')
@@ -1314,16 +1316,16 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       GeneratedColumn<Uint8List>('topic_id', aliasedName, false,
               type: DriftSqlType.blob, requiredDuringInsert: true)
           .withConverter<Uuid>($NotesTable.$convertertopicId);
-  static const VerificationMeta _contextIdMeta =
-      const VerificationMeta('contextId');
+  static const VerificationMeta _activityIdMeta =
+      const VerificationMeta('activityId');
   @override
-  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> contextId =
-      GeneratedColumn<Uint8List>('context_id', aliasedName, true,
+  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> activityId =
+      GeneratedColumn<Uint8List>('activity_id', aliasedName, true,
               type: DriftSqlType.blob,
               requiredDuringInsert: false,
               defaultConstraints: GeneratedColumn.constraintIsAlways(
-                  'REFERENCES contexts (id)'))
-          .withConverter<Uuid?>($NotesTable.$convertercontextIdn);
+                  'REFERENCES activities (id)'))
+          .withConverter<Uuid?>($NotesTable.$converteractivityIdn);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -1335,7 +1337,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
         root,
         private,
         topicId,
-        contextId
+        activityId
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1375,7 +1377,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
           private.isAcceptableOrUnknown(data['private']!, _privateMeta));
     }
     context.handle(_topicIdMeta, const VerificationResult.success());
-    context.handle(_contextIdMeta, const VerificationResult.success());
+    context.handle(_activityIdMeta, const VerificationResult.success());
     return context;
   }
 
@@ -1404,9 +1406,9 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       topicId: $NotesTable.$convertertopicId.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}topic_id'])!),
-      contextId: $NotesTable.$convertercontextIdn.fromSql(attachedDatabase
+      activityId: $NotesTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.blob, data['${effectivePrefix}context_id'])),
+          .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
     );
   }
 
@@ -1421,10 +1423,10 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
   static TypeConverter<Order, double> $converterorder = const OrderConverter();
   static TypeConverter<Uuid, Uint8List> $convertertopicId =
       const UuidConverter();
-  static TypeConverter<Uuid, Uint8List> $convertercontextId =
+  static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
-  static TypeConverter<Uuid?, Uint8List?> $convertercontextIdn =
-      NullAwareTypeConverter.wrap($convertercontextId);
+  static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
+      NullAwareTypeConverter.wrap($converteractivityId);
 }
 
 class NoteRow extends DataClass implements Insertable<NoteRow> {
@@ -1437,7 +1439,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   final bool root;
   final bool private;
   final Uuid topicId;
-  final Uuid? contextId;
+  final Uuid? activityId;
   const NoteRow(
       {required this.id,
       required this.modifiedAt,
@@ -1448,7 +1450,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       required this.root,
       required this.private,
       required this.topicId,
-      this.contextId});
+      this.activityId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1471,9 +1473,9 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       map['topic_id'] =
           Variable<Uint8List>($NotesTable.$convertertopicId.toSql(topicId));
     }
-    if (!nullToAbsent || contextId != null) {
-      map['context_id'] = Variable<Uint8List>(
-          $NotesTable.$convertercontextIdn.toSql(contextId));
+    if (!nullToAbsent || activityId != null) {
+      map['activity_id'] = Variable<Uint8List>(
+          $NotesTable.$converteractivityIdn.toSql(activityId));
     }
     return map;
   }
@@ -1489,9 +1491,9 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       root: Value(root),
       private: Value(private),
       topicId: Value(topicId),
-      contextId: contextId == null && nullToAbsent
+      activityId: activityId == null && nullToAbsent
           ? const Value.absent()
-          : Value(contextId),
+          : Value(activityId),
     );
   }
 
@@ -1508,7 +1510,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       root: serializer.fromJson<bool>(json['root']),
       private: serializer.fromJson<bool>(json['private']),
       topicId: serializer.fromJson<Uuid>(json['topic_id']),
-      contextId: serializer.fromJson<Uuid?>(json['context_id']),
+      activityId: serializer.fromJson<Uuid?>(json['activity_id']),
     );
   }
   @override
@@ -1524,7 +1526,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       'root': serializer.toJson<bool>(root),
       'private': serializer.toJson<bool>(private),
       'topic_id': serializer.toJson<Uuid>(topicId),
-      'context_id': serializer.toJson<Uuid?>(contextId),
+      'activity_id': serializer.toJson<Uuid?>(activityId),
     };
   }
 
@@ -1538,7 +1540,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           bool? root,
           bool? private,
           Uuid? topicId,
-          Value<Uuid?> contextId = const Value.absent()}) =>
+          Value<Uuid?> activityId = const Value.absent()}) =>
       NoteRow(
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
@@ -1549,7 +1551,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
         root: root ?? this.root,
         private: private ?? this.private,
         topicId: topicId ?? this.topicId,
-        contextId: contextId.present ? contextId.value : this.contextId,
+        activityId: activityId.present ? activityId.value : this.activityId,
       );
   NoteRow copyWithCompanion(NotesCompanion data) {
     return NoteRow(
@@ -1563,7 +1565,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       root: data.root.present ? data.root.value : this.root,
       private: data.private.present ? data.private.value : this.private,
       topicId: data.topicId.present ? data.topicId.value : this.topicId,
-      contextId: data.contextId.present ? data.contextId.value : this.contextId,
+      activityId:
+          data.activityId.present ? data.activityId.value : this.activityId,
     );
   }
 
@@ -1579,14 +1582,14 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           ..write('root: $root, ')
           ..write('private: $private, ')
           ..write('topicId: $topicId, ')
-          ..write('contextId: $contextId')
+          ..write('activityId: $activityId')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(id, modifiedAt, createdAt, userId, body,
-      order, root, private, topicId, contextId);
+      order, root, private, topicId, activityId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1600,7 +1603,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           other.root == this.root &&
           other.private == this.private &&
           other.topicId == this.topicId &&
-          other.contextId == this.contextId);
+          other.activityId == this.activityId);
 }
 
 class NotesCompanion extends UpdateCompanion<NoteRow> {
@@ -1613,7 +1616,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   final Value<bool> root;
   final Value<bool> private;
   final Value<Uuid> topicId;
-  final Value<Uuid?> contextId;
+  final Value<Uuid?> activityId;
   final Value<int> rowid;
   const NotesCompanion({
     this.id = const Value.absent(),
@@ -1625,7 +1628,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     this.root = const Value.absent(),
     this.private = const Value.absent(),
     this.topicId = const Value.absent(),
-    this.contextId = const Value.absent(),
+    this.activityId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   NotesCompanion.insert({
@@ -1638,7 +1641,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     this.root = const Value.absent(),
     this.private = const Value.absent(),
     required Uuid topicId,
-    this.contextId = const Value.absent(),
+    this.activityId = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : body = Value(body),
         topicId = Value(topicId);
@@ -1652,7 +1655,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     Expression<bool>? root,
     Expression<bool>? private,
     Expression<Uint8List>? topicId,
-    Expression<Uint8List>? contextId,
+    Expression<Uint8List>? activityId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1665,7 +1668,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       if (root != null) 'root': root,
       if (private != null) 'private': private,
       if (topicId != null) 'topic_id': topicId,
-      if (contextId != null) 'context_id': contextId,
+      if (activityId != null) 'activity_id': activityId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1680,7 +1683,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       Value<bool>? root,
       Value<bool>? private,
       Value<Uuid>? topicId,
-      Value<Uuid?>? contextId,
+      Value<Uuid?>? activityId,
       Value<int>? rowid}) {
     return NotesCompanion(
       id: id ?? this.id,
@@ -1692,7 +1695,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       root: root ?? this.root,
       private: private ?? this.private,
       topicId: topicId ?? this.topicId,
-      contextId: contextId ?? this.contextId,
+      activityId: activityId ?? this.activityId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1730,9 +1733,9 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       map['topic_id'] = Variable<Uint8List>(
           $NotesTable.$convertertopicId.toSql(topicId.value));
     }
-    if (contextId.present) {
-      map['context_id'] = Variable<Uint8List>(
-          $NotesTable.$convertercontextIdn.toSql(contextId.value));
+    if (activityId.present) {
+      map['activity_id'] = Variable<Uint8List>(
+          $NotesTable.$converteractivityIdn.toSql(activityId.value));
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -1752,7 +1755,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
           ..write('root: $root, ')
           ..write('private: $private, ')
           ..write('topicId: $topicId, ')
-          ..write('contextId: $contextId, ')
+          ..write('activityId: $activityId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1807,19 +1810,19 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       GeneratedColumn<String>('response', aliasedName, false,
               type: DriftSqlType.string, requiredDuringInsert: true)
           .withConverter<EventResponse>($EventsTable.$converterresponse);
-  static const VerificationMeta _contextIdMeta =
-      const VerificationMeta('contextId');
+  static const VerificationMeta _activityIdMeta =
+      const VerificationMeta('activityId');
   @override
-  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> contextId =
-      GeneratedColumn<Uint8List>('context_id', aliasedName, true,
+  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> activityId =
+      GeneratedColumn<Uint8List>('activity_id', aliasedName, true,
               type: DriftSqlType.blob,
               requiredDuringInsert: false,
               defaultConstraints: GeneratedColumn.constraintIsAlways(
-                  'REFERENCES contexts (id)'))
-          .withConverter<Uuid?>($EventsTable.$convertercontextIdn);
+                  'REFERENCES activities (id)'))
+          .withConverter<Uuid?>($EventsTable.$converteractivityIdn);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, modifiedAt, name, start, end, series, response, contextId];
+      [id, modifiedAt, name, start, end, series, response, activityId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1858,7 +1861,7 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
           series.isAcceptableOrUnknown(data['series']!, _seriesMeta));
     }
     context.handle(_responseMeta, const VerificationResult.success());
-    context.handle(_contextIdMeta, const VerificationResult.success());
+    context.handle(_activityIdMeta, const VerificationResult.success());
     return context;
   }
 
@@ -1883,9 +1886,9 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       response: $EventsTable.$converterresponse.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}response'])!),
-      contextId: $EventsTable.$convertercontextIdn.fromSql(attachedDatabase
+      activityId: $EventsTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.blob, data['${effectivePrefix}context_id'])),
+          .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
     );
   }
 
@@ -1897,10 +1900,10 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
   static JsonTypeConverter2<EventResponse, String, String> $converterresponse =
       const EnumNameConverter<EventResponse>(EventResponse.values);
-  static TypeConverter<Uuid, Uint8List> $convertercontextId =
+  static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
-  static TypeConverter<Uuid?, Uint8List?> $convertercontextIdn =
-      NullAwareTypeConverter.wrap($convertercontextId);
+  static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
+      NullAwareTypeConverter.wrap($converteractivityId);
 }
 
 class EventRow extends DataClass implements Insertable<EventRow> {
@@ -1911,7 +1914,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   final DateTime end;
   final String? series;
   final EventResponse response;
-  final Uuid? contextId;
+  final Uuid? activityId;
   const EventRow(
       {required this.id,
       required this.modifiedAt,
@@ -1920,7 +1923,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       required this.end,
       this.series,
       required this.response,
-      this.contextId});
+      this.activityId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1940,9 +1943,9 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       map['response'] =
           Variable<String>($EventsTable.$converterresponse.toSql(response));
     }
-    if (!nullToAbsent || contextId != null) {
-      map['context_id'] = Variable<Uint8List>(
-          $EventsTable.$convertercontextIdn.toSql(contextId));
+    if (!nullToAbsent || activityId != null) {
+      map['activity_id'] = Variable<Uint8List>(
+          $EventsTable.$converteractivityIdn.toSql(activityId));
     }
     return map;
   }
@@ -1957,9 +1960,9 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       series:
           series == null && nullToAbsent ? const Value.absent() : Value(series),
       response: Value(response),
-      contextId: contextId == null && nullToAbsent
+      activityId: activityId == null && nullToAbsent
           ? const Value.absent()
-          : Value(contextId),
+          : Value(activityId),
     );
   }
 
@@ -1975,7 +1978,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       series: serializer.fromJson<String?>(json['series']),
       response: $EventsTable.$converterresponse
           .fromJson(serializer.fromJson<String>(json['response'])),
-      contextId: serializer.fromJson<Uuid?>(json['context_id']),
+      activityId: serializer.fromJson<Uuid?>(json['activity_id']),
     );
   }
   @override
@@ -1990,7 +1993,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       'series': serializer.toJson<String?>(series),
       'response': serializer
           .toJson<String>($EventsTable.$converterresponse.toJson(response)),
-      'context_id': serializer.toJson<Uuid?>(contextId),
+      'activity_id': serializer.toJson<Uuid?>(activityId),
     };
   }
 
@@ -2002,7 +2005,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           DateTime? end,
           Value<String?> series = const Value.absent(),
           EventResponse? response,
-          Value<Uuid?> contextId = const Value.absent()}) =>
+          Value<Uuid?> activityId = const Value.absent()}) =>
       EventRow(
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
@@ -2011,7 +2014,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
         end: end ?? this.end,
         series: series.present ? series.value : this.series,
         response: response ?? this.response,
-        contextId: contextId.present ? contextId.value : this.contextId,
+        activityId: activityId.present ? activityId.value : this.activityId,
       );
   EventRow copyWithCompanion(EventsCompanion data) {
     return EventRow(
@@ -2023,7 +2026,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       end: data.end.present ? data.end.value : this.end,
       series: data.series.present ? data.series.value : this.series,
       response: data.response.present ? data.response.value : this.response,
-      contextId: data.contextId.present ? data.contextId.value : this.contextId,
+      activityId:
+          data.activityId.present ? data.activityId.value : this.activityId,
     );
   }
 
@@ -2037,14 +2041,14 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           ..write('end: $end, ')
           ..write('series: $series, ')
           ..write('response: $response, ')
-          ..write('contextId: $contextId')
+          ..write('activityId: $activityId')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(
-      id, modifiedAt, name, start, end, series, response, contextId);
+      id, modifiedAt, name, start, end, series, response, activityId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2056,7 +2060,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           other.end == this.end &&
           other.series == this.series &&
           other.response == this.response &&
-          other.contextId == this.contextId);
+          other.activityId == this.activityId);
 }
 
 class EventsCompanion extends UpdateCompanion<EventRow> {
@@ -2067,7 +2071,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   final Value<DateTime> end;
   final Value<String?> series;
   final Value<EventResponse> response;
-  final Value<Uuid?> contextId;
+  final Value<Uuid?> activityId;
   final Value<int> rowid;
   const EventsCompanion({
     this.id = const Value.absent(),
@@ -2077,7 +2081,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     this.end = const Value.absent(),
     this.series = const Value.absent(),
     this.response = const Value.absent(),
-    this.contextId = const Value.absent(),
+    this.activityId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   EventsCompanion.insert({
@@ -2088,7 +2092,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     required DateTime end,
     this.series = const Value.absent(),
     required EventResponse response,
-    this.contextId = const Value.absent(),
+    this.activityId = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : start = Value(start),
         end = Value(end),
@@ -2101,7 +2105,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     Expression<DateTime>? end,
     Expression<String>? series,
     Expression<String>? response,
-    Expression<Uint8List>? contextId,
+    Expression<Uint8List>? activityId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2112,7 +2116,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       if (end != null) 'end': end,
       if (series != null) 'series': series,
       if (response != null) 'response': response,
-      if (contextId != null) 'context_id': contextId,
+      if (activityId != null) 'activity_id': activityId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2125,7 +2129,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       Value<DateTime>? end,
       Value<String?>? series,
       Value<EventResponse>? response,
-      Value<Uuid?>? contextId,
+      Value<Uuid?>? activityId,
       Value<int>? rowid}) {
     return EventsCompanion(
       id: id ?? this.id,
@@ -2135,7 +2139,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       end: end ?? this.end,
       series: series ?? this.series,
       response: response ?? this.response,
-      contextId: contextId ?? this.contextId,
+      activityId: activityId ?? this.activityId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2166,9 +2170,9 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       map['response'] = Variable<String>(
           $EventsTable.$converterresponse.toSql(response.value));
     }
-    if (contextId.present) {
-      map['context_id'] = Variable<Uint8List>(
-          $EventsTable.$convertercontextIdn.toSql(contextId.value));
+    if (activityId.present) {
+      map['activity_id'] = Variable<Uint8List>(
+          $EventsTable.$converteractivityIdn.toSql(activityId.value));
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -2186,7 +2190,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
           ..write('end: $end, ')
           ..write('series: $series, ')
           ..write('response: $response, ')
-          ..write('contextId: $contextId, ')
+          ..write('activityId: $activityId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2211,18 +2215,18 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, BudgetRow> {
       type: DriftSqlType.dateTime,
       requiredDuringInsert: false,
       defaultValue: currentDateAndTime);
-  static const VerificationMeta _contextIdMeta =
-      const VerificationMeta('contextId');
+  static const VerificationMeta _activityIdMeta =
+      const VerificationMeta('activityId');
   @override
-  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> contextId =
-      GeneratedColumn<Uint8List>('context_id', aliasedName, true,
+  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> activityId =
+      GeneratedColumn<Uint8List>('activity_id', aliasedName, true,
               type: DriftSqlType.blob,
               requiredDuringInsert: false,
               defaultConstraints: GeneratedColumn.constraintIsAlways(
-                  'REFERENCES contexts (id)'))
-          .withConverter<Uuid?>($BudgetsTable.$convertercontextIdn);
+                  'REFERENCES activities (id)'))
+          .withConverter<Uuid?>($BudgetsTable.$converteractivityIdn);
   @override
-  List<GeneratedColumn> get $columns => [id, modifiedAt, contextId];
+  List<GeneratedColumn> get $columns => [id, modifiedAt, activityId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2242,7 +2246,7 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, BudgetRow> {
           modifiedAt.isAcceptableOrUnknown(
               data['modified_at']!, _modifiedAtMeta));
     }
-    context.handle(_contextIdMeta, const VerificationResult.success());
+    context.handle(_activityIdMeta, const VerificationResult.success());
     return context;
   }
 
@@ -2256,9 +2260,9 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, BudgetRow> {
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
-      contextId: $BudgetsTable.$convertercontextIdn.fromSql(attachedDatabase
+      activityId: $BudgetsTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.blob, data['${effectivePrefix}context_id'])),
+          .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
     );
   }
 
@@ -2267,25 +2271,26 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, BudgetRow> {
     return $BudgetsTable(attachedDatabase, alias);
   }
 
-  static TypeConverter<Uuid, Uint8List> $convertercontextId =
+  static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
-  static TypeConverter<Uuid?, Uint8List?> $convertercontextIdn =
-      NullAwareTypeConverter.wrap($convertercontextId);
+  static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
+      NullAwareTypeConverter.wrap($converteractivityId);
 }
 
 class BudgetRow extends DataClass implements Insertable<BudgetRow> {
   final int id;
   final DateTime modifiedAt;
-  final Uuid? contextId;
-  const BudgetRow({required this.id, required this.modifiedAt, this.contextId});
+  final Uuid? activityId;
+  const BudgetRow(
+      {required this.id, required this.modifiedAt, this.activityId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
-    if (!nullToAbsent || contextId != null) {
-      map['context_id'] = Variable<Uint8List>(
-          $BudgetsTable.$convertercontextIdn.toSql(contextId));
+    if (!nullToAbsent || activityId != null) {
+      map['activity_id'] = Variable<Uint8List>(
+          $BudgetsTable.$converteractivityIdn.toSql(activityId));
     }
     return map;
   }
@@ -2294,9 +2299,9 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
     return BudgetsCompanion(
       id: Value(id),
       modifiedAt: Value(modifiedAt),
-      contextId: contextId == null && nullToAbsent
+      activityId: activityId == null && nullToAbsent
           ? const Value.absent()
-          : Value(contextId),
+          : Value(activityId),
     );
   }
 
@@ -2306,7 +2311,7 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
     return BudgetRow(
       id: serializer.fromJson<int>(json['id']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
-      contextId: serializer.fromJson<Uuid?>(json['context_id']),
+      activityId: serializer.fromJson<Uuid?>(json['activity_id']),
     );
   }
   @override
@@ -2315,25 +2320,26 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
-      'context_id': serializer.toJson<Uuid?>(contextId),
+      'activity_id': serializer.toJson<Uuid?>(activityId),
     };
   }
 
   BudgetRow copyWith(
           {int? id,
           DateTime? modifiedAt,
-          Value<Uuid?> contextId = const Value.absent()}) =>
+          Value<Uuid?> activityId = const Value.absent()}) =>
       BudgetRow(
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
-        contextId: contextId.present ? contextId.value : this.contextId,
+        activityId: activityId.present ? activityId.value : this.activityId,
       );
   BudgetRow copyWithCompanion(BudgetsCompanion data) {
     return BudgetRow(
       id: data.id.present ? data.id.value : this.id,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
-      contextId: data.contextId.present ? data.contextId.value : this.contextId,
+      activityId:
+          data.activityId.present ? data.activityId.value : this.activityId,
     );
   }
 
@@ -2342,54 +2348,54 @@ class BudgetRow extends DataClass implements Insertable<BudgetRow> {
     return (StringBuffer('BudgetRow(')
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
-          ..write('contextId: $contextId')
+          ..write('activityId: $activityId')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, modifiedAt, contextId);
+  int get hashCode => Object.hash(id, modifiedAt, activityId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is BudgetRow &&
           other.id == this.id &&
           other.modifiedAt == this.modifiedAt &&
-          other.contextId == this.contextId);
+          other.activityId == this.activityId);
 }
 
 class BudgetsCompanion extends UpdateCompanion<BudgetRow> {
   final Value<int> id;
   final Value<DateTime> modifiedAt;
-  final Value<Uuid?> contextId;
+  final Value<Uuid?> activityId;
   const BudgetsCompanion({
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
-    this.contextId = const Value.absent(),
+    this.activityId = const Value.absent(),
   });
   BudgetsCompanion.insert({
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
-    this.contextId = const Value.absent(),
+    this.activityId = const Value.absent(),
   });
   static Insertable<BudgetRow> custom({
     Expression<int>? id,
     Expression<DateTime>? modifiedAt,
-    Expression<Uint8List>? contextId,
+    Expression<Uint8List>? activityId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (modifiedAt != null) 'modified_at': modifiedAt,
-      if (contextId != null) 'context_id': contextId,
+      if (activityId != null) 'activity_id': activityId,
     });
   }
 
   BudgetsCompanion copyWith(
-      {Value<int>? id, Value<DateTime>? modifiedAt, Value<Uuid?>? contextId}) {
+      {Value<int>? id, Value<DateTime>? modifiedAt, Value<Uuid?>? activityId}) {
     return BudgetsCompanion(
       id: id ?? this.id,
       modifiedAt: modifiedAt ?? this.modifiedAt,
-      contextId: contextId ?? this.contextId,
+      activityId: activityId ?? this.activityId,
     );
   }
 
@@ -2402,9 +2408,9 @@ class BudgetsCompanion extends UpdateCompanion<BudgetRow> {
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
     }
-    if (contextId.present) {
-      map['context_id'] = Variable<Uint8List>(
-          $BudgetsTable.$convertercontextIdn.toSql(contextId.value));
+    if (activityId.present) {
+      map['activity_id'] = Variable<Uint8List>(
+          $BudgetsTable.$converteractivityIdn.toSql(activityId.value));
     }
     return map;
   }
@@ -2414,7 +2420,7 @@ class BudgetsCompanion extends UpdateCompanion<BudgetRow> {
     return (StringBuffer('BudgetsCompanion(')
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
-          ..write('contextId: $contextId')
+          ..write('activityId: $activityId')
           ..write(')'))
         .toString();
   }
@@ -2442,16 +2448,16 @@ class $SessionsTable extends Sessions
       type: DriftSqlType.dateTime,
       requiredDuringInsert: false,
       defaultValue: currentDateAndTime);
-  static const VerificationMeta _contextIdMeta =
-      const VerificationMeta('contextId');
+  static const VerificationMeta _activityIdMeta =
+      const VerificationMeta('activityId');
   @override
-  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> contextId =
-      GeneratedColumn<Uint8List>('context_id', aliasedName, true,
+  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> activityId =
+      GeneratedColumn<Uint8List>('activity_id', aliasedName, true,
               type: DriftSqlType.blob,
               requiredDuringInsert: false,
               defaultConstraints: GeneratedColumn.constraintIsAlways(
-                  'REFERENCES contexts (id)'))
-          .withConverter<Uuid?>($SessionsTable.$convertercontextIdn);
+                  'REFERENCES activities (id)'))
+          .withConverter<Uuid?>($SessionsTable.$converteractivityIdn);
   static const VerificationMeta _startMeta = const VerificationMeta('start');
   @override
   late final GeneratedColumn<DateTime> start = GeneratedColumn<DateTime>(
@@ -2485,7 +2491,7 @@ class $SessionsTable extends Sessions
       type: DriftSqlType.dateTime, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, modifiedAt, contextId, start, end, priority, pomodoro, pomodoroAt];
+      [id, modifiedAt, activityId, start, end, priority, pomodoro, pomodoroAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2503,7 +2509,7 @@ class $SessionsTable extends Sessions
           modifiedAt.isAcceptableOrUnknown(
               data['modified_at']!, _modifiedAtMeta));
     }
-    context.handle(_contextIdMeta, const VerificationResult.success());
+    context.handle(_activityIdMeta, const VerificationResult.success());
     if (data.containsKey('start')) {
       context.handle(
           _startMeta, start.isAcceptableOrUnknown(data['start']!, _startMeta));
@@ -2540,9 +2546,9 @@ class $SessionsTable extends Sessions
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
-      contextId: $SessionsTable.$convertercontextIdn.fromSql(attachedDatabase
+      activityId: $SessionsTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.blob, data['${effectivePrefix}context_id'])),
+          .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
       start: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}start'])!,
       end: attachedDatabase.typeMapping
@@ -2563,10 +2569,10 @@ class $SessionsTable extends Sessions
   }
 
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
-  static TypeConverter<Uuid, Uint8List> $convertercontextId =
+  static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
-  static TypeConverter<Uuid?, Uint8List?> $convertercontextIdn =
-      NullAwareTypeConverter.wrap($convertercontextId);
+  static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
+      NullAwareTypeConverter.wrap($converteractivityId);
   static TypeConverter<Duration, int> $converterpomodoro =
       const DurationConverter();
   static TypeConverter<Duration?, int?> $converterpomodoron =
@@ -2576,7 +2582,7 @@ class $SessionsTable extends Sessions
 class SessionRow extends DataClass implements Insertable<SessionRow> {
   final Uuid id;
   final DateTime modifiedAt;
-  final Uuid? contextId;
+  final Uuid? activityId;
   final DateTime start;
   final DateTime end;
   final int priority;
@@ -2585,7 +2591,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   const SessionRow(
       {required this.id,
       required this.modifiedAt,
-      this.contextId,
+      this.activityId,
       required this.start,
       required this.end,
       required this.priority,
@@ -2598,9 +2604,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       map['id'] = Variable<Uint8List>($SessionsTable.$converterid.toSql(id));
     }
     map['modified_at'] = Variable<DateTime>(modifiedAt);
-    if (!nullToAbsent || contextId != null) {
-      map['context_id'] = Variable<Uint8List>(
-          $SessionsTable.$convertercontextIdn.toSql(contextId));
+    if (!nullToAbsent || activityId != null) {
+      map['activity_id'] = Variable<Uint8List>(
+          $SessionsTable.$converteractivityIdn.toSql(activityId));
     }
     map['start'] = Variable<DateTime>(start);
     map['end'] = Variable<DateTime>(end);
@@ -2619,9 +2625,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     return SessionsCompanion(
       id: Value(id),
       modifiedAt: Value(modifiedAt),
-      contextId: contextId == null && nullToAbsent
+      activityId: activityId == null && nullToAbsent
           ? const Value.absent()
-          : Value(contextId),
+          : Value(activityId),
       start: Value(start),
       end: Value(end),
       priority: Value(priority),
@@ -2640,7 +2646,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     return SessionRow(
       id: serializer.fromJson<Uuid>(json['id']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
-      contextId: serializer.fromJson<Uuid?>(json['context_id']),
+      activityId: serializer.fromJson<Uuid?>(json['activity_id']),
       start: serializer.fromJson<DateTime>(json['start']),
       end: serializer.fromJson<DateTime>(json['end']),
       priority: serializer.fromJson<int>(json['priority']),
@@ -2654,7 +2660,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
-      'context_id': serializer.toJson<Uuid?>(contextId),
+      'activity_id': serializer.toJson<Uuid?>(activityId),
       'start': serializer.toJson<DateTime>(start),
       'end': serializer.toJson<DateTime>(end),
       'priority': serializer.toJson<int>(priority),
@@ -2666,7 +2672,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   SessionRow copyWith(
           {Uuid? id,
           DateTime? modifiedAt,
-          Value<Uuid?> contextId = const Value.absent(),
+          Value<Uuid?> activityId = const Value.absent(),
           DateTime? start,
           DateTime? end,
           int? priority,
@@ -2675,7 +2681,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       SessionRow(
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
-        contextId: contextId.present ? contextId.value : this.contextId,
+        activityId: activityId.present ? activityId.value : this.activityId,
         start: start ?? this.start,
         end: end ?? this.end,
         priority: priority ?? this.priority,
@@ -2687,7 +2693,8 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       id: data.id.present ? data.id.value : this.id,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
-      contextId: data.contextId.present ? data.contextId.value : this.contextId,
+      activityId:
+          data.activityId.present ? data.activityId.value : this.activityId,
       start: data.start.present ? data.start.value : this.start,
       end: data.end.present ? data.end.value : this.end,
       priority: data.priority.present ? data.priority.value : this.priority,
@@ -2702,7 +2709,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     return (StringBuffer('SessionRow(')
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
-          ..write('contextId: $contextId, ')
+          ..write('activityId: $activityId, ')
           ..write('start: $start, ')
           ..write('end: $end, ')
           ..write('priority: $priority, ')
@@ -2714,14 +2721,14 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
 
   @override
   int get hashCode => Object.hash(
-      id, modifiedAt, contextId, start, end, priority, pomodoro, pomodoroAt);
+      id, modifiedAt, activityId, start, end, priority, pomodoro, pomodoroAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is SessionRow &&
           other.id == this.id &&
           other.modifiedAt == this.modifiedAt &&
-          other.contextId == this.contextId &&
+          other.activityId == this.activityId &&
           other.start == this.start &&
           other.end == this.end &&
           other.priority == this.priority &&
@@ -2732,7 +2739,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
 class SessionsCompanion extends UpdateCompanion<SessionRow> {
   final Value<Uuid> id;
   final Value<DateTime> modifiedAt;
-  final Value<Uuid?> contextId;
+  final Value<Uuid?> activityId;
   final Value<DateTime> start;
   final Value<DateTime> end;
   final Value<int> priority;
@@ -2742,7 +2749,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   const SessionsCompanion({
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
-    this.contextId = const Value.absent(),
+    this.activityId = const Value.absent(),
     this.start = const Value.absent(),
     this.end = const Value.absent(),
     this.priority = const Value.absent(),
@@ -2753,7 +2760,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   SessionsCompanion.insert({
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
-    this.contextId = const Value.absent(),
+    this.activityId = const Value.absent(),
     required DateTime start,
     required DateTime end,
     this.priority = const Value.absent(),
@@ -2765,7 +2772,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   static Insertable<SessionRow> custom({
     Expression<Uint8List>? id,
     Expression<DateTime>? modifiedAt,
-    Expression<Uint8List>? contextId,
+    Expression<Uint8List>? activityId,
     Expression<DateTime>? start,
     Expression<DateTime>? end,
     Expression<int>? priority,
@@ -2776,7 +2783,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (modifiedAt != null) 'modified_at': modifiedAt,
-      if (contextId != null) 'context_id': contextId,
+      if (activityId != null) 'activity_id': activityId,
       if (start != null) 'start': start,
       if (end != null) 'end': end,
       if (priority != null) 'priority': priority,
@@ -2789,7 +2796,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   SessionsCompanion copyWith(
       {Value<Uuid>? id,
       Value<DateTime>? modifiedAt,
-      Value<Uuid?>? contextId,
+      Value<Uuid?>? activityId,
       Value<DateTime>? start,
       Value<DateTime>? end,
       Value<int>? priority,
@@ -2799,7 +2806,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     return SessionsCompanion(
       id: id ?? this.id,
       modifiedAt: modifiedAt ?? this.modifiedAt,
-      contextId: contextId ?? this.contextId,
+      activityId: activityId ?? this.activityId,
       start: start ?? this.start,
       end: end ?? this.end,
       priority: priority ?? this.priority,
@@ -2819,9 +2826,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
     }
-    if (contextId.present) {
-      map['context_id'] = Variable<Uint8List>(
-          $SessionsTable.$convertercontextIdn.toSql(contextId.value));
+    if (activityId.present) {
+      map['activity_id'] = Variable<Uint8List>(
+          $SessionsTable.$converteractivityIdn.toSql(activityId.value));
     }
     if (start.present) {
       map['start'] = Variable<DateTime>(start.value);
@@ -2850,7 +2857,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     return (StringBuffer('SessionsCompanion(')
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
-          ..write('contextId: $contextId, ')
+          ..write('activityId: $activityId, ')
           ..write('start: $start, ')
           ..write('end: $end, ')
           ..write('priority: $priority, ')
@@ -2881,16 +2888,16 @@ class $BalancesTable extends Balances
   late final GeneratedColumn<String> day = GeneratedColumn<String>(
       'day', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _contextIdMeta =
-      const VerificationMeta('contextId');
+  static const VerificationMeta _activityIdMeta =
+      const VerificationMeta('activityId');
   @override
-  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> contextId =
-      GeneratedColumn<Uint8List>('context_id', aliasedName, true,
+  late final GeneratedColumnWithTypeConverter<Uuid?, Uint8List> activityId =
+      GeneratedColumn<Uint8List>('activity_id', aliasedName, true,
               type: DriftSqlType.blob,
               requiredDuringInsert: false,
               defaultConstraints: GeneratedColumn.constraintIsAlways(
-                  'REFERENCES contexts (id)'))
-          .withConverter<Uuid?>($BalancesTable.$convertercontextIdn);
+                  'REFERENCES activities (id)'))
+          .withConverter<Uuid?>($BalancesTable.$converteractivityIdn);
   static const VerificationMeta _typeMeta = const VerificationMeta('type');
   @override
   late final GeneratedColumnWithTypeConverter<BalanceType, int> type =
@@ -2914,7 +2921,7 @@ class $BalancesTable extends Balances
           .withConverter<Duration>($BalancesTable.$convertertime);
   @override
   List<GeneratedColumn> get $columns =>
-      [modifiedAt, day, contextId, type, count, time];
+      [modifiedAt, day, activityId, type, count, time];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2937,7 +2944,7 @@ class $BalancesTable extends Balances
     } else if (isInserting) {
       context.missing(_dayMeta);
     }
-    context.handle(_contextIdMeta, const VerificationResult.success());
+    context.handle(_activityIdMeta, const VerificationResult.success());
     context.handle(_typeMeta, const VerificationResult.success());
     if (data.containsKey('count')) {
       context.handle(
@@ -2957,9 +2964,9 @@ class $BalancesTable extends Balances
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
       day: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}day'])!,
-      contextId: $BalancesTable.$convertercontextIdn.fromSql(attachedDatabase
+      activityId: $BalancesTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.blob, data['${effectivePrefix}context_id'])),
+          .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
       type: $BalancesTable.$convertertype.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}type'])!),
       count: attachedDatabase.typeMapping
@@ -2974,10 +2981,10 @@ class $BalancesTable extends Balances
     return $BalancesTable(attachedDatabase, alias);
   }
 
-  static TypeConverter<Uuid, Uint8List> $convertercontextId =
+  static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
-  static TypeConverter<Uuid?, Uint8List?> $convertercontextIdn =
-      NullAwareTypeConverter.wrap($convertercontextId);
+  static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
+      NullAwareTypeConverter.wrap($converteractivityId);
   static JsonTypeConverter2<BalanceType, int, int> $convertertype =
       const EnumIndexConverter<BalanceType>(BalanceType.values);
   static TypeConverter<Duration, int> $convertertime =
@@ -2987,14 +2994,14 @@ class $BalancesTable extends Balances
 class BalanceRow extends DataClass implements Insertable<BalanceRow> {
   final DateTime modifiedAt;
   final String day;
-  final Uuid? contextId;
+  final Uuid? activityId;
   final BalanceType type;
   final int count;
   final Duration time;
   const BalanceRow(
       {required this.modifiedAt,
       required this.day,
-      this.contextId,
+      this.activityId,
       required this.type,
       required this.count,
       required this.time});
@@ -3003,9 +3010,9 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
     final map = <String, Expression>{};
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     map['day'] = Variable<String>(day);
-    if (!nullToAbsent || contextId != null) {
-      map['context_id'] = Variable<Uint8List>(
-          $BalancesTable.$convertercontextIdn.toSql(contextId));
+    if (!nullToAbsent || activityId != null) {
+      map['activity_id'] = Variable<Uint8List>(
+          $BalancesTable.$converteractivityIdn.toSql(activityId));
     }
     {
       map['type'] = Variable<int>($BalancesTable.$convertertype.toSql(type));
@@ -3021,9 +3028,9 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
     return BalancesCompanion(
       modifiedAt: Value(modifiedAt),
       day: Value(day),
-      contextId: contextId == null && nullToAbsent
+      activityId: activityId == null && nullToAbsent
           ? const Value.absent()
-          : Value(contextId),
+          : Value(activityId),
       type: Value(type),
       count: Value(count),
       time: Value(time),
@@ -3036,7 +3043,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
     return BalanceRow(
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       day: serializer.fromJson<String>(json['day']),
-      contextId: serializer.fromJson<Uuid?>(json['context_id']),
+      activityId: serializer.fromJson<Uuid?>(json['activity_id']),
       type: $BalancesTable.$convertertype
           .fromJson(serializer.fromJson<int>(json['type'])),
       count: serializer.fromJson<int>(json['count']),
@@ -3049,7 +3056,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
     return <String, dynamic>{
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'day': serializer.toJson<String>(day),
-      'context_id': serializer.toJson<Uuid?>(contextId),
+      'activity_id': serializer.toJson<Uuid?>(activityId),
       'type':
           serializer.toJson<int>($BalancesTable.$convertertype.toJson(type)),
       'count': serializer.toJson<int>(count),
@@ -3060,14 +3067,14 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
   BalanceRow copyWith(
           {DateTime? modifiedAt,
           String? day,
-          Value<Uuid?> contextId = const Value.absent(),
+          Value<Uuid?> activityId = const Value.absent(),
           BalanceType? type,
           int? count,
           Duration? time}) =>
       BalanceRow(
         modifiedAt: modifiedAt ?? this.modifiedAt,
         day: day ?? this.day,
-        contextId: contextId.present ? contextId.value : this.contextId,
+        activityId: activityId.present ? activityId.value : this.activityId,
         type: type ?? this.type,
         count: count ?? this.count,
         time: time ?? this.time,
@@ -3077,7 +3084,8 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
       day: data.day.present ? data.day.value : this.day,
-      contextId: data.contextId.present ? data.contextId.value : this.contextId,
+      activityId:
+          data.activityId.present ? data.activityId.value : this.activityId,
       type: data.type.present ? data.type.value : this.type,
       count: data.count.present ? data.count.value : this.count,
       time: data.time.present ? data.time.value : this.time,
@@ -3089,7 +3097,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
     return (StringBuffer('BalanceRow(')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('day: $day, ')
-          ..write('contextId: $contextId, ')
+          ..write('activityId: $activityId, ')
           ..write('type: $type, ')
           ..write('count: $count, ')
           ..write('time: $time')
@@ -3099,14 +3107,14 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
 
   @override
   int get hashCode =>
-      Object.hash(modifiedAt, day, contextId, type, count, time);
+      Object.hash(modifiedAt, day, activityId, type, count, time);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is BalanceRow &&
           other.modifiedAt == this.modifiedAt &&
           other.day == this.day &&
-          other.contextId == this.contextId &&
+          other.activityId == this.activityId &&
           other.type == this.type &&
           other.count == this.count &&
           other.time == this.time);
@@ -3115,7 +3123,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
 class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   final Value<DateTime> modifiedAt;
   final Value<String> day;
-  final Value<Uuid?> contextId;
+  final Value<Uuid?> activityId;
   final Value<BalanceType> type;
   final Value<int> count;
   final Value<Duration> time;
@@ -3123,7 +3131,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   const BalancesCompanion({
     this.modifiedAt = const Value.absent(),
     this.day = const Value.absent(),
-    this.contextId = const Value.absent(),
+    this.activityId = const Value.absent(),
     this.type = const Value.absent(),
     this.count = const Value.absent(),
     this.time = const Value.absent(),
@@ -3132,7 +3140,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   BalancesCompanion.insert({
     this.modifiedAt = const Value.absent(),
     required String day,
-    this.contextId = const Value.absent(),
+    this.activityId = const Value.absent(),
     required BalanceType type,
     this.count = const Value.absent(),
     this.time = const Value.absent(),
@@ -3142,7 +3150,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   static Insertable<BalanceRow> custom({
     Expression<DateTime>? modifiedAt,
     Expression<String>? day,
-    Expression<Uint8List>? contextId,
+    Expression<Uint8List>? activityId,
     Expression<int>? type,
     Expression<int>? count,
     Expression<int>? time,
@@ -3151,7 +3159,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
     return RawValuesInsertable({
       if (modifiedAt != null) 'modified_at': modifiedAt,
       if (day != null) 'day': day,
-      if (contextId != null) 'context_id': contextId,
+      if (activityId != null) 'activity_id': activityId,
       if (type != null) 'type': type,
       if (count != null) 'count': count,
       if (time != null) 'time': time,
@@ -3162,7 +3170,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   BalancesCompanion copyWith(
       {Value<DateTime>? modifiedAt,
       Value<String>? day,
-      Value<Uuid?>? contextId,
+      Value<Uuid?>? activityId,
       Value<BalanceType>? type,
       Value<int>? count,
       Value<Duration>? time,
@@ -3170,7 +3178,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
     return BalancesCompanion(
       modifiedAt: modifiedAt ?? this.modifiedAt,
       day: day ?? this.day,
-      contextId: contextId ?? this.contextId,
+      activityId: activityId ?? this.activityId,
       type: type ?? this.type,
       count: count ?? this.count,
       time: time ?? this.time,
@@ -3187,9 +3195,9 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
     if (day.present) {
       map['day'] = Variable<String>(day.value);
     }
-    if (contextId.present) {
-      map['context_id'] = Variable<Uint8List>(
-          $BalancesTable.$convertercontextIdn.toSql(contextId.value));
+    if (activityId.present) {
+      map['activity_id'] = Variable<Uint8List>(
+          $BalancesTable.$converteractivityIdn.toSql(activityId.value));
     }
     if (type.present) {
       map['type'] =
@@ -3213,7 +3221,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
     return (StringBuffer('BalancesCompanion(')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('day: $day, ')
-          ..write('contextId: $contextId, ')
+          ..write('activityId: $activityId, ')
           ..write('type: $type, ')
           ..write('count: $count, ')
           ..write('time: $time, ')
@@ -3229,7 +3237,7 @@ abstract class _$Store extends GeneratedDatabase {
   late final $SyncStatesTable syncStates = $SyncStatesTable(this);
   late final $AccountsTable accounts = $AccountsTable(this);
   late final $CalendarsTable calendars = $CalendarsTable(this);
-  late final $ContextsTable contexts = $ContextsTable(this);
+  late final $ActivitiesTable activities = $ActivitiesTable(this);
   late final $NotesTable notes = $NotesTable(this);
   late final $EventsTable events = $EventsTable(this);
   late final $BudgetsTable budgets = $BudgetsTable(this);
@@ -3243,7 +3251,7 @@ abstract class _$Store extends GeneratedDatabase {
         syncStates,
         accounts,
         calendars,
-        contexts,
+        activities,
         notes,
         events,
         budgets,
@@ -3769,7 +3777,7 @@ typedef $$CalendarsTableProcessedTableManager = ProcessedTableManager<
     (CalendarRow, $$CalendarsTableReferences),
     CalendarRow,
     PrefetchHooks Function({bool accountId})>;
-typedef $$ContextsTableCreateCompanionBuilder = ContextsCompanion Function({
+typedef $$ActivitiesTableCreateCompanionBuilder = ActivitiesCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
   Value<DateTime> createdAt,
@@ -3779,7 +3787,7 @@ typedef $$ContextsTableCreateCompanionBuilder = ContextsCompanion Function({
   Value<Duration> pomodoro,
   Value<int> rowid,
 });
-typedef $$ContextsTableUpdateCompanionBuilder = ContextsCompanion Function({
+typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
   Value<DateTime> createdAt,
@@ -3790,18 +3798,19 @@ typedef $$ContextsTableUpdateCompanionBuilder = ContextsCompanion Function({
   Value<int> rowid,
 });
 
-final class $$ContextsTableReferences
-    extends BaseReferences<_$Store, $ContextsTable, ContextRow> {
-  $$ContextsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+final class $$ActivitiesTableReferences
+    extends BaseReferences<_$Store, $ActivitiesTable, ActivityRow> {
+  $$ActivitiesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$NotesTable, List<NoteRow>> _notesRefsTable(
           _$Store db) =>
       MultiTypedResultKey.fromTable(db.notes,
-          aliasName: $_aliasNameGenerator(db.contexts.id, db.notes.contextId));
+          aliasName:
+              $_aliasNameGenerator(db.activities.id, db.notes.activityId));
 
   $$NotesTableProcessedTableManager get notesRefs {
     final manager = $$NotesTableTableManager($_db, $_db.notes)
-        .filter((f) => f.contextId.id($_item.id));
+        .filter((f) => f.activityId.id($_item.id));
 
     final cache = $_typedResult.readTableOrNull(_notesRefsTable($_db));
     return ProcessedTableManager(
@@ -3811,11 +3820,12 @@ final class $$ContextsTableReferences
   static MultiTypedResultKey<$EventsTable, List<EventRow>> _eventsRefsTable(
           _$Store db) =>
       MultiTypedResultKey.fromTable(db.events,
-          aliasName: $_aliasNameGenerator(db.contexts.id, db.events.contextId));
+          aliasName:
+              $_aliasNameGenerator(db.activities.id, db.events.activityId));
 
   $$EventsTableProcessedTableManager get eventsRefs {
     final manager = $$EventsTableTableManager($_db, $_db.events)
-        .filter((f) => f.contextId.id($_item.id));
+        .filter((f) => f.activityId.id($_item.id));
 
     final cache = $_typedResult.readTableOrNull(_eventsRefsTable($_db));
     return ProcessedTableManager(
@@ -3826,11 +3836,11 @@ final class $$ContextsTableReferences
           _$Store db) =>
       MultiTypedResultKey.fromTable(db.budgets,
           aliasName:
-              $_aliasNameGenerator(db.contexts.id, db.budgets.contextId));
+              $_aliasNameGenerator(db.activities.id, db.budgets.activityId));
 
   $$BudgetsTableProcessedTableManager get budgetsRefs {
     final manager = $$BudgetsTableTableManager($_db, $_db.budgets)
-        .filter((f) => f.contextId.id($_item.id));
+        .filter((f) => f.activityId.id($_item.id));
 
     final cache = $_typedResult.readTableOrNull(_budgetsRefsTable($_db));
     return ProcessedTableManager(
@@ -3838,14 +3848,14 @@ final class $$ContextsTableReferences
   }
 
   static MultiTypedResultKey<$SessionsTable, List<SessionRow>>
-      _sessionsRefsTable(_$Store db) =>
-          MultiTypedResultKey.fromTable(db.sessions,
-              aliasName:
-                  $_aliasNameGenerator(db.contexts.id, db.sessions.contextId));
+      _sessionsRefsTable(_$Store db) => MultiTypedResultKey.fromTable(
+          db.sessions,
+          aliasName:
+              $_aliasNameGenerator(db.activities.id, db.sessions.activityId));
 
   $$SessionsTableProcessedTableManager get sessionsRefs {
     final manager = $$SessionsTableTableManager($_db, $_db.sessions)
-        .filter((f) => f.contextId.id($_item.id));
+        .filter((f) => f.activityId.id($_item.id));
 
     final cache = $_typedResult.readTableOrNull(_sessionsRefsTable($_db));
     return ProcessedTableManager(
@@ -3853,14 +3863,14 @@ final class $$ContextsTableReferences
   }
 
   static MultiTypedResultKey<$BalancesTable, List<BalanceRow>>
-      _balancesRefsTable(_$Store db) =>
-          MultiTypedResultKey.fromTable(db.balances,
-              aliasName:
-                  $_aliasNameGenerator(db.contexts.id, db.balances.contextId));
+      _balancesRefsTable(_$Store db) => MultiTypedResultKey.fromTable(
+          db.balances,
+          aliasName:
+              $_aliasNameGenerator(db.activities.id, db.balances.activityId));
 
   $$BalancesTableProcessedTableManager get balancesRefs {
     final manager = $$BalancesTableTableManager($_db, $_db.balances)
-        .filter((f) => f.contextId.id($_item.id));
+        .filter((f) => f.activityId.id($_item.id));
 
     final cache = $_typedResult.readTableOrNull(_balancesRefsTable($_db));
     return ProcessedTableManager(
@@ -3868,9 +3878,9 @@ final class $$ContextsTableReferences
   }
 }
 
-class $$ContextsTableFilterComposer
-    extends FilterComposer<_$Store, $ContextsTable> {
-  $$ContextsTableFilterComposer(super.$state);
+class $$ActivitiesTableFilterComposer
+    extends FilterComposer<_$Store, $ActivitiesTable> {
+  $$ActivitiesTableFilterComposer(super.$state);
   ColumnWithTypeConverterFilters<Uuid, Uuid, Uint8List> get id =>
       $state.composableBuilder(
           column: $state.table.id,
@@ -3920,7 +3930,7 @@ class $$ContextsTableFilterComposer
         composer: this,
         getCurrentColumn: (t) => t.id,
         referencedTable: $state.db.notes,
-        getReferencedColumn: (t) => t.contextId,
+        getReferencedColumn: (t) => t.activityId,
         builder: (joinBuilder, parentComposers) => $$NotesTableFilterComposer(
             ComposerState(
                 $state.db, $state.db.notes, joinBuilder, parentComposers)));
@@ -3933,7 +3943,7 @@ class $$ContextsTableFilterComposer
         composer: this,
         getCurrentColumn: (t) => t.id,
         referencedTable: $state.db.events,
-        getReferencedColumn: (t) => t.contextId,
+        getReferencedColumn: (t) => t.activityId,
         builder: (joinBuilder, parentComposers) => $$EventsTableFilterComposer(
             ComposerState(
                 $state.db, $state.db.events, joinBuilder, parentComposers)));
@@ -3946,7 +3956,7 @@ class $$ContextsTableFilterComposer
         composer: this,
         getCurrentColumn: (t) => t.id,
         referencedTable: $state.db.budgets,
-        getReferencedColumn: (t) => t.contextId,
+        getReferencedColumn: (t) => t.activityId,
         builder: (joinBuilder, parentComposers) => $$BudgetsTableFilterComposer(
             ComposerState(
                 $state.db, $state.db.budgets, joinBuilder, parentComposers)));
@@ -3959,7 +3969,7 @@ class $$ContextsTableFilterComposer
         composer: this,
         getCurrentColumn: (t) => t.id,
         referencedTable: $state.db.sessions,
-        getReferencedColumn: (t) => t.contextId,
+        getReferencedColumn: (t) => t.activityId,
         builder: (joinBuilder, parentComposers) =>
             $$SessionsTableFilterComposer(ComposerState(
                 $state.db, $state.db.sessions, joinBuilder, parentComposers)));
@@ -3972,7 +3982,7 @@ class $$ContextsTableFilterComposer
         composer: this,
         getCurrentColumn: (t) => t.id,
         referencedTable: $state.db.balances,
-        getReferencedColumn: (t) => t.contextId,
+        getReferencedColumn: (t) => t.activityId,
         builder: (joinBuilder, parentComposers) =>
             $$BalancesTableFilterComposer(ComposerState(
                 $state.db, $state.db.balances, joinBuilder, parentComposers)));
@@ -3980,9 +3990,9 @@ class $$ContextsTableFilterComposer
   }
 }
 
-class $$ContextsTableOrderingComposer
-    extends OrderingComposer<_$Store, $ContextsTable> {
-  $$ContextsTableOrderingComposer(super.$state);
+class $$ActivitiesTableOrderingComposer
+    extends OrderingComposer<_$Store, $ActivitiesTable> {
+  $$ActivitiesTableOrderingComposer(super.$state);
   ColumnOrderings<Uint8List> get id => $state.composableBuilder(
       column: $state.table.id,
       builder: (column, joinBuilders) =>
@@ -4019,30 +4029,30 @@ class $$ContextsTableOrderingComposer
           ColumnOrderings(column, joinBuilders: joinBuilders));
 }
 
-class $$ContextsTableTableManager extends RootTableManager<
+class $$ActivitiesTableTableManager extends RootTableManager<
     _$Store,
-    $ContextsTable,
-    ContextRow,
-    $$ContextsTableFilterComposer,
-    $$ContextsTableOrderingComposer,
-    $$ContextsTableCreateCompanionBuilder,
-    $$ContextsTableUpdateCompanionBuilder,
-    (ContextRow, $$ContextsTableReferences),
-    ContextRow,
+    $ActivitiesTable,
+    ActivityRow,
+    $$ActivitiesTableFilterComposer,
+    $$ActivitiesTableOrderingComposer,
+    $$ActivitiesTableCreateCompanionBuilder,
+    $$ActivitiesTableUpdateCompanionBuilder,
+    (ActivityRow, $$ActivitiesTableReferences),
+    ActivityRow,
     PrefetchHooks Function(
         {bool notesRefs,
         bool eventsRefs,
         bool budgetsRefs,
         bool sessionsRefs,
         bool balancesRefs})> {
-  $$ContextsTableTableManager(_$Store db, $ContextsTable table)
+  $$ActivitiesTableTableManager(_$Store db, $ActivitiesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
           filteringComposer:
-              $$ContextsTableFilterComposer(ComposerState(db, table)),
+              $$ActivitiesTableFilterComposer(ComposerState(db, table)),
           orderingComposer:
-              $$ContextsTableOrderingComposer(ComposerState(db, table)),
+              $$ActivitiesTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
@@ -4053,7 +4063,7 @@ class $$ContextsTableTableManager extends RootTableManager<
             Value<Duration> pomodoro = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
-              ContextsCompanion(
+              ActivitiesCompanion(
             id: id,
             modifiedAt: modifiedAt,
             createdAt: createdAt,
@@ -4073,7 +4083,7 @@ class $$ContextsTableTableManager extends RootTableManager<
             Value<Duration> pomodoro = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
-              ContextsCompanion.insert(
+              ActivitiesCompanion.insert(
             id: id,
             modifiedAt: modifiedAt,
             createdAt: createdAt,
@@ -4084,8 +4094,10 @@ class $$ContextsTableTableManager extends RootTableManager<
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) =>
-                  (e.readTable(table), $$ContextsTableReferences(db, table, e)))
+              .map((e) => (
+                    e.readTable(table),
+                    $$ActivitiesTableReferences(db, table, e)
+                  ))
               .toList(),
           prefetchHooksCallback: (
               {notesRefs = false,
@@ -4109,59 +4121,61 @@ class $$ContextsTableTableManager extends RootTableManager<
                     await $_getPrefetchedData(
                         currentTable: table,
                         referencedTable:
-                            $$ContextsTableReferences._notesRefsTable(db),
+                            $$ActivitiesTableReferences._notesRefsTable(db),
                         managerFromTypedResult: (p0) =>
-                            $$ContextsTableReferences(db, table, p0).notesRefs,
+                            $$ActivitiesTableReferences(db, table, p0)
+                                .notesRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
-                                .where((e) => e.contextId == item.id),
+                                .where((e) => e.activityId == item.id),
                         typedResults: items),
                   if (eventsRefs)
                     await $_getPrefetchedData(
                         currentTable: table,
                         referencedTable:
-                            $$ContextsTableReferences._eventsRefsTable(db),
+                            $$ActivitiesTableReferences._eventsRefsTable(db),
                         managerFromTypedResult: (p0) =>
-                            $$ContextsTableReferences(db, table, p0).eventsRefs,
+                            $$ActivitiesTableReferences(db, table, p0)
+                                .eventsRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
-                                .where((e) => e.contextId == item.id),
+                                .where((e) => e.activityId == item.id),
                         typedResults: items),
                   if (budgetsRefs)
                     await $_getPrefetchedData(
                         currentTable: table,
                         referencedTable:
-                            $$ContextsTableReferences._budgetsRefsTable(db),
+                            $$ActivitiesTableReferences._budgetsRefsTable(db),
                         managerFromTypedResult: (p0) =>
-                            $$ContextsTableReferences(db, table, p0)
+                            $$ActivitiesTableReferences(db, table, p0)
                                 .budgetsRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
-                                .where((e) => e.contextId == item.id),
+                                .where((e) => e.activityId == item.id),
                         typedResults: items),
                   if (sessionsRefs)
                     await $_getPrefetchedData(
                         currentTable: table,
                         referencedTable:
-                            $$ContextsTableReferences._sessionsRefsTable(db),
+                            $$ActivitiesTableReferences._sessionsRefsTable(db),
                         managerFromTypedResult: (p0) =>
-                            $$ContextsTableReferences(db, table, p0)
+                            $$ActivitiesTableReferences(db, table, p0)
                                 .sessionsRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
-                                .where((e) => e.contextId == item.id),
+                                .where((e) => e.activityId == item.id),
                         typedResults: items),
                   if (balancesRefs)
                     await $_getPrefetchedData(
                         currentTable: table,
                         referencedTable:
-                            $$ContextsTableReferences._balancesRefsTable(db),
+                            $$ActivitiesTableReferences._balancesRefsTable(db),
                         managerFromTypedResult: (p0) =>
-                            $$ContextsTableReferences(db, table, p0)
+                            $$ActivitiesTableReferences(db, table, p0)
                                 .balancesRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
-                                .where((e) => e.contextId == item.id),
+                                .where((e) => e.activityId == item.id),
                         typedResults: items)
                 ];
               },
@@ -4170,16 +4184,16 @@ class $$ContextsTableTableManager extends RootTableManager<
         ));
 }
 
-typedef $$ContextsTableProcessedTableManager = ProcessedTableManager<
+typedef $$ActivitiesTableProcessedTableManager = ProcessedTableManager<
     _$Store,
-    $ContextsTable,
-    ContextRow,
-    $$ContextsTableFilterComposer,
-    $$ContextsTableOrderingComposer,
-    $$ContextsTableCreateCompanionBuilder,
-    $$ContextsTableUpdateCompanionBuilder,
-    (ContextRow, $$ContextsTableReferences),
-    ContextRow,
+    $ActivitiesTable,
+    ActivityRow,
+    $$ActivitiesTableFilterComposer,
+    $$ActivitiesTableOrderingComposer,
+    $$ActivitiesTableCreateCompanionBuilder,
+    $$ActivitiesTableUpdateCompanionBuilder,
+    (ActivityRow, $$ActivitiesTableReferences),
+    ActivityRow,
     PrefetchHooks Function(
         {bool notesRefs,
         bool eventsRefs,
@@ -4196,7 +4210,7 @@ typedef $$NotesTableCreateCompanionBuilder = NotesCompanion Function({
   Value<bool> root,
   Value<bool> private,
   required Uuid topicId,
-  Value<Uuid?> contextId,
+  Value<Uuid?> activityId,
   Value<int> rowid,
 });
 typedef $$NotesTableUpdateCompanionBuilder = NotesCompanion Function({
@@ -4209,7 +4223,7 @@ typedef $$NotesTableUpdateCompanionBuilder = NotesCompanion Function({
   Value<bool> root,
   Value<bool> private,
   Value<Uuid> topicId,
-  Value<Uuid?> contextId,
+  Value<Uuid?> activityId,
   Value<int> rowid,
 });
 
@@ -4217,14 +4231,14 @@ final class $$NotesTableReferences
     extends BaseReferences<_$Store, $NotesTable, NoteRow> {
   $$NotesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $ContextsTable _contextIdTable(_$Store db) => db.contexts
-      .createAlias($_aliasNameGenerator(db.notes.contextId, db.contexts.id));
+  static $ActivitiesTable _activityIdTable(_$Store db) => db.activities
+      .createAlias($_aliasNameGenerator(db.notes.activityId, db.activities.id));
 
-  $$ContextsTableProcessedTableManager? get contextId {
-    if ($_item.contextId == null) return null;
-    final manager = $$ContextsTableTableManager($_db, $_db.contexts)
-        .filter((f) => f.id($_item.contextId!));
-    final item = $_typedResult.readTableOrNull(_contextIdTable($_db));
+  $$ActivitiesTableProcessedTableManager? get activityId {
+    if ($_item.activityId == null) return null;
+    final manager = $$ActivitiesTableTableManager($_db, $_db.activities)
+        .filter((f) => f.id($_item.activityId!));
+    final item = $_typedResult.readTableOrNull(_activityIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
@@ -4286,15 +4300,15 @@ class $$NotesTableFilterComposer extends FilterComposer<_$Store, $NotesTable> {
               column,
               joinBuilders: joinBuilders));
 
-  $$ContextsTableFilterComposer get contextId {
-    final $$ContextsTableFilterComposer composer = $state.composerBuilder(
+  $$ActivitiesTableFilterComposer get activityId {
+    final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.contextId,
-        referencedTable: $state.db.contexts,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $state.db.activities,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder, parentComposers) =>
-            $$ContextsTableFilterComposer(ComposerState(
-                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+            $$ActivitiesTableFilterComposer(ComposerState($state.db,
+                $state.db.activities, joinBuilder, parentComposers)));
     return composer;
   }
 }
@@ -4347,15 +4361,15 @@ class $$NotesTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  $$ContextsTableOrderingComposer get contextId {
-    final $$ContextsTableOrderingComposer composer = $state.composerBuilder(
+  $$ActivitiesTableOrderingComposer get activityId {
+    final $$ActivitiesTableOrderingComposer composer = $state.composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.contextId,
-        referencedTable: $state.db.contexts,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $state.db.activities,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder, parentComposers) =>
-            $$ContextsTableOrderingComposer(ComposerState(
-                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+            $$ActivitiesTableOrderingComposer(ComposerState($state.db,
+                $state.db.activities, joinBuilder, parentComposers)));
     return composer;
   }
 }
@@ -4370,7 +4384,7 @@ class $$NotesTableTableManager extends RootTableManager<
     $$NotesTableUpdateCompanionBuilder,
     (NoteRow, $$NotesTableReferences),
     NoteRow,
-    PrefetchHooks Function({bool contextId})> {
+    PrefetchHooks Function({bool activityId})> {
   $$NotesTableTableManager(_$Store db, $NotesTable table)
       : super(TableManagerState(
           db: db,
@@ -4389,7 +4403,7 @@ class $$NotesTableTableManager extends RootTableManager<
             Value<bool> root = const Value.absent(),
             Value<bool> private = const Value.absent(),
             Value<Uuid> topicId = const Value.absent(),
-            Value<Uuid?> contextId = const Value.absent(),
+            Value<Uuid?> activityId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               NotesCompanion(
@@ -4402,7 +4416,7 @@ class $$NotesTableTableManager extends RootTableManager<
             root: root,
             private: private,
             topicId: topicId,
-            contextId: contextId,
+            activityId: activityId,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -4415,7 +4429,7 @@ class $$NotesTableTableManager extends RootTableManager<
             Value<bool> root = const Value.absent(),
             Value<bool> private = const Value.absent(),
             required Uuid topicId,
-            Value<Uuid?> contextId = const Value.absent(),
+            Value<Uuid?> activityId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               NotesCompanion.insert(
@@ -4428,14 +4442,14 @@ class $$NotesTableTableManager extends RootTableManager<
             root: root,
             private: private,
             topicId: topicId,
-            contextId: contextId,
+            activityId: activityId,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) =>
                   (e.readTable(table), $$NotesTableReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({contextId = false}) {
+          prefetchHooksCallback: ({activityId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -4451,13 +4465,14 @@ class $$NotesTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic>>(state) {
-                if (contextId) {
+                if (activityId) {
                   state = state.withJoin(
                     currentTable: table,
-                    currentColumn: table.contextId,
-                    referencedTable: $$NotesTableReferences._contextIdTable(db),
+                    currentColumn: table.activityId,
+                    referencedTable:
+                        $$NotesTableReferences._activityIdTable(db),
                     referencedColumn:
-                        $$NotesTableReferences._contextIdTable(db).id,
+                        $$NotesTableReferences._activityIdTable(db).id,
                   ) as T;
                 }
 
@@ -4481,7 +4496,7 @@ typedef $$NotesTableProcessedTableManager = ProcessedTableManager<
     $$NotesTableUpdateCompanionBuilder,
     (NoteRow, $$NotesTableReferences),
     NoteRow,
-    PrefetchHooks Function({bool contextId})>;
+    PrefetchHooks Function({bool activityId})>;
 typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
@@ -4490,7 +4505,7 @@ typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
   required DateTime end,
   Value<String?> series,
   required EventResponse response,
-  Value<Uuid?> contextId,
+  Value<Uuid?> activityId,
   Value<int> rowid,
 });
 typedef $$EventsTableUpdateCompanionBuilder = EventsCompanion Function({
@@ -4501,7 +4516,7 @@ typedef $$EventsTableUpdateCompanionBuilder = EventsCompanion Function({
   Value<DateTime> end,
   Value<String?> series,
   Value<EventResponse> response,
-  Value<Uuid?> contextId,
+  Value<Uuid?> activityId,
   Value<int> rowid,
 });
 
@@ -4509,14 +4524,15 @@ final class $$EventsTableReferences
     extends BaseReferences<_$Store, $EventsTable, EventRow> {
   $$EventsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $ContextsTable _contextIdTable(_$Store db) => db.contexts
-      .createAlias($_aliasNameGenerator(db.events.contextId, db.contexts.id));
+  static $ActivitiesTable _activityIdTable(_$Store db) =>
+      db.activities.createAlias(
+          $_aliasNameGenerator(db.events.activityId, db.activities.id));
 
-  $$ContextsTableProcessedTableManager? get contextId {
-    if ($_item.contextId == null) return null;
-    final manager = $$ContextsTableTableManager($_db, $_db.contexts)
-        .filter((f) => f.id($_item.contextId!));
-    final item = $_typedResult.readTableOrNull(_contextIdTable($_db));
+  $$ActivitiesTableProcessedTableManager? get activityId {
+    if ($_item.activityId == null) return null;
+    final manager = $$ActivitiesTableTableManager($_db, $_db.activities)
+        .filter((f) => f.id($_item.activityId!));
+    final item = $_typedResult.readTableOrNull(_activityIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
@@ -4565,15 +4581,15 @@ class $$EventsTableFilterComposer
               column,
               joinBuilders: joinBuilders));
 
-  $$ContextsTableFilterComposer get contextId {
-    final $$ContextsTableFilterComposer composer = $state.composerBuilder(
+  $$ActivitiesTableFilterComposer get activityId {
+    final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.contextId,
-        referencedTable: $state.db.contexts,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $state.db.activities,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder, parentComposers) =>
-            $$ContextsTableFilterComposer(ComposerState(
-                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+            $$ActivitiesTableFilterComposer(ComposerState($state.db,
+                $state.db.activities, joinBuilder, parentComposers)));
     return composer;
   }
 }
@@ -4616,15 +4632,15 @@ class $$EventsTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  $$ContextsTableOrderingComposer get contextId {
-    final $$ContextsTableOrderingComposer composer = $state.composerBuilder(
+  $$ActivitiesTableOrderingComposer get activityId {
+    final $$ActivitiesTableOrderingComposer composer = $state.composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.contextId,
-        referencedTable: $state.db.contexts,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $state.db.activities,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder, parentComposers) =>
-            $$ContextsTableOrderingComposer(ComposerState(
-                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+            $$ActivitiesTableOrderingComposer(ComposerState($state.db,
+                $state.db.activities, joinBuilder, parentComposers)));
     return composer;
   }
 }
@@ -4639,7 +4655,7 @@ class $$EventsTableTableManager extends RootTableManager<
     $$EventsTableUpdateCompanionBuilder,
     (EventRow, $$EventsTableReferences),
     EventRow,
-    PrefetchHooks Function({bool contextId})> {
+    PrefetchHooks Function({bool activityId})> {
   $$EventsTableTableManager(_$Store db, $EventsTable table)
       : super(TableManagerState(
           db: db,
@@ -4656,7 +4672,7 @@ class $$EventsTableTableManager extends RootTableManager<
             Value<DateTime> end = const Value.absent(),
             Value<String?> series = const Value.absent(),
             Value<EventResponse> response = const Value.absent(),
-            Value<Uuid?> contextId = const Value.absent(),
+            Value<Uuid?> activityId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               EventsCompanion(
@@ -4667,7 +4683,7 @@ class $$EventsTableTableManager extends RootTableManager<
             end: end,
             series: series,
             response: response,
-            contextId: contextId,
+            activityId: activityId,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -4678,7 +4694,7 @@ class $$EventsTableTableManager extends RootTableManager<
             required DateTime end,
             Value<String?> series = const Value.absent(),
             required EventResponse response,
-            Value<Uuid?> contextId = const Value.absent(),
+            Value<Uuid?> activityId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               EventsCompanion.insert(
@@ -4689,14 +4705,14 @@ class $$EventsTableTableManager extends RootTableManager<
             end: end,
             series: series,
             response: response,
-            contextId: contextId,
+            activityId: activityId,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) =>
                   (e.readTable(table), $$EventsTableReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({contextId = false}) {
+          prefetchHooksCallback: ({activityId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -4712,14 +4728,14 @@ class $$EventsTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic>>(state) {
-                if (contextId) {
+                if (activityId) {
                   state = state.withJoin(
                     currentTable: table,
-                    currentColumn: table.contextId,
+                    currentColumn: table.activityId,
                     referencedTable:
-                        $$EventsTableReferences._contextIdTable(db),
+                        $$EventsTableReferences._activityIdTable(db),
                     referencedColumn:
-                        $$EventsTableReferences._contextIdTable(db).id,
+                        $$EventsTableReferences._activityIdTable(db).id,
                   ) as T;
                 }
 
@@ -4743,30 +4759,31 @@ typedef $$EventsTableProcessedTableManager = ProcessedTableManager<
     $$EventsTableUpdateCompanionBuilder,
     (EventRow, $$EventsTableReferences),
     EventRow,
-    PrefetchHooks Function({bool contextId})>;
+    PrefetchHooks Function({bool activityId})>;
 typedef $$BudgetsTableCreateCompanionBuilder = BudgetsCompanion Function({
   Value<int> id,
   Value<DateTime> modifiedAt,
-  Value<Uuid?> contextId,
+  Value<Uuid?> activityId,
 });
 typedef $$BudgetsTableUpdateCompanionBuilder = BudgetsCompanion Function({
   Value<int> id,
   Value<DateTime> modifiedAt,
-  Value<Uuid?> contextId,
+  Value<Uuid?> activityId,
 });
 
 final class $$BudgetsTableReferences
     extends BaseReferences<_$Store, $BudgetsTable, BudgetRow> {
   $$BudgetsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $ContextsTable _contextIdTable(_$Store db) => db.contexts
-      .createAlias($_aliasNameGenerator(db.budgets.contextId, db.contexts.id));
+  static $ActivitiesTable _activityIdTable(_$Store db) =>
+      db.activities.createAlias(
+          $_aliasNameGenerator(db.budgets.activityId, db.activities.id));
 
-  $$ContextsTableProcessedTableManager? get contextId {
-    if ($_item.contextId == null) return null;
-    final manager = $$ContextsTableTableManager($_db, $_db.contexts)
-        .filter((f) => f.id($_item.contextId!));
-    final item = $_typedResult.readTableOrNull(_contextIdTable($_db));
+  $$ActivitiesTableProcessedTableManager? get activityId {
+    if ($_item.activityId == null) return null;
+    final manager = $$ActivitiesTableTableManager($_db, $_db.activities)
+        .filter((f) => f.id($_item.activityId!));
+    final item = $_typedResult.readTableOrNull(_activityIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
@@ -4786,15 +4803,15 @@ class $$BudgetsTableFilterComposer
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  $$ContextsTableFilterComposer get contextId {
-    final $$ContextsTableFilterComposer composer = $state.composerBuilder(
+  $$ActivitiesTableFilterComposer get activityId {
+    final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.contextId,
-        referencedTable: $state.db.contexts,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $state.db.activities,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder, parentComposers) =>
-            $$ContextsTableFilterComposer(ComposerState(
-                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+            $$ActivitiesTableFilterComposer(ComposerState($state.db,
+                $state.db.activities, joinBuilder, parentComposers)));
     return composer;
   }
 }
@@ -4812,15 +4829,15 @@ class $$BudgetsTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  $$ContextsTableOrderingComposer get contextId {
-    final $$ContextsTableOrderingComposer composer = $state.composerBuilder(
+  $$ActivitiesTableOrderingComposer get activityId {
+    final $$ActivitiesTableOrderingComposer composer = $state.composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.contextId,
-        referencedTable: $state.db.contexts,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $state.db.activities,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder, parentComposers) =>
-            $$ContextsTableOrderingComposer(ComposerState(
-                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+            $$ActivitiesTableOrderingComposer(ComposerState($state.db,
+                $state.db.activities, joinBuilder, parentComposers)));
     return composer;
   }
 }
@@ -4835,7 +4852,7 @@ class $$BudgetsTableTableManager extends RootTableManager<
     $$BudgetsTableUpdateCompanionBuilder,
     (BudgetRow, $$BudgetsTableReferences),
     BudgetRow,
-    PrefetchHooks Function({bool contextId})> {
+    PrefetchHooks Function({bool activityId})> {
   $$BudgetsTableTableManager(_$Store db, $BudgetsTable table)
       : super(TableManagerState(
           db: db,
@@ -4847,28 +4864,28 @@ class $$BudgetsTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
-            Value<Uuid?> contextId = const Value.absent(),
+            Value<Uuid?> activityId = const Value.absent(),
           }) =>
               BudgetsCompanion(
             id: id,
             modifiedAt: modifiedAt,
-            contextId: contextId,
+            activityId: activityId,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
-            Value<Uuid?> contextId = const Value.absent(),
+            Value<Uuid?> activityId = const Value.absent(),
           }) =>
               BudgetsCompanion.insert(
             id: id,
             modifiedAt: modifiedAt,
-            contextId: contextId,
+            activityId: activityId,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) =>
                   (e.readTable(table), $$BudgetsTableReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({contextId = false}) {
+          prefetchHooksCallback: ({activityId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -4884,14 +4901,14 @@ class $$BudgetsTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic>>(state) {
-                if (contextId) {
+                if (activityId) {
                   state = state.withJoin(
                     currentTable: table,
-                    currentColumn: table.contextId,
+                    currentColumn: table.activityId,
                     referencedTable:
-                        $$BudgetsTableReferences._contextIdTable(db),
+                        $$BudgetsTableReferences._activityIdTable(db),
                     referencedColumn:
-                        $$BudgetsTableReferences._contextIdTable(db).id,
+                        $$BudgetsTableReferences._activityIdTable(db).id,
                   ) as T;
                 }
 
@@ -4915,11 +4932,11 @@ typedef $$BudgetsTableProcessedTableManager = ProcessedTableManager<
     $$BudgetsTableUpdateCompanionBuilder,
     (BudgetRow, $$BudgetsTableReferences),
     BudgetRow,
-    PrefetchHooks Function({bool contextId})>;
+    PrefetchHooks Function({bool activityId})>;
 typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
-  Value<Uuid?> contextId,
+  Value<Uuid?> activityId,
   required DateTime start,
   required DateTime end,
   Value<int> priority,
@@ -4930,7 +4947,7 @@ typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
 typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
-  Value<Uuid?> contextId,
+  Value<Uuid?> activityId,
   Value<DateTime> start,
   Value<DateTime> end,
   Value<int> priority,
@@ -4943,14 +4960,15 @@ final class $$SessionsTableReferences
     extends BaseReferences<_$Store, $SessionsTable, SessionRow> {
   $$SessionsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $ContextsTable _contextIdTable(_$Store db) => db.contexts
-      .createAlias($_aliasNameGenerator(db.sessions.contextId, db.contexts.id));
+  static $ActivitiesTable _activityIdTable(_$Store db) =>
+      db.activities.createAlias(
+          $_aliasNameGenerator(db.sessions.activityId, db.activities.id));
 
-  $$ContextsTableProcessedTableManager? get contextId {
-    if ($_item.contextId == null) return null;
-    final manager = $$ContextsTableTableManager($_db, $_db.contexts)
-        .filter((f) => f.id($_item.contextId!));
-    final item = $_typedResult.readTableOrNull(_contextIdTable($_db));
+  $$ActivitiesTableProcessedTableManager? get activityId {
+    if ($_item.activityId == null) return null;
+    final manager = $$ActivitiesTableTableManager($_db, $_db.activities)
+        .filter((f) => f.id($_item.activityId!));
+    final item = $_typedResult.readTableOrNull(_activityIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
@@ -4999,15 +5017,15 @@ class $$SessionsTableFilterComposer
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  $$ContextsTableFilterComposer get contextId {
-    final $$ContextsTableFilterComposer composer = $state.composerBuilder(
+  $$ActivitiesTableFilterComposer get activityId {
+    final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.contextId,
-        referencedTable: $state.db.contexts,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $state.db.activities,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder, parentComposers) =>
-            $$ContextsTableFilterComposer(ComposerState(
-                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+            $$ActivitiesTableFilterComposer(ComposerState($state.db,
+                $state.db.activities, joinBuilder, parentComposers)));
     return composer;
   }
 }
@@ -5050,15 +5068,15 @@ class $$SessionsTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  $$ContextsTableOrderingComposer get contextId {
-    final $$ContextsTableOrderingComposer composer = $state.composerBuilder(
+  $$ActivitiesTableOrderingComposer get activityId {
+    final $$ActivitiesTableOrderingComposer composer = $state.composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.contextId,
-        referencedTable: $state.db.contexts,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $state.db.activities,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder, parentComposers) =>
-            $$ContextsTableOrderingComposer(ComposerState(
-                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+            $$ActivitiesTableOrderingComposer(ComposerState($state.db,
+                $state.db.activities, joinBuilder, parentComposers)));
     return composer;
   }
 }
@@ -5073,7 +5091,7 @@ class $$SessionsTableTableManager extends RootTableManager<
     $$SessionsTableUpdateCompanionBuilder,
     (SessionRow, $$SessionsTableReferences),
     SessionRow,
-    PrefetchHooks Function({bool contextId})> {
+    PrefetchHooks Function({bool activityId})> {
   $$SessionsTableTableManager(_$Store db, $SessionsTable table)
       : super(TableManagerState(
           db: db,
@@ -5085,7 +5103,7 @@ class $$SessionsTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
-            Value<Uuid?> contextId = const Value.absent(),
+            Value<Uuid?> activityId = const Value.absent(),
             Value<DateTime> start = const Value.absent(),
             Value<DateTime> end = const Value.absent(),
             Value<int> priority = const Value.absent(),
@@ -5096,7 +5114,7 @@ class $$SessionsTableTableManager extends RootTableManager<
               SessionsCompanion(
             id: id,
             modifiedAt: modifiedAt,
-            contextId: contextId,
+            activityId: activityId,
             start: start,
             end: end,
             priority: priority,
@@ -5107,7 +5125,7 @@ class $$SessionsTableTableManager extends RootTableManager<
           createCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
-            Value<Uuid?> contextId = const Value.absent(),
+            Value<Uuid?> activityId = const Value.absent(),
             required DateTime start,
             required DateTime end,
             Value<int> priority = const Value.absent(),
@@ -5118,7 +5136,7 @@ class $$SessionsTableTableManager extends RootTableManager<
               SessionsCompanion.insert(
             id: id,
             modifiedAt: modifiedAt,
-            contextId: contextId,
+            activityId: activityId,
             start: start,
             end: end,
             priority: priority,
@@ -5130,7 +5148,7 @@ class $$SessionsTableTableManager extends RootTableManager<
               .map((e) =>
                   (e.readTable(table), $$SessionsTableReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({contextId = false}) {
+          prefetchHooksCallback: ({activityId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -5146,14 +5164,14 @@ class $$SessionsTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic>>(state) {
-                if (contextId) {
+                if (activityId) {
                   state = state.withJoin(
                     currentTable: table,
-                    currentColumn: table.contextId,
+                    currentColumn: table.activityId,
                     referencedTable:
-                        $$SessionsTableReferences._contextIdTable(db),
+                        $$SessionsTableReferences._activityIdTable(db),
                     referencedColumn:
-                        $$SessionsTableReferences._contextIdTable(db).id,
+                        $$SessionsTableReferences._activityIdTable(db).id,
                   ) as T;
                 }
 
@@ -5177,11 +5195,11 @@ typedef $$SessionsTableProcessedTableManager = ProcessedTableManager<
     $$SessionsTableUpdateCompanionBuilder,
     (SessionRow, $$SessionsTableReferences),
     SessionRow,
-    PrefetchHooks Function({bool contextId})>;
+    PrefetchHooks Function({bool activityId})>;
 typedef $$BalancesTableCreateCompanionBuilder = BalancesCompanion Function({
   Value<DateTime> modifiedAt,
   required String day,
-  Value<Uuid?> contextId,
+  Value<Uuid?> activityId,
   required BalanceType type,
   Value<int> count,
   Value<Duration> time,
@@ -5190,7 +5208,7 @@ typedef $$BalancesTableCreateCompanionBuilder = BalancesCompanion Function({
 typedef $$BalancesTableUpdateCompanionBuilder = BalancesCompanion Function({
   Value<DateTime> modifiedAt,
   Value<String> day,
-  Value<Uuid?> contextId,
+  Value<Uuid?> activityId,
   Value<BalanceType> type,
   Value<int> count,
   Value<Duration> time,
@@ -5201,14 +5219,15 @@ final class $$BalancesTableReferences
     extends BaseReferences<_$Store, $BalancesTable, BalanceRow> {
   $$BalancesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $ContextsTable _contextIdTable(_$Store db) => db.contexts
-      .createAlias($_aliasNameGenerator(db.balances.contextId, db.contexts.id));
+  static $ActivitiesTable _activityIdTable(_$Store db) =>
+      db.activities.createAlias(
+          $_aliasNameGenerator(db.balances.activityId, db.activities.id));
 
-  $$ContextsTableProcessedTableManager? get contextId {
-    if ($_item.contextId == null) return null;
-    final manager = $$ContextsTableTableManager($_db, $_db.contexts)
-        .filter((f) => f.id($_item.contextId!));
-    final item = $_typedResult.readTableOrNull(_contextIdTable($_db));
+  $$ActivitiesTableProcessedTableManager? get activityId {
+    if ($_item.activityId == null) return null;
+    final manager = $$ActivitiesTableTableManager($_db, $_db.activities)
+        .filter((f) => f.id($_item.activityId!));
+    final item = $_typedResult.readTableOrNull(_activityIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
@@ -5247,15 +5266,15 @@ class $$BalancesTableFilterComposer
               column,
               joinBuilders: joinBuilders));
 
-  $$ContextsTableFilterComposer get contextId {
-    final $$ContextsTableFilterComposer composer = $state.composerBuilder(
+  $$ActivitiesTableFilterComposer get activityId {
+    final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.contextId,
-        referencedTable: $state.db.contexts,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $state.db.activities,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder, parentComposers) =>
-            $$ContextsTableFilterComposer(ComposerState(
-                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+            $$ActivitiesTableFilterComposer(ComposerState($state.db,
+                $state.db.activities, joinBuilder, parentComposers)));
     return composer;
   }
 }
@@ -5288,15 +5307,15 @@ class $$BalancesTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  $$ContextsTableOrderingComposer get contextId {
-    final $$ContextsTableOrderingComposer composer = $state.composerBuilder(
+  $$ActivitiesTableOrderingComposer get activityId {
+    final $$ActivitiesTableOrderingComposer composer = $state.composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.contextId,
-        referencedTable: $state.db.contexts,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $state.db.activities,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder, parentComposers) =>
-            $$ContextsTableOrderingComposer(ComposerState(
-                $state.db, $state.db.contexts, joinBuilder, parentComposers)));
+            $$ActivitiesTableOrderingComposer(ComposerState($state.db,
+                $state.db.activities, joinBuilder, parentComposers)));
     return composer;
   }
 }
@@ -5311,7 +5330,7 @@ class $$BalancesTableTableManager extends RootTableManager<
     $$BalancesTableUpdateCompanionBuilder,
     (BalanceRow, $$BalancesTableReferences),
     BalanceRow,
-    PrefetchHooks Function({bool contextId})> {
+    PrefetchHooks Function({bool activityId})> {
   $$BalancesTableTableManager(_$Store db, $BalancesTable table)
       : super(TableManagerState(
           db: db,
@@ -5323,7 +5342,7 @@ class $$BalancesTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<String> day = const Value.absent(),
-            Value<Uuid?> contextId = const Value.absent(),
+            Value<Uuid?> activityId = const Value.absent(),
             Value<BalanceType> type = const Value.absent(),
             Value<int> count = const Value.absent(),
             Value<Duration> time = const Value.absent(),
@@ -5332,7 +5351,7 @@ class $$BalancesTableTableManager extends RootTableManager<
               BalancesCompanion(
             modifiedAt: modifiedAt,
             day: day,
-            contextId: contextId,
+            activityId: activityId,
             type: type,
             count: count,
             time: time,
@@ -5341,7 +5360,7 @@ class $$BalancesTableTableManager extends RootTableManager<
           createCompanionCallback: ({
             Value<DateTime> modifiedAt = const Value.absent(),
             required String day,
-            Value<Uuid?> contextId = const Value.absent(),
+            Value<Uuid?> activityId = const Value.absent(),
             required BalanceType type,
             Value<int> count = const Value.absent(),
             Value<Duration> time = const Value.absent(),
@@ -5350,7 +5369,7 @@ class $$BalancesTableTableManager extends RootTableManager<
               BalancesCompanion.insert(
             modifiedAt: modifiedAt,
             day: day,
-            contextId: contextId,
+            activityId: activityId,
             type: type,
             count: count,
             time: time,
@@ -5360,7 +5379,7 @@ class $$BalancesTableTableManager extends RootTableManager<
               .map((e) =>
                   (e.readTable(table), $$BalancesTableReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({contextId = false}) {
+          prefetchHooksCallback: ({activityId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -5376,14 +5395,14 @@ class $$BalancesTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic>>(state) {
-                if (contextId) {
+                if (activityId) {
                   state = state.withJoin(
                     currentTable: table,
-                    currentColumn: table.contextId,
+                    currentColumn: table.activityId,
                     referencedTable:
-                        $$BalancesTableReferences._contextIdTable(db),
+                        $$BalancesTableReferences._activityIdTable(db),
                     referencedColumn:
-                        $$BalancesTableReferences._contextIdTable(db).id,
+                        $$BalancesTableReferences._activityIdTable(db).id,
                   ) as T;
                 }
 
@@ -5407,7 +5426,7 @@ typedef $$BalancesTableProcessedTableManager = ProcessedTableManager<
     $$BalancesTableUpdateCompanionBuilder,
     (BalanceRow, $$BalancesTableReferences),
     BalanceRow,
-    PrefetchHooks Function({bool contextId})>;
+    PrefetchHooks Function({bool activityId})>;
 
 class $StoreManager {
   final _$Store _db;
@@ -5418,8 +5437,8 @@ class $StoreManager {
       $$AccountsTableTableManager(_db, _db.accounts);
   $$CalendarsTableTableManager get calendars =>
       $$CalendarsTableTableManager(_db, _db.calendars);
-  $$ContextsTableTableManager get contexts =>
-      $$ContextsTableTableManager(_db, _db.contexts);
+  $$ActivitiesTableTableManager get activities =>
+      $$ActivitiesTableTableManager(_db, _db.activities);
   $$NotesTableTableManager get notes =>
       $$NotesTableTableManager(_db, _db.notes);
   $$EventsTableTableManager get events =>

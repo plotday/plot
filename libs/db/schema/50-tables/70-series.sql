@@ -8,7 +8,7 @@ CREATE TABLE "public"."series" (
     "invitees" text[],
     "embedding" vector (384),
     -- overrides
-    "context_id" uuid REFERENCES context ON DELETE SET NULL,
+    "activity_id" uuid REFERENCES activity ON DELETE SET NULL,
     CONSTRAINT series_unique UNIQUE (user_id, series)
 );
 

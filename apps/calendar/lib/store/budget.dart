@@ -2,8 +2,10 @@ part of 'store.dart';
 
 @DataClassName('BudgetRow')
 class Budgets extends IdStoreTable {
-  BlobColumn get contextId =>
-      blob().nullable().map(const UuidConverter()).references(Contexts, #id)();
+  BlobColumn get activityId => blob()
+      .nullable()
+      .map(const UuidConverter())
+      .references(Activities, #id)();
 }
 
 class BudgetsBase extends BaseTable {
@@ -25,7 +27,7 @@ class Budget extends BudgetRow {
       : super(
           id: row.id,
           modifiedAt: row.modifiedAt,
-          contextId: row.contextId,
+          activityId: row.activityId,
         );
 
   Future<void> save() => Store.get.save(table, this);

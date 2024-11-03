@@ -8,8 +8,8 @@ SELECT
         ex.day, s.day
 ) AS day,
     COALESCE(
-        ex.context_id, s.context_id
-) AS context_id,
+        ex.activity_id, s.activity_id
+) AS activity_id,
     ex.type,
     COALESCE(
         COALESCE(
@@ -29,7 +29,7 @@ FROM (
     SELECT
         user_id,
         day,
-        context_id,
+        activity_id,
         'accepted' AS type,
         COALESCE(
             count(
@@ -48,12 +48,12 @@ FROM (
     GROUP BY
         user_id,
         day,
-        context_id
+        activity_id
     UNION ALL
     SELECT
         user_id,
         day,
-        context_id,
+        activity_id,
         'tentative' AS type,
         COALESCE(count(*) FILTER (WHERE response = 'tentative'
                 OR response IS NULL), 0) AS events,
@@ -67,12 +67,12 @@ FROM (
     GROUP BY
         user_id,
         day,
-        context_id
+        activity_id
     UNION ALL
     SELECT
         user_id,
         day,
-        context_id,
+        activity_id,
         'declined' AS type,
         COALESCE(count(*) FILTER (WHERE response = 'declined'), 0) AS events,
         COALESCE(sum(seconds) FILTER (WHERE response = 'declined'), 0) AS seconds
@@ -84,13 +84,13 @@ FROM (
     GROUP BY
         user_id,
         day,
-        context_id
+        activity_id
 ) AS ex
     FULL JOIN (
         SELECT
             user_id,
             (lower(at) at time zone user_timezone ())::date AS day,
-            context_id,
+            activity_id,
             'accepted' AS type,
             count(*) AS events,
             sum(EXTRACT(epoch FROM upper(at) - lower(at)) / 60)::integer AS seconds
@@ -99,8 +99,8 @@ FROM (
         GROUP BY
             user_id,
             day,
-            context_id) AS s ON ex.user_id = s.user_id
+            activity_id) AS s ON ex.user_id = s.user_id
     AND ex.day = s.day
-    AND ex.context_id = s.context_id
+    AND ex.activity_id = s.activity_id
     AND ex.type = s.type;
 

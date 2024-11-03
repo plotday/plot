@@ -1,16 +1,16 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/state/context.dart';
+import 'package:plot/state/activity.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/router.dart';
 
-class ContextNav extends StatelessWidget {
-  const ContextNav({super.key});
+class ActivityNav extends StatelessWidget {
+  const ActivityNav({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ContextBloc, ContextState>(
+    return BlocBuilder<ActivityBloc, ActivityState>(
       builder: (buildContext, state) => Row(
         children: [
           if (state.current != null)

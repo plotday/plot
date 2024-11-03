@@ -82,24 +82,24 @@ WITH event_x1 AS (
 )
 SELECT
     e.*,
-    ctx.id AS context_id,
-    ctx.path AS context_path
+    ctx.id AS activity_id,
+    ctx.path AS activity_path
 FROM
     event_x1 e
     LEFT JOIN LATERAL (
         SELECT
-            context_id
+            activity_id
         FROM
             series
         WHERE
             user_id = e.user_id
-            AND context_id IS NOT NULL
+            AND activity_id IS NOT NULL
         ORDER BY
             series = e.series DESC,
             invitees = e.invitees DESC,
             embedding <-> e.embedding DESC
         LIMIT 1) AS s ON TRUE
-    LEFT JOIN context ctx ON ctx.id = s.context_id;
+    LEFT JOIN activity ctx ON ctx.id = s.activity_id;
 
 -- Define a computed relation for PostgREST joins
 -- https://postgrest.org/en/stable/references/api/resource_embedding.html#computed-relationships

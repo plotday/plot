@@ -3,7 +3,7 @@ CREATE TABLE "public"."note" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
-    "context_id" uuid REFERENCES context ON DELETE CASCADE,
+    "activity_id" uuid REFERENCES activity ON DELETE CASCADE,
     "topic_id" uuid NOT NULL,
     "body" text NOT NULL,
     "order" double precision NOT NULL,
@@ -18,15 +18,15 @@ CREATE TRIGGER set_note_modified_at
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_at ();
 
-CREATE UNIQUE INDEX note_order_root ON "public"."note" (context_id, "order")
+CREATE UNIQUE INDEX note_order_root ON "public"."note" (activity_id, "order")
 WHERE
     root = TRUE;
 
-CREATE UNIQUE INDEX note_topic_root ON public.note (context_id, topic_id)
+CREATE UNIQUE INDEX note_topic_root ON public.note (activity_id, topic_id)
 WHERE
     root = TRUE;
 
-CREATE UNIQUE INDEX note_order_topic ON "public"."note" (context_id, topic_id, "order")
+CREATE UNIQUE INDEX note_order_topic ON "public"."note" (activity_id, topic_id, "order")
 WHERE
     root = FALSE;
 
@@ -36,15 +36,15 @@ CREATE OR REPLACE FUNCTION update_topic_root (note_id uuid)
     AS $$
 DECLARE
     _root_order text;
-    _context_id uuid;
+    _activity_id uuid;
     _topic_id uuid;
 BEGIN
     -- Start a transaction block
     BEGIN
-        -- Find the context_id and topic_id for the given ID
+        -- Find the activity_id and topic_id for the given ID
         SELECT
-            context_id,
-            topic_id INTO _context_id,
+            activity_id,
+            topic_id INTO _activity_id,
             _topic_id
         FROM
             "public"."note"
@@ -55,7 +55,7 @@ BEGIN
             "order" INTO _root_order
         FROM
             "public"."note"
-        WHERE (context_id IS NOT DISTINCT FROM _context_id)
+        WHERE (activity_id IS NOT DISTINCT FROM _activity_id)
             AND topic_id = _topic_id
             AND root = TRUE
         FOR UPDATE;
@@ -65,7 +65,7 @@ BEGIN
         SET
             root = FALSE,
             "order" = '!'
-        WHERE (context_id IS NOT DISTINCT FROM _context_id)
+        WHERE (activity_id IS NOT DISTINCT FROM _activity_id)
             AND topic_id = _topic_id
             AND root = TRUE;
         -- Update the row for the given id to set root = true and order previous order

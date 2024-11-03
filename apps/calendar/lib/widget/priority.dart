@@ -8,7 +8,7 @@ import 'package:plot/router.dart';
 
 class PriorityWidget extends StatelessWidget {
   const PriorityWidget({required this.context, this.balance, super.key});
-  final Context context;
+  final Activity context;
   final Balance? balance;
 
   @override

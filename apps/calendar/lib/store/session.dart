@@ -2,8 +2,10 @@ part of 'store.dart';
 
 @DataClassName('SessionRow')
 class Sessions extends UuidStoreTable {
-  BlobColumn get contextId =>
-      blob().nullable().map(const UuidConverter()).references(Contexts, #id)();
+  BlobColumn get activityId => blob()
+      .nullable()
+      .map(const UuidConverter())
+      .references(Activities, #id)();
 
   DateTimeColumn get start => dateTime()();
   DateTimeColumn get end => dateTime()();
@@ -41,13 +43,13 @@ class Session extends SessionRow {
   static Future<void> push() => Store.get.push(table, SessionsBase());
   static Future<bool> pull() => Store.get.pull(table, SessionsBase());
 
-  static Future<Session> resume(Context? context,
+  static Future<Session> resume(Activity? activity,
       {required DateTime end}) async {
     var session = await _latest();
     Session? previous;
     if (session != null) {
       if (session.at.isNow()) {
-        if (session.context == context) {
+        if (session.activity == activity) {
           session = Session.fromStore(session.copyWith(end: end));
         } else {
           session = Session.fromStore(session.copyWith(end: DateTime.now()));
@@ -55,23 +57,23 @@ class Session extends SessionRow {
           session = null;
         }
       } else {
-        if (session.context == context) {
+        if (session.activity == activity) {
           previous = session;
         }
         session = null;
       }
     }
     if (session == null) {
-      previous ??= await _latest(context: context);
-      session = Session(context: context, end: end);
+      previous ??= await _latest(context: activity);
+      session = Session(activity: activity, end: end);
     }
     return session;
   }
 
-  static Future<Session?> _latest({Context? context}) async {
+  static Future<Session?> _latest({Activity? context}) async {
     final query = Store.get.select(table);
     if (context != null) {
-      query.where((t) => t.contextId.equals(context.id.toBytes()));
+      query.where((t) => t.activityId.equals(context.id.toBytes()));
     }
     final row = await (query
           ..orderBy([
@@ -97,12 +99,12 @@ class Session extends SessionRow {
     if (withContext) {
       return Rx.combineLatest2(
           sessionStream,
-          Context.watch(),
-          (List<Session> sessions, Map<Uuid, Context> contexts) => sessions
+          Activity.watch(),
+          (List<Session> sessions, Map<Uuid, Activity> contexts) => sessions
               .map((session) => Session.fromStore(session,
-                  context: session.contextId == null
+                  activity: session.activityId == null
                       ? null
-                      : contexts[session.contextId]))
+                      : contexts[session.activityId]))
               .toList());
     }
     return sessionStream;
@@ -114,22 +116,22 @@ class Session extends SessionRow {
         return session?.at.isNow() == true ? session : null;
       });
 
-  Session({this.context, required super.end})
+  Session({this.activity, required super.end})
       : super(
           id: Uuid.generate(),
           modifiedAt: DateTime.now(),
-          contextId: context?.id,
+          activityId: activity?.id,
           start: DateTime.now(),
           pomodoro: null,
           pomodoroAt: null,
           priority: 0,
         );
 
-  Session.fromStore(SessionRow row, {this.context})
+  Session.fromStore(SessionRow row, {this.activity})
       : super(
           id: row.id,
           modifiedAt: row.modifiedAt,
-          contextId: row.contextId,
+          activityId: row.activityId,
           start: row.start,
           end: row.end,
           pomodoro: row.pomodoro,
@@ -137,7 +139,7 @@ class Session extends SessionRow {
           priority: row.priority,
         );
 
-  final Context? context;
+  final Activity? activity;
 
   Future<void> save() => Store.get.save(table, this);
 

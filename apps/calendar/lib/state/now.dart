@@ -37,8 +37,8 @@ class NowBloc extends Cubit<NowState> {
     return super.close();
   }
 
-  void setContext(Context? context) async {
-    if (state.session?.context == context) return;
+  void setContext(Activity? context) async {
+    if (state.session?.activity == context) return;
     // TODO properly set and extend time
     await Session.resume(context,
         end: state.endFor(context) ?? DateTime.now().addMinutes(5));

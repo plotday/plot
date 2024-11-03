@@ -14,8 +14,10 @@ class Notes extends UuidStoreTable {
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
   BlobColumn get topicId => blob().map(const UuidConverter())();
-  BlobColumn get contextId =>
-      blob().nullable().map(const UuidConverter()).references(Contexts, #id)();
+  BlobColumn get activityId => blob()
+      .nullable()
+      .map(const UuidConverter())
+      .references(Activities, #id)();
 }
 
 class NotesBase extends BaseTable {
@@ -30,20 +32,20 @@ class NotesBase extends BaseTable {
       NoteRow.fromJson(json);
 }
 
-class ContextNotesBase extends NotesBase {
-  ContextNotesBase(this.contextPath)
+class ActivityNotesBase extends NotesBase {
+  ActivityNotesBase(this.activityPath)
       : super(
-          name: 'notes:$contextPath',
+          name: 'notes:$activityPath',
           order: 'order',
           limit: 40,
         );
 
-  final Path? contextPath;
+  final Path? activityPath;
 
   @override
   PostgrestFilterBuilder<T> filter<T>(PostgrestFilterBuilder<T> query) {
-    if (contextPath == null) return query;
-    return query.filter('context_path', 'cs', contextPath);
+    if (activityPath == null) return query;
+    return query.filter('activity_path', 'cs', activityPath);
   }
 }
 
@@ -74,21 +76,21 @@ class Note extends NoteRow implements Comparable<Note> {
 
   static Future<void> push() => Store.get.push(table, NotesBase());
   static Future<bool> pull() async => Store.get.pull(table, NotesBase());
-  static Future<bool> pullContext(Path? contextPath) async =>
-      Store.get.pull(table, ContextNotesBase(contextPath));
-  static bool hasMoreContext(Path? contextPath) =>
-      Store.get.hasMore(ContextNotesBase(contextPath));
+  static Future<bool> pullActivity(Path? activityPath) async =>
+      Store.get.pull(table, ActivityNotesBase(activityPath));
+  static bool hasMoreActivity(Path? activityPath) =>
+      Store.get.hasMore(ActivityNotesBase(activityPath));
   static Future<bool> pullTopic(TopicId topicId) async =>
       Store.get.pull(table, TopicNotesBase(topicId));
   static bool hasMoreTopic(TopicId topicId) =>
       Store.get.hasMore(TopicNotesBase(topicId));
 
-  static Stream<List<Note>> watchContext(Context? context) {
+  static Stream<List<Note>> watchActivity(Activity? activity) {
     final query = Store.get.select(table)..where((t) => t.root.equals(true));
-    if (context == null) {
-      query.where((t) => t.contextId.isNull());
+    if (activity == null) {
+      query.where((t) => t.activityId.isNull());
     } else {
-      query.where((t) => t.contextId.equals(context.id.toBytes()));
+      query.where((t) => t.activityId.equals(activity.id.toBytes()));
     }
     query.orderBy(
         [(t) => OrderingTerm.desc(t.root), (t) => OrderingTerm.asc(t.order)]);
@@ -105,7 +107,7 @@ class Note extends NoteRow implements Comparable<Note> {
           .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
 
   factory Note({
-    required Uuid? contextId,
+    required Uuid? activityId,
     required String body,
     required Order order,
     bool private = false,
@@ -114,7 +116,7 @@ class Note extends NoteRow implements Comparable<Note> {
     final now = DateTime.now();
     return Note.fromStore(NoteRow(
       id: id,
-      contextId: contextId,
+      activityId: activityId,
       userId: Uuid.fromString(base.auth.currentUser!.id),
       root: true,
       topicId: id,
@@ -138,7 +140,7 @@ class Note extends NoteRow implements Comparable<Note> {
       id: id,
       userId: Uuid.fromString(base.auth.currentUser!.id),
       root: false,
-      contextId: parent.contextId,
+      activityId: parent.activityId,
       topicId: parent.topicId,
       createdAt: now,
       modifiedAt: now,
@@ -153,7 +155,7 @@ class Note extends NoteRow implements Comparable<Note> {
           id: row.id,
           userId: row.userId,
           root: row.root,
-          contextId: row.contextId,
+          activityId: row.activityId,
           topicId: row.topicId,
           createdAt: row.createdAt,
           modifiedAt: row.modifiedAt,
