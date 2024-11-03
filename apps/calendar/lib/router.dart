@@ -115,22 +115,29 @@ class EventRoute extends Route {
 
 @immutable
 class ActivityRoute extends Route {
-  static const path = '/activity/:contextId';
-  static const all = 'all';
+  static const path = '/activity/:contextIdString';
+  static const rootId = 'root';
 
-  const ActivityRoute({this.contextId = ActivityRoute.all});
+  ActivityRoute({required this.contextIdString})
+      : contextId =
+            contextIdString == rootId ? null : Uuid.fromString(contextIdString);
+  ActivityRoute.byId(this.contextId)
+      : contextIdString = contextId?.toString() ?? rootId;
+  const ActivityRoute.root()
+      : contextIdString = rootId,
+        contextId = null;
 
-  final String contextId;
+  final String contextIdString;
+  final ContextId? contextId;
 
   @override
   void onEnter(BuildContext context) {
-    final id = contextId == all ? null : Uuid.fromString(contextId);
-    context.read<ContextBloc>().setCurrent(id);
+    context.read<ContextBloc>().setCurrent(contextId);
     final event = context.read<ScheduleBloc>().selected;
     if (event != null) {
       context
           .read<ScheduleBloc>()
-          .update(event.copyWith(contextId: Value(Uuid.fromString(contextId))));
+          .update(event.copyWith(contextId: Value(contextId)));
     }
   }
 
@@ -147,25 +154,26 @@ class ActivityRoute extends Route {
 }
 
 @immutable
-class TopicRoute extends Route {
+class TopicRoute extends ActivityRoute {
   static const path = '${ActivityRoute.path}/$subPath';
-  static const subPath = ':topicId';
+  static const subPath = ':topicIdString';
 
-  const TopicRoute({required this.contextId, required this.topicId});
+  TopicRoute({required this.contextIdString, required this.topicIdString})
+      : topicId = TopicId.fromString(topicIdString),
+        super(contextIdString: contextIdString);
+  TopicRoute.byId(ContextId? contextId, this.topicId)
+      : contextIdString = contextId?.toString() ?? ActivityRoute.rootId,
+        topicIdString = topicId.toString(),
+        super.byId(contextId);
 
-  final String contextId;
-  final String topicId;
+  final String contextIdString;
+  final String topicIdString;
+  final TopicId? topicId;
 
   @override
   void onEnter(BuildContext context) {
-    final id = contextId == 'root' ? null : Uuid.fromString(contextId);
-    context.read<ContextBloc>().setCurrent(id);
-    final event = context.read<ScheduleBloc>().selected;
-    if (event != null) {
-      context
-          .read<ScheduleBloc>()
-          .update(event.copyWith(contextId: Value(Uuid.fromString(contextId))));
-    }
+    super.onEnter(context);
+    context.read<ContextBloc>().setTopic(topicId);
   }
 
   @override
@@ -177,7 +185,51 @@ class TopicRoute extends Route {
       const ContextPage();
 
   @override
-  List<Object?> get props => [contextId];
+  List<Object?> get props => super.props + [topicId];
+}
+
+@immutable
+class ActivityAddRoute extends ActivityRoute {
+  static const path = '${ActivityRoute.path}/$subPath';
+  static const subPath = 'new';
+
+  ActivityAddRoute({required this.contextIdString})
+      : super(contextIdString: contextIdString);
+  ActivityAddRoute.byId(ContextId? contextId)
+      : contextIdString = contextId?.toString() ?? ActivityRoute.rootId,
+        super.byId(contextId);
+
+  final String contextIdString;
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const ActivityEditPage();
+
+  @override
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const ActivityEditPage();
+}
+
+@immutable
+class ActivityEditRoute extends ActivityRoute {
+  static const path = '${ActivityRoute.path}/$subPath';
+  static const subPath = 'edit';
+
+  ActivityEditRoute({required this.contextIdString})
+      : super(contextIdString: contextIdString);
+  ActivityEditRoute.byId(ContextId contextId)
+      : contextIdString = contextId?.toString() ?? ActivityRoute.rootId,
+        super.byId(contextId);
+
+  final String contextIdString;
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const ActivityEditPage();
+
+  @override
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const ActivityEditPage();
 }
 
 class ActivityBranch extends StatefulShellBranchData {
@@ -199,6 +251,8 @@ class MoreBranch extends StatefulShellBranchData {
     TypedGoRoute<HomeRoute>(path: HomeRoute.path),
     TypedGoRoute<EventRoute>(path: EventRoute.path),
     TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
+    TypedGoRoute<ActivityEditRoute>(path: ActivityEditRoute.path),
+    TypedGoRoute<ActivityAddRoute>(path: ActivityAddRoute.path),
     TypedGoRoute<TopicRoute>(path: TopicRoute.path),
   ]),
 ])
@@ -247,6 +301,8 @@ class _TripleRoutes extends ShellRouteData {
           TypedGoRoute<ActivityRoute>(
             path: ActivityRoute.path,
             routes: [
+              TypedGoRoute<ActivityEditRoute>(path: ActivityEditRoute.subPath),
+              TypedGoRoute<ActivityAddRoute>(path: ActivityAddRoute.subPath),
               TypedGoRoute<TopicRoute>(
                 path: TopicRoute.subPath,
               ),

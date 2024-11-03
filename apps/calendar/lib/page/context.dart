@@ -1,13 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/router.dart';
 import 'package:plot/widget/reorderable_list_view.dart';
 import 'package:plot/state/context.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/note.dart';
-import 'package:plot/widget/input_action.dart';
 import 'package:plot/widget/bidirectional_list.dart';
 
 class ContextPage extends StatelessWidget {
@@ -44,19 +44,24 @@ class ContextPage extends StatelessWidget {
                 )).save();
               },
             ),
-            InputAction(
-              onAdd: (name) {
-                Context(
-                  name: name,
-                  parent: state.current,
-                  order: Order.between(state.children.lastOrNull?.order, null),
-                ).save();
-              },
-              label: "Add an actvity",
-            ),
+            if (state.current != null)
+              Button(
+                  onTap: () {
+                    ActivityEditRoute.byId(state.current!.id).go(context);
+                  },
+                  child: const Text('Edit Activity')),
             Button(
                 onTap: () {
-                  context.read<ContextBloc>().newTopic(context);
+                  ActivityAddRoute.byId(state.current?.id).go(context);
+                },
+                child: const Text('Add an Activity')),
+            Button(
+                onTap: () {
+                  if (state.current == null) {
+                    HomeRoute().go(context);
+                  } else {
+                    ActivityRoute.byId(state.current!.id).go(context);
+                  }
                 },
                 child: const Text('Add a Topic')),
             ReorderableListView(

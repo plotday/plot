@@ -14,8 +14,7 @@ class PriorityWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      onTap: () =>
-          ActivityRoute(contextId: this.context.id.toString()).go(context),
+      onTap: () => ActivityRoute.byId(this.context.id).go(context),
       key: ValueKey(this.context.id.toString()),
       // subtitle: LinearProgressIndicator(
       //     value: priority.budget.inMinutes > 0

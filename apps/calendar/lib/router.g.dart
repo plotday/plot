@@ -34,11 +34,19 @@ RouteBase get $_AdaptiveRoutes => ShellRouteData.$route(
               factory: $EventRouteExtension._fromState,
             ),
             GoRouteData.$route(
-              path: '/activity/:contextId',
+              path: '/activity/:contextIdString',
               factory: $ActivityRouteExtension._fromState,
             ),
             GoRouteData.$route(
-              path: '/activity/:contextId/:topicId',
+              path: '/activity/:contextIdString/edit',
+              factory: $ActivityEditRouteExtension._fromState,
+            ),
+            GoRouteData.$route(
+              path: '/activity/:contextIdString/new',
+              factory: $ActivityAddRouteExtension._fromState,
+            ),
+            GoRouteData.$route(
+              path: '/activity/:contextIdString/:topicIdString',
               factory: $TopicRouteExtension._fromState,
             ),
           ],
@@ -132,11 +140,49 @@ extension $EventRouteExtension on EventRoute {
 
 extension $ActivityRouteExtension on ActivityRoute {
   static ActivityRoute _fromState(GoRouterState state) => ActivityRoute(
-        contextId: state.pathParameters['contextId']! ?? ActivityRoute.all,
+        contextIdString: state.pathParameters['contextIdString']!,
       );
 
   String get location => GoRouteData.$location(
-        '/activity/${Uri.encodeComponent(contextId)}',
+        '/activity/${Uri.encodeComponent(contextIdString)}',
+      );
+
+  void go(BuildContext context) => context.go(location);
+
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  void replace(BuildContext context) => context.replace(location);
+}
+
+extension $ActivityEditRouteExtension on ActivityEditRoute {
+  static ActivityEditRoute _fromState(GoRouterState state) => ActivityEditRoute(
+        contextIdString: state.pathParameters['contextIdString']!,
+      );
+
+  String get location => GoRouteData.$location(
+        '/activity/${Uri.encodeComponent(contextIdString)}/edit',
+      );
+
+  void go(BuildContext context) => context.go(location);
+
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  void replace(BuildContext context) => context.replace(location);
+}
+
+extension $ActivityAddRouteExtension on ActivityAddRoute {
+  static ActivityAddRoute _fromState(GoRouterState state) => ActivityAddRoute(
+        contextIdString: state.pathParameters['contextIdString']!,
+      );
+
+  String get location => GoRouteData.$location(
+        '/activity/${Uri.encodeComponent(contextIdString)}/new',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -151,12 +197,12 @@ extension $ActivityRouteExtension on ActivityRoute {
 
 extension $TopicRouteExtension on TopicRoute {
   static TopicRoute _fromState(GoRouterState state) => TopicRoute(
-        contextId: state.pathParameters['contextId']!,
-        topicId: state.pathParameters['topicId']!,
+        contextIdString: state.pathParameters['contextIdString']!,
+        topicIdString: state.pathParameters['topicIdString']!,
       );
 
   String get location => GoRouteData.$location(
-        '/activity/${Uri.encodeComponent(contextId)}/${Uri.encodeComponent(topicId)}',
+        '/activity/${Uri.encodeComponent(contextIdString)}/${Uri.encodeComponent(topicIdString)}',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -196,11 +242,19 @@ RouteBase get $_SingleRoutes => ShellRouteData.$route(
             StatefulShellBranchData.$branch(
               routes: [
                 GoRouteData.$route(
-                  path: '/activity/:contextId',
+                  path: '/activity/:contextIdString',
                   factory: $ActivityRouteExtension._fromState,
                   routes: [
                     GoRouteData.$route(
-                      path: ':topicId',
+                      path: 'edit',
+                      factory: $ActivityEditRouteExtension._fromState,
+                    ),
+                    GoRouteData.$route(
+                      path: 'new',
+                      factory: $ActivityAddRouteExtension._fromState,
+                    ),
+                    GoRouteData.$route(
+                      path: ':topicIdString',
                       factory: $TopicRouteExtension._fromState,
                     ),
                   ],

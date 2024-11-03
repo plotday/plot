@@ -1,13 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/util/optional.dart';
-import 'package:plot/router.dart';
 
 part 'context_state.dart';
 
@@ -92,15 +90,6 @@ class ContextBloc extends Cubit<ContextState> {
           moreTopicNotes: Note.hasMoreTopic(topic),
         ));
       });
-    }
-  }
-
-  void newTopic(BuildContext context) {
-    emit(state.copyWith(topicId: Optional.of(null), topicNotes: []));
-    if (state.current == null) {
-      HomeRoute().go(context);
-    } else {
-      ActivityRoute(contextId: state.current!.id.toString()).go(context);
     }
   }
 

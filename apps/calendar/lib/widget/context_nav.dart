@@ -18,9 +18,8 @@ class ContextNav extends StatelessWidget {
               icon: const BackButtonIcon(),
               onPressed: () {
                 state.current?.parent == null
-                    ? const ActivityRoute().go(context)
-                    : ActivityRoute(
-                            contextId: state.current!.parent!.id!.toString())
+                    ? const ActivityRoute.root().go(context)
+                    : ActivityRoute.byId(state.current!.parent!.id!)
                         .go(context);
               },
             ),

@@ -19,11 +19,7 @@ class Header extends StatelessWidget {
               onPressed: () async {
                 final parent = state.current!.parent;
                 if (!context.mounted) return;
-                ActivityRoute(
-                        contextId: parent == null
-                            ? ActivityRoute.all
-                            : parent.id.toString())
-                    .go(context);
+                ActivityRoute.byId(parent?.id).go(context);
               },
             ),
           Expanded(

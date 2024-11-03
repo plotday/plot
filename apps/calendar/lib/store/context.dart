@@ -134,7 +134,7 @@ class Context extends ContextRow implements Comparable<Context> {
   }
 
   final Context? parent;
-  final List<Context> children;
+  List<Context> children;
 
   @override
   Context copyWith({
@@ -162,7 +162,8 @@ class Context extends ContextRow implements Comparable<Context> {
       );
 
   void _addChild(Context child) {
-    children.replaceSorted(child, (a, b) => a.id == b.id);
+    children = List<Context>.from(children)
+        .replaceSorted(child, (a, b) => a.id == b.id);
   }
 
   Future<void> save() {
