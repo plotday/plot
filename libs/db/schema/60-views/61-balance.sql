@@ -1,42 +1,22 @@
-CREATE OR REPLACE VIEW balance WITH ( security_invoker = TRUE
-) AS
+CREATE OR REPLACE VIEW balance WITH ( security_invoker = TRUE)
+-- for formatting
+AS
 SELECT
-    COALESCE(
-        ex.user_id, s.user_id
-) AS user_id,
-    COALESCE(
-        ex.day, s.day
-) AS day,
-    COALESCE(
-        ex.activity_id, s.activity_id
-) AS activity_id,
+    COALESCE(ex.user_id, s.user_id) AS user_id,
+    COALESCE(ex.day, s.day) AS day,
+    COALESCE(ex.activity_id, s.activity_id) AS activity_id,
     ex.type,
-    COALESCE(
-        COALESCE(
-            ex.events, 0
-) + COALESCE(
-            s.events, 0
-)
-) AS events,
-    COALESCE(
-        COALESCE(
-            ex.seconds, 0
-) + COALESCE(
-            s.seconds, 0
-)
-) AS seconds
+    COALESCE(COALESCE(ex.events, 0) + COALESCE(s.events, 0)) AS events,
+    COALESCE(COALESCE(ex.seconds, 0) + COALESCE(s.seconds, 0)) AS seconds
 FROM (
     SELECT
         user_id,
         day,
         activity_id,
         'accepted' AS type,
-        COALESCE(
-            count(
-                *
-) FILTER ( WHERE response != 'declined'
-            AND response != 'tentative'
-            AND response IS NOT NULL), 0) AS events,
+        COALESCE(count(*) FILTER (WHERE response != 'declined'
+                AND response != 'tentative'
+                AND response IS NOT NULL), 0) AS events,
         COALESCE(sum(seconds) FILTER (WHERE response != 'declined'
                 AND response != 'tentative'
                 AND response IS NOT NULL), 0) AS seconds
@@ -84,8 +64,7 @@ FROM (
     GROUP BY
         user_id,
         day,
-        activity_id
-) AS ex
+        activity_id) AS ex
     FULL JOIN (
         SELECT
             user_id,
