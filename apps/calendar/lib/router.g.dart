@@ -30,7 +30,7 @@ RouteBase get $_AdaptiveRoutes => ShellRouteData.$route(
               factory: $HomeRouteExtension._fromState,
             ),
             GoRouteData.$route(
-              path: '/schedule/:eventId',
+              path: '/schedule/:eventIdString',
               factory: $EventRouteExtension._fromState,
             ),
             GoRouteData.$route(
@@ -121,11 +121,11 @@ extension $HomeRouteExtension on HomeRoute {
 
 extension $EventRouteExtension on EventRoute {
   static EventRoute _fromState(GoRouterState state) => EventRoute(
-        eventId: state.pathParameters['eventId']!,
+        eventIdString: state.pathParameters['eventIdString']!,
       );
 
   String get location => GoRouteData.$location(
-        '/schedule/${Uri.encodeComponent(eventId)}',
+        '/schedule/${Uri.encodeComponent(eventIdString)}',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -232,7 +232,7 @@ RouteBase get $_SingleRoutes => ShellRouteData.$route(
                   factory: $HomeRouteExtension._fromState,
                   routes: [
                     GoRouteData.$route(
-                      path: '/schedule/:eventId',
+                      path: '/schedule/:eventIdString',
                       factory: $EventRouteExtension._fromState,
                     ),
                   ],

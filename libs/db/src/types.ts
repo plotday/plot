@@ -529,6 +529,7 @@ export type Database = {
           email: string
           event_id: string | null
           is_optional: boolean
+          modified_at: string
           response: Database["public"]["Enums"]["event_response"] | null
           contact: unknown | null
         }
@@ -537,6 +538,7 @@ export type Database = {
           email: string
           event_id?: string | null
           is_optional?: boolean
+          modified_at?: string
           response?: Database["public"]["Enums"]["event_response"] | null
         }
         Update: {
@@ -544,6 +546,7 @@ export type Database = {
           email?: string
           event_id?: string | null
           is_optional?: boolean
+          modified_at?: string
           response?: Database["public"]["Enums"]["event_response"] | null
         }
         Relationships: [
@@ -921,6 +924,7 @@ export type Database = {
           invitee_domains: string[] | null
           invitee_organization_ids: number[] | null
           invitees: string[] | null
+          modified_at: string | null
           size: string | null
         }
         Relationships: [
@@ -962,6 +966,7 @@ export type Database = {
           invitee_domains: string[] | null
           invitees: string[] | null
           invitees_hidden: boolean | null
+          modified_at: string | null
           name: string | null
           notice: number | null
           organizer_email: string | null
@@ -1227,6 +1232,31 @@ export type Database = {
         }
         Returns: boolean
       }
+      calendar: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          account_id: number
+          created_at: string
+          enabled: boolean
+          full_sync_at: string | null
+          full_sync_started_at: string | null
+          id: number
+          modified_at: string
+          name: string | null
+          provider_id: string
+          ready: boolean
+          sequence: number
+          sync_error: string | null
+          sync_state: string | null
+          synced_at: string | null
+          synced_dates: unknown | null
+          watch_expires_at: string | null
+          watch_id: string | null
+          watch_secret: string | null
+        }[]
+      }
       calendars: {
         Args: {
           "": unknown
@@ -1295,6 +1325,19 @@ export type Database = {
           email: string
         }
         Returns: number
+      }
+      invitee: {
+        Args: {
+          "": unknown
+        }
+        Returns: {
+          created_at: string
+          email: string
+          event_id: string | null
+          is_optional: boolean
+          modified_at: string
+          response: Database["public"]["Enums"]["event_response"] | null
+        }[]
       }
       is_finite: {
         Args: {

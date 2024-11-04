@@ -3,6 +3,7 @@ CREATE OR REPLACE VIEW "public"."event_invitees" WITH ( security_invoker = TRUE)
 AS
 SELECT
     i.event_id AS event_id,
+    MAX(i.modified_at) AS modified_at,
     count(i.email)::integer AS invitee_count,
     count(i.email) FILTER (WHERE (i.response = 'accepted'::event_response))::integer AS attendee_count,
 array_agg(i.email) AS invitees,
@@ -35,6 +36,7 @@ WITH event_x1 AS (
         e.provider_id AS provider_id,
         COALESCE(e.series, e.provider_id) AS series,
         e.created_at AS created_at,
+        GREATEST (e.modified_at, i.modified_at) AS modified_at,
         e.status AS status,
         e.provider_link AS provider_link,
         e.summary AS summary,
@@ -100,6 +102,44 @@ FROM
             embedding <-> e.embedding DESC
         LIMIT 1) AS s ON TRUE
     LEFT JOIN activity ctx ON ctx.id = s.activity_id;
+
+CREATE OR REPLACE FUNCTION handle_event_x_upsert ()
+    RETURNS TRIGGER
+    AS $$
+DECLARE
+    invitee text;
+BEGIN
+    INSERT INTO event (id, user_id, name, at, calendar_id, provider_id, created_at, status, provider_link, summary, description, visibility, availability, conferencing_url, organizer_email, response, series, invitees_hidden)
+        VALUES (NEW.id, NEW.user_id, NEW.name, NEW.at, NEW.calendar_id, NEW.provider_id, NEW.created_at, NEW.status, NEW.provider_link, NEW.summary, NEW.description, NEW.visibility, NEW.availability, NEW.conferencing_url, NEW.organizer_email, NEW.response, NEW.series, NEW.invitees_hidden)
+    ON CONFLICT (id)
+        DO UPDATE SET
+            name = NEW.name, at = NEW.at, calendar_id = NEW.calendar_id, provider_id = NEW.provider_id, status = NEW.status, provider_link = NEW.provider_link, summary = NEW.summary, description = NEW.description, visibility = NEW.visibility, availability = NEW.availability, conferencing_url = NEW.conferencing_url, organizer_email = NEW.organizer_email, response = NEW.response, series = NEW.series, invitees_hidden = NEW.invitees_hidden;
+    IF TG_OP = 'UPDATE' THEN
+        -- Delete those invitees that are no longer present
+        FOREACH invitee IN ARRAY OLD.invitees LOOP
+            IF NOT invitee = ANY (NEW.invitees) THEN
+                DELETE FROM invitee
+                WHERE event_id = OLD.id
+                    AND email = invitee;
+            END IF;
+        END LOOP;
+    END IF;
+    -- Insert new invitees
+    FOREACH invitee IN ARRAY NEW.invitees LOOP
+        INSERT INTO invitee (event_id, email)
+            VALUES (NEW.id, invitee)
+        ON CONFLICT (event_id, email)
+            DO NOTHING;
+    END LOOP;
+    RETURN NEW;
+END;
+$$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER upsert_event_x
+    INSTEAD OF INSERT OR UPDATE ON event_x
+    FOR EACH ROW
+    EXECUTE FUNCTION handle_event_x_upsert ();
 
 -- Define a computed relation for PostgREST joins
 -- https://postgrest.org/en/stable/references/api/resource_embedding.html#computed-relationships

@@ -91,16 +91,18 @@ class HomeRoute extends Route {
 
 @immutable
 class EventRoute extends Route {
-  static const path = '/schedule/:eventId';
+  static const path = '/schedule/:eventIdString';
 
-  const EventRoute({required this.eventId});
+  EventRoute({required this.eventIdString})
+      : eventId = Uuid.fromString(eventIdString);
+  EventRoute.byId(this.eventId) : eventIdString = eventId.toString();
 
-  final String eventId;
+  final String eventIdString;
+  final EventId eventId;
 
   @override
   void onEnter(BuildContext context) async {
-    final event =
-        await context.read<ScheduleBloc>().selectById(Uuid.fromString(eventId));
+    final event = await context.read<ScheduleBloc>().selectById(eventId);
     if (!context.mounted) return;
     context.read<ActivityBloc>().setCurrent(event.activityId);
   }

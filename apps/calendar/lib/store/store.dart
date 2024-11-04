@@ -235,7 +235,7 @@ class Store extends _$Store {
       Account.push().then((_) => Account.pull()),
       Activity.push().then((_) => Activity.pull()),
       Note.push().then((_) => Note.pull()),
-      // TODO add rest
+      Event.push().then((_) => Event.pull()),
     ]);
   }
 

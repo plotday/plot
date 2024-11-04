@@ -36,6 +36,13 @@ class EventsBase extends BaseTable {
     json['end'] = range.end.toDb();
     return EventRow.fromJson(json);
   }
+
+  @override
+  Future<void> put(Iterable<Map<String, dynamic>> rows) async {
+    // Upsert isn't supported on views because they don't have uniqueness
+    // constraints. Insert is overridden to upsert.
+    await base.from(table).insert(rows.toList());
+  }
 }
 
 class Event extends EventRow {

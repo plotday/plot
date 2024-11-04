@@ -20,7 +20,7 @@ class EventWidget extends StatelessWidget {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, scheduleState) => GestureDetector(
         onTap: () {
-          EventRoute(eventId: event.id.toString()).go(context);
+          EventRoute.byId(event.id).go(context);
         },
         child: Padding(
           padding: const EdgeInsetsDirectional.symmetric(vertical: 4),
