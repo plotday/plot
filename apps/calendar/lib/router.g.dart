@@ -60,7 +60,7 @@ extension $_AdaptiveRoutesExtension on _AdaptiveRoutes {
 }
 
 extension $LoginRouteExtension on LoginRoute {
-  static LoginRoute _fromState(GoRouterState state) => LoginRoute();
+  static LoginRoute _fromState(GoRouterState state) => const LoginRoute();
 
   String get location => GoRouteData.$location(
         '/login',

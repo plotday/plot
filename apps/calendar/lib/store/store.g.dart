@@ -1808,8 +1808,47 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
   @override
   late final GeneratedColumnWithTypeConverter<EventResponse, String> response =
       GeneratedColumn<String>('response', aliasedName, false,
-              type: DriftSqlType.string, requiredDuringInsert: true)
+              type: DriftSqlType.string,
+              requiredDuringInsert: false,
+              defaultValue: Constant(EventResponse.accepted.toString()))
           .withConverter<EventResponse>($EventsTable.$converterresponse);
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumnWithTypeConverter<EventStatus, String> status =
+      GeneratedColumn<String>('status', aliasedName, false,
+              type: DriftSqlType.string,
+              requiredDuringInsert: false,
+              defaultValue: Constant(EventStatus.confirmed.toString()))
+          .withConverter<EventStatus>($EventsTable.$converterstatus);
+  static const VerificationMeta _visibilityMeta =
+      const VerificationMeta('visibility');
+  @override
+  late final GeneratedColumnWithTypeConverter<EventVisibility, String>
+      visibility = GeneratedColumn<String>('visibility', aliasedName, false,
+              type: DriftSqlType.string,
+              requiredDuringInsert: false,
+              defaultValue: Constant(EventVisibility.normal.toString()))
+          .withConverter<EventVisibility>($EventsTable.$convertervisibility);
+  static const VerificationMeta _availabilityMeta =
+      const VerificationMeta('availability');
+  @override
+  late final GeneratedColumnWithTypeConverter<EventAvailability, String>
+      availability = GeneratedColumn<String>('availability', aliasedName, false,
+              type: DriftSqlType.string,
+              requiredDuringInsert: false,
+              defaultValue: Constant(EventAvailability.free.toString()))
+          .withConverter<EventAvailability>(
+              $EventsTable.$converteravailability);
+  static const VerificationMeta _inviteesHiddenMeta =
+      const VerificationMeta('inviteesHidden');
+  @override
+  late final GeneratedColumn<bool> inviteesHidden = GeneratedColumn<bool>(
+      'invitees_hidden', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("invitees_hidden" IN (0, 1))'),
+      defaultValue: const Constant(false));
   static const VerificationMeta _activityIdMeta =
       const VerificationMeta('activityId');
   @override
@@ -1821,8 +1860,20 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
                   'REFERENCES activities (id)'))
           .withConverter<Uuid?>($EventsTable.$converteractivityIdn);
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, modifiedAt, name, start, end, series, response, activityId];
+  List<GeneratedColumn> get $columns => [
+        id,
+        modifiedAt,
+        name,
+        start,
+        end,
+        series,
+        response,
+        status,
+        visibility,
+        availability,
+        inviteesHidden,
+        activityId
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1861,6 +1912,15 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
           series.isAcceptableOrUnknown(data['series']!, _seriesMeta));
     }
     context.handle(_responseMeta, const VerificationResult.success());
+    context.handle(_statusMeta, const VerificationResult.success());
+    context.handle(_visibilityMeta, const VerificationResult.success());
+    context.handle(_availabilityMeta, const VerificationResult.success());
+    if (data.containsKey('invitees_hidden')) {
+      context.handle(
+          _inviteesHiddenMeta,
+          inviteesHidden.isAcceptableOrUnknown(
+              data['invitees_hidden']!, _inviteesHiddenMeta));
+    }
     context.handle(_activityIdMeta, const VerificationResult.success());
     return context;
   }
@@ -1886,6 +1946,16 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       response: $EventsTable.$converterresponse.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}response'])!),
+      status: $EventsTable.$converterstatus.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}status'])!),
+      visibility: $EventsTable.$convertervisibility.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}visibility'])!),
+      availability: $EventsTable.$converteravailability.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}availability'])!),
+      inviteesHidden: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}invitees_hidden'])!,
       activityId: $EventsTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
@@ -1900,6 +1970,14 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
   static JsonTypeConverter2<EventResponse, String, String> $converterresponse =
       const EnumNameConverter<EventResponse>(EventResponse.values);
+  static JsonTypeConverter2<EventStatus, String, String> $converterstatus =
+      const EnumNameConverter<EventStatus>(EventStatus.values);
+  static JsonTypeConverter2<EventVisibility, String, String>
+      $convertervisibility =
+      const EnumNameConverter<EventVisibility>(EventVisibility.values);
+  static JsonTypeConverter2<EventAvailability, String, String>
+      $converteravailability =
+      const EnumNameConverter<EventAvailability>(EventAvailability.values);
   static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
   static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
@@ -1914,6 +1992,10 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   final DateTime end;
   final String? series;
   final EventResponse response;
+  final EventStatus status;
+  final EventVisibility visibility;
+  final EventAvailability availability;
+  final bool inviteesHidden;
   final Uuid? activityId;
   const EventRow(
       {required this.id,
@@ -1923,6 +2005,10 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       required this.end,
       this.series,
       required this.response,
+      required this.status,
+      required this.visibility,
+      required this.availability,
+      required this.inviteesHidden,
       this.activityId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1943,6 +2029,19 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       map['response'] =
           Variable<String>($EventsTable.$converterresponse.toSql(response));
     }
+    {
+      map['status'] =
+          Variable<String>($EventsTable.$converterstatus.toSql(status));
+    }
+    {
+      map['visibility'] =
+          Variable<String>($EventsTable.$convertervisibility.toSql(visibility));
+    }
+    {
+      map['availability'] = Variable<String>(
+          $EventsTable.$converteravailability.toSql(availability));
+    }
+    map['invitees_hidden'] = Variable<bool>(inviteesHidden);
     if (!nullToAbsent || activityId != null) {
       map['activity_id'] = Variable<Uint8List>(
           $EventsTable.$converteractivityIdn.toSql(activityId));
@@ -1960,6 +2059,10 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       series:
           series == null && nullToAbsent ? const Value.absent() : Value(series),
       response: Value(response),
+      status: Value(status),
+      visibility: Value(visibility),
+      availability: Value(availability),
+      inviteesHidden: Value(inviteesHidden),
       activityId: activityId == null && nullToAbsent
           ? const Value.absent()
           : Value(activityId),
@@ -1978,6 +2081,13 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       series: serializer.fromJson<String?>(json['series']),
       response: $EventsTable.$converterresponse
           .fromJson(serializer.fromJson<String>(json['response'])),
+      status: $EventsTable.$converterstatus
+          .fromJson(serializer.fromJson<String>(json['status'])),
+      visibility: $EventsTable.$convertervisibility
+          .fromJson(serializer.fromJson<String>(json['visibility'])),
+      availability: $EventsTable.$converteravailability
+          .fromJson(serializer.fromJson<String>(json['availability'])),
+      inviteesHidden: serializer.fromJson<bool>(json['invitees_hidden']),
       activityId: serializer.fromJson<Uuid?>(json['activity_id']),
     );
   }
@@ -1993,6 +2103,13 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       'series': serializer.toJson<String?>(series),
       'response': serializer
           .toJson<String>($EventsTable.$converterresponse.toJson(response)),
+      'status': serializer
+          .toJson<String>($EventsTable.$converterstatus.toJson(status)),
+      'visibility': serializer
+          .toJson<String>($EventsTable.$convertervisibility.toJson(visibility)),
+      'availability': serializer.toJson<String>(
+          $EventsTable.$converteravailability.toJson(availability)),
+      'invitees_hidden': serializer.toJson<bool>(inviteesHidden),
       'activity_id': serializer.toJson<Uuid?>(activityId),
     };
   }
@@ -2005,6 +2122,10 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           DateTime? end,
           Value<String?> series = const Value.absent(),
           EventResponse? response,
+          EventStatus? status,
+          EventVisibility? visibility,
+          EventAvailability? availability,
+          bool? inviteesHidden,
           Value<Uuid?> activityId = const Value.absent()}) =>
       EventRow(
         id: id ?? this.id,
@@ -2014,6 +2135,10 @@ class EventRow extends DataClass implements Insertable<EventRow> {
         end: end ?? this.end,
         series: series.present ? series.value : this.series,
         response: response ?? this.response,
+        status: status ?? this.status,
+        visibility: visibility ?? this.visibility,
+        availability: availability ?? this.availability,
+        inviteesHidden: inviteesHidden ?? this.inviteesHidden,
         activityId: activityId.present ? activityId.value : this.activityId,
       );
   EventRow copyWithCompanion(EventsCompanion data) {
@@ -2026,6 +2151,15 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       end: data.end.present ? data.end.value : this.end,
       series: data.series.present ? data.series.value : this.series,
       response: data.response.present ? data.response.value : this.response,
+      status: data.status.present ? data.status.value : this.status,
+      visibility:
+          data.visibility.present ? data.visibility.value : this.visibility,
+      availability: data.availability.present
+          ? data.availability.value
+          : this.availability,
+      inviteesHidden: data.inviteesHidden.present
+          ? data.inviteesHidden.value
+          : this.inviteesHidden,
       activityId:
           data.activityId.present ? data.activityId.value : this.activityId,
     );
@@ -2041,14 +2175,18 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           ..write('end: $end, ')
           ..write('series: $series, ')
           ..write('response: $response, ')
+          ..write('status: $status, ')
+          ..write('visibility: $visibility, ')
+          ..write('availability: $availability, ')
+          ..write('inviteesHidden: $inviteesHidden, ')
           ..write('activityId: $activityId')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, modifiedAt, name, start, end, series, response, activityId);
+  int get hashCode => Object.hash(id, modifiedAt, name, start, end, series,
+      response, status, visibility, availability, inviteesHidden, activityId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2060,6 +2198,10 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           other.end == this.end &&
           other.series == this.series &&
           other.response == this.response &&
+          other.status == this.status &&
+          other.visibility == this.visibility &&
+          other.availability == this.availability &&
+          other.inviteesHidden == this.inviteesHidden &&
           other.activityId == this.activityId);
 }
 
@@ -2071,6 +2213,10 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   final Value<DateTime> end;
   final Value<String?> series;
   final Value<EventResponse> response;
+  final Value<EventStatus> status;
+  final Value<EventVisibility> visibility;
+  final Value<EventAvailability> availability;
+  final Value<bool> inviteesHidden;
   final Value<Uuid?> activityId;
   final Value<int> rowid;
   const EventsCompanion({
@@ -2081,6 +2227,10 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     this.end = const Value.absent(),
     this.series = const Value.absent(),
     this.response = const Value.absent(),
+    this.status = const Value.absent(),
+    this.visibility = const Value.absent(),
+    this.availability = const Value.absent(),
+    this.inviteesHidden = const Value.absent(),
     this.activityId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -2091,12 +2241,15 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     required DateTime start,
     required DateTime end,
     this.series = const Value.absent(),
-    required EventResponse response,
+    this.response = const Value.absent(),
+    this.status = const Value.absent(),
+    this.visibility = const Value.absent(),
+    this.availability = const Value.absent(),
+    this.inviteesHidden = const Value.absent(),
     this.activityId = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : start = Value(start),
-        end = Value(end),
-        response = Value(response);
+        end = Value(end);
   static Insertable<EventRow> custom({
     Expression<Uint8List>? id,
     Expression<DateTime>? modifiedAt,
@@ -2105,6 +2258,10 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     Expression<DateTime>? end,
     Expression<String>? series,
     Expression<String>? response,
+    Expression<String>? status,
+    Expression<String>? visibility,
+    Expression<String>? availability,
+    Expression<bool>? inviteesHidden,
     Expression<Uint8List>? activityId,
     Expression<int>? rowid,
   }) {
@@ -2116,6 +2273,10 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       if (end != null) 'end': end,
       if (series != null) 'series': series,
       if (response != null) 'response': response,
+      if (status != null) 'status': status,
+      if (visibility != null) 'visibility': visibility,
+      if (availability != null) 'availability': availability,
+      if (inviteesHidden != null) 'invitees_hidden': inviteesHidden,
       if (activityId != null) 'activity_id': activityId,
       if (rowid != null) 'rowid': rowid,
     });
@@ -2129,6 +2290,10 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       Value<DateTime>? end,
       Value<String?>? series,
       Value<EventResponse>? response,
+      Value<EventStatus>? status,
+      Value<EventVisibility>? visibility,
+      Value<EventAvailability>? availability,
+      Value<bool>? inviteesHidden,
       Value<Uuid?>? activityId,
       Value<int>? rowid}) {
     return EventsCompanion(
@@ -2139,6 +2304,10 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       end: end ?? this.end,
       series: series ?? this.series,
       response: response ?? this.response,
+      status: status ?? this.status,
+      visibility: visibility ?? this.visibility,
+      availability: availability ?? this.availability,
+      inviteesHidden: inviteesHidden ?? this.inviteesHidden,
       activityId: activityId ?? this.activityId,
       rowid: rowid ?? this.rowid,
     );
@@ -2170,6 +2339,21 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       map['response'] = Variable<String>(
           $EventsTable.$converterresponse.toSql(response.value));
     }
+    if (status.present) {
+      map['status'] =
+          Variable<String>($EventsTable.$converterstatus.toSql(status.value));
+    }
+    if (visibility.present) {
+      map['visibility'] = Variable<String>(
+          $EventsTable.$convertervisibility.toSql(visibility.value));
+    }
+    if (availability.present) {
+      map['availability'] = Variable<String>(
+          $EventsTable.$converteravailability.toSql(availability.value));
+    }
+    if (inviteesHidden.present) {
+      map['invitees_hidden'] = Variable<bool>(inviteesHidden.value);
+    }
     if (activityId.present) {
       map['activity_id'] = Variable<Uint8List>(
           $EventsTable.$converteractivityIdn.toSql(activityId.value));
@@ -2190,6 +2374,10 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
           ..write('end: $end, ')
           ..write('series: $series, ')
           ..write('response: $response, ')
+          ..write('status: $status, ')
+          ..write('visibility: $visibility, ')
+          ..write('availability: $availability, ')
+          ..write('inviteesHidden: $inviteesHidden, ')
           ..write('activityId: $activityId, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -4504,7 +4692,11 @@ typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
   required DateTime start,
   required DateTime end,
   Value<String?> series,
-  required EventResponse response,
+  Value<EventResponse> response,
+  Value<EventStatus> status,
+  Value<EventVisibility> visibility,
+  Value<EventAvailability> availability,
+  Value<bool> inviteesHidden,
   Value<Uuid?> activityId,
   Value<int> rowid,
 });
@@ -4516,6 +4708,10 @@ typedef $$EventsTableUpdateCompanionBuilder = EventsCompanion Function({
   Value<DateTime> end,
   Value<String?> series,
   Value<EventResponse> response,
+  Value<EventStatus> status,
+  Value<EventVisibility> visibility,
+  Value<EventAvailability> availability,
+  Value<bool> inviteesHidden,
   Value<Uuid?> activityId,
   Value<int> rowid,
 });
@@ -4581,6 +4777,32 @@ class $$EventsTableFilterComposer
               column,
               joinBuilders: joinBuilders));
 
+  ColumnWithTypeConverterFilters<EventStatus, EventStatus, String> get status =>
+      $state.composableBuilder(
+          column: $state.table.status,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
+
+  ColumnWithTypeConverterFilters<EventVisibility, EventVisibility, String>
+      get visibility => $state.composableBuilder(
+          column: $state.table.visibility,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
+
+  ColumnWithTypeConverterFilters<EventAvailability, EventAvailability, String>
+      get availability => $state.composableBuilder(
+          column: $state.table.availability,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
+
+  ColumnFilters<bool> get inviteesHidden => $state.composableBuilder(
+      column: $state.table.inviteesHidden,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
   $$ActivitiesTableFilterComposer get activityId {
     final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
         composer: this,
@@ -4632,6 +4854,26 @@ class $$EventsTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
+  ColumnOrderings<String> get status => $state.composableBuilder(
+      column: $state.table.status,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<String> get visibility => $state.composableBuilder(
+      column: $state.table.visibility,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<String> get availability => $state.composableBuilder(
+      column: $state.table.availability,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<bool> get inviteesHidden => $state.composableBuilder(
+      column: $state.table.inviteesHidden,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
   $$ActivitiesTableOrderingComposer get activityId {
     final $$ActivitiesTableOrderingComposer composer = $state.composerBuilder(
         composer: this,
@@ -4672,6 +4914,10 @@ class $$EventsTableTableManager extends RootTableManager<
             Value<DateTime> end = const Value.absent(),
             Value<String?> series = const Value.absent(),
             Value<EventResponse> response = const Value.absent(),
+            Value<EventStatus> status = const Value.absent(),
+            Value<EventVisibility> visibility = const Value.absent(),
+            Value<EventAvailability> availability = const Value.absent(),
+            Value<bool> inviteesHidden = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
@@ -4683,6 +4929,10 @@ class $$EventsTableTableManager extends RootTableManager<
             end: end,
             series: series,
             response: response,
+            status: status,
+            visibility: visibility,
+            availability: availability,
+            inviteesHidden: inviteesHidden,
             activityId: activityId,
             rowid: rowid,
           ),
@@ -4693,7 +4943,11 @@ class $$EventsTableTableManager extends RootTableManager<
             required DateTime start,
             required DateTime end,
             Value<String?> series = const Value.absent(),
-            required EventResponse response,
+            Value<EventResponse> response = const Value.absent(),
+            Value<EventStatus> status = const Value.absent(),
+            Value<EventVisibility> visibility = const Value.absent(),
+            Value<EventAvailability> availability = const Value.absent(),
+            Value<bool> inviteesHidden = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
@@ -4705,6 +4959,10 @@ class $$EventsTableTableManager extends RootTableManager<
             end: end,
             series: series,
             response: response,
+            status: status,
+            visibility: visibility,
+            availability: availability,
+            inviteesHidden: inviteesHidden,
             activityId: activityId,
             rowid: rowid,
           ),

@@ -2,6 +2,12 @@ part of 'store.dart';
 
 enum EventResponse { accepted, declined, tentative }
 
+enum EventStatus { confirmed, cancelled, tentative }
+
+enum EventVisibility { normal, private, confidential, public, personal }
+
+enum EventAvailability { busy, away, focus, free, location }
+
 typedef EventId = Uuid;
 
 @DataClassName('EventRow')
@@ -10,7 +16,16 @@ class Events extends UuidStoreTable {
   DateTimeColumn get start => dateTime()();
   DateTimeColumn get end => dateTime()();
   TextColumn get series => text().nullable()();
-  TextColumn get response => textEnum<EventResponse>()();
+  TextColumn get response => textEnum<EventResponse>()
+      .withDefault(Constant(EventResponse.accepted.toString()))();
+  TextColumn get status => textEnum<EventStatus>()
+      .withDefault(Constant(EventStatus.confirmed.toString()))();
+  TextColumn get visibility => textEnum<EventVisibility>()
+      .withDefault(Constant(EventVisibility.normal.toString()))();
+  TextColumn get availability => textEnum<EventAvailability>()
+      .withDefault(Constant(EventAvailability.free.toString()))();
+  BoolColumn get inviteesHidden =>
+      boolean().withDefault(const Constant(false))();
   BlobColumn get activityId => blob()
       .nullable()
       .map(const UuidConverter())
@@ -18,7 +33,7 @@ class Events extends UuidStoreTable {
 }
 
 class EventsBase extends BaseTable {
-  EventsBase() : super(table: 'event_x', name: 'events');
+  EventsBase() : super(table: 'event_x', name: 'events', upsertAsInsert: true);
 
   @override
   Map<String, dynamic> toBase(DataClass row) {
@@ -26,6 +41,9 @@ class EventsBase extends BaseTable {
     final range = DateTimeRange(DateTime.parse(json['start'] as String),
         DateTime.parse(json['end'] as String));
     json['at'] = range.toDb();
+    json['user_id'] = base.auth.currentUser!.id;
+    json.remove('start');
+    json.remove('end');
     return json;
   }
 
@@ -35,13 +53,6 @@ class EventsBase extends BaseTable {
     json['start'] = range.start.toDb();
     json['end'] = range.end.toDb();
     return EventRow.fromJson(json);
-  }
-
-  @override
-  Future<void> put(Iterable<Map<String, dynamic>> rows) async {
-    // Upsert isn't supported on views because they don't have uniqueness
-    // constraints. Insert is overridden to upsert.
-    await base.from(table).insert(rows.toList());
   }
 }
 
@@ -89,6 +100,10 @@ class Event extends EventRow {
       {required DateTimeRange at,
       super.name,
       super.response = EventResponse.accepted,
+      super.status = EventStatus.confirmed,
+      super.visibility = EventVisibility.normal,
+      super.availability = EventAvailability.free,
+      super.inviteesHidden = false,
       this.activity})
       : super(
           id: Uuid.generate(),
@@ -107,6 +122,10 @@ class Event extends EventRow {
           end: row.end,
           series: row.series,
           response: row.response,
+          status: row.status,
+          visibility: row.visibility,
+          availability: row.availability,
+          inviteesHidden: row.inviteesHidden,
           activityId: activity?.id ?? row.activityId,
         );
 
@@ -120,6 +139,10 @@ class Event extends EventRow {
     DateTime? end,
     Value<String?> name = const Value.absent(),
     EventResponse? response,
+    EventStatus? status,
+    EventVisibility? visibility,
+    EventAvailability? availability,
+    bool? inviteesHidden,
     Value<String?> series = const Value.absent(),
   }) {
     return Event.fromStore(
@@ -130,6 +153,9 @@ class Event extends EventRow {
         end: end,
         name: name,
         response: response,
+        status: status,
+        visibility: visibility,
+        inviteesHidden: inviteesHidden,
         series: series,
       ),
       activity: activity.present ? activity.value : null,

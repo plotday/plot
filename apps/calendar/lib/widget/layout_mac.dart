@@ -7,6 +7,7 @@ import 'package:plot/state/schedule.dart';
 import 'package:plot/router.dart';
 import 'activity_nav.dart';
 import 'scroll_context.dart';
+import 'package:plot/widget/global_menu.dart';
 
 class MacLayout extends StatefulWidget {
   const MacLayout(this.drawer, this.primary, this.secondary, {super.key});
@@ -31,7 +32,8 @@ class MacLayoutState extends State<MacLayout> {
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, state) {
-        return MacosWindow(
+        return GlobalMenu(
+            child: MacosWindow(
           child: MacosScaffold(
             toolBar: ToolBar(
               title: const ActivityNav(),
@@ -77,7 +79,7 @@ class MacLayoutState extends State<MacLayout> {
                 ),
             ],
           ),
-        );
+        ));
       },
     );
   }

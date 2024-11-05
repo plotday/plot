@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:rxdart/rxdart.dart';
@@ -54,6 +56,7 @@ abstract class BaseTable {
     required this.table,
     this.order = 'modified_at',
     this.ascending = true,
+    this.upsertAsInsert = false,
     String? name,
     this.limit,
   }) : name = name ?? "${table}s";
@@ -63,6 +66,7 @@ abstract class BaseTable {
   final String order;
   final bool ascending;
   final int? limit;
+  final bool upsertAsInsert;
 
   Insertable<DataClass> fromBase(Map<String, dynamic> json);
   Map<String, dynamic> toBase(DataClass row) => row.toJson();
@@ -92,7 +96,13 @@ abstract class BaseTable {
   }
 
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
-    await base.from(table).upsert(rows.toList());
+    if (upsertAsInsert) {
+      // Upsert isn't supported on views because they don't have uniqueness
+      // constraints. Insert is overridden to upsert.
+      await base.from(table).insert(rows.toList());
+    } else {
+      await base.from(table).upsert(rows.toList());
+    }
   }
 }
 
@@ -168,7 +178,7 @@ class Store extends _$Store {
     }
     storeQuery.orderBy([(t) => OrderingTerm(expression: t.modifiedAt)]);
     final storeRows = await storeQuery.get();
-    await baseTable.put(storeRows.map((row) => row.toJson()));
+    await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
     final now = DateTime.now();
     if (storeRows.isNotEmpty) {
       await into(syncStates).insert(
@@ -242,18 +252,20 @@ class Store extends _$Store {
   Store._() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 5;
 
-  // @override
-  // MigrationStrategy get migration {
-  //   return MigrationStrategy(beforeOpen: (openingDetails) async {
-  //     final m = createMigrator(); // changed to this
-  //     for (final table in allTables) {
-  //       await m.deleteTable(table.actualTableName);
-  //       await m.createTable(table);
-  //     }
-  //   });
-  // }
+  @override
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onUpgrade: (Migrator m, int from, int to) async {
+        final m = createMigrator(); // changed to this
+        for (final table in allTables) {
+          await m.deleteTable(table.actualTableName);
+          await m.createTable(table);
+        }
+      },
+    );
+  }
 
   static QueryExecutor _openConnection() {
     return driftDatabase(name: 'plot');

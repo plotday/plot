@@ -18,18 +18,12 @@ class Activities extends UuidStoreTable {
 }
 
 class ContextsBase extends BaseTable {
-  ContextsBase() : super(table: 'activity_x', name: "activities");
+  ContextsBase()
+      : super(table: 'activity_x', name: "activities", upsertAsInsert: true);
 
   @override
   Insertable<ActivityRow> fromBase(Map<String, dynamic> json) =>
       ActivityRow.fromJson(json);
-
-  @override
-  Future<void> put(Iterable<Map<String, dynamic>> rows) async {
-    // Upsert isn't supported on views because they don't have uniqueness
-    // constraints. Insert is overridden to upsert.
-    await base.from(table).insert(rows.toList());
-  }
 }
 
 class Activity extends ActivityRow implements Comparable<Activity> {

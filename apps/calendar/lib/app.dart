@@ -9,7 +9,6 @@ import 'package:macos_ui/macos_ui.dart' as macos;
 import 'widget/layout.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/router.dart';
-import 'package:plot/widget/global_menu.dart';
 import 'package:plot/widget/spinner.dart';
 
 class App extends StatefulWidget {
@@ -47,41 +46,39 @@ class AppState extends State<App> with WidgetsBindingObserver {
         if (!snapshot.hasData) {
           return const Center(child: Spinner());
         }
-        return GlobalMenu(
-          child: BlocProvider<UserBloc>(
-            create: (_) => UserBloc(),
-            child: BlocListener<UserBloc, UserState>(
-              listener: (context, state) {
-                snapshot.data?.refresh();
-              },
-              child: PlatformBuilder(
-                builder: (context) => AdaptiveTheme(
-                  light: material.ThemeData(
-                    colorScheme: material.ColorScheme.fromSeed(
-                      seedColor: const Color(0x002BDD66),
-                      brightness: material.Brightness.light,
-                    ),
-                  ),
-                  dark: material.ThemeData(
-                    colorScheme: material.ColorScheme.fromSeed(
-                      seedColor: const Color(0x002BDD66),
-                      brightness: material.Brightness.dark,
-                    ),
-                  ),
-                  debugShowFloatingThemeButton: true,
-                  initial: AdaptiveThemeMode.system,
-                  builder: (theme, darkTheme) => material.MaterialApp.router(
-                    title: 'Plot',
-                    theme: theme,
-                    darkTheme: darkTheme,
-                    routerConfig: snapshot.data,
+        return BlocProvider<UserBloc>(
+          create: (_) => UserBloc(),
+          child: BlocListener<UserBloc, UserState>(
+            listener: (context, state) {
+              snapshot.data?.refresh();
+            },
+            child: PlatformBuilder(
+              builder: (context) => AdaptiveTheme(
+                light: material.ThemeData(
+                  colorScheme: material.ColorScheme.fromSeed(
+                    seedColor: const Color(0x002BDD66),
+                    brightness: material.Brightness.light,
                   ),
                 ),
-                macOSBuilder: (context) => macos.MacosApp.router(
+                dark: material.ThemeData(
+                  colorScheme: material.ColorScheme.fromSeed(
+                    seedColor: const Color(0x002BDD66),
+                    brightness: material.Brightness.dark,
+                  ),
+                ),
+                debugShowFloatingThemeButton: true,
+                initial: AdaptiveThemeMode.system,
+                builder: (theme, darkTheme) => material.MaterialApp.router(
                   title: 'Plot',
-                  debugShowCheckedModeBanner: false,
+                  theme: theme,
+                  darkTheme: darkTheme,
                   routerConfig: snapshot.data,
                 ),
+              ),
+              macOSBuilder: (context) => macos.MacosApp.router(
+                title: 'Plot',
+                debugShowCheckedModeBanner: false,
+                routerConfig: snapshot.data,
               ),
             ),
           ),

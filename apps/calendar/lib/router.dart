@@ -45,6 +45,8 @@ abstract class Route extends GoRouteData with EquatableMixin {
 class LoginRoute extends Route {
   static const path = '/login';
 
+  const LoginRoute();
+
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
       const SignInPage();
@@ -60,8 +62,9 @@ class SettingsRoute extends Route {
   const SettingsRoute();
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const AccountPage();
+  Widget buildAdaptive(BuildContext context, GoRouterState state) {
+    return const AccountPage();
+  }
 
   @override
   List<Object?> get props => [];
