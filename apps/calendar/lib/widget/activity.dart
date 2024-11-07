@@ -6,8 +6,8 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/router.dart';
 
-class PriorityWidget extends StatelessWidget {
-  const PriorityWidget({required this.context, this.balance, super.key});
+class ActivityWidget extends StatelessWidget {
+  const ActivityWidget({required this.context, this.balance, super.key});
   final Activity context;
   final Balance? balance;
 

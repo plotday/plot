@@ -6,7 +6,7 @@ import 'package:plot/widget/reorderable_list_view.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/widget/priority.dart';
+import 'package:plot/widget/activity.dart';
 import 'package:plot/widget/note.dart';
 import 'package:plot/widget/bidirectional_list.dart';
 
@@ -23,10 +23,37 @@ class ActivityPage extends StatelessWidget {
         builder: (context, index) => NoteWidget(note: state.notes[index]),
         header: Column(
           children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Activity'),
+                  Row(
+                    children: [
+                      if (state.current != null)
+                        Button(
+                            onTap: () {
+                              ActivityEditRoute.byId(state.current!.id)
+                                  .go(context);
+                            },
+                            child: const Text('Edit')),
+                      if (state.current != null) const SizedBox(width: 8),
+                      Button(
+                        onTap: () {
+                          ActivityAddRoute.byId(state.current?.id).go(context);
+                        },
+                        child: const Text('+'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
             ReorderableListView(
               list: state.children,
               itemBuilder: (buildContext, item) =>
-                  PriorityWidget(context: item),
+                  ActivityWidget(context: item),
               shrinkWrap: true,
               onReorder: (int oldIndex, int newIndex) async {
                 var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
@@ -44,26 +71,24 @@ class ActivityPage extends StatelessWidget {
                 )).save();
               },
             ),
-            if (state.current != null)
-              Button(
-                  onTap: () {
-                    ActivityEditRoute.byId(state.current!.id).go(context);
-                  },
-                  child: const Text('Edit Activity')),
-            Button(
-                onTap: () {
-                  ActivityAddRoute.byId(state.current?.id).go(context);
-                },
-                child: const Text('Add an Activity')),
-            Button(
-                onTap: () {
-                  if (state.current == null) {
-                    HomeRoute().go(context);
-                  } else {
-                    ActivityRoute.byId(state.current!.id).go(context);
-                  }
-                },
-                child: const Text('Add a Topic')),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Notes'),
+                  Button(
+                      onTap: () {
+                        if (state.current == null) {
+                          HomeRoute().go(context);
+                        } else {
+                          ActivityRoute.byId(state.current!.id).go(context);
+                        }
+                      },
+                      child: const Text('+')),
+                ],
+              ),
+            ),
             ReorderableListView(
               list: state.pinnedNotes,
               itemBuilder: (buildContext, item) => NoteWidget(note: item),
