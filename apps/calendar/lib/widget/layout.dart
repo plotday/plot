@@ -67,25 +67,25 @@ final class FullPageLayout extends Layout {
 }
 
 final class AdaptiveLayout extends Layout {
-  const AdaptiveLayout(this.first, this.second, this.third, {super.key});
+  const AdaptiveLayout(this.left, this.main, this.right, {super.key});
 
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
       macOSBuilder: (_) => MacLayout(
-        first,
-        second,
-        third,
+        left,
+        main,
+        right,
       ),
       builder: (_) => MaterialLayout(
-        drawer: first,
-        primary: second,
-        secondary: third,
+        drawer: left,
+        primary: main,
+        secondary: right,
       ),
     );
   }
 
-  final Widget first;
-  final Widget second;
-  final Widget third;
+  final Widget left;
+  final Widget main;
+  final Widget right;
 }

@@ -33,7 +33,7 @@ class Events extends UuidStoreTable {
 }
 
 class EventsBase extends BaseTable {
-  EventsBase() : super(table: 'event_x', name: 'events', upsertAsInsert: true);
+  EventsBase() : super(table: 'event_x', name: 'events', upsertAsUpdate: true);
 
   @override
   Map<String, dynamic> toBase(DataClass row) {

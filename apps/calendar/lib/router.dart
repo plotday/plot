@@ -279,9 +279,9 @@ class _TripleRoutes extends ShellRouteData {
   @override
   Widget builder(BuildContext context, GoRouterState state, Widget child) {
     return AdaptiveLayout(
-      const SchedulePage(),
       const ActivityPage(),
       child,
+      const SchedulePage(),
     );
   }
 }

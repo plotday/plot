@@ -19,7 +19,7 @@ class Activities extends UuidStoreTable {
 
 class ContextsBase extends BaseTable {
   ContextsBase()
-      : super(table: 'activity_x', name: "activities", upsertAsInsert: true);
+      : super(table: 'activity_x', name: "activities", upsertAsUpdate: true);
 
   @override
   Insertable<ActivityRow> fromBase(Map<String, dynamic> json) =>

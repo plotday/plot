@@ -12,6 +12,13 @@ class AccountsBase extends BaseTable {
   AccountsBase() : super(table: 'account');
 
   @override
+  Map<String, dynamic> toBase(DataClass row) {
+    final json = super.toBase(row);
+    json.remove('provider');
+    return json;
+  }
+
+  @override
   Insertable<AccountRow> fromBase(Map<String, dynamic> json) {
     json['provider'] = json['credentials']['provider'];
     return AccountRow.fromJson(json);

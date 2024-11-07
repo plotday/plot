@@ -10,16 +10,16 @@ import 'scroll_context.dart';
 import 'package:plot/widget/global_menu.dart';
 
 class MacLayout extends StatefulWidget {
-  const MacLayout(this.drawer, this.primary, this.secondary, {super.key});
+  const MacLayout(this.left, this.main, this.right, {super.key});
 
   @override
   State<MacLayout> createState() {
     return MacLayoutState();
   }
 
-  final Widget primary;
-  final Widget? secondary;
-  final Widget drawer;
+  final Widget main;
+  final Widget? right;
+  final Widget left;
 }
 
 class MacLayoutState extends State<MacLayout> {
@@ -52,7 +52,7 @@ class MacLayoutState extends State<MacLayout> {
               ResizablePane(
                 builder: (context, scrollController) => ScrollControllerContext(
                   controller: scrollController,
-                  child: widget.drawer,
+                  child: widget.left,
                 ),
                 startSize: 300,
                 minSize: 300,
@@ -62,19 +62,19 @@ class MacLayoutState extends State<MacLayout> {
               ResizablePane(
                 builder: (context, scrollController) => ScrollControllerContext(
                   controller: scrollController,
-                  child: widget.primary,
+                  child: widget.main,
                 ),
                 startSize: 300,
                 minSize: 300,
                 maxSize: 400,
                 resizableSide: ResizableSide.right,
               ),
-              if (widget.secondary != null)
+              if (widget.right != null)
                 ContentArea(
                   builder: (context, scrollController) =>
                       ScrollControllerContext(
                     controller: scrollController,
-                    child: widget.secondary!,
+                    child: widget.right!,
                   ),
                 ),
             ],

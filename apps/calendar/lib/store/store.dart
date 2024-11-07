@@ -56,7 +56,7 @@ abstract class BaseTable {
     required this.table,
     this.order = 'modified_at',
     this.ascending = true,
-    this.upsertAsInsert = false,
+    this.upsertAsUpdate = false,
     String? name,
     this.limit,
   }) : name = name ?? "${table}s";
@@ -66,7 +66,7 @@ abstract class BaseTable {
   final String order;
   final bool ascending;
   final int? limit;
-  final bool upsertAsInsert;
+  final bool upsertAsUpdate;
 
   Insertable<DataClass> fromBase(Map<String, dynamic> json);
   Map<String, dynamic> toBase(DataClass row) => row.toJson();
@@ -96,10 +96,14 @@ abstract class BaseTable {
   }
 
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
-    if (upsertAsInsert) {
-      // Upsert isn't supported on views because they don't have uniqueness
-      // constraints. Insert is overridden to upsert.
-      await base.from(table).insert(rows.toList());
+    if (rows.isEmpty) return;
+    final id = rows.first['id'];
+    if (id is int || upsertAsUpdate) {
+      for (final row in rows) {
+        final id = row['id'] as Object;
+        final rest = Map<String, dynamic>.from(row)..remove('id');
+        await base.from(table).update(rest).eq('id', id);
+      }
     } else {
       await base.from(table).upsert(rows.toList());
     }
@@ -145,6 +149,7 @@ class Store extends _$Store {
         batch.insertAllOnConflictUpdate(table, data);
       });
     } catch (e) {
+      print("Error saving ${toString()}");
       print(e);
       rethrow;
     }
@@ -178,19 +183,26 @@ class Store extends _$Store {
     }
     storeQuery.orderBy([(t) => OrderingTerm(expression: t.modifiedAt)]);
     final storeRows = await storeQuery.get();
-    await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
+    try {
+      await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
+    } catch (e) {
+      print("Error saving to ${table.actualTableName}");
+      print(e);
+      rethrow;
+    }
     final now = DateTime.now();
     if (storeRows.isNotEmpty) {
       await into(syncStates).insert(
-          SyncStatesCompanion.insert(
-            entity: entity,
-            pushedAt: Value(now),
-            lastPulled: const Value(null),
-          ),
-          onConflict: DoUpdate(
-            (old) => SyncStatesCompanion(
-                entity: Value(entity), pushedAt: Value(now)),
-          ));
+        SyncStatesCompanion.insert(
+          entity: entity,
+          pushedAt: Value(now),
+          lastPulled: const Value(null),
+        ),
+        onConflict: DoUpdate(
+          (old) =>
+              SyncStatesCompanion(entity: Value(entity), pushedAt: Value(now)),
+        ),
+      );
     }
   }
 
