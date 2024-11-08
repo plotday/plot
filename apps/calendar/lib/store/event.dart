@@ -77,15 +77,16 @@ class Event extends EventRow {
         .watch()
         .map((rows) => rows.map((row) => Event.fromStore(row)).toList());
     if (withActivity) {
-      return Rx.combineLatest2(
-          eventStream,
-          Activity.watch(),
-          (List<Event> events, Map<Uuid, Activity> activities) => events
-              .map((event) => Event.fromStore(event,
-                  activity: event.activityId == null
-                      ? null
-                      : activities[event.activityId]))
-              .toList());
+      return Rx.combineLatest2(eventStream, Activity.watch(),
+          (List<Event> events, Map<Uuid, Activity> activities) {
+        final ret = events
+            .map((event) => Event.fromStore(event,
+                activity: event.activityId == null
+                    ? null
+                    : activities[event.activityId]))
+            .toList();
+        return ret;
+      });
     }
     return eventStream;
   }
@@ -173,16 +174,18 @@ class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> watch(DateRange range) {
     return Event.watch(range, withActivity: true).map((events) {
       var (start, end) = range.bounds;
+
       final direction =
           start < end ? TimeDirection.ascending : TimeDirection.descending;
       Map<Date, ScheduledDay> days = {};
-      List<Event> dayEvents = [];
       Iterator<Event> eventIterator = events.iterator;
+      bool hasMore = eventIterator.moveNext();
 
       while (start != end) {
-        while (eventIterator.moveNext() &&
-            eventIterator.current.start.toDate() == start) {
+        List<Event> dayEvents = [];
+        while (hasMore && eventIterator.current.start.toDate() == start) {
           dayEvents.add(eventIterator.current);
+          hasMore = eventIterator.moveNext();
         }
         days[start] = ScheduledDay(start, dayEvents);
         start = start.next(direction: direction);
