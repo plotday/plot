@@ -27,7 +27,7 @@ CREATE OR REPLACE FUNCTION calc_all_day (at tstzrange)
 DECLARE
     seconds integer = calc_seconds (at);
 BEGIN
-    RETURN seconds >= 60 * 23;
+    RETURN seconds >= 60 * 60 * 23;
 END;
 $$;
 
