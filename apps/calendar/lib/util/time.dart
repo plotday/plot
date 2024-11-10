@@ -397,7 +397,8 @@ extension PlotDateTimeExtension on DateTime {
   }
 
   Date toDate() => Date(year, month, day);
-  TimeOfDay toTimeOfDay() => TimeOfDay(hour: hour, minute: minute);
+  TimeOfDay toTimeOfDay() =>
+      TimeOfDay(hour: toLocal().hour, minute: toLocal().minute);
   DateTime at(TimeOfDay time) =>
       DateTime(year, month, day, time.hour, time.minute);
 
