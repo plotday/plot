@@ -11,13 +11,17 @@ class Notes extends UuidStoreTable {
   RealColumn get order => real()
       .clientDefault(() => Order.first().value)
       .map(const OrderConverter())();
+  DateTimeColumn get orderedAt => dateTime().withDefault(currentDateAndTime)();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
+  BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
   BlobColumn get topicId => blob().map(const UuidConverter())();
   BlobColumn get activityId => blob()
       .nullable()
       .map(const UuidConverter())
       .references(Activities, #id)();
+  DateTimeColumn get doAt => dateTime().nullable()();
+  DateTimeColumn get doneAt => dateTime().nullable()();
 }
 
 class NotesBase extends BaseTable {
@@ -111,6 +115,8 @@ class Note extends NoteRow implements Comparable<Note> {
     required String body,
     required Order order,
     bool private = false,
+    bool pinned = false,
+    DateTime? doAt,
   }) {
     final id = Uuid.generate();
     final now = DateTime.now();
@@ -124,7 +130,10 @@ class Note extends NoteRow implements Comparable<Note> {
       modifiedAt: now,
       body: body,
       order: order,
+      orderedAt: now,
       private: private,
+      pinned: pinned,
+      doAt: doAt,
     ));
   }
 
@@ -146,7 +155,9 @@ class Note extends NoteRow implements Comparable<Note> {
       modifiedAt: now,
       body: body,
       order: order,
+      orderedAt: now,
       private: private,
+      pinned: false,
     ));
   }
 
@@ -159,10 +170,50 @@ class Note extends NoteRow implements Comparable<Note> {
           topicId: row.topicId,
           createdAt: row.createdAt,
           modifiedAt: row.modifiedAt,
+          orderedAt: row.orderedAt,
+          doAt: row.doAt,
+          doneAt: row.doneAt,
           body: row.body,
           order: row.order,
           private: row.private,
+          pinned: row.pinned,
         );
+
+  @override
+  Note copyWith(
+          {Uuid? id,
+          DateTime? modifiedAt,
+          DateTime? createdAt,
+          Uuid? userId,
+          String? body,
+          Order? order,
+          DateTime? orderedAt,
+          bool? root,
+          bool? pinned,
+          bool? private,
+          Uuid? topicId,
+          Value<Uuid?> activityId = const Value.absent(),
+          Value<DateTime?> doAt = const Value.absent(),
+          Value<DateTime?> doneAt = const Value.absent()}) =>
+      Note.fromStore(super.copyWith(
+        id: id ?? this.id,
+        modifiedAt: modifiedAt ?? this.modifiedAt,
+        createdAt: createdAt ?? this.createdAt,
+        userId: userId ?? this.userId,
+        body: body ?? this.body,
+        order: order ?? this.order,
+        orderedAt: orderedAt ??
+            ((order != null || pinned != null)
+                ? DateTime.now()
+                : this.orderedAt),
+        root: root ?? this.root,
+        pinned: pinned ?? this.pinned,
+        private: private ?? this.private,
+        topicId: topicId ?? this.topicId,
+        activityId: activityId,
+        doAt: doAt,
+        doneAt: doneAt,
+      ));
 
   Future<void> save() => Store.get.save(table, this);
 

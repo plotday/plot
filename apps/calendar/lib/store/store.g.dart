@@ -1290,6 +1290,14 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
               requiredDuringInsert: false,
               clientDefault: () => Order.first().value)
           .withConverter<Order>($NotesTable.$converterorder);
+  static const VerificationMeta _orderedAtMeta =
+      const VerificationMeta('orderedAt');
+  @override
+  late final GeneratedColumn<DateTime> orderedAt = GeneratedColumn<DateTime>(
+      'ordered_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
   static const VerificationMeta _rootMeta = const VerificationMeta('root');
   @override
   late final GeneratedColumn<bool> root = GeneratedColumn<bool>(
@@ -1298,6 +1306,15 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       requiredDuringInsert: false,
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('CHECK ("root" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _pinnedMeta = const VerificationMeta('pinned');
+  @override
+  late final GeneratedColumn<bool> pinned = GeneratedColumn<bool>(
+      'pinned', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("pinned" IN (0, 1))'),
       defaultValue: const Constant(false));
   static const VerificationMeta _privateMeta =
       const VerificationMeta('private');
@@ -1326,6 +1343,16 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
               defaultConstraints: GeneratedColumn.constraintIsAlways(
                   'REFERENCES activities (id)'))
           .withConverter<Uuid?>($NotesTable.$converteractivityIdn);
+  static const VerificationMeta _doAtMeta = const VerificationMeta('doAt');
+  @override
+  late final GeneratedColumn<DateTime> doAt = GeneratedColumn<DateTime>(
+      'do_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _doneAtMeta = const VerificationMeta('doneAt');
+  @override
+  late final GeneratedColumn<DateTime> doneAt = GeneratedColumn<DateTime>(
+      'done_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -1334,10 +1361,14 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
         userId,
         body,
         order,
+        orderedAt,
         root,
+        pinned,
         private,
         topicId,
-        activityId
+        activityId,
+        doAt,
+        doneAt
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1368,9 +1399,17 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       context.missing(_bodyMeta);
     }
     context.handle(_orderMeta, const VerificationResult.success());
+    if (data.containsKey('ordered_at')) {
+      context.handle(_orderedAtMeta,
+          orderedAt.isAcceptableOrUnknown(data['ordered_at']!, _orderedAtMeta));
+    }
     if (data.containsKey('root')) {
       context.handle(
           _rootMeta, root.isAcceptableOrUnknown(data['root']!, _rootMeta));
+    }
+    if (data.containsKey('pinned')) {
+      context.handle(_pinnedMeta,
+          pinned.isAcceptableOrUnknown(data['pinned']!, _pinnedMeta));
     }
     if (data.containsKey('private')) {
       context.handle(_privateMeta,
@@ -1378,6 +1417,14 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     }
     context.handle(_topicIdMeta, const VerificationResult.success());
     context.handle(_activityIdMeta, const VerificationResult.success());
+    if (data.containsKey('do_at')) {
+      context.handle(
+          _doAtMeta, doAt.isAcceptableOrUnknown(data['do_at']!, _doAtMeta));
+    }
+    if (data.containsKey('done_at')) {
+      context.handle(_doneAtMeta,
+          doneAt.isAcceptableOrUnknown(data['done_at']!, _doneAtMeta));
+    }
     return context;
   }
 
@@ -1399,8 +1446,12 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
           .read(DriftSqlType.string, data['${effectivePrefix}body'])!,
       order: $NotesTable.$converterorder.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.double, data['${effectivePrefix}order'])!),
+      orderedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}ordered_at'])!,
       root: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}root'])!,
+      pinned: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}pinned'])!,
       private: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}private'])!,
       topicId: $NotesTable.$convertertopicId.fromSql(attachedDatabase
@@ -1409,6 +1460,10 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       activityId: $NotesTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
+      doAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}do_at']),
+      doneAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}done_at']),
     );
   }
 
@@ -1436,10 +1491,14 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   final Uuid userId;
   final String body;
   final Order order;
+  final DateTime orderedAt;
   final bool root;
+  final bool pinned;
   final bool private;
   final Uuid topicId;
   final Uuid? activityId;
+  final DateTime? doAt;
+  final DateTime? doneAt;
   const NoteRow(
       {required this.id,
       required this.modifiedAt,
@@ -1447,10 +1506,14 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       required this.userId,
       required this.body,
       required this.order,
+      required this.orderedAt,
       required this.root,
+      required this.pinned,
       required this.private,
       required this.topicId,
-      this.activityId});
+      this.activityId,
+      this.doAt,
+      this.doneAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1467,7 +1530,9 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     {
       map['order'] = Variable<double>($NotesTable.$converterorder.toSql(order));
     }
+    map['ordered_at'] = Variable<DateTime>(orderedAt);
     map['root'] = Variable<bool>(root);
+    map['pinned'] = Variable<bool>(pinned);
     map['private'] = Variable<bool>(private);
     {
       map['topic_id'] =
@@ -1476,6 +1541,12 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     if (!nullToAbsent || activityId != null) {
       map['activity_id'] = Variable<Uint8List>(
           $NotesTable.$converteractivityIdn.toSql(activityId));
+    }
+    if (!nullToAbsent || doAt != null) {
+      map['do_at'] = Variable<DateTime>(doAt);
+    }
+    if (!nullToAbsent || doneAt != null) {
+      map['done_at'] = Variable<DateTime>(doneAt);
     }
     return map;
   }
@@ -1488,12 +1559,17 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       userId: Value(userId),
       body: Value(body),
       order: Value(order),
+      orderedAt: Value(orderedAt),
       root: Value(root),
+      pinned: Value(pinned),
       private: Value(private),
       topicId: Value(topicId),
       activityId: activityId == null && nullToAbsent
           ? const Value.absent()
           : Value(activityId),
+      doAt: doAt == null && nullToAbsent ? const Value.absent() : Value(doAt),
+      doneAt:
+          doneAt == null && nullToAbsent ? const Value.absent() : Value(doneAt),
     );
   }
 
@@ -1507,10 +1583,14 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       userId: serializer.fromJson<Uuid>(json['user_id']),
       body: serializer.fromJson<String>(json['body']),
       order: serializer.fromJson<Order>(json['order']),
+      orderedAt: serializer.fromJson<DateTime>(json['ordered_at']),
       root: serializer.fromJson<bool>(json['root']),
+      pinned: serializer.fromJson<bool>(json['pinned']),
       private: serializer.fromJson<bool>(json['private']),
       topicId: serializer.fromJson<Uuid>(json['topic_id']),
       activityId: serializer.fromJson<Uuid?>(json['activity_id']),
+      doAt: serializer.fromJson<DateTime?>(json['do_at']),
+      doneAt: serializer.fromJson<DateTime?>(json['done_at']),
     );
   }
   @override
@@ -1523,10 +1603,14 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       'user_id': serializer.toJson<Uuid>(userId),
       'body': serializer.toJson<String>(body),
       'order': serializer.toJson<Order>(order),
+      'ordered_at': serializer.toJson<DateTime>(orderedAt),
       'root': serializer.toJson<bool>(root),
+      'pinned': serializer.toJson<bool>(pinned),
       'private': serializer.toJson<bool>(private),
       'topic_id': serializer.toJson<Uuid>(topicId),
       'activity_id': serializer.toJson<Uuid?>(activityId),
+      'do_at': serializer.toJson<DateTime?>(doAt),
+      'done_at': serializer.toJson<DateTime?>(doneAt),
     };
   }
 
@@ -1537,10 +1621,14 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           Uuid? userId,
           String? body,
           Order? order,
+          DateTime? orderedAt,
           bool? root,
+          bool? pinned,
           bool? private,
           Uuid? topicId,
-          Value<Uuid?> activityId = const Value.absent()}) =>
+          Value<Uuid?> activityId = const Value.absent(),
+          Value<DateTime?> doAt = const Value.absent(),
+          Value<DateTime?> doneAt = const Value.absent()}) =>
       NoteRow(
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
@@ -1548,10 +1636,14 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
         userId: userId ?? this.userId,
         body: body ?? this.body,
         order: order ?? this.order,
+        orderedAt: orderedAt ?? this.orderedAt,
         root: root ?? this.root,
+        pinned: pinned ?? this.pinned,
         private: private ?? this.private,
         topicId: topicId ?? this.topicId,
         activityId: activityId.present ? activityId.value : this.activityId,
+        doAt: doAt.present ? doAt.value : this.doAt,
+        doneAt: doneAt.present ? doneAt.value : this.doneAt,
       );
   NoteRow copyWithCompanion(NotesCompanion data) {
     return NoteRow(
@@ -1562,11 +1654,15 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       userId: data.userId.present ? data.userId.value : this.userId,
       body: data.body.present ? data.body.value : this.body,
       order: data.order.present ? data.order.value : this.order,
+      orderedAt: data.orderedAt.present ? data.orderedAt.value : this.orderedAt,
       root: data.root.present ? data.root.value : this.root,
+      pinned: data.pinned.present ? data.pinned.value : this.pinned,
       private: data.private.present ? data.private.value : this.private,
       topicId: data.topicId.present ? data.topicId.value : this.topicId,
       activityId:
           data.activityId.present ? data.activityId.value : this.activityId,
+      doAt: data.doAt.present ? data.doAt.value : this.doAt,
+      doneAt: data.doneAt.present ? data.doneAt.value : this.doneAt,
     );
   }
 
@@ -1579,17 +1675,34 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           ..write('userId: $userId, ')
           ..write('body: $body, ')
           ..write('order: $order, ')
+          ..write('orderedAt: $orderedAt, ')
           ..write('root: $root, ')
+          ..write('pinned: $pinned, ')
           ..write('private: $private, ')
           ..write('topicId: $topicId, ')
-          ..write('activityId: $activityId')
+          ..write('activityId: $activityId, ')
+          ..write('doAt: $doAt, ')
+          ..write('doneAt: $doneAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, modifiedAt, createdAt, userId, body,
-      order, root, private, topicId, activityId);
+  int get hashCode => Object.hash(
+      id,
+      modifiedAt,
+      createdAt,
+      userId,
+      body,
+      order,
+      orderedAt,
+      root,
+      pinned,
+      private,
+      topicId,
+      activityId,
+      doAt,
+      doneAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1600,10 +1713,14 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           other.userId == this.userId &&
           other.body == this.body &&
           other.order == this.order &&
+          other.orderedAt == this.orderedAt &&
           other.root == this.root &&
+          other.pinned == this.pinned &&
           other.private == this.private &&
           other.topicId == this.topicId &&
-          other.activityId == this.activityId);
+          other.activityId == this.activityId &&
+          other.doAt == this.doAt &&
+          other.doneAt == this.doneAt);
 }
 
 class NotesCompanion extends UpdateCompanion<NoteRow> {
@@ -1613,10 +1730,14 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   final Value<Uuid> userId;
   final Value<String> body;
   final Value<Order> order;
+  final Value<DateTime> orderedAt;
   final Value<bool> root;
+  final Value<bool> pinned;
   final Value<bool> private;
   final Value<Uuid> topicId;
   final Value<Uuid?> activityId;
+  final Value<DateTime?> doAt;
+  final Value<DateTime?> doneAt;
   final Value<int> rowid;
   const NotesCompanion({
     this.id = const Value.absent(),
@@ -1625,10 +1746,14 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     this.userId = const Value.absent(),
     this.body = const Value.absent(),
     this.order = const Value.absent(),
+    this.orderedAt = const Value.absent(),
     this.root = const Value.absent(),
+    this.pinned = const Value.absent(),
     this.private = const Value.absent(),
     this.topicId = const Value.absent(),
     this.activityId = const Value.absent(),
+    this.doAt = const Value.absent(),
+    this.doneAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   NotesCompanion.insert({
@@ -1638,10 +1763,14 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     this.userId = const Value.absent(),
     required String body,
     this.order = const Value.absent(),
+    this.orderedAt = const Value.absent(),
     this.root = const Value.absent(),
+    this.pinned = const Value.absent(),
     this.private = const Value.absent(),
     required Uuid topicId,
     this.activityId = const Value.absent(),
+    this.doAt = const Value.absent(),
+    this.doneAt = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : body = Value(body),
         topicId = Value(topicId);
@@ -1652,10 +1781,14 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     Expression<Uint8List>? userId,
     Expression<String>? body,
     Expression<double>? order,
+    Expression<DateTime>? orderedAt,
     Expression<bool>? root,
+    Expression<bool>? pinned,
     Expression<bool>? private,
     Expression<Uint8List>? topicId,
     Expression<Uint8List>? activityId,
+    Expression<DateTime>? doAt,
+    Expression<DateTime>? doneAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1665,10 +1798,14 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       if (userId != null) 'user_id': userId,
       if (body != null) 'body': body,
       if (order != null) 'order': order,
+      if (orderedAt != null) 'ordered_at': orderedAt,
       if (root != null) 'root': root,
+      if (pinned != null) 'pinned': pinned,
       if (private != null) 'private': private,
       if (topicId != null) 'topic_id': topicId,
       if (activityId != null) 'activity_id': activityId,
+      if (doAt != null) 'do_at': doAt,
+      if (doneAt != null) 'done_at': doneAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1680,10 +1817,14 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       Value<Uuid>? userId,
       Value<String>? body,
       Value<Order>? order,
+      Value<DateTime>? orderedAt,
       Value<bool>? root,
+      Value<bool>? pinned,
       Value<bool>? private,
       Value<Uuid>? topicId,
       Value<Uuid?>? activityId,
+      Value<DateTime?>? doAt,
+      Value<DateTime?>? doneAt,
       Value<int>? rowid}) {
     return NotesCompanion(
       id: id ?? this.id,
@@ -1692,10 +1833,14 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       userId: userId ?? this.userId,
       body: body ?? this.body,
       order: order ?? this.order,
+      orderedAt: orderedAt ?? this.orderedAt,
       root: root ?? this.root,
+      pinned: pinned ?? this.pinned,
       private: private ?? this.private,
       topicId: topicId ?? this.topicId,
       activityId: activityId ?? this.activityId,
+      doAt: doAt ?? this.doAt,
+      doneAt: doneAt ?? this.doneAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1723,8 +1868,14 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       map['order'] =
           Variable<double>($NotesTable.$converterorder.toSql(order.value));
     }
+    if (orderedAt.present) {
+      map['ordered_at'] = Variable<DateTime>(orderedAt.value);
+    }
     if (root.present) {
       map['root'] = Variable<bool>(root.value);
+    }
+    if (pinned.present) {
+      map['pinned'] = Variable<bool>(pinned.value);
     }
     if (private.present) {
       map['private'] = Variable<bool>(private.value);
@@ -1736,6 +1887,12 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     if (activityId.present) {
       map['activity_id'] = Variable<Uint8List>(
           $NotesTable.$converteractivityIdn.toSql(activityId.value));
+    }
+    if (doAt.present) {
+      map['do_at'] = Variable<DateTime>(doAt.value);
+    }
+    if (doneAt.present) {
+      map['done_at'] = Variable<DateTime>(doneAt.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -1752,10 +1909,14 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
           ..write('userId: $userId, ')
           ..write('body: $body, ')
           ..write('order: $order, ')
+          ..write('orderedAt: $orderedAt, ')
           ..write('root: $root, ')
+          ..write('pinned: $pinned, ')
           ..write('private: $private, ')
           ..write('topicId: $topicId, ')
           ..write('activityId: $activityId, ')
+          ..write('doAt: $doAt, ')
+          ..write('doneAt: $doneAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4395,10 +4556,14 @@ typedef $$NotesTableCreateCompanionBuilder = NotesCompanion Function({
   Value<Uuid> userId,
   required String body,
   Value<Order> order,
+  Value<DateTime> orderedAt,
   Value<bool> root,
+  Value<bool> pinned,
   Value<bool> private,
   required Uuid topicId,
   Value<Uuid?> activityId,
+  Value<DateTime?> doAt,
+  Value<DateTime?> doneAt,
   Value<int> rowid,
 });
 typedef $$NotesTableUpdateCompanionBuilder = NotesCompanion Function({
@@ -4408,10 +4573,14 @@ typedef $$NotesTableUpdateCompanionBuilder = NotesCompanion Function({
   Value<Uuid> userId,
   Value<String> body,
   Value<Order> order,
+  Value<DateTime> orderedAt,
   Value<bool> root,
+  Value<bool> pinned,
   Value<bool> private,
   Value<Uuid> topicId,
   Value<Uuid?> activityId,
+  Value<DateTime?> doAt,
+  Value<DateTime?> doneAt,
   Value<int> rowid,
 });
 
@@ -4471,8 +4640,18 @@ class $$NotesTableFilterComposer extends FilterComposer<_$Store, $NotesTable> {
               column,
               joinBuilders: joinBuilders));
 
+  ColumnFilters<DateTime> get orderedAt => $state.composableBuilder(
+      column: $state.table.orderedAt,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
   ColumnFilters<bool> get root => $state.composableBuilder(
       column: $state.table.root,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnFilters<bool> get pinned => $state.composableBuilder(
+      column: $state.table.pinned,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
@@ -4487,6 +4666,16 @@ class $$NotesTableFilterComposer extends FilterComposer<_$Store, $NotesTable> {
           builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
               column,
               joinBuilders: joinBuilders));
+
+  ColumnFilters<DateTime> get doAt => $state.composableBuilder(
+      column: $state.table.doAt,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnFilters<DateTime> get doneAt => $state.composableBuilder(
+      column: $state.table.doneAt,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
 
   $$ActivitiesTableFilterComposer get activityId {
     final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
@@ -4534,8 +4723,18 @@ class $$NotesTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
+  ColumnOrderings<DateTime> get orderedAt => $state.composableBuilder(
+      column: $state.table.orderedAt,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
   ColumnOrderings<bool> get root => $state.composableBuilder(
       column: $state.table.root,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<bool> get pinned => $state.composableBuilder(
+      column: $state.table.pinned,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -4546,6 +4745,16 @@ class $$NotesTableOrderingComposer
 
   ColumnOrderings<Uint8List> get topicId => $state.composableBuilder(
       column: $state.table.topicId,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<DateTime> get doAt => $state.composableBuilder(
+      column: $state.table.doAt,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<DateTime> get doneAt => $state.composableBuilder(
+      column: $state.table.doneAt,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -4588,10 +4797,14 @@ class $$NotesTableTableManager extends RootTableManager<
             Value<Uuid> userId = const Value.absent(),
             Value<String> body = const Value.absent(),
             Value<Order> order = const Value.absent(),
+            Value<DateTime> orderedAt = const Value.absent(),
             Value<bool> root = const Value.absent(),
+            Value<bool> pinned = const Value.absent(),
             Value<bool> private = const Value.absent(),
             Value<Uuid> topicId = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
+            Value<DateTime?> doAt = const Value.absent(),
+            Value<DateTime?> doneAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               NotesCompanion(
@@ -4601,10 +4814,14 @@ class $$NotesTableTableManager extends RootTableManager<
             userId: userId,
             body: body,
             order: order,
+            orderedAt: orderedAt,
             root: root,
+            pinned: pinned,
             private: private,
             topicId: topicId,
             activityId: activityId,
+            doAt: doAt,
+            doneAt: doneAt,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -4614,10 +4831,14 @@ class $$NotesTableTableManager extends RootTableManager<
             Value<Uuid> userId = const Value.absent(),
             required String body,
             Value<Order> order = const Value.absent(),
+            Value<DateTime> orderedAt = const Value.absent(),
             Value<bool> root = const Value.absent(),
+            Value<bool> pinned = const Value.absent(),
             Value<bool> private = const Value.absent(),
             required Uuid topicId,
             Value<Uuid?> activityId = const Value.absent(),
+            Value<DateTime?> doAt = const Value.absent(),
+            Value<DateTime?> doneAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               NotesCompanion.insert(
@@ -4627,10 +4848,14 @@ class $$NotesTableTableManager extends RootTableManager<
             userId: userId,
             body: body,
             order: order,
+            orderedAt: orderedAt,
             root: root,
+            pinned: pinned,
             private: private,
             topicId: topicId,
             activityId: activityId,
+            doAt: doAt,
+            doneAt: doneAt,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0

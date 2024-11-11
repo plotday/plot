@@ -6,9 +6,13 @@ CREATE TABLE "public"."note" (
     "activity_id" uuid REFERENCES activity ON DELETE CASCADE,
     "topic_id" uuid NOT NULL,
     "body" text NOT NULL,
-    "order" double precision NOT NULL,
     "root" boolean NOT NULL DEFAULT TRUE,
-    "private" boolean NOT NULL DEFAULT FALSE
+    "pinned" boolean NOT NULL DEFAULT FALSE,
+    "order" double precision NOT NULL,
+    "ordered_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "private" boolean NOT NULL DEFAULT FALSE,
+    "do_at" timestamp with time zone,
+    "done_at" timestamp with time zone
 );
 
 ALTER TABLE "public"."note" ENABLE ROW LEVEL SECURITY;

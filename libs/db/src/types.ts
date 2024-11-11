@@ -571,9 +571,13 @@ export type Database = {
           activity_id: string | null
           body: string
           created_at: string
+          do_at: string | null
+          done_at: string | null
           id: string
           modified_at: string
           order: number
+          ordered_at: string
+          pinned: boolean
           private: boolean
           root: boolean
           topic_id: string
@@ -583,9 +587,13 @@ export type Database = {
           activity_id?: string | null
           body: string
           created_at?: string
+          do_at?: string | null
+          done_at?: string | null
           id?: string
           modified_at?: string
           order: number
+          ordered_at?: string
+          pinned?: boolean
           private?: boolean
           root?: boolean
           topic_id: string
@@ -595,9 +603,13 @@ export type Database = {
           activity_id?: string | null
           body?: string
           created_at?: string
+          do_at?: string | null
+          done_at?: string | null
           id?: string
           modified_at?: string
           order?: number
+          ordered_at?: string
+          pinned?: boolean
           private?: boolean
           root?: boolean
           topic_id?: string
@@ -1074,9 +1086,13 @@ export type Database = {
           activity_path: unknown | null
           body: string | null
           created_at: string | null
+          do_at: string | null
+          done_at: string | null
           id: string | null
           modified_at: string | null
           order: number | null
+          ordered_at: string | null
+          pinned: boolean | null
           private: boolean | null
           root: boolean | null
           tags: Json | null
