@@ -36,6 +36,7 @@ export type Database = {
     Tables: {
       account: {
         Row: {
+          archived_at: string | null
           contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
@@ -47,6 +48,7 @@ export type Database = {
           organization: unknown | null
         }
         Insert: {
+          archived_at?: string | null
           contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
@@ -56,6 +58,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          archived_at?: string | null
           contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
@@ -76,6 +79,7 @@ export type Database = {
       }
       activity: {
         Row: {
+          archived_at: string | null
           created_at: string
           created_by: string
           id: string
@@ -85,6 +89,7 @@ export type Database = {
           budget: unknown | null
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
           created_by: string
           id?: string
@@ -93,6 +98,7 @@ export type Database = {
           path: unknown
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
           created_by?: string
           id?: string
@@ -281,6 +287,7 @@ export type Database = {
       calendar: {
         Row: {
           account_id: number
+          archived_at: string | null
           created_at: string
           enabled: boolean
           full_sync_at: string | null
@@ -302,6 +309,7 @@ export type Database = {
         }
         Insert: {
           account_id: number
+          archived_at?: string | null
           created_at?: string
           enabled?: boolean
           full_sync_at?: string | null
@@ -322,6 +330,7 @@ export type Database = {
         }
         Update: {
           account_id?: number
+          archived_at?: string | null
           created_at?: string
           enabled?: boolean
           full_sync_at?: string | null
@@ -417,6 +426,7 @@ export type Database = {
       }
       event: {
         Row: {
+          archived_at: string | null
           at: unknown
           availability: Database["public"]["Enums"]["event_availability"]
           calendar_id: number | null
@@ -440,6 +450,7 @@ export type Database = {
           visibility: Database["public"]["Enums"]["event_visibility"]
         }
         Insert: {
+          archived_at?: string | null
           at: unknown
           availability?: Database["public"]["Enums"]["event_availability"]
           calendar_id?: number | null
@@ -463,6 +474,7 @@ export type Database = {
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
         Update: {
+          archived_at?: string | null
           at?: unknown
           availability?: Database["public"]["Enums"]["event_availability"]
           calendar_id?: number | null
@@ -569,6 +581,7 @@ export type Database = {
       note: {
         Row: {
           activity_id: string | null
+          archived_at: string | null
           body: string
           created_at: string
           do_at: string | null
@@ -585,6 +598,7 @@ export type Database = {
         }
         Insert: {
           activity_id?: string | null
+          archived_at?: string | null
           body: string
           created_at?: string
           do_at?: string | null
@@ -601,6 +615,7 @@ export type Database = {
         }
         Update: {
           activity_id?: string | null
+          archived_at?: string | null
           body?: string
           created_at?: string
           do_at?: string | null
@@ -1084,6 +1099,7 @@ export type Database = {
         Row: {
           activity_id: string | null
           activity_path: unknown | null
+          archived_at: string | null
           body: string | null
           created_at: string | null
           do_at: string | null
@@ -1166,6 +1182,7 @@ export type Database = {
           "": unknown
         }
         Returns: {
+          archived_at: string | null
           contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
@@ -1254,6 +1271,7 @@ export type Database = {
         }
         Returns: {
           account_id: number
+          archived_at: string | null
           created_at: string
           enabled: boolean
           full_sync_at: string | null
@@ -1279,6 +1297,7 @@ export type Database = {
         }
         Returns: {
           account_id: number
+          archived_at: string | null
           created_at: string
           enabled: boolean
           full_sync_at: string | null

@@ -2,6 +2,7 @@ CREATE TABLE "public"."event" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "archived_at" timestamp with time zone,
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "calendar_id" bigint REFERENCES calendar ON DELETE CASCADE,
     "provider_id" text NOT NULL DEFAULT gen_random_uuid () ::text,

@@ -2,7 +2,8 @@ CREATE TABLE "public"."activity" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE SET NULL,
+    "archived_at" timestamp with time zone,
+    "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "name" text NOT NULL,
     "path" ltree NOT NULL UNIQUE
 );

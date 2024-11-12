@@ -2,6 +2,7 @@ CREATE TABLE "public"."account" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "archived_at" timestamp with time zone,
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "email" text NOT NULL CHECK (is_lower ("email")),
     "credentials" jsonb,
