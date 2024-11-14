@@ -16,15 +16,15 @@ sealed class ScheduleState extends Equatable {
   ScheduleState copyWith({
     Date? day,
     Map<Date, ScheduledDay>? schedule,
-    Optional<Event> selected = const Optional.absent(),
+    Value<Event> selected = const Value.absent(),
     String? error,
     bool loading = false,
   }) {
-    if (selected.isPresent) {
-      if (selected.isNotNull) {
+    if (selected.present) {
+      if (selected.notNull) {
         return SelectedEventState.copy(
           this,
-          selected: selected.value!,
+          selected: selected.value,
           schedule: schedule ?? this.schedule,
         );
       } else {

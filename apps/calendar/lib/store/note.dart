@@ -1,9 +1,7 @@
 part of 'store.dart';
 
 @DataClassName('NoteRow')
-class Notes extends UuidStoreTable {
-  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
-
+class Notes extends UuidStoreTable with DraftTable {
   BlobColumn get userId => blob()
       .clientDefault(() => Uuid.generate().toBytes())
       .map(const UuidConverter())();
@@ -110,13 +108,9 @@ class Note extends NoteRow implements Comparable<Note> {
           .watch()
           .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
 
-  factory Note({
+  factory Note.draft({
     required Uuid? activityId,
-    required String body,
-    required Order order,
-    bool private = false,
-    bool pinned = false,
-    DateTime? doAt,
+    Note? parent,
   }) {
     final id = Uuid.generate();
     final now = DateTime.now();
@@ -128,35 +122,11 @@ class Note extends NoteRow implements Comparable<Note> {
       topicId: id,
       createdAt: now,
       modifiedAt: now,
-      body: body,
-      order: order,
+      draft: true,
+      body: "",
+      order: parent == null ? Order.first() : Order.last(),
       orderedAt: now,
-      private: private,
-      pinned: pinned,
-      doAt: doAt,
-    ));
-  }
-
-  factory Note.inTopic({
-    required Note parent,
-    required String body,
-    required Order order,
-    bool private = false,
-  }) {
-    final id = Uuid.generate();
-    final now = DateTime.now();
-    return Note.fromStore(NoteRow(
-      id: id,
-      userId: Uuid.fromString(base.auth.currentUser!.id),
-      root: false,
-      activityId: parent.activityId,
-      topicId: parent.topicId,
-      createdAt: now,
-      modifiedAt: now,
-      body: body,
-      order: order,
-      orderedAt: now,
-      private: private,
+      private: true,
       pinned: false,
     ));
   }
@@ -170,6 +140,7 @@ class Note extends NoteRow implements Comparable<Note> {
           topicId: row.topicId,
           createdAt: row.createdAt,
           modifiedAt: row.modifiedAt,
+          draft: row.draft,
           orderedAt: row.orderedAt,
           doAt: row.doAt,
           doneAt: row.doneAt,
@@ -180,42 +151,50 @@ class Note extends NoteRow implements Comparable<Note> {
         );
 
   @override
-  Note copyWith(
-          {Uuid? id,
-          DateTime? modifiedAt,
-          DateTime? createdAt,
-          Uuid? userId,
-          String? body,
-          Order? order,
-          DateTime? orderedAt,
-          bool? root,
-          bool? pinned,
-          bool? private,
-          Uuid? topicId,
-          Value<Uuid?> activityId = const Value.absent(),
-          Value<DateTime?> doAt = const Value.absent(),
-          Value<DateTime?> doneAt = const Value.absent()}) =>
-      Note.fromStore(super.copyWith(
-        id: id ?? this.id,
-        modifiedAt: modifiedAt ?? this.modifiedAt,
-        createdAt: createdAt ?? this.createdAt,
-        userId: userId ?? this.userId,
-        body: body ?? this.body,
-        order: order ?? this.order,
-        orderedAt: orderedAt ??
-            ((order != null || pinned != null)
-                ? DateTime.now()
-                : this.orderedAt),
-        root: root ?? this.root,
-        pinned: pinned ?? this.pinned,
-        private: private ?? this.private,
-        topicId: topicId ?? this.topicId,
-        activityId: activityId,
-        doAt: doAt,
-        doneAt: doneAt,
-      ));
+  Note copyWith({
+    Uuid? id,
+    DateTime? modifiedAt,
+    DateTime? createdAt,
+    bool? draft,
+    Uuid? userId,
+    String? body,
+    Order? order,
+    DateTime? orderedAt,
+    bool? root,
+    bool? pinned,
+    bool? private,
+    Uuid? topicId,
+    Value<Uuid?> activityId = const Value.absent(),
+    Value<DateTime?> doAt = const Value.absent(),
+    Value<DateTime?> doneAt = const Value.absent(),
+  }) {
+    final publish = this.draft && draft == false;
+    if (publish) {
+      order ??= ((root ?? this.root) ? Order.first() : Order.last());
+    }
+    return Note.fromStore(super.copyWith(
+      id: id ?? this.id,
+      createdAt: publish ? DateTime.now() : this.createdAt,
+      modifiedAt: DateTime.now(),
+      draft: draft,
+      userId: userId ?? this.userId,
+      body: body ?? this.body,
+      order: order ?? this.order,
+      orderedAt: orderedAt ??
+          ((order != null || pinned != null) ? DateTime.now() : this.orderedAt),
+      root: root ?? this.root,
+      pinned: pinned ?? this.pinned,
+      private: private ?? this.private,
+      topicId: topicId ?? this.topicId,
+      activityId: activityId,
+      doAt: doAt,
+      doneAt: doneAt,
+    ));
+  }
 
-  Future<void> save() => Store.get.save(table, this);
+  Future<void> save() => Store.get.save(table, toCompanion(false));
+  bool get doNow => doAt?.isSameOrBefore(DateTime.now()) == true;
+  bool get done => doneAt != null;
 
   @override
   int compareTo(Note other) {

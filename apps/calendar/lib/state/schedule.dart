@@ -4,7 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/util/optional.dart';
 
 part 'schedule_state.dart';
 
@@ -14,8 +13,7 @@ class ScheduleBloc extends Cubit<ScheduleState> {
   }
 
   void select(Event event) {
-    emit(state.copyWith(
-        selected: Optional.of(event), day: event.start.toDate()));
+    emit(state.copyWith(selected: Value(event), day: event.start.toDate()));
     // TODO watch for event changes
     // _watchEvent(event.id);
   }
@@ -29,8 +27,7 @@ class ScheduleBloc extends Cubit<ScheduleState> {
     _eventSubscription?.cancel();
     final stream = Event.watchOne(id).asBroadcastStream();
     _eventSubscription = stream.listen((event) {
-      emit(state.copyWith(
-          selected: Optional.of(event), day: event.start.toDate()));
+      emit(state.copyWith(selected: Value(event), day: event.start.toDate()));
     });
     return stream.first;
   }

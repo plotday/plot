@@ -1,5 +1,5 @@
-export 'button.dart';
 export 'activity_nav.dart';
+export 'button.dart';
 export 'header.dart';
 export 'icon.dart';
 export 'link.dart';
@@ -9,3 +9,5 @@ export 'scroll_context.dart';
 export 'spinner.dart';
 export 'tapable.dart';
 export 'text_field.dart';
+export 'toggle.dart';
+export 'topic.dart';

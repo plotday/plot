@@ -35,6 +35,11 @@ class StoreTable extends Table {
   DateTimeColumn get modifiedAt => dateTime().withDefault(currentDateAndTime)();
 }
 
+mixin DraftTable on Table {
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  BoolColumn get draft => boolean().withDefault(const Constant(false))();
+}
+
 class IdStoreTable extends StoreTable {
   IntColumn get id => integer()();
 
@@ -264,7 +269,7 @@ class Store extends _$Store {
   Store._() : super(_openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration {
@@ -282,4 +287,10 @@ class Store extends _$Store {
   static QueryExecutor _openConnection() {
     return driftDatabase(name: 'plot');
   }
+}
+
+extension ValueExtension<T> on Value<T> {
+  bool get notNull => present && value != null;
+  T? or(T? fallback) => present ? value : fallback;
+  T? get orNull => present ? value : null;
 }

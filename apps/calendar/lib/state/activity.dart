@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'dart:collection';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/util/list.dart';
-import 'package:plot/util/optional.dart';
 
 part 'activity_state.dart';
 
@@ -30,14 +30,14 @@ class ActivityBloc extends Cubit<ActivityState> {
     _activitySubscription?.cancel();
     if (current == null) {
       _activitySubscription = Activity.watchRoot().listen((activities) {
-        emit(state.copyWith(current: Optional.of(null), children: activities));
+        emit(state.copyWith(current: const Value(null), children: activities));
         _loadBalances();
         _loadNotes();
       });
     } else {
       _activitySubscription =
           Activity.watchOne(current, depth: 1).listen((activity) {
-        emit(state.copyWith(current: Optional.of(activity)));
+        emit(state.copyWith(current: Value(activity)));
         _loadBalances();
         _loadNotes();
       });
@@ -46,7 +46,7 @@ class ActivityBloc extends Cubit<ActivityState> {
 
   void setTopic(TopicId? topicId) {
     if (_topicSubscription != null && topicId == state.topicId) return;
-    emit(state.copyWith(topicId: Optional.of(topicId), topicNotes: []));
+    emit(state.copyWith(topicId: Value(topicId), topicNotes: []));
     _loadTopicNotes();
   }
 
@@ -55,7 +55,7 @@ class ActivityBloc extends Cubit<ActivityState> {
   }
 
   void setWeek(Week week) async {
-    emit(state.copyWith(week: week, balances: Optional.of(null)));
+    emit(state.copyWith(week: week, balances: const Value(null)));
     _loadBalances();
   }
 
@@ -64,7 +64,7 @@ class ActivityBloc extends Cubit<ActivityState> {
     _balanceSubscription =
         Balance.watch(state.week.start, state.week.end).listen(
       (balances) {
-        emit(state.copyWith(balances: Optional.of(balances)));
+        emit(state.copyWith(balances: Value(balances)));
       },
     );
   }
@@ -93,28 +93,15 @@ class ActivityBloc extends Cubit<ActivityState> {
     }
   }
 
-  Future<void> addNote(Note note) async {
-    await note.save();
-    if (note.root) {
-      emit(state.copyWith(
-          newNote: note,
-          topicId: Optional.of(note.topicId),
-          topicNotes: [note]));
-      _loadTopicNotes();
-    }
-  }
-
   Future<void> updateNote(Note note) async {
-    final currentNotes = state.notes;
-    final notes = currentNotes.replace(note, (n1, n2) => n1.id == n2.id);
     emit(
-      state.copyWith(notes: notes),
+      state.copyWith(newNote: note),
     );
     try {
+      // TODO debounce save
       await note.save();
     } catch (e) {
       print(e);
-      emit(state.copyWith(notes: currentNotes));
       rethrow;
     }
   }

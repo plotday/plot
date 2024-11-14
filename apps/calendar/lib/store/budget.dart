@@ -30,5 +30,5 @@ class Budget extends BudgetRow {
           activityId: row.activityId,
         );
 
-  Future<void> save() => Store.get.save(table, this);
+  Future<void> save() => Store.get.save(table, toCompanion(false));
 }

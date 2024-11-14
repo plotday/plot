@@ -877,6 +877,15 @@ class $ActivitiesTable extends Activities
       type: DriftSqlType.dateTime,
       requiredDuringInsert: false,
       defaultValue: currentDateAndTime);
+  static const VerificationMeta _draftMeta = const VerificationMeta('draft');
+  @override
+  late final GeneratedColumn<bool> draft = GeneratedColumn<bool>(
+      'draft', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("draft" IN (0, 1))'),
+      defaultValue: const Constant(false));
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -907,7 +916,7 @@ class $ActivitiesTable extends Activities
           .withConverter<Duration>($ActivitiesTable.$converterpomodoro);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, modifiedAt, createdAt, name, path, order, pomodoro];
+      [id, modifiedAt, createdAt, draft, name, path, order, pomodoro];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -928,6 +937,10 @@ class $ActivitiesTable extends Activities
     if (data.containsKey('created_at')) {
       context.handle(_createdAtMeta,
           createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('draft')) {
+      context.handle(
+          _draftMeta, draft.isAcceptableOrUnknown(data['draft']!, _draftMeta));
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -953,6 +966,8 @@ class $ActivitiesTable extends Activities
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      draft: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}draft'])!,
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       path: $ActivitiesTable.$converterpath.fromSql(attachedDatabase.typeMapping
@@ -982,6 +997,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final Uuid id;
   final DateTime modifiedAt;
   final DateTime createdAt;
+  final bool draft;
   final String name;
   final Path path;
   final Order order;
@@ -990,6 +1006,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       {required this.id,
       required this.modifiedAt,
       required this.createdAt,
+      required this.draft,
       required this.name,
       required this.path,
       required this.order,
@@ -1002,6 +1019,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     }
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     map['created_at'] = Variable<DateTime>(createdAt);
+    map['draft'] = Variable<bool>(draft);
     map['name'] = Variable<String>(name);
     {
       map['path'] =
@@ -1023,6 +1041,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       id: Value(id),
       modifiedAt: Value(modifiedAt),
       createdAt: Value(createdAt),
+      draft: Value(draft),
       name: Value(name),
       path: Value(path),
       order: Value(order),
@@ -1037,6 +1056,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       id: serializer.fromJson<Uuid>(json['id']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       createdAt: serializer.fromJson<DateTime>(json['created_at']),
+      draft: serializer.fromJson<bool>(json['draft']),
       name: serializer.fromJson<String>(json['name']),
       path: serializer.fromJson<Path>(json['path']),
       order: serializer.fromJson<Order>(json['order']),
@@ -1050,6 +1070,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       'id': serializer.toJson<Uuid>(id),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'created_at': serializer.toJson<DateTime>(createdAt),
+      'draft': serializer.toJson<bool>(draft),
       'name': serializer.toJson<String>(name),
       'path': serializer.toJson<Path>(path),
       'order': serializer.toJson<Order>(order),
@@ -1061,6 +1082,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           {Uuid? id,
           DateTime? modifiedAt,
           DateTime? createdAt,
+          bool? draft,
           String? name,
           Path? path,
           Order? order,
@@ -1069,6 +1091,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
         createdAt: createdAt ?? this.createdAt,
+        draft: draft ?? this.draft,
         name: name ?? this.name,
         path: path ?? this.path,
         order: order ?? this.order,
@@ -1080,6 +1103,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      draft: data.draft.present ? data.draft.value : this.draft,
       name: data.name.present ? data.name.value : this.name,
       path: data.path.present ? data.path.value : this.path,
       order: data.order.present ? data.order.value : this.order,
@@ -1093,6 +1117,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('createdAt: $createdAt, ')
+          ..write('draft: $draft, ')
           ..write('name: $name, ')
           ..write('path: $path, ')
           ..write('order: $order, ')
@@ -1102,8 +1127,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, modifiedAt, createdAt, name, path, order, pomodoro);
+  int get hashCode => Object.hash(
+      id, modifiedAt, createdAt, draft, name, path, order, pomodoro);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1111,6 +1136,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           other.id == this.id &&
           other.modifiedAt == this.modifiedAt &&
           other.createdAt == this.createdAt &&
+          other.draft == this.draft &&
           other.name == this.name &&
           other.path == this.path &&
           other.order == this.order &&
@@ -1121,6 +1147,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<Uuid> id;
   final Value<DateTime> modifiedAt;
   final Value<DateTime> createdAt;
+  final Value<bool> draft;
   final Value<String> name;
   final Value<Path> path;
   final Value<Order> order;
@@ -1130,6 +1157,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.draft = const Value.absent(),
     this.name = const Value.absent(),
     this.path = const Value.absent(),
     this.order = const Value.absent(),
@@ -1140,6 +1168,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.draft = const Value.absent(),
     required String name,
     required Path path,
     this.order = const Value.absent(),
@@ -1151,6 +1180,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Expression<Uint8List>? id,
     Expression<DateTime>? modifiedAt,
     Expression<DateTime>? createdAt,
+    Expression<bool>? draft,
     Expression<String>? name,
     Expression<String>? path,
     Expression<double>? order,
@@ -1161,6 +1191,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       if (id != null) 'id': id,
       if (modifiedAt != null) 'modified_at': modifiedAt,
       if (createdAt != null) 'created_at': createdAt,
+      if (draft != null) 'draft': draft,
       if (name != null) 'name': name,
       if (path != null) 'path': path,
       if (order != null) 'order': order,
@@ -1173,6 +1204,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       {Value<Uuid>? id,
       Value<DateTime>? modifiedAt,
       Value<DateTime>? createdAt,
+      Value<bool>? draft,
       Value<String>? name,
       Value<Path>? path,
       Value<Order>? order,
@@ -1182,6 +1214,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       id: id ?? this.id,
       modifiedAt: modifiedAt ?? this.modifiedAt,
       createdAt: createdAt ?? this.createdAt,
+      draft: draft ?? this.draft,
       name: name ?? this.name,
       path: path ?? this.path,
       order: order ?? this.order,
@@ -1202,6 +1235,9 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (draft.present) {
+      map['draft'] = Variable<bool>(draft.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -1230,6 +1266,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('createdAt: $createdAt, ')
+          ..write('draft: $draft, ')
           ..write('name: $name, ')
           ..write('path: $path, ')
           ..write('order: $order, ')
@@ -1269,6 +1306,15 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       type: DriftSqlType.dateTime,
       requiredDuringInsert: false,
       defaultValue: currentDateAndTime);
+  static const VerificationMeta _draftMeta = const VerificationMeta('draft');
+  @override
+  late final GeneratedColumn<bool> draft = GeneratedColumn<bool>(
+      'draft', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("draft" IN (0, 1))'),
+      defaultValue: const Constant(false));
   static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
   @override
   late final GeneratedColumnWithTypeConverter<Uuid, Uint8List> userId =
@@ -1358,6 +1404,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
         id,
         modifiedAt,
         createdAt,
+        draft,
         userId,
         body,
         order,
@@ -1390,6 +1437,10 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     if (data.containsKey('created_at')) {
       context.handle(_createdAtMeta,
           createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('draft')) {
+      context.handle(
+          _draftMeta, draft.isAcceptableOrUnknown(data['draft']!, _draftMeta));
     }
     context.handle(_userIdMeta, const VerificationResult.success());
     if (data.containsKey('body')) {
@@ -1440,6 +1491,8 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      draft: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}draft'])!,
       userId: $NotesTable.$converteruserId.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}user_id'])!),
       body: attachedDatabase.typeMapping
@@ -1488,6 +1541,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   final Uuid id;
   final DateTime modifiedAt;
   final DateTime createdAt;
+  final bool draft;
   final Uuid userId;
   final String body;
   final Order order;
@@ -1503,6 +1557,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       {required this.id,
       required this.modifiedAt,
       required this.createdAt,
+      required this.draft,
       required this.userId,
       required this.body,
       required this.order,
@@ -1522,6 +1577,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     }
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     map['created_at'] = Variable<DateTime>(createdAt);
+    map['draft'] = Variable<bool>(draft);
     {
       map['user_id'] =
           Variable<Uint8List>($NotesTable.$converteruserId.toSql(userId));
@@ -1556,6 +1612,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       id: Value(id),
       modifiedAt: Value(modifiedAt),
       createdAt: Value(createdAt),
+      draft: Value(draft),
       userId: Value(userId),
       body: Value(body),
       order: Value(order),
@@ -1580,6 +1637,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       id: serializer.fromJson<Uuid>(json['id']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
       createdAt: serializer.fromJson<DateTime>(json['created_at']),
+      draft: serializer.fromJson<bool>(json['draft']),
       userId: serializer.fromJson<Uuid>(json['user_id']),
       body: serializer.fromJson<String>(json['body']),
       order: serializer.fromJson<Order>(json['order']),
@@ -1600,6 +1658,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       'id': serializer.toJson<Uuid>(id),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
       'created_at': serializer.toJson<DateTime>(createdAt),
+      'draft': serializer.toJson<bool>(draft),
       'user_id': serializer.toJson<Uuid>(userId),
       'body': serializer.toJson<String>(body),
       'order': serializer.toJson<Order>(order),
@@ -1618,6 +1677,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           {Uuid? id,
           DateTime? modifiedAt,
           DateTime? createdAt,
+          bool? draft,
           Uuid? userId,
           String? body,
           Order? order,
@@ -1633,6 +1693,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
         createdAt: createdAt ?? this.createdAt,
+        draft: draft ?? this.draft,
         userId: userId ?? this.userId,
         body: body ?? this.body,
         order: order ?? this.order,
@@ -1651,6 +1712,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      draft: data.draft.present ? data.draft.value : this.draft,
       userId: data.userId.present ? data.userId.value : this.userId,
       body: data.body.present ? data.body.value : this.body,
       order: data.order.present ? data.order.value : this.order,
@@ -1672,6 +1734,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('createdAt: $createdAt, ')
+          ..write('draft: $draft, ')
           ..write('userId: $userId, ')
           ..write('body: $body, ')
           ..write('order: $order, ')
@@ -1692,6 +1755,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       id,
       modifiedAt,
       createdAt,
+      draft,
       userId,
       body,
       order,
@@ -1710,6 +1774,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           other.id == this.id &&
           other.modifiedAt == this.modifiedAt &&
           other.createdAt == this.createdAt &&
+          other.draft == this.draft &&
           other.userId == this.userId &&
           other.body == this.body &&
           other.order == this.order &&
@@ -1727,6 +1792,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   final Value<Uuid> id;
   final Value<DateTime> modifiedAt;
   final Value<DateTime> createdAt;
+  final Value<bool> draft;
   final Value<Uuid> userId;
   final Value<String> body;
   final Value<Order> order;
@@ -1743,6 +1809,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.draft = const Value.absent(),
     this.userId = const Value.absent(),
     this.body = const Value.absent(),
     this.order = const Value.absent(),
@@ -1760,6 +1827,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.draft = const Value.absent(),
     this.userId = const Value.absent(),
     required String body,
     this.order = const Value.absent(),
@@ -1778,6 +1846,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     Expression<Uint8List>? id,
     Expression<DateTime>? modifiedAt,
     Expression<DateTime>? createdAt,
+    Expression<bool>? draft,
     Expression<Uint8List>? userId,
     Expression<String>? body,
     Expression<double>? order,
@@ -1795,6 +1864,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       if (id != null) 'id': id,
       if (modifiedAt != null) 'modified_at': modifiedAt,
       if (createdAt != null) 'created_at': createdAt,
+      if (draft != null) 'draft': draft,
       if (userId != null) 'user_id': userId,
       if (body != null) 'body': body,
       if (order != null) 'order': order,
@@ -1814,6 +1884,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       {Value<Uuid>? id,
       Value<DateTime>? modifiedAt,
       Value<DateTime>? createdAt,
+      Value<bool>? draft,
       Value<Uuid>? userId,
       Value<String>? body,
       Value<Order>? order,
@@ -1830,6 +1901,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       id: id ?? this.id,
       modifiedAt: modifiedAt ?? this.modifiedAt,
       createdAt: createdAt ?? this.createdAt,
+      draft: draft ?? this.draft,
       userId: userId ?? this.userId,
       body: body ?? this.body,
       order: order ?? this.order,
@@ -1856,6 +1928,9 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (draft.present) {
+      map['draft'] = Variable<bool>(draft.value);
     }
     if (userId.present) {
       map['user_id'] =
@@ -1906,6 +1981,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('createdAt: $createdAt, ')
+          ..write('draft: $draft, ')
           ..write('userId: $userId, ')
           ..write('body: $body, ')
           ..write('order: $order, ')
@@ -1944,6 +2020,23 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       type: DriftSqlType.dateTime,
       requiredDuringInsert: false,
       defaultValue: currentDateAndTime);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _draftMeta = const VerificationMeta('draft');
+  @override
+  late final GeneratedColumn<bool> draft = GeneratedColumn<bool>(
+      'draft', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("draft" IN (0, 1))'),
+      defaultValue: const Constant(false));
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -2024,6 +2117,8 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
   List<GeneratedColumn> get $columns => [
         id,
         modifiedAt,
+        createdAt,
+        draft,
         name,
         start,
         end,
@@ -2051,6 +2146,14 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
           _modifiedAtMeta,
           modifiedAt.isAcceptableOrUnknown(
               data['modified_at']!, _modifiedAtMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('draft')) {
+      context.handle(
+          _draftMeta, draft.isAcceptableOrUnknown(data['draft']!, _draftMeta));
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -2096,6 +2199,10 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      draft: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}draft'])!,
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name']),
       start: attachedDatabase.typeMapping
@@ -2148,6 +2255,8 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
 class EventRow extends DataClass implements Insertable<EventRow> {
   final Uuid id;
   final DateTime modifiedAt;
+  final DateTime createdAt;
+  final bool draft;
   final String? name;
   final DateTime start;
   final DateTime end;
@@ -2161,6 +2270,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   const EventRow(
       {required this.id,
       required this.modifiedAt,
+      required this.createdAt,
+      required this.draft,
       this.name,
       required this.start,
       required this.end,
@@ -2178,6 +2289,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       map['id'] = Variable<Uint8List>($EventsTable.$converterid.toSql(id));
     }
     map['modified_at'] = Variable<DateTime>(modifiedAt);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['draft'] = Variable<bool>(draft);
     if (!nullToAbsent || name != null) {
       map['name'] = Variable<String>(name);
     }
@@ -2214,6 +2327,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     return EventsCompanion(
       id: Value(id),
       modifiedAt: Value(modifiedAt),
+      createdAt: Value(createdAt),
+      draft: Value(draft),
       name: name == null && nullToAbsent ? const Value.absent() : Value(name),
       start: Value(start),
       end: Value(end),
@@ -2236,6 +2351,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     return EventRow(
       id: serializer.fromJson<Uuid>(json['id']),
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      createdAt: serializer.fromJson<DateTime>(json['created_at']),
+      draft: serializer.fromJson<bool>(json['draft']),
       name: serializer.fromJson<String?>(json['name']),
       start: serializer.fromJson<DateTime>(json['start']),
       end: serializer.fromJson<DateTime>(json['end']),
@@ -2258,6 +2375,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'created_at': serializer.toJson<DateTime>(createdAt),
+      'draft': serializer.toJson<bool>(draft),
       'name': serializer.toJson<String?>(name),
       'start': serializer.toJson<DateTime>(start),
       'end': serializer.toJson<DateTime>(end),
@@ -2278,6 +2397,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   EventRow copyWith(
           {Uuid? id,
           DateTime? modifiedAt,
+          DateTime? createdAt,
+          bool? draft,
           Value<String?> name = const Value.absent(),
           DateTime? start,
           DateTime? end,
@@ -2291,6 +2412,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       EventRow(
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
+        createdAt: createdAt ?? this.createdAt,
+        draft: draft ?? this.draft,
         name: name.present ? name.value : this.name,
         start: start ?? this.start,
         end: end ?? this.end,
@@ -2307,6 +2430,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       id: data.id.present ? data.id.value : this.id,
       modifiedAt:
           data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      draft: data.draft.present ? data.draft.value : this.draft,
       name: data.name.present ? data.name.value : this.name,
       start: data.start.present ? data.start.value : this.start,
       end: data.end.present ? data.end.value : this.end,
@@ -2331,6 +2456,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     return (StringBuffer('EventRow(')
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('draft: $draft, ')
           ..write('name: $name, ')
           ..write('start: $start, ')
           ..write('end: $end, ')
@@ -2346,14 +2473,29 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, modifiedAt, name, start, end, series,
-      response, status, visibility, availability, inviteesHidden, activityId);
+  int get hashCode => Object.hash(
+      id,
+      modifiedAt,
+      createdAt,
+      draft,
+      name,
+      start,
+      end,
+      series,
+      response,
+      status,
+      visibility,
+      availability,
+      inviteesHidden,
+      activityId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is EventRow &&
           other.id == this.id &&
           other.modifiedAt == this.modifiedAt &&
+          other.createdAt == this.createdAt &&
+          other.draft == this.draft &&
           other.name == this.name &&
           other.start == this.start &&
           other.end == this.end &&
@@ -2369,6 +2511,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
 class EventsCompanion extends UpdateCompanion<EventRow> {
   final Value<Uuid> id;
   final Value<DateTime> modifiedAt;
+  final Value<DateTime> createdAt;
+  final Value<bool> draft;
   final Value<String?> name;
   final Value<DateTime> start;
   final Value<DateTime> end;
@@ -2383,6 +2527,8 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   const EventsCompanion({
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.draft = const Value.absent(),
     this.name = const Value.absent(),
     this.start = const Value.absent(),
     this.end = const Value.absent(),
@@ -2398,6 +2544,8 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   EventsCompanion.insert({
     this.id = const Value.absent(),
     this.modifiedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.draft = const Value.absent(),
     this.name = const Value.absent(),
     required DateTime start,
     required DateTime end,
@@ -2414,6 +2562,8 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   static Insertable<EventRow> custom({
     Expression<Uint8List>? id,
     Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? createdAt,
+    Expression<bool>? draft,
     Expression<String>? name,
     Expression<DateTime>? start,
     Expression<DateTime>? end,
@@ -2429,6 +2579,8 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (createdAt != null) 'created_at': createdAt,
+      if (draft != null) 'draft': draft,
       if (name != null) 'name': name,
       if (start != null) 'start': start,
       if (end != null) 'end': end,
@@ -2446,6 +2598,8 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   EventsCompanion copyWith(
       {Value<Uuid>? id,
       Value<DateTime>? modifiedAt,
+      Value<DateTime>? createdAt,
+      Value<bool>? draft,
       Value<String?>? name,
       Value<DateTime>? start,
       Value<DateTime>? end,
@@ -2460,6 +2614,8 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     return EventsCompanion(
       id: id ?? this.id,
       modifiedAt: modifiedAt ?? this.modifiedAt,
+      createdAt: createdAt ?? this.createdAt,
+      draft: draft ?? this.draft,
       name: name ?? this.name,
       start: start ?? this.start,
       end: end ?? this.end,
@@ -2483,6 +2639,12 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     }
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (draft.present) {
+      map['draft'] = Variable<bool>(draft.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -2530,6 +2692,8 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     return (StringBuffer('EventsCompanion(')
           ..write('id: $id, ')
           ..write('modifiedAt: $modifiedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('draft: $draft, ')
           ..write('name: $name, ')
           ..write('start: $start, ')
           ..write('end: $end, ')
@@ -4130,6 +4294,7 @@ typedef $$ActivitiesTableCreateCompanionBuilder = ActivitiesCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
   Value<DateTime> createdAt,
+  Value<bool> draft,
   required String name,
   required Path path,
   Value<Order> order,
@@ -4140,6 +4305,7 @@ typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
   Value<DateTime> createdAt,
+  Value<bool> draft,
   Value<String> name,
   Value<Path> path,
   Value<Order> order,
@@ -4244,6 +4410,11 @@ class $$ActivitiesTableFilterComposer
 
   ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
       column: $state.table.createdAt,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnFilters<bool> get draft => $state.composableBuilder(
+      column: $state.table.draft,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
@@ -4357,6 +4528,11 @@ class $$ActivitiesTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
+  ColumnOrderings<bool> get draft => $state.composableBuilder(
+      column: $state.table.draft,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
   ColumnOrderings<String> get name => $state.composableBuilder(
       column: $state.table.name,
       builder: (column, joinBuilders) =>
@@ -4406,6 +4582,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
+            Value<bool> draft = const Value.absent(),
             Value<String> name = const Value.absent(),
             Value<Path> path = const Value.absent(),
             Value<Order> order = const Value.absent(),
@@ -4416,6 +4593,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             id: id,
             modifiedAt: modifiedAt,
             createdAt: createdAt,
+            draft: draft,
             name: name,
             path: path,
             order: order,
@@ -4426,6 +4604,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
+            Value<bool> draft = const Value.absent(),
             required String name,
             required Path path,
             Value<Order> order = const Value.absent(),
@@ -4436,6 +4615,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             id: id,
             modifiedAt: modifiedAt,
             createdAt: createdAt,
+            draft: draft,
             name: name,
             path: path,
             order: order,
@@ -4553,6 +4733,7 @@ typedef $$NotesTableCreateCompanionBuilder = NotesCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
   Value<DateTime> createdAt,
+  Value<bool> draft,
   Value<Uuid> userId,
   required String body,
   Value<Order> order,
@@ -4570,6 +4751,7 @@ typedef $$NotesTableUpdateCompanionBuilder = NotesCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
   Value<DateTime> createdAt,
+  Value<bool> draft,
   Value<Uuid> userId,
   Value<String> body,
   Value<Order> order,
@@ -4618,6 +4800,11 @@ class $$NotesTableFilterComposer extends FilterComposer<_$Store, $NotesTable> {
 
   ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
       column: $state.table.createdAt,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnFilters<bool> get draft => $state.composableBuilder(
+      column: $state.table.draft,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
@@ -4708,6 +4895,11 @@ class $$NotesTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
+  ColumnOrderings<bool> get draft => $state.composableBuilder(
+      column: $state.table.draft,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
   ColumnOrderings<Uint8List> get userId => $state.composableBuilder(
       column: $state.table.userId,
       builder: (column, joinBuilders) =>
@@ -4794,6 +4986,7 @@ class $$NotesTableTableManager extends RootTableManager<
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
+            Value<bool> draft = const Value.absent(),
             Value<Uuid> userId = const Value.absent(),
             Value<String> body = const Value.absent(),
             Value<Order> order = const Value.absent(),
@@ -4811,6 +5004,7 @@ class $$NotesTableTableManager extends RootTableManager<
             id: id,
             modifiedAt: modifiedAt,
             createdAt: createdAt,
+            draft: draft,
             userId: userId,
             body: body,
             order: order,
@@ -4828,6 +5022,7 @@ class $$NotesTableTableManager extends RootTableManager<
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
+            Value<bool> draft = const Value.absent(),
             Value<Uuid> userId = const Value.absent(),
             required String body,
             Value<Order> order = const Value.absent(),
@@ -4845,6 +5040,7 @@ class $$NotesTableTableManager extends RootTableManager<
             id: id,
             modifiedAt: modifiedAt,
             createdAt: createdAt,
+            draft: draft,
             userId: userId,
             body: body,
             order: order,
@@ -4913,6 +5109,8 @@ typedef $$NotesTableProcessedTableManager = ProcessedTableManager<
 typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
+  Value<DateTime> createdAt,
+  Value<bool> draft,
   Value<String?> name,
   required DateTime start,
   required DateTime end,
@@ -4928,6 +5126,8 @@ typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
 typedef $$EventsTableUpdateCompanionBuilder = EventsCompanion Function({
   Value<Uuid> id,
   Value<DateTime> modifiedAt,
+  Value<DateTime> createdAt,
+  Value<bool> draft,
   Value<String?> name,
   Value<DateTime> start,
   Value<DateTime> end,
@@ -4972,6 +5172,16 @@ class $$EventsTableFilterComposer
 
   ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
       column: $state.table.modifiedAt,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
+      column: $state.table.createdAt,
+      builder: (column, joinBuilders) =>
+          ColumnFilters(column, joinBuilders: joinBuilders));
+
+  ColumnFilters<bool> get draft => $state.composableBuilder(
+      column: $state.table.draft,
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
@@ -5051,6 +5261,16 @@ class $$EventsTableOrderingComposer
 
   ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
       column: $state.table.modifiedAt,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
+      column: $state.table.createdAt,
+      builder: (column, joinBuilders) =>
+          ColumnOrderings(column, joinBuilders: joinBuilders));
+
+  ColumnOrderings<bool> get draft => $state.composableBuilder(
+      column: $state.table.draft,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
@@ -5134,6 +5354,8 @@ class $$EventsTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<bool> draft = const Value.absent(),
             Value<String?> name = const Value.absent(),
             Value<DateTime> start = const Value.absent(),
             Value<DateTime> end = const Value.absent(),
@@ -5149,6 +5371,8 @@ class $$EventsTableTableManager extends RootTableManager<
               EventsCompanion(
             id: id,
             modifiedAt: modifiedAt,
+            createdAt: createdAt,
+            draft: draft,
             name: name,
             start: start,
             end: end,
@@ -5164,6 +5388,8 @@ class $$EventsTableTableManager extends RootTableManager<
           createCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<bool> draft = const Value.absent(),
             Value<String?> name = const Value.absent(),
             required DateTime start,
             required DateTime end,
@@ -5179,6 +5405,8 @@ class $$EventsTableTableManager extends RootTableManager<
               EventsCompanion.insert(
             id: id,
             modifiedAt: modifiedAt,
+            createdAt: createdAt,
+            draft: draft,
             name: name,
             start: start,
             end: end,

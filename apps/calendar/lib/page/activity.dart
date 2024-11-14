@@ -7,8 +7,35 @@ import 'package:plot/state/activity.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity.dart';
-import 'package:plot/widget/note.dart';
 import 'package:plot/widget/bidirectional_list.dart';
+
+class ReorderableNotesView extends StatelessWidget {
+  const ReorderableNotesView({required this.notes, super.key});
+
+  final List<Note> notes;
+
+  @override
+  Widget build(BuildContext context) => ReorderableListView(
+        list: notes,
+        itemBuilder: (buildContext, item) => TopicWidget(note: item),
+        shrinkWrap: true,
+        onReorder: (int oldIndex, int newIndex) async {
+          var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+          var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+          Note? previous;
+          if (previousIndex >= 0) {
+            previous = notes[previousIndex];
+          }
+          Note? next;
+          if (nextIndex < notes.length) {
+            next = notes[nextIndex];
+          }
+          context.read<ActivityBloc>().updateNote(notes[oldIndex].copyWith(
+                order: Order.between(previous?.order, next?.order),
+              ));
+        },
+      );
+}
 
 class ActivityPage extends StatelessWidget {
   const ActivityPage({super.key});
@@ -20,7 +47,7 @@ class ActivityPage extends StatelessWidget {
           body: BidirectionalList(
         scrollController: ScrollControllerContext.of(context),
         count: state.notes.length,
-        builder: (context, index) => NoteWidget(note: state.notes[index]),
+        builder: (context, index) => TopicWidget(note: state.notes[index]),
         header: Column(
           children: [
             Padding(
@@ -89,26 +116,11 @@ class ActivityPage extends StatelessWidget {
                 ],
               ),
             ),
-            ReorderableListView(
-              list: state.pinnedNotes,
-              itemBuilder: (buildContext, item) => NoteWidget(note: item),
-              shrinkWrap: true,
-              onReorder: (int oldIndex, int newIndex) async {
-                var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-                var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-                Note? previous;
-                if (previousIndex >= 0) {
-                  previous = state.notes[previousIndex];
-                }
-                Note? next;
-                if (nextIndex < state.notes.length) {
-                  next = state.notes[nextIndex];
-                }
-                final note = Note.fromStore(state.notes[oldIndex].copyWith(
-                  order: Order.between(previous?.order, next?.order),
-                ));
-                buildContext.read<ActivityBloc>().updateNote(note);
-              },
+            ReorderableNotesView(
+              notes: state.pinnedNotes,
+            ),
+            ReorderableNotesView(
+              notes: state.doNowNotes,
             ),
           ],
         ),

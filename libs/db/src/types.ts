@@ -82,6 +82,7 @@ export type Database = {
           archived_at: string | null
           created_at: string
           created_by: string
+          draft: boolean
           id: string
           modified_at: string
           name: string
@@ -92,6 +93,7 @@ export type Database = {
           archived_at?: string | null
           created_at?: string
           created_by: string
+          draft?: boolean
           id?: string
           modified_at?: string
           name: string
@@ -101,6 +103,7 @@ export type Database = {
           archived_at?: string | null
           created_at?: string
           created_by?: string
+          draft?: boolean
           id?: string
           modified_at?: string
           name?: string
@@ -433,6 +436,7 @@ export type Database = {
           conferencing_url: string | null
           created_at: string
           description: string | null
+          draft: boolean
           id: string
           invitees_hidden: boolean
           modified_at: string
@@ -457,6 +461,7 @@ export type Database = {
           conferencing_url?: string | null
           created_at?: string
           description?: string | null
+          draft?: boolean
           id?: string
           invitees_hidden?: boolean
           modified_at?: string
@@ -481,6 +486,7 @@ export type Database = {
           conferencing_url?: string | null
           created_at?: string
           description?: string | null
+          draft?: boolean
           id?: string
           invitees_hidden?: boolean
           modified_at?: string
@@ -586,6 +592,7 @@ export type Database = {
           created_at: string
           do_at: string | null
           done_at: string | null
+          draft: boolean
           id: string
           modified_at: string
           order: number
@@ -603,6 +610,7 @@ export type Database = {
           created_at?: string
           do_at?: string | null
           done_at?: string | null
+          draft?: boolean
           id?: string
           modified_at?: string
           order: number
@@ -620,6 +628,7 @@ export type Database = {
           created_at?: string
           do_at?: string | null
           done_at?: string | null
+          draft?: boolean
           id?: string
           modified_at?: string
           order?: number
@@ -913,6 +922,7 @@ export type Database = {
       activity_x: {
         Row: {
           created_at: string | null
+          draft: boolean | null
           id: string | null
           modified_at: string | null
           name: string | null
@@ -985,6 +995,7 @@ export type Database = {
           created_at: string | null
           day: string | null
           description: string | null
+          draft: boolean | null
           embedding: string | null
           external: boolean | null
           id: string | null
@@ -1104,6 +1115,7 @@ export type Database = {
           created_at: string | null
           do_at: string | null
           done_at: string | null
+          draft: boolean | null
           id: string | null
           modified_at: string | null
           order: number | null

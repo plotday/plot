@@ -5,6 +5,7 @@ SELECT
     c2.id,
     cu.user_id,
     c2.created_at,
+    c2.draft,
     GREATEST (cs.modified_at, cu.modified_at, c2.modified_at) AS modified_at,
     c2.name,
     replace_parent_path (c1.path, c2.path, COALESCE(cu.path, c1.path)) AS path,
@@ -26,11 +27,11 @@ DECLARE
 BEGIN
     _activity_id := NEW.id;
     IF (OLD IS NULL OR (NEW.name IS DISTINCT FROM OLD.name OR NEW.path IS DISTINCT FROM OLD.path)) THEN
-        INSERT INTO activity (id, name, path, created_by)
-            VALUES (NEW.id, NEW.name, NEW.path, auth.uid ())
+        INSERT INTO activity (id, name, path, draft, created_by)
+            VALUES (NEW.id, NEW.name, NEW.path, NEW.draft, auth.uid ())
         ON CONFLICT (id)
             DO UPDATE SET
-                name = NEW.name, path = NEW.path
+                name = NEW.name, path = NEW.path, draft = NEW.draft
             RETURNING
                 id INTO _activity_id;
     END IF;

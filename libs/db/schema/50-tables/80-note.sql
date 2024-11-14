@@ -2,6 +2,7 @@ CREATE TABLE "public"."note" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "draft" boolean NOT NULL DEFAULT FALSE,
     "archived_at" timestamp with time zone,
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "activity_id" uuid REFERENCES activity ON DELETE CASCADE,

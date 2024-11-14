@@ -1,8 +1,14 @@
 part of 'activity.dart';
 
 final class ActivityState extends Equatable {
-  static List<Note> _filterPinnedNotes(List<Note> notes, bool pinned) {
-    return notes.where((note) => note.order.pinned == pinned).toList();
+  static List<Note> _filterNotes(List<Note> notes,
+      {bool? pinned, bool? draft, bool? doNow}) {
+    return notes
+        .where((note) =>
+            (pinned == null || note.pinned == pinned) &&
+            (draft == null || note.draft == draft) &&
+            (doNow == null || note.doNow == doNow))
+        .toList();
   }
 
   ActivityState({
@@ -10,69 +16,80 @@ final class ActivityState extends Equatable {
     this.current,
     List<Activity>? children,
   })  : children = current?.children ?? children ?? const [],
-        notes = const [],
+        _notes = const [],
         moreNotes = true,
-        pinnedNotes = const [],
         topicId = null,
-        topicNotes = const [],
-        pinnedTopicNotes = const [],
+        topicNotes = [Note.draft(activityId: current?.id)],
         moreTopicNotes = false,
         balances = null;
 
   ActivityState._({
     required this.week,
-    this.current,
+    required this.current,
+    required List<Note> notes,
+    required this.topicNotes,
+    required this.moreNotes,
+    required this.moreTopicNotes,
+    required this.topicId,
     List<Activity>? children,
-    List<Note> notes = const [],
-    this.moreNotes = true,
-    this.topicId,
-    List<Note> topicNotes = const [],
-    this.moreTopicNotes = true,
     this.balances,
-  })  : children = children ?? current?.children ?? const [],
-        notes = _filterPinnedNotes(notes, false),
-        pinnedNotes = _filterPinnedNotes(notes, true),
-        topicNotes = _filterPinnedNotes(topicNotes, false),
-        pinnedTopicNotes = _filterPinnedNotes(topicNotes, true);
+  })  : _notes = notes,
+        children = children ?? current?.children ?? const [];
 
   final Activity? current;
   final List<Activity> children;
 
-  final List<Note> notes;
-  final List<Note> pinnedNotes;
+  final List<Note> _notes;
   final bool moreNotes;
+  List<Note> get notes =>
+      _filterNotes(_notes, pinned: false, draft: false, doNow: false);
+  List<Note> get pinnedNotes =>
+      _filterNotes(_notes, pinned: true, draft: false, doNow: false);
+  List<Note> get doNowNotes =>
+      _filterNotes(_notes, pinned: false, draft: false, doNow: true);
 
   final TopicId? topicId;
   final List<Note> topicNotes;
-  final List<Note> pinnedTopicNotes;
   final bool moreTopicNotes;
-  Note? get topicNote => topicNotes.firstOrNull;
+  Note get topicNote => topicNotes.first;
+  Note get draftNote => topicNotes.last;
 
   final Week week;
   final Map<ActivityId?, Balance>? balances;
 
   ActivityState copyWith({
-    Optional<Activity> current = const Optional.absent(),
+    Value<Activity?> current = const Value.absent(),
     List<Activity>? children,
     Week? week,
-    Optional<Map<Uuid?, Balance>> balances = const Optional.absent(),
+    Value<Map<Uuid?, Balance>?> balances = const Value.absent(),
     List<Note>? notes,
     bool? moreNotes,
-    Optional<TopicId> topicId = const Optional.absent(),
+    Value<TopicId?> topicId = const Value.absent(),
     List<Note>? topicNotes,
     bool? moreTopicNotes,
     Note? newNote,
-    List<Note> newNotes = const [],
   }) {
+    notes ??= _notes;
+    topicNotes ??= this.topicNotes;
     if (newNote != null) {
-      newNotes = newNotes + [newNote];
+      if (newNote.root) {
+        notes = List<Note>.from(notes)
+          ..replaceSorted(
+            newNote,
+            (n1, n2) => n1.id == n2.id,
+          );
+      } else {
+        topicNotes = List<Note>.from(topicNotes)
+          ..replaceSorted(
+            newNote,
+            (n1, n2) => n1.id == n2.id,
+          );
+      }
     }
-    notes ??= this.notes;
-    for (var note in newNotes) {
-      List<Note>.from(notes).replaceSorted(
-        note,
-        (n1, n2) => n1.id == n2.id,
-      );
+    if (!topicNotes.any((note) => note.draft)) {
+      topicNotes.add(Note.draft(
+          activityId: current.or(this.current)?.id,
+          parent: topicNotes.firstOrNull));
     }
 
     return ActivityState._(
@@ -83,7 +100,7 @@ final class ActivityState extends Equatable {
       notes: notes,
       moreNotes: moreNotes ?? this.moreNotes,
       topicId: topicId.or(this.topicId),
-      topicNotes: topicNotes ?? this.topicNotes,
+      topicNotes: topicNotes,
       moreTopicNotes: moreTopicNotes ?? this.moreTopicNotes,
     );
   }
@@ -96,10 +113,8 @@ final class ActivityState extends Equatable {
         balances,
         notes,
         moreNotes,
-        pinnedNotes,
         topicId,
         topicNotes,
-        pinnedTopicNotes,
         moreTopicNotes,
       ];
 }

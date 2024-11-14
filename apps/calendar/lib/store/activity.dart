@@ -4,9 +4,7 @@ typedef ActivityId = Uuid;
 typedef TopicId = Uuid;
 
 @DataClassName('ActivityRow')
-class Activities extends UuidStoreTable {
-  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
-
+class Activities extends UuidStoreTable with DraftTable {
   TextColumn get name => text()();
   TextColumn get path => text().map(const PathConverter())();
   RealColumn get order => real()
@@ -108,6 +106,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
           id: Uuid.generate(),
           createdAt: DateTime.now(),
           modifiedAt: DateTime.now(),
+          draft: false,
           path: Path.generate(parent: parent?.path),
         ) {
     parent?._addChild(this);
@@ -119,6 +118,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
           id: row.id,
           createdAt: row.createdAt,
           modifiedAt: row.modifiedAt,
+          draft: row.draft,
           name: row.name,
           pomodoro: row.pomodoro,
           order: row.order,
@@ -135,6 +135,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Uuid? id,
     DateTime? modifiedAt,
     DateTime? createdAt,
+    bool? draft,
     String? name,
     Path? path,
     Order? order,
@@ -144,8 +145,10 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       Activity.fromStore(
         super.copyWith(
           id: id,
-          modifiedAt: modifiedAt,
-          createdAt: createdAt,
+          createdAt:
+              this.draft && draft == false ? DateTime.now() : this.createdAt,
+          modifiedAt: DateTime.now(),
+          draft: draft,
           name: name,
           path: path,
           order: order,
@@ -160,9 +163,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         .replaceSorted(child, (a, b) => a.id == b.id);
   }
 
-  Future<void> save() {
-    return Store.get.save(table, copyWith(modifiedAt: DateTime.now()));
-  }
+  Future<void> save() => Store.get
+      .save(table, copyWith(modifiedAt: DateTime.now()).toCompanion(false));
 
   @override
   int compareTo(Activity other) {

@@ -11,7 +11,7 @@ enum EventAvailability { busy, away, focus, free, location }
 typedef EventId = Uuid;
 
 @DataClassName('EventRow')
-class Events extends UuidStoreTable {
+class Events extends UuidStoreTable with DraftTable {
   TextColumn get name => text().nullable()();
   DateTimeColumn get start => dateTime()();
   DateTimeColumn get end => dateTime()();
@@ -108,7 +108,9 @@ class Event extends EventRow {
       this.activity})
       : super(
           id: Uuid.generate(),
+          createdAt: DateTime.now(),
           modifiedAt: DateTime.now(),
+          draft: false,
           activityId: activity?.id,
           start: at.start,
           end: at.end,
@@ -117,7 +119,9 @@ class Event extends EventRow {
   Event.fromStore(EventRow row, {this.activity})
       : super(
           id: row.id,
+          createdAt: row.createdAt,
           modifiedAt: row.modifiedAt,
+          draft: row.draft,
           name: row.name,
           start: row.start,
           end: row.end,
@@ -134,6 +138,8 @@ class Event extends EventRow {
   Event copyWith({
     Uuid? id,
     DateTime? modifiedAt,
+    DateTime? createdAt,
+    bool? draft,
     Value<Uuid?> activityId = const Value.absent(),
     Value<Activity?> activity = const Value.absent(),
     DateTime? start,
@@ -146,10 +152,14 @@ class Event extends EventRow {
     bool? inviteesHidden,
     Value<String?> series = const Value.absent(),
   }) {
+    final publish = this.draft && draft == false;
     return Event.fromStore(
       super.copyWith(
         id: id,
         activityId: activityId,
+        createdAt: publish ? DateTime.now() : this.createdAt,
+        modifiedAt: DateTime.now(),
+        draft: draft,
         start: start,
         end: end,
         name: name,
