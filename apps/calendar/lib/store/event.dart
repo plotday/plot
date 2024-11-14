@@ -175,7 +175,7 @@ class Event extends EventRow {
 
   final Activity? activity;
 
-  Future<void> save() => Store.get.save(table, this);
+  Future<void> save() => Store.get.save(table, toCompanion(false));
 
   DateTimeRange get at => DateTimeRange(start, end);
 }

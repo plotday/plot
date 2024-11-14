@@ -139,6 +139,27 @@ class Session extends SessionRow {
           priority: row.priority,
         );
 
+  @override
+  Session copyWith(
+          {Uuid? id,
+          DateTime? modifiedAt,
+          Value<Uuid?> activityId = const Value.absent(),
+          DateTime? start,
+          DateTime? end,
+          int? priority,
+          Value<Duration?> pomodoro = const Value.absent(),
+          Value<DateTime?> pomodoroAt = const Value.absent()}) =>
+      Session.fromStore(super.copyWith(
+        id: id,
+        modifiedAt: DateTime.now(),
+        activityId: activityId,
+        start: start,
+        end: end,
+        priority: priority,
+        pomodoro: pomodoro,
+        pomodoroAt: pomodoroAt,
+      ));
+
   final Activity? activity;
 
   Future<void> save() => Store.get.save(table, toCompanion(false));

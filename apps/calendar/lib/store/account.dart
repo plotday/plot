@@ -72,7 +72,20 @@ class Account extends AccountRow {
           provider: row.provider,
         );
 
+  @override
+  Account copyWith(
+          {int? id,
+          DateTime? modifiedAt,
+          String? email,
+          AccountProvider? provider}) =>
+      Account.fromStore(super.copyWith(
+        id: id,
+        modifiedAt: DateTime.now(),
+        email: email,
+        provider: provider,
+      ));
+
   final List<Calendar>? calendars;
 
-  Future<void> save() => Store.get.save(table, this);
+  Future<void> save() => Store.get.save(table, toCompanion(false));
 }

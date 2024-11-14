@@ -34,7 +34,22 @@ class Calendar extends CalendarRow {
           accountId: row.accountId,
         );
 
-  Future<void> save() => Store.get.save(table, this);
+  @override
+  Calendar copyWith(
+          {int? id,
+          DateTime? modifiedAt,
+          String? name,
+          bool? enabled,
+          int? accountId}) =>
+      Calendar.fromStore(super.copyWith(
+        id: id,
+        modifiedAt: DateTime.now(),
+        name: name,
+        enabled: enabled,
+        accountId: accountId,
+      ));
+
+  Future<void> save() => Store.get.save(table, toCompanion(false));
 
   Future<void> sync() async {
     await api.post(
