@@ -67,29 +67,32 @@ final class ActivityState extends Equatable {
     Value<TopicId?> topicId = const Value.absent(),
     List<Note>? topicNotes,
     bool? moreTopicNotes,
-    Note? newNote,
+    List<Note>? newNotes,
   }) {
     notes ??= _notes;
     topicNotes ??= this.topicNotes;
-    if (newNote != null) {
+    for (var newNote in newNotes ?? const <Note>[]) {
       if (newNote.root) {
-        notes = List<Note>.from(notes)
+        notes = List<Note>.from(notes!)
           ..replaceSorted(
             newNote,
             (n1, n2) => n1.id == n2.id,
           );
       } else {
-        topicNotes = List<Note>.from(topicNotes)
+        topicNotes = List<Note>.from(topicNotes!)
           ..replaceSorted(
             newNote,
             (n1, n2) => n1.id == n2.id,
           );
       }
     }
-    if (!topicNotes.any((note) => note.draft)) {
-      topicNotes.add(Note.draft(
+    if (!topicNotes!.any((note) => note.draft)) {
+      topicNotes.add(
+        Note.draft(
           activityId: current.or(this.current)?.id,
-          parent: topicNotes.firstOrNull));
+          parent: topicNotes.firstOrNull,
+        ),
+      );
     }
 
     return ActivityState._(
@@ -97,7 +100,7 @@ final class ActivityState extends Equatable {
       current: current.or(this.current),
       children: children ?? current.orNull?.children ?? this.children,
       week: week ?? this.week,
-      notes: notes,
+      notes: notes!,
       moreNotes: moreNotes ?? this.moreNotes,
       topicId: topicId.or(this.topicId),
       topicNotes: topicNotes,

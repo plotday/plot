@@ -94,12 +94,22 @@ class ActivityBloc extends Cubit<ActivityState> {
   }
 
   Future<void> updateNote(Note note) async {
+    final topicUpdate =
+        !note.draft && !note.root && note.topicId == state.topicId
+            ? state.topicNote.copyWith(order: Order.first())
+            : null;
     emit(
-      state.copyWith(newNote: note),
+      state.copyWith(newNotes: [
+        note,
+        if (topicUpdate != null) topicUpdate,
+      ]),
     );
     try {
       // TODO debounce save
-      await note.save();
+      await Future.wait([
+        note.save(),
+        if (topicUpdate != null) topicUpdate.save(),
+      ]);
     } catch (e) {
       print(e);
       rethrow;
