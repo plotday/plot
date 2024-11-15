@@ -24,10 +24,9 @@ class Notes extends UuidStoreTable with DraftTable {
 
 class NotesBase extends BaseTable {
   NotesBase({
-    super.order,
     super.limit,
     super.name,
-  }) : super(table: 'note');
+  }) : super(table: 'note_x', upsertAsUpdate: true, order: 'order_x');
 
   @override
   Insertable<DataClass> fromBase(Map<String, dynamic> json) =>
@@ -38,7 +37,6 @@ class ActivityNotesBase extends NotesBase {
   ActivityNotesBase(this.activityPath)
       : super(
           name: 'notes:$activityPath',
-          order: 'order',
           limit: 40,
         );
 
@@ -55,7 +53,6 @@ class TopicNotesBase extends NotesBase {
   TopicNotesBase(this.topicId)
       : super(
           name: 'notes:topic:$topicId',
-          order: 'order',
           limit: 40,
         );
 
@@ -94,8 +91,17 @@ class Note extends NoteRow implements Comparable<Note> {
     } else {
       query.where((t) => t.activityId.equals(activity.id.toBytes()));
     }
-    query.orderBy(
-        [(t) => OrderingTerm.desc(t.root), (t) => OrderingTerm.asc(t.order)]);
+
+    query.orderBy([
+      (t) => OrderingTerm.desc(t.pinned),
+      (t) => OrderingTerm(
+            expression: const CustomExpression<DateTime>(
+                'CASE WHEN do_at IS NOT NULL AND do_at <= CURRENT_TIMESTAMP THEN do_at ELSE NULL END'),
+            mode: OrderingMode.asc,
+          ),
+      (t) => OrderingTerm.asc(t.order)
+    ]);
+
     return query
         .watch()
         .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
@@ -104,7 +110,10 @@ class Note extends NoteRow implements Comparable<Note> {
   static Stream<List<Note>> watchTopic(TopicId topicId) =>
       (Store.get.select(table)
             ..where((t) => t.topicId.equals(topicId.toBytes()))
-            ..orderBy([(t) => OrderingTerm.asc(t.order)]))
+            ..orderBy([
+              (t) => OrderingTerm.desc(t.root),
+              (t) => OrderingTerm.asc(t.order)
+            ]))
           .watch()
           .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
 

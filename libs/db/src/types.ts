@@ -1119,6 +1119,7 @@ export type Database = {
           id: string | null
           modified_at: string | null
           order: number | null
+          order_x: number | null
           ordered_at: string | null
           pinned: boolean | null
           private: boolean | null
