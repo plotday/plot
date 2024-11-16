@@ -3398,9 +3398,10 @@ class $BalancesTable extends Balances
       defaultValue: currentDateAndTime);
   static const VerificationMeta _dayMeta = const VerificationMeta('day');
   @override
-  late final GeneratedColumn<String> day = GeneratedColumn<String>(
-      'day', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
+  late final GeneratedColumnWithTypeConverter<Date, String> day =
+      GeneratedColumn<String>('day', aliasedName, false,
+              type: DriftSqlType.string, requiredDuringInsert: true)
+          .withConverter<Date>($BalancesTable.$converterday);
   static const VerificationMeta _activityIdMeta =
       const VerificationMeta('activityId');
   @override
@@ -3413,9 +3414,9 @@ class $BalancesTable extends Balances
           .withConverter<Uuid?>($BalancesTable.$converteractivityIdn);
   static const VerificationMeta _typeMeta = const VerificationMeta('type');
   @override
-  late final GeneratedColumnWithTypeConverter<BalanceType, int> type =
-      GeneratedColumn<int>('type', aliasedName, false,
-              type: DriftSqlType.int, requiredDuringInsert: true)
+  late final GeneratedColumnWithTypeConverter<BalanceType, String> type =
+      GeneratedColumn<String>('type', aliasedName, false,
+              type: DriftSqlType.string, requiredDuringInsert: true)
           .withConverter<BalanceType>($BalancesTable.$convertertype);
   static const VerificationMeta _countMeta = const VerificationMeta('count');
   @override
@@ -3451,12 +3452,7 @@ class $BalancesTable extends Balances
           modifiedAt.isAcceptableOrUnknown(
               data['modified_at']!, _modifiedAtMeta));
     }
-    if (data.containsKey('day')) {
-      context.handle(
-          _dayMeta, day.isAcceptableOrUnknown(data['day']!, _dayMeta));
-    } else if (isInserting) {
-      context.missing(_dayMeta);
-    }
+    context.handle(_dayMeta, const VerificationResult.success());
     context.handle(_activityIdMeta, const VerificationResult.success());
     context.handle(_typeMeta, const VerificationResult.success());
     if (data.containsKey('count')) {
@@ -3475,13 +3471,13 @@ class $BalancesTable extends Balances
     return BalanceRow(
       modifiedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
-      day: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}day'])!,
+      day: $BalancesTable.$converterday.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}day'])!),
       activityId: $BalancesTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
       type: $BalancesTable.$convertertype.fromSql(attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}type'])!),
+          .read(DriftSqlType.string, data['${effectivePrefix}type'])!),
       count: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}count'])!,
       time: $BalancesTable.$convertertime.fromSql(attachedDatabase.typeMapping
@@ -3494,19 +3490,20 @@ class $BalancesTable extends Balances
     return $BalancesTable(attachedDatabase, alias);
   }
 
+  static TypeConverter<Date, String> $converterday = const DateConverter();
   static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
   static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
       NullAwareTypeConverter.wrap($converteractivityId);
-  static JsonTypeConverter2<BalanceType, int, int> $convertertype =
-      const EnumIndexConverter<BalanceType>(BalanceType.values);
+  static JsonTypeConverter2<BalanceType, String, String> $convertertype =
+      const EnumNameConverter<BalanceType>(BalanceType.values);
   static TypeConverter<Duration, int> $convertertime =
       const DurationConverter();
 }
 
 class BalanceRow extends DataClass implements Insertable<BalanceRow> {
   final DateTime modifiedAt;
-  final String day;
+  final Date day;
   final Uuid? activityId;
   final BalanceType type;
   final int count;
@@ -3522,13 +3519,15 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['modified_at'] = Variable<DateTime>(modifiedAt);
-    map['day'] = Variable<String>(day);
+    {
+      map['day'] = Variable<String>($BalancesTable.$converterday.toSql(day));
+    }
     if (!nullToAbsent || activityId != null) {
       map['activity_id'] = Variable<Uint8List>(
           $BalancesTable.$converteractivityIdn.toSql(activityId));
     }
     {
-      map['type'] = Variable<int>($BalancesTable.$convertertype.toSql(type));
+      map['type'] = Variable<String>($BalancesTable.$convertertype.toSql(type));
     }
     map['count'] = Variable<int>(count);
     {
@@ -3555,10 +3554,10 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return BalanceRow(
       modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
-      day: serializer.fromJson<String>(json['day']),
+      day: serializer.fromJson<Date>(json['day']),
       activityId: serializer.fromJson<Uuid?>(json['activity_id']),
       type: $BalancesTable.$convertertype
-          .fromJson(serializer.fromJson<int>(json['type'])),
+          .fromJson(serializer.fromJson<String>(json['type'])),
       count: serializer.fromJson<int>(json['count']),
       time: serializer.fromJson<Duration>(json['seconds']),
     );
@@ -3568,10 +3567,10 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'modified_at': serializer.toJson<DateTime>(modifiedAt),
-      'day': serializer.toJson<String>(day),
+      'day': serializer.toJson<Date>(day),
       'activity_id': serializer.toJson<Uuid?>(activityId),
       'type':
-          serializer.toJson<int>($BalancesTable.$convertertype.toJson(type)),
+          serializer.toJson<String>($BalancesTable.$convertertype.toJson(type)),
       'count': serializer.toJson<int>(count),
       'seconds': serializer.toJson<Duration>(time),
     };
@@ -3579,7 +3578,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
 
   BalanceRow copyWith(
           {DateTime? modifiedAt,
-          String? day,
+          Date? day,
           Value<Uuid?> activityId = const Value.absent(),
           BalanceType? type,
           int? count,
@@ -3635,7 +3634,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
 
 class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   final Value<DateTime> modifiedAt;
-  final Value<String> day;
+  final Value<Date> day;
   final Value<Uuid?> activityId;
   final Value<BalanceType> type;
   final Value<int> count;
@@ -3652,7 +3651,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   });
   BalancesCompanion.insert({
     this.modifiedAt = const Value.absent(),
-    required String day,
+    required Date day,
     this.activityId = const Value.absent(),
     required BalanceType type,
     this.count = const Value.absent(),
@@ -3664,7 +3663,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
     Expression<DateTime>? modifiedAt,
     Expression<String>? day,
     Expression<Uint8List>? activityId,
-    Expression<int>? type,
+    Expression<String>? type,
     Expression<int>? count,
     Expression<int>? time,
     Expression<int>? rowid,
@@ -3682,7 +3681,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
 
   BalancesCompanion copyWith(
       {Value<DateTime>? modifiedAt,
-      Value<String>? day,
+      Value<Date>? day,
       Value<Uuid?>? activityId,
       Value<BalanceType>? type,
       Value<int>? count,
@@ -3706,7 +3705,8 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
     }
     if (day.present) {
-      map['day'] = Variable<String>(day.value);
+      map['day'] =
+          Variable<String>($BalancesTable.$converterday.toSql(day.value));
     }
     if (activityId.present) {
       map['activity_id'] = Variable<Uint8List>(
@@ -3714,7 +3714,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
     }
     if (type.present) {
       map['type'] =
-          Variable<int>($BalancesTable.$convertertype.toSql(type.value));
+          Variable<String>($BalancesTable.$convertertype.toSql(type.value));
     }
     if (count.present) {
       map['count'] = Variable<int>(count.value);
@@ -5909,7 +5909,7 @@ typedef $$SessionsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool activityId})>;
 typedef $$BalancesTableCreateCompanionBuilder = BalancesCompanion Function({
   Value<DateTime> modifiedAt,
-  required String day,
+  required Date day,
   Value<Uuid?> activityId,
   required BalanceType type,
   Value<int> count,
@@ -5918,7 +5918,7 @@ typedef $$BalancesTableCreateCompanionBuilder = BalancesCompanion Function({
 });
 typedef $$BalancesTableUpdateCompanionBuilder = BalancesCompanion Function({
   Value<DateTime> modifiedAt,
-  Value<String> day,
+  Value<Date> day,
   Value<Uuid?> activityId,
   Value<BalanceType> type,
   Value<int> count,
@@ -5953,12 +5953,14 @@ class $$BalancesTableFilterComposer
       builder: (column, joinBuilders) =>
           ColumnFilters(column, joinBuilders: joinBuilders));
 
-  ColumnFilters<String> get day => $state.composableBuilder(
-      column: $state.table.day,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnWithTypeConverterFilters<Date, Date, String> get day =>
+      $state.composableBuilder(
+          column: $state.table.day,
+          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
+              column,
+              joinBuilders: joinBuilders));
 
-  ColumnWithTypeConverterFilters<BalanceType, BalanceType, int> get type =>
+  ColumnWithTypeConverterFilters<BalanceType, BalanceType, String> get type =>
       $state.composableBuilder(
           column: $state.table.type,
           builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
@@ -6003,7 +6005,7 @@ class $$BalancesTableOrderingComposer
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
 
-  ColumnOrderings<int> get type => $state.composableBuilder(
+  ColumnOrderings<String> get type => $state.composableBuilder(
       column: $state.table.type,
       builder: (column, joinBuilders) =>
           ColumnOrderings(column, joinBuilders: joinBuilders));
@@ -6052,7 +6054,7 @@ class $$BalancesTableTableManager extends RootTableManager<
               $$BalancesTableOrderingComposer(ComposerState(db, table)),
           updateCompanionCallback: ({
             Value<DateTime> modifiedAt = const Value.absent(),
-            Value<String> day = const Value.absent(),
+            Value<Date> day = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
             Value<BalanceType> type = const Value.absent(),
             Value<int> count = const Value.absent(),
@@ -6070,7 +6072,7 @@ class $$BalancesTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<DateTime> modifiedAt = const Value.absent(),
-            required String day,
+            required Date day,
             Value<Uuid?> activityId = const Value.absent(),
             required BalanceType type,
             Value<int> count = const Value.absent(),

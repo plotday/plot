@@ -62,7 +62,7 @@ class ActivityBloc extends Cubit<ActivityState> {
   void _loadBalances() async {
     _balanceSubscription?.cancel();
     _balanceSubscription =
-        Balance.watch(state.week.start, state.week.end).listen(
+        Balance.watchWeek(state.week, path: state.current?.path).listen(
       (balances) {
         emit(state.copyWith(balances: Value(balances)));
       },
@@ -117,7 +117,7 @@ class ActivityBloc extends Cubit<ActivityState> {
   }
 
   StreamSubscription<dynamic>? _activitySubscription;
-  StreamSubscription<Map<Uuid?, Balance>>? _balanceSubscription;
+  StreamSubscription<BalanceByActivityType>? _balanceSubscription;
   StreamSubscription<List<Note>>? _noteSubscription;
   StreamSubscription<List<Note>>? _topicSubscription;
 }

@@ -2,84 +2,63 @@ CREATE OR REPLACE VIEW balance WITH ( security_invoker = TRUE)
 -- for formatting
 AS
 SELECT
-    COALESCE(ex.user_id, s.user_id) AS user_id,
-    COALESCE(ex.day, s.day) AS day,
-    COALESCE(ex.activity_id, s.activity_id) AS activity_id,
-    ex.type,
-    COALESCE(COALESCE(ex.events, 0) + COALESCE(s.events, 0)) AS events,
-    COALESCE(COALESCE(ex.seconds, 0) + COALESCE(s.seconds, 0)) AS seconds
-FROM (
-    SELECT
-        user_id,
-        day,
-        activity_id,
-        'accepted' AS type,
-        COALESCE(count(*) FILTER (WHERE response != 'declined'
-                AND response != 'tentative'
-                AND response IS NOT NULL), 0) AS events,
-        COALESCE(sum(seconds) FILTER (WHERE response != 'declined'
-                AND response != 'tentative'
-                AND response IS NOT NULL), 0) AS seconds
-    FROM
-        event_x
-    WHERE
-        status != 'cancelled'
-        AND all_day = FALSE
-    GROUP BY
-        user_id,
-        day,
-        activity_id
-    UNION ALL
-    SELECT
-        user_id,
-        day,
-        activity_id,
-        'tentative' AS type,
-        COALESCE(count(*) FILTER (WHERE response = 'tentative'
-                OR response IS NULL), 0) AS events,
-        COALESCE(sum(seconds) FILTER (WHERE response = 'tentative'
-                OR response IS NULL), 0) AS seconds
-    FROM
-        event_x
-    WHERE
-        status != 'cancelled'
-        AND all_day = FALSE
-    GROUP BY
-        user_id,
-        day,
-        activity_id
-    UNION ALL
-    SELECT
-        user_id,
-        day,
-        activity_id,
-        'declined' AS type,
-        COALESCE(count(*) FILTER (WHERE response = 'declined'), 0) AS events,
-        COALESCE(sum(seconds) FILTER (WHERE response = 'declined'), 0) AS seconds
-    FROM
-        event_x
-    WHERE
-        status != 'cancelled'
-        AND all_day = FALSE
-    GROUP BY
-        user_id,
-        day,
-        activity_id) AS ex
-    FULL JOIN (
-        SELECT
-            user_id,
-            (lower(at) at time zone user_timezone ())::date AS day,
-            activity_id,
-            'accepted' AS type,
-            count(*) AS events,
-            sum(EXTRACT(epoch FROM upper(at) - lower(at)) / 60)::integer AS seconds
-        FROM
-            session
-        GROUP BY
-            user_id,
-            day,
-            activity_id) AS s ON ex.user_id = s.user_id
-    AND ex.day = s.day
-    AND ex.activity_id = s.activity_id
-    AND ex.type = s.type;
+    user_id,
+    day,
+    activity_id,
+    CASE WHEN response IS NULL THEN
+        'tentative'
+    ELSE
+        response::text
+    END AS type,
+    COUNT(*) AS "count",
+    SUM(seconds) AS "seconds",
+    MAX(modified_at) AS modified_at
+FROM
+    event_x
+WHERE
+    status != 'cancelled'
+    AND all_day = FALSE
+GROUP BY
+    user_id,
+    day,
+    activity_id,
+    response
+UNION ALL
+SELECT
+    user_id,
+    (lower(at) at time zone user_timezone ())::date AS day,
+    activity_id,
+    'session' AS type,
+    count(*) AS "count",
+    sum(EXTRACT(epoch FROM upper(at) - lower(at)) / 60)::integer AS seconds,
+    MAX(modified_at) AS modified_at
+FROM
+    session
+GROUP BY
+    user_id,
+    day,
+    activity_id
+UNION ALL
+SELECT
+    user_id,
+    (do_at at time zone user_timezone ())::date AS day,
+    activity_id,
+    CASE WHEN do_at <= NOW() THEN
+        'do_now'
+    ELSE
+        'do_later'
+    END AS type,
+    COUNT(*) AS "count",
+    0 AS "seconds",
+    MAX(modified_at) AS modified_at
+FROM
+    "public"."note"
+WHERE
+    do_at IS NOT NULL
+    AND done_at IS NULL
+GROUP BY
+    user_id,
+    day,
+    activity_id,
+    type;
 

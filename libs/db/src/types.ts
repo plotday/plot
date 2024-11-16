@@ -944,8 +944,9 @@ export type Database = {
       balance: {
         Row: {
           activity_id: string | null
+          count: number | null
           day: string | null
-          events: number | null
+          modified_at: string | null
           seconds: number | null
           type: string | null
           user_id: string | null

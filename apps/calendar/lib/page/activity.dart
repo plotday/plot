@@ -79,8 +79,10 @@ class ActivityPage extends StatelessWidget {
             ),
             ReorderableListView(
               list: state.children,
-              itemBuilder: (buildContext, item) =>
-                  ActivityWidget(context: item),
+              itemBuilder: (buildContext, item) => ActivityWidget(
+                activity: item,
+                balances: state.balances?[item.id],
+              ),
               shrinkWrap: true,
               onReorder: (int oldIndex, int newIndex) async {
                 var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);

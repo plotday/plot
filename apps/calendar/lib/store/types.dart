@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
+import 'package:plot/util/time.dart';
 import 'package:uuid/uuid.dart' as uuid;
 
 bool __isType<T, Y>() => T == Y;
@@ -96,5 +97,19 @@ class DurationConverter extends TypeConverter<Duration, int> {
   @override
   int toSql(Duration value) {
     return value.inSeconds;
+  }
+}
+
+class DateConverter extends TypeConverter<Date, String> {
+  const DateConverter();
+
+  @override
+  Date fromSql(String fromDb) {
+    return Date.fromString(fromDb);
+  }
+
+  @override
+  String toSql(Date value) {
+    return value.toString();
   }
 }

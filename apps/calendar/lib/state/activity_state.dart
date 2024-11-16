@@ -55,13 +55,13 @@ final class ActivityState extends Equatable {
   Note get draftNote => topicNotes.last;
 
   final Week week;
-  final Map<ActivityId?, Balance>? balances;
+  final BalanceByActivityType? balances;
 
   ActivityState copyWith({
     Value<Activity?> current = const Value.absent(),
     List<Activity>? children,
     Week? week,
-    Value<Map<Uuid?, Balance>?> balances = const Value.absent(),
+    Value<BalanceByActivityType?> balances = const Value.absent(),
     List<Note>? notes,
     bool? moreNotes,
     Value<TopicId?> topicId = const Value.absent(),
