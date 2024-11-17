@@ -18,3 +18,12 @@ END;
 $$
 LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION server_timestamp ()
+    RETURNS timestamptz
+    AS $$
+BEGIN
+    RETURN now();
+END;
+$$
+LANGUAGE plpgsql;
+

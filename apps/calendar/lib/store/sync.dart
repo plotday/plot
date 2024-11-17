@@ -5,8 +5,11 @@ class SyncStates extends Table {
 
   // Local timestamp of the most recent row pushed
   DateTimeColumn get pushedAt => dateTime().nullable()();
-  // Value of the order field of the last item pulled
-  TextColumn get lastPulled => text().nullable()();
+  // Value of the modified_at field of the latest item pulled
+  DateTimeColumn get pulledAt => dateTime().nullable()();
+  // Range synced
+  TextColumn get from => text().nullable()();
+  TextColumn get to => text().nullable()();
   BoolColumn get more => boolean().withDefault(const Constant(true))();
 
   @override

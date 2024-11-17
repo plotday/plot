@@ -25,7 +25,6 @@ part 'calendar.dart';
 part 'activity.dart';
 part 'note.dart';
 part 'event.dart';
-part 'budget.dart';
 part 'session.dart';
 part 'balance.dart';
 
@@ -56,6 +55,13 @@ class UuidStoreTable extends StoreTable {
   Set<Column> get primaryKey => {id};
 }
 
+enum PullType {
+  initial, // pull first page on initial pull
+  more, // pull the next page
+  updates, // pull updates since last pull
+  all, // pull all
+}
+
 abstract class BaseTable {
   BaseTable({
     required this.table,
@@ -63,11 +69,14 @@ abstract class BaseTable {
     this.ascending = true,
     this.upsertAsUpdate = false,
     String? name,
+    this.filterName,
     this.limit,
   }) : name = name ?? "${table}s";
 
   final String table;
   final String name;
+  final String? filterName;
+  String get fullName => "$name${filterName == null ? "" : ":$filterName"}";
   final String order;
   final bool ascending;
   final int? limit;
@@ -76,20 +85,70 @@ abstract class BaseTable {
   Insertable<DataClass> fromBase(Map<String, dynamic> json);
   Map<String, dynamic> toBase(DataClass row) => row.toJson();
 
-  Future<(Iterable<Map<String, dynamic>>, String?)> get(
-      String? lastOrder) async {
+  Future<
+      (
+        Iterable<Map<String, dynamic>> rows,
+        DateTime? lastModified,
+        (String?, String?)? range,
+        bool more,
+      )> get({
+    (String?, String?)? include,
+    (String?, String?)? exclude,
+    DateTime? modifiedSince,
+  }) async {
     var query =
         base.from(table).select().eq("user_id", base.auth.currentUser!.id);
-    if (lastOrder != null) {
-      query = query.gt(order, lastOrder);
+    if (exclude != null) {
+      final (from, to) = exclude;
+      if (from != null) {
+        if (to != null) {
+          query = query.or("$order.lt.$from,$order.gt.$to");
+        } else {
+          query = query.lt(order, from);
+        }
+      } else if (to != null) {
+        query = query.gt(order, to);
+      }
+    }
+    if (include != null) {
+      final (from, to) = include;
+      if (from != null) {
+        query = query.gte(order, from);
+      }
+      if (to != null) {
+        query = query.lte(order, to);
+      }
+    }
+    if (modifiedSince != null) {
+      query = query.gt("modified_at", modifiedSince);
     }
     query = filter(query);
     var query2 = sort(query);
     if (limit != null) {
       query2 = query2.limit(limit!);
     }
+    DateTime preQueryTimestamp = DateTime.now();
     final rows = await query2;
-    return (rows, rows.isEmpty ? null : rows.last[order].toString());
+    (String?, String?)? range;
+    if (include != null && limit == null) {
+      range = include;
+    } else if (rows.isNotEmpty) {
+      range = (rows.first[order].toString(), rows.last[order].toString());
+    }
+    DateTime lastModified;
+    if (rows.isEmpty) {
+      final localTimestamp = DateTime.now();
+      final serverTimestamp =
+          DateTime.parse(await base.rpc<String>('server_timestamp'));
+      lastModified =
+          preQueryTimestamp.add(serverTimestamp.difference(localTimestamp));
+    } else {
+      lastModified = rows.map((row) {
+        return DateTime.parse(row['modified_at'] as String);
+      }).reduce((value, last) => value.isAfter(last) ? value : last);
+    }
+    final more = include != null || (limit != null && rows.length < limit!);
+    return (rows, lastModified, range, more);
   }
 
   PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
@@ -122,7 +181,6 @@ abstract class BaseTable {
   Activities,
   Notes,
   Events,
-  Budgets,
   Sessions,
   Balances,
 ])
@@ -175,7 +233,7 @@ class Store extends _$Store {
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable,
   ) async {
-    final entity = baseTable.name;
+    final entity = baseTable.fullName;
     final syncState = await (select(syncStates)
           ..where((row) => row.entity.equals(entity)))
         .getSingleOrNull();
@@ -201,7 +259,6 @@ class Store extends _$Store {
         SyncStatesCompanion.insert(
           entity: entity,
           pushedAt: Value(now),
-          lastPulled: const Value(null),
         ),
         onConflict: DoUpdate(
           (old) =>
@@ -212,49 +269,91 @@ class Store extends _$Store {
   }
 
   Future<bool> pull<TABLE extends StoreTable, DATA extends DataClass>(
-      TableInfo<TABLE, DATA> table, BaseTable baseTable) async {
-    if (!hasMore(baseTable)) return false;
-    final entity = baseTable.name;
+    PullType type,
+    TableInfo<TABLE, DATA> table,
+    BaseTable baseTable, {
+    (String, String)? range,
+  }) async {
+    final paged = [PullType.initial, PullType.more].contains(type);
+    if (paged && !hasMore(baseTable)) {
+      return false;
+    }
+    final entity = baseTable.fullName;
     final syncState = await (select(syncStates)
           ..where((row) => row.entity.equals(entity)))
         .getSingleOrNull();
     if (syncState?.more == false) {
       _noMore.add(entity);
-      return false;
+      if (paged) {
+        return false;
+      }
+    }
+    if (type == PullType.initial && syncState?.to != null) {
+      return true;
+    }
+    if (type == PullType.updates && syncState?.pulledAt == null) {
+      return true;
     }
 
-    var (baseRows, last) = (await baseTable.get(syncState?.lastPulled));
+    var (baseRows, lastModified, newRange, more) = (await baseTable.get(
+      include: range ??
+          ([PullType.updates, PullType.more].contains(type)
+              ? (syncState?.from, syncState?.to)
+              : null),
+      exclude: type == PullType.more ? (syncState?.from, syncState?.to) : null,
+      modifiedSince: type == PullType.more ? null : syncState?.pulledAt,
+    ));
+    final (from, to) = newRange ?? (null, null);
 
     final storeRows = baseRows.map(baseTable.fromBase);
     await batch((batch) {
       batch.insertAllOnConflictUpdate(table, storeRows);
     });
 
-    final more = baseTable.limit == null || last == null;
     if (!more) {
       _noMore.add(entity);
     }
     await into(syncStates).insert(
       SyncStatesCompanion.insert(
         entity: entity,
-        lastPulled: Value(last),
+        pulledAt: Value(lastModified),
+        from: paged ? Value(from) : const Value.absent(),
+        to: paged ? Value(to) : const Value.absent(),
+        more: Value(paged ? more : false),
         pushedAt: const Value(null),
-        more: Value(more),
       ),
       onConflict: DoUpdate(
         (old) => SyncStatesCompanion(
           entity: Value(entity),
-          lastPulled: Value(last),
-          more: Value(more),
+          pulledAt: Value(lastModified),
+          from: paged ? Value(from) : const Value.absent(),
+          to: paged ? Value(to) : const Value.absent(),
+          more: paged
+              ? Value(more)
+              : type == PullType.all
+                  ? const Value(false)
+                  : const Value.absent(),
         ),
       ),
     );
+    // If this is the first pull for the given type, we need to set its pulledAt
+    // so updates are synced from that point on.
+    if (baseTable.filterName != null) {
+      await into(syncStates).insert(
+        SyncStatesCompanion.insert(
+          entity: baseTable.name,
+          pulledAt: Value(lastModified),
+          pushedAt: const Value(null),
+        ),
+        onConflict: DoNothing(),
+      );
+    }
     return more;
   }
 
   static final Set<String> _noMore = {};
   bool hasMore(BaseTable baseTable) {
-    return !_noMore.contains(baseTable.name);
+    return !_noMore.contains(baseTable.fullName);
   }
 
   Future<void> sync() async {
@@ -263,19 +362,20 @@ class Store extends _$Store {
       Activity.push().then((_) => Activity.pull()),
       Note.push().then((_) => Note.pull()),
       Event.push().then((_) => Event.pull()),
+      Balance.pull(),
     ]);
   }
 
   Store._() : super(_openConnection());
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
       onUpgrade: (Migrator m, int from, int to) async {
-        final m = createMigrator(); // changed to this
+        final m = createMigrator();
         for (final table in allTables) {
           await m.deleteTable(table.actualTableName);
           await m.createTable(table);

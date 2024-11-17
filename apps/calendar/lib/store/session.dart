@@ -41,7 +41,8 @@ class Session extends SessionRow {
   static TableInfo<Sessions, SessionRow> get table => Store.get.sessions;
 
   static Future<void> push() => Store.get.push(table, SessionsBase());
-  static Future<bool> pull() => Store.get.pull(table, SessionsBase());
+  static Future<bool> pull() =>
+      Store.get.pull(PullType.updates, table, SessionsBase());
 
   static Future<Session> resume(Activity? activity,
       {required DateTime end}) async {

@@ -15,8 +15,8 @@ class Activities extends UuidStoreTable with DraftTable {
       .map(const DurationConverter())();
 }
 
-class ContextsBase extends BaseTable {
-  ContextsBase()
+class ActivitiesBase extends BaseTable {
+  ActivitiesBase()
       : super(table: 'activity_x', name: "activities", upsertAsUpdate: true);
 
   @override
@@ -31,8 +31,9 @@ class Activity extends ActivityRow implements Comparable<Activity> {
           bool>(
       "LENGTH(path) - LENGTH(REPLACE(path, '.', '')) <= ${path == null ? depth - 1 : path.depth + depth}");
 
-  static Future<void> push() => Store.get.push(table, ContextsBase());
-  static Future<bool> pull() => Store.get.pull(table, ContextsBase());
+  static Future<void> push() => Store.get.push(table, ActivitiesBase());
+  static Future<bool> pull() =>
+      Store.get.pull(PullType.all, table, ActivitiesBase());
 
   static Stream<Map<Uuid, Activity>> watch() {
     final query = Store.get.select(table);

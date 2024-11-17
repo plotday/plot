@@ -33,7 +33,13 @@ class Events extends UuidStoreTable with DraftTable {
 }
 
 class EventsBase extends BaseTable {
-  EventsBase() : super(table: 'event_x', name: 'events', upsertAsUpdate: true);
+  EventsBase({super.filterName, super.ascending, super.limit})
+      : super(
+          table: 'event_x',
+          name: 'events',
+          upsertAsUpdate: true,
+          order: 'day',
+        );
 
   @override
   Map<String, dynamic> toBase(DataClass row) {
@@ -54,17 +60,27 @@ class EventsBase extends BaseTable {
     json['end'] = range.end.toDb();
     return EventRow.fromJson(json);
   }
+
+  @override
+  PostgrestTransformBuilder<T2> sort<T2>(PostgrestTransformBuilder<T2> query) {
+    // While we fetch and order by 'day', we want the sort to be more granular
+    return query.order('at', ascending: true);
+  }
 }
 
 class Event extends EventRow {
   static TableInfo<Events, EventRow> get table => Store.get.events;
 
   static Future<void> push() => Store.get.push(table, EventsBase());
-  static Future<bool> pull() async => Store.get.pull(table, EventsBase());
-  // TODO: fetch more
+  static Future<bool> pull() =>
+      Store.get.pull(PullType.updates, table, EventsBase());
+  static Future<bool> pullRange(String from, String to) =>
+      Store.get.pull(PullType.more, table, EventsBase(),
+          range: (from.toString(), to.toString()));
 
   static Stream<List<Event>> watch(DateRange range,
       {bool withActivity = false}) {
+    pullRange(range.start.toString(), range.end.toString());
     final order =
         range.start <= range.end ? OrderingMode.asc : OrderingMode.desc;
     final eventStream = (Store.get.select(table)
@@ -92,6 +108,7 @@ class Event extends EventRow {
   }
 
   static Stream<Event> watchOne(EventId id) {
+    // TODO if not found, pull
     final query = Store.get.select(table)
       ..where((t) => t.id.equals(id.toBytes()));
     return query.watchSingle().map((row) => Event.fromStore(row));

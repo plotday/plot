@@ -29,28 +29,46 @@ class Balances extends StoreTable {
       integer().withDefault(const Constant(0)).map(const DurationConverter())();
 }
 
-class BalancesBase extends BaseTable {
-  BalancesBase() : super(table: 'balance');
+class BalanceBase extends BaseTable {
+  BalanceBase({super.filterName})
+      : super(
+          table: 'balance',
+        );
 
   @override
   Insertable<BalanceRow> fromBase(Map<String, dynamic> json) =>
       BalanceRow.fromJson(json);
 }
 
+class WeekBalanceBase extends BalanceBase {
+  WeekBalanceBase(this.week)
+      : super(
+          filterName: week.start.toString(),
+        );
+
+  final Week week;
+
+  @override
+  PostgrestFilterBuilder<T> filter<T>(PostgrestFilterBuilder<T> query) {
+    return query
+        .gte('day', week.start.toString())
+        .lt('day', week.end.toString());
+  }
+}
+
 class Balance extends BalanceRow {
   static $BalancesTable get table => Store.get.balances;
 
-  static Future<bool> pull(
-    Date from,
-    Date to, {
-    Path? path,
-    int? depth = 1, // number of child levels to include
-  }) =>
-      Store.get.pull(table, BalancesBase());
+  static Future<bool> pull() =>
+      Store.get.pull(PullType.updates, table, BalanceBase());
 
-  static Stream<BalanceByActivityDateType> watch(
-    Date from,
-    Date to, {
+  static Future<bool> pullWeek(
+    Week week,
+  ) =>
+      Store.get.pull(PullType.all, table, WeekBalanceBase(week));
+
+  static Stream<BalanceByActivityDateType> watchDaily(
+    DateRange range, {
     Path? path,
     int? depth = 1, // number of child levels to include
   }) {
@@ -58,8 +76,8 @@ class Balance extends BalanceRow {
       leftOuterJoin(
           Activity.table, Activity.table.id.equalsExp(table.activityId)),
     ])
-      ..where(table.day.isBiggerOrEqualValue(from.toString()))
-      ..where(table.day.isSmallerThanValue(to.toString()));
+      ..where(table.day.isBiggerOrEqualValue(range.start.toString()))
+      ..where(table.day.isSmallerThanValue(range.end.toString()));
 
     if (path != null) {
       query.where(Activity.table.path.like("$path%"));
@@ -68,7 +86,8 @@ class Balance extends BalanceRow {
       query.where(Activity.pathDepth(path, depth));
     }
 
-    final order = from <= to ? OrderingMode.asc : OrderingMode.desc;
+    final order =
+        range.start <= range.end ? OrderingMode.asc : OrderingMode.desc;
     query.orderBy([
       OrderingTerm(expression: table.day, mode: order),
     ]);
@@ -90,13 +109,12 @@ class Balance extends BalanceRow {
         );
   }
 
-  static Stream<BalanceByActivityType> watchWeek(
-    Week week, {
+  static Stream<BalanceByActivityType> watch(
+    DateRange range, {
     Path? path,
     int? depth = 1, // number of child levels to include
   }) {
-    return watch(week.start, week.end, path: path, depth: depth)
-        .map((dailyBalanceMap) {
+    return watchDaily(range, path: path, depth: depth).map((dailyBalanceMap) {
       final balanceMap = <ActivityId?, Map<BalanceType, BalanceStats>>{};
 
       for (final activityId in dailyBalanceMap.keys) {

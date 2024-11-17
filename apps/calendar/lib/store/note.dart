@@ -25,8 +25,13 @@ class Notes extends UuidStoreTable with DraftTable {
 class NotesBase extends BaseTable {
   NotesBase({
     super.limit,
-    super.name,
-  }) : super(table: 'note_x', upsertAsUpdate: true, order: 'order_x');
+    super.filterName,
+  }) : super(
+          table: 'note_x',
+          name: 'notes',
+          upsertAsUpdate: true,
+          order: 'order_x',
+        );
 
   @override
   Insertable<DataClass> fromBase(Map<String, dynamic> json) =>
@@ -36,7 +41,7 @@ class NotesBase extends BaseTable {
 class ActivityNotesBase extends NotesBase {
   ActivityNotesBase(this.activityPath)
       : super(
-          name: 'notes:$activityPath',
+          filterName: activityPath?.toString(),
           limit: 40,
         );
 
@@ -52,7 +57,7 @@ class ActivityNotesBase extends NotesBase {
 class TopicNotesBase extends NotesBase {
   TopicNotesBase(this.topicId)
       : super(
-          name: 'notes:topic:$topicId',
+          filterName: 'topic:$topicId',
           limit: 40,
         );
 
@@ -74,17 +79,22 @@ class Note extends NoteRow implements Comparable<Note> {
   static TableInfo<Notes, NoteRow> get table => Store.get.notes;
 
   static Future<void> push() => Store.get.push(table, NotesBase());
-  static Future<bool> pull() async => Store.get.pull(table, NotesBase());
-  static Future<bool> pullActivity(Path? activityPath) async =>
-      Store.get.pull(table, ActivityNotesBase(activityPath));
+  static Future<bool> pull() async =>
+      Store.get.pull(PullType.updates, table, NotesBase());
+  static Future<bool> pullActivity(Path? activityPath,
+          {bool more = false}) async =>
+      Store.get.pull(more ? PullType.more : PullType.initial, table,
+          ActivityNotesBase(activityPath));
   static bool hasMoreActivity(Path? activityPath) =>
       Store.get.hasMore(ActivityNotesBase(activityPath));
-  static Future<bool> pullTopic(TopicId topicId) async =>
-      Store.get.pull(table, TopicNotesBase(topicId));
+  static Future<bool> pullTopic(TopicId topicId, {bool more = false}) async =>
+      Store.get.pull(more ? PullType.more : PullType.initial, table,
+          TopicNotesBase(topicId));
   static bool hasMoreTopic(TopicId topicId) =>
       Store.get.hasMore(TopicNotesBase(topicId));
 
   static Stream<List<Note>> watchActivity(Activity? activity) {
+    pullActivity(activity?.path);
     final query = Store.get.select(table)..where((t) => t.root.equals(true));
     if (activity == null) {
       query.where((t) => t.activityId.isNull());
@@ -107,15 +117,17 @@ class Note extends NoteRow implements Comparable<Note> {
         .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
   }
 
-  static Stream<List<Note>> watchTopic(TopicId topicId) =>
-      (Store.get.select(table)
-            ..where((t) => t.topicId.equals(topicId.toBytes()))
-            ..orderBy([
-              (t) => OrderingTerm.desc(t.root),
-              (t) => OrderingTerm.asc(t.order)
-            ]))
-          .watch()
-          .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
+  static Stream<List<Note>> watchTopic(TopicId topicId) {
+    pullTopic(topicId);
+    return (Store.get.select(table)
+          ..where((t) => t.topicId.equals(topicId.toBytes()))
+          ..orderBy([
+            (t) => OrderingTerm.desc(t.root),
+            (t) => OrderingTerm.asc(t.order)
+          ]))
+        .watch()
+        .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
+  }
 
   factory Note.draft({
     required Uuid? activityId,

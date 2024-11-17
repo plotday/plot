@@ -19,7 +19,9 @@ class Calendar extends CalendarRow {
   static TableInfo<Calendars, CalendarRow> get table => Store.get.calendars;
 
   static Future<void> push() => Store.get.push(table, CalendarsBase());
-  static Future<bool> pull() => Store.get.pull(table, CalendarsBase());
+  static Future<bool> pull() =>
+      Store.get.pull(PullType.all, table, BalanceBase());
+
   static Stream<List<Calendar>> watch() => Store.get
       .select(table)
       .watch()

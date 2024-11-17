@@ -42,7 +42,8 @@ class Account extends AccountRow {
   }
 
   static Future<void> push() => Store.get.push(table, AccountsBase());
-  static Future<void> pull() => Store.get.pull(table, AccountsBase());
+  static Future<bool> pull() =>
+      Store.get.pull(PullType.all, table, AccountsBase());
 
   static Stream<List<Account>> watch({bool withCalendars = false}) {
     final accountStream = Store.get

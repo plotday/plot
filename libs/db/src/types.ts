@@ -87,7 +87,6 @@ export type Database = {
           modified_at: string
           name: string
           path: unknown
-          budget: unknown | null
         }
         Insert: {
           archived_at?: string | null
@@ -218,68 +217,6 @@ export type Database = {
           },
           {
             foreignKeyName: "activity_user_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      budget: {
-        Row: {
-          activity_id: string | null
-          created_at: string
-          id: number
-          modified_at: string
-          seconds: number | null
-          type: Database["public"]["Enums"]["budget_type"]
-          user_id: string
-          week: unknown
-        }
-        Insert: {
-          activity_id?: string | null
-          created_at?: string
-          id?: never
-          modified_at?: string
-          seconds?: number | null
-          type?: Database["public"]["Enums"]["budget_type"]
-          user_id: string
-          week: unknown
-        }
-        Update: {
-          activity_id?: string | null
-          created_at?: string
-          id?: never
-          modified_at?: string
-          seconds?: number | null
-          type?: Database["public"]["Enums"]["budget_type"]
-          user_id?: string
-          week?: unknown
-        }
-        Relationships: [
-          {
-            foreignKeyName: "budget_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "budget_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "budget_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["activity_id"]
-          },
-          {
-            foreignKeyName: "budget_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -1210,21 +1147,6 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
-      budget: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          activity_id: string | null
-          created_at: string
-          id: number
-          modified_at: string
-          seconds: number | null
-          type: Database["public"]["Enums"]["budget_type"]
-          user_id: string
-          week: unknown
-        }[]
-      }
       calc_all_day: {
         Args: {
           at: unknown
@@ -1448,6 +1370,10 @@ export type Database = {
         }
         Returns: unknown
       }
+      server_timestamp: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       update_topic_root: {
         Args: {
           note_id: string
@@ -1487,7 +1413,6 @@ export type Database = {
       }
     }
     Enums: {
-      budget_type: "default" | "exception"
       event_availability: "busy" | "away" | "focus" | "free" | "location"
       event_internal: "internal" | "external"
       event_response: "accepted" | "declined" | "tentative"
