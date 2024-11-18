@@ -54,7 +54,8 @@ SELECT
 FROM
     "public"."note"
 WHERE
-    do_at IS NOT NULL
+    draft = FALSE
+    AND do_at IS NOT NULL
     AND done_at IS NULL
 GROUP BY
     user_id,
