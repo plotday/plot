@@ -81,6 +81,13 @@ class HomeRoute extends Route {
   final String? d;
 
   @override
+  void onEnter(BuildContext context) {
+    context.read<ActivityBloc>()
+      ..setCurrent(null)
+      ..setTopic(null);
+  }
+
+  @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
       const TopicPage();
 
