@@ -74,13 +74,13 @@ class Event extends EventRow {
   static Future<void> push() => Store.get.push(table, EventsBase());
   static Future<bool> pull() =>
       Store.get.pull(PullType.updates, table, EventsBase());
-  static Future<bool> pullRange(String from, String to) =>
+  static Future<bool> pullRange(DateRange range) =>
       Store.get.pull(PullType.more, table, EventsBase(),
-          range: (from.toString(), to.toString()));
+          range: (range.start.toString(), range.end.toString()));
 
   static Stream<List<Event>> watch(DateRange range,
       {bool withActivity = false}) {
-    pullRange(range.start.toString(), range.end.toString());
+    pullRange(range);
     final order =
         range.start <= range.end ? OrderingMode.asc : OrderingMode.desc;
     final eventStream = (Store.get.select(table)

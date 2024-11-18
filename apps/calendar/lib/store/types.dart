@@ -27,6 +27,9 @@ class CustomSerializer extends ValueSerializer {
     if (T == Duration) {
       return Duration(seconds: json as int) as T;
     }
+    if (T == Date) {
+      return Date.fromString(json as String) as T;
+    }
 
     return _inner.fromJson<T>(json);
   }

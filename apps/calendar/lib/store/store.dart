@@ -282,11 +282,9 @@ class Store extends _$Store {
     final syncState = await (select(syncStates)
           ..where((row) => row.entity.equals(entity)))
         .getSingleOrNull();
-    if (syncState?.more == false) {
+    if (paged && syncState?.more == false) {
       _noMore.add(entity);
-      if (paged) {
-        return false;
-      }
+      return false;
     }
     if (type == PullType.initial && syncState?.to != null) {
       return true;
@@ -369,7 +367,7 @@ class Store extends _$Store {
   Store._() : super(_openConnection());
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 18;
 
   @override
   MigrationStrategy get migration {

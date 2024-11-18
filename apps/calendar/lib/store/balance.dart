@@ -15,11 +15,11 @@ typedef BalanceByActivityDateType = Map<ActivityId?, Map<Date, BalanceByType>>;
 
 @DataClassName('BalanceRow')
 class Balances extends StoreTable {
-  TextColumn get day => text().map(const DateConverter())();
   BlobColumn get activityId => blob()
       .nullable()
       .map(const UuidConverter())
       .references(Activities, #id)();
+  TextColumn get day => text().map(const DateConverter())();
   TextColumn get type => textEnum<BalanceType>()();
 
   IntColumn get count => integer().withDefault(const Constant(0))();
@@ -27,12 +27,16 @@ class Balances extends StoreTable {
   @JsonKey('seconds')
   IntColumn get time =>
       integer().withDefault(const Constant(0)).map(const DurationConverter())();
+
+  @override
+  Set<Column> get primaryKey => {activityId, day, type};
 }
 
 class BalanceBase extends BaseTable {
   BalanceBase({super.filterName})
       : super(
           table: 'balance',
+          order: 'day',
         );
 
   @override
@@ -62,85 +66,61 @@ class Balance extends BalanceRow {
   static Future<bool> pull() =>
       Store.get.pull(PullType.updates, table, BalanceBase());
 
+  static Future<bool> pullRange(DateRange range) =>
+      Store.get.pull(PullType.more, table, BalanceBase(),
+          range: (range.start.toString(), range.end.toString()));
+
   static Future<bool> pullWeek(
     Week week,
   ) =>
       Store.get.pull(PullType.all, table, WeekBalanceBase(week));
 
-  static Stream<BalanceByActivityDateType> watchDaily(
-    DateRange range, {
-    Path? path,
-    int? depth = 1, // number of child levels to include
-  }) {
-    final query = Store.get.select(table).join([
-      leftOuterJoin(
-          Activity.table, Activity.table.id.equalsExp(table.activityId)),
-    ])
-      ..where(table.day.isBiggerOrEqualValue(range.start.toString()))
-      ..where(table.day.isSmallerThanValue(range.end.toString()));
-
-    if (path != null) {
-      query.where(Activity.table.path.like("$path%"));
-    }
-    if (depth != null) {
-      query.where(Activity.pathDepth(path, depth));
-    }
-
-    final order =
-        range.start <= range.end ? OrderingMode.asc : OrderingMode.desc;
-    query.orderBy([
-      OrderingTerm(expression: table.day, mode: order),
-    ]);
-
+  static Stream<BalanceByActivityDateType> watchDaily(DateRange range) {
+    pullRange(range);
+    final query = Store.get.select(table)
+      ..where((t) => t.day.isBiggerOrEqualValue(range.start.toString()))
+      ..where((t) => t.day.isSmallerThanValue(range.end.toString()));
     return query.watch().map(
-          (rows) => {
-            for (final row in rows)
-              row.readTable(table).activityId: {
-                for (final row in rows)
-                  row.readTable(table).day: {
-                    for (final row in rows)
-                      row.readTable(table).type: BalanceStats(
-                        time: row.readTable(table).time,
-                        count: row.readTable(table).count,
-                      ),
-                  },
-              },
-          },
-        );
+      (rows) {
+        final BalanceByActivityDateType result = {};
+        for (final row in rows) {
+          final activityId = row.activityId;
+          final day = row.day;
+          final type = row.type;
+          final balanceStat = BalanceStats(
+            time: row.time,
+            count: row.count,
+          );
+          result.putIfAbsent(activityId, () => {});
+          result[activityId]!.putIfAbsent(day, () => {});
+          result[activityId]![day]![type] = balanceStat;
+        }
+        return result;
+      },
+    );
   }
 
-  static Stream<BalanceByActivityType> watch(
-    DateRange range, {
-    Path? path,
-    int? depth = 1, // number of child levels to include
-  }) {
-    return watchDaily(range, path: path, depth: depth).map((dailyBalanceMap) {
+  static Stream<BalanceByActivityType> watch(DateRange range) {
+    return watchDaily(range).map((dailyBalanceMap) {
       final balanceMap = <ActivityId?, Map<BalanceType, BalanceStats>>{};
 
       for (final activityId in dailyBalanceMap.keys) {
         final dailyMap = dailyBalanceMap[activityId]!;
-
         final typeStatsMap = <BalanceType, BalanceStats>{};
-
         for (final date in dailyMap.keys) {
           final balanceTypeMap = dailyMap[date]!;
-
           for (final balanceType in balanceTypeMap.keys) {
             final balance = balanceTypeMap[balanceType]!;
-
             final currentStats = typeStatsMap[balanceType];
             final updatedCount = (currentStats?.count ?? 0) + balance.count;
             final updatedTime =
                 (currentStats?.time ?? const Duration()) + balance.time;
-
             typeStatsMap[balanceType] =
                 BalanceStats(count: updatedCount, time: updatedTime);
           }
         }
-
         balanceMap[activityId] = typeStatsMap;
       }
-
       return balanceMap;
     });
   }
@@ -161,4 +141,7 @@ class BalanceStats {
 
   final int count;
   final Duration time;
+
+  @override
+  String toString() => 'BalanceStats{count: $count, time: $time}';
 }

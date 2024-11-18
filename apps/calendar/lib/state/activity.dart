@@ -61,8 +61,7 @@ class ActivityBloc extends Cubit<ActivityState> {
 
   void _loadBalances() async {
     _balanceSubscription?.cancel();
-    _balanceSubscription =
-        Balance.watch(state.week, path: state.current?.path).listen(
+    _balanceSubscription = Balance.watch(state.week).listen(
       (balances) {
         emit(state.copyWith(balances: Value(balances)));
       },

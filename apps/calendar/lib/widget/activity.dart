@@ -35,6 +35,7 @@ class ActivityWidget extends StatelessWidget {
                       DurationText(
                           duration: balances![BalanceType.accepted]?.time ??
                               Duration.zero),
+                      Text("(${(balances![BalanceType.do_now]?.count ?? 0)})"),
                     ],
                   ),
                   const SizedBox(width: 8),
