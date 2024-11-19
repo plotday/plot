@@ -25,19 +25,25 @@ class ActivityBloc extends Cubit<ActivityState> {
   }
 
   void setCurrent(ActivityId? current) {
-    setTopic(null);
     if (_activitySubscription != null && current == state.current?.id) return;
     _activitySubscription?.cancel();
     if (current == null) {
       _activitySubscription = Activity.watchRoot().listen((activities) {
-        emit(state.copyWith(current: const Value(null), children: activities));
+        emit(state.copyWith(
+            current: const Value(null),
+            children: activities,
+            topicId: const Value(null),
+            topicNotes: []));
         _loadBalances();
         _loadNotes();
       });
     } else {
       _activitySubscription =
           Activity.watchOne(current, depth: 1).listen((activity) {
-        emit(state.copyWith(current: Value(activity)));
+        emit(state.copyWith(
+            current: Value(activity),
+            topicId: const Value(null),
+            topicNotes: []));
         _loadBalances();
         _loadNotes();
       });
@@ -45,7 +51,11 @@ class ActivityBloc extends Cubit<ActivityState> {
   }
 
   void setTopic(TopicId? topicId) {
-    if (_topicSubscription != null && topicId == state.topicId) return;
+    if (_topicSubscription != null &&
+        (topicId == state.topicId ||
+            (topicId == null && state.topic.draft == true))) {
+      return;
+    }
     emit(state.copyWith(topicId: Value(topicId), topicNotes: []));
     _loadTopicNotes();
   }
@@ -95,7 +105,7 @@ class ActivityBloc extends Cubit<ActivityState> {
   Future<void> updateNote(Note note) async {
     final topicUpdate =
         !note.draft && !note.root && note.topicId == state.topicId
-            ? state.topicNote.copyWith(order: Order.first())
+            ? state.topic.copyWith(order: Order.first())
             : null;
     emit(
       state.copyWith(newNotes: [

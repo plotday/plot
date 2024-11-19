@@ -18,10 +18,11 @@ final class ActivityState extends Equatable {
   })  : children = current?.children ?? children ?? const [],
         _notes = const [],
         moreNotes = true,
-        topicId = null,
         topicNotes = [Note.draft(activityId: current?.id)],
         moreTopicNotes = false,
-        balances = null;
+        balances = null {
+    topicId = topicNotes.first.topicId;
+  }
 
   ActivityState._({
     required this.week,
@@ -48,11 +49,11 @@ final class ActivityState extends Equatable {
   List<Note> get doNowNotes =>
       _filterNotes(_notes, pinned: false, draft: false, doNow: true);
 
-  final TopicId? topicId;
+  late final TopicId? topicId;
   final List<Note> topicNotes;
   final bool moreTopicNotes;
-  Note get topicNote => topicNotes.first;
-  Note get draftNote => topicNotes.last;
+  Note get topic => topicNotes.first;
+  Note get draft => topicNotes.last;
 
   final Week week;
   final BalanceByActivityType? balances;
@@ -69,6 +70,19 @@ final class ActivityState extends Equatable {
     bool? moreTopicNotes,
     List<Note>? newNotes,
   }) {
+    if (topicId.or(this.topicId) == null) {
+      final newTopic = [
+        if (notes != null) ...notes,
+        // If changing the topic to null, look in the current notes for a draft
+        if (notes == null && topicId.present) ..._notes,
+        if (newNotes != null) ...newNotes
+      ].where((note) => note.root && note.draft).firstOrNull;
+      if (newTopic != null) {
+        topicId = Value(newTopic.topicId);
+        topicNotes = [newTopic];
+      }
+    }
+
     notes ??= _notes;
     topicNotes ??= this.topicNotes;
     for (var newNote in newNotes ?? const <Note>[]) {
@@ -78,7 +92,8 @@ final class ActivityState extends Equatable {
             newNote,
             (n1, n2) => n1.id == n2.id,
           );
-      } else {
+      }
+      if (newNote.topicId == topicId.or(this.topicId)) {
         topicNotes = List<Note>.from(topicNotes!)
           ..replaceSorted(
             newNote,
