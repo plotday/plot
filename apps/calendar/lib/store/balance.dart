@@ -5,8 +5,8 @@ enum BalanceType {
   tentative,
   declined,
   session,
-  do_now, // ignore: constant_identifier_names
-  do_later, // ignore: constant_identifier_names
+  todo,
+  done,
 }
 
 typedef BalanceByType = Map<BalanceType, BalanceStats>;

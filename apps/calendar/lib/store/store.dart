@@ -367,7 +367,7 @@ class Store extends _$Store {
   Store._() : super(_openConnection());
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 20;
 
   @override
   MigrationStrategy get migration {

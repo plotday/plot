@@ -41,12 +41,12 @@ GROUP BY
 UNION ALL
 SELECT
     user_id,
-    (do_at at time zone user_timezone ())::date AS day,
+    (COALESCE(done_at, do_at) at time zone user_timezone ())::date AS day,
     activity_id,
-    CASE WHEN do_at <= NOW() THEN
-        'do_now'
+    CASE WHEN done_at IS NULL THEN
+        'todo'
     ELSE
-        'do_later'
+        'done'
     END AS type,
     COUNT(*) AS "count",
     0 AS "seconds",
