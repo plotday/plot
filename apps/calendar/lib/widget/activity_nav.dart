@@ -15,7 +15,7 @@ class ActivityNav extends StatelessWidget {
         children: [
           if (state.current != null)
             IconButton(
-              icon: const BackButtonIcon(),
+              icon: Icons.back,
               onPressed: () {
                 state.current?.parent == null
                     ? const ActivityRoute.root().go(context)

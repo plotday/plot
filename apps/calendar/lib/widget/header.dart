@@ -15,7 +15,7 @@ class Header extends StatelessWidget {
         children: [
           if (state.current != null)
             IconButton(
-              icon: const BackButtonIcon(),
+              icon: Icons.back,
               onPressed: () async {
                 final parent = state.current!.parent;
                 if (!context.mounted) return;
