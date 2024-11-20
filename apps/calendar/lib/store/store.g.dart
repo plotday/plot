@@ -3632,71 +3632,87 @@ typedef $$SyncStatesTableUpdateCompanionBuilder = SyncStatesCompanion Function({
 });
 
 class $$SyncStatesTableFilterComposer
-    extends FilterComposer<_$Store, $SyncStatesTable> {
-  $$SyncStatesTableFilterComposer(super.$state);
-  ColumnFilters<String> get entity => $state.composableBuilder(
-      column: $state.table.entity,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+    extends Composer<_$Store, $SyncStatesTable> {
+  $$SyncStatesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get entity => $composableBuilder(
+      column: $table.entity, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get pushedAt => $state.composableBuilder(
-      column: $state.table.pushedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get pushedAt => $composableBuilder(
+      column: $table.pushedAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get pulledAt => $state.composableBuilder(
-      column: $state.table.pulledAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get pulledAt => $composableBuilder(
+      column: $table.pulledAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get from => $state.composableBuilder(
-      column: $state.table.from,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<String> get from => $composableBuilder(
+      column: $table.from, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get to => $state.composableBuilder(
-      column: $state.table.to,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<String> get to => $composableBuilder(
+      column: $table.to, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get more => $state.composableBuilder(
-      column: $state.table.more,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<bool> get more => $composableBuilder(
+      column: $table.more, builder: (column) => ColumnFilters(column));
 }
 
 class $$SyncStatesTableOrderingComposer
-    extends OrderingComposer<_$Store, $SyncStatesTable> {
-  $$SyncStatesTableOrderingComposer(super.$state);
-  ColumnOrderings<String> get entity => $state.composableBuilder(
-      column: $state.table.entity,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+    extends Composer<_$Store, $SyncStatesTable> {
+  $$SyncStatesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get entity => $composableBuilder(
+      column: $table.entity, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get pushedAt => $state.composableBuilder(
-      column: $state.table.pushedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get pushedAt => $composableBuilder(
+      column: $table.pushedAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get pulledAt => $state.composableBuilder(
-      column: $state.table.pulledAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get pulledAt => $composableBuilder(
+      column: $table.pulledAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get from => $state.composableBuilder(
-      column: $state.table.from,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get from => $composableBuilder(
+      column: $table.from, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get to => $state.composableBuilder(
-      column: $state.table.to,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get to => $composableBuilder(
+      column: $table.to, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get more => $state.composableBuilder(
-      column: $state.table.more,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<bool> get more => $composableBuilder(
+      column: $table.more, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SyncStatesTableAnnotationComposer
+    extends Composer<_$Store, $SyncStatesTable> {
+  $$SyncStatesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get entity =>
+      $composableBuilder(column: $table.entity, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get pushedAt =>
+      $composableBuilder(column: $table.pushedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get pulledAt =>
+      $composableBuilder(column: $table.pulledAt, builder: (column) => column);
+
+  GeneratedColumn<String> get from =>
+      $composableBuilder(column: $table.from, builder: (column) => column);
+
+  GeneratedColumn<String> get to =>
+      $composableBuilder(column: $table.to, builder: (column) => column);
+
+  GeneratedColumn<bool> get more =>
+      $composableBuilder(column: $table.more, builder: (column) => column);
 }
 
 class $$SyncStatesTableTableManager extends RootTableManager<
@@ -3705,6 +3721,7 @@ class $$SyncStatesTableTableManager extends RootTableManager<
     SyncState,
     $$SyncStatesTableFilterComposer,
     $$SyncStatesTableOrderingComposer,
+    $$SyncStatesTableAnnotationComposer,
     $$SyncStatesTableCreateCompanionBuilder,
     $$SyncStatesTableUpdateCompanionBuilder,
     (SyncState, BaseReferences<_$Store, $SyncStatesTable, SyncState>),
@@ -3714,10 +3731,12 @@ class $$SyncStatesTableTableManager extends RootTableManager<
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$SyncStatesTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$SyncStatesTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$SyncStatesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncStatesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncStatesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<String> entity = const Value.absent(),
             Value<DateTime?> pushedAt = const Value.absent(),
@@ -3767,6 +3786,7 @@ typedef $$SyncStatesTableProcessedTableManager = ProcessedTableManager<
     SyncState,
     $$SyncStatesTableFilterComposer,
     $$SyncStatesTableOrderingComposer,
+    $$SyncStatesTableAnnotationComposer,
     $$SyncStatesTableCreateCompanionBuilder,
     $$SyncStatesTableUpdateCompanionBuilder,
     (SyncState, BaseReferences<_$Store, $SyncStatesTable, SyncState>),
@@ -3805,67 +3825,113 @@ final class $$AccountsTableReferences
   }
 }
 
-class $$AccountsTableFilterComposer
-    extends FilterComposer<_$Store, $AccountsTable> {
-  $$AccountsTableFilterComposer(super.$state);
-  ColumnFilters<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+class $$AccountsTableFilterComposer extends Composer<_$Store, $AccountsTable> {
+  $$AccountsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get email => $state.composableBuilder(
-      column: $state.table.email,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<String> get email => $composableBuilder(
+      column: $table.email, builder: (column) => ColumnFilters(column));
 
   ColumnWithTypeConverterFilters<AccountProvider, AccountProvider, String>
-      get provider => $state.composableBuilder(
-          column: $state.table.provider,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      get provider => $composableBuilder(
+          column: $table.provider,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ComposableFilter calendarsRefs(
-      ComposableFilter Function($$CalendarsTableFilterComposer f) f) {
-    final $$CalendarsTableFilterComposer composer = $state.composerBuilder(
+  Expression<bool> calendarsRefs(
+      Expression<bool> Function($$CalendarsTableFilterComposer f) f) {
+    final $$CalendarsTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.id,
-        referencedTable: $state.db.calendars,
+        referencedTable: $db.calendars,
         getReferencedColumn: (t) => t.accountId,
-        builder: (joinBuilder, parentComposers) =>
-            $$CalendarsTableFilterComposer(ComposerState(
-                $state.db, $state.db.calendars, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$CalendarsTableFilterComposer(
+              $db: $db,
+              $table: $db.calendars,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return f(composer);
   }
 }
 
 class $$AccountsTableOrderingComposer
-    extends OrderingComposer<_$Store, $AccountsTable> {
-  $$AccountsTableOrderingComposer(super.$state);
-  ColumnOrderings<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+    extends Composer<_$Store, $AccountsTable> {
+  $$AccountsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get email => $state.composableBuilder(
-      column: $state.table.email,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get email => $composableBuilder(
+      column: $table.email, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get provider => $state.composableBuilder(
-      column: $state.table.provider,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get provider => $composableBuilder(
+      column: $table.provider, builder: (column) => ColumnOrderings(column));
+}
+
+class $$AccountsTableAnnotationComposer
+    extends Composer<_$Store, $AccountsTable> {
+  $$AccountsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get email =>
+      $composableBuilder(column: $table.email, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<AccountProvider, String> get provider =>
+      $composableBuilder(column: $table.provider, builder: (column) => column);
+
+  Expression<T> calendarsRefs<T extends Object>(
+      Expression<T> Function($$CalendarsTableAnnotationComposer a) f) {
+    final $$CalendarsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.calendars,
+        getReferencedColumn: (t) => t.accountId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$CalendarsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.calendars,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$AccountsTableTableManager extends RootTableManager<
@@ -3874,6 +3940,7 @@ class $$AccountsTableTableManager extends RootTableManager<
     AccountRow,
     $$AccountsTableFilterComposer,
     $$AccountsTableOrderingComposer,
+    $$AccountsTableAnnotationComposer,
     $$AccountsTableCreateCompanionBuilder,
     $$AccountsTableUpdateCompanionBuilder,
     (AccountRow, $$AccountsTableReferences),
@@ -3883,10 +3950,12 @@ class $$AccountsTableTableManager extends RootTableManager<
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$AccountsTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$AccountsTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$AccountsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AccountsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AccountsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
@@ -3947,6 +4016,7 @@ typedef $$AccountsTableProcessedTableManager = ProcessedTableManager<
     AccountRow,
     $$AccountsTableFilterComposer,
     $$AccountsTableOrderingComposer,
+    $$AccountsTableAnnotationComposer,
     $$AccountsTableCreateCompanionBuilder,
     $$AccountsTableUpdateCompanionBuilder,
     (AccountRow, $$AccountsTableReferences),
@@ -3986,73 +4056,127 @@ final class $$CalendarsTableReferences
 }
 
 class $$CalendarsTableFilterComposer
-    extends FilterComposer<_$Store, $CalendarsTable> {
-  $$CalendarsTableFilterComposer(super.$state);
-  ColumnFilters<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+    extends Composer<_$Store, $CalendarsTable> {
+  $$CalendarsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get enabled => $state.composableBuilder(
-      column: $state.table.enabled,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<bool> get enabled => $composableBuilder(
+      column: $table.enabled, builder: (column) => ColumnFilters(column));
 
   $$AccountsTableFilterComposer get accountId {
-    final $$AccountsTableFilterComposer composer = $state.composerBuilder(
+    final $$AccountsTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.accountId,
-        referencedTable: $state.db.accounts,
+        referencedTable: $db.accounts,
         getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder, parentComposers) =>
-            $$AccountsTableFilterComposer(ComposerState(
-                $state.db, $state.db.accounts, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$AccountsTableFilterComposer(
+              $db: $db,
+              $table: $db.accounts,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return composer;
   }
 }
 
 class $$CalendarsTableOrderingComposer
-    extends OrderingComposer<_$Store, $CalendarsTable> {
-  $$CalendarsTableOrderingComposer(super.$state);
-  ColumnOrderings<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+    extends Composer<_$Store, $CalendarsTable> {
+  $$CalendarsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get enabled => $state.composableBuilder(
-      column: $state.table.enabled,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<bool> get enabled => $composableBuilder(
+      column: $table.enabled, builder: (column) => ColumnOrderings(column));
 
   $$AccountsTableOrderingComposer get accountId {
-    final $$AccountsTableOrderingComposer composer = $state.composerBuilder(
+    final $$AccountsTableOrderingComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.accountId,
-        referencedTable: $state.db.accounts,
+        referencedTable: $db.accounts,
         getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder, parentComposers) =>
-            $$AccountsTableOrderingComposer(ComposerState(
-                $state.db, $state.db.accounts, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$AccountsTableOrderingComposer(
+              $db: $db,
+              $table: $db.accounts,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$CalendarsTableAnnotationComposer
+    extends Composer<_$Store, $CalendarsTable> {
+  $$CalendarsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<bool> get enabled =>
+      $composableBuilder(column: $table.enabled, builder: (column) => column);
+
+  $$AccountsTableAnnotationComposer get accountId {
+    final $$AccountsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.accountId,
+        referencedTable: $db.accounts,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$AccountsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.accounts,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return composer;
   }
 }
@@ -4063,6 +4187,7 @@ class $$CalendarsTableTableManager extends RootTableManager<
     CalendarRow,
     $$CalendarsTableFilterComposer,
     $$CalendarsTableOrderingComposer,
+    $$CalendarsTableAnnotationComposer,
     $$CalendarsTableCreateCompanionBuilder,
     $$CalendarsTableUpdateCompanionBuilder,
     (CalendarRow, $$CalendarsTableReferences),
@@ -4072,10 +4197,12 @@ class $$CalendarsTableTableManager extends RootTableManager<
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$CalendarsTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$CalendarsTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$CalendarsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CalendarsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CalendarsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
@@ -4125,6 +4252,7 @@ class $$CalendarsTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic,
+                      dynamic,
                       dynamic>>(state) {
                 if (accountId) {
                   state = state.withJoin(
@@ -4153,6 +4281,7 @@ typedef $$CalendarsTableProcessedTableManager = ProcessedTableManager<
     CalendarRow,
     $$CalendarsTableFilterComposer,
     $$CalendarsTableOrderingComposer,
+    $$CalendarsTableAnnotationComposer,
     $$CalendarsTableCreateCompanionBuilder,
     $$CalendarsTableUpdateCompanionBuilder,
     (CalendarRow, $$CalendarsTableReferences),
@@ -4247,151 +4376,281 @@ final class $$ActivitiesTableReferences
 }
 
 class $$ActivitiesTableFilterComposer
-    extends FilterComposer<_$Store, $ActivitiesTable> {
-  $$ActivitiesTableFilterComposer(super.$state);
+    extends Composer<_$Store, $ActivitiesTable> {
+  $$ActivitiesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
   ColumnWithTypeConverterFilters<Uuid, Uuid, Uint8List> get id =>
-      $state.composableBuilder(
-          column: $state.table.id,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.id,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get draft => $state.composableBuilder(
-      column: $state.table.draft,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<bool> get draft => $composableBuilder(
+      column: $table.draft, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
 
   ColumnWithTypeConverterFilters<Path, Path, String> get path =>
-      $state.composableBuilder(
-          column: $state.table.path,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.path,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<Order, Order, double> get order =>
-      $state.composableBuilder(
-          column: $state.table.order,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.order,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<Duration, Duration, int> get pomodoro =>
-      $state.composableBuilder(
-          column: $state.table.pomodoro,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.pomodoro,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ComposableFilter notesRefs(
-      ComposableFilter Function($$NotesTableFilterComposer f) f) {
-    final $$NotesTableFilterComposer composer = $state.composerBuilder(
+  Expression<bool> notesRefs(
+      Expression<bool> Function($$NotesTableFilterComposer f) f) {
+    final $$NotesTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.id,
-        referencedTable: $state.db.notes,
+        referencedTable: $db.notes,
         getReferencedColumn: (t) => t.activityId,
-        builder: (joinBuilder, parentComposers) => $$NotesTableFilterComposer(
-            ComposerState(
-                $state.db, $state.db.notes, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$NotesTableFilterComposer(
+              $db: $db,
+              $table: $db.notes,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return f(composer);
   }
 
-  ComposableFilter eventsRefs(
-      ComposableFilter Function($$EventsTableFilterComposer f) f) {
-    final $$EventsTableFilterComposer composer = $state.composerBuilder(
+  Expression<bool> eventsRefs(
+      Expression<bool> Function($$EventsTableFilterComposer f) f) {
+    final $$EventsTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.id,
-        referencedTable: $state.db.events,
+        referencedTable: $db.events,
         getReferencedColumn: (t) => t.activityId,
-        builder: (joinBuilder, parentComposers) => $$EventsTableFilterComposer(
-            ComposerState(
-                $state.db, $state.db.events, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$EventsTableFilterComposer(
+              $db: $db,
+              $table: $db.events,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return f(composer);
   }
 
-  ComposableFilter sessionsRefs(
-      ComposableFilter Function($$SessionsTableFilterComposer f) f) {
-    final $$SessionsTableFilterComposer composer = $state.composerBuilder(
+  Expression<bool> sessionsRefs(
+      Expression<bool> Function($$SessionsTableFilterComposer f) f) {
+    final $$SessionsTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.id,
-        referencedTable: $state.db.sessions,
+        referencedTable: $db.sessions,
         getReferencedColumn: (t) => t.activityId,
-        builder: (joinBuilder, parentComposers) =>
-            $$SessionsTableFilterComposer(ComposerState(
-                $state.db, $state.db.sessions, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SessionsTableFilterComposer(
+              $db: $db,
+              $table: $db.sessions,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return f(composer);
   }
 
-  ComposableFilter balancesRefs(
-      ComposableFilter Function($$BalancesTableFilterComposer f) f) {
-    final $$BalancesTableFilterComposer composer = $state.composerBuilder(
+  Expression<bool> balancesRefs(
+      Expression<bool> Function($$BalancesTableFilterComposer f) f) {
+    final $$BalancesTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.id,
-        referencedTable: $state.db.balances,
+        referencedTable: $db.balances,
         getReferencedColumn: (t) => t.activityId,
-        builder: (joinBuilder, parentComposers) =>
-            $$BalancesTableFilterComposer(ComposerState(
-                $state.db, $state.db.balances, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BalancesTableFilterComposer(
+              $db: $db,
+              $table: $db.balances,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return f(composer);
   }
 }
 
 class $$ActivitiesTableOrderingComposer
-    extends OrderingComposer<_$Store, $ActivitiesTable> {
-  $$ActivitiesTableOrderingComposer(super.$state);
-  ColumnOrderings<Uint8List> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+    extends Composer<_$Store, $ActivitiesTable> {
+  $$ActivitiesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<Uint8List> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get draft => $state.composableBuilder(
-      column: $state.table.draft,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<bool> get draft => $composableBuilder(
+      column: $table.draft, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get path => $state.composableBuilder(
-      column: $state.table.path,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get path => $composableBuilder(
+      column: $table.path, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<double> get order => $state.composableBuilder(
-      column: $state.table.order,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<double> get order => $composableBuilder(
+      column: $table.order, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<int> get pomodoro => $state.composableBuilder(
-      column: $state.table.pomodoro,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<int> get pomodoro => $composableBuilder(
+      column: $table.pomodoro, builder: (column) => ColumnOrderings(column));
+}
+
+class $$ActivitiesTableAnnotationComposer
+    extends Composer<_$Store, $ActivitiesTable> {
+  $$ActivitiesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get draft =>
+      $composableBuilder(column: $table.draft, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<Path, String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<Order, double> get order =>
+      $composableBuilder(column: $table.order, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<Duration, int> get pomodoro =>
+      $composableBuilder(column: $table.pomodoro, builder: (column) => column);
+
+  Expression<T> notesRefs<T extends Object>(
+      Expression<T> Function($$NotesTableAnnotationComposer a) f) {
+    final $$NotesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.notes,
+        getReferencedColumn: (t) => t.activityId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$NotesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.notes,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> eventsRefs<T extends Object>(
+      Expression<T> Function($$EventsTableAnnotationComposer a) f) {
+    final $$EventsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.events,
+        getReferencedColumn: (t) => t.activityId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$EventsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.events,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> sessionsRefs<T extends Object>(
+      Expression<T> Function($$SessionsTableAnnotationComposer a) f) {
+    final $$SessionsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.sessions,
+        getReferencedColumn: (t) => t.activityId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SessionsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.sessions,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> balancesRefs<T extends Object>(
+      Expression<T> Function($$BalancesTableAnnotationComposer a) f) {
+    final $$BalancesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.balances,
+        getReferencedColumn: (t) => t.activityId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BalancesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.balances,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$ActivitiesTableTableManager extends RootTableManager<
@@ -4400,6 +4659,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
     ActivityRow,
     $$ActivitiesTableFilterComposer,
     $$ActivitiesTableOrderingComposer,
+    $$ActivitiesTableAnnotationComposer,
     $$ActivitiesTableCreateCompanionBuilder,
     $$ActivitiesTableUpdateCompanionBuilder,
     (ActivityRow, $$ActivitiesTableReferences),
@@ -4413,10 +4673,12 @@ class $$ActivitiesTableTableManager extends RootTableManager<
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$ActivitiesTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$ActivitiesTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$ActivitiesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ActivitiesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ActivitiesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
@@ -4544,6 +4806,7 @@ typedef $$ActivitiesTableProcessedTableManager = ProcessedTableManager<
     ActivityRow,
     $$ActivitiesTableFilterComposer,
     $$ActivitiesTableOrderingComposer,
+    $$ActivitiesTableAnnotationComposer,
     $$ActivitiesTableCreateCompanionBuilder,
     $$ActivitiesTableUpdateCompanionBuilder,
     (ActivityRow, $$ActivitiesTableReferences),
@@ -4608,181 +4871,223 @@ final class $$NotesTableReferences
   }
 }
 
-class $$NotesTableFilterComposer extends FilterComposer<_$Store, $NotesTable> {
-  $$NotesTableFilterComposer(super.$state);
+class $$NotesTableFilterComposer extends Composer<_$Store, $NotesTable> {
+  $$NotesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
   ColumnWithTypeConverterFilters<Uuid, Uuid, Uint8List> get id =>
-      $state.composableBuilder(
-          column: $state.table.id,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.id,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get draft => $state.composableBuilder(
-      column: $state.table.draft,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<bool> get draft => $composableBuilder(
+      column: $table.draft, builder: (column) => ColumnFilters(column));
 
   ColumnWithTypeConverterFilters<Uuid, Uuid, Uint8List> get userId =>
-      $state.composableBuilder(
-          column: $state.table.userId,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.userId,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<String> get body => $state.composableBuilder(
-      column: $state.table.body,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<String> get body => $composableBuilder(
+      column: $table.body, builder: (column) => ColumnFilters(column));
 
   ColumnWithTypeConverterFilters<Order, Order, double> get order =>
-      $state.composableBuilder(
-          column: $state.table.order,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.order,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get orderedAt => $state.composableBuilder(
-      column: $state.table.orderedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get orderedAt => $composableBuilder(
+      column: $table.orderedAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get root => $state.composableBuilder(
-      column: $state.table.root,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<bool> get root => $composableBuilder(
+      column: $table.root, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get pinned => $state.composableBuilder(
-      column: $state.table.pinned,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<bool> get pinned => $composableBuilder(
+      column: $table.pinned, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get private => $state.composableBuilder(
-      column: $state.table.private,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<bool> get private => $composableBuilder(
+      column: $table.private, builder: (column) => ColumnFilters(column));
 
   ColumnWithTypeConverterFilters<Uuid, Uuid, Uint8List> get topicId =>
-      $state.composableBuilder(
-          column: $state.table.topicId,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.topicId,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get doAt => $state.composableBuilder(
-      column: $state.table.doAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get doAt => $composableBuilder(
+      column: $table.doAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get doneAt => $state.composableBuilder(
-      column: $state.table.doneAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get doneAt => $composableBuilder(
+      column: $table.doneAt, builder: (column) => ColumnFilters(column));
 
   $$ActivitiesTableFilterComposer get activityId {
-    final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
+    final $$ActivitiesTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.activityId,
-        referencedTable: $state.db.activities,
+        referencedTable: $db.activities,
         getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder, parentComposers) =>
-            $$ActivitiesTableFilterComposer(ComposerState($state.db,
-                $state.db.activities, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableFilterComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return composer;
   }
 }
 
-class $$NotesTableOrderingComposer
-    extends OrderingComposer<_$Store, $NotesTable> {
-  $$NotesTableOrderingComposer(super.$state);
-  ColumnOrderings<Uint8List> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+class $$NotesTableOrderingComposer extends Composer<_$Store, $NotesTable> {
+  $$NotesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<Uint8List> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get draft => $state.composableBuilder(
-      column: $state.table.draft,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<bool> get draft => $composableBuilder(
+      column: $table.draft, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<Uint8List> get userId => $state.composableBuilder(
-      column: $state.table.userId,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<Uint8List> get userId => $composableBuilder(
+      column: $table.userId, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get body => $state.composableBuilder(
-      column: $state.table.body,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get body => $composableBuilder(
+      column: $table.body, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<double> get order => $state.composableBuilder(
-      column: $state.table.order,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<double> get order => $composableBuilder(
+      column: $table.order, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get orderedAt => $state.composableBuilder(
-      column: $state.table.orderedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get orderedAt => $composableBuilder(
+      column: $table.orderedAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get root => $state.composableBuilder(
-      column: $state.table.root,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<bool> get root => $composableBuilder(
+      column: $table.root, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get pinned => $state.composableBuilder(
-      column: $state.table.pinned,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<bool> get pinned => $composableBuilder(
+      column: $table.pinned, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get private => $state.composableBuilder(
-      column: $state.table.private,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<bool> get private => $composableBuilder(
+      column: $table.private, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<Uint8List> get topicId => $state.composableBuilder(
-      column: $state.table.topicId,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<Uint8List> get topicId => $composableBuilder(
+      column: $table.topicId, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get doAt => $state.composableBuilder(
-      column: $state.table.doAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get doAt => $composableBuilder(
+      column: $table.doAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get doneAt => $state.composableBuilder(
-      column: $state.table.doneAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get doneAt => $composableBuilder(
+      column: $table.doneAt, builder: (column) => ColumnOrderings(column));
 
   $$ActivitiesTableOrderingComposer get activityId {
-    final $$ActivitiesTableOrderingComposer composer = $state.composerBuilder(
+    final $$ActivitiesTableOrderingComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.activityId,
-        referencedTable: $state.db.activities,
+        referencedTable: $db.activities,
         getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder, parentComposers) =>
-            $$ActivitiesTableOrderingComposer(ComposerState($state.db,
-                $state.db.activities, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableOrderingComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$NotesTableAnnotationComposer extends Composer<_$Store, $NotesTable> {
+  $$NotesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get draft =>
+      $composableBuilder(column: $table.draft, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<Uuid, Uint8List> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get body =>
+      $composableBuilder(column: $table.body, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<Order, double> get order =>
+      $composableBuilder(column: $table.order, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get orderedAt =>
+      $composableBuilder(column: $table.orderedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get root =>
+      $composableBuilder(column: $table.root, builder: (column) => column);
+
+  GeneratedColumn<bool> get pinned =>
+      $composableBuilder(column: $table.pinned, builder: (column) => column);
+
+  GeneratedColumn<bool> get private =>
+      $composableBuilder(column: $table.private, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<Uuid, Uint8List> get topicId =>
+      $composableBuilder(column: $table.topicId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get doAt =>
+      $composableBuilder(column: $table.doAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get doneAt =>
+      $composableBuilder(column: $table.doneAt, builder: (column) => column);
+
+  $$ActivitiesTableAnnotationComposer get activityId {
+    final $$ActivitiesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $db.activities,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return composer;
   }
 }
@@ -4793,6 +5098,7 @@ class $$NotesTableTableManager extends RootTableManager<
     NoteRow,
     $$NotesTableFilterComposer,
     $$NotesTableOrderingComposer,
+    $$NotesTableAnnotationComposer,
     $$NotesTableCreateCompanionBuilder,
     $$NotesTableUpdateCompanionBuilder,
     (NoteRow, $$NotesTableReferences),
@@ -4802,10 +5108,12 @@ class $$NotesTableTableManager extends RootTableManager<
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$NotesTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$NotesTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$NotesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$NotesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$NotesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
@@ -4897,6 +5205,7 @@ class $$NotesTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic,
+                      dynamic,
                       dynamic>>(state) {
                 if (activityId) {
                   state = state.withJoin(
@@ -4925,6 +5234,7 @@ typedef $$NotesTableProcessedTableManager = ProcessedTableManager<
     NoteRow,
     $$NotesTableFilterComposer,
     $$NotesTableOrderingComposer,
+    $$NotesTableAnnotationComposer,
     $$NotesTableCreateCompanionBuilder,
     $$NotesTableUpdateCompanionBuilder,
     (NoteRow, $$NotesTableReferences),
@@ -4984,174 +5294,221 @@ final class $$EventsTableReferences
   }
 }
 
-class $$EventsTableFilterComposer
-    extends FilterComposer<_$Store, $EventsTable> {
-  $$EventsTableFilterComposer(super.$state);
+class $$EventsTableFilterComposer extends Composer<_$Store, $EventsTable> {
+  $$EventsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
   ColumnWithTypeConverterFilters<Uuid, Uuid, Uint8List> get id =>
-      $state.composableBuilder(
-          column: $state.table.id,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.id,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get draft => $state.composableBuilder(
-      column: $state.table.draft,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<bool> get draft => $composableBuilder(
+      column: $table.draft, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get start => $state.composableBuilder(
-      column: $state.table.start,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get start => $composableBuilder(
+      column: $table.start, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get end => $state.composableBuilder(
-      column: $state.table.end,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get end => $composableBuilder(
+      column: $table.end, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get series => $state.composableBuilder(
-      column: $state.table.series,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<String> get series => $composableBuilder(
+      column: $table.series, builder: (column) => ColumnFilters(column));
 
   ColumnWithTypeConverterFilters<EventResponse, EventResponse, String>
-      get response => $state.composableBuilder(
-          column: $state.table.response,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      get response => $composableBuilder(
+          column: $table.response,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<EventStatus, EventStatus, String> get status =>
-      $state.composableBuilder(
-          column: $state.table.status,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.status,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<EventVisibility, EventVisibility, String>
-      get visibility => $state.composableBuilder(
-          column: $state.table.visibility,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      get visibility => $composableBuilder(
+          column: $table.visibility,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<EventAvailability, EventAvailability, String>
-      get availability => $state.composableBuilder(
-          column: $state.table.availability,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      get availability => $composableBuilder(
+          column: $table.availability,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<bool> get inviteesHidden => $state.composableBuilder(
-      column: $state.table.inviteesHidden,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<bool> get inviteesHidden => $composableBuilder(
+      column: $table.inviteesHidden,
+      builder: (column) => ColumnFilters(column));
 
   $$ActivitiesTableFilterComposer get activityId {
-    final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
+    final $$ActivitiesTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.activityId,
-        referencedTable: $state.db.activities,
+        referencedTable: $db.activities,
         getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder, parentComposers) =>
-            $$ActivitiesTableFilterComposer(ComposerState($state.db,
-                $state.db.activities, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableFilterComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return composer;
   }
 }
 
-class $$EventsTableOrderingComposer
-    extends OrderingComposer<_$Store, $EventsTable> {
-  $$EventsTableOrderingComposer(super.$state);
-  ColumnOrderings<Uint8List> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+class $$EventsTableOrderingComposer extends Composer<_$Store, $EventsTable> {
+  $$EventsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<Uint8List> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get draft => $state.composableBuilder(
-      column: $state.table.draft,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<bool> get draft => $composableBuilder(
+      column: $table.draft, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get start => $state.composableBuilder(
-      column: $state.table.start,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get start => $composableBuilder(
+      column: $table.start, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get end => $state.composableBuilder(
-      column: $state.table.end,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get end => $composableBuilder(
+      column: $table.end, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get series => $state.composableBuilder(
-      column: $state.table.series,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get series => $composableBuilder(
+      column: $table.series, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get response => $state.composableBuilder(
-      column: $state.table.response,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get response => $composableBuilder(
+      column: $table.response, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get status => $state.composableBuilder(
-      column: $state.table.status,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get visibility => $state.composableBuilder(
-      column: $state.table.visibility,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get visibility => $composableBuilder(
+      column: $table.visibility, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get availability => $state.composableBuilder(
-      column: $state.table.availability,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get availability => $composableBuilder(
+      column: $table.availability,
+      builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get inviteesHidden => $state.composableBuilder(
-      column: $state.table.inviteesHidden,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<bool> get inviteesHidden => $composableBuilder(
+      column: $table.inviteesHidden,
+      builder: (column) => ColumnOrderings(column));
 
   $$ActivitiesTableOrderingComposer get activityId {
-    final $$ActivitiesTableOrderingComposer composer = $state.composerBuilder(
+    final $$ActivitiesTableOrderingComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.activityId,
-        referencedTable: $state.db.activities,
+        referencedTable: $db.activities,
         getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder, parentComposers) =>
-            $$ActivitiesTableOrderingComposer(ComposerState($state.db,
-                $state.db.activities, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableOrderingComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$EventsTableAnnotationComposer extends Composer<_$Store, $EventsTable> {
+  $$EventsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get draft =>
+      $composableBuilder(column: $table.draft, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get start =>
+      $composableBuilder(column: $table.start, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get end =>
+      $composableBuilder(column: $table.end, builder: (column) => column);
+
+  GeneratedColumn<String> get series =>
+      $composableBuilder(column: $table.series, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<EventResponse, String> get response =>
+      $composableBuilder(column: $table.response, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<EventStatus, String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<EventVisibility, String> get visibility =>
+      $composableBuilder(
+          column: $table.visibility, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<EventAvailability, String>
+      get availability => $composableBuilder(
+          column: $table.availability, builder: (column) => column);
+
+  GeneratedColumn<bool> get inviteesHidden => $composableBuilder(
+      column: $table.inviteesHidden, builder: (column) => column);
+
+  $$ActivitiesTableAnnotationComposer get activityId {
+    final $$ActivitiesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $db.activities,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return composer;
   }
 }
@@ -5162,6 +5519,7 @@ class $$EventsTableTableManager extends RootTableManager<
     EventRow,
     $$EventsTableFilterComposer,
     $$EventsTableOrderingComposer,
+    $$EventsTableAnnotationComposer,
     $$EventsTableCreateCompanionBuilder,
     $$EventsTableUpdateCompanionBuilder,
     (EventRow, $$EventsTableReferences),
@@ -5171,10 +5529,12 @@ class $$EventsTableTableManager extends RootTableManager<
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$EventsTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$EventsTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$EventsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$EventsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$EventsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
@@ -5262,6 +5622,7 @@ class $$EventsTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic,
+                      dynamic,
                       dynamic>>(state) {
                 if (activityId) {
                   state = state.withJoin(
@@ -5290,6 +5651,7 @@ typedef $$EventsTableProcessedTableManager = ProcessedTableManager<
     EventRow,
     $$EventsTableFilterComposer,
     $$EventsTableOrderingComposer,
+    $$EventsTableAnnotationComposer,
     $$EventsTableCreateCompanionBuilder,
     $$EventsTableUpdateCompanionBuilder,
     (EventRow, $$EventsTableReferences),
@@ -5337,108 +5699,158 @@ final class $$SessionsTableReferences
   }
 }
 
-class $$SessionsTableFilterComposer
-    extends FilterComposer<_$Store, $SessionsTable> {
-  $$SessionsTableFilterComposer(super.$state);
+class $$SessionsTableFilterComposer extends Composer<_$Store, $SessionsTable> {
+  $$SessionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
   ColumnWithTypeConverterFilters<Uuid, Uuid, Uint8List> get id =>
-      $state.composableBuilder(
-          column: $state.table.id,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.id,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get start => $state.composableBuilder(
-      column: $state.table.start,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get start => $composableBuilder(
+      column: $table.start, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get end => $state.composableBuilder(
-      column: $state.table.end,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get end => $composableBuilder(
+      column: $table.end, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<int> get priority => $state.composableBuilder(
-      column: $state.table.priority,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<int> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnFilters(column));
 
   ColumnWithTypeConverterFilters<Duration?, Duration, int> get pomodoro =>
-      $state.composableBuilder(
-          column: $state.table.pomodoro,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.pomodoro,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get pomodoroAt => $state.composableBuilder(
-      column: $state.table.pomodoroAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<DateTime> get pomodoroAt => $composableBuilder(
+      column: $table.pomodoroAt, builder: (column) => ColumnFilters(column));
 
   $$ActivitiesTableFilterComposer get activityId {
-    final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
+    final $$ActivitiesTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.activityId,
-        referencedTable: $state.db.activities,
+        referencedTable: $db.activities,
         getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder, parentComposers) =>
-            $$ActivitiesTableFilterComposer(ComposerState($state.db,
-                $state.db.activities, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableFilterComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return composer;
   }
 }
 
 class $$SessionsTableOrderingComposer
-    extends OrderingComposer<_$Store, $SessionsTable> {
-  $$SessionsTableOrderingComposer(super.$state);
-  ColumnOrderings<Uint8List> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+    extends Composer<_$Store, $SessionsTable> {
+  $$SessionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<Uint8List> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get start => $state.composableBuilder(
-      column: $state.table.start,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get start => $composableBuilder(
+      column: $table.start, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get end => $state.composableBuilder(
-      column: $state.table.end,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get end => $composableBuilder(
+      column: $table.end, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<int> get priority => $state.composableBuilder(
-      column: $state.table.priority,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<int> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<int> get pomodoro => $state.composableBuilder(
-      column: $state.table.pomodoro,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<int> get pomodoro => $composableBuilder(
+      column: $table.pomodoro, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get pomodoroAt => $state.composableBuilder(
-      column: $state.table.pomodoroAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<DateTime> get pomodoroAt => $composableBuilder(
+      column: $table.pomodoroAt, builder: (column) => ColumnOrderings(column));
 
   $$ActivitiesTableOrderingComposer get activityId {
-    final $$ActivitiesTableOrderingComposer composer = $state.composerBuilder(
+    final $$ActivitiesTableOrderingComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.activityId,
-        referencedTable: $state.db.activities,
+        referencedTable: $db.activities,
         getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder, parentComposers) =>
-            $$ActivitiesTableOrderingComposer(ComposerState($state.db,
-                $state.db.activities, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableOrderingComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$SessionsTableAnnotationComposer
+    extends Composer<_$Store, $SessionsTable> {
+  $$SessionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get start =>
+      $composableBuilder(column: $table.start, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get end =>
+      $composableBuilder(column: $table.end, builder: (column) => column);
+
+  GeneratedColumn<int> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<Duration?, int> get pomodoro =>
+      $composableBuilder(column: $table.pomodoro, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get pomodoroAt => $composableBuilder(
+      column: $table.pomodoroAt, builder: (column) => column);
+
+  $$ActivitiesTableAnnotationComposer get activityId {
+    final $$ActivitiesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $db.activities,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return composer;
   }
 }
@@ -5449,6 +5861,7 @@ class $$SessionsTableTableManager extends RootTableManager<
     SessionRow,
     $$SessionsTableFilterComposer,
     $$SessionsTableOrderingComposer,
+    $$SessionsTableAnnotationComposer,
     $$SessionsTableCreateCompanionBuilder,
     $$SessionsTableUpdateCompanionBuilder,
     (SessionRow, $$SessionsTableReferences),
@@ -5458,10 +5871,12 @@ class $$SessionsTableTableManager extends RootTableManager<
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$SessionsTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$SessionsTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$SessionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SessionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SessionsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> modifiedAt = const Value.absent(),
@@ -5525,6 +5940,7 @@ class $$SessionsTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic,
+                      dynamic,
                       dynamic>>(state) {
                 if (activityId) {
                   state = state.withJoin(
@@ -5553,6 +5969,7 @@ typedef $$SessionsTableProcessedTableManager = ProcessedTableManager<
     SessionRow,
     $$SessionsTableFilterComposer,
     $$SessionsTableOrderingComposer,
+    $$SessionsTableAnnotationComposer,
     $$SessionsTableCreateCompanionBuilder,
     $$SessionsTableUpdateCompanionBuilder,
     (SessionRow, $$SessionsTableReferences),
@@ -5596,90 +6013,142 @@ final class $$BalancesTableReferences
   }
 }
 
-class $$BalancesTableFilterComposer
-    extends FilterComposer<_$Store, $BalancesTable> {
-  $$BalancesTableFilterComposer(super.$state);
-  ColumnFilters<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+class $$BalancesTableFilterComposer extends Composer<_$Store, $BalancesTable> {
+  $$BalancesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
 
   ColumnWithTypeConverterFilters<Date, Date, String> get day =>
-      $state.composableBuilder(
-          column: $state.table.day,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.day,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<BalanceType, BalanceType, String> get type =>
-      $state.composableBuilder(
-          column: $state.table.type,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.type,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<int> get count => $state.composableBuilder(
-      column: $state.table.count,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
+  ColumnFilters<int> get count => $composableBuilder(
+      column: $table.count, builder: (column) => ColumnFilters(column));
 
   ColumnWithTypeConverterFilters<Duration, Duration, int> get time =>
-      $state.composableBuilder(
-          column: $state.table.time,
-          builder: (column, joinBuilders) => ColumnWithTypeConverterFilters(
-              column,
-              joinBuilders: joinBuilders));
+      $composableBuilder(
+          column: $table.time,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   $$ActivitiesTableFilterComposer get activityId {
-    final $$ActivitiesTableFilterComposer composer = $state.composerBuilder(
+    final $$ActivitiesTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.activityId,
-        referencedTable: $state.db.activities,
+        referencedTable: $db.activities,
         getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder, parentComposers) =>
-            $$ActivitiesTableFilterComposer(ComposerState($state.db,
-                $state.db.activities, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableFilterComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return composer;
   }
 }
 
 class $$BalancesTableOrderingComposer
-    extends OrderingComposer<_$Store, $BalancesTable> {
-  $$BalancesTableOrderingComposer(super.$state);
-  ColumnOrderings<DateTime> get modifiedAt => $state.composableBuilder(
-      column: $state.table.modifiedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+    extends Composer<_$Store, $BalancesTable> {
+  $$BalancesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get day => $state.composableBuilder(
-      column: $state.table.day,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get day => $composableBuilder(
+      column: $table.day, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get type => $state.composableBuilder(
-      column: $state.table.type,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<String> get type => $composableBuilder(
+      column: $table.type, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<int> get count => $state.composableBuilder(
-      column: $state.table.count,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<int> get count => $composableBuilder(
+      column: $table.count, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<int> get time => $state.composableBuilder(
-      column: $state.table.time,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
+  ColumnOrderings<int> get time => $composableBuilder(
+      column: $table.time, builder: (column) => ColumnOrderings(column));
 
   $$ActivitiesTableOrderingComposer get activityId {
-    final $$ActivitiesTableOrderingComposer composer = $state.composerBuilder(
+    final $$ActivitiesTableOrderingComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.activityId,
-        referencedTable: $state.db.activities,
+        referencedTable: $db.activities,
         getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder, parentComposers) =>
-            $$ActivitiesTableOrderingComposer(ComposerState($state.db,
-                $state.db.activities, joinBuilder, parentComposers)));
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableOrderingComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$BalancesTableAnnotationComposer
+    extends Composer<_$Store, $BalancesTable> {
+  $$BalancesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
+      column: $table.modifiedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<Date, String> get day =>
+      $composableBuilder(column: $table.day, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<BalanceType, String> get type =>
+      $composableBuilder(column: $table.type, builder: (column) => column);
+
+  GeneratedColumn<int> get count =>
+      $composableBuilder(column: $table.count, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<Duration, int> get time =>
+      $composableBuilder(column: $table.time, builder: (column) => column);
+
+  $$ActivitiesTableAnnotationComposer get activityId {
+    final $$ActivitiesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.activityId,
+        referencedTable: $db.activities,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ActivitiesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.activities,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return composer;
   }
 }
@@ -5690,6 +6159,7 @@ class $$BalancesTableTableManager extends RootTableManager<
     BalanceRow,
     $$BalancesTableFilterComposer,
     $$BalancesTableOrderingComposer,
+    $$BalancesTableAnnotationComposer,
     $$BalancesTableCreateCompanionBuilder,
     $$BalancesTableUpdateCompanionBuilder,
     (BalanceRow, $$BalancesTableReferences),
@@ -5699,10 +6169,12 @@ class $$BalancesTableTableManager extends RootTableManager<
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$BalancesTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$BalancesTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$BalancesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BalancesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BalancesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<DateTime> modifiedAt = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
@@ -5758,6 +6230,7 @@ class $$BalancesTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic,
+                      dynamic,
                       dynamic>>(state) {
                 if (activityId) {
                   state = state.withJoin(
@@ -5786,6 +6259,7 @@ typedef $$BalancesTableProcessedTableManager = ProcessedTableManager<
     BalanceRow,
     $$BalancesTableFilterComposer,
     $$BalancesTableOrderingComposer,
+    $$BalancesTableAnnotationComposer,
     $$BalancesTableCreateCompanionBuilder,
     $$BalancesTableUpdateCompanionBuilder,
     (BalanceRow, $$BalancesTableReferences),

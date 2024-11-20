@@ -37,12 +37,13 @@ class Calendar extends CalendarRow {
         );
 
   @override
-  Calendar copyWith(
-          {int? id,
-          DateTime? modifiedAt,
-          String? name,
-          bool? enabled,
-          int? accountId}) =>
+  Calendar copyWith({
+    int? id,
+    DateTime? modifiedAt,
+    String? name,
+    bool? enabled,
+    int? accountId,
+  }) =>
       Calendar.fromStore(super.copyWith(
         id: id,
         modifiedAt: DateTime.now(),
@@ -51,7 +52,8 @@ class Calendar extends CalendarRow {
         accountId: accountId,
       ));
 
-  Future<void> save() => Store.get.save(table, toCompanion(false));
+  Future<void> save() =>
+      Store.get.save(table, toCompanion(false), CalendarsBase());
 
   Future<void> sync() async {
     await api.post(

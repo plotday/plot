@@ -164,7 +164,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         .replaceSorted(child, (a, b) => a.id == b.id);
   }
 
-  Future<void> save() => Store.get.save(table, this);
+  Future<void> save() => Store.get.save(table, this, AccountsBase());
 
   @override
   int compareTo(Activity other) {

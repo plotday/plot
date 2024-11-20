@@ -213,7 +213,7 @@ class Note extends NoteRow implements Comparable<Note> {
     ));
   }
 
-  Future<void> save() => Store.get.save(table, toCompanion(false));
+  Future<void> save() => Store.get.save(table, toCompanion(false), NotesBase());
   bool get doNow => doAt?.isSameOrBefore(DateTime.now()) == true;
   bool get done => doneAt != null;
 

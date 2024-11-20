@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart';
+// import 'package:drift/isolate.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:equatable/equatable.dart';
@@ -162,12 +163,14 @@ abstract class BaseTable {
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
     final id = rows.first['id'];
-    if (id is int || upsertAsUpdate) {
+    if (id is int) {
       for (final row in rows) {
         final id = row['id'] as Object;
         final rest = Map<String, dynamic>.from(row)..remove('id');
         await base.from(table).update(rest).eq('id', id);
       }
+    } else if (upsertAsUpdate) {
+      await base.from(table).insert(rows.toList());
     } else {
       await base.from(table).upsert(rows.toList());
     }
@@ -185,11 +188,12 @@ abstract class BaseTable {
   Balances,
 ])
 class Store extends _$Store {
-  static final Store _store = Store._();
   static Store get get => _store;
+  static late final Store _store;
 
-  static void init() {
+  static void init() async {
     driftRuntimeOptions.defaultSerializer = const CustomSerializer();
+    _store = Store._();
   }
 
   Future<DATA> add<TABLE extends StoreTable, DATA extends DataClass>(
@@ -219,7 +223,9 @@ class Store extends _$Store {
   }
 
   Future<void> save<TABLE extends StoreTable, DATA extends DataClass>(
-      TableInfo<TABLE, DATA> table, Insertable<DATA> data) async {
+      TableInfo<TABLE, DATA> table,
+      Insertable<DATA> data,
+      BaseTable baseTable) async {
     try {
       await add(table, data);
     } catch (e) {
@@ -227,6 +233,7 @@ class Store extends _$Store {
       print(e);
       rethrow;
     }
+    push(table, baseTable);
   }
 
   Future<void> push<TABLE extends StoreTable, DATA extends DataClass>(
@@ -364,7 +371,13 @@ class Store extends _$Store {
     ]);
   }
 
-  Store._() : super(_openConnection());
+  Store._()
+      : super(driftDatabase(
+          name: 'plot',
+          // native: const DriftNativeOptions(
+          //   shareAcrossIsolates: true,
+          // ),
+        ));
 
   @override
   int get schemaVersion => 20;
@@ -380,10 +393,6 @@ class Store extends _$Store {
         }
       },
     );
-  }
-
-  static QueryExecutor _openConnection() {
-    return driftDatabase(name: 'plot');
   }
 }
 

@@ -192,7 +192,8 @@ class Event extends EventRow {
 
   final Activity? activity;
 
-  Future<void> save() => Store.get.save(table, toCompanion(false));
+  Future<void> save() =>
+      Store.get.save(table, toCompanion(false), EventsBase());
 
   DateTimeRange get at => DateTimeRange(start, end);
 }

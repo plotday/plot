@@ -88,5 +88,6 @@ class Account extends AccountRow {
 
   final List<Calendar>? calendars;
 
-  Future<void> save() => Store.get.save(table, toCompanion(false));
+  Future<void> save() =>
+      Store.get.save(table, toCompanion(false), AccountsBase());
 }
