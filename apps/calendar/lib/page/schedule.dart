@@ -1,16 +1,31 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/widget/schedule.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/state/schedule.dart';
+import 'package:plot/router.dart';
 
 class SchedulePage extends StatelessWidget {
   const SchedulePage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: ScheduleWidget(
-        scrollController: ScrollControllerContext.of(context),
+    return BlocBuilder<ScheduleBloc, ScheduleState>(
+      builder: (context, state) => Scaffold(
+        actions: [
+          ActionItem(
+            icon: Icons.today,
+            label: 'Schedule',
+            showLabel: false,
+            onPressed: () {
+              HomeRoute.day(state.day).go(context);
+            },
+          ),
+        ],
+        body: ScheduleWidget(
+          scrollController: ScrollControllerContext.of(context),
+        ),
       ),
     );
   }

@@ -35,19 +35,6 @@ class MacLayoutState extends State<MacLayout> {
         return GlobalMenu(
             child: MacosWindow(
           child: MacosScaffold(
-            toolBar: ToolBar(
-              title: const ActivityNav(),
-              actions: [
-                ToolBarIconButton(
-                  icon: const material.Icon(material.Icons.calendar_today),
-                  label: 'Schedule',
-                  showLabel: false,
-                  onPressed: () {
-                    HomeRoute.day(state.day).go(context);
-                  },
-                ),
-              ],
-            ),
             children: [
               ResizablePane(
                 builder: (context, scrollController) => ScrollControllerContext(
@@ -59,23 +46,23 @@ class MacLayoutState extends State<MacLayout> {
                 maxSize: 400,
                 resizableSide: ResizableSide.right,
               ),
-              ResizablePane(
+              ContentArea(
                 builder: (context, scrollController) => ScrollControllerContext(
                   controller: scrollController,
                   child: widget.main,
                 ),
-                startSize: 300,
-                minSize: 300,
-                maxSize: 400,
-                resizableSide: ResizableSide.right,
               ),
               if (widget.right != null)
-                ContentArea(
+                ResizablePane(
                   builder: (context, scrollController) =>
                       ScrollControllerContext(
                     controller: scrollController,
                     child: widget.right!,
                   ),
+                  startSize: 300,
+                  minSize: 300,
+                  maxSize: 400,
+                  resizableSide: ResizableSide.left,
                 ),
             ],
           ),
