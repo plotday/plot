@@ -4,9 +4,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/activity.dart';
+import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/note.dart';
-import 'package:plot/widget/input_action.dart';
-import 'package:plot/widget/toggle.dart';
 
 class TopicPage extends StatelessWidget {
   const TopicPage({super.key});
@@ -35,9 +34,13 @@ class TopicPage extends StatelessWidget {
                     )),
             child: const Text("Pin"),
           ),
-          ...state.topicNotes
-              .take(state.topicNotes.length - 1)
-              .map((note) => NoteWidget(note: note)),
+          SelectionArea(
+              child: Column(
+            children: state.topicNotes
+                .take(state.topicNotes.length - 1)
+                .map((note) => NoteWidget(note: note))
+                .toList(),
+          )),
           InputAction(
             // TODO update body while editing
             onAdd: (body) async {
