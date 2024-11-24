@@ -13,6 +13,24 @@ enum TimeDirection {
 class Date extends Equatable {
   static Date today() => DateTime.now().toLocal().toDate();
 
+  static Stream<Date> current() async* {
+    while (true) {
+      // Calculate the Duration till the start of the next day.
+      DateTime now = DateTime.now();
+      Date current = now.toLocal().toDate();
+
+      // Yield the current date immediately upon subscription
+      yield current;
+
+      // Calculate time until the start of the next day for the initial delay
+      DateTime tomorrow = DateTime(now.year, now.month, now.day + 1);
+      Duration untilMidnight = tomorrow.difference(now);
+
+      // After initially yielding, wait until midnight, then start daily timer
+      await Future.delayed(untilMidnight);
+    }
+  }
+
   const Date(this.year, this.month, this.day);
 
   Date.fromString(String date)

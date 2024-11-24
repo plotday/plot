@@ -196,6 +196,17 @@ class Event extends EventRow {
       Store.get.save(table, toCompanion(false), EventsBase());
 
   DateTimeRange get at => DateTimeRange(start, end);
+
+  BalanceType get balanceType {
+    switch (response) {
+      case EventResponse.accepted:
+        return BalanceType.accepted;
+      case EventResponse.declined:
+        return BalanceType.declined;
+      case EventResponse.tentative:
+        return BalanceType.tentative;
+    }
+  }
 }
 
 class ScheduledDay extends Equatable {

@@ -75,6 +75,17 @@ class TopicNotesBase extends NotesBase {
   }
 }
 
+class ActiveNotesBase extends NotesBase {
+  ActiveNotesBase(this.until);
+
+  final DateTime until;
+
+  @override
+  PostgrestFilterBuilder<T> filter<T>(PostgrestFilterBuilder<T> query) {
+    return query.lt('do_at', until).not('done_at', 'is', null);
+  }
+}
+
 class Note extends NoteRow implements Comparable<Note> {
   static TableInfo<Notes, NoteRow> get table => Store.get.notes;
 
@@ -85,6 +96,8 @@ class Note extends NoteRow implements Comparable<Note> {
           {bool more = false}) async =>
       Store.get.pull(more ? PullType.more : PullType.initial, table,
           ActivityNotesBase(activityPath));
+  static Future<bool> pullActive(DateTime until) async =>
+      Store.get.pull(PullType.all, table, ActiveNotesBase(until));
   static bool hasMoreActivity(Path? activityPath) =>
       Store.get.hasMore(ActivityNotesBase(activityPath));
   static Future<bool> pullTopic(TopicId topicId, {bool more = false}) async =>
@@ -127,6 +140,20 @@ class Note extends NoteRow implements Comparable<Note> {
           ]))
         .watch()
         .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
+  }
+
+  // Stream of items that are currently active, and will become active before
+  // the end of the current day.
+  static Stream<List<Note>> watchActive() {
+    return Date.current().switchMap((date) {
+      pullActive(date.toEnd());
+      final query = Store.get.select(table)
+        ..where((t) => t.doAt.isSmallerThanValue(date.toEnd()))
+        ..where((t) => t.doneAt.isNull());
+      return query
+          .watch()
+          .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
+    });
   }
 
   factory Note.draft({

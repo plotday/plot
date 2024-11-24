@@ -20,3 +20,52 @@ class StreamListenable<T> {
     _notifier.dispose();
   }
 }
+
+class ExpiringResult<S> {
+  final S value;
+  final DateTime expiry;
+
+  ExpiringResult({required this.value, required this.expiry});
+}
+
+class ExpiringStreamTransformer<T, S> extends StreamTransformerBase<T, S> {
+  final ExpiringResult<S> Function(T) mapFunction;
+
+  ExpiringStreamTransformer({required this.mapFunction});
+
+  @override
+  Stream<S> bind(Stream<T> stream) {
+    late StreamController<S> controller;
+    var subscriptions = <StreamSubscription<T>>[];
+    controller = StreamController<S>(
+      onListen: () {
+        subscriptions = <StreamSubscription<T>>[
+          stream.listen(
+            (event) {
+              final result = mapFunction(event);
+
+              // Emit the mapped value
+              controller.add(result.value);
+
+              // Set up a timer to re-map and emit the value and expiry again
+              final duration = result.expiry.difference(DateTime.now());
+              Timer(duration, () {
+                final expiredValueResult = mapFunction(event);
+                controller.add(expiredValueResult.value);
+              });
+            },
+            onError: controller.addError,
+            onDone: controller.close,
+            cancelOnError: false,
+          )
+        ];
+      },
+      onCancel: () {
+        for (final subscription in subscriptions) {
+          subscription.cancel();
+        }
+      },
+    );
+    return controller.stream;
+  }
+}

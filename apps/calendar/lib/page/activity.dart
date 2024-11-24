@@ -45,12 +45,18 @@ class ActivityPage extends StatelessWidget {
     return BlocBuilder<ActivityBloc, ActivityState>(
       builder: (buildContext, state) => Scaffold(
           actions: [
-            ActionItem(
-              icon: Icons.today,
-              label: 'Schedule',
-              showLabel: false,
-              onPressed: () {},
-            ),
+            if (state.current != null)
+              ActionItem(
+                icon: Icons.back,
+                label: 'Schedule',
+                showLabel: false,
+                onPressed: () {
+                  state.current?.parent == null
+                      ? const ActivityRoute.root().go(context)
+                      : ActivityRoute.byId(state.current!.parent!.id!)
+                          .go(context);
+                },
+              ),
           ],
           body: BidirectionalList(
             scrollController: ScrollControllerContext.of(context),
@@ -87,6 +93,11 @@ class ActivityPage extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (state.current != null)
+                  ActivityWidget(
+                    activity: state.current!,
+                    balances: state.balances?[state.current!.id],
+                  ),
                 ReorderableListView(
                   list: state.children,
                   itemBuilder: (buildContext, item) => ActivityWidget(
