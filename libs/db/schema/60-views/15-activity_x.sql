@@ -52,3 +52,13 @@ CREATE TRIGGER upsert_activity_x
     FOR EACH ROW
     EXECUTE FUNCTION handle_activity_x_upsert ();
 
+CREATE OR REPLACE VIEW "public"."activity_children" WITH ( security_invoker = TRUE)
+-- for formatting
+AS
+SELECT
+    a.id,
+    c.id AS child_id
+FROM
+    "public"."activity_x" a
+    JOIN "public"."activity" c ON c.path <@ a.path;
+

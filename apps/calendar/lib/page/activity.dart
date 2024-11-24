@@ -93,11 +93,10 @@ class ActivityPage extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (state.current != null)
-                  ActivityWidget(
-                    activity: state.current!,
-                    balances: state.balances?[state.current!.id],
-                  ),
+                ActivityWidget(
+                  activity: state.current,
+                  balances: state.balances?[state.current?.id],
+                ),
                 ReorderableListView(
                   list: state.children,
                   itemBuilder: (buildContext, item) => ActivityWidget(

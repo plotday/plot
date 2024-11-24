@@ -482,21 +482,15 @@ extension DurationExtension on Duration {
     return '${inHours > 0 ? inHours : ''}:${inMinutes.remainder(60).toString().padLeft(2, '0')}';
   }
 
-  bool get hasHours {
-    return inHours > 0;
-  }
+  bool get hasHours => inHours > 0;
 
-  String get hoursString {
-    return inHours.toString();
-  }
+  String get hoursString => inHours.toString();
 
-  bool get hasMinutes {
-    return inMinutes.remainder(60) > 0;
-  }
+  bool get hasMinutes => inMinutes.remainder(60) > 0;
 
-  String get minutesString {
-    return inMinutes.remainder(60).toString();
-  }
+  String get minutesString => inMinutes.remainder(60).toString();
+
+  bool get isNonZero => inSeconds > 0;
 }
 
 extension TimeOfDayExtension on TimeOfDay {

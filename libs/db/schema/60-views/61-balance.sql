@@ -1,4 +1,4 @@
-CREATE OR REPLACE VIEW balance WITH ( security_invoker = TRUE)
+CREATE OR REPLACE VIEW balance_without_children WITH ( security_invoker = TRUE)
 -- for formatting
 AS
 SELECT
@@ -57,6 +57,45 @@ WHERE
     draft = FALSE
     AND do_at IS NOT NULL
     AND done_at IS NULL
+GROUP BY
+    user_id,
+    day,
+    activity_id,
+    type;
+
+CREATE OR REPLACE VIEW balance WITH ( security_invoker = TRUE)
+-- for formatting
+AS
+SELECT
+    user_id,
+    day,
+    NULL AS activity_id,
+    type,
+    SUM(b.count) AS "count",
+    SUM(b.seconds)::integer AS "seconds",
+    MAX(b.modified_at) AS modified_at
+FROM
+    balance_without_children b
+WHERE
+    b.activity_id IS NULL
+GROUP BY
+    user_id,
+    day,
+    type
+UNION ALL
+SELECT
+    user_id,
+    day,
+    activity_id,
+    type,
+    SUM(b.count) AS "count",
+    SUM(b.seconds)::integer AS "seconds",
+    MAX(b.modified_at) AS modified_at
+FROM
+    balance_without_children b
+    JOIN activity_children ac ON b.activity_id = ac.child_id
+WHERE
+    b.activity_id IS NOT NULL
 GROUP BY
     user_id,
     day,

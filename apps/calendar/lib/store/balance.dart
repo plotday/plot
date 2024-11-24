@@ -79,6 +79,7 @@ class Balance extends BalanceRow {
     pullRange(range);
 
     final query = Store.get.select(table)
+      ..where((t) => t.count.isBiggerThanValue(0))
       ..where((t) => t.day.isBiggerOrEqualValue(range.start.toString()))
       ..where((t) => t.day.isSmallerThanValue(range.end.toString()));
     final balanceStats = query.watch().map((List<BalanceRow> rows) {
@@ -154,8 +155,10 @@ class Balance extends BalanceRow {
             }
             final balanceStat = balanceTypeEntry.value;
             combinedBalanceByType.update(
-                balanceType, (existingStat) => existingStat + balanceStat,
-                ifAbsent: () => balanceStat);
+              balanceType,
+              (existingStat) => existingStat + balanceStat,
+              ifAbsent: () => balanceStat,
+            );
           }
         }
       }

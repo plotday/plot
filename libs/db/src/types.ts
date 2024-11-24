@@ -152,6 +152,20 @@ export type Database = {
             foreignKeyName: "activity_settings_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_settings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_settings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
             referencedRelation: "activity_x"
             referencedColumns: ["id"]
           },
@@ -199,6 +213,20 @@ export type Database = {
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_user_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_user_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
             referencedColumns: ["id"]
           },
           {
@@ -588,6 +616,20 @@ export type Database = {
             foreignKeyName: "note_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
             referencedRelation: "activity_x"
             referencedColumns: ["id"]
           },
@@ -700,6 +742,20 @@ export type Database = {
             foreignKeyName: "series_activity_id_fkey"
             columns: ["activity_id"]
             isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
             referencedRelation: "activity_x"
             referencedColumns: ["id"]
           },
@@ -759,6 +815,20 @@ export type Database = {
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "session_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
             referencedColumns: ["id"]
           },
           {
@@ -856,6 +926,13 @@ export type Database = {
       }
     }
     Views: {
+      activity_children: {
+        Row: {
+          child_id: string | null
+          id: string | null
+        }
+        Relationships: []
+      }
       activity_x: {
         Row: {
           created_at: string | null
@@ -879,6 +956,18 @@ export type Database = {
         ]
       }
       balance: {
+        Row: {
+          activity_id: string | null
+          count: number | null
+          day: string | null
+          modified_at: string | null
+          seconds: number | null
+          type: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      balance_without_children: {
         Row: {
           activity_id: string | null
           count: number | null
@@ -1072,6 +1161,20 @@ export type Database = {
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
             referencedColumns: ["id"]
           },
           {

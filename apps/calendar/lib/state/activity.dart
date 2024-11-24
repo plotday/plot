@@ -65,6 +65,7 @@ class ActivityBloc extends Cubit<ActivityState> {
   }
 
   void setWeek(Week week) async {
+    if (state.week == week) return;
     emit(state.copyWith(week: week, balances: const Value(null)));
     _loadBalances();
   }
@@ -73,6 +74,7 @@ class ActivityBloc extends Cubit<ActivityState> {
     _balanceSubscription?.cancel();
     _balanceSubscription = Balance.watch(state.week).listen(
       (balances) {
+        print("balances (${state.week}): $balances");
         emit(state.copyWith(balances: Value(balances)));
       },
     );
