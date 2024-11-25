@@ -74,7 +74,6 @@ class ActivityBloc extends Cubit<ActivityState> {
     _balanceSubscription?.cancel();
     _balanceSubscription = Balance.watch(state.week).listen(
       (balances) {
-        print("balances (${state.week}): $balances");
         emit(state.copyWith(balances: Value(balances)));
       },
     );

@@ -56,7 +56,11 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     });
   }
 
-  static Stream<List<Activity>> watchRoot() => watchPath(null);
+  static Stream<List<Activity>> watchAll() => watchPath(null, depth: null);
+
+  static Stream<List<Activity>> watchRoot({int? depth = 1}) =>
+      watchPath(null, depth: depth);
+
   static Stream<List<Activity>> watchPath(Path? path, {int? depth = 1}) {
     final query = Store.get.select(table);
     if (path != null) {
@@ -76,20 +80,20 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       List<Activity> stack = [];
 
       for (var row in rows) {
-        var context =
-            Activity.fromStore(row, parent: stack.isEmpty ? null : stack.last);
+        var activity = Activity.fromStore(row);
 
-        if ((path == null && context.path.isRoot) || context.path == path) {
-          matches.add(context);
+        if ((path == null && activity.path.isRoot) || activity.path == path) {
+          matches.add(activity);
+          stack = [];
         } else if (stack.isNotEmpty &&
-            !stack.last.path.isParent(context.path)) {
-          stack.removeWhere((c) => !c.path.isParent(context.path));
+            !stack.last.path.isParent(activity.path)) {
+          stack.removeWhere((c) => !c.path.isParent(activity.path));
         }
 
         if (stack.isNotEmpty) {
-          context = context.copyWith(parent: stack.last);
+          activity = activity.copyWith(parent: stack.last);
         }
-        stack.add(context);
+        stack.add(activity);
       }
 
       matches.sort();
