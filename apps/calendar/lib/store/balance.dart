@@ -108,20 +108,27 @@ class Balance extends BalanceRow {
                     TimeBasedBalanceStats(events.map((event) => event.at).toList()))))));
 
     final noteStats = Note.watchActive().map((notes) =>
-        groupBy(notes, (note) => note.activityId)
-            .map((activityId, notes) => MapEntry(activityId, {
-                  BalanceType.todo: TimeBasedBalanceStats(notes
-                      .map((note) => DateTimeRange(note.doAt!, note.doAt!))
-                      .toList())
-                })));
+        groupBy(notes, (note) => note.activityId).map((activityId, notes) {
+          return MapEntry(activityId, {
+            BalanceType.todo: TimeBasedBalanceStats(notes
+                .map((note) => DateTimeRange(note.doAt!, note.doAt!))
+                .toList())
+          });
+        }));
 
     return Rx.combineLatest3(
         Date.current(),
         balanceStats,
-        Rx.combineLatest2(
+        Rx.combineLatest3(
+          Activity.watchAll(),
           eventStats,
           noteStats,
-          (events, notes) => combineMaps(events, notes),
+          (activities, events, notes) {
+            return combineNestedMaps(
+              aggregateChildBalances(null, events, activities),
+              aggregateChildBalances(null, notes, activities),
+            );
+          },
         ), (
       Date today,
       BalanceByDateActivityType balanceMap,
@@ -189,9 +196,14 @@ class BalanceStats {
   DateTime? validateUntil() => null;
 
   BalanceStats operator +(BalanceStats other) {
-    if (other is TimeBasedBalanceStats) {
+    if (this is TimeBasedBalanceStats || other is TimeBasedBalanceStats) {
       return TimeBasedBalanceStats(
-        other.occurrences,
+        (this is TimeBasedBalanceStats
+                ? (this as TimeBasedBalanceStats).occurrences
+                : const <DateTimeRange>[]) +
+            (other is TimeBasedBalanceStats
+                ? other.occurrences
+                : const <DateTimeRange>[]),
         count: count + other.count,
         time: time + other.time,
       );
@@ -216,19 +228,54 @@ class TimeBasedBalanceStats extends BalanceStats {
 
   final List<DateTimeRange> occurrences;
   List<DateTimeRange> get currentOccurrences => occurrences
-      .where((occurrence) => occurrence.end.isAfter(DateTime.now()))
+      .where((occurrence) => occurrence.start.isSameOrBefore(DateTime.now()))
       .toList();
 
   @override
-  int get count => currentOccurrences.length;
+  int get count => super.count + currentOccurrences.length;
   @override
   Duration get time => currentOccurrences.fold<Duration>(
-        const Duration(),
+        super.time,
         (total, occurrence) => total + occurrence.duration,
       );
+
   @override
   DateTime? validateUntil() => occurrences
       .map((occurrence) => occurrence.start)
       .where((start) => start.isAfter(DateTime.now()))
       .reduce((a, b) => a.isBefore(b) ? a : b);
+}
+
+BalanceByActivityType aggregateChildBalances(
+  ActivityId? activityId,
+  BalanceByActivityType balanceByActivity,
+  List<Activity> children,
+) {
+  BalanceByActivityType newBalances = {};
+  if (balanceByActivity[activityId]?.isNotEmpty == true) {
+    newBalances[activityId] = balanceByActivity[activityId]!;
+  }
+  for (var child in children) {
+    final childBalances =
+        aggregateChildBalances(child.id, balanceByActivity, child.children);
+    if (childBalances.isEmpty) continue;
+    newBalances.addAll(childBalances);
+    if (newBalances[activityId] == null) {
+      newBalances[activityId] = childBalances[child.id]!;
+      continue;
+    }
+    final BalanceByType newBalance = {};
+    for (var balanceType in BalanceType.values) {
+      final balanceStat1 = newBalances[activityId]![balanceType];
+      final balanceStat2 = childBalances[child.id]![balanceType];
+      if (balanceStat1 == null && balanceStat2 == null) continue;
+      if (balanceStat1 == null || balanceStat2 == null) {
+        newBalance[balanceType] = (balanceStat1 ?? balanceStat2)!;
+        continue;
+      }
+      newBalance[balanceType] = balanceStat1 + balanceStat2;
+    }
+    newBalances[activityId] = newBalance;
+  }
+  return newBalances;
 }

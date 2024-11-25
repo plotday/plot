@@ -148,8 +148,10 @@ class Note extends NoteRow implements Comparable<Note> {
     return Date.current().switchMap((date) {
       pullActive(date.toEnd());
       final query = Store.get.select(table)
-        ..where((t) => t.doAt.isSmallerThanValue(date.toEnd()))
-        ..where((t) => t.doneAt.isNull());
+        ..where((t) =>
+            t.draft.equals(false) &
+            t.doAt.isSmallerThanValue(date.toEnd()) &
+            t.doneAt.isNull());
       return query
           .watch()
           .map((rows) => rows.map((row) => Note.fromStore(row)).toList());

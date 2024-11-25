@@ -7,7 +7,7 @@ extension MapFilterKeys<T1, T2> on Map<T1, T2> {
   }
 }
 
-Map<K, Map<L, V>> combineMaps<K, L, V>(
+Map<K, Map<L, V>> combineNestedMaps<K, L, V>(
     Map<K, Map<L, V>> mapA, Map<K, Map<L, V>> mapB) {
   Map<K, Map<L, V>> result = {};
 
