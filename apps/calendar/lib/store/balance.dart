@@ -125,8 +125,8 @@ class Balance extends BalanceRow {
           noteStats,
           (activities, events, notes) {
             return combineNestedMaps(
-              aggregateChildBalances(null, events, activities),
-              aggregateChildBalances(null, notes, activities),
+              _aggregateChildBalances(events, activities, null),
+              _aggregateChildBalances(notes, activities, null),
             );
           },
         ), (
@@ -196,17 +196,8 @@ class BalanceStats {
   DateTime? validateUntil() => null;
 
   BalanceStats operator +(BalanceStats other) {
-    if (this is TimeBasedBalanceStats || other is TimeBasedBalanceStats) {
-      return TimeBasedBalanceStats(
-        (this is TimeBasedBalanceStats
-                ? (this as TimeBasedBalanceStats).occurrences
-                : const <DateTimeRange>[]) +
-            (other is TimeBasedBalanceStats
-                ? other.occurrences
-                : const <DateTimeRange>[]),
-        count: count + other.count,
-        time: time + other.time,
-      );
+    if (other is TimeBasedBalanceStats) {
+      return other + this;
     } else {
       return BalanceStats(
         count: count + other.count,
@@ -244,20 +235,40 @@ class TimeBasedBalanceStats extends BalanceStats {
       .map((occurrence) => occurrence.start)
       .where((start) => start.isAfter(DateTime.now()))
       .reduce((a, b) => a.isBefore(b) ? a : b);
+
+  int get _count => super.count;
+  Duration get _time => super.time;
+
+  @override
+  TimeBasedBalanceStats operator +(BalanceStats other) {
+    if (other is TimeBasedBalanceStats) {
+      return TimeBasedBalanceStats(
+        occurrences + other.occurrences,
+        count: super.count + other._count,
+        time: super.time + other._time,
+      );
+    } else {
+      return TimeBasedBalanceStats(
+        occurrences,
+        count: super.count + other.count,
+        time: super.time + other.time,
+      );
+    }
+  }
 }
 
-BalanceByActivityType aggregateChildBalances(
-  ActivityId? activityId,
+BalanceByActivityType _aggregateChildBalances(
   BalanceByActivityType balanceByActivity,
   List<Activity> children,
+  ActivityId? activityId,
 ) {
   BalanceByActivityType newBalances = {};
   if (balanceByActivity[activityId]?.isNotEmpty == true) {
-    newBalances[activityId] = balanceByActivity[activityId]!;
+    newBalances[activityId] = Map.of(balanceByActivity[activityId]!);
   }
   for (var child in children) {
     final childBalances =
-        aggregateChildBalances(child.id, balanceByActivity, child.children);
+        _aggregateChildBalances(balanceByActivity, child.children, child.id);
     if (childBalances.isEmpty) continue;
     newBalances.addAll(childBalances);
     if (newBalances[activityId] == null) {
