@@ -36,7 +36,6 @@ class TopicWidget extends StatelessWidget {
                 Button(
                   onTap: () =>
                       context.read<ActivityBloc>().updateNote(note.copyWith(
-                            doAt: const Value(null),
                             doneAt: Value(DateTime.now()),
                             order: Order.first(),
                           )),
