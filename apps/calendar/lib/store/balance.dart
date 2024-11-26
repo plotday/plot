@@ -88,10 +88,15 @@ class Balance extends BalanceRow {
         final activityId = row.activityId;
         final day = row.day;
         final type = row.type;
-        final balanceStat = BalanceStats(
-          time: row.time,
-          count: row.count,
-        );
+        final balanceStat = row.day < Date.today()
+            ? BalanceStats(
+                pastTime: row.time,
+                pastCount: row.count,
+              )
+            : BalanceStats(
+                futureTime: row.time,
+                futureCount: row.count,
+              );
         result.putIfAbsent(day, () => {});
         result[day]!.putIfAbsent(activityId, () => {});
         result[day]![activityId]![type] = balanceStat;
@@ -99,22 +104,72 @@ class Balance extends BalanceRow {
       return result;
     });
 
-    final eventStats = Event.watch(Day.today()).map((events) => groupBy(
-            events, (event) => event.activityId)
-        .map((activityId, events) => MapEntry(
-            activityId,
-            groupBy(events, (event) => event.balanceType).map(
-                (activityId, events) => MapEntry(activityId,
-                    TimeBasedBalanceStats(events.map((event) => event.at).toList()))))));
+    final eventStats = Date.current().switchMap((today) =>
+        Event.watch(today.toDateRange())
+            .transform(ExpiringStreamTransformer((events) {
+          final now = DateTime.now();
+          return ExpiringResult(
+            value: groupBy(events, (event) => event.activityId)
+                .map((activityId, events) {
+              final pastEvents =
+                  events.where((event) => event.at.end.isBefore(now));
+              // final currentEvent = pastEvents.lastOrNull?.at;
+              final futureEvents =
+                  events.where((event) => event.at.end.isSameOrAfter(now));
+              return MapEntry(activityId, {
+                BalanceType.todo: BalanceStats(
+                  pastCount: pastEvents.length,
+                  pastTime: pastEvents
+                      .map((event) => event.at.duration)
+                      .fold(Duration.zero, (a, b) => a + b),
+                  futureCount: futureEvents.length,
+                  futureTime: futureEvents
+                      .map((event) => event.at.duration)
+                      .fold(Duration.zero, (a, b) => a + b),
+                )
+              });
+            }),
+            expiry: events
+                .map((event) =>
+                    event.at.start.isAfter(now) ? event.at.start : event.at.end)
+                .where((time) => time.isAfter(now))
+                .fold(
+                    null,
+                    (a, b) => a == null
+                        ? b
+                        : a.isBefore(b)
+                            ? a
+                            : b),
+          );
+        })));
 
-    final noteStats = Note.watchActive().map((notes) =>
-        groupBy(notes, (note) => note.activityId).map((activityId, notes) {
+    final noteStats =
+        Note.watchActive().transform(ExpiringStreamTransformer((notes) {
+      final now = DateTime.now();
+      return ExpiringResult(
+        value:
+            groupBy(notes, (note) => note.activityId).map((activityId, notes) {
+          final pastCount =
+              notes.where((note) => note.doAt!.isSameOrBefore(now)).length;
           return MapEntry(activityId, {
-            BalanceType.todo: TimeBasedBalanceStats(notes
-                .map((note) => DateTimeRange(note.doAt!, note.doAt!))
-                .toList())
+            BalanceType.todo: BalanceStats(
+              pastCount: pastCount,
+              futureCount: notes.length - pastCount,
+            )
           });
-        }));
+        }),
+        expiry: notes
+            .map((note) => note.doAt!)
+            .where((start) => start.isAfter(now))
+            .fold(
+                null,
+                (a, b) => a == null
+                    ? b
+                    : a.isBefore(b)
+                        ? a
+                        : b),
+      );
+    }));
 
     return Rx.combineLatest3(
         Date.current(),
@@ -186,75 +241,31 @@ class Balance extends BalanceRow {
 }
 
 class BalanceStats {
-  const BalanceStats({required this.count, required this.time});
+  const BalanceStats(
+      {this.pastCount = 0,
+      this.pastTime = Duration.zero,
+      this.futureCount = 0,
+      this.futureTime = Duration.zero});
 
-  final int count;
-  final Duration time;
-
-  // The current value of count and time are valid until the given DateTime.
-  // If null, they are valid indefinitely.
-  DateTime? validateUntil() => null;
+  final int pastCount;
+  final Duration pastTime;
+  final int futureCount;
+  final Duration futureTime;
+  int get count => pastCount + futureCount;
+  Duration get time => pastTime + futureTime;
 
   BalanceStats operator +(BalanceStats other) {
-    if (other is TimeBasedBalanceStats) {
-      return other + this;
-    } else {
-      return BalanceStats(
-        count: count + other.count,
-        time: time + other.time,
-      );
-    }
+    return BalanceStats(
+      pastCount: pastCount + other.pastCount,
+      pastTime: pastTime + other.pastTime,
+      futureCount: futureCount + other.futureCount,
+      futureTime: futureTime + other.futureTime,
+    );
   }
 
   @override
-  String toString() => 'BalanceStats{count: $count, time: $time}';
-}
-
-class TimeBasedBalanceStats extends BalanceStats {
-  TimeBasedBalanceStats(
-    this.occurrences, {
-    super.count = 0,
-    super.time = Duration.zero,
-  });
-
-  final List<DateTimeRange> occurrences;
-  List<DateTimeRange> get currentOccurrences => occurrences
-      .where((occurrence) => occurrence.start.isSameOrBefore(DateTime.now()))
-      .toList();
-
-  @override
-  int get count => super.count + currentOccurrences.length;
-  @override
-  Duration get time => currentOccurrences.fold<Duration>(
-        super.time,
-        (total, occurrence) => total + occurrence.duration,
-      );
-
-  @override
-  DateTime? validateUntil() => occurrences
-      .map((occurrence) => occurrence.start)
-      .where((start) => start.isAfter(DateTime.now()))
-      .reduce((a, b) => a.isBefore(b) ? a : b);
-
-  int get _count => super.count;
-  Duration get _time => super.time;
-
-  @override
-  TimeBasedBalanceStats operator +(BalanceStats other) {
-    if (other is TimeBasedBalanceStats) {
-      return TimeBasedBalanceStats(
-        occurrences + other.occurrences,
-        count: super.count + other._count,
-        time: super.time + other._time,
-      );
-    } else {
-      return TimeBasedBalanceStats(
-        occurrences,
-        count: super.count + other.count,
-        time: super.time + other.time,
-      );
-    }
-  }
+  String toString() =>
+      'BalanceStats(count: $pastCount/$count, time: $pastTime/$time)';
 }
 
 BalanceByActivityType _aggregateChildBalances(

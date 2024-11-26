@@ -23,15 +23,15 @@ class StreamListenable<T> {
 
 class ExpiringResult<S> {
   final S value;
-  final DateTime expiry;
+  final DateTime? expiry;
 
-  ExpiringResult({required this.value, required this.expiry});
+  ExpiringResult({required this.value, this.expiry});
 }
 
 class ExpiringStreamTransformer<T, S> extends StreamTransformerBase<T, S> {
-  final ExpiringResult<S> Function(T) mapFunction;
+  final ExpiringResult<S> Function(T) map;
 
-  ExpiringStreamTransformer({required this.mapFunction});
+  ExpiringStreamTransformer(this.map);
 
   @override
   Stream<S> bind(Stream<T> stream) {
@@ -42,17 +42,19 @@ class ExpiringStreamTransformer<T, S> extends StreamTransformerBase<T, S> {
         subscriptions = <StreamSubscription<T>>[
           stream.listen(
             (event) {
-              final result = mapFunction(event);
+              final result = map(event);
 
               // Emit the mapped value
               controller.add(result.value);
 
-              // Set up a timer to re-map and emit the value and expiry again
-              final duration = result.expiry.difference(DateTime.now());
-              Timer(duration, () {
-                final expiredValueResult = mapFunction(event);
-                controller.add(expiredValueResult.value);
-              });
+              if (result.expiry != null) {
+                // Set up a timer to re-map and emit the value and expiry again
+                final duration = result.expiry!.difference(DateTime.now());
+                Timer(duration, () {
+                  final expiredValueResult = map(event);
+                  controller.add(expiredValueResult.value);
+                });
+              }
             },
             onError: controller.addError,
             onDone: controller.close,
