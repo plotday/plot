@@ -108,28 +108,26 @@ class Balance extends BalanceRow {
         Event.watch(today.toDateRange())
             .transform(ExpiringStreamTransformer((events) {
           final now = DateTime.now();
-          return ExpiringResult(
-            value: groupBy(events, (event) => event.activityId)
-                .map((activityId, events) {
-              final pastEvents =
-                  events.where((event) => event.at.end.isBefore(now));
-              // final currentEvent = pastEvents.lastOrNull?.at;
-              final futureEvents =
-                  events.where((event) => event.at.end.isSameOrAfter(now));
-              return MapEntry(activityId, {
-                BalanceType.todo: BalanceStats(
-                  pastCount: pastEvents.length,
-                  pastTime: pastEvents
-                      .map((event) => event.at.duration)
-                      .fold(Duration.zero, (a, b) => a + b),
-                  futureCount: futureEvents.length,
-                  futureTime: futureEvents
-                      .map((event) => event.at.duration)
-                      .fold(Duration.zero, (a, b) => a + b),
-                )
-              });
-            }),
-            expiry: events
+
+          final currentEvent = events.any((event) => event.at.includes(now));
+          DateTime? expiry;
+          if (currentEvent) {
+            if (now.second < 50) {
+              expiry = now + const Duration(seconds: 10);
+            } else {
+              final nextMinute = now.add(const Duration(minutes: 1));
+              expiry = DateTime(
+                nextMinute.year,
+                nextMinute.month,
+                nextMinute.day,
+                nextMinute.hour,
+                nextMinute.minute,
+                0,
+                0,
+              );
+            }
+          } else {
+            expiry = events
                 .map((event) =>
                     event.at.start.isAfter(now) ? event.at.start : event.at.end)
                 .where((time) => time.isAfter(now))
@@ -139,7 +137,42 @@ class Balance extends BalanceRow {
                         ? b
                         : a.isBefore(b)
                             ? a
-                            : b),
+                            : b);
+          }
+
+          return ExpiringResult(
+            value: groupBy(events, (event) => event.activityId)
+                .map((activityId, events) {
+              final pastEvents =
+                  events.where((event) => event.at.end.isBefore(now));
+              final currentEvents =
+                  events.where((event) => event.at.includes(now));
+              final futureEvents =
+                  events.where((event) => event.at.start.isAfter(now));
+              return MapEntry(activityId, {
+                BalanceType.todo: BalanceStats(
+                  pastCount: pastEvents.length,
+                  pastTime: pastEvents
+                          .toList()
+                          .map((event) => event.at.duration)
+                          .fold(Duration.zero, (a, b) => a + b) +
+                      currentEvents
+                          .toList()
+                          .map((event) => now.difference(event.at.end))
+                          .fold(Duration.zero, (a, b) => a + b),
+                  futureCount: currentEvents.length + futureEvents.length,
+                  futureTime: futureEvents
+                          .toList()
+                          .map((event) => event.at.duration)
+                          .fold(Duration.zero, (a, b) => a + b) +
+                      currentEvents
+                          .toList()
+                          .map((event) => event.at.end.difference(now))
+                          .fold(Duration.zero, (a, b) => a + b),
+                )
+              });
+            }),
+            expiry: expiry,
           );
         })));
 
