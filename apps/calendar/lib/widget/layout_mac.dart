@@ -1,11 +1,8 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/schedule.dart';
-import 'package:plot/router.dart';
-import 'activity_nav.dart';
 import 'scroll_context.dart';
 import 'package:plot/widget/global_menu.dart';
 

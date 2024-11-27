@@ -44,6 +44,7 @@ class ActivityPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<ActivityBloc, ActivityState>(
       builder: (buildContext, state) => Scaffold(
+          title: const WeekNavigator(),
           actions: [
             if (state.current != null)
               ActionItem(

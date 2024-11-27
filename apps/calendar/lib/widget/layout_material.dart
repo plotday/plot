@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 import 'package:go_router/go_router.dart';
 
-import 'activity_nav.dart';
-
 class MaterialLayout extends StatelessWidget {
   static const singleBreakpoint = WidthPlatformBreakpoint(end: 600);
   static const doubleBreakpoint = WidthPlatformBreakpoint(begin: 600, end: 840);
@@ -38,9 +36,6 @@ class MaterialLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const ActivityNav(),
-      ),
       body: AdaptiveLayout(
         key: const Key('Global Layout'),
         primaryNavigation: SlotLayout(

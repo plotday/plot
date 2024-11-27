@@ -27,7 +27,7 @@ class Date extends Equatable {
       Duration untilMidnight = tomorrow.difference(now);
 
       // After initially yielding, wait until midnight, then start daily timer
-      await Future.delayed(untilMidnight);
+      await Future<void>.delayed(untilMidnight);
     }
   }
 
@@ -57,14 +57,13 @@ class Date extends Equatable {
   bool operator >=(Date other) => this == other || this > other;
 
   Duration difference(Date other) =>
-      Duration(days: toDateTime().difference(other.toDateTime()).inDays);
+      Duration(days: toUTC().difference(other.toUTC()).inDays);
 
-  Date operator +(Duration duration) => toDateTime().add(duration).toDate();
-  Date operator -(Duration duration) => toDateTime().sub(duration).toDate();
+  Date operator +(Duration duration) => addDays(duration.inDays);
+  Date operator -(Duration duration) => addDays(-duration.inDays);
   Date addDays(int days, {TimeDirection direction = TimeDirection.ascending}) {
     final m = direction == TimeDirection.ascending ? 1 : -1;
-    // Days are always added as 24 hours, so add a margin for time changes
-    return (toDateTime() + Duration(days: days * m, hours: 3 * m)).toDate();
+    return (toUTC() + Duration(days: days * m)).toDate();
   }
 
   Date subDays(int days) => addDays(-1 * days);
@@ -75,6 +74,7 @@ class Date extends Equatable {
 
   DateTime toDateTime({TimeOfDay time = const TimeOfDay(hour: 0, minute: 0)}) =>
       DateTime(year, month, day, time.hour, time.minute);
+  DateTime toUTC() => DateTime.utc(year, month, day);
   Day toDateRange() => Day(this);
   DateTimeRange toDateTimeRange() => toDateRange().toDateTimeRange();
   DateTime toStart() => toDateTimeRange().start;
@@ -192,10 +192,7 @@ class Week extends DateRange {
   final Date _monday;
 
   static Date _getMonday(Date date) {
-    return date
-        .subDays(
-            date.weekday + (date.weekday < startOfWeek ? 8 : 0) - startOfWeek)
-        .addDays(startOfWeek > DateTime.monday ? 8 - startOfWeek : 0);
+    return date.subDays(date.toDateTime().weekday - startOfWeek);
   }
 
   Week(Date date) : _monday = _getMonday(date);
