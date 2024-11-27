@@ -146,12 +146,6 @@ class ActivityRoute extends Route {
   @override
   void onEnter(BuildContext context) {
     context.read<ActivityBloc>().setCurrent(activityId);
-    final event = context.read<ScheduleBloc>().selected;
-    if (event != null) {
-      context
-          .read<ScheduleBloc>()
-          .update(event.copyWith(activityId: Value(activityId)));
-    }
   }
 
   @override
