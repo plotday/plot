@@ -170,7 +170,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
   bool isParent(Activity other) => path.isParent(other.path);
 
-  Future<void> save() => Store.get.save(table, this, AccountsBase());
+  Future<void> save() => Store.get.save(table, this, ActivitiesBase());
 
   @override
   int compareTo(Activity other) {

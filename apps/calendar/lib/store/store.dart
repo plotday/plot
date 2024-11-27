@@ -256,15 +256,15 @@ class Store extends _$Store {
     }
     storeQuery.orderBy([(t) => OrderingTerm(expression: t.modifiedAt)]);
     final storeRows = await storeQuery.get();
-    try {
-      await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
-    } catch (e) {
-      print("Error saving to ${table.actualTableName}");
-      print(e);
-      rethrow;
-    }
-    final now = DateTime.now();
     if (storeRows.isNotEmpty) {
+      try {
+        await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
+      } catch (e) {
+        print("Error pushing to ${baseTable.table}");
+        print(e);
+        rethrow;
+      }
+      final now = DateTime.now();
       await into(syncStates).insert(
         SyncStatesCompanion.insert(
           entity: entity,
