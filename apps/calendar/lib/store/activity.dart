@@ -36,14 +36,19 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       Store.get.pull(PullType.all, table, ActivitiesBase());
 
   static Stream<Map<Uuid, Activity>> watch() {
-    final query = Store.get.select(table);
-    return query.watch().map((rows) {
-      final contexts = <Uuid, Activity>{};
-      for (var row in rows) {
-        final context = Activity.fromStore(row);
-        contexts[context.id] = context;
+    return watchAll().map((rows) {
+      final activities = <Uuid, Activity>{};
+      void add(Activity activity) {
+        activities[activity.id] = activity;
+        for (var child in activity.children) {
+          add(child);
+        }
       }
-      return contexts;
+
+      for (var row in rows) {
+        add(row);
+      }
+      return activities;
     });
   }
 
@@ -82,17 +87,19 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       for (var row in rows) {
         var activity = Activity.fromStore(row);
 
-        if ((path == null && activity.path.isRoot) || activity.path == path) {
-          matches.add(activity);
-          stack = [];
-        } else if (stack.isNotEmpty &&
-            !stack.last.path.isParent(activity.path)) {
+        if (stack.isNotEmpty && !stack.last.path.isParent(activity.path)) {
           stack.removeWhere((c) => !c.path.isParent(activity.path));
         }
 
         if (stack.isNotEmpty) {
           activity = activity.copyWith(parent: stack.last);
         }
+
+        if ((path == null && activity.path.isRoot) || activity.path == path) {
+          matches.add(activity);
+          stack.clear();
+        }
+
         stack.add(activity);
       }
 

@@ -117,9 +117,11 @@ class ActivityPage extends StatelessWidget {
                     if (nextIndex < state.children.length) {
                       next = state.children[nextIndex];
                     }
-                    Activity.fromStore(state.children[oldIndex].copyWith(
-                      order: Order.between(previous?.order, next?.order),
-                    )).save();
+                    state.children[oldIndex]
+                        .copyWith(
+                          order: Order.between(previous?.order, next?.order),
+                        )
+                        .save();
                   },
                 ),
                 Padding(
