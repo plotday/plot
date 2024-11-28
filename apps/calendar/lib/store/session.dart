@@ -1,5 +1,16 @@
 part of 'store.dart';
 
+enum SessionPriority implements Comparable<SessionPriority> {
+  user(100);
+
+  const SessionPriority(this.value);
+
+  final int value;
+
+  @override
+  int compareTo(SessionPriority other) => value - other.value;
+}
+
 @DataClassName('SessionRow')
 class Sessions extends UuidStoreTable {
   BlobColumn get activityId => blob()
@@ -9,7 +20,8 @@ class Sessions extends UuidStoreTable {
 
   DateTimeColumn get start => dateTime()();
   DateTimeColumn get end => dateTime()();
-  IntColumn get priority => integer().withDefault(const Constant(0))();
+  IntColumn get priority =>
+      integer().withDefault(Constant(SessionPriority.user.value))();
 
   IntColumn get pomodoro =>
       integer().nullable().map(const DurationConverter())();
@@ -25,6 +37,9 @@ class SessionsBase extends BaseTable {
     final range = DateTimeRange(DateTime.parse(json['start'] as String),
         DateTime.parse(json['end'] as String));
     json['at'] = range.toDb();
+    json['user_id'] = base.auth.currentUser!.id;
+    json.remove('start');
+    json.remove('end');
     return json;
   }
 
@@ -68,6 +83,7 @@ class Session extends SessionRow {
       previous ??= await _latest(context: activity);
       session = Session(activity: activity, end: end);
     }
+    await session.save();
     return session;
   }
 

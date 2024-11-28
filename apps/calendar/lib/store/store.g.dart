@@ -2826,7 +2826,7 @@ class $SessionsTable extends Sessions
       'priority', aliasedName, false,
       type: DriftSqlType.int,
       requiredDuringInsert: false,
-      defaultValue: const Constant(0));
+      defaultValue: Constant(SessionPriority.user.value));
   static const VerificationMeta _pomodoroMeta =
       const VerificationMeta('pomodoro');
   @override

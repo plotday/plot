@@ -370,6 +370,7 @@ class Store extends _$Store {
       Activity.push().then((_) => Activity.pull()),
       Note.push().then((_) => Note.pull()),
       Event.push().then((_) => Event.pull()),
+      Session.push().then((_) => Session.pull()),
       Balance.pull(),
     ]);
   }

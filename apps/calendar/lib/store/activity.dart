@@ -35,6 +35,15 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   static Future<bool> pull() =>
       Store.get.pull(PullType.all, table, ActivitiesBase());
 
+  static Future<Activity> get(ActivityId id) async {
+    return await (Store.get.select(table)
+          ..where((t) => t.id.equals(id.toBytes())))
+        .getSingle()
+        .then((row) {
+      return Activity.fromStore(row);
+    });
+  }
+
   static Stream<Map<Uuid, Activity>> watch() {
     return watchAll().map((rows) {
       final activities = <Uuid, Activity>{};

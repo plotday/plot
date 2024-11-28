@@ -37,11 +37,11 @@ class NowBloc extends Cubit<NowState> {
     return super.close();
   }
 
-  void setContext(Activity? context) async {
-    if (state.session?.activity == context) return;
+  void setActivity(Activity? activity) async {
+    if (state.session?.activity == activity) return;
     // TODO properly set and extend time
-    await Session.resume(context,
-        end: state.endFor(context) ?? DateTime.now().addMinutes(5));
+    await Session.resume(activity,
+        end: state.endFor(activity) ?? DateTime.now().addMinutes(5));
   }
 
   // Future<void> _newActive(Emitter<NowState> emit, Session block) async {

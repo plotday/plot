@@ -8,6 +8,7 @@ import 'store/store.dart';
 import 'state/user.dart';
 import 'state/schedule.dart';
 import 'state/activity.dart';
+import 'state/now.dart';
 import 'state/root_provider.dart';
 import 'page/page.dart';
 import 'widget/layout.dart';
@@ -85,6 +86,7 @@ class HomeRoute extends Route {
     context.read<ActivityBloc>()
       ..setCurrent(null)
       ..setTopic(null);
+    context.read<NowBloc>().setActivity(null);
   }
 
   @override
@@ -144,8 +146,15 @@ class ActivityRoute extends Route {
   final ActivityId? activityId;
 
   @override
-  void onEnter(BuildContext context) {
+  void onEnter(BuildContext context) async {
     context.read<ActivityBloc>().setCurrent(activityId);
+    if (activityId == null) {
+      context.read<NowBloc>().setActivity(null);
+      return;
+    }
+    Activity activity = await Activity.get(activityId!);
+    if (!context.mounted) return;
+    context.read<NowBloc>().setActivity(activity);
   }
 
   @override
