@@ -1,3 +1,4 @@
+export 'badge.dart';
 export 'button.dart';
 export 'header.dart';
 export 'icons.dart';

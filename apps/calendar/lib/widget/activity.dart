@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' as material;
 
 import 'package:plot/widget/time.dart';
 import 'package:plot/store/store.dart';
@@ -34,7 +33,7 @@ class ActivityWidget extends StatelessWidget {
                             duration: balances![BalanceType.accepted]!.time),
                       if (balances![BalanceType.todo]?.count != null &&
                           balances![BalanceType.todo]!.count > 0)
-                        Text("(${(balances![BalanceType.todo]?.count)})"),
+                        Badge(count: balances![BalanceType.todo]!.count),
                     ],
                   ),
                   const SizedBox(width: 8),

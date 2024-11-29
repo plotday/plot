@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
-
 import 'package:platform_builder/platform_builder.dart';
 
 class Button extends StatelessWidget {
