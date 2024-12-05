@@ -60,6 +60,9 @@ class Scaffold extends StatelessWidget {
                     child: Row(
                       children: [
                         if (title != null) title!,
+                        const Expanded(
+                          child: SizedBox(),
+                        ),
                         ...(actions ?? []).map(
                           (action) => IconButton(
                             icon: action.icon,

@@ -61,10 +61,6 @@ class ActivityPage extends StatelessWidget {
             header: Column(
               children: [
                 const WeekNavigator(),
-                ActivityWidget(
-                  activity: state.current,
-                  balances: state.balances?[state.current?.id],
-                ),
                 ReorderableListView(
                   list: state.children,
                   itemBuilder: (buildContext, item) => ActivityWidget(

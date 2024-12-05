@@ -5,9 +5,9 @@ import 'package:figma_squircle/figma_squircle.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 
 import 'package:plot/state/schedule.dart';
-import 'scroll_context.dart';
 import 'scaffold.dart';
 import 'package:plot/widget/global_menu.dart';
+import 'package:plot/widget/activity_navigator.dart';
 
 class MacLayout extends StatefulWidget {
   const MacLayout(this.left, this.main, this.right, {super.key});
@@ -51,7 +51,7 @@ class MacLayoutState extends State<MacLayout> {
                   ),
                   ResizableChild(
                     child: Scaffold(
-                      title: const Text("Plot"),
+                      title: const ActivityNavigator(),
                       body: Column(
                         children: [
                           Expanded(

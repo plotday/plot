@@ -1,3 +1,4 @@
+export 'activity_navigator.dart';
 export 'badge.dart';
 export 'button.dart';
 export 'header.dart';

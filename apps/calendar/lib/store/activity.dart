@@ -185,6 +185,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   }
 
   bool isParent(Activity other) => path.isParent(other.path);
+  List<Activity> get ancestry =>
+      parent == null ? [this] : parent!.ancestry + [this];
 
   Future<void> save() => Store.get.save(table, this, ActivitiesBase());
 
