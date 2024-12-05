@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' as material;
-import 'package:macos_ui/macos_ui.dart' as macos;
-import 'package:platform_builder/platform_builder.dart';
+
+import '../app.dart';
+import 'button.dart';
 
 class ActionItem {
   const ActionItem({
@@ -21,37 +21,61 @@ class Scaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PlatformBuilder(
-      macOSBuilder: (_) => macos.MacosScaffold(
-        toolBar: title != null || actions != null
-            ? macos.ToolBar(
-                title: title,
-                actions: actions
-                    ?.map(
-                      (action) => macos.ToolBarIconButton(
-                        icon: action.icon,
-                        label: action.label,
-                        showLabel: action.showLabel,
-                        onPressed: action.onPressed,
-                      ),
-                    )
-                    .toList(),
-              )
-            : null,
-        children: [
-          macos.ContentArea(
-            builder: (_, __) => body,
-          )
-        ],
-      ),
-      builder: (_) => material.Scaffold(
-        appBar: title == null
-            ? null
-            : material.AppBar(
-                title: title!,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final height = constraints.maxHeight;
+        final hasToolbar = title != null || actions != null;
+        final topPadding = hasToolbar ? App.toolbarHeight : 0.0;
+
+        return Stack(
+          children: [
+            Positioned(
+              top: 0,
+              width: width,
+              height: height,
+              child: Padding(
+                padding: EdgeInsets.only(top: topPadding),
+                child: body,
               ),
-        body: body,
-      ),
+            ),
+
+            // Toolbar
+            if (hasToolbar)
+              Positioned(
+                width: width,
+                height: App.toolbarHeight,
+                child: Builder(builder: (BuildContext context) {
+                  final RenderBox? renderBox =
+                      context.findRenderObject() as RenderBox?;
+                  EdgeInsetsGeometry padding = EdgeInsets.zero;
+                  if (renderBox != null) {
+                    final pos = renderBox.localToGlobal(Offset.zero);
+                    if (pos.dx == 0 && pos.dy == 0) {
+                      padding = App.toolbarPadding;
+                    }
+                  }
+                  return Padding(
+                    padding: padding,
+                    child: Row(
+                      children: [
+                        if (title != null) title!,
+                        ...(actions ?? []).map(
+                          (action) => IconButton(
+                            icon: action.icon,
+                            // label: action.label,
+                            // showLabel: action.showLabel,
+                            onPressed: action.onPressed,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ),
+          ],
+        );
+      },
     );
   }
 

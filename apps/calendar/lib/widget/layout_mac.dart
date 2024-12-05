@@ -1,9 +1,12 @@
 import 'package:flutter/widgets.dart';
 import 'package:macos_ui/macos_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:figma_squircle/figma_squircle.dart';
+import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 
 import 'package:plot/state/schedule.dart';
 import 'scroll_context.dart';
+import 'scaffold.dart';
 import 'package:plot/widget/global_menu.dart';
 
 class MacLayout extends StatefulWidget {
@@ -30,40 +33,57 @@ class MacLayoutState extends State<MacLayout> {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, state) {
         return GlobalMenu(
-            child: MacosWindow(
-          child: MacosScaffold(
-            children: [
-              ResizablePane(
-                builder: (context, scrollController) => ScrollControllerContext(
-                  controller: scrollController,
-                  child: widget.left,
+          child: MacosWindow(
+            child: WallpaperTintedArea(
+              backgroundColor: MacosColors.appleBlue,
+              child: ResizableContainer(
+                direction: Axis.horizontal,
+                divider: const ResizableDivider(
+                  color: MacosColors.transparent,
+                  thickness: 4.0,
                 ),
-                startSize: 300,
-                minSize: 300,
-                maxSize: 400,
-                resizableSide: ResizableSide.right,
-              ),
-              ContentArea(
-                builder: (context, scrollController) => ScrollControllerContext(
-                  controller: scrollController,
-                  child: widget.main,
-                ),
-              ),
-              if (widget.right != null)
-                ResizablePane(
-                  builder: (context, scrollController) =>
-                      ScrollControllerContext(
-                    controller: scrollController,
-                    child: widget.right!,
+                children: [
+                  ResizableChild(
+                    size: const ResizableSize.ratio(0.20),
+                    minSize: 200,
+                    maxSize: 400,
+                    child: widget.left,
                   ),
-                  startSize: 300,
-                  minSize: 300,
-                  maxSize: 400,
-                  resizableSide: ResizableSide.left,
-                ),
-            ],
+                  ResizableChild(
+                    child: Scaffold(
+                      title: const Text("Plot"),
+                      body: Column(
+                        children: [
+                          Expanded(
+                            child: ClipSmoothRect(
+                              radius: SmoothBorderRadius(
+                                cornerRadius: 16,
+                                cornerSmoothing: 1,
+                              ),
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                    color: MacosColors.windowBackgroundColor),
+                                child: widget.main,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16.0),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (widget.right != null)
+                    ResizableChild(
+                      size: const ResizableSize.ratio(0.20),
+                      minSize: 200,
+                      maxSize: 400,
+                      child: widget.right!,
+                    ),
+                ],
+              ),
+            ),
           ),
-        ));
+        );
       },
     );
   }

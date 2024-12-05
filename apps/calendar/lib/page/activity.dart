@@ -44,20 +44,15 @@ class ActivityPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<ActivityBloc, ActivityState>(
       builder: (buildContext, state) => Scaffold(
-          title: const WeekNavigator(),
           actions: [
-            if (state.current != null)
-              ActionItem(
-                icon: Icons.back,
-                label: 'Schedule',
-                showLabel: false,
-                onPressed: () {
-                  state.current?.parent == null
-                      ? const ActivityRoute.root().go(context)
-                      : ActivityRoute.byId(state.current!.parent!.id!)
-                          .go(context);
-                },
-              ),
+            ActionItem(
+              icon: Icons.add,
+              label: 'New',
+              showLabel: false,
+              onPressed: () {
+                NewRoute.byId(state.current!.id).go(context);
+              },
+            ),
           ],
           body: BidirectionalList(
             scrollController: ScrollControllerContext.of(context),
@@ -65,35 +60,7 @@ class ActivityPage extends StatelessWidget {
             builder: (context, index) => TopicWidget(note: state.notes[index]),
             header: Column(
               children: [
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Activity'),
-                      Row(
-                        children: [
-                          if (state.current != null)
-                            Button(
-                                onTap: () {
-                                  ActivityEditRoute.byId(state.current!.id)
-                                      .go(context);
-                                },
-                                child: const Text('Edit')),
-                          if (state.current != null) const SizedBox(width: 8),
-                          Button(
-                            onTap: () {
-                              ActivityAddRoute.byId(state.current?.id)
-                                  .go(context);
-                            },
-                            child: const Text('+'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+                const WeekNavigator(),
                 ActivityWidget(
                   activity: state.current,
                   balances: state.balances?[state.current?.id],
@@ -123,25 +90,6 @@ class ActivityPage extends StatelessWidget {
                         )
                         .save();
                   },
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Notes'),
-                      Button(
-                          onTap: () {
-                            if (state.current == null) {
-                              HomeRoute().go(context);
-                            } else {
-                              ActivityRoute.byId(state.current!.id).go(context);
-                            }
-                          },
-                          child: const Text('+')),
-                    ],
-                  ),
                 ),
                 ReorderableNotesView(
                   notes: state.pinnedNotes,

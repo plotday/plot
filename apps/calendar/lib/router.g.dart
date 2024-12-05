@@ -39,7 +39,7 @@ RouteBase get $_AdaptiveRoutes => ShellRouteData.$route(
             ),
             GoRouteData.$route(
               path: '/activity/:activityIdString/edit',
-              factory: $ActivityEditRouteExtension._fromState,
+              factory: $NewRouteExtension._fromState,
             ),
             GoRouteData.$route(
               path: '/activity/:activityIdString/new',
@@ -157,8 +157,8 @@ extension $ActivityRouteExtension on ActivityRoute {
   void replace(BuildContext context) => context.replace(location);
 }
 
-extension $ActivityEditRouteExtension on ActivityEditRoute {
-  static ActivityEditRoute _fromState(GoRouterState state) => ActivityEditRoute(
+extension $NewRouteExtension on NewRoute {
+  static NewRoute _fromState(GoRouterState state) => NewRoute(
         activityIdString: state.pathParameters['activityIdString']!,
       );
 
@@ -247,7 +247,7 @@ RouteBase get $_SingleRoutes => ShellRouteData.$route(
                   routes: [
                     GoRouteData.$route(
                       path: 'edit',
-                      factory: $ActivityEditRouteExtension._fromState,
+                      factory: $NewRouteExtension._fromState,
                     ),
                     GoRouteData.$route(
                       path: 'new',

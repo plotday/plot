@@ -91,7 +91,7 @@ class HomeRoute extends Route {
 
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const TopicPage();
+      const NewPage();
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
@@ -159,7 +159,7 @@ class ActivityRoute extends Route {
 
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const TopicPage();
+      const NewPage();
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
@@ -219,21 +219,21 @@ class ActivityAddRoute extends ActivityRoute {
 
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const ActivityEditPage();
+      const NewPage();
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const ActivityEditPage();
+      const NewPage();
 }
 
 @immutable
-class ActivityEditRoute extends ActivityRoute {
+class NewRoute extends ActivityRoute {
   static const path = '${ActivityRoute.path}/$subPath';
   static const subPath = 'edit';
 
-  ActivityEditRoute({required this.activityIdString})
+  NewRoute({required this.activityIdString})
       : super(activityIdString: activityIdString);
-  ActivityEditRoute.byId(ActivityId activityId)
+  NewRoute.byId(ActivityId activityId)
       : activityIdString = activityId?.toString() ?? ActivityRoute.rootId,
         super.byId(activityId);
 
@@ -241,11 +241,11 @@ class ActivityEditRoute extends ActivityRoute {
 
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const ActivityEditPage();
+      const NewPage();
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const ActivityEditPage();
+      const NewPage();
 }
 
 class ActivityBranch extends StatefulShellBranchData {
@@ -267,7 +267,7 @@ class MoreBranch extends StatefulShellBranchData {
     TypedGoRoute<HomeRoute>(path: HomeRoute.path),
     TypedGoRoute<EventRoute>(path: EventRoute.path),
     TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
-    TypedGoRoute<ActivityEditRoute>(path: ActivityEditRoute.path),
+    TypedGoRoute<NewRoute>(path: NewRoute.path),
     TypedGoRoute<ActivityAddRoute>(path: ActivityAddRoute.path),
     TypedGoRoute<TopicRoute>(path: TopicRoute.path),
   ]),
@@ -317,7 +317,7 @@ class _TripleRoutes extends ShellRouteData {
           TypedGoRoute<ActivityRoute>(
             path: ActivityRoute.path,
             routes: [
-              TypedGoRoute<ActivityEditRoute>(path: ActivityEditRoute.subPath),
+              TypedGoRoute<NewRoute>(path: NewRoute.subPath),
               TypedGoRoute<ActivityAddRoute>(path: ActivityAddRoute.subPath),
               TypedGoRoute<TopicRoute>(
                 path: TopicRoute.subPath,

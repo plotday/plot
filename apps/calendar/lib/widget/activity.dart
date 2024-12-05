@@ -10,6 +10,13 @@ class ActivityWidget extends StatelessWidget {
   final Activity? activity;
   final BalanceByType? balances;
 
+  Duration get past =>
+      (balances?[BalanceType.accepted]?.pastTime ?? Duration.zero) +
+      (balances?[BalanceType.session]?.pastTime ?? Duration.zero);
+  Duration get future =>
+      (balances?[BalanceType.accepted]?.futureTime ?? Duration.zero) +
+      (balances?[BalanceType.session]?.futureTime ?? Duration.zero);
+
   @override
   Widget build(BuildContext context) {
     return ListTile(
@@ -27,10 +34,9 @@ class ActivityWidget extends StatelessWidget {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      if (balances![BalanceType.accepted]?.time != null &&
-                          balances![BalanceType.accepted]!.time.isNonZero)
-                        DurationText(
-                            duration: balances![BalanceType.accepted]!.time),
+                      if (past.isNonZero) DurationText(duration: past),
+                      const Text("/"),
+                      if (future.isNonZero) DurationText(duration: future),
                       if (balances![BalanceType.todo]?.count != null &&
                           balances![BalanceType.todo]!.count > 0)
                         Badge(count: balances![BalanceType.todo]!.count),

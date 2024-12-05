@@ -1,52 +1,83 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
-
 import 'package:platform_builder/platform_builder.dart';
 
-class Toggle extends StatelessWidget {
-  const Toggle({
-    required this.child,
-    required this.onChanged,
+class ToggleChoice<T> {
+  const ToggleChoice({
     required this.value,
-    super.key,
+    required this.label,
   });
 
-  final ValueChanged<bool> onChanged;
-  final Widget child;
-  final bool value;
+  final T value;
+  final String label;
+}
+
+class Toggle<T> extends StatefulWidget {
+  const Toggle(
+      {required this.choices,
+      required this.selected,
+      required this.onSelect,
+      super.key});
+
+  final void Function(T) onSelect;
+  final T selected;
+  final List<ToggleChoice<T>> choices;
+
+  @override
+  _ToggleState<T> createState() => _ToggleState<T>();
+}
+
+class _ToggleState<T> extends State<Toggle<T>> {
+  macos.MacosTabController? _macosTabController;
+
+  macos.MacosTabController getMacosController() {
+    _macosTabController = macos.MacosTabController(
+      initialIndex: widget.choices
+          .indexWhere((choice) => choice.value == widget.selected),
+      length: widget.choices.length,
+    );
+    _macosTabController!.addListener(_handleMacosTabChange);
+    return _macosTabController!;
+  }
+
+  void _handleMacosTabChange() {
+    final selectedIndex = _macosTabController!.index;
+    if (selectedIndex < widget.choices.length) {
+      widget.onSelect(widget.choices[selectedIndex].value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _macosTabController?.removeListener(_handleMacosTabChange);
+    _macosTabController?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      macOSBuilder: (_) => Row(
-        children: <Widget>[
-          Expanded(child: child),
-          macos.MacosSwitch(
-            value: value,
-            onChanged: onChanged,
-          ),
-        ],
-      ),
-      builder: (_) => material.InkWell(
-        onTap: () {
-          onChanged(!value);
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0),
-          child: Row(
-            children: <Widget>[
-              Expanded(child: child),
-              material.Switch(
-                value: value,
-                onChanged: (bool newValue) {
-                  onChanged(newValue);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+        macOSBuilder: (_) => macos.MacosSegmentedControl(
+              controller: getMacosController(),
+              tabs: widget.choices
+                  .map((choice) => macos.MacosTab(
+                        label: choice.label,
+                        active: widget.selected == choice.value,
+                      ))
+                  .toList(),
+            ),
+        builder: (_) => material.SegmentedButton<T>(
+              segments: widget.choices
+                  .map((choice) => material.ButtonSegment<T>(
+                        value: choice.value,
+                        label: Text(choice.label),
+                      ))
+                  .toList(),
+              selected: <T>{widget.selected},
+              onSelectionChanged: (Set<T> newSelection) {
+                widget.onSelect(newSelection.first);
+              },
+            ));
   }
 }

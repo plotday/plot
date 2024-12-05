@@ -9,6 +9,7 @@ export 'scaffold.dart';
 export 'scroll_context.dart';
 export 'selectable_text.dart';
 export 'spinner.dart';
+export 'switch.dart';
 export 'tapable.dart';
 export 'text_field.dart';
 export 'toggle.dart';

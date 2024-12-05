@@ -383,6 +383,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.3"
+  figma_squircle:
+    dependency: "direct main"
+    description:
+      name: figma_squircle
+      sha256: "790b91a9505e90d246f6efe2fa065ff7fffe658c7b44fe9b5b20c7b0ad3818c0"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.5.3"
   file:
     dependency: transitive
     description:
@@ -444,6 +452,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
+  flutter_resizable_container:
+    dependency: "direct main"
+    description:
+      name: flutter_resizable_container
+      sha256: ccca2c4da19acabd7456cc6ca6724ed2d1545d97b53b87fc67cfa1c3fa754acd
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.3"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -727,13 +743,13 @@ packages:
     source: hosted
     version: "2.0.9"
   macos_window_utils:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: macos_window_utils
-      sha256: "230be594d26f6dee92c5a1544f4242d25138a5bfb9f185b27f14de3949ef0be8"
+      sha256: "3534f2af024f2f24112ca28789a44e6750083f8c0065414546c6593ee48a5009"
       url: "https://pub.dev"
     source: hosted
-    version: "1.5.0"
+    version: "1.6.1"
   macros:
     dependency: transitive
     description:
