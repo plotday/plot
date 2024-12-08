@@ -51,12 +51,18 @@ class AppWidget extends StatelessWidget {
         ),
         debugShowFloatingThemeButton: true,
         initial: AdaptiveThemeMode.system,
-        builder: (theme, darkTheme) => material.MaterialApp.router(
-          title: 'Plot',
-          theme: theme,
-          darkTheme: darkTheme,
-          routerConfig: routerConfig,
-        ),
+        builder: (theme, darkTheme) => routerConfig == null
+            ? material.MaterialApp(
+                home: home,
+                theme: theme,
+                darkTheme: darkTheme,
+              )
+            : material.MaterialApp.router(
+                title: 'Plot',
+                theme: theme,
+                darkTheme: darkTheme,
+                routerConfig: routerConfig,
+              ),
       ),
       macOSBuilder: (context) => routerConfig == null
           ? macos.MacosApp(home: home)
