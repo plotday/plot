@@ -1,35 +1,26 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/state/activity.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/router.dart';
+import 'package:plot/store/store.dart';
 
 class Header extends StatelessWidget {
-  const Header({super.key});
+  const Header(
+      {required this.currentActivity,
+      required this.onCurrentActivitySelected,
+      super.key});
+
+  final Activity? currentActivity;
+  final void Function(Activity?) onCurrentActivitySelected;
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ActivityBloc, ActivityState>(
-      builder: (buildContext, state) => Row(
-        children: [
-          if (state.current != null)
-            IconButton(
-              icon: Icons.back,
-              onPressed: () async {
-                final parent = state.current!.parent;
-                if (!context.mounted) return;
-                ActivityRoute.byId(parent?.id).go(context);
-              },
+    return Center(
+      child: currentActivity == null
+          ? const Text('Plot')
+          : ActivitySelector(
+              selected: currentActivity,
+              onSelect: onCurrentActivitySelected,
             ),
-          Expanded(
-            child: Text(
-              state.current?.name ?? 'Everything else',
-              overflow: TextOverflow.ellipsis,
-            ),
-          )
-        ],
-      ),
     );
   }
 }

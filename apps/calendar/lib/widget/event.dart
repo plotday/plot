@@ -1,86 +1,76 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/widget/time.dart';
-import 'package:plot/state/activity.dart';
-import 'package:plot/state/schedule.dart';
-
-final supabase = Supabase.instance.client;
+import 'package:plot/widget/widget.dart';
 
 class EventWidget extends StatelessWidget {
-  const EventWidget({required this.event, super.key});
+  const EventWidget({
+    required this.event,
+    required this.onSelect,
+    super.key,
+  });
 
   final Event event;
+  final void Function() onSelect;
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ScheduleBloc, ScheduleState>(
-      builder: (context, scheduleState) => GestureDetector(
-        onTap: () {
-          EventRoute.byId(event.id).go(context);
-        },
-        child: Padding(
-          padding: const EdgeInsetsDirectional.symmetric(vertical: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 72,
-                alignment: Alignment.topRight,
-                child:
-                    event.id != null || !event.at.start.toTimeOfDay().isMidnight
-                        ? TimeWidget(time: event.at.start)
-                        : SmallCapsWidget(
-                            text: event.at.start.format('EEEE'),
+    return GestureDetector(
+      onTap: () => onSelect(),
+      child: Padding(
+        padding: const EdgeInsetsDirectional.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 72,
+              alignment: Alignment.topRight,
+              child:
+                  event.id != null || !event.at.start.toTimeOfDay().isMidnight
+                      ? TimeWidget(time: event.at.start)
+                      : SmallCapsWidget(
+                          text: event.at.start.format('EEEE'),
+                        ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    height: 20,
+                    child: Row(
+                      children: [
+                        DurationWidget(
+                          duration: event.id != null ||
+                                  !(event.at.start.toTimeOfDay().isMidnight ||
+                                      event.at.end.toTimeOfDay().isMidnight)
+                              ? event.at.duration
+                              : Duration.zero,
+                        ),
+                        Expanded(
+                          child: Container(
+                            height: 0.5,
+                            color: Colors.grey,
                           ),
-              ),
-              const SizedBox(width: 8),
-              BlocBuilder<ActivityBloc, ActivityState>(
-                builder: (context, prioritiesState) => Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(
-                        height: 20,
-                        child: Row(
-                          children: [
-                            DurationWidget(
-                              duration: event.id != null ||
-                                      !(event.at.start
-                                              .toTimeOfDay()
-                                              .isMidnight ||
-                                          event.at.end.toTimeOfDay().isMidnight)
-                                  ? event.at.duration
-                                  : Duration.zero,
-                            ),
-                            Expanded(
-                              child: Container(
-                                height: 0.5,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
                         ),
-                      ),
-                      if (event.activity != null)
-                        Text(
-                          event.activity!.name,
-                        ),
-                      if (event.name != null)
-                        Text(
-                          event.name!,
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  if (event.activity != null)
+                    Text(
+                      event.activity!.name,
+                    ),
+                  if (event.name != null)
+                    Text(
+                      event.name!,
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

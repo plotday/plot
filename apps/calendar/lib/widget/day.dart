@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/util/time.dart';
 import 'event.dart';
 
 class DateWidget extends StatelessWidget {
@@ -60,9 +59,10 @@ class DateWidget extends StatelessWidget {
 }
 
 class DayWidget extends StatelessWidget {
-  const DayWidget({required this.day, super.key});
+  const DayWidget({required this.day, required this.onSelect, super.key});
 
   final ScheduledDay day;
+  final void Function(Event) onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +70,12 @@ class DayWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         DateWidget(day: day),
-        ...day.events.map((event) => EventWidget(event: event)),
+        ...day.events.map(
+          (event) => EventWidget(
+            event: event,
+            onSelect: () => onSelect(event),
+          ),
+        ),
       ],
     );
   }

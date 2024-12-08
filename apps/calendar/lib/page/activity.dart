@@ -2,12 +2,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/router.dart';
-import 'package:plot/widget/reorderable_list_view.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/widget/activity.dart';
-import 'package:plot/widget/bidirectional_list.dart';
 
 class ReorderableNotesView extends StatelessWidget {
   const ReorderableNotesView({required this.notes, super.key});
@@ -50,7 +47,11 @@ class ActivityPage extends StatelessWidget {
               label: 'New',
               showLabel: false,
               onPressed: () {
-                NewRoute.byId(state.current!.id).go(context);
+                if (state.current == null) {
+                  // TODO
+                } else {
+                  NewRoute.byId(state.current!.id).go(context);
+                }
               },
             ),
           ],
@@ -60,7 +61,11 @@ class ActivityPage extends StatelessWidget {
             builder: (context, index) => TopicWidget(note: state.notes[index]),
             header: Column(
               children: [
-                const WeekNavigator(),
+                WeekSelector(
+                  week: state.week,
+                  onSelect: (week) =>
+                      context.read<ActivityBloc>().setWeek(week),
+                ),
                 ReorderableListView(
                   list: state.children,
                   itemBuilder: (buildContext, item) => ActivityWidget(

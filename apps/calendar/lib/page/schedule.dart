@@ -25,6 +25,15 @@ class SchedulePage extends StatelessWidget {
         ],
         body: ScheduleWidget(
           scrollController: ScrollControllerContext.of(context),
+          range: state.range,
+          anchor: state.anchor,
+          schedule: state.schedule,
+          fetcher: (range) async {
+            context.read<ScheduleBloc>().watch(range);
+          },
+          onSelect: (event) {
+            EventRoute.byId(event.id).go(context);
+          },
         ),
       ),
     );

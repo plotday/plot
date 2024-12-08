@@ -11,7 +11,7 @@ import 'state/activity.dart';
 import 'state/now.dart';
 import 'state/root_provider.dart';
 import 'page/page.dart';
-import 'widget/layout.dart';
+import 'widget/widget.dart';
 
 part 'router.g.dart';
 
@@ -229,7 +229,7 @@ class ActivityAddRoute extends ActivityRoute {
 @immutable
 class NewRoute extends ActivityRoute {
   static const path = '${ActivityRoute.path}/$subPath';
-  static const subPath = 'edit';
+  static const subPath = 'new';
 
   NewRoute({required this.activityIdString})
       : super(activityIdString: activityIdString);
@@ -267,7 +267,7 @@ class MoreBranch extends StatefulShellBranchData {
     TypedGoRoute<HomeRoute>(path: HomeRoute.path),
     TypedGoRoute<EventRoute>(path: EventRoute.path),
     TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
-    TypedGoRoute<NewRoute>(path: NewRoute.path),
+    TypedGoRoute<NewRoute>(path: NewRoute.path), // TODO redirect
     TypedGoRoute<ActivityAddRoute>(path: ActivityAddRoute.path),
     TypedGoRoute<TopicRoute>(path: TopicRoute.path),
   ]),
@@ -288,10 +288,18 @@ class _TripleRoutes extends ShellRouteData {
 
   @override
   Widget builder(BuildContext context, GoRouterState state, Widget child) {
-    return AdaptiveLayout(
+    return SidebarLayout(
       const ActivityPage(),
       child,
       const SchedulePage(),
+      title: BlocBuilder<ActivityBloc, ActivityState>(
+        builder: (context, state) => ActivitySelector(
+          selected: state.current,
+          onSelect: (activity) {
+            ActivityRoute.byId(activity?.id).go(context);
+          },
+        ),
+      ),
     );
   }
 }
@@ -371,7 +379,7 @@ GoRouter getRouter(PanelLayout layout) {
             child: child,
           );
         },
-        routes: layout == PanelLayout.adaptive
+        routes: layout == PanelLayout.sidebar
             ? [$_AdaptiveRoutes]
             : [$_SingleRoutes],
       ),

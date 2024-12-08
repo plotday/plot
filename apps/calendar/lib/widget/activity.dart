@@ -1,14 +1,20 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:plot/widget/time.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/router.dart';
 
 class ActivityWidget extends StatelessWidget {
-  const ActivityWidget({required this.activity, this.balances, super.key});
+  const ActivityWidget({
+    required this.activity,
+    this.balances,
+    super.key,
+    this.onTap,
+    this.selected = false,
+  });
   final Activity? activity;
   final BalanceByType? balances;
+  final VoidCallback? onTap;
+  final bool selected;
 
   Duration get past =>
       (balances?[BalanceType.accepted]?.pastTime ?? Duration.zero) +
@@ -20,9 +26,12 @@ class ActivityWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      onTap: () => ActivityRoute.byId(activity?.id).go(context),
+      onTap: () {
+        onTap?.call();
+      },
+      selected: selected,
       key: ValueKey(activity?.id.toString()),
-      child: Padding(
+      title: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,

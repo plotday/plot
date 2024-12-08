@@ -67,6 +67,9 @@ dependencies:
   figma_squircle: ^0.5.3
   flutter_resizable_container: ^3.0.3
   macos_window_utils: ^1.6.1
+  font_awesome_flutter:
+    git:
+      url: git@github.com:plotday/font_awesome_flutter.git
 
 dev_dependencies:
   flutter_test:

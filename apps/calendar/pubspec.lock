@@ -486,6 +486,15 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  font_awesome_flutter:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: HEAD
+      resolved-ref: "52f4f330273bdcf727714f4c051684cc8c8c7f95"
+      url: "git@github.com:plotday/font_awesome_flutter.git"
+    source: git
+    version: "10.8.0"
   frontend_server_client:
     dependency: transitive
     description:

@@ -27,7 +27,6 @@ class _GlobalMenuState extends State<GlobalMenu> {
               members: <PlatformMenuItem>[
                 PlatformMenuItem(
                   onSelected: () {
-                    print("Let's go");
                     const SettingsRoute().go(context);
                   },
                   label: "Settings",

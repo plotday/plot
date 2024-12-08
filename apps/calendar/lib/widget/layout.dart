@@ -7,8 +7,8 @@ import "layout_material.dart";
 import "layout_mac.dart";
 
 enum PanelLayout {
-  single,
-  adaptive,
+  tabbed, // mobile layout with tabs using bottom navigation
+  sidebar, // desktop layout with two sidebars
 }
 
 sealed class Layout extends StatelessWidget {
@@ -18,15 +18,15 @@ sealed class Layout extends StatelessWidget {
         final deviceInfo = DeviceInfoPlugin();
         final iosDeviceInfo = await deviceInfo.iosInfo;
         return iosDeviceInfo.model.toLowerCase().contains('iphone')
-            ? PanelLayout.single
-            : PanelLayout.adaptive;
+            ? PanelLayout.tabbed
+            : PanelLayout.sidebar;
       },
       androidResolver: () {
         double screenWidth = MediaQuery.of(context).size.shortestSide;
-        return screenWidth <= 600 ? PanelLayout.single : PanelLayout.adaptive;
+        return screenWidth <= 600 ? PanelLayout.tabbed : PanelLayout.sidebar;
       },
       defaultResolver: () {
-        return PanelLayout.adaptive;
+        return PanelLayout.sidebar;
       },
     );
   }
@@ -66,8 +66,9 @@ final class FullPageLayout extends Layout {
   final Widget page;
 }
 
-final class AdaptiveLayout extends Layout {
-  const AdaptiveLayout(this.left, this.main, this.right, {super.key});
+final class SidebarLayout extends Layout {
+  const SidebarLayout(this.left, this.main, this.right,
+      {this.title, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +77,7 @@ final class AdaptiveLayout extends Layout {
         left,
         main,
         right,
+        title: title,
       ),
       builder: (_) => MaterialLayout(
         drawer: left,
@@ -88,4 +90,5 @@ final class AdaptiveLayout extends Layout {
   final Widget left;
   final Widget main;
   final Widget right;
+  final Widget? title;
 }
