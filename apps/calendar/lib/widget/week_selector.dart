@@ -14,7 +14,7 @@ class WeekSelector extends StatelessWidget {
     return Row(
       children: [
         IconButton(
-          icon: Icons.left,
+          icon: const PlotIcon.left(),
           onPressed: () {
             onSelect(week.previous());
           },
@@ -26,7 +26,7 @@ class WeekSelector extends StatelessWidget {
           ),
         ),
         IconButton(
-          icon: Icons.right,
+          icon: const PlotIcon.right(),
           onPressed: () {
             onSelect(week.next());
           },

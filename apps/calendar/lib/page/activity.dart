@@ -43,7 +43,7 @@ class ActivityPage extends StatelessWidget {
       builder: (buildContext, state) => Scaffold(
           actions: [
             ActionItem(
-              icon: Icons.add,
+              icon: const PlotIcon.add(),
               label: 'New',
               showLabel: false,
               onPressed: () {

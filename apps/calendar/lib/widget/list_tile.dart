@@ -10,6 +10,7 @@ class ListTile extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.leading,
+    this.leadingSize,
     this.onTap,
     this.selected = false,
     ThemeColor? color,
@@ -21,18 +22,25 @@ class ListTile extends StatelessWidget {
   final Widget title;
   final Widget? subtitle;
   final Widget? leading;
+  final Size? leadingSize;
   final ThemeColor color;
 
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      macOSBuilder: (_) => macos_ui.MacosListTile(
-        onClick: onTap,
-        title: title,
-        subtitle: subtitle,
-        leading: leading,
-        // TODO selected: selected,
-        // TODO tileColor
+      macOSBuilder: (_) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        child: macos_ui.MacosListTile(
+          onClick: onTap,
+          title: title,
+          subtitle: subtitle,
+          leading: leadingSize != null
+              ? SizedBox.fromSize(
+                  size: leadingSize!, child: Center(child: leading))
+              : leading,
+          // TODO selected: selected,
+          // TODO tileColor
+        ),
       ),
       builder: (_) => material.ListTile(
         onTap: onTap,

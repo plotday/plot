@@ -25,7 +25,7 @@ class ActivitySelector extends StatelessWidget {
                   child: Text(a?.name ?? 'Home'),
                 ))
             .toList()
-            .expand((widget) => [widget, Icons.right])
+            .expand((widget) => [widget, const PlotIcon.right()])
             .toList()
           ..removeLast()
       ],

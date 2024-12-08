@@ -1,27 +1,28 @@
-import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:flutter/material.dart' as material;
 
-class BackIcon extends StatelessWidget {
-  const BackIcon({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return PlatformBuilder(
-      builder: (context) => const material.BackButtonIcon(),
-    );
-  }
-}
-
-class Icons {
-  static const back = BackIcon();
-  static const left = FaIcon(FontAwesomeIcons.chevronLeft);
-  static const right = FaIcon(FontAwesomeIcons.chevronRight);
-  static const todo = FaIcon(FontAwesomeIcons.circle);
-  static const done = FaIcon(FontAwesomeIcons.circleCheck);
-  static const scheduled = FaIcon(FontAwesomeIcons.alarmClock);
-  static const pinned = FaIcon(FontAwesomeIcons.thumbtack);
-  static const today = FaIcon(FontAwesomeIcons.circleCalendar);
-  static const add = FaIcon(FontAwesomeIcons.plusLarge);
+class PlotIcon extends FaIcon {
+  PlotIcon.back({super.size, super.color, super.key})
+      : super(PlatformResolver.current(
+          macOSResolver: () => material.Icons.arrow_back_ios_new_rounded,
+          iOSResolver: () => material.Icons.arrow_back_ios_new_rounded,
+          defaultResolver: () => material.Icons.arrow_back,
+        ));
+  const PlotIcon.left({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.chevronLeft);
+  const PlotIcon.right({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.chevronRight);
+  const PlotIcon.todo({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.circle);
+  const PlotIcon.done({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.circleCheck);
+  const PlotIcon.scheduled({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.alarmClock);
+  const PlotIcon.pinned({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.thumbtack);
+  const PlotIcon.today({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.circleCalendar);
+  const PlotIcon.add({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.plusLarge);
 }

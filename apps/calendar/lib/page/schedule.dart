@@ -15,7 +15,7 @@ class SchedulePage extends StatelessWidget {
       builder: (context, state) => Scaffold(
         actions: [
           ActionItem(
-            icon: Icons.today,
+            icon: const PlotIcon.today(),
             label: 'Schedule',
             showLabel: false,
             onPressed: () {
