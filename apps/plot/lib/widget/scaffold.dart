@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import '../app.dart';
+import 'app.dart';
 import 'button.dart';
 
 class ActionItem {
@@ -26,7 +26,7 @@ class Scaffold extends StatelessWidget {
         final width = constraints.maxWidth;
         final height = constraints.maxHeight;
         final hasToolbar = title != null || actions != null;
-        final topPadding = hasToolbar ? App.toolbarHeight : 0.0;
+        final topPadding = hasToolbar ? AppWidget.toolbarHeight : 0.0;
 
         return Stack(
           children: [
@@ -44,7 +44,7 @@ class Scaffold extends StatelessWidget {
             if (hasToolbar)
               Positioned(
                 width: width,
-                height: App.toolbarHeight,
+                height: AppWidget.toolbarHeight,
                 child: Builder(builder: (BuildContext context) {
                   final RenderBox? renderBox =
                       context.findRenderObject() as RenderBox?;
@@ -52,7 +52,7 @@ class Scaffold extends StatelessWidget {
                   if (renderBox != null) {
                     final pos = renderBox.localToGlobal(Offset.zero);
                     if (pos.dx == 0 && pos.dy == 0) {
-                      padding = App.toolbarPadding;
+                      padding = AppWidget.toolbarPadding;
                     }
                   }
                   return Padding(

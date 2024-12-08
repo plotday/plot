@@ -22,22 +22,37 @@
   ],
   "pipeline": {
     "topo": {
-      "dependsOn": ["^topo"]
+      "dependsOn": [
+        "^topo"
+      ]
     },
     "build": {
-      "dependsOn": ["^build", "topo"],
-      "outputs": ["build/**"]
+      "dependsOn": [
+        "^build",
+        "topo"
+      ],
+      "outputs": [
+        "build/**"
+      ]
     },
     "deploy": {
-      "dependsOn": ["^build", "build"]
+      "dependsOn": [
+        "^build",
+        "build"
+      ]
     },
     "deploy:workers:changed": {
-      "dependsOn": ["^build", "build"]
+      "dependsOn": [
+        "^build",
+        "build"
+      ]
     },
     "lint": {},
     "test": {},
     "@plotday/db#test": {
-      "dependsOn": ["@plotday/db#start"]
+      "dependsOn": [
+        "@plotday/db#start"
+      ]
     },
     "@plotday/cal#test": {
       "env": [
@@ -48,14 +63,18 @@
       ]
     },
     "test:watch": {
-      "dependsOn": ["@plotday/db#start"],
+      "dependsOn": [
+        "@plotday/db#start"
+      ],
       "cache": false,
       "persistent": true
     },
     "dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["@plotday/db#start"]
+      "dependsOn": [
+        "@plotday/db#start"
+      ]
     },
     "start": {
       "cache": false
@@ -67,11 +86,15 @@
       "persistent": false
     },
     "@plotday/db#gen-types": {
-      "dependsOn": ["@plotday/db#start"],
+      "dependsOn": [
+        "@plotday/db#start"
+      ],
       "cache": false
     },
     "@plotday/db#gen-migration": {
-      "dependsOn": ["@plotday/db#start"]
+      "dependsOn": [
+        "@plotday/db#start"
+      ]
     },
     "@plotday/web#build": {
       "outputs": [
@@ -81,16 +104,18 @@
         "functions/\\[path\\].js.map"
       ]
     },
-    "@plotday/calendar#build:web": {
-      "outputs": ["build/web/**"]
-    },
     "pre-commit": {},
     "@plotday/dev#pre-commit": {
-      "inputs": ["**/package.json", "**/pnpm-lock.json"]
+      "inputs": [
+        "**/package.json",
+        "**/pnpm-lock.json"
+      ]
     },
     "migrate": {},
     "@plotday/db#migrate": {
-      "inputs": ["lib/db/supabase/migrations/*"]
+      "inputs": [
+        "lib/db/supabase/migrations/*"
+      ]
     }
   }
 }

@@ -37,7 +37,7 @@ for file in "${files[@]}"; do
 done
 
 fail=0
-for var_name in $npm_package_env_vars; do
+for var_name in $@; do
   if [ -z "${!var_name}" ]; then
     echo "!!! Environment variable $var_name not set" >&2
     fail=1

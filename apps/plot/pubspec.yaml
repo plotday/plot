@@ -127,8 +127,28 @@ flutter:
   # see https://flutter.dev/custom-fonts/#from-packages
 
 scripts:
-  dev-macos: flutter run -d macOS --dart-define-from-file=.env
-  dev-android: flutter run --dart-define-from-file=.env
+  env:
+    echo: ../../scripts/gen-env SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID AMPLITUDE_API_KEY AUTH_CALLBACK_URL
+    default: $echo_env > .env
+    android: $echo_env | sed 's/localhost/10.0.2.2/' > .env
+  build:
+    watch: flutter pub run build_runner watch
+    web:
+      - $env:default
+      - flutter pub get && flutter build web --release --source-maps --base-href=/
+  dev:
+    macos:
+      - $env:default
+      - flutter run -d macOS
+    android: 
+      - flutter emulators --launch Medium_Phone_API_34
+      - $env:android
+      - flutter run -d android
+    web:
+      - $env:default
+      - flutter run -d chrome --web-port 8788
+  deploy:
+    web: wrangler pages deploy build/web --project-name=calendar --branch ${DEPLOY_ENV:-staging} --commit-hash ${GITHUB_SHA:-dev} && flutter packages pub run sentry_dart_plugin
 
 sentry:
   upload_debug_symbols: true
