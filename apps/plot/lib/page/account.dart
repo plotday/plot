@@ -71,7 +71,7 @@ class AccountPage extends StatelessWidget {
               Button(
                 onTap: () async {
                   try {
-                    await base.auth.signOut();
+                    await Base.client.auth.signOut();
                   } on AuthException catch (e) {
                     if (!context.mounted) return;
                     print("Sign out error: ${e.message}");

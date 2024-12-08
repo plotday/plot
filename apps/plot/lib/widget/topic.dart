@@ -21,9 +21,10 @@ class TopicWidget extends StatelessWidget {
       onTap: onTap,
       selected: selected,
       leading: switch (note) {
+        _ when note.doNow => const PlotIcon.todo(size: 16),
         _ when note.done => const PlotIcon.done(size: 16),
+        _ when note.scheduled => const PlotIcon.scheduled(size: 16),
         _ when note.pinned => const PlotIcon.pinned(size: 16),
-        _ when note.doNow => const PlotIcon.scheduled(size: 16),
         _ => null,
       },
       leadingSize: const Size(16, 16),

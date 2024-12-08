@@ -6,6 +6,7 @@ import 'package:drift_flutter/drift_flutter.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:collection/collection.dart';
 import 'package:equatable/equatable.dart';
+import 'package:injector/injector.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
@@ -101,7 +102,7 @@ abstract class BaseTable {
     DateTime? modifiedSince,
   }) async {
     var query =
-        base.from(table).select().eq("user_id", base.auth.currentUser!.id);
+        Base.client.from(table).select().eq("user_id", Base.userId.toString());
     if (exclude != null) {
       final (from, to) = exclude;
       if (from != null) {
@@ -143,7 +144,7 @@ abstract class BaseTable {
     if (rows.isEmpty) {
       final localTimestamp = DateTime.now();
       final serverTimestamp =
-          DateTime.parse(await base.rpc<String>('server_timestamp'));
+          DateTime.parse(await Base.client.rpc<String>('server_timestamp'));
       lastModified =
           preQueryTimestamp.add(serverTimestamp.difference(localTimestamp));
     } else {
@@ -170,12 +171,12 @@ abstract class BaseTable {
       for (final row in rows) {
         final id = row['id'] as Object;
         final rest = Map<String, dynamic>.from(row)..remove('id');
-        await base.from(table).update(rest).eq('id', id);
+        await Base.client.from(table).update(rest).eq('id', id);
       }
     } else if (upsertAsUpdate) {
-      await base.from(table).insert(rows.toList());
+      await Base.client.from(table).insert(rows.toList());
     } else {
-      await base.from(table).upsert(rows.toList());
+      await Base.client.from(table).upsert(rows.toList());
     }
   }
 }
@@ -191,12 +192,10 @@ abstract class BaseTable {
   Balances,
 ])
 class Store extends _$Store {
-  static Store get get => _store;
-  static late final Store _store;
-
-  static void init() async {
+  static Store get get => Injector.appInstance.get<Store>();
+  static Future<void> init() async {
     driftRuntimeOptions.defaultSerializer = const CustomSerializer();
-    _store = Store._();
+    Injector.appInstance.registerSingleton<Store>(() => Store._());
   }
 
   Future<DATA> add<TABLE extends StoreTable, DATA extends DataClass>(

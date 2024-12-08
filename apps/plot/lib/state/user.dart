@@ -25,7 +25,7 @@ class User extends Equatable {
 class UserBloc extends Cubit<UserState> {
   UserBloc() : super(const UserLoading()) {
     // TODO store user and handle offline
-    _authSubscription = base.auth.onAuthStateChange.listen((data) {
+    _authSubscription = Base.client.auth.onAuthStateChange.listen((data) {
       if (data.session?.user == null) {
         emit(const UserSignedOut());
         Sentry.configureScope((scope) => scope.setUser(null));

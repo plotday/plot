@@ -167,7 +167,7 @@ class Note extends NoteRow implements Comparable<Note> {
     return Note.fromStore(NoteRow(
       id: id,
       activityId: activityId,
-      userId: Uuid.fromString(base.auth.currentUser!.id),
+      userId: Base.userId,
       root: parent == null,
       topicId: parent == null ? id : parent.topicId,
       createdAt: now,
@@ -243,7 +243,14 @@ class Note extends NoteRow implements Comparable<Note> {
   }
 
   Future<void> save() => Store.get.save(table, toCompanion(false), NotesBase());
-  bool get doNow => doAt?.isSameOrBefore(DateTime.now()) == true;
+  bool get doNow {
+    return doAt?.isSameOrBefore(DateTime.now()) == true;
+  }
+
+  bool get scheduled {
+    return doAt?.isAfter(DateTime.now()) == true;
+  }
+
   bool get done => doneAt != null;
 
   @override

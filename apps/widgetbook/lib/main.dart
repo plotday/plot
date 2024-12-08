@@ -1,12 +1,15 @@
 import 'package:flutter/widgets.dart';
 import 'package:widgetbook/widgetbook.dart';
 import 'package:widgetbook_annotation/widgetbook_annotation.dart' as widgetbook;
+import 'package:injector/injector.dart';
 
 import 'package:plot/widget/app.dart';
+import 'package:plot/base.dart';
 
 import 'main.directories.g.dart';
 
 void main() {
+  Injector.appInstance.registerSingleton<Base>(() => Base.disconnected());
   runApp(const WidgetbookApp());
 }
 

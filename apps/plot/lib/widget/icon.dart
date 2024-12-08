@@ -22,7 +22,7 @@ class PlotIcon extends FaIcon {
   const PlotIcon.pinned({super.size, super.color, super.key})
       : super(FontAwesomeIcons.thumbtack);
   const PlotIcon.today({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.circleCalendar);
+      : super(FontAwesomeIcons.calendar);
   const PlotIcon.add({super.size, super.color, super.key})
       : super(FontAwesomeIcons.plusLarge);
 }

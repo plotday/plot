@@ -656,7 +656,7 @@ packages:
     source: hosted
     version: "4.2.0"
   injector:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: injector
       sha256: ed389bed5b48a699d5b9561c985023d0d5cc88dd5ff2237aadcce5a5ab433e4e

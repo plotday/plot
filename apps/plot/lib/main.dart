@@ -1,12 +1,11 @@
 import 'package:flutter/widgets.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 // import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'env.dart';
 import 'app.dart';
+import 'base.dart';
 import 'store/store.dart';
 
 Future<void> main() async {
@@ -18,13 +17,10 @@ Future<void> main() async {
   //   appRunner: () async {
   await dotenv.load(fileName: ".env");
   await App.init();
+  await Base.init();
+  await Store.init();
   GoRouter.optionURLReflectsImperativeAPIs = true;
   usePathUrlStrategy();
-  await Supabase.initialize(
-    url: Env.supabaseUrl,
-    anonKey: Env.supabaseAnonKey,
-  );
-  Store.init();
   return runApp(const App());
   //   },
   // );

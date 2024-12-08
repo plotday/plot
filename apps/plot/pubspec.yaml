@@ -70,6 +70,7 @@ dependencies:
   font_awesome_flutter:
     git:
       url: git@github.com:plotday/font_awesome_flutter.git
+  injector: ^3.0.0
 
 dev_dependencies:
   flutter_test:
@@ -129,8 +130,8 @@ flutter:
 scripts:
   env:
     echo: ../../scripts/gen-env SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID AMPLITUDE_API_KEY AUTH_CALLBACK_URL
-    default: $echo_env > .env
-    android: $echo_env | sed 's/localhost/10.0.2.2/' > .env
+    default: $env:echo > .env
+    android: $env:echo | sed 's/localhost/10.0.2.2/' > .env
   build:
     watch: flutter pub run build_runner watch
     web:

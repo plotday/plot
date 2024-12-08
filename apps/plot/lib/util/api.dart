@@ -1,14 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:plot/base.dart';
 
 import '../env.dart';
 
-final supabase = Supabase.instance.client;
-
 Map<String, String> _getHeaders() {
   final auth =
-      'Bearer ${supabase.auth.currentSession?.accessToken}/${supabase.auth.currentSession?.refreshToken}';
+      'Bearer ${Base.client.auth.currentSession?.accessToken}/${Base.client.auth.currentSession?.refreshToken}';
   return {
     'Content-Type': 'application/json; charset=UTF-8',
     'Authorization': auth,
@@ -25,7 +24,7 @@ Future<Map<String, dynamic>> post(String url,
   if (response.statusCode != 200) {
     throw Exception('${response.statusCode} $url ${response.body}');
   }
-  return jsonDecode(response.body);
+  return jsonDecode(response.body) as Map<String, dynamic>;
 }
 
 Future<Map<String, dynamic>> put(String url,
@@ -38,7 +37,7 @@ Future<Map<String, dynamic>> put(String url,
   if (response.statusCode != 200) {
     throw Exception('${response.statusCode} $url ${response.body}');
   }
-  return jsonDecode(response.body);
+  return jsonDecode(response.body) as Map<String, dynamic>;
 }
 
 Future<Map<String, dynamic>> patch(String url,
@@ -51,5 +50,5 @@ Future<Map<String, dynamic>> patch(String url,
   if (response.statusCode != 200) {
     throw Exception('${response.statusCode} $url ${response.body}');
   }
-  return jsonDecode(response.body);
+  return jsonDecode(response.body) as Map<String, dynamic>;
 }

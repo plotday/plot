@@ -10,6 +10,7 @@
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 import 'package:plot_widgetbook/list_tile.dart' as _i2;
+import 'package:plot_widgetbook/topic.dart' as _i3;
 import 'package:widgetbook/widgetbook.dart' as _i1;
 
 final directories = <_i1.WidgetbookNode>[
@@ -28,7 +29,20 @@ final directories = <_i1.WidgetbookNode>[
             builder: _i2.buildListTile,
           ),
         ],
-      )
+      ),
+      _i1.WidgetbookComponent(
+        name: 'TopicWidget',
+        useCases: [
+          _i1.WidgetbookUseCase(
+            name: 'Do now',
+            builder: _i3.buildTopicDoNow,
+          ),
+          _i1.WidgetbookUseCase(
+            name: 'Plain',
+            builder: _i3.buildTopic,
+          ),
+        ],
+      ),
     ],
   )
 ];

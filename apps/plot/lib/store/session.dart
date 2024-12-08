@@ -37,7 +37,7 @@ class SessionsBase extends BaseTable {
     final range = DateTimeRange(DateTime.parse(json['start'] as String),
         DateTime.parse(json['end'] as String));
     json['at'] = range.toDb();
-    json['user_id'] = base.auth.currentUser!.id;
+    json['user_id'] = Base.userId.toString();
     json.remove('start');
     json.remove('end');
     return json;

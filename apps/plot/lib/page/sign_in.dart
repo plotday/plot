@@ -31,7 +31,7 @@ class _SignInPageState extends State<SignInPage> {
   }
 
   void _initbase() {
-    _authSubscription = base.auth.onAuthStateChange.listen((data) {
+    _authSubscription = Base.client.auth.onAuthStateChange.listen((data) {
       switch (data.event) {
         case AuthChangeEvent.initialSession:
           setState(() {
@@ -84,7 +84,7 @@ class _SignInPageState extends State<SignInPage> {
             onSignIn: (auth) async {
               if (auth.idToken == null) return;
               try {
-                await base.auth.signInWithIdToken(
+                await Base.client.auth.signInWithIdToken(
                   provider: OAuthProvider.google,
                   idToken: auth.idToken!,
                   accessToken: auth.accessToken,
