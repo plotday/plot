@@ -102,14 +102,22 @@ class Session extends SessionRow {
     return Session.fromStore(row);
   }
 
-  static Stream<List<Session>> watch({bool withContext = false}) {
-    final sessionStream = (Store.get.select(table)
-          ..orderBy([
-            (t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc)
-          ])
-          ..limit(10))
-        .watch()
-        .map(
+  static Stream<List<Session>> watch({
+    DateRange? range,
+    int? limit,
+    bool withContext = false,
+  }) {
+    final query = Store.get.select(table);
+    if (range != null) {
+      query.where((t) => t.start.isBiggerOrEqualValue(range.start.toStart()));
+      query.where((t) => t.end.isSmallerThanValue(range.end.toEnd()));
+    }
+    if (limit != null) {
+      query.orderBy(
+          [(t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc)]);
+      query.limit(limit);
+    }
+    final sessionStream = query.watch().map(
           (rows) => rows.map((row) => Session.fromStore(row)).toList(),
         );
 
@@ -128,7 +136,7 @@ class Session extends SessionRow {
   }
 
   static Stream<Session?> watchCurrent() =>
-      watch(withContext: true).map((sessions) {
+      watch(withContext: true, limit: 10).map((sessions) {
         final session = sessions.firstOrNull;
         return session?.at.isNow() == true ? session : null;
       });

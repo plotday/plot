@@ -209,18 +209,34 @@ class Balance extends BalanceRow {
             );
           })));
 
+    final sessionStats = Date.current().switchMap((today) => !range
+            .includes(today)
+        ? Stream.value(BalanceByActivityType.from({}))
+        : Session.watch(range: today.toDateRange()).map((sessions) => groupBy(
+                sessions, (session) => session.activityId)
+            .map((activityId, groupedSessions) => MapEntry(activityId, {
+                  BalanceType.session: BalanceStats(
+                    pastCount: groupedSessions.length,
+                    pastTime: groupedSessions
+                        .map((session) => session.end.difference(session.start))
+                        .fold(Duration.zero, (a, b) => a + b),
+                  )
+                }))));
+
     return Rx.combineLatest3(
         Date.current(),
         balanceStats,
-        Rx.combineLatest3(
+        Rx.combineLatest4(
           Activity.watchAll(),
           eventStats,
           noteStats,
-          (activities, events, notes) {
-            return combineNestedMaps(
+          sessionStats,
+          (activities, events, notes, sessions) {
+            return combineNestedMaps([
               _aggregateChildBalances(events, activities, null),
               _aggregateChildBalances(notes, activities, null),
-            );
+              _aggregateChildBalances(sessions, activities, null),
+            ]);
           },
         ), (
       Date today,

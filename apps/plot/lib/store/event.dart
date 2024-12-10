@@ -78,8 +78,10 @@ class Event extends EventRow {
       Store.get.pull(PullType.more, table, EventsBase(),
           range: (range.start.toString(), range.end.toString()));
 
-  static Stream<List<Event>> watch(DateRange range,
-      {bool withActivity = false}) {
+  static Stream<List<Event>> watch(
+    DateRange range, {
+    bool withActivity = false,
+  }) {
     pullRange(range);
     final order =
         range.start <= range.end ? OrderingMode.asc : OrderingMode.desc;
