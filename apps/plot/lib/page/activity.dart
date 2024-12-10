@@ -17,7 +17,10 @@ class ReorderableNotesView extends StatelessWidget {
         itemBuilder: (buildContext, item) => TopicWidget(
           note: item,
           onChange: (note) => context.read<ActivityBloc>().updateNote(note),
-          onTap: () => context.read<ActivityBloc>().setTopic(item.topicId),
+          onTap: () => TopicRoute.byId(
+            item.activityId,
+            item.topicId,
+          ).go(context),
         ),
         shrinkWrap: true,
         onReorder: (int oldIndex, int newIndex) async {
@@ -71,9 +74,10 @@ class ActivityPage extends StatelessWidget {
             builder: (context, index) => TopicWidget(
               note: state.notes[index],
               onChange: (note) => context.read<ActivityBloc>().updateNote(note),
-              onTap: () => context
-                  .read<ActivityBloc>()
-                  .setTopic(state.notes[index].topicId),
+              onTap: () => TopicRoute.byId(
+                state.notes[index].activityId,
+                state.notes[index].topicId,
+              ).go(context),
             ),
             header: Column(
               children: [
@@ -88,7 +92,7 @@ class ActivityPage extends StatelessWidget {
                       activity: item,
                       balances: state.balances?[item.id],
                       onTap: () {
-                        context.read<ActivityBloc>().setCurrent(item);
+                        ActivityRoute.byId(item.id).go(context);
                       }),
                   shrinkWrap: true,
                   onReorder: (int oldIndex, int newIndex) async {

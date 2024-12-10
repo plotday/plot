@@ -5,7 +5,6 @@ import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/widget/note.dart';
 
 class NewTopic extends StatelessWidget {
   const NewTopic({super.key});
@@ -37,17 +36,15 @@ class NewTopic extends StatelessWidget {
           InputAction(
             // TODO update body while editing
             onAdd: (body) async {
-              final destination = state.draft.root
-                  ? (state.draft.activityId, state.draft.topicId)
-                  : null;
+              final destination = (state.draft.activityId, state.draft.topicId);
               await context
                   .read<ActivityBloc>()
                   .updateNote(state.draft.copyWith(body: body, draft: false));
-              if (context.mounted && destination != null) {
+              if (context.mounted) {
                 TopicRoute.byId(destination.$1, destination.$2).go(context);
               }
             },
-            label: state.draft.root ? "Start a topic" : "Add a note",
+            label: "Start a topic",
           ),
         ],
       ),
