@@ -29,7 +29,7 @@ class ListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return PlatformBuilder(
       macOSBuilder: (_) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
         child: macos_ui.MacosListTile(
           onClick: onTap,
           title: title,

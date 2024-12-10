@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart' as material;
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
@@ -15,7 +16,8 @@ class ActivitySelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: 4,
       children: [
         ...[null, if (selected != null) ...selected!.ancestry]
             .map((a) => Tapable(
@@ -25,7 +27,10 @@ class ActivitySelector extends StatelessWidget {
                   child: Text(a?.name ?? 'Home'),
                 ))
             .toList()
-            .expand((widget) => [widget, const PlotIcon.right()])
+            .expand((widget) => [
+                  widget,
+                  const PlotIcon.right(size: 14, color: material.Colors.grey)
+                ])
             .toList()
           ..removeLast()
       ],

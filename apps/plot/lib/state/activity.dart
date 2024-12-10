@@ -5,7 +5,6 @@ import 'package:equatable/equatable.dart';
 import 'dart:collection';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/util/list.dart';
 
 part 'activity_state.dart';
 
@@ -24,29 +23,44 @@ class ActivityBloc extends Cubit<ActivityState> {
     _topicSubscription?.cancel();
   }
 
-  void setCurrent(ActivityId? current) {
-    if (_activitySubscription != null && current == state.current?.id) return;
+  void setCurrent(Activity? current) {
+    if (_activitySubscription != null && current?.id == state.current?.id) {
+      return;
+    }
+
     _activitySubscription?.cancel();
+    emit(state.copyWith(
+      current: Value(current),
+      children: [],
+      topicId: const Value(null),
+      topicNotes: [],
+    ));
     if (current == null) {
       _activitySubscription = Activity.watchRoot().listen((activities) {
         emit(state.copyWith(
-            current: const Value(null),
-            children: activities,
-            topicId: const Value(null),
-            topicNotes: []));
-        _loadBalances();
-        _loadNotes();
+          children: activities,
+        ));
       });
     } else {
       _activitySubscription =
-          Activity.watchOne(current, depth: 1).listen((activity) {
+          Activity.watchOne(current.id, depth: 1).listen((activity) {
         emit(state.copyWith(
-            current: Value(activity),
-            topicId: const Value(null),
-            topicNotes: []));
-        _loadBalances();
-        _loadNotes();
+          current: Value(activity),
+        ));
       });
+    }
+    _loadBalances();
+    _loadNotes();
+  }
+
+  void setCurrentId(ActivityId? id) async {
+    if (_activitySubscription != null && id == state.current?.id) return;
+    _activitySubscription?.cancel();
+    if (id == null) {
+      setCurrent(null);
+    } else {
+      final activity = await Activity.get(id);
+      setCurrent(activity);
     }
   }
 
@@ -108,12 +122,6 @@ class ActivityBloc extends Cubit<ActivityState> {
         !note.draft && !note.root && note.topicId == state.topicId
             ? state.topic.copyWith(order: Order.first())
             : null;
-    emit(
-      state.copyWith(newNotes: [
-        note,
-        if (topicUpdate != null) topicUpdate,
-      ]),
-    );
     try {
       // TODO debounce save
       await Future.wait([

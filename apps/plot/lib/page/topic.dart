@@ -22,8 +22,6 @@ class TopicPage extends StatelessWidget {
               onChanged: (on) =>
                   context.read<ActivityBloc>().updateNote(state.topic.copyWith(
                         doAt: on ? Value(DateTime.now()) : const Value(null),
-                        doneAt: const Value(null),
-                        pinned: false,
                       )),
               child: const Text("Do now"),
             ),
@@ -32,7 +30,6 @@ class TopicPage extends StatelessWidget {
               onChanged: (on) =>
                   context.read<ActivityBloc>().updateNote(state.topic.copyWith(
                         pinned: on,
-                        doAt: const Value(null),
                       )),
               child: const Text("Pin"),
             ),

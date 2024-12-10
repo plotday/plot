@@ -10,4 +10,10 @@ extension type ThemeColor(int index) {
           return material.ListTileTheme.of(context).tileColor;
         },
       );
+
+  Color? getForeground(BuildContext context) => PlatformResolver.current(
+        defaultResolver: () {
+          return material.Colors.red;
+        },
+      );
 }

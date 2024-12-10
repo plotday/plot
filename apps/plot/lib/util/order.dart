@@ -1,18 +1,15 @@
 extension type Order._(double value) {
-  static double _last() =>
-      DateTime.now().millisecondsSinceEpoch.toDouble() * 10;
-  static double _first() =>
-      (10000000000000 - DateTime.now().millisecondsSinceEpoch).toDouble();
+  static double _last() => -DateTime.now().millisecondsSinceEpoch.toDouble();
+  static double _first() => DateTime.now().millisecondsSinceEpoch.toDouble();
   static double _between(Order? after, Order? before) {
     var a = after?.value;
     var b = before?.value;
     if (a == null) {
-      if (b == null) return _last();
-      return _first();
+      return b == null ? _last() : _first();
     } else if (b == null) {
       return _last();
     }
-    return a + (b - a) / 2;
+    return (a + b) / 2;
   }
 
   const Order(this.value);
@@ -26,5 +23,5 @@ extension type Order._(double value) {
                 ? number
                 : throw ArgumentError('Order must be a number'));
 
-  int compareTo(Order other) => value.compareTo(other.value);
+  int compareTo(Order other) => -value.compareTo(other.value);
 }

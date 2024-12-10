@@ -116,7 +116,7 @@ class EventRoute extends Route {
   void onEnter(BuildContext context) async {
     final event = await context.read<ScheduleBloc>().selectById(eventId);
     if (!context.mounted) return;
-    context.read<ActivityBloc>().setCurrent(event.activityId);
+    context.read<ActivityBloc>().setCurrentId(event.activityId);
   }
 
   @override
@@ -147,7 +147,7 @@ class ActivityRoute extends Route {
 
   @override
   void onEnter(BuildContext context) async {
-    context.read<ActivityBloc>().setCurrent(activityId);
+    context.read<ActivityBloc>().setCurrentId(activityId);
     if (activityId == null) {
       context.read<NowBloc>().setActivity(null);
       return;

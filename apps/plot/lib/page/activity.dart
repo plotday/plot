@@ -14,11 +14,16 @@ class ReorderableNotesView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ReorderableListView(
         list: notes,
-        itemBuilder: (buildContext, item) => TopicWidget(note: item),
+        itemBuilder: (buildContext, item) => TopicWidget(
+          note: item,
+          onChange: (note) => context.read<ActivityBloc>().updateNote(note),
+          onTap: () => context.read<ActivityBloc>().setTopic(item.topicId),
+        ),
         shrinkWrap: true,
         onReorder: (int oldIndex, int newIndex) async {
           var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
           var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+          Note note = notes[oldIndex];
           Note? previous;
           if (previousIndex >= 0) {
             previous = notes[previousIndex];
@@ -27,8 +32,13 @@ class ReorderableNotesView extends StatelessWidget {
           if (nextIndex < notes.length) {
             next = notes[nextIndex];
           }
-          context.read<ActivityBloc>().updateNote(notes[oldIndex].copyWith(
+          context.read<ActivityBloc>().updateNote(note.copyWith(
                 order: Order.between(previous?.order, next?.order),
+                // Action notes are sorted first by doAt, so we need to set this
+                // to have the same doAt as one of its neighbours.
+                doAt: note.doNow
+                    ? Value(previous?.doAt ?? next?.doAt ?? note.doAt)
+                    : const Value.absent(),
               ));
         },
       );
@@ -58,7 +68,13 @@ class ActivityPage extends StatelessWidget {
           body: BidirectionalList(
             scrollController: ScrollControllerContext.of(context),
             count: state.notes.length,
-            builder: (context, index) => TopicWidget(note: state.notes[index]),
+            builder: (context, index) => TopicWidget(
+              note: state.notes[index],
+              onChange: (note) => context.read<ActivityBloc>().updateNote(note),
+              onTap: () => context
+                  .read<ActivityBloc>()
+                  .setTopic(state.notes[index].topicId),
+            ),
             header: Column(
               children: [
                 WeekSelector(
@@ -69,9 +85,11 @@ class ActivityPage extends StatelessWidget {
                 ReorderableListView(
                   list: state.children,
                   itemBuilder: (buildContext, item) => ActivityWidget(
-                    activity: item,
-                    balances: state.balances?[item.id],
-                  ),
+                      activity: item,
+                      balances: state.balances?[item.id],
+                      onTap: () {
+                        context.read<ActivityBloc>().setCurrent(item);
+                      }),
                   shrinkWrap: true,
                   onReorder: (int oldIndex, int newIndex) async {
                     var previousIndex =

@@ -23,15 +23,22 @@ class Button extends StatelessWidget {
 }
 
 class IconButton extends StatelessWidget {
-  const IconButton({required this.icon, required this.onPressed, super.key});
+  const IconButton({
+    required this.icon,
+    required this.onPressed,
+    this.padding = const EdgeInsets.all(8),
+    super.key,
+  });
 
   final VoidCallback onPressed;
   final Widget icon;
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
       macOSBuilder: (_) => macos.MacosIconButton(
+        padding: padding,
         onPressed: onPressed,
         icon: icon,
       ),

@@ -31,6 +31,7 @@ class NotesBase extends BaseTable {
           name: 'notes',
           upsertAsUpdate: true,
           order: 'order_x',
+          ascending: false,
         );
 
   @override
@@ -122,7 +123,7 @@ class Note extends NoteRow implements Comparable<Note> {
                 'CASE WHEN do_at IS NOT NULL AND do_at <= CURRENT_TIMESTAMP THEN do_at ELSE NULL END'),
             mode: OrderingMode.asc,
           ),
-      (t) => OrderingTerm.asc(t.order)
+      (t) => OrderingTerm.desc(t.order)
     ]);
 
     return query
@@ -136,7 +137,7 @@ class Note extends NoteRow implements Comparable<Note> {
           ..where((t) => t.topicId.equals(topicId.toBytes()))
           ..orderBy([
             (t) => OrderingTerm.desc(t.root),
-            (t) => OrderingTerm.asc(t.order)
+            (t) => OrderingTerm.desc(t.order)
           ]))
         .watch()
         .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
@@ -183,21 +184,21 @@ class Note extends NoteRow implements Comparable<Note> {
 
   Note.fromStore(NoteRow row)
       : super(
-          id: row.id,
-          userId: row.userId,
-          root: row.root,
           activityId: row.activityId,
-          topicId: row.topicId,
+          body: row.body,
           createdAt: row.createdAt,
-          modifiedAt: row.modifiedAt,
-          draft: row.draft,
-          orderedAt: row.orderedAt,
           doAt: row.doAt,
           doneAt: row.doneAt,
-          body: row.body,
+          draft: row.draft,
+          id: row.id,
+          modifiedAt: row.modifiedAt,
           order: row.order,
-          private: row.private,
+          orderedAt: row.orderedAt,
           pinned: row.pinned,
+          private: row.private,
+          root: row.root,
+          topicId: row.topicId,
+          userId: row.userId,
         );
 
   @override
@@ -219,6 +220,20 @@ class Note extends NoteRow implements Comparable<Note> {
     Value<DateTime?> doneAt = const Value.absent(),
   }) {
     final publish = this.draft && draft == false;
+    if (doAt.present && doAt.value != null) {
+      doneAt = const Value(null);
+      order ??= Order.last();
+      pinned = false;
+    } else if (doneAt.present && doneAt.value != null) {
+      order ??= Order.first();
+      pinned = false;
+    }
+    if (pinned == true) {
+      doAt = const Value(null);
+      order ??= Order.last();
+    } else if (pinned == false) {
+      order ??= Order.first();
+    }
     if (publish) {
       order ??= ((root ?? this.root) ? Order.first() : Order.last());
     }
@@ -230,8 +245,7 @@ class Note extends NoteRow implements Comparable<Note> {
       userId: userId ?? this.userId,
       body: body ?? this.body,
       order: order ?? this.order,
-      orderedAt: orderedAt ??
-          ((order != null || pinned != null) ? DateTime.now() : this.orderedAt),
+      orderedAt: orderedAt ?? (order != null ? DateTime.now() : this.orderedAt),
       root: root ?? this.root,
       pinned: pinned ?? this.pinned,
       private: private ?? this.private,
@@ -244,7 +258,7 @@ class Note extends NoteRow implements Comparable<Note> {
 
   Future<void> save() => Store.get.save(table, toCompanion(false), NotesBase());
   bool get doNow {
-    return doAt?.isSameOrBefore(DateTime.now()) == true;
+    return !done && doAt?.isSameOrBefore(DateTime.now()) == true;
   }
 
   bool get scheduled {

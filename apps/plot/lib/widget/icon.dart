@@ -16,7 +16,7 @@ class PlotIcon extends FaIcon {
   const PlotIcon.todo({super.size, super.color, super.key})
       : super(FontAwesomeIcons.circle);
   const PlotIcon.done({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.circleCheck);
+      : super(FontAwesomeIcons.check);
   const PlotIcon.scheduled({super.size, super.color, super.key})
       : super(FontAwesomeIcons.alarmClock);
   const PlotIcon.pinned({super.size, super.color, super.key})

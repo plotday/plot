@@ -7,7 +7,7 @@ SELECT
     (
         CASE WHEN pinned = TRUE THEN
             -- Pinned notes first
-            "order"
+            2E14 + "order"
         WHEN do_at <= NOW() THEN
             -- Current actions ordered first by when they were added.
             -- do_at epoch (seconds) shifted left by 1E3 and order (milliseconds)
@@ -15,7 +15,7 @@ SELECT
             1E14 + EXTRACT(EPOCH FROM do_at) * 1E3 + "order" / 1E7
         ELSE
             -- Everything else
-            2E14 + "order"
+            "order"
         END) AS order_x,
     COALESCE(jsonb_object_agg(tag_users.emoji, tag_users.user_ids) FILTER (WHERE tag_users.emoji IS NOT NULL), '{}'::jsonb) AS tags
 FROM
