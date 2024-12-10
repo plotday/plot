@@ -28,7 +28,7 @@ class MacLayout extends StatelessWidget {
         // negative margin to the visual effect subview.
         padding: const EdgeInsets.all(-2000.0),
         child: Container(
-          color: MacosColors.appleBlue.withAlpha(96),
+          color: MacosColors.systemBlueColor.withAlpha(96),
           child: ResizableContainer(
             direction: Axis.horizontal,
             divider: const ResizableDivider(
@@ -54,8 +54,9 @@ class MacLayout extends StatelessWidget {
                             cornerSmoothing: 1,
                           ),
                           child: Container(
-                            decoration: const BoxDecoration(
-                                color: MacosColors.windowBackgroundColor),
+                            decoration: BoxDecoration(
+                              color: MacosTheme.of(context).canvasColor,
+                            ),
                             child: main,
                           ),
                         ),
