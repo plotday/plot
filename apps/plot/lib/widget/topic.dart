@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
+import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
@@ -28,6 +29,9 @@ class TopicWidget extends StatelessWidget {
             padding: EdgeInsets.zero,
             onPressed: () {
               onChange(note.copyWith(doneAt: Value(DateTime.now())));
+              Posthog().capture(
+                eventName: 'Topic Started',
+              );
             },
             icon: const PlotIcon.todo(
               color: material.Colors.grey,
@@ -37,6 +41,9 @@ class TopicWidget extends StatelessWidget {
             padding: EdgeInsets.zero,
             onPressed: () {
               onChange(note.copyWith(doAt: Value(DateTime.now())));
+              Posthog().capture(
+                eventName: 'Topic Completed',
+              );
             },
             icon: const PlotIcon.done(
               color: material.Colors.grey,
@@ -45,7 +52,9 @@ class TopicWidget extends StatelessWidget {
         _ when note.scheduled => IconButton(
             padding: EdgeInsets.zero,
             onPressed: () {
-              print("pressed");
+              Posthog().capture(
+                eventName: 'Topic Scheduled',
+              );
             },
             icon: const PlotIcon.scheduled(
               color: material.Colors.grey,
@@ -55,6 +64,9 @@ class TopicWidget extends StatelessWidget {
             padding: EdgeInsets.zero,
             onPressed: () {
               onChange(note.copyWith(pinned: false));
+              Posthog().capture(
+                eventName: 'Topic Un-pinned',
+              );
             },
             icon: const PlotIcon.pinned(
               color: material.Colors.grey,

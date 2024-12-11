@@ -71,6 +71,7 @@ dependencies:
     git:
       url: git@github.com:plotday/font_awesome_flutter.git
   injector: ^3.0.0
+  posthog_flutter: ^4.7.1
 
 dev_dependencies:
   flutter_test:

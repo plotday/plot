@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'package:plot/router.dart';
 import 'package:plot/state/activity.dart';
@@ -16,6 +17,9 @@ class NewTopic extends StatelessWidget {
           InputAction(
             // TODO update body while editing
             onAdd: (body) async {
+              Posthog().capture(
+                eventName: 'Topic Created',
+              );
               final destination = (state.draft.activityId, state.draft.topicId);
               await context
                   .read<ActivityBloc>()
