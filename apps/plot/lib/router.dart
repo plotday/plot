@@ -240,6 +240,12 @@ class NewRoute extends ActivityRoute {
   final String activityIdString;
 
   @override
+  void onEnter(BuildContext context) {
+    super.onEnter(context);
+    context.read<ActivityBloc>().setTopic(null);
+  }
+
+  @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
       const NewPage();
 

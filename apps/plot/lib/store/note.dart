@@ -224,14 +224,14 @@ class Note extends NoteRow implements Comparable<Note> {
       doneAt = const Value(null);
       order ??= Order.last();
       pinned = false;
-    } else if (doneAt.present && doneAt.value != null) {
-      order ??= Order.first();
-      pinned = false;
-    }
-    if (pinned == true) {
+    } else if (pinned == true) {
       doAt = const Value(null);
       order ??= Order.last();
-    } else if (pinned == false) {
+    }
+    if ((((doneAt.present && doneAt.value != null) ||
+                (doAt.present && doAt.value == null)) &&
+            !(pinned ?? this.pinned)) ||
+        pinned == false) {
       order ??= Order.first();
     }
     if (publish) {
