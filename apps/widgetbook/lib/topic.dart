@@ -7,7 +7,9 @@ import 'package:plot/widget/topic.dart';
 @widgetbook.UseCase(name: 'Plain', type: TopicWidget)
 Widget buildTopic(BuildContext context) {
   return TopicWidget(
-      note: Note.draft(activityId: null).copyWith(body: "I'm a note."));
+    note: Note.draft(activityId: null).copyWith(body: "I'm a note."),
+    onChange: (topic) {},
+  );
 }
 
 @widgetbook.UseCase(name: 'Do now', type: TopicWidget)
@@ -17,5 +19,6 @@ Widget buildTopicDoNow(BuildContext context) {
       body: "I'm a note.",
       doAt: Value(DateTime.now()),
     ),
+    onChange: (topic) {},
   );
 }

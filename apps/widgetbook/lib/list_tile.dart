@@ -17,3 +17,14 @@ Widget buildListTileLeading(BuildContext context) {
     title: const Text('Title'),
   );
 }
+
+@widgetbook.UseCase(name: 'Selected', type: ListTile)
+Widget buildListTileSelected(BuildContext context) {
+  return Column(children: [
+    ListTile(
+      leading: const Text('Leading'),
+      title: const Text('Title'),
+      selected: true,
+    ),
+  ]);
+}

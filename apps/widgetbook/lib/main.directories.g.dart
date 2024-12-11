@@ -25,6 +25,10 @@ final directories = <_i1.WidgetbookNode>[
             builder: _i2.buildListTileLeading,
           ),
           _i1.WidgetbookUseCase(
+            name: 'Selected',
+            builder: _i2.buildListTileSelected,
+          ),
+          _i1.WidgetbookUseCase(
             name: 'Title only',
             builder: _i2.buildListTile,
           ),

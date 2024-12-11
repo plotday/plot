@@ -3,11 +3,18 @@ import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
 import 'package:platform_builder/platform_builder.dart';
 
+enum ButtonStyle { primary, secondary }
+
 class Button extends StatelessWidget {
-  const Button({required this.child, required this.onTap, super.key});
+  const Button(
+      {required this.child,
+      required this.onTap,
+      this.style = ButtonStyle.primary,
+      super.key});
 
   final VoidCallback onTap;
   final Widget child;
+  final ButtonStyle style;
 
   @override
   Widget build(BuildContext context) {
@@ -15,9 +22,18 @@ class Button extends StatelessWidget {
       macOSBuilder: (_) => macos.PushButton(
         onPressed: onTap,
         controlSize: macos.ControlSize.regular,
+        secondary: style == ButtonStyle.secondary,
         child: child,
       ),
-      builder: (_) => material.InkWell(onTap: onTap, child: child),
+      builder: (_) => style == ButtonStyle.primary
+          ? material.FilledButton(
+              onPressed: onTap,
+              child: child,
+            )
+          : material.FilledButton.tonal(
+              onPressed: onTap,
+              child: child,
+            ),
     );
   }
 }

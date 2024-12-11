@@ -6,7 +6,7 @@ import 'package:platform_builder/platform_builder.dart';
 class Tapable extends StatelessWidget {
   const Tapable({required this.child, required this.onTap, super.key});
 
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Widget child;
 
   @override

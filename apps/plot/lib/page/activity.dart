@@ -7,15 +7,17 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 
 class ReorderableNotesView extends StatelessWidget {
-  const ReorderableNotesView({required this.notes, super.key});
+  const ReorderableNotesView({required this.notes, this.selected, super.key});
 
   final List<Note> notes;
+  final TopicId? selected;
 
   @override
   Widget build(BuildContext context) => ReorderableListView(
         list: notes,
         itemBuilder: (buildContext, item) => TopicWidget(
           note: item,
+          selected: selected == item.topicId,
           onChange: (note) => context.read<ActivityBloc>().updateNote(note),
           onTap: () => TopicRoute.byId(
             item.activityId,
@@ -73,6 +75,7 @@ class ActivityPage extends StatelessWidget {
             count: state.notes.length,
             builder: (context, index) => TopicWidget(
               note: state.notes[index],
+              selected: state.topicId == state.notes[index].topicId,
               onChange: (note) => context.read<ActivityBloc>().updateNote(note),
               onTap: () => TopicRoute.byId(
                 state.notes[index].activityId,
@@ -116,9 +119,11 @@ class ActivityPage extends StatelessWidget {
                 ),
                 ReorderableNotesView(
                   notes: state.pinnedNotes,
+                  selected: state.topicId,
                 ),
                 ReorderableNotesView(
                   notes: state.doNowNotes,
+                  selected: state.topicId,
                 ),
               ],
             ),

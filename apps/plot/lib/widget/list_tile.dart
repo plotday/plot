@@ -4,6 +4,7 @@ import 'package:macos_ui/macos_ui.dart' as macos_ui;
 import 'package:platform_builder/platform_builder.dart';
 
 import 'theme_color.dart';
+import 'tapable.dart';
 
 class ListTile extends StatelessWidget {
   ListTile({
@@ -28,18 +29,23 @@ class ListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      macOSBuilder: (_) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-        child: macos_ui.MacosListTile(
-          onClick: onTap,
-          title: title,
-          subtitle: subtitle,
-          leading: leadingSize != null
-              ? SizedBox.fromSize(
-                  size: leadingSize!, child: Center(child: leading))
-              : leading,
-          // TODO selected: selected,
-          // TODO tileColor
+      macOSBuilder: (_) => Tapable(
+        onTap: onTap,
+        child: Container(
+          color: selected
+              ? macos_ui.MacosColors.appleBlue
+              : material.Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+            child: macos_ui.MacosListTile(
+              title: title,
+              subtitle: subtitle,
+              leading: leadingSize != null
+                  ? SizedBox.fromSize(
+                      size: leadingSize!, child: Center(child: leading))
+                  : leading,
+            ),
+          ),
         ),
       ),
       builder: (_) => material.ListTile(
@@ -48,7 +54,7 @@ class ListTile extends StatelessWidget {
         subtitle: subtitle,
         leading: leading,
         selected: selected,
-        tileColor: color.getBackground(context),
+        tileColor: selected ? color.getBackground(context) : null,
       ),
     );
   }

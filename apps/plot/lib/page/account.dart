@@ -81,6 +81,7 @@ class AccountPage extends StatelessWidget {
                     // );
                   }
                 },
+                style: ButtonStyle.secondary,
                 child: const Text('Sign Out'),
               ),
             ],
