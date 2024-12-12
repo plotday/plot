@@ -63,7 +63,7 @@ class ActivityPage extends StatelessWidget {
               showLabel: false,
               onPressed: () {
                 if (state.current == null) {
-                  // TODO
+                  HomeRoute().go(context);
                 } else {
                   NewRoute.byId(state.current!.id).go(context);
                 }
