@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/util/theme_color.dart';
 import 'event.dart';
 
 class DateWidget extends StatelessWidget {
@@ -25,7 +26,8 @@ class DateWidget extends StatelessWidget {
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: Colors.primaries.first,
+                    color:
+                        const ThemeColor.defaultColor().getForeground(context),
                     shape: BoxShape.circle,
                   ),
                 ),

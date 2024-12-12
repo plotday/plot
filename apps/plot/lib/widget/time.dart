@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:plot/util/time.dart';
+import 'package:plot/util/theme_color.dart';
 
 class SmallCapsWidget extends StatelessWidget {
   const SmallCapsWidget({required this.text, super.key});
@@ -75,22 +76,18 @@ class DurationWidget extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.start,
       children: List.generate(numBlocks * 2, (index) {
         if (index % 2 == 0) {
-          return _buildBlock(1.0);
+          return Container(
+            width: 4,
+            height: 4,
+            decoration: BoxDecoration(
+              color: const ThemeColor.defaultColor().getForeground(context),
+              shape: BoxShape.circle,
+            ),
+          );
         } else {
           return const SizedBox(width: 4);
         }
       }),
-    );
-  }
-
-  Widget _buildBlock(double fillFraction) {
-    return Container(
-      width: 4 * fillFraction,
-      height: 4,
-      decoration: BoxDecoration(
-        color: Colors.accents.first,
-        shape: BoxShape.circle,
-      ),
     );
   }
 }

@@ -7,7 +7,7 @@ import 'package:plot/util/theme_color.dart';
 import 'tapable.dart';
 
 class ListTile extends StatelessWidget {
-  ListTile({
+  const ListTile({
     required this.title,
     this.subtitle,
     this.leading,
@@ -16,7 +16,7 @@ class ListTile extends StatelessWidget {
     this.selected = false,
     ThemeColor? color,
     super.key,
-  }) : color = color ?? ThemeColor.defaultColor();
+  }) : color = color ?? const ThemeColor.defaultColor();
 
   final VoidCallback? onTap;
   final bool selected;
@@ -33,7 +33,7 @@ class ListTile extends StatelessWidget {
         onTap: onTap,
         child: Container(
           color: selected
-              ? macos_ui.MacosColors.appleBlue
+              ? const ThemeColor.defaultColor().getBackground(context)
               : material.Colors.transparent,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),

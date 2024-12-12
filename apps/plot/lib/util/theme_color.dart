@@ -7,7 +7,7 @@ extension type ThemeColor(int index) {
 
   Color? getBackground(BuildContext context) => PlatformResolver.current(
         defaultResolver: () {
-          return material.ListTileTheme.of(context).tileColor;
+          return material.Colors.blue.shade900;
         },
       );
 
