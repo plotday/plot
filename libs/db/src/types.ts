@@ -121,6 +121,7 @@ export type Database = {
       activity_settings: {
         Row: {
           activity_id: string
+          color: number
           modified_at: string
           order: number
           pomodoro: number
@@ -128,6 +129,7 @@ export type Database = {
         }
         Insert: {
           activity_id: string
+          color?: number
           modified_at?: string
           order: number
           pomodoro?: number
@@ -135,6 +137,7 @@ export type Database = {
         }
         Update: {
           activity_id?: string
+          color?: number
           modified_at?: string
           order?: number
           pomodoro?: number
@@ -935,6 +938,7 @@ export type Database = {
       }
       activity_x: {
         Row: {
+          color: number | null
           created_at: string | null
           draft: boolean | null
           id: string | null

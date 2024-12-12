@@ -4,6 +4,7 @@ import 'package:plot/util/uuid.dart';
 import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
 import 'package:plot/util/time.dart';
+import 'package:plot/util/theme_color.dart';
 import 'package:uuid/uuid.dart' as uuid;
 
 bool __isType<T, Y>() => T == Y;
@@ -100,6 +101,20 @@ class DurationConverter extends TypeConverter<Duration, int> {
   @override
   int toSql(Duration value) {
     return value.inSeconds;
+  }
+}
+
+class ThemeColorConverter extends TypeConverter<ThemeColor, int> {
+  const ThemeColorConverter();
+
+  @override
+  ThemeColor fromSql(int fromDb) {
+    return ThemeColor(fromDb);
+  }
+
+  @override
+  int toSql(ThemeColor value) {
+    return value.index;
   }
 }
 

@@ -13,6 +13,9 @@ class Activities extends UuidStoreTable with DraftTable {
   IntColumn get pomodoro => integer()
       .withDefault(const Constant(25 * 60))
       .map(const DurationConverter())();
+  IntColumn get color => integer()
+      .withDefault(const Constant(0))
+      .map(const ThemeColorConverter())();
 }
 
 class ActivitiesBase extends BaseTable {
@@ -122,6 +125,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     required super.order,
     this.parent,
     super.pomodoro = const Duration(minutes: 25),
+    super.color = const ThemeColor.defaultColor(),
   })  : children = [],
         super(
           id: Uuid.generate(),
@@ -142,6 +146,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
           draft: row.draft,
           name: row.name,
           pomodoro: row.pomodoro,
+          color: row.color,
           order: row.order,
           path: row.path,
         ) {
@@ -161,6 +166,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Path? path,
     Order? order,
     Duration? pomodoro,
+    ThemeColor? color,
     Activity? parent,
   }) =>
       Activity.fromStore(
@@ -174,6 +180,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
           path: path,
           order: order,
           pomodoro: pomodoro,
+          color: color,
         ),
         parent: parent ?? this.parent,
         children: children,

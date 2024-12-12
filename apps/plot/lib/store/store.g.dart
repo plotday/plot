@@ -981,9 +981,17 @@ class $ActivitiesTable extends Activities
               requiredDuringInsert: false,
               defaultValue: const Constant(25 * 60))
           .withConverter<Duration>($ActivitiesTable.$converterpomodoro);
+  static const VerificationMeta _colorMeta = const VerificationMeta('color');
+  @override
+  late final GeneratedColumnWithTypeConverter<ThemeColor, int> color =
+      GeneratedColumn<int>('color', aliasedName, false,
+              type: DriftSqlType.int,
+              requiredDuringInsert: false,
+              defaultValue: const Constant(0))
+          .withConverter<ThemeColor>($ActivitiesTable.$convertercolor);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, modifiedAt, createdAt, draft, name, path, order, pomodoro];
+      [id, modifiedAt, createdAt, draft, name, path, order, pomodoro, color];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1018,6 +1026,7 @@ class $ActivitiesTable extends Activities
     context.handle(_pathMeta, const VerificationResult.success());
     context.handle(_orderMeta, const VerificationResult.success());
     context.handle(_pomodoroMeta, const VerificationResult.success());
+    context.handle(_colorMeta, const VerificationResult.success());
     return context;
   }
 
@@ -1045,6 +1054,9 @@ class $ActivitiesTable extends Activities
       pomodoro: $ActivitiesTable.$converterpomodoro.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}pomodoro'])!),
+      color: $ActivitiesTable.$convertercolor.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}color'])!),
     );
   }
 
@@ -1058,6 +1070,8 @@ class $ActivitiesTable extends Activities
   static TypeConverter<Order, double> $converterorder = const OrderConverter();
   static TypeConverter<Duration, int> $converterpomodoro =
       const DurationConverter();
+  static TypeConverter<ThemeColor, int> $convertercolor =
+      const ThemeColorConverter();
 }
 
 class ActivityRow extends DataClass implements Insertable<ActivityRow> {
@@ -1069,6 +1083,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final Path path;
   final Order order;
   final Duration pomodoro;
+  final ThemeColor color;
   const ActivityRow(
       {required this.id,
       required this.modifiedAt,
@@ -1077,7 +1092,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       required this.name,
       required this.path,
       required this.order,
-      required this.pomodoro});
+      required this.pomodoro,
+      required this.color});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1100,6 +1116,10 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       map['pomodoro'] =
           Variable<int>($ActivitiesTable.$converterpomodoro.toSql(pomodoro));
     }
+    {
+      map['color'] =
+          Variable<int>($ActivitiesTable.$convertercolor.toSql(color));
+    }
     return map;
   }
 
@@ -1113,6 +1133,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       path: Value(path),
       order: Value(order),
       pomodoro: Value(pomodoro),
+      color: Value(color),
     );
   }
 
@@ -1128,6 +1149,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       path: serializer.fromJson<Path>(json['path']),
       order: serializer.fromJson<Order>(json['order']),
       pomodoro: serializer.fromJson<Duration>(json['pomodoro']),
+      color: serializer.fromJson<ThemeColor>(json['color']),
     );
   }
   @override
@@ -1142,6 +1164,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       'path': serializer.toJson<Path>(path),
       'order': serializer.toJson<Order>(order),
       'pomodoro': serializer.toJson<Duration>(pomodoro),
+      'color': serializer.toJson<ThemeColor>(color),
     };
   }
 
@@ -1153,7 +1176,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           String? name,
           Path? path,
           Order? order,
-          Duration? pomodoro}) =>
+          Duration? pomodoro,
+          ThemeColor? color}) =>
       ActivityRow(
         id: id ?? this.id,
         modifiedAt: modifiedAt ?? this.modifiedAt,
@@ -1163,6 +1187,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
         path: path ?? this.path,
         order: order ?? this.order,
         pomodoro: pomodoro ?? this.pomodoro,
+        color: color ?? this.color,
       );
   ActivityRow copyWithCompanion(ActivitiesCompanion data) {
     return ActivityRow(
@@ -1175,6 +1200,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       path: data.path.present ? data.path.value : this.path,
       order: data.order.present ? data.order.value : this.order,
       pomodoro: data.pomodoro.present ? data.pomodoro.value : this.pomodoro,
+      color: data.color.present ? data.color.value : this.color,
     );
   }
 
@@ -1188,14 +1214,15 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           ..write('name: $name, ')
           ..write('path: $path, ')
           ..write('order: $order, ')
-          ..write('pomodoro: $pomodoro')
+          ..write('pomodoro: $pomodoro, ')
+          ..write('color: $color')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(
-      id, modifiedAt, createdAt, draft, name, path, order, pomodoro);
+      id, modifiedAt, createdAt, draft, name, path, order, pomodoro, color);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1207,7 +1234,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           other.name == this.name &&
           other.path == this.path &&
           other.order == this.order &&
-          other.pomodoro == this.pomodoro);
+          other.pomodoro == this.pomodoro &&
+          other.color == this.color);
 }
 
 class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
@@ -1219,6 +1247,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<Path> path;
   final Value<Order> order;
   final Value<Duration> pomodoro;
+  final Value<ThemeColor> color;
   final Value<int> rowid;
   const ActivitiesCompanion({
     this.id = const Value.absent(),
@@ -1229,6 +1258,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.path = const Value.absent(),
     this.order = const Value.absent(),
     this.pomodoro = const Value.absent(),
+    this.color = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ActivitiesCompanion.insert({
@@ -1240,6 +1270,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     required Path path,
     this.order = const Value.absent(),
     this.pomodoro = const Value.absent(),
+    this.color = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : name = Value(name),
         path = Value(path);
@@ -1252,6 +1283,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Expression<String>? path,
     Expression<double>? order,
     Expression<int>? pomodoro,
+    Expression<int>? color,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1263,6 +1295,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       if (path != null) 'path': path,
       if (order != null) 'order': order,
       if (pomodoro != null) 'pomodoro': pomodoro,
+      if (color != null) 'color': color,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1276,6 +1309,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       Value<Path>? path,
       Value<Order>? order,
       Value<Duration>? pomodoro,
+      Value<ThemeColor>? color,
       Value<int>? rowid}) {
     return ActivitiesCompanion(
       id: id ?? this.id,
@@ -1286,6 +1320,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       path: path ?? this.path,
       order: order ?? this.order,
       pomodoro: pomodoro ?? this.pomodoro,
+      color: color ?? this.color,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1321,6 +1356,10 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       map['pomodoro'] = Variable<int>(
           $ActivitiesTable.$converterpomodoro.toSql(pomodoro.value));
     }
+    if (color.present) {
+      map['color'] =
+          Variable<int>($ActivitiesTable.$convertercolor.toSql(color.value));
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1338,6 +1377,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
           ..write('path: $path, ')
           ..write('order: $order, ')
           ..write('pomodoro: $pomodoro, ')
+          ..write('color: $color, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4296,6 +4336,7 @@ typedef $$ActivitiesTableCreateCompanionBuilder = ActivitiesCompanion Function({
   required Path path,
   Value<Order> order,
   Value<Duration> pomodoro,
+  Value<ThemeColor> color,
   Value<int> rowid,
 });
 typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
@@ -4307,6 +4348,7 @@ typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
   Value<Path> path,
   Value<Order> order,
   Value<Duration> pomodoro,
+  Value<ThemeColor> color,
   Value<int> rowid,
 });
 
@@ -4414,6 +4456,11 @@ class $$ActivitiesTableFilterComposer
   ColumnWithTypeConverterFilters<Duration, Duration, int> get pomodoro =>
       $composableBuilder(
           column: $table.pomodoro,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
+
+  ColumnWithTypeConverterFilters<ThemeColor, ThemeColor, int> get color =>
+      $composableBuilder(
+          column: $table.color,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   Expression<bool> notesRefs(
@@ -4533,6 +4580,9 @@ class $$ActivitiesTableOrderingComposer
 
   ColumnOrderings<int> get pomodoro => $composableBuilder(
       column: $table.pomodoro, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get color => $composableBuilder(
+      column: $table.color, builder: (column) => ColumnOrderings(column));
 }
 
 class $$ActivitiesTableAnnotationComposer
@@ -4567,6 +4617,9 @@ class $$ActivitiesTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<Duration, int> get pomodoro =>
       $composableBuilder(column: $table.pomodoro, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<ThemeColor, int> get color =>
+      $composableBuilder(column: $table.color, builder: (column) => column);
 
   Expression<T> notesRefs<T extends Object>(
       Expression<T> Function($$NotesTableAnnotationComposer a) f) {
@@ -4688,6 +4741,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             Value<Path> path = const Value.absent(),
             Value<Order> order = const Value.absent(),
             Value<Duration> pomodoro = const Value.absent(),
+            Value<ThemeColor> color = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               ActivitiesCompanion(
@@ -4699,6 +4753,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             path: path,
             order: order,
             pomodoro: pomodoro,
+            color: color,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -4710,6 +4765,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             required Path path,
             Value<Order> order = const Value.absent(),
             Value<Duration> pomodoro = const Value.absent(),
+            Value<ThemeColor> color = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               ActivitiesCompanion.insert(
@@ -4721,6 +4777,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             path: path,
             order: order,
             pomodoro: pomodoro,
+            color: color,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0

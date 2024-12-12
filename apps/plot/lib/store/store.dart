@@ -10,6 +10,7 @@ import 'package:injector/injector.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
+import 'package:plot/util/theme_color.dart';
 import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
 import 'package:plot/util/list.dart';
@@ -383,7 +384,7 @@ class Store extends _$Store {
         ));
 
   @override
-  int get schemaVersion => 24;
+  int get schemaVersion => 25;
 
   @override
   MigrationStrategy get migration {

@@ -43,6 +43,7 @@ CREATE TABLE "public"."activity_settings" (
     "activity_id" uuid NOT NULL REFERENCES public.activity ON DELETE CASCADE,
     "order" double precision NOT NULL,
     "pomodoro" integer NOT NULL DEFAULT 25 * 60,
+    "color" integer NOT NULL DEFAULT 0,
     CONSTRAINT user_activity_unique UNIQUE ("user_id", "activity_id")
 );
 

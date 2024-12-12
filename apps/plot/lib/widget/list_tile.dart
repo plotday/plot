@@ -3,7 +3,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos_ui;
 import 'package:platform_builder/platform_builder.dart';
 
-import 'theme_color.dart';
+import 'package:plot/util/theme_color.dart';
 import 'tapable.dart';
 
 class ListTile extends StatelessWidget {

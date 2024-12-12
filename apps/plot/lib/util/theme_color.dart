@@ -3,7 +3,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:platform_builder/platform_builder.dart';
 
 extension type ThemeColor(int index) {
-  factory ThemeColor.defaultColor() => ThemeColor(0);
+  const ThemeColor.defaultColor() : index = 0;
 
   Color? getBackground(BuildContext context) => PlatformResolver.current(
         defaultResolver: () {
@@ -13,7 +13,7 @@ extension type ThemeColor(int index) {
 
   Color? getForeground(BuildContext context) => PlatformResolver.current(
         defaultResolver: () {
-          return material.Colors.red;
+          return material.Colors.blue;
         },
       );
 }

@@ -11,7 +11,8 @@ SELECT
     replace_parent_path (c1.path, c2.path, COALESCE(cu.path, c1.path)) AS path,
     COALESCE(cs.order, (extract(epoch FROM CURRENT_TIMESTAMP) * 1000)::double PRECISION * 10) AS
 ORDER,
-COALESCE(cs.pomodoro, 25) AS pomodoro
+cs.pomodoro AS pomodoro,
+cs.color AS color
 FROM
     activity_user cu
     JOIN activity c1 ON cu.activity_id = c1.id
@@ -35,12 +36,12 @@ BEGIN
             RETURNING
                 id INTO _activity_id;
     END IF;
-    IF (OLD IS NULL AND (NEW.order IS NOT NULL OR NEW.pomodoro IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."order" IS DISTINCT FROM OLD."order" OR NEW.pomodoro IS DISTINCT FROM OLD.pomodoro)) THEN
-        INSERT INTO activity_settings (user_id, activity_id, "order", pomodoro)
-            VALUES (auth.uid (), _activity_id, NEW.order, COALESCE(NEW.pomodoro, 25))
+    IF (OLD IS NULL AND (NEW.order IS NOT NULL OR NEW.pomodoro IS NOT NULL OR NEW.color IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."order" IS DISTINCT FROM OLD."order" OR NEW.pomodoro IS DISTINCT FROM OLD.pomodoro OR NEW.color IS DISTINCT FROM OLD.color)) THEN
+        INSERT INTO activity_settings (user_id, activity_id, "order", pomodoro, color)
+            VALUES (auth.uid (), _activity_id, NEW.order, COALESCE(NEW.pomodoro, 25 * 60), COALESCE(NEW.color, 0))
         ON CONFLICT (user_id, activity_id)
             DO UPDATE SET
-                "order" = COALESCE(NEW.order, activity_settings."order"), pomodoro = COALESCE(NEW.pomodoro, activity_settings.pomodoro);
+                "order" = COALESCE(NEW.order, activity_settings."order"), pomodoro = COALESCE(NEW.pomodoro, activity_settings.pomodoro), color = COALESCE(NEW.color, activity_settings.color);
     END IF;
     RETURN NEW;
 END;

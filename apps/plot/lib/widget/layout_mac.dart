@@ -32,10 +32,10 @@ class MacLayout extends StatelessWidget {
         padding: const EdgeInsets.all(-2000.0),
         child: Container(
           color: (HSLColor.fromColor(MacosColors.appleBlue))
-              .withLightness(isDark ? 0.15 : 0.8)
+              .withLightness(isDark ? 0.2 : 0.8)
               .withSaturation(isDark ? 0.7 : 1.0)
               .toColor()
-              .withOpacity(isDark ? 0.3 : 0.7),
+              .withOpacity(0.35),
           child: ResizableContainer(
             direction: Axis.horizontal,
             divider: const ResizableDivider(

@@ -38,7 +38,7 @@ RouteBase get $_AdaptiveRoutes => ShellRouteData.$route(
               factory: $ActivityRouteExtension._fromState,
             ),
             GoRouteData.$route(
-              path: '/activity/:activityIdString/edit',
+              path: '/activity/:activityIdString/new',
               factory: $NewRouteExtension._fromState,
             ),
             GoRouteData.$route(
@@ -163,7 +163,7 @@ extension $NewRouteExtension on NewRoute {
       );
 
   String get location => GoRouteData.$location(
-        '/activity/${Uri.encodeComponent(activityIdString)}/edit',
+        '/activity/${Uri.encodeComponent(activityIdString)}/new',
       );
 
   void go(BuildContext context) => context.go(location);
@@ -246,7 +246,7 @@ RouteBase get $_SingleRoutes => ShellRouteData.$route(
                   factory: $ActivityRouteExtension._fromState,
                   routes: [
                     GoRouteData.$route(
-                      path: 'edit',
+                      path: 'new',
                       factory: $NewRouteExtension._fromState,
                     ),
                     GoRouteData.$route(
