@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-
+import 'package:macos_ui/macos_ui.dart' as macos;
 import 'app.dart';
 import 'button.dart';
 
@@ -16,8 +16,42 @@ class ActionItem {
   final VoidCallback onPressed;
 }
 
-class Scaffold extends StatelessWidget {
+class Scaffold extends StatefulWidget {
   const Scaffold({required this.body, this.title, this.actions, super.key});
+
+  final Widget body;
+  final Widget? title;
+  final List<ActionItem>? actions;
+
+  @override
+  ScaffoldState createState() => ScaffoldState();
+}
+
+class ScaffoldState extends State<Scaffold> {
+  final GlobalKey _toolbarKey = GlobalKey();
+  EdgeInsetsGeometry _padding = EdgeInsets.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    // Use post-frame callback to ensure layout is complete
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateToolbarPadding();
+    });
+  }
+
+  void _updateToolbarPadding() {
+    final RenderBox? renderBox =
+        _toolbarKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null) {
+      final pos = renderBox.localToGlobal(Offset.zero);
+      setState(() {
+        _padding = pos.dx == 0 && pos.dy == 0
+            ? AppWidget.toolbarPadding
+            : EdgeInsets.zero;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +59,7 @@ class Scaffold extends StatelessWidget {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final height = constraints.maxHeight;
-        final hasToolbar = title != null || actions != null;
+        final hasToolbar = widget.title != null || widget.actions != null;
         final topPadding = hasToolbar ? AppWidget.toolbarHeight : 0.0;
 
         return Stack(
@@ -36,38 +70,39 @@ class Scaffold extends StatelessWidget {
               height: height,
               child: Padding(
                 padding: EdgeInsets.only(top: topPadding),
-                child: body,
+                child: widget.body,
               ),
             ),
-
             // Toolbar
             if (hasToolbar)
               Positioned(
                 width: width,
                 height: AppWidget.toolbarHeight,
                 child: Builder(builder: (BuildContext context) {
-                  final RenderBox? renderBox =
-                      context.findRenderObject() as RenderBox?;
-                  EdgeInsetsGeometry padding = EdgeInsets.zero;
-                  if (renderBox != null) {
-                    final pos = renderBox.localToGlobal(Offset.zero);
-                    if (pos.dx == 0 && pos.dy == 0) {
-                      padding = AppWidget.toolbarPadding;
-                    }
-                  }
+                  Widget? backButton = ModalRoute.of(context)?.canPop != true
+                      ? null
+                      : Container(
+                          width: 20.0,
+                          alignment: Alignment.centerLeft,
+                          child: macos.MacosBackButton(
+                            fillColor: macos.MacosColors.transparent,
+                            onPressed: () => Navigator.maybePop(context),
+                          ),
+                        );
+
                   return Padding(
-                    padding: padding,
+                    key: _toolbarKey,
+                    padding: _padding,
                     child: Row(
                       children: [
-                        if (title != null) title!,
+                        if (backButton != null) backButton,
+                        if (widget.title != null) widget.title!,
                         const Expanded(
                           child: SizedBox(),
                         ),
-                        ...(actions ?? []).map(
+                        ...(widget.actions ?? []).map(
                           (action) => IconButton(
                             icon: action.icon,
-                            // label: action.label,
-                            // showLabel: action.showLabel,
                             onPressed: action.onPressed,
                           ),
                         ),
@@ -81,8 +116,4 @@ class Scaffold extends StatelessWidget {
       },
     );
   }
-
-  final Widget body;
-  final Widget? title;
-  final List<ActionItem>? actions;
 }
