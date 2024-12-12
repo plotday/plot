@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart';
 import 'package:figma_squircle/figma_squircle.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
@@ -17,6 +18,8 @@ class MacLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    bool isDark =
+        MediaQuery.of(context).platformBrightness == material.Brightness.dark;
     return GlobalMenu(
       child: VisualEffectSubviewContainer(
         alphaValue: 1,
@@ -28,7 +31,11 @@ class MacLayout extends StatelessWidget {
         // negative margin to the visual effect subview.
         padding: const EdgeInsets.all(-2000.0),
         child: Container(
-          color: MacosColors.systemBlueColor.withAlpha(96),
+          color: (HSLColor.fromColor(MacosColors.appleBlue))
+              .withLightness(isDark ? 0.15 : 0.8)
+              .withSaturation(isDark ? 0.7 : 1.0)
+              .toColor()
+              .withOpacity(isDark ? 0.3 : 0.7),
           child: ResizableContainer(
             direction: Axis.horizontal,
             divider: const ResizableDivider(
