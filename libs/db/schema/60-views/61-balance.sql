@@ -30,7 +30,7 @@ SELECT
     activity_id,
     'session' AS type,
     count(*) AS "count",
-    sum(EXTRACT(epoch FROM upper(at) - lower(at)) / 60)::integer AS seconds,
+    sum(EXTRACT(epoch FROM upper(at) - lower(at)))::integer AS seconds,
     MAX(modified_at) AS modified_at
 FROM
     session
