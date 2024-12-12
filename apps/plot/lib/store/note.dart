@@ -120,7 +120,7 @@ class Note extends NoteRow implements Comparable<Note> {
       (t) => OrderingTerm.desc(t.pinned),
       (t) => OrderingTerm(
             expression: const CustomExpression<DateTime>(
-                'CASE WHEN do_at IS NOT NULL AND do_at <= CURRENT_TIMESTAMP THEN do_at ELSE NULL END'),
+                'CASE WHEN do_at IS NOT NULL AND done_at IS NULL AND do_at <= CURRENT_TIMESTAMP THEN do_at ELSE NULL END'),
             mode: OrderingMode.asc,
           ),
       (t) => OrderingTerm.desc(t.order)
@@ -235,7 +235,7 @@ class Note extends NoteRow implements Comparable<Note> {
       order ??= Order.first();
     }
     if (publish) {
-      order ??= ((root ?? this.root) ? Order.first() : Order.last());
+      order ??= (root ?? this.root) ? Order.first() : Order.last();
     }
     return Note.fromStore(super.copyWith(
       id: id ?? this.id,
