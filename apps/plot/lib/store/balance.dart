@@ -78,173 +78,181 @@ class Balance extends BalanceRow {
   static Stream<BalanceByDateActivityType> watchDaily(DateRange range) {
     pullRange(range);
 
-    final query = Store.get.select(table)
-      ..where((t) => t.count.isBiggerThanValue(0))
-      ..where((t) => t.day.isBiggerOrEqualValue(range.start.toString()))
-      ..where((t) => t.day.isSmallerThanValue(range.end.toString()));
-    final balanceStats = query.watch().map((List<BalanceRow> rows) {
-      final BalanceByDateActivityType result = {};
-      for (final row in rows) {
-        final activityId = row.activityId;
-        final day = row.day;
-        final type = row.type;
-        final balanceStat = row.day < Date.today()
-            ? BalanceStats(
-                pastTime: row.time,
-                pastCount: row.count,
-              )
-            : BalanceStats(
-                futureTime: row.time,
-                futureCount: row.count,
-              );
-        result.putIfAbsent(day, () => {});
-        result[day]!.putIfAbsent(activityId, () => {});
-        result[day]![activityId]![type] = balanceStat;
-      }
-      return result;
-    });
-
-    final eventStats = Date.current().switchMap((today) => !range
-            .includes(today)
-        ? Stream.value(BalanceByActivityType.from({}))
-        : Event.watch(today.toDateRange())
-            .transform(ExpiringStreamTransformer((events) {
-            final now = DateTime.now();
-
-            final currentEvent = events.any((event) => event.at.includes(now));
-            DateTime? expiry;
-            if (currentEvent) {
-              if (now.second < 50) {
-                expiry = now + const Duration(seconds: 10);
-              } else {
-                final nextMinute = now.add(const Duration(minutes: 1));
-                expiry = DateTime(
-                  nextMinute.year,
-                  nextMinute.month,
-                  nextMinute.day,
-                  nextMinute.hour,
-                  nextMinute.minute,
-                  0,
-                  0,
+    return Date.current().switchMap((today) {
+      final query = Store.get.select(table)
+        ..where((t) => t.count.isBiggerThanValue(0))
+        ..where((t) => t.day.isBiggerOrEqualValue(range.start.toString()))
+        ..where((t) => t.day.isNotValue(today.toString()))
+        ..where((t) => t.day.isSmallerThanValue(range.end.toString()));
+      final balanceStats = query.watch().map((List<BalanceRow> rows) {
+        final BalanceByDateActivityType result = {};
+        for (final row in rows) {
+          final activityId = row.activityId;
+          final day = row.day;
+          final type = row.type;
+          final balanceStat = row.day < today
+              ? BalanceStats(
+                  pastTime: row.time,
+                  pastCount: row.count,
+                )
+              : BalanceStats(
+                  futureTime: row.time,
+                  futureCount: row.count,
                 );
+          result.putIfAbsent(day, () => {});
+          result[day]!.putIfAbsent(activityId, () => {});
+          result[day]![activityId]![type] = balanceStat;
+        }
+        return result;
+      });
+
+      final eventStats = !range.includes(today)
+          ? Stream.value(BalanceByActivityType.from({}))
+          : Event.watch(today.toDateRange())
+              .transform(ExpiringStreamTransformer((events) {
+              final now = DateTime.now();
+
+              final currentEvent =
+                  events.any((event) => event.at.includes(now));
+              DateTime? expiry;
+              if (currentEvent) {
+                if (now.second < 50) {
+                  expiry = now + const Duration(seconds: 10);
+                } else {
+                  final nextMinute = now.add(const Duration(minutes: 1));
+                  expiry = DateTime(
+                    nextMinute.year,
+                    nextMinute.month,
+                    nextMinute.day,
+                    nextMinute.hour,
+                    nextMinute.minute,
+                    0,
+                    0,
+                  );
+                }
+              } else {
+                expiry = events
+                    .map((event) => event.at.start.isAfter(now)
+                        ? event.at.start
+                        : event.at.end)
+                    .where((time) => time.isAfter(now))
+                    .fold(
+                        null,
+                        (a, b) => a == null
+                            ? b
+                            : a.isBefore(b)
+                                ? a
+                                : b);
               }
-            } else {
-              expiry = events
-                  .map((event) => event.at.start.isAfter(now)
-                      ? event.at.start
-                      : event.at.end)
-                  .where((time) => time.isAfter(now))
-                  .fold(
-                      null,
-                      (a, b) => a == null
-                          ? b
-                          : a.isBefore(b)
-                              ? a
-                              : b);
-            }
 
-            return ExpiringResult(
-              value: groupBy(events, (event) => event.activityId)
-                  .map((activityId, events) {
-                final pastEvents =
-                    events.where((event) => event.at.end.isBefore(now));
-                final currentEvents =
-                    events.where((event) => event.at.includes(now));
-                final futureEvents =
-                    events.where((event) => event.at.start.isAfter(now));
-                return MapEntry(activityId, {
-                  BalanceType.todo: BalanceStats(
-                    pastCount: pastEvents.length,
-                    pastTime: pastEvents
-                            .toList()
-                            .map((event) => event.at.duration)
-                            .fold(Duration.zero, (a, b) => a + b) +
-                        currentEvents
-                            .toList()
-                            .map((event) => now.difference(event.at.end))
-                            .fold(Duration.zero, (a, b) => a + b),
-                    futureCount: currentEvents.length + futureEvents.length,
-                    futureTime: futureEvents
-                            .toList()
-                            .map((event) => event.at.duration)
-                            .fold(Duration.zero, (a, b) => a + b) +
-                        currentEvents
-                            .toList()
-                            .map((event) => event.at.end.difference(now))
-                            .fold(Duration.zero, (a, b) => a + b),
-                  )
-                });
-              }),
-              expiry: expiry,
-            );
-          })));
+              return ExpiringResult(
+                value: groupBy(events, (Event e) => (e.activityId, e.response))
+                    .map((key, events) {
+                  final activityId = key.$1;
+                  final response = key.$2;
+                  final type = switch (response) {
+                    EventResponse.accepted => BalanceType.accepted,
+                    EventResponse.tentative => BalanceType.tentative,
+                    EventResponse.declined => BalanceType.declined,
+                  };
+                  final pastEvents =
+                      events.where((event) => event.at.end.isBefore(now));
+                  final currentEvents =
+                      events.where((event) => event.at.includes(now));
+                  final futureEvents =
+                      events.where((event) => event.at.start.isAfter(now));
+                  return MapEntry(activityId, {
+                    type: BalanceStats(
+                      pastCount: pastEvents.length,
+                      pastTime: pastEvents
+                              .toList()
+                              .map((event) => event.at.duration)
+                              .fold(Duration.zero, (a, b) => a + b) +
+                          currentEvents
+                              .toList()
+                              .map((event) => now.difference(event.at.end))
+                              .fold(Duration.zero, (a, b) => a + b),
+                      futureCount: currentEvents.length + futureEvents.length,
+                      futureTime: futureEvents
+                              .toList()
+                              .map((event) => event.at.duration)
+                              .fold(Duration.zero, (a, b) => a + b) +
+                          currentEvents
+                              .toList()
+                              .map((event) => event.at.end.difference(now))
+                              .fold(Duration.zero, (a, b) => a + b),
+                    )
+                  });
+                }),
+                expiry: expiry,
+              );
+            }));
 
-    final noteStats = Date.current().switchMap((today) => !range.includes(today)
-        ? Stream.value(BalanceByActivityType.from({}))
-        : Note.watchActive().transform(ExpiringStreamTransformer((notes) {
-            final now = DateTime.now();
-            return ExpiringResult(
-              value: groupBy(notes, (note) => note.activityId)
-                  .map((activityId, notes) {
-                final pastCount = notes
-                    .where((note) => note.doAt!.isSameOrBefore(now))
-                    .length;
-                return MapEntry(activityId, {
-                  BalanceType.todo: BalanceStats(
-                    pastCount: pastCount,
-                    futureCount: notes.length - pastCount,
-                  )
-                });
-              }),
-              expiry: notes
-                  .map((note) => note.doAt!)
-                  .where((start) => start.isAfter(now))
-                  .fold(
-                      null,
-                      (a, b) => a == null
-                          ? b
-                          : a.isBefore(b)
-                              ? a
-                              : b),
-            );
-          })));
+      final noteStats = !range.includes(today)
+          ? Stream.value(BalanceByActivityType.from({}))
+          : Note.watchActive().transform(ExpiringStreamTransformer((notes) {
+              final now = DateTime.now();
+              return ExpiringResult(
+                value: groupBy(notes, (note) => note.activityId)
+                    .map((activityId, notes) {
+                  final pastCount = notes
+                      .where((note) => note.doAt!.isSameOrBefore(now))
+                      .length;
+                  return MapEntry(activityId, {
+                    BalanceType.todo: BalanceStats(
+                      pastCount: pastCount,
+                      futureCount: notes.length - pastCount,
+                    )
+                  });
+                }),
+                expiry: notes
+                    .map((note) => note.doAt!)
+                    .where((start) => start.isAfter(now))
+                    .fold(
+                        null,
+                        (a, b) => a == null
+                            ? b
+                            : a.isBefore(b)
+                                ? a
+                                : b),
+              );
+            }));
 
-    final sessionStats = Date.current().switchMap((today) => !range
-            .includes(today)
-        ? Stream.value(BalanceByActivityType.from({}))
-        : Session.watch(range: today.toDateRange()).map((sessions) => groupBy(
-                sessions, (session) => session.activityId)
-            .map((activityId, groupedSessions) => MapEntry(activityId, {
-                  BalanceType.session: BalanceStats(
-                    pastCount: groupedSessions.length,
-                    pastTime: groupedSessions
-                        .map((session) => session.end.difference(session.start))
-                        .fold(Duration.zero, (a, b) => a + b),
-                  )
-                }))));
+      final sessionStats = !range.includes(today)
+          ? Stream.value(BalanceByActivityType.from({}))
+          : Session.watch(range: today.toDateRange()).map((sessions) =>
+              groupBy(sessions, (session) => session.activityId)
+                  .map((activityId, groupedSessions) => MapEntry(activityId, {
+                        BalanceType.session: BalanceStats(
+                          pastCount: groupedSessions.length,
+                          pastTime: groupedSessions
+                              .map((session) =>
+                                  session.end.difference(session.start))
+                              .fold(Duration.zero, (a, b) => a + b),
+                        )
+                      })));
 
-    return Rx.combineLatest3(
-        Date.current(),
-        balanceStats,
-        Rx.combineLatest4(
-          Activity.watchAll(),
-          eventStats,
-          noteStats,
-          sessionStats,
-          (activities, events, notes, sessions) {
-            return combineNestedMaps([
-              _aggregateChildBalances(events, activities, null),
-              _aggregateChildBalances(notes, activities, null),
-              _aggregateChildBalances(sessions, activities, null),
-            ]);
-          },
-        ), (
-      Date today,
-      BalanceByDateActivityType balanceMap,
-      BalanceByActivityType todayMap,
-    ) {
-      balanceMap[today] = todayMap;
-      return balanceMap;
+      return Rx.combineLatest2(
+          balanceStats,
+          Rx.combineLatest4(
+            Activity.watchAll(),
+            eventStats,
+            noteStats,
+            sessionStats,
+            (activities, events, notes, sessions) {
+              return combineNestedMaps([
+                _aggregateChildBalances(events, activities, null),
+                _aggregateChildBalances(notes, activities, null),
+                _aggregateChildBalances(sessions, activities, null),
+              ]);
+            },
+          ), (
+        BalanceByDateActivityType balanceMap,
+        BalanceByActivityType todayMap,
+      ) {
+        balanceMap[today] = todayMap;
+        return balanceMap;
+      });
     });
   }
 

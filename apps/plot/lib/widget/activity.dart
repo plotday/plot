@@ -10,17 +10,20 @@ class ActivityWidget extends StatelessWidget {
     super.key,
     this.onTap,
     this.selected = false,
+    this.isNow = false,
   });
   final Activity? activity;
   final BalanceByType? balances;
   final VoidCallback? onTap;
   final bool selected;
+  final bool isNow;
 
   Duration get past =>
       (balances?[BalanceType.accepted]?.pastTime ?? Duration.zero) +
       (balances?[BalanceType.session]?.pastTime ?? Duration.zero);
   Duration get future =>
       (balances?[BalanceType.accepted]?.futureTime ?? Duration.zero) +
+      (balances?[BalanceType.tentative]?.futureTime ?? Duration.zero) +
       (balances?[BalanceType.session]?.futureTime ?? Duration.zero);
 
   @override
@@ -46,9 +49,12 @@ class ActivityWidget extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    if (past.isNonZero) DurationText(duration: past),
-                    const Text("/"),
-                    if (future.isNonZero) DurationText(duration: future),
+                    if (isNow && past + future >= const Duration(minutes: 1))
+                      DurationText(duration: past),
+                    if (isNow && past + future >= const Duration(minutes: 1))
+                      const Text("/"),
+                    if (past + future >= const Duration(minutes: 1))
+                      DurationText(duration: past + future),
                   ],
                 ),
                 const SizedBox(width: 8),

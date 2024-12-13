@@ -94,6 +94,7 @@ class ActivityPage extends StatelessWidget {
                   itemBuilder: (buildContext, item) => ActivityWidget(
                       activity: item,
                       balances: state.balances?[item.id],
+                      isNow: state.week.isNow(),
                       onTap: () {
                         ActivityRoute.byId(item.id).go(context);
                       }),

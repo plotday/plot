@@ -24,7 +24,7 @@ class ActivitySelector extends StatelessWidget {
                   onTap: () {
                     onSelect(a);
                   },
-                  child: Text(a?.name ?? 'Home'),
+                  child: Text(a?.name ?? 'Everything'),
                 ))
             .toList()
             .expand((widget) => [
