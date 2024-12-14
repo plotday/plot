@@ -11,6 +11,7 @@ class ScheduleWidget extends StatelessWidget {
     required this.anchor,
     required this.fetcher,
     required this.onSelect,
+    this.selected,
     this.scrollController,
     super.key,
   });
@@ -21,6 +22,7 @@ class ScheduleWidget extends StatelessWidget {
   final Date anchor;
   final Future<void> Function(DateRange range) fetcher;
   final void Function(Event) onSelect;
+  final Event? selected;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +42,7 @@ class ScheduleWidget extends StatelessWidget {
           DayWidget(
             day: day,
             onSelect: onSelect,
+            selected: selected,
           ),
         ]);
       },

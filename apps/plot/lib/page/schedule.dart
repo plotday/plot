@@ -28,6 +28,7 @@ class SchedulePage extends StatelessWidget {
           range: state.range,
           anchor: state.anchor,
           schedule: state.schedule,
+          selected: state is SelectedEventState ? state.selected : null,
           fetcher: (range) async {
             context.read<ScheduleBloc>().watch(range);
           },

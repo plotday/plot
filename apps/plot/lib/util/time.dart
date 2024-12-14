@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:dart_date/dart_date.dart';
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:equatable/equatable.dart';
@@ -508,4 +509,8 @@ extension TimeOfDayExtension on TimeOfDay {
   }
 
   bool get isMidnight => hour == 0 && minute == 0;
+
+  String formatShort(BuildContext context) {
+    return format(context).replaceAll(':00', '');
+  }
 }

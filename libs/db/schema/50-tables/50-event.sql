@@ -22,7 +22,7 @@ CREATE TABLE "public"."event" (
     "sequence" integer NOT NULL DEFAULT 1,
     "optional" boolean NOT NULL DEFAULT FALSE,
     "invitees_hidden" boolean NOT NULL DEFAULT FALSE,
-    CONSTRAINT event_calendar_provider_id_unique UNIQUE NULLS NOT DISTINCT (calendar_id, provider_id)
+    CONSTRAINT event_calendar_provider_id_unique UNIQUE (calendar_id, provider_id)
 );
 
 ALTER TABLE "public"."event" ENABLE ROW LEVEL SECURITY;

@@ -271,7 +271,7 @@ class ScheduledDay extends Equatable {
   static List<Event> _addGaps(Date date, List<Event> events) {
     List<Event> expanded = [];
     final start = date.toDateTime();
-    final end = start.endOfDay;
+    final end = start.nextDay;
     if (events.isEmpty ||
         events.first.at.start.difference(start).inMinutes > 0) {
       expanded.add(Event(

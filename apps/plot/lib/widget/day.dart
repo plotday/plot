@@ -61,9 +61,11 @@ class DateWidget extends StatelessWidget {
 }
 
 class DayWidget extends StatelessWidget {
-  const DayWidget({required this.day, required this.onSelect, super.key});
+  const DayWidget(
+      {required this.day, required this.onSelect, this.selected, super.key});
 
   final ScheduledDay day;
+  final Event? selected;
   final void Function(Event) onSelect;
 
   @override
@@ -76,6 +78,7 @@ class DayWidget extends StatelessWidget {
           (event) => EventWidget(
             event: event,
             onSelect: () => onSelect(event),
+            selected: event.id == selected?.id,
           ),
         ),
       ],

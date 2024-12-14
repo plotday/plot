@@ -2,75 +2,75 @@ import 'package:flutter/material.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/util/theme_color.dart';
 
 class EventWidget extends StatelessWidget {
   const EventWidget({
     required this.event,
     required this.onSelect,
+    this.selected = false,
+    ThemeColor? color,
     super.key,
-  });
+  }) : color = color ?? const ThemeColor.defaultColor();
 
   final Event event;
   final void Function() onSelect;
+  final bool selected;
+  final ThemeColor color;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => onSelect(),
-      child: Padding(
-        padding: const EdgeInsetsDirectional.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: Container(
+        color: selected
+            ? const ThemeColor.defaultColor().getBackground(context)
+            : Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.all(4),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(
-              width: 72,
+              width: 68,
               alignment: Alignment.topRight,
-              child:
-                  event.id != null || !event.at.start.toTimeOfDay().isMidnight
-                      ? TimeWidget(time: event.at.start)
-                      : SmallCapsWidget(
-                          text: event.at.start.format('EEEE'),
-                        ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(
-                    height: 20,
-                    child: Row(
-                      children: [
-                        DurationWidget(
-                          duration: event.id != null ||
-                                  !(event.at.start.toTimeOfDay().isMidnight ||
-                                      event.at.end.toTimeOfDay().isMidnight)
-                              ? event.at.duration
-                              : Duration.zero,
-                        ),
-                        Expanded(
-                          child: Container(
-                            height: 0.5,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (event.activity != null)
-                    Text(
-                      event.activity!.name,
-                    ),
-                  if (event.name != null)
-                    Text(
-                      event.name!,
-                      style: const TextStyle(fontWeight: FontWeight.w500),
+                  event.at.start.toTimeOfDay().isMidnight
+                      ? const PlotIcon.startOfDay(size: 10, color: Colors.white)
+                      : TimeWidget(time: event.at.start),
+                  const SizedBox(height: 4),
+                  if (event.name != null ||
+                      (event.at.start != event.at.start.startOfDay &&
+                          event.at.end != event.at.end.startOfDay))
+                    DurationText(
+                      duration: event.id != null ||
+                              !(event.at.start.toTimeOfDay().isMidnight ||
+                                  event.at.end.toTimeOfDay().isMidnight)
+                          ? event.at.duration
+                          : Duration.zero,
                     ),
                 ],
               ),
             ),
-          ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (event.name != null)
+                    Text(
+                      event.name!,
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  if (event.name != null) const SizedBox(height: 4),
+                  if (event.activity != null)
+                    Text(
+                      event.activity!.name,
+                    ),
+                ],
+              ),
+            ),
+          ]),
         ),
       ),
     );

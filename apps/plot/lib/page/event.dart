@@ -14,8 +14,9 @@ class EventPage extends StatelessWidget {
       return switch (state) {
         SelectedEventErrorState _ => const Center(child: Text("Error")),
         SelectedEventState state => Column(children: [
-            const Text('Event Page'),
             if (state.selected.name != null) Text(state.selected.name!),
+            if (state.selected.activity?.name != null)
+              Text(state.selected.activity!.name),
             Text(state.selected.at.start.toDate().format()),
             Text(state.selected.at.start.toTimeOfDay().format(context)),
             Text(state.selected.at.end.toTimeOfDay().format(context)),
