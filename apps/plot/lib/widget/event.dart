@@ -37,10 +37,10 @@ class EventWidget extends StatelessWidget {
                   event.at.start.toTimeOfDay().isMidnight
                       ? const PlotIcon.startOfDay(size: 10, color: Colors.white)
                       : TimeWidget(time: event.at.start),
-                  const SizedBox(height: 4),
                   if (event.name != null ||
                       (event.at.start != event.at.start.startOfDay &&
-                          event.at.end != event.at.end.startOfDay))
+                          event.at.end != event.at.end.startOfDay)) ...[
+                    const SizedBox(height: 4),
                     DurationText(
                       duration: event.id != null ||
                               !(event.at.start.toTimeOfDay().isMidnight ||
@@ -48,13 +48,14 @@ class EventWidget extends StatelessWidget {
                           ? event.at.duration
                           : Duration.zero,
                     ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (event.name != null)
                     Text(
@@ -67,6 +68,12 @@ class EventWidget extends StatelessWidget {
                     Text(
                       event.activity!.name,
                     ),
+                  if (event.name == null && event.activity == null)
+                    const SizedBox(
+                      height: 16,
+                      child: Squiggle(
+                          color: Color.fromRGBO(0xFF, 0xFF, 0xFF, 0.1)),
+                    )
                 ],
               ),
             ),
