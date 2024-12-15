@@ -13,8 +13,8 @@ typedef EventId = Uuid;
 @DataClassName('EventRow')
 class Events extends UuidStoreTable with DraftTable {
   TextColumn get name => text().nullable()();
-  DateTimeColumn get start => dateTime()();
-  DateTimeColumn get end => dateTime()();
+  DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();
+  DateTimeColumn get end => dateTime().map(const LocalDateTimeConverter())();
   TextColumn get series => text().nullable()();
   TextColumn get response => textEnum<EventResponse>()
       .withDefault(Constant(EventResponse.accepted.toString()))();

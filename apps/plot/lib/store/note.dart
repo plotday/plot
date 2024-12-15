@@ -9,7 +9,9 @@ class Notes extends UuidStoreTable with DraftTable {
   RealColumn get order => real()
       .clientDefault(() => Order.first().value)
       .map(const OrderConverter())();
-  DateTimeColumn get orderedAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get orderedAt => dateTime()
+      .withDefault(currentDateAndTime)
+      .map(const LocalDateTimeConverter())();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
@@ -18,8 +20,10 @@ class Notes extends UuidStoreTable with DraftTable {
       .nullable()
       .map(const UuidConverter())
       .references(Activities, #id)();
-  DateTimeColumn get doAt => dateTime().nullable()();
-  DateTimeColumn get doneAt => dateTime().nullable()();
+  DateTimeColumn get doAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+  DateTimeColumn get doneAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
 }
 
 class NotesBase extends BaseTable {

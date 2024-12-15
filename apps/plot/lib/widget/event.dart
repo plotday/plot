@@ -57,23 +57,24 @@ class EventWidget extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (event.name == null && event.activity == null)
+                    const SizedBox(
+                      height: 16,
+                      child: Squiggle(
+                          color: Color.fromRGBO(0xFF, 0xFF, 0xFF, 0.1)),
+                    ),
                   if (event.name != null)
                     Text(
                       event.name!,
                       style: const TextStyle(fontWeight: FontWeight.w500),
                       overflow: TextOverflow.ellipsis,
                     ),
-                  if (event.name != null) const SizedBox(height: 4),
+                  if (event.name != null && event.activity != null)
+                    const SizedBox(height: 4),
                   if (event.activity != null)
                     Text(
                       event.activity!.name,
                     ),
-                  if (event.name == null && event.activity == null)
-                    const SizedBox(
-                      height: 16,
-                      child: Squiggle(
-                          color: Color.fromRGBO(0xFF, 0xFF, 0xFF, 0.1)),
-                    )
                 ],
               ),
             ),

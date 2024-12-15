@@ -37,11 +37,15 @@ part 'balance.dart';
 part 'store.g.dart';
 
 class StoreTable extends Table {
-  DateTimeColumn get modifiedAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get modifiedAt => dateTime()
+      .withDefault(currentDateAndTime)
+      .map(const LocalDateTimeConverter())();
 }
 
 mixin DraftTable on Table {
-  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get createdAt => dateTime()
+      .withDefault(currentDateAndTime)
+      .map(const LocalDateTimeConverter())();
   BoolColumn get draft => boolean().withDefault(const Constant(false))();
 }
 

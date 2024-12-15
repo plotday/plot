@@ -4,9 +4,11 @@ class SyncStates extends Table {
   TextColumn get entity => text()();
 
   // Local timestamp of the most recent row pushed
-  DateTimeColumn get pushedAt => dateTime().nullable()();
+  DateTimeColumn get pushedAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
   // Value of the modified_at field of the latest item pulled
-  DateTimeColumn get pulledAt => dateTime().nullable()();
+  DateTimeColumn get pulledAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
   // Range synced
   TextColumn get from => text().nullable()();
   TextColumn get to => text().nullable()();

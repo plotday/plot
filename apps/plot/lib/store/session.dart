@@ -18,14 +18,15 @@ class Sessions extends UuidStoreTable {
       .map(const UuidConverter())
       .references(Activities, #id)();
 
-  DateTimeColumn get start => dateTime()();
-  DateTimeColumn get end => dateTime()();
+  DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();
+  DateTimeColumn get end => dateTime().map(const LocalDateTimeConverter())();
   IntColumn get priority =>
       integer().withDefault(Constant(SessionPriority.user.value))();
 
   IntColumn get pomodoro =>
       integer().nullable().map(const DurationConverter())();
-  DateTimeColumn get pomodoroAt => dateTime().nullable()();
+  DateTimeColumn get pomodoroAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
 }
 
 class SessionsBase extends BaseTable {

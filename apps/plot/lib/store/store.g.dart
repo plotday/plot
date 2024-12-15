@@ -17,15 +17,17 @@ class $SyncStatesTable extends SyncStates
   static const VerificationMeta _pushedAtMeta =
       const VerificationMeta('pushedAt');
   @override
-  late final GeneratedColumn<DateTime> pushedAt = GeneratedColumn<DateTime>(
-      'pushed_at', aliasedName, true,
-      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> pushedAt =
+      GeneratedColumn<DateTime>('pushed_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($SyncStatesTable.$converterpushedAtn);
   static const VerificationMeta _pulledAtMeta =
       const VerificationMeta('pulledAt');
   @override
-  late final GeneratedColumn<DateTime> pulledAt = GeneratedColumn<DateTime>(
-      'pulled_at', aliasedName, true,
-      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> pulledAt =
+      GeneratedColumn<DateTime>('pulled_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($SyncStatesTable.$converterpulledAtn);
   static const VerificationMeta _fromMeta = const VerificationMeta('from');
   @override
   late final GeneratedColumn<String> from = GeneratedColumn<String>(
@@ -64,14 +66,8 @@ class $SyncStatesTable extends SyncStates
     } else if (isInserting) {
       context.missing(_entityMeta);
     }
-    if (data.containsKey('pushed_at')) {
-      context.handle(_pushedAtMeta,
-          pushedAt.isAcceptableOrUnknown(data['pushed_at']!, _pushedAtMeta));
-    }
-    if (data.containsKey('pulled_at')) {
-      context.handle(_pulledAtMeta,
-          pulledAt.isAcceptableOrUnknown(data['pulled_at']!, _pulledAtMeta));
-    }
+    context.handle(_pushedAtMeta, const VerificationResult.success());
+    context.handle(_pulledAtMeta, const VerificationResult.success());
     if (data.containsKey('from')) {
       context.handle(
           _fromMeta, from.isAcceptableOrUnknown(data['from']!, _fromMeta));
@@ -94,10 +90,12 @@ class $SyncStatesTable extends SyncStates
     return SyncState(
       entity: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}entity'])!,
-      pushedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}pushed_at']),
-      pulledAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}pulled_at']),
+      pushedAt: $SyncStatesTable.$converterpushedAtn.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}pushed_at'])),
+      pulledAt: $SyncStatesTable.$converterpulledAtn.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}pulled_at'])),
       from: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}from']),
       to: attachedDatabase.typeMapping
@@ -111,6 +109,15 @@ class $SyncStatesTable extends SyncStates
   $SyncStatesTable createAlias(String alias) {
     return $SyncStatesTable(attachedDatabase, alias);
   }
+
+  static TypeConverter<DateTime, DateTime> $converterpushedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterpushedAtn =
+      NullAwareTypeConverter.wrap($converterpushedAt);
+  static TypeConverter<DateTime, DateTime> $converterpulledAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterpulledAtn =
+      NullAwareTypeConverter.wrap($converterpulledAt);
 }
 
 class SyncState extends DataClass implements Insertable<SyncState> {
@@ -132,10 +139,12 @@ class SyncState extends DataClass implements Insertable<SyncState> {
     final map = <String, Expression>{};
     map['entity'] = Variable<String>(entity);
     if (!nullToAbsent || pushedAt != null) {
-      map['pushed_at'] = Variable<DateTime>(pushedAt);
+      map['pushed_at'] = Variable<DateTime>(
+          $SyncStatesTable.$converterpushedAtn.toSql(pushedAt));
     }
     if (!nullToAbsent || pulledAt != null) {
-      map['pulled_at'] = Variable<DateTime>(pulledAt);
+      map['pulled_at'] = Variable<DateTime>(
+          $SyncStatesTable.$converterpulledAtn.toSql(pulledAt));
     }
     if (!nullToAbsent || from != null) {
       map['from'] = Variable<String>(from);
@@ -312,10 +321,12 @@ class SyncStatesCompanion extends UpdateCompanion<SyncState> {
       map['entity'] = Variable<String>(entity.value);
     }
     if (pushedAt.present) {
-      map['pushed_at'] = Variable<DateTime>(pushedAt.value);
+      map['pushed_at'] = Variable<DateTime>(
+          $SyncStatesTable.$converterpushedAtn.toSql(pushedAt.value));
     }
     if (pulledAt.present) {
-      map['pulled_at'] = Variable<DateTime>(pulledAt.value);
+      map['pulled_at'] = Variable<DateTime>(
+          $SyncStatesTable.$converterpulledAtn.toSql(pulledAt.value));
     }
     if (from.present) {
       map['from'] = Variable<String>(from.value);
@@ -361,11 +372,12 @@ class $AccountsTable extends Accounts
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
-  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
-      'modified_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
+      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($AccountsTable.$convertermodifiedAt);
   static const VerificationMeta _emailMeta = const VerificationMeta('email');
   @override
   late final GeneratedColumn<String> email = GeneratedColumn<String>(
@@ -393,12 +405,7 @@ class $AccountsTable extends Accounts
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    if (data.containsKey('modified_at')) {
-      context.handle(
-          _modifiedAtMeta,
-          modifiedAt.isAcceptableOrUnknown(
-              data['modified_at']!, _modifiedAtMeta));
-    }
+    context.handle(_modifiedAtMeta, const VerificationResult.success());
     if (data.containsKey('email')) {
       context.handle(
           _emailMeta, email.isAcceptableOrUnknown(data['email']!, _emailMeta));
@@ -417,8 +424,9 @@ class $AccountsTable extends Accounts
     return AccountRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      modifiedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
+      modifiedAt: $AccountsTable.$convertermodifiedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
       email: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}email'])!,
       provider: $AccountsTable.$converterprovider.fromSql(attachedDatabase
@@ -432,6 +440,8 @@ class $AccountsTable extends Accounts
     return $AccountsTable(attachedDatabase, alias);
   }
 
+  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+      const LocalDateTimeConverter();
   static JsonTypeConverter2<AccountProvider, String, String>
       $converterprovider =
       const EnumNameConverter<AccountProvider>(AccountProvider.values);
@@ -451,7 +461,10 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['modified_at'] = Variable<DateTime>(modifiedAt);
+    {
+      map['modified_at'] = Variable<DateTime>(
+          $AccountsTable.$convertermodifiedAt.toSql(modifiedAt));
+    }
     map['email'] = Variable<String>(email);
     {
       map['provider'] =
@@ -588,7 +601,8 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
       map['id'] = Variable<int>(id.value);
     }
     if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+      map['modified_at'] = Variable<DateTime>(
+          $AccountsTable.$convertermodifiedAt.toSql(modifiedAt.value));
     }
     if (email.present) {
       map['email'] = Variable<String>(email.value);
@@ -626,11 +640,12 @@ class $CalendarsTable extends Calendars
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
-  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
-      'modified_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
+      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($CalendarsTable.$convertermodifiedAt);
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -670,12 +685,7 @@ class $CalendarsTable extends Calendars
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    if (data.containsKey('modified_at')) {
-      context.handle(
-          _modifiedAtMeta,
-          modifiedAt.isAcceptableOrUnknown(
-              data['modified_at']!, _modifiedAtMeta));
-    }
+    context.handle(_modifiedAtMeta, const VerificationResult.success());
     if (data.containsKey('name')) {
       context.handle(
           _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
@@ -705,8 +715,9 @@ class $CalendarsTable extends Calendars
     return CalendarRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      modifiedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
+      modifiedAt: $CalendarsTable.$convertermodifiedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       enabled: attachedDatabase.typeMapping
@@ -720,6 +731,9 @@ class $CalendarsTable extends Calendars
   $CalendarsTable createAlias(String alias) {
     return $CalendarsTable(attachedDatabase, alias);
   }
+
+  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+      const LocalDateTimeConverter();
 }
 
 class CalendarRow extends DataClass implements Insertable<CalendarRow> {
@@ -738,7 +752,10 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['modified_at'] = Variable<DateTime>(modifiedAt);
+    {
+      map['modified_at'] = Variable<DateTime>(
+          $CalendarsTable.$convertermodifiedAt.toSql(modifiedAt));
+    }
     map['name'] = Variable<String>(name);
     map['enabled'] = Variable<bool>(enabled);
     map['account_id'] = Variable<int>(accountId);
@@ -887,7 +904,8 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
       map['id'] = Variable<int>(id.value);
     }
     if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+      map['modified_at'] = Variable<DateTime>(
+          $CalendarsTable.$convertermodifiedAt.toSql(modifiedAt.value));
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -931,19 +949,21 @@ class $ActivitiesTable extends Activities
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
-  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
-      'modified_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
+      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($ActivitiesTable.$convertermodifiedAt);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> createdAt =
+      GeneratedColumn<DateTime>('created_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($ActivitiesTable.$convertercreatedAt);
   static const VerificationMeta _draftMeta = const VerificationMeta('draft');
   @override
   late final GeneratedColumn<bool> draft = GeneratedColumn<bool>(
@@ -1003,16 +1023,8 @@ class $ActivitiesTable extends Activities
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    if (data.containsKey('modified_at')) {
-      context.handle(
-          _modifiedAtMeta,
-          modifiedAt.isAcceptableOrUnknown(
-              data['modified_at']!, _modifiedAtMeta));
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
-    }
+    context.handle(_modifiedAtMeta, const VerificationResult.success());
+    context.handle(_createdAtMeta, const VerificationResult.success());
     if (data.containsKey('draft')) {
       context.handle(
           _draftMeta, draft.isAcceptableOrUnknown(data['draft']!, _draftMeta));
@@ -1038,10 +1050,12 @@ class $ActivitiesTable extends Activities
     return ActivityRow(
       id: $ActivitiesTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      modifiedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      modifiedAt: $ActivitiesTable.$convertermodifiedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
+      createdAt: $ActivitiesTable.$convertercreatedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!),
       draft: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}draft'])!,
       name: attachedDatabase.typeMapping
@@ -1066,6 +1080,10 @@ class $ActivitiesTable extends Activities
   }
 
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
+  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $convertercreatedAt =
+      const LocalDateTimeConverter();
   static TypeConverter<Path, String> $converterpath = const PathConverter();
   static TypeConverter<Order, double> $converterorder = const OrderConverter();
   static TypeConverter<Duration, int> $converterpomodoro =
@@ -1100,8 +1118,14 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     {
       map['id'] = Variable<Uint8List>($ActivitiesTable.$converterid.toSql(id));
     }
-    map['modified_at'] = Variable<DateTime>(modifiedAt);
-    map['created_at'] = Variable<DateTime>(createdAt);
+    {
+      map['modified_at'] = Variable<DateTime>(
+          $ActivitiesTable.$convertermodifiedAt.toSql(modifiedAt));
+    }
+    {
+      map['created_at'] = Variable<DateTime>(
+          $ActivitiesTable.$convertercreatedAt.toSql(createdAt));
+    }
     map['draft'] = Variable<bool>(draft);
     map['name'] = Variable<String>(name);
     {
@@ -1333,10 +1357,12 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
           Variable<Uint8List>($ActivitiesTable.$converterid.toSql(id.value));
     }
     if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+      map['modified_at'] = Variable<DateTime>(
+          $ActivitiesTable.$convertermodifiedAt.toSql(modifiedAt.value));
     }
     if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
+      map['created_at'] = Variable<DateTime>(
+          $ActivitiesTable.$convertercreatedAt.toSql(createdAt.value));
     }
     if (draft.present) {
       map['draft'] = Variable<bool>(draft.value);
@@ -1400,19 +1426,21 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
-  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
-      'modified_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
+      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($NotesTable.$convertermodifiedAt);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> createdAt =
+      GeneratedColumn<DateTime>('created_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($NotesTable.$convertercreatedAt);
   static const VerificationMeta _draftMeta = const VerificationMeta('draft');
   @override
   late final GeneratedColumn<bool> draft = GeneratedColumn<bool>(
@@ -1446,11 +1474,12 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
   static const VerificationMeta _orderedAtMeta =
       const VerificationMeta('orderedAt');
   @override
-  late final GeneratedColumn<DateTime> orderedAt = GeneratedColumn<DateTime>(
-      'ordered_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> orderedAt =
+      GeneratedColumn<DateTime>('ordered_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($NotesTable.$converterorderedAt);
   static const VerificationMeta _rootMeta = const VerificationMeta('root');
   @override
   late final GeneratedColumn<bool> root = GeneratedColumn<bool>(
@@ -1498,14 +1527,16 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
           .withConverter<Uuid?>($NotesTable.$converteractivityIdn);
   static const VerificationMeta _doAtMeta = const VerificationMeta('doAt');
   @override
-  late final GeneratedColumn<DateTime> doAt = GeneratedColumn<DateTime>(
-      'do_at', aliasedName, true,
-      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> doAt =
+      GeneratedColumn<DateTime>('do_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($NotesTable.$converterdoAtn);
   static const VerificationMeta _doneAtMeta = const VerificationMeta('doneAt');
   @override
-  late final GeneratedColumn<DateTime> doneAt = GeneratedColumn<DateTime>(
-      'done_at', aliasedName, true,
-      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> doneAt =
+      GeneratedColumn<DateTime>('done_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($NotesTable.$converterdoneAtn);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -1535,16 +1566,8 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    if (data.containsKey('modified_at')) {
-      context.handle(
-          _modifiedAtMeta,
-          modifiedAt.isAcceptableOrUnknown(
-              data['modified_at']!, _modifiedAtMeta));
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
-    }
+    context.handle(_modifiedAtMeta, const VerificationResult.success());
+    context.handle(_createdAtMeta, const VerificationResult.success());
     if (data.containsKey('draft')) {
       context.handle(
           _draftMeta, draft.isAcceptableOrUnknown(data['draft']!, _draftMeta));
@@ -1557,10 +1580,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       context.missing(_bodyMeta);
     }
     context.handle(_orderMeta, const VerificationResult.success());
-    if (data.containsKey('ordered_at')) {
-      context.handle(_orderedAtMeta,
-          orderedAt.isAcceptableOrUnknown(data['ordered_at']!, _orderedAtMeta));
-    }
+    context.handle(_orderedAtMeta, const VerificationResult.success());
     if (data.containsKey('root')) {
       context.handle(
           _rootMeta, root.isAcceptableOrUnknown(data['root']!, _rootMeta));
@@ -1575,14 +1595,8 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     }
     context.handle(_topicIdMeta, const VerificationResult.success());
     context.handle(_activityIdMeta, const VerificationResult.success());
-    if (data.containsKey('do_at')) {
-      context.handle(
-          _doAtMeta, doAt.isAcceptableOrUnknown(data['do_at']!, _doAtMeta));
-    }
-    if (data.containsKey('done_at')) {
-      context.handle(_doneAtMeta,
-          doneAt.isAcceptableOrUnknown(data['done_at']!, _doneAtMeta));
-    }
+    context.handle(_doAtMeta, const VerificationResult.success());
+    context.handle(_doneAtMeta, const VerificationResult.success());
     return context;
   }
 
@@ -1594,10 +1608,12 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     return NoteRow(
       id: $NotesTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      modifiedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      modifiedAt: $NotesTable.$convertermodifiedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
+      createdAt: $NotesTable.$convertercreatedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!),
       draft: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}draft'])!,
       userId: $NotesTable.$converteruserId.fromSql(attachedDatabase.typeMapping
@@ -1606,8 +1622,9 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
           .read(DriftSqlType.string, data['${effectivePrefix}body'])!,
       order: $NotesTable.$converterorder.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.double, data['${effectivePrefix}order'])!),
-      orderedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}ordered_at'])!,
+      orderedAt: $NotesTable.$converterorderedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}ordered_at'])!),
       root: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}root'])!,
       pinned: attachedDatabase.typeMapping
@@ -1620,10 +1637,10 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       activityId: $NotesTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
-      doAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}do_at']),
-      doneAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}done_at']),
+      doAt: $NotesTable.$converterdoAtn.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}do_at'])),
+      doneAt: $NotesTable.$converterdoneAtn.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}done_at'])),
     );
   }
 
@@ -1633,15 +1650,29 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
   }
 
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
+  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $convertercreatedAt =
+      const LocalDateTimeConverter();
   static TypeConverter<Uuid, Uint8List> $converteruserId =
       const UuidConverter();
   static TypeConverter<Order, double> $converterorder = const OrderConverter();
+  static TypeConverter<DateTime, DateTime> $converterorderedAt =
+      const LocalDateTimeConverter();
   static TypeConverter<Uuid, Uint8List> $convertertopicId =
       const UuidConverter();
   static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
   static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
       NullAwareTypeConverter.wrap($converteractivityId);
+  static TypeConverter<DateTime, DateTime> $converterdoAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterdoAtn =
+      NullAwareTypeConverter.wrap($converterdoAt);
+  static TypeConverter<DateTime, DateTime> $converterdoneAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterdoneAtn =
+      NullAwareTypeConverter.wrap($converterdoneAt);
 }
 
 class NoteRow extends DataClass implements Insertable<NoteRow> {
@@ -1682,8 +1713,14 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     {
       map['id'] = Variable<Uint8List>($NotesTable.$converterid.toSql(id));
     }
-    map['modified_at'] = Variable<DateTime>(modifiedAt);
-    map['created_at'] = Variable<DateTime>(createdAt);
+    {
+      map['modified_at'] = Variable<DateTime>(
+          $NotesTable.$convertermodifiedAt.toSql(modifiedAt));
+    }
+    {
+      map['created_at'] =
+          Variable<DateTime>($NotesTable.$convertercreatedAt.toSql(createdAt));
+    }
     map['draft'] = Variable<bool>(draft);
     {
       map['user_id'] =
@@ -1693,7 +1730,10 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     {
       map['order'] = Variable<double>($NotesTable.$converterorder.toSql(order));
     }
-    map['ordered_at'] = Variable<DateTime>(orderedAt);
+    {
+      map['ordered_at'] =
+          Variable<DateTime>($NotesTable.$converterorderedAt.toSql(orderedAt));
+    }
     map['root'] = Variable<bool>(root);
     map['pinned'] = Variable<bool>(pinned);
     map['private'] = Variable<bool>(private);
@@ -1706,10 +1746,12 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           $NotesTable.$converteractivityIdn.toSql(activityId));
     }
     if (!nullToAbsent || doAt != null) {
-      map['do_at'] = Variable<DateTime>(doAt);
+      map['do_at'] =
+          Variable<DateTime>($NotesTable.$converterdoAtn.toSql(doAt));
     }
     if (!nullToAbsent || doneAt != null) {
-      map['done_at'] = Variable<DateTime>(doneAt);
+      map['done_at'] =
+          Variable<DateTime>($NotesTable.$converterdoneAtn.toSql(doneAt));
     }
     return map;
   }
@@ -2031,10 +2073,12 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       map['id'] = Variable<Uint8List>($NotesTable.$converterid.toSql(id.value));
     }
     if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+      map['modified_at'] = Variable<DateTime>(
+          $NotesTable.$convertermodifiedAt.toSql(modifiedAt.value));
     }
     if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
+      map['created_at'] = Variable<DateTime>(
+          $NotesTable.$convertercreatedAt.toSql(createdAt.value));
     }
     if (draft.present) {
       map['draft'] = Variable<bool>(draft.value);
@@ -2051,7 +2095,8 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
           Variable<double>($NotesTable.$converterorder.toSql(order.value));
     }
     if (orderedAt.present) {
-      map['ordered_at'] = Variable<DateTime>(orderedAt.value);
+      map['ordered_at'] = Variable<DateTime>(
+          $NotesTable.$converterorderedAt.toSql(orderedAt.value));
     }
     if (root.present) {
       map['root'] = Variable<bool>(root.value);
@@ -2071,10 +2116,12 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
           $NotesTable.$converteractivityIdn.toSql(activityId.value));
     }
     if (doAt.present) {
-      map['do_at'] = Variable<DateTime>(doAt.value);
+      map['do_at'] =
+          Variable<DateTime>($NotesTable.$converterdoAtn.toSql(doAt.value));
     }
     if (doneAt.present) {
-      map['done_at'] = Variable<DateTime>(doneAt.value);
+      map['done_at'] =
+          Variable<DateTime>($NotesTable.$converterdoneAtn.toSql(doneAt.value));
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -2122,19 +2169,21 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
-  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
-      'modified_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
+      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($EventsTable.$convertermodifiedAt);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> createdAt =
+      GeneratedColumn<DateTime>('created_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($EventsTable.$convertercreatedAt);
   static const VerificationMeta _draftMeta = const VerificationMeta('draft');
   @override
   late final GeneratedColumn<bool> draft = GeneratedColumn<bool>(
@@ -2151,14 +2200,16 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _startMeta = const VerificationMeta('start');
   @override
-  late final GeneratedColumn<DateTime> start = GeneratedColumn<DateTime>(
-      'start', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> start =
+      GeneratedColumn<DateTime>('start', aliasedName, false,
+              type: DriftSqlType.dateTime, requiredDuringInsert: true)
+          .withConverter<DateTime>($EventsTable.$converterstart);
   static const VerificationMeta _endMeta = const VerificationMeta('end');
   @override
-  late final GeneratedColumn<DateTime> end = GeneratedColumn<DateTime>(
-      'end', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> end =
+      GeneratedColumn<DateTime>('end', aliasedName, false,
+              type: DriftSqlType.dateTime, requiredDuringInsert: true)
+          .withConverter<DateTime>($EventsTable.$converterend);
   static const VerificationMeta _seriesMeta = const VerificationMeta('series');
   @override
   late final GeneratedColumn<String> series = GeneratedColumn<String>(
@@ -2248,16 +2299,8 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    if (data.containsKey('modified_at')) {
-      context.handle(
-          _modifiedAtMeta,
-          modifiedAt.isAcceptableOrUnknown(
-              data['modified_at']!, _modifiedAtMeta));
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
-    }
+    context.handle(_modifiedAtMeta, const VerificationResult.success());
+    context.handle(_createdAtMeta, const VerificationResult.success());
     if (data.containsKey('draft')) {
       context.handle(
           _draftMeta, draft.isAcceptableOrUnknown(data['draft']!, _draftMeta));
@@ -2266,18 +2309,8 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       context.handle(
           _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
     }
-    if (data.containsKey('start')) {
-      context.handle(
-          _startMeta, start.isAcceptableOrUnknown(data['start']!, _startMeta));
-    } else if (isInserting) {
-      context.missing(_startMeta);
-    }
-    if (data.containsKey('end')) {
-      context.handle(
-          _endMeta, end.isAcceptableOrUnknown(data['end']!, _endMeta));
-    } else if (isInserting) {
-      context.missing(_endMeta);
-    }
+    context.handle(_startMeta, const VerificationResult.success());
+    context.handle(_endMeta, const VerificationResult.success());
     if (data.containsKey('series')) {
       context.handle(_seriesMeta,
           series.isAcceptableOrUnknown(data['series']!, _seriesMeta));
@@ -2304,18 +2337,20 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
     return EventRow(
       id: $EventsTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      modifiedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      modifiedAt: $EventsTable.$convertermodifiedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
+      createdAt: $EventsTable.$convertercreatedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!),
       draft: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}draft'])!,
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name']),
-      start: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}start'])!,
-      end: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}end'])!,
+      start: $EventsTable.$converterstart.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}start'])!),
+      end: $EventsTable.$converterend.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}end'])!),
       series: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}series']),
       response: $EventsTable.$converterresponse.fromSql(attachedDatabase
@@ -2343,6 +2378,14 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
   }
 
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
+  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $convertercreatedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $converterstart =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $converterend =
+      const LocalDateTimeConverter();
   static JsonTypeConverter2<EventResponse, String, String> $converterresponse =
       const EnumNameConverter<EventResponse>(EventResponse.values);
   static JsonTypeConverter2<EventStatus, String, String> $converterstatus =
@@ -2395,14 +2438,25 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     {
       map['id'] = Variable<Uint8List>($EventsTable.$converterid.toSql(id));
     }
-    map['modified_at'] = Variable<DateTime>(modifiedAt);
-    map['created_at'] = Variable<DateTime>(createdAt);
+    {
+      map['modified_at'] = Variable<DateTime>(
+          $EventsTable.$convertermodifiedAt.toSql(modifiedAt));
+    }
+    {
+      map['created_at'] =
+          Variable<DateTime>($EventsTable.$convertercreatedAt.toSql(createdAt));
+    }
     map['draft'] = Variable<bool>(draft);
     if (!nullToAbsent || name != null) {
       map['name'] = Variable<String>(name);
     }
-    map['start'] = Variable<DateTime>(start);
-    map['end'] = Variable<DateTime>(end);
+    {
+      map['start'] =
+          Variable<DateTime>($EventsTable.$converterstart.toSql(start));
+    }
+    {
+      map['end'] = Variable<DateTime>($EventsTable.$converterend.toSql(end));
+    }
     if (!nullToAbsent || series != null) {
       map['series'] = Variable<String>(series);
     }
@@ -2745,10 +2799,12 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
           Variable<Uint8List>($EventsTable.$converterid.toSql(id.value));
     }
     if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+      map['modified_at'] = Variable<DateTime>(
+          $EventsTable.$convertermodifiedAt.toSql(modifiedAt.value));
     }
     if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
+      map['created_at'] = Variable<DateTime>(
+          $EventsTable.$convertercreatedAt.toSql(createdAt.value));
     }
     if (draft.present) {
       map['draft'] = Variable<bool>(draft.value);
@@ -2757,10 +2813,12 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       map['name'] = Variable<String>(name.value);
     }
     if (start.present) {
-      map['start'] = Variable<DateTime>(start.value);
+      map['start'] =
+          Variable<DateTime>($EventsTable.$converterstart.toSql(start.value));
     }
     if (end.present) {
-      map['end'] = Variable<DateTime>(end.value);
+      map['end'] =
+          Variable<DateTime>($EventsTable.$converterend.toSql(end.value));
     }
     if (series.present) {
       map['series'] = Variable<String>(series.value);
@@ -2834,11 +2892,12 @@ class $SessionsTable extends Sessions
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
-  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
-      'modified_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
+      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($SessionsTable.$convertermodifiedAt);
   static const VerificationMeta _activityIdMeta =
       const VerificationMeta('activityId');
   @override
@@ -2851,14 +2910,16 @@ class $SessionsTable extends Sessions
           .withConverter<Uuid?>($SessionsTable.$converteractivityIdn);
   static const VerificationMeta _startMeta = const VerificationMeta('start');
   @override
-  late final GeneratedColumn<DateTime> start = GeneratedColumn<DateTime>(
-      'start', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> start =
+      GeneratedColumn<DateTime>('start', aliasedName, false,
+              type: DriftSqlType.dateTime, requiredDuringInsert: true)
+          .withConverter<DateTime>($SessionsTable.$converterstart);
   static const VerificationMeta _endMeta = const VerificationMeta('end');
   @override
-  late final GeneratedColumn<DateTime> end = GeneratedColumn<DateTime>(
-      'end', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> end =
+      GeneratedColumn<DateTime>('end', aliasedName, false,
+              type: DriftSqlType.dateTime, requiredDuringInsert: true)
+          .withConverter<DateTime>($SessionsTable.$converterend);
   static const VerificationMeta _priorityMeta =
       const VerificationMeta('priority');
   @override
@@ -2877,9 +2938,10 @@ class $SessionsTable extends Sessions
   static const VerificationMeta _pomodoroAtMeta =
       const VerificationMeta('pomodoroAt');
   @override
-  late final GeneratedColumn<DateTime> pomodoroAt = GeneratedColumn<DateTime>(
-      'pomodoro_at', aliasedName, true,
-      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> pomodoroAt =
+      GeneratedColumn<DateTime>('pomodoro_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($SessionsTable.$converterpomodoroAtn);
   @override
   List<GeneratedColumn> get $columns =>
       [id, modifiedAt, activityId, start, end, priority, pomodoro, pomodoroAt];
@@ -2894,36 +2956,16 @@ class $SessionsTable extends Sessions
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    if (data.containsKey('modified_at')) {
-      context.handle(
-          _modifiedAtMeta,
-          modifiedAt.isAcceptableOrUnknown(
-              data['modified_at']!, _modifiedAtMeta));
-    }
+    context.handle(_modifiedAtMeta, const VerificationResult.success());
     context.handle(_activityIdMeta, const VerificationResult.success());
-    if (data.containsKey('start')) {
-      context.handle(
-          _startMeta, start.isAcceptableOrUnknown(data['start']!, _startMeta));
-    } else if (isInserting) {
-      context.missing(_startMeta);
-    }
-    if (data.containsKey('end')) {
-      context.handle(
-          _endMeta, end.isAcceptableOrUnknown(data['end']!, _endMeta));
-    } else if (isInserting) {
-      context.missing(_endMeta);
-    }
+    context.handle(_startMeta, const VerificationResult.success());
+    context.handle(_endMeta, const VerificationResult.success());
     if (data.containsKey('priority')) {
       context.handle(_priorityMeta,
           priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta));
     }
     context.handle(_pomodoroMeta, const VerificationResult.success());
-    if (data.containsKey('pomodoro_at')) {
-      context.handle(
-          _pomodoroAtMeta,
-          pomodoroAt.isAcceptableOrUnknown(
-              data['pomodoro_at']!, _pomodoroAtMeta));
-    }
+    context.handle(_pomodoroAtMeta, const VerificationResult.success());
     return context;
   }
 
@@ -2935,22 +2977,24 @@ class $SessionsTable extends Sessions
     return SessionRow(
       id: $SessionsTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      modifiedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
+      modifiedAt: $SessionsTable.$convertermodifiedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
       activityId: $SessionsTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
-      start: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}start'])!,
-      end: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}end'])!,
+      start: $SessionsTable.$converterstart.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}start'])!),
+      end: $SessionsTable.$converterend.fromSql(attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}end'])!),
       priority: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}priority'])!,
       pomodoro: $SessionsTable.$converterpomodoron.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}pomodoro'])),
-      pomodoroAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}pomodoro_at']),
+      pomodoroAt: $SessionsTable.$converterpomodoroAtn.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}pomodoro_at'])),
     );
   }
 
@@ -2960,14 +3004,24 @@ class $SessionsTable extends Sessions
   }
 
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
+  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+      const LocalDateTimeConverter();
   static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
   static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
       NullAwareTypeConverter.wrap($converteractivityId);
+  static TypeConverter<DateTime, DateTime> $converterstart =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $converterend =
+      const LocalDateTimeConverter();
   static TypeConverter<Duration, int> $converterpomodoro =
       const DurationConverter();
   static TypeConverter<Duration?, int?> $converterpomodoron =
       NullAwareTypeConverter.wrap($converterpomodoro);
+  static TypeConverter<DateTime, DateTime> $converterpomodoroAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterpomodoroAtn =
+      NullAwareTypeConverter.wrap($converterpomodoroAt);
 }
 
 class SessionRow extends DataClass implements Insertable<SessionRow> {
@@ -2994,20 +3048,29 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     {
       map['id'] = Variable<Uint8List>($SessionsTable.$converterid.toSql(id));
     }
-    map['modified_at'] = Variable<DateTime>(modifiedAt);
+    {
+      map['modified_at'] = Variable<DateTime>(
+          $SessionsTable.$convertermodifiedAt.toSql(modifiedAt));
+    }
     if (!nullToAbsent || activityId != null) {
       map['activity_id'] = Variable<Uint8List>(
           $SessionsTable.$converteractivityIdn.toSql(activityId));
     }
-    map['start'] = Variable<DateTime>(start);
-    map['end'] = Variable<DateTime>(end);
+    {
+      map['start'] =
+          Variable<DateTime>($SessionsTable.$converterstart.toSql(start));
+    }
+    {
+      map['end'] = Variable<DateTime>($SessionsTable.$converterend.toSql(end));
+    }
     map['priority'] = Variable<int>(priority);
     if (!nullToAbsent || pomodoro != null) {
       map['pomodoro'] =
           Variable<int>($SessionsTable.$converterpomodoron.toSql(pomodoro));
     }
     if (!nullToAbsent || pomodoroAt != null) {
-      map['pomodoro_at'] = Variable<DateTime>(pomodoroAt);
+      map['pomodoro_at'] = Variable<DateTime>(
+          $SessionsTable.$converterpomodoroAtn.toSql(pomodoroAt));
     }
     return map;
   }
@@ -3215,17 +3278,20 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
           Variable<Uint8List>($SessionsTable.$converterid.toSql(id.value));
     }
     if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+      map['modified_at'] = Variable<DateTime>(
+          $SessionsTable.$convertermodifiedAt.toSql(modifiedAt.value));
     }
     if (activityId.present) {
       map['activity_id'] = Variable<Uint8List>(
           $SessionsTable.$converteractivityIdn.toSql(activityId.value));
     }
     if (start.present) {
-      map['start'] = Variable<DateTime>(start.value);
+      map['start'] =
+          Variable<DateTime>($SessionsTable.$converterstart.toSql(start.value));
     }
     if (end.present) {
-      map['end'] = Variable<DateTime>(end.value);
+      map['end'] =
+          Variable<DateTime>($SessionsTable.$converterend.toSql(end.value));
     }
     if (priority.present) {
       map['priority'] = Variable<int>(priority.value);
@@ -3235,7 +3301,8 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
           $SessionsTable.$converterpomodoron.toSql(pomodoro.value));
     }
     if (pomodoroAt.present) {
-      map['pomodoro_at'] = Variable<DateTime>(pomodoroAt.value);
+      map['pomodoro_at'] = Variable<DateTime>(
+          $SessionsTable.$converterpomodoroAtn.toSql(pomodoroAt.value));
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -3269,11 +3336,12 @@ class $BalancesTable extends Balances
   static const VerificationMeta _modifiedAtMeta =
       const VerificationMeta('modifiedAt');
   @override
-  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
-      'modified_at', aliasedName, false,
-      type: DriftSqlType.dateTime,
-      requiredDuringInsert: false,
-      defaultValue: currentDateAndTime);
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
+      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+              type: DriftSqlType.dateTime,
+              requiredDuringInsert: false,
+              defaultValue: currentDateAndTime)
+          .withConverter<DateTime>($BalancesTable.$convertermodifiedAt);
   static const VerificationMeta _activityIdMeta =
       const VerificationMeta('activityId');
   @override
@@ -3324,12 +3392,7 @@ class $BalancesTable extends Balances
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    if (data.containsKey('modified_at')) {
-      context.handle(
-          _modifiedAtMeta,
-          modifiedAt.isAcceptableOrUnknown(
-              data['modified_at']!, _modifiedAtMeta));
-    }
+    context.handle(_modifiedAtMeta, const VerificationResult.success());
     context.handle(_activityIdMeta, const VerificationResult.success());
     context.handle(_dayMeta, const VerificationResult.success());
     context.handle(_typeMeta, const VerificationResult.success());
@@ -3347,8 +3410,9 @@ class $BalancesTable extends Balances
   BalanceRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return BalanceRow(
-      modifiedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!,
+      modifiedAt: $BalancesTable.$convertermodifiedAt.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
       activityId: $BalancesTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
@@ -3368,6 +3432,8 @@ class $BalancesTable extends Balances
     return $BalancesTable(attachedDatabase, alias);
   }
 
+  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+      const LocalDateTimeConverter();
   static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
   static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
@@ -3396,7 +3462,10 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['modified_at'] = Variable<DateTime>(modifiedAt);
+    {
+      map['modified_at'] = Variable<DateTime>(
+          $BalancesTable.$convertermodifiedAt.toSql(modifiedAt));
+    }
     if (!nullToAbsent || activityId != null) {
       map['activity_id'] = Variable<Uint8List>(
           $BalancesTable.$converteractivityIdn.toSql(activityId));
@@ -3580,7 +3649,8 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+      map['modified_at'] = Variable<DateTime>(
+          $BalancesTable.$convertermodifiedAt.toSql(modifiedAt.value));
     }
     if (activityId.present) {
       map['activity_id'] = Variable<Uint8List>(
@@ -3683,11 +3753,15 @@ class $$SyncStatesTableFilterComposer
   ColumnFilters<String> get entity => $composableBuilder(
       column: $table.entity, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get pushedAt => $composableBuilder(
-      column: $table.pushedAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime> get pushedAt =>
+      $composableBuilder(
+          column: $table.pushedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get pulledAt => $composableBuilder(
-      column: $table.pulledAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime> get pulledAt =>
+      $composableBuilder(
+          column: $table.pulledAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<String> get from => $composableBuilder(
       column: $table.from, builder: (column) => ColumnFilters(column));
@@ -3739,10 +3813,10 @@ class $$SyncStatesTableAnnotationComposer
   GeneratedColumn<String> get entity =>
       $composableBuilder(column: $table.entity, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get pushedAt =>
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get pushedAt =>
       $composableBuilder(column: $table.pushedAt, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get pulledAt =>
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get pulledAt =>
       $composableBuilder(column: $table.pulledAt, builder: (column) => column);
 
   GeneratedColumn<String> get from =>
@@ -3876,8 +3950,10 @@ class $$AccountsTableFilterComposer extends Composer<_$Store, $AccountsTable> {
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<String> get email => $composableBuilder(
       column: $table.email, builder: (column) => ColumnFilters(column));
@@ -3943,8 +4019,9 @@ class $$AccountsTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt, builder: (column) => column);
 
   GeneratedColumn<String> get email =>
       $composableBuilder(column: $table.email, builder: (column) => column);
@@ -4107,8 +4184,10 @@ class $$CalendarsTableFilterComposer
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<String> get name => $composableBuilder(
       column: $table.name, builder: (column) => ColumnFilters(column));
@@ -4191,8 +4270,9 @@ class $$CalendarsTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt, builder: (column) => column);
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
@@ -4431,11 +4511,15 @@ class $$ActivitiesTableFilterComposer
           column: $table.id,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get createdAt =>
+      $composableBuilder(
+          column: $table.createdAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<bool> get draft => $composableBuilder(
       column: $table.draft, builder: (column) => ColumnFilters(column));
@@ -4597,10 +4681,11 @@ class $$ActivitiesTableAnnotationComposer
   GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get createdAt =>
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
   GeneratedColumn<bool> get draft =>
@@ -4941,11 +5026,15 @@ class $$NotesTableFilterComposer extends Composer<_$Store, $NotesTable> {
           column: $table.id,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get createdAt =>
+      $composableBuilder(
+          column: $table.createdAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<bool> get draft => $composableBuilder(
       column: $table.draft, builder: (column) => ColumnFilters(column));
@@ -4963,8 +5052,10 @@ class $$NotesTableFilterComposer extends Composer<_$Store, $NotesTable> {
           column: $table.order,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get orderedAt => $composableBuilder(
-      column: $table.orderedAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get orderedAt =>
+      $composableBuilder(
+          column: $table.orderedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<bool> get root => $composableBuilder(
       column: $table.root, builder: (column) => ColumnFilters(column));
@@ -4980,11 +5071,15 @@ class $$NotesTableFilterComposer extends Composer<_$Store, $NotesTable> {
           column: $table.topicId,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get doAt => $composableBuilder(
-      column: $table.doAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime> get doAt =>
+      $composableBuilder(
+          column: $table.doAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get doneAt => $composableBuilder(
-      column: $table.doneAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime> get doneAt =>
+      $composableBuilder(
+          column: $table.doneAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   $$ActivitiesTableFilterComposer get activityId {
     final $$ActivitiesTableFilterComposer composer = $composerBuilder(
@@ -5089,10 +5184,11 @@ class $$NotesTableAnnotationComposer extends Composer<_$Store, $NotesTable> {
   GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get createdAt =>
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
   GeneratedColumn<bool> get draft =>
@@ -5107,7 +5203,7 @@ class $$NotesTableAnnotationComposer extends Composer<_$Store, $NotesTable> {
   GeneratedColumnWithTypeConverter<Order, double> get order =>
       $composableBuilder(column: $table.order, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get orderedAt =>
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get orderedAt =>
       $composableBuilder(column: $table.orderedAt, builder: (column) => column);
 
   GeneratedColumn<bool> get root =>
@@ -5122,10 +5218,10 @@ class $$NotesTableAnnotationComposer extends Composer<_$Store, $NotesTable> {
   GeneratedColumnWithTypeConverter<Uuid, Uint8List> get topicId =>
       $composableBuilder(column: $table.topicId, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get doAt =>
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get doAt =>
       $composableBuilder(column: $table.doAt, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get doneAt =>
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get doneAt =>
       $composableBuilder(column: $table.doneAt, builder: (column) => column);
 
   $$ActivitiesTableAnnotationComposer get activityId {
@@ -5364,11 +5460,15 @@ class $$EventsTableFilterComposer extends Composer<_$Store, $EventsTable> {
           column: $table.id,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get createdAt =>
+      $composableBuilder(
+          column: $table.createdAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<bool> get draft => $composableBuilder(
       column: $table.draft, builder: (column) => ColumnFilters(column));
@@ -5376,11 +5476,15 @@ class $$EventsTableFilterComposer extends Composer<_$Store, $EventsTable> {
   ColumnFilters<String> get name => $composableBuilder(
       column: $table.name, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get start => $composableBuilder(
-      column: $table.start, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get start =>
+      $composableBuilder(
+          column: $table.start,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get end => $composableBuilder(
-      column: $table.end, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get end =>
+      $composableBuilder(
+          column: $table.end,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<String> get series => $composableBuilder(
       column: $table.series, builder: (column) => ColumnFilters(column));
@@ -5511,10 +5615,11 @@ class $$EventsTableAnnotationComposer extends Composer<_$Store, $EventsTable> {
   GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get createdAt =>
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
   GeneratedColumn<bool> get draft =>
@@ -5523,10 +5628,10 @@ class $$EventsTableAnnotationComposer extends Composer<_$Store, $EventsTable> {
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get start =>
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get start =>
       $composableBuilder(column: $table.start, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get end =>
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get end =>
       $composableBuilder(column: $table.end, builder: (column) => column);
 
   GeneratedColumn<String> get series =>
@@ -5769,14 +5874,20 @@ class $$SessionsTableFilterComposer extends Composer<_$Store, $SessionsTable> {
           column: $table.id,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get start => $composableBuilder(
-      column: $table.start, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get start =>
+      $composableBuilder(
+          column: $table.start,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get end => $composableBuilder(
-      column: $table.end, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get end =>
+      $composableBuilder(
+          column: $table.end,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<int> get priority => $composableBuilder(
       column: $table.priority, builder: (column) => ColumnFilters(column));
@@ -5786,8 +5897,10 @@ class $$SessionsTableFilterComposer extends Composer<_$Store, $SessionsTable> {
           column: $table.pomodoro,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnFilters<DateTime> get pomodoroAt => $composableBuilder(
-      column: $table.pomodoroAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime>
+      get pomodoroAt => $composableBuilder(
+          column: $table.pomodoroAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   $$ActivitiesTableFilterComposer get activityId {
     final $$ActivitiesTableFilterComposer composer = $composerBuilder(
@@ -5873,13 +5986,14 @@ class $$SessionsTableAnnotationComposer
   GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get start =>
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get start =>
       $composableBuilder(column: $table.start, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get end =>
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get end =>
       $composableBuilder(column: $table.end, builder: (column) => column);
 
   GeneratedColumn<int> get priority =>
@@ -5888,8 +6002,9 @@ class $$SessionsTableAnnotationComposer
   GeneratedColumnWithTypeConverter<Duration?, int> get pomodoro =>
       $composableBuilder(column: $table.pomodoro, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get pomodoroAt => $composableBuilder(
-      column: $table.pomodoroAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get pomodoroAt =>
+      $composableBuilder(
+          column: $table.pomodoroAt, builder: (column) => column);
 
   $$ActivitiesTableAnnotationComposer get activityId {
     final $$ActivitiesTableAnnotationComposer composer = $composerBuilder(
@@ -6078,8 +6193,10 @@ class $$BalancesTableFilterComposer extends Composer<_$Store, $BalancesTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<Date, Date, String> get day =>
       $composableBuilder(
@@ -6174,8 +6291,9 @@ class $$BalancesTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
+      $composableBuilder(
+          column: $table.modifiedAt, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<Date, String> get day =>
       $composableBuilder(column: $table.day, builder: (column) => column);

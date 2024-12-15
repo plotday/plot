@@ -118,6 +118,20 @@ class ThemeColorConverter extends TypeConverter<ThemeColor, int> {
   }
 }
 
+class LocalDateTimeConverter extends TypeConverter<DateTime, DateTime> {
+  const LocalDateTimeConverter();
+
+  @override
+  DateTime fromSql(DateTime fromDb) {
+    return fromDb.toLocal();
+  }
+
+  @override
+  DateTime toSql(DateTime value) {
+    return value.toUtc();
+  }
+}
+
 class DateConverter extends TypeConverter<Date, String> {
   const DateConverter();
 

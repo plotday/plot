@@ -16,18 +16,12 @@ class Date extends Equatable {
 
   static Stream<Date> current() async* {
     while (true) {
-      // Calculate the Duration till the start of the next day.
-      DateTime now = DateTime.now();
-      Date current = now.toLocal().toDate();
+      DateTime now = DateTime.now().toLocal();
+      yield now.toDate();
 
-      // Yield the current date immediately upon subscription
-      yield current;
-
-      // Calculate time until the start of the next day for the initial delay
-      DateTime tomorrow = DateTime(now.year, now.month, now.day + 1);
+      // Wait until the start of the next day
+      DateTime tomorrow = now.nextDay.startOfDay;
       Duration untilMidnight = tomorrow.difference(now);
-
-      // After initially yielding, wait until midnight, then start daily timer
       await Future<void>.delayed(untilMidnight);
     }
   }
@@ -413,8 +407,7 @@ extension PlotDateTimeExtension on DateTime {
   }
 
   Date toDate() => Date(year, month, day);
-  TimeOfDay toTimeOfDay() =>
-      TimeOfDay(hour: toLocal().hour, minute: toLocal().minute);
+  TimeOfDay toTimeOfDay() => TimeOfDay(hour: hour, minute: minute);
   DateTime at(TimeOfDay time) =>
       DateTime(year, month, day, time.hour, time.minute);
 
