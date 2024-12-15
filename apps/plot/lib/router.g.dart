@@ -30,6 +30,10 @@ RouteBase get $_AdaptiveRoutes => ShellRouteData.$route(
               factory: $HomeRouteExtension._fromState,
             ),
             GoRouteData.$route(
+              path: '/schedule/new',
+              factory: $NewEventRouteExtension._fromState,
+            ),
+            GoRouteData.$route(
               path: '/schedule/:eventIdString',
               factory: $EventRouteExtension._fromState,
             ),
@@ -106,6 +110,30 @@ extension $HomeRouteExtension on HomeRoute {
         '/',
         queryParams: {
           if (d != null) 'd': d,
+        },
+      );
+
+  void go(BuildContext context) => context.go(location);
+
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  void replace(BuildContext context) => context.replace(location);
+}
+
+extension $NewEventRouteExtension on NewEventRoute {
+  static NewEventRoute _fromState(GoRouterState state) => NewEventRoute(
+        name: state.uri.queryParameters['name'],
+        at: state.uri.queryParameters['at'],
+      );
+
+  String get location => GoRouteData.$location(
+        '/schedule/new',
+        queryParams: {
+          if (name != null) 'name': name,
+          if (at != null) 'at': at,
         },
       );
 
@@ -231,6 +259,10 @@ RouteBase get $_SingleRoutes => ShellRouteData.$route(
                   path: '/',
                   factory: $HomeRouteExtension._fromState,
                   routes: [
+                    GoRouteData.$route(
+                      path: '/schedule/new',
+                      factory: $NewEventRouteExtension._fromState,
+                    ),
                     GoRouteData.$route(
                       path: '/schedule/:eventIdString',
                       factory: $EventRouteExtension._fromState,

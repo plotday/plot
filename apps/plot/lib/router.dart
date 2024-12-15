@@ -102,6 +102,43 @@ class HomeRoute extends Route {
 }
 
 @immutable
+class NewEventRoute extends Route {
+  static const path = '/schedule/new';
+
+  NewEventRoute({
+    this.name,
+    this.at,
+  }) : _at = at == null ? null : DateTimeRange.fromString(at);
+
+  NewEventRoute.at(
+    this._at, {
+    this.name,
+  }) : at = _at?.toDb();
+
+  final String? at;
+  final DateTimeRange? _at;
+  final String? name;
+
+  @override
+  void onEnter(BuildContext context) async {
+    context.read<ScheduleBloc>().select(
+          Event(
+            name: name,
+            at: _at ?? Day.today().toDateTimeRange(),
+            draft: true,
+          ),
+        );
+  }
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const EventPage();
+
+  @override
+  List<Object?> get props => [at, name];
+}
+
+@immutable
 class EventRoute extends Route {
   static const path = '/schedule/:eventIdString';
 
@@ -271,6 +308,7 @@ class MoreBranch extends StatefulShellBranchData {
   TypedGoRoute<SettingsRoute>(path: SettingsRoute.path),
   TypedShellRoute<_TripleRoutes>(routes: <TypedRoute<RouteData>>[
     TypedGoRoute<HomeRoute>(path: HomeRoute.path),
+    TypedGoRoute<NewEventRoute>(path: NewEventRoute.path),
     TypedGoRoute<EventRoute>(path: EventRoute.path),
     TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
     TypedGoRoute<NewRoute>(path: NewRoute.path), // TODO redirect
@@ -319,9 +357,8 @@ class _TripleRoutes extends ShellRouteData {
           TypedGoRoute<HomeRoute>(
             path: HomeRoute.path,
             routes: [
-              TypedGoRoute<EventRoute>(
-                path: EventRoute.path,
-              ),
+              TypedGoRoute<NewEventRoute>(path: NewEventRoute.path),
+              TypedGoRoute<EventRoute>(path: EventRoute.path),
             ],
           ),
         ],
