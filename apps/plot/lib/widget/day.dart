@@ -3,11 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/theme_color.dart';
 import 'event.dart';
+import 'squiggle.dart';
 
 class DateWidget extends StatelessWidget {
-  const DateWidget({required this.day, super.key});
+  const DateWidget({
+    required this.day,
+    this.firstEvent,
+    this.allDayEvents = const [],
+    super.key,
+  });
 
   final ScheduledDay day;
+  final Event? firstEvent;
+  final List<Event> allDayEvents;
 
   @override
   Widget build(BuildContext context) {
@@ -19,41 +27,49 @@ class DateWidget extends StatelessWidget {
           Container(
             width: 72,
             alignment: Alignment.topRight,
-            child: Stack(
-              alignment: Alignment.center,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color:
-                        const ThemeColor.defaultColor().getForeground(context),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                Text(
-                  day.date.toDateTime().format('d'),
-                  style: Theme.of(context).textTheme.titleSmall,
+                Text(day.date.format(format: 'E')),
+                const SizedBox(width: 4),
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: const ThemeColor.defaultColor()
+                            .getForeground(context),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    Text(
+                      day.date.toDateTime().format('d'),
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(
-            child: Row(
-              children: [
-                Text(
-                  day.date.year == DateTime.now().year
-                      ? day.date.toDateTime().format('MMMM')
-                      : day.date.toDateTime().format('MMMM yyyy'),
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: Colors.grey,
-                      ),
-                  textAlign: TextAlign.end,
-                ),
-              ],
-            ),
-          ),
+          const Expanded(child: Squiggle()),
+          // Expanded(
+          //   child: Row(
+          //     children: [
+          //       Text(
+          //         day.date.year == DateTime.now().year
+          //             ? day.date.toDateTime().format('MMMM')
+          //             : day.date.toDateTime().format('MMMM yyyy'),
+          //         style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          //               color: Colors.grey,
+          //             ),
+          //         textAlign: TextAlign.end,
+          //       ),
+          //     ],
+          //   ),
+          // ),
         ],
       ),
     );
@@ -73,14 +89,20 @@ class DayWidget extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DateWidget(day: day),
-        ...day.events.map(
-          (event) => EventWidget(
-            event: event,
-            onSelect: () => onSelect(event),
-            selected: event.id == selected?.id,
-          ),
+        DateWidget(
+          day: day,
+          firstEvent: day.events.isNotEmpty ? day.events.first : null,
+          allDayEvents: day.allDayEvents,
         ),
+        ...day.events
+            .where((e) => !e.draft || !e.at.start.toTimeOfDay().isMidnight)
+            .map(
+              (event) => EventWidget(
+                event: event,
+                onSelect: () => onSelect(event),
+                selected: event.id == selected?.id,
+              ),
+            ),
       ],
     );
   }

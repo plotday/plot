@@ -3,19 +3,24 @@ import 'package:flutter/material.dart';
 class Squiggle extends StatelessWidget {
   final Color color;
   final double strokeWidth;
+  final double height;
 
   const Squiggle({
-    this.color = Colors.grey,
+    this.color = const Color.fromRGBO(0xFF, 0xFF, 0xFF, 0.1),
     this.strokeWidth = 2.0,
+    this.height = 10.0,
     super.key,
   });
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _SquigglyLinePainter(
-        color: color,
-        strokeWidth: strokeWidth,
+    return SizedBox(
+      height: height,
+      child: CustomPaint(
+        painter: _SquigglyLinePainter(
+          color: color,
+          strokeWidth: strokeWidth,
+        ),
       ),
     );
   }
@@ -45,7 +50,7 @@ class _SquigglyLinePainter extends CustomPainter {
 
     // Number of waves depends on widget width
     final wavelength = size.width / 20;
-    final amplitude = size.height / 4;
+    final amplitude = size.height / 2;
 
     // Adjust control points for smooth curves
     for (double x = 0; x < size.width; x += wavelength) {

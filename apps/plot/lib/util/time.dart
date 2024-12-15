@@ -83,8 +83,8 @@ class Date extends Equatable {
   String toString() =>
       "$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
 
-  String format() {
-    return toDateTime().format('EEEE, MMM d');
+  String format({String format = 'EEEE, MMM d'}) {
+    return toDateTime().format(format);
   }
 }
 
@@ -167,9 +167,11 @@ class Day extends DateRange {
   List<Object> get props => [start];
 
   @override
-  String format() {
+  String format({String? format}) {
     final day = start.format();
-    if (isNow()) {
+    if (format != null) {
+      return start.format(format: format);
+    } else if (isNow()) {
       return "Today ($day)";
     } else if (next().isNow()) {
       return "Yesterday ($day)";

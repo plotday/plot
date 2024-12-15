@@ -116,20 +116,20 @@ class Event extends EventRow {
     return query.watchSingle().map((row) => Event.fromStore(row));
   }
 
-  Event(
-      {required DateTimeRange at,
-      super.name,
-      super.response = EventResponse.accepted,
-      super.status = EventStatus.confirmed,
-      super.visibility = EventVisibility.normal,
-      super.availability = EventAvailability.free,
-      super.inviteesHidden = false,
-      this.activity})
-      : super(
+  Event({
+    required DateTimeRange at,
+    super.name,
+    super.response = EventResponse.accepted,
+    super.status = EventStatus.confirmed,
+    super.visibility = EventVisibility.normal,
+    super.availability = EventAvailability.free,
+    super.inviteesHidden = false,
+    super.draft = false,
+    this.activity,
+  }) : super(
           id: Uuid.generate(),
           createdAt: DateTime.now(),
           modifiedAt: DateTime.now(),
-          draft: false,
           activityId: activity?.id,
           start: at.start,
           end: at.end,
@@ -280,6 +280,7 @@ class ScheduledDay extends Equatable {
             events.isEmpty
                 ? end
                 : start.at(events.first.at.start.toTimeOfDay())),
+        draft: true,
       ));
     }
     for (var i = 0; i < events.length; i++) {
@@ -290,6 +291,7 @@ class ScheduledDay extends Equatable {
             events[i].at.end,
             i + 1 == events.length ? end : events[i + 1].at.start,
           ),
+          draft: true,
         ));
       }
     }

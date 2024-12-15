@@ -28,57 +28,58 @@ class EventWidget extends StatelessWidget {
             : Colors.transparent,
         child: Padding(
           padding: const EdgeInsetsDirectional.all(4),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              width: 68,
-              alignment: Alignment.topRight,
-              child: Column(
-                children: [
-                  event.at.start.toTimeOfDay().isMidnight
-                      ? const PlotIcon.startOfDay(size: 10, color: Colors.white)
-                      : TimeWidget(time: event.at.start),
-                  if (event.name != null ||
-                      (event.at.start != event.at.start.startOfDay &&
-                          event.at.end != event.at.end.startOfDay)) ...[
-                    const SizedBox(height: 4),
-                    DurationText(
-                      duration: event.id != null ||
-                              !(event.at.start.toTimeOfDay().isMidnight ||
-                                  event.at.end.toTimeOfDay().isMidnight)
-                          ? event.at.duration
-                          : Duration.zero,
-                    ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 68,
+                alignment: Alignment.topRight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    TimeWidget(time: event.at.start),
+                    if (!event.draft ||
+                        (event.at.start.toTimeOfDay().isMidnight &&
+                            event.at.end.toTimeOfDay().isMidnight)) ...[
+                      const SizedBox(height: 4),
+                      DurationText(
+                        duration: !event.draft ||
+                                !(event.at.start.toTimeOfDay().isMidnight ||
+                                    event.at.end.toTimeOfDay().isMidnight)
+                            ? event.at.duration
+                            : Duration.zero,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (event.name == null && event.activity == null)
-                    const SizedBox(
-                      height: 16,
-                      child: Squiggle(
-                          color: Color.fromRGBO(0xFF, 0xFF, 0xFF, 0.1)),
-                    ),
-                  if (event.name != null)
-                    Text(
-                      event.name!,
-                      style: const TextStyle(fontWeight: FontWeight.w500),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  if (event.name != null && event.activity != null)
-                    const SizedBox(height: 4),
-                  if (event.activity != null)
-                    Text(
-                      event.activity!.name,
-                    ),
-                ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (event.name == null && event.activity == null)
+                      const SizedBox(
+                        height: 16,
+                        child: Squiggle(),
+                      ),
+                    if (event.name != null)
+                      Text(
+                        event.name!,
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    if (event.name != null && event.activity != null)
+                      const SizedBox(height: 4),
+                    if (event.activity != null)
+                      Text(
+                        event.activity!.name,
+                      ),
+                  ],
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
         ),
       ),
     );
