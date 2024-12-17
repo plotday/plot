@@ -25,10 +25,10 @@ class Toggle<T> extends StatefulWidget {
   final List<ToggleChoice<T>> choices;
 
   @override
-  _ToggleState<T> createState() => _ToggleState<T>();
+  ToggleState<T> createState() => ToggleState<T>();
 }
 
-class _ToggleState<T> extends State<Toggle<T>> {
+class ToggleState<T> extends State<Toggle<T>> {
   macos.MacosTabController? _macosTabController;
 
   macos.MacosTabController getMacosController() {

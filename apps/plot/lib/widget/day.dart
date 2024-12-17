@@ -9,12 +9,14 @@ class DateWidget extends StatelessWidget {
   const DateWidget({
     required this.day,
     required this.onSelect,
+    this.selected = false,
     this.firstEvent,
     this.allDayEvents = const [],
     super.key,
   });
 
   final ScheduledDay day;
+  final bool selected;
   final void Function() onSelect;
   final Event? firstEvent;
   final List<Event> allDayEvents;
@@ -23,58 +25,63 @@ class DateWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => onSelect(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Container(
-              width: 72,
-              alignment: Alignment.topRight,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text(day.date.format(format: 'E')),
-                  const SizedBox(width: 4),
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: const ThemeColor.defaultColor()
-                              .getForeground(context),
-                          shape: BoxShape.circle,
+      child: Container(
+        color: selected
+            ? const ThemeColor.defaultColor().getBackground(context)
+            : Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.all(4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                width: 72,
+                alignment: Alignment.topRight,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(day.date.format(format: 'E')),
+                    const SizedBox(width: 4),
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: const ThemeColor.defaultColor()
+                                .getForeground(context),
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
-                      Text(
-                        day.date.toDateTime().format('d'),
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ],
-                  ),
-                ],
+                        Text(
+                          day.date.toDateTime().format('d'),
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            const Expanded(child: Squiggle()),
-            // Expanded(
-            //   child: Row(
-            //     children: [
-            //       Text(
-            //         day.date.year == DateTime.now().year
-            //             ? day.date.toDateTime().format('MMMM')
-            //             : day.date.toDateTime().format('MMMM yyyy'),
-            //         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            //               color: Colors.grey,
-            //             ),
-            //         textAlign: TextAlign.end,
-            //       ),
-            //     ],
-            //   ),
-            // ),
-          ],
+              const SizedBox(width: 8),
+              const Expanded(child: Squiggle()),
+              // Expanded(
+              //   child: Row(
+              //     children: [
+              //       Text(
+              //         day.date.year == DateTime.now().year
+              //             ? day.date.toDateTime().format('MMMM')
+              //             : day.date.toDateTime().format('MMMM yyyy'),
+              //         style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              //               color: Colors.grey,
+              //             ),
+              //         textAlign: TextAlign.end,
+              //       ),
+              //     ],
+              //   ),
+              // ),
+            ],
+          ),
         ),
       ),
     );
@@ -82,8 +89,12 @@ class DateWidget extends StatelessWidget {
 }
 
 class DayWidget extends StatelessWidget {
-  const DayWidget(
-      {required this.day, required this.onSelect, this.selected, super.key});
+  const DayWidget({
+    required this.day,
+    required this.onSelect,
+    this.selected,
+    super.key,
+  });
 
   final ScheduledDay day;
   final Event? selected;
@@ -100,6 +111,9 @@ class DayWidget extends StatelessWidget {
             at: day.date.toDateTimeRange(),
             draft: true,
           )),
+          selected: selected?.draft == true &&
+              selected!.start.toDate() == day.date &&
+              selected!.start <= day.events.first.start,
           firstEvent: day.events.isNotEmpty ? day.events.first : null,
           allDayEvents: day.allDayEvents,
         ),
@@ -109,7 +123,10 @@ class DayWidget extends StatelessWidget {
               (event) => EventWidget(
                 event: event,
                 onSelect: () => onSelect(event),
-                selected: event.id == selected?.id,
+                selected: event.id == selected?.id ||
+                    (selected?.draft == true &&
+                        event.draft &&
+                        selected?.at.start == event.at.start),
               ),
             ),
       ],

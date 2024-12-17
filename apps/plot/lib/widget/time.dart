@@ -43,15 +43,21 @@ class TimeWidget extends StatelessWidget {
     final parts = time.toTimeOfDay().formatShort(context).split(' ');
     return Text.rich(
       TextSpan(
+        style: const TextStyle(
+          height: 1,
+        ),
         children: <TextSpan>[
           TextSpan(
             text: parts[0],
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
           ),
-          if (parts.length > 1) const TextSpan(text: ' '),
+          if (parts.length > 1)
+            const TextSpan(
+              text: ' ',
+            ),
           if (parts.length > 1)
             TextSpan(
               text: parts[1],
@@ -102,9 +108,15 @@ class DurationText extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text.rich(
       TextSpan(
+        style: const TextStyle(
+          fontSize: 12,
+          height: 1,
+        ),
         children: <TextSpan>[
           if (!duration.hasHours && !duration.hasMinutes)
-            const TextSpan(text: '—'),
+            const TextSpan(
+              text: '—',
+            ),
           if (duration.hasHours)
             TextSpan(
               text: duration.hoursString,

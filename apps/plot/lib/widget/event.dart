@@ -66,7 +66,8 @@ class EventWidget extends StatelessWidget {
                     if (event.name != null)
                       Text(
                         event.name!,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w500, height: 1.0),
                         overflow: TextOverflow.ellipsis,
                       ),
                     if (event.name != null && event.activity != null)

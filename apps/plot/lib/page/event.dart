@@ -12,15 +12,53 @@ class EventPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(builder: (context, state) {
       return switch (state) {
+        SelectedEventState state => Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (state.selected.name != null) Text(state.selected.name!),
+                if (state.selected.activity?.name != null)
+                  Text(state.selected.activity!.name),
+                Row(
+                  children: [
+                    Text(state.selected.at.start.toDate().format()),
+                    const SizedBox(width: 8),
+                    TimePicker(
+                      onChanged: (time) {
+                        print(time.toString());
+                        context.read<ScheduleBloc>().update(
+                              state.selected.copyWith(
+                                start: state.selected.at.start.copyWith(
+                                  hour: time.hour,
+                                  minute: time.minute,
+                                ),
+                              ),
+                            );
+                      },
+                      value: state.selected.at.start.toTimeOfDay(),
+                    ),
+                    const Text(' – '),
+                    TimePicker(
+                      onChanged: (time) {
+                        print(time.toString());
+                        context.read<ScheduleBloc>().update(
+                              state.selected.copyWith(
+                                end: state.selected.at.end.copyWith(
+                                  hour: time.hour,
+                                  minute: time.minute,
+                                ),
+                              ),
+                            );
+                      },
+                      value: state.selected.at.end.toTimeOfDay(),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         SelectedEventErrorState _ => const Center(child: Text("Error")),
-        SelectedEventState state => Column(children: [
-            if (state.selected.name != null) Text(state.selected.name!),
-            if (state.selected.activity?.name != null)
-              Text(state.selected.activity!.name),
-            Text(state.selected.at.start.toDate().format()),
-            Text(state.selected.at.start.toTimeOfDay().format(context)),
-            Text(state.selected.at.end.toTimeOfDay().format(context)),
-          ]),
         SelectedEventLoadingState _ => const Center(child: Spinner()),
         ScheduleState _ => const Center(child: Text("No event selected")),
       };

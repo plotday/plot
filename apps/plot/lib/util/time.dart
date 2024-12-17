@@ -291,6 +291,9 @@ class DateTimeRange extends Equatable {
     }
   }
 
+  DateTimeRange copyWith({DateTime? start, DateTime? end}) =>
+      DateTimeRange(start ?? this.start, end ?? this.end);
+
   final DateTime start;
   final DateTime end;
 
@@ -508,4 +511,14 @@ extension TimeOfDayExtension on TimeOfDay {
   String formatShort(BuildContext context) {
     return format(context).replaceAll(':00', '');
   }
+}
+
+TimeOfDay parseTimeOfDay(String str) {
+  final pm = str.toLowerCase().contains('p');
+  str = str.replaceAll(RegExp(r'[ap]m?'), '');
+  final parts = str.trim().replaceAll(RegExp(r'[:.\s]'), ':').split(':');
+  return TimeOfDay(
+    hour: int.parse(parts[0]) + (pm ? 12 : 0),
+    minute: parts.length == 1 ? 0 : int.parse(parts[1]),
+  );
 }

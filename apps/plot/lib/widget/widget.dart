@@ -19,6 +19,7 @@ export 'switch.dart';
 export 'tapable.dart';
 export 'text_field.dart';
 export 'time.dart';
+export 'time_picker.dart';
 export 'toggle.dart';
 export 'topic.dart';
 export 'week_selector.dart';
