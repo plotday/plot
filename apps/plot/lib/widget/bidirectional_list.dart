@@ -122,19 +122,7 @@ class BidirectionalListState extends State<BidirectionalList> {
         _scrollController.position.viewportDimension;
   }
 
-  void _loadInitialItems() {
-    _loadMoreItems(
-        ((_scrollController.position.viewportDimension /
-                    widget.estimatedItemExtent) *
-                widget.overflow)
-            .ceil(),
-        ((_scrollController.position.viewportDimension /
-                    widget.estimatedItemExtent) *
-                widget.overflow)
-            .ceil());
-  }
-
-  void _loadIfNecessary() {
+  Future<void> _loadIfNecessary() async {
     if (_loading) return;
     if (widget.doneStart && widget.doneEnd) return;
     if (pagesBefore() >= widget.overflow && pagesAfter() >= widget.overflow) {
@@ -169,23 +157,6 @@ class BidirectionalListState extends State<BidirectionalList> {
   void initState() {
     super.initState();
     _scrollController = widget.scrollController ?? ScrollController();
-
-    // Wait until the widget is properly mounted and has a position
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_scrollController.hasClients) {
-        _loadInitialItems();
-        _scrollController.addListener(_loadIfNecessary);
-      } else {
-        // If no client is attached yet, wait for the controller to be attached
-        _scrollController.addListener(() {
-          if (_scrollController.hasClients) {
-            _loadInitialItems();
-            _scrollController.addListener(_loadIfNecessary);
-          }
-        });
-      }
-    });
   }
 
   @override
@@ -233,31 +204,38 @@ class BidirectionalListState extends State<BidirectionalList> {
       ),
     );
 
-    return CustomScrollView(
-      controller: _scrollController,
-      physics: BidirectionalListScrollPhysics(
-        getScrollAdjustment: _getScrollAdjustment,
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (ScrollMetricsNotification notification) {
+        _loadIfNecessary();
+        return false; // Return false to allow the notification to continue to be dispatched
+      },
+      child: CustomScrollView(
+        controller: _scrollController,
+        physics: BidirectionalListScrollPhysics(
+          getScrollAdjustment: _getScrollAdjustment,
+        ),
+        center: widget.doneStart && widget.header != null
+            ? _headerKey
+            : _downListKey,
+        slivers: [
+          if (widget.header != null)
+            SliverToBoxAdapter(key: _headerKey, child: widget.header),
+          if (widget.count > 0 && !widget.doneStart) spinner,
+          SliverList.builder(
+            key: _upListKey,
+            itemCount: _upCount - _shrinkUp,
+            itemBuilder: (context, index) =>
+                widget.builder(context, _upCount - index - 1),
+          ),
+          SliverList.builder(
+            key: _downListKey,
+            itemCount: _downCount - _shrinkDown,
+            itemBuilder: (context, index) =>
+                widget.builder(context, _upCount + index),
+          ),
+          if (!widget.doneEnd) spinner,
+        ],
       ),
-      center:
-          widget.doneStart && widget.header != null ? _headerKey : _downListKey,
-      slivers: [
-        if (widget.header != null)
-          SliverToBoxAdapter(key: _headerKey, child: widget.header),
-        if (widget.count > 0 && !widget.doneStart) spinner,
-        SliverList.builder(
-          key: _upListKey,
-          itemCount: _upCount - _shrinkUp,
-          itemBuilder: (context, index) =>
-              widget.builder(context, _upCount - index - 1),
-        ),
-        SliverList.builder(
-          key: _downListKey,
-          itemCount: _downCount - _shrinkDown,
-          itemBuilder: (context, index) =>
-              widget.builder(context, _upCount + index),
-        ),
-        if (!widget.doneEnd) spinner,
-      ],
     );
   }
 }
