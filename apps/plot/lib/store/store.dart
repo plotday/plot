@@ -264,9 +264,14 @@ class Store extends _$Store {
       try {
         await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
       } catch (e) {
-        print("Error pushing to ${baseTable.table}");
-        print(e);
-        rethrow;
+        for (final row in storeRows) {
+          try {
+            await baseTable.put([baseTable.toBase(row)]);
+          } catch (e) {
+            print("Error pushing ${row.toJsonString()} to ${baseTable.table}");
+            print(e);
+          }
+        }
       }
       final now = DateTime.now();
       await into(syncStates).insert(

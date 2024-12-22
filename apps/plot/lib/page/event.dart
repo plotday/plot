@@ -24,34 +24,15 @@ class EventPage extends StatelessWidget {
                   children: [
                     Text(state.selected.at.start.toDate().format()),
                     const SizedBox(width: 8),
-                    TimePicker(
+                    TimeRangePicker(
                       onChanged: (time) {
-                        print(time.toString());
                         context.read<ScheduleBloc>().update(
                               state.selected.copyWith(
-                                start: state.selected.at.start.copyWith(
-                                  hour: time.hour,
-                                  minute: time.minute,
-                                ),
+                                at: state.selected.at,
                               ),
                             );
                       },
-                      value: state.selected.at.start.toTimeOfDay(),
-                    ),
-                    const Text(' – '),
-                    TimePicker(
-                      onChanged: (time) {
-                        print(time.toString());
-                        context.read<ScheduleBloc>().update(
-                              state.selected.copyWith(
-                                end: state.selected.at.end.copyWith(
-                                  hour: time.hour,
-                                  minute: time.minute,
-                                ),
-                              ),
-                            );
-                      },
-                      value: state.selected.at.end.toTimeOfDay(),
+                      value: state.selected.at,
                     ),
                   ],
                 ),

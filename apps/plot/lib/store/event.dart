@@ -163,6 +163,7 @@ class Event extends EventRow {
     Value<Activity?> activity = const Value.absent(),
     DateTime? start,
     DateTime? end,
+    DateTimeRange? at,
     Value<String?> name = const Value.absent(),
     EventResponse? response,
     EventStatus? status,
@@ -171,6 +172,20 @@ class Event extends EventRow {
     bool? inviteesHidden,
     Value<String?> series = const Value.absent(),
   }) {
+    start ??= at?.start;
+    end ??= at?.end;
+    if (start != null && end != null && start.isAfter(end)) {
+      throw ArgumentError('Start must be before end');
+    }
+    if (start != null && end == null) {
+      end =
+          this.end.add(start.difference(this.start)).max(start.nextMidnight());
+    } else if (start == null && end != null) {
+      start = this
+          .start
+          .subtract(end.difference(this.end))
+          .min(end.previousMidnight());
+    }
     final publish = this.draft && draft == false;
     return Event.fromStore(
       super.copyWith(

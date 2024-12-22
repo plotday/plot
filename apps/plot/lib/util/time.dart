@@ -415,9 +415,18 @@ extension PlotDateTimeExtension on DateTime {
   TimeOfDay toTimeOfDay() => TimeOfDay(hour: hour, minute: minute);
   DateTime at(TimeOfDay time) =>
       DateTime(year, month, day, time.hour, time.minute);
+  DateTime min(DateTime other) => isBefore(other) ? other : this;
+  DateTime max(DateTime other) => isAfter(other) ? other : this;
 
   DateTime round({int minutes = 30, bool down = true}) => sub(Duration(
       minutes: down ? minute % minutes : (minute % minutes) - minutes));
+
+  DateTime previousMidnight() => toTimeOfDay().isMidnight
+      ? DateTime.now().subtract(const Duration(days: 1))
+      : toDate().toDateTime();
+  DateTime nextMidnight() => toTimeOfDay().isMidnight
+      ? DateTime.now().add(const Duration(days: 1))
+      : toDate().next().toDateTime();
 }
 
 Duration durationFromString(String durationString) {
@@ -514,8 +523,8 @@ extension TimeOfDayExtension on TimeOfDay {
 }
 
 TimeOfDay parseTimeOfDay(String str) {
-  final pm = str.toLowerCase().contains('p');
-  str = str.replaceAll(RegExp(r'[ap]m?'), '');
+  final pm = str.contains(RegExp(r'[pP]'));
+  str = str.toLowerCase().replaceAll(RegExp(r'[ap]m?'), '');
   final parts = str.trim().replaceAll(RegExp(r'[:.\s]'), ':').split(':');
   return TimeOfDay(
     hour: int.parse(parts[0]) + (pm ? 12 : 0),
