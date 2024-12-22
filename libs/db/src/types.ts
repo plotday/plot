@@ -42,7 +42,7 @@ export type Database = {
           credentials: Json | null
           email: string
           id: number
-          modified_at: string
+          updated_at: string
           user_id: string
           calendars: unknown | null
           organization: unknown | null
@@ -54,7 +54,7 @@ export type Database = {
           credentials?: Json | null
           email: string
           id?: never
-          modified_at?: string
+          updated_at?: string
           user_id: string
         }
         Update: {
@@ -64,7 +64,7 @@ export type Database = {
           credentials?: Json | null
           email?: string
           id?: never
-          modified_at?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -84,9 +84,9 @@ export type Database = {
           created_by: string
           draft: boolean
           id: string
-          modified_at: string
           name: string
           path: unknown
+          updated_at: string
         }
         Insert: {
           archived_at?: string | null
@@ -94,9 +94,9 @@ export type Database = {
           created_by: string
           draft?: boolean
           id?: string
-          modified_at?: string
           name: string
           path: unknown
+          updated_at?: string
         }
         Update: {
           archived_at?: string | null
@@ -104,9 +104,9 @@ export type Database = {
           created_by?: string
           draft?: boolean
           id?: string
-          modified_at?: string
           name?: string
           path?: unknown
+          updated_at?: string
         }
         Relationships: [
           {
@@ -122,25 +122,25 @@ export type Database = {
         Row: {
           activity_id: string
           color: number
-          modified_at: string
           order: number
           pomodoro: number
+          updated_at: string
           user_id: string
         }
         Insert: {
           activity_id: string
           color?: number
-          modified_at?: string
           order: number
           pomodoro?: number
+          updated_at?: string
           user_id: string
         }
         Update: {
           activity_id?: string
           color?: number
-          modified_at?: string
           order?: number
           pomodoro?: number
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -192,22 +192,22 @@ export type Database = {
         Row: {
           activity_id: string
           created_at: string
-          modified_at: string
           path: unknown | null
+          updated_at: string
           user_id: string
         }
         Insert: {
           activity_id: string
           created_at?: string
-          modified_at?: string
           path?: unknown | null
+          updated_at?: string
           user_id: string
         }
         Update: {
           activity_id?: string
           created_at?: string
-          modified_at?: string
           path?: unknown | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -264,7 +264,6 @@ export type Database = {
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
-          modified_at: string
           name: string | null
           provider_id: string
           ready: boolean
@@ -273,6 +272,7 @@ export type Database = {
           sync_state: string | null
           synced_at: string | null
           synced_dates: unknown | null
+          updated_at: string
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -286,7 +286,6 @@ export type Database = {
           full_sync_at?: string | null
           full_sync_started_at?: string | null
           id?: never
-          modified_at?: string
           name?: string | null
           provider_id: string
           ready?: boolean
@@ -295,6 +294,7 @@ export type Database = {
           sync_state?: string | null
           synced_at?: string | null
           synced_dates?: unknown | null
+          updated_at?: string
           watch_expires_at?: string | null
           watch_id?: string | null
           watch_secret?: string | null
@@ -307,7 +307,6 @@ export type Database = {
           full_sync_at?: string | null
           full_sync_started_at?: string | null
           id?: never
-          modified_at?: string
           name?: string | null
           provider_id?: string
           ready?: boolean
@@ -316,6 +315,7 @@ export type Database = {
           sync_state?: string | null
           synced_at?: string | null
           synced_dates?: unknown | null
+          updated_at?: string
           watch_expires_at?: string | null
           watch_id?: string | null
           watch_secret?: string | null
@@ -407,7 +407,6 @@ export type Database = {
           draft: boolean
           id: string
           invitees_hidden: boolean
-          modified_at: string
           name: string | null
           optional: boolean
           organizer_email: string | null
@@ -418,6 +417,7 @@ export type Database = {
           series: string | null
           status: Database["public"]["Enums"]["event_status"]
           summary: string | null
+          updated_at: string
           user_id: string
           visibility: Database["public"]["Enums"]["event_visibility"]
         }
@@ -432,7 +432,6 @@ export type Database = {
           draft?: boolean
           id?: string
           invitees_hidden?: boolean
-          modified_at?: string
           name?: string | null
           optional?: boolean
           organizer_email?: string | null
@@ -443,6 +442,7 @@ export type Database = {
           series?: string | null
           status?: Database["public"]["Enums"]["event_status"]
           summary?: string | null
+          updated_at?: string
           user_id: string
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
@@ -457,7 +457,6 @@ export type Database = {
           draft?: boolean
           id?: string
           invitees_hidden?: boolean
-          modified_at?: string
           name?: string | null
           optional?: boolean
           organizer_email?: string | null
@@ -468,6 +467,7 @@ export type Database = {
           series?: string | null
           status?: Database["public"]["Enums"]["event_status"]
           summary?: string | null
+          updated_at?: string
           user_id?: string
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
@@ -515,8 +515,8 @@ export type Database = {
           email: string
           event_id: string | null
           is_optional: boolean
-          modified_at: string
           response: Database["public"]["Enums"]["event_response"] | null
+          updated_at: string
           contact: unknown | null
         }
         Insert: {
@@ -524,16 +524,16 @@ export type Database = {
           email: string
           event_id?: string | null
           is_optional?: boolean
-          modified_at?: string
           response?: Database["public"]["Enums"]["event_response"] | null
+          updated_at?: string
         }
         Update: {
           created_at?: string
           email?: string
           event_id?: string | null
           is_optional?: boolean
-          modified_at?: string
           response?: Database["public"]["Enums"]["event_response"] | null
+          updated_at?: string
         }
         Relationships: [
           {
@@ -562,13 +562,13 @@ export type Database = {
           done_at: string | null
           draft: boolean
           id: string
-          modified_at: string
           order: number
           ordered_at: string
           pinned: boolean
           private: boolean
           root: boolean
           topic_id: string
+          updated_at: string
           user_id: string
         }
         Insert: {
@@ -580,13 +580,13 @@ export type Database = {
           done_at?: string | null
           draft?: boolean
           id?: string
-          modified_at?: string
           order: number
           ordered_at?: string
           pinned?: boolean
           private?: boolean
           root?: boolean
           topic_id: string
+          updated_at?: string
           user_id: string
         }
         Update: {
@@ -598,13 +598,13 @@ export type Database = {
           done_at?: string | null
           draft?: boolean
           id?: string
-          modified_at?: string
           order?: number
           ordered_at?: string
           pinned?: boolean
           private?: boolean
           root?: boolean
           topic_id?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -709,8 +709,8 @@ export type Database = {
           embedding: string | null
           id: number
           invitees: string[] | null
-          modified_at: string
           series: string
+          updated_at: string
           user_id: string
         }
         Insert: {
@@ -719,8 +719,8 @@ export type Database = {
           embedding?: string | null
           id?: never
           invitees?: string[] | null
-          modified_at?: string
           series: string
+          updated_at?: string
           user_id: string
         }
         Update: {
@@ -729,8 +729,8 @@ export type Database = {
           embedding?: string | null
           id?: never
           invitees?: string[] | null
-          modified_at?: string
           series?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -784,10 +784,10 @@ export type Database = {
           at: unknown
           created_at: string
           id: string
-          modified_at: string
           pomodoro: number | null
           pomodoro_at: string | null
           priority: number
+          updated_at: string
           user_id: string
         }
         Insert: {
@@ -795,10 +795,10 @@ export type Database = {
           at: unknown
           created_at?: string
           id?: string
-          modified_at?: string
           pomodoro?: number | null
           pomodoro_at?: string | null
           priority?: number
+          updated_at?: string
           user_id: string
         }
         Update: {
@@ -806,10 +806,10 @@ export type Database = {
           at?: unknown
           created_at?: string
           id?: string
-          modified_at?: string
           pomodoro?: number | null
           pomodoro_at?: string | null
           priority?: number
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -942,11 +942,11 @@ export type Database = {
           created_at: string | null
           draft: boolean | null
           id: string | null
-          modified_at: string | null
           name: string | null
           order: number | null
           path: unknown | null
           pomodoro: number | null
+          updated_at: string | null
           user_id: string | null
         }
         Relationships: [
@@ -964,9 +964,9 @@ export type Database = {
           activity_id: string | null
           count: number | null
           day: string | null
-          modified_at: string | null
           seconds: number | null
           type: string | null
+          updated_at: string | null
           user_id: string | null
         }
         Relationships: []
@@ -976,9 +976,9 @@ export type Database = {
           activity_id: string | null
           count: number | null
           day: string | null
-          modified_at: string | null
           seconds: number | null
           type: string | null
+          updated_at: string | null
           user_id: string | null
         }
         Relationships: []
@@ -992,8 +992,8 @@ export type Database = {
           invitee_domains: string[] | null
           invitee_organization_ids: number[] | null
           invitees: string[] | null
-          modified_at: string | null
           size: string | null
+          updated_at: string | null
         }
         Relationships: [
           {
@@ -1035,7 +1035,6 @@ export type Database = {
           invitee_domains: string[] | null
           invitees: string[] | null
           invitees_hidden: boolean | null
-          modified_at: string | null
           name: string | null
           notice: number | null
           organizer_email: string | null
@@ -1051,6 +1050,7 @@ export type Database = {
           status: Database["public"]["Enums"]["event_status"] | null
           summary: string | null
           type: Database["public"]["Enums"]["event_type"] | null
+          updated_at: string | null
           user_id: string | null
           visibility: Database["public"]["Enums"]["event_visibility"] | null
         }
@@ -1148,7 +1148,6 @@ export type Database = {
           done_at: string | null
           draft: boolean | null
           id: string | null
-          modified_at: string | null
           order: number | null
           order_x: number | null
           ordered_at: string | null
@@ -1157,6 +1156,7 @@ export type Database = {
           root: boolean | null
           tags: Json | null
           topic_id: string | null
+          updated_at: string | null
           user_id: string | null
         }
         Relationships: [
@@ -1246,7 +1246,7 @@ export type Database = {
           credentials: Json | null
           email: string
           id: number
-          modified_at: string
+          updated_at: string
           user_id: string
         }[]
       }
@@ -1320,7 +1320,6 @@ export type Database = {
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
-          modified_at: string
           name: string | null
           provider_id: string
           ready: boolean
@@ -1329,6 +1328,7 @@ export type Database = {
           sync_state: string | null
           synced_at: string | null
           synced_dates: unknown | null
+          updated_at: string
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -1346,7 +1346,6 @@ export type Database = {
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
-          modified_at: string
           name: string | null
           provider_id: string
           ready: boolean
@@ -1355,6 +1354,7 @@ export type Database = {
           sync_state: string | null
           synced_at: string | null
           synced_dates: unknown | null
+          updated_at: string
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -1413,8 +1413,8 @@ export type Database = {
           email: string
           event_id: string | null
           is_optional: boolean
-          modified_at: string
           response: Database["public"]["Enums"]["event_response"] | null
+          updated_at: string
         }[]
       }
       is_finite: {

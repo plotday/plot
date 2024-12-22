@@ -3,7 +3,7 @@ CREATE OR REPLACE VIEW "public"."event_invitees" WITH ( security_invoker = TRUE)
 AS
 SELECT
     i.event_id AS event_id,
-    MAX(i.modified_at) AS modified_at,
+    MAX(i.updated_at) AS updated_at,
     count(i.email)::integer AS invitee_count,
     count(i.email) FILTER (WHERE (i.response = 'accepted'::event_response))::integer AS attendee_count,
 array_agg(i.email) AS invitees,
@@ -36,7 +36,7 @@ WITH event_x1 AS (
         e.provider_id AS provider_id,
         COALESCE(e.series, e.provider_id) AS series,
         e.created_at AS created_at,
-        GREATEST (e.modified_at, i.modified_at) AS modified_at,
+        GREATEST (e.updated_at, i.updated_at) AS updated_at,
         e.draft AS draft,
         e.status AS status,
         e.provider_link AS provider_link,

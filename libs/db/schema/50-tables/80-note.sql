@@ -1,7 +1,7 @@
 CREATE TABLE "public"."note" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "draft" boolean NOT NULL DEFAULT FALSE,
     "archived_at" timestamp with time zone,
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
@@ -19,10 +19,10 @@ CREATE TABLE "public"."note" (
 
 ALTER TABLE "public"."note" ENABLE ROW LEVEL SECURITY;
 
-CREATE TRIGGER set_note_modified_at
+CREATE TRIGGER set_note_updated_at
     BEFORE UPDATE ON "public"."note"
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE UNIQUE INDEX note_order_root ON "public"."note" (activity_id, "order")
 WHERE

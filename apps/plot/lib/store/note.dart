@@ -176,7 +176,7 @@ class Note extends NoteRow implements Comparable<Note> {
       root: parent == null,
       topicId: parent == null ? id : parent.topicId,
       createdAt: now,
-      modifiedAt: now,
+      updatedAt: now,
       draft: true,
       body: "",
       order: parent == null ? Order.first() : Order.last(),
@@ -195,7 +195,7 @@ class Note extends NoteRow implements Comparable<Note> {
           doneAt: row.doneAt,
           draft: row.draft,
           id: row.id,
-          modifiedAt: row.modifiedAt,
+          updatedAt: row.updatedAt,
           order: row.order,
           orderedAt: row.orderedAt,
           pinned: row.pinned,
@@ -208,7 +208,7 @@ class Note extends NoteRow implements Comparable<Note> {
   @override
   Note copyWith({
     Uuid? id,
-    DateTime? modifiedAt,
+    DateTime? updatedAt,
     DateTime? createdAt,
     bool? draft,
     Uuid? userId,
@@ -244,7 +244,7 @@ class Note extends NoteRow implements Comparable<Note> {
     return Note.fromStore(super.copyWith(
       id: id ?? this.id,
       createdAt: publish ? DateTime.now() : this.createdAt,
-      modifiedAt: DateTime.now(),
+      updatedAt: DateTime.now(),
       draft: draft,
       userId: userId ?? this.userId,
       body: body ?? this.body,

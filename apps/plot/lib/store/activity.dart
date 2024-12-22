@@ -130,7 +130,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         super(
           id: Uuid.generate(),
           createdAt: DateTime.now(),
-          modifiedAt: DateTime.now(),
+          updatedAt: DateTime.now(),
           draft: false,
           path: Path.generate(parent: parent?.path),
         ) {
@@ -142,7 +142,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         super(
           id: row.id,
           createdAt: row.createdAt,
-          modifiedAt: row.modifiedAt,
+          updatedAt: row.updatedAt,
           draft: row.draft,
           name: row.name,
           pomodoro: row.pomodoro,
@@ -159,7 +159,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   @override
   Activity copyWith({
     Uuid? id,
-    DateTime? modifiedAt,
+    DateTime? updatedAt,
     DateTime? createdAt,
     bool? draft,
     String? name,
@@ -174,7 +174,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
           id: id,
           createdAt:
               this.draft && draft == false ? DateTime.now() : this.createdAt,
-          modifiedAt: DateTime.now(),
+          updatedAt: DateTime.now(),
           draft: draft,
           name: name,
           path: path,

@@ -8,11 +8,11 @@ DROP TRIGGER IF EXISTS "context_insert_trigger" ON "public"."activity";
 
 DROP TRIGGER IF EXISTS "set_context_created_by" ON "public"."activity";
 
-DROP TRIGGER IF EXISTS "set_context_modified_at" ON "public"."activity";
+DROP TRIGGER IF EXISTS "set_context_updated_at" ON "public"."activity";
 
-DROP TRIGGER IF EXISTS "set_context_settings_modified_at" ON "public"."activity_settings";
+DROP TRIGGER IF EXISTS "set_context_settings_updated_at" ON "public"."activity_settings";
 
-DROP TRIGGER IF EXISTS "set_context_user_modified_at" ON "public"."activity_user";
+DROP TRIGGER IF EXISTS "set_context_user_updated_at" ON "public"."activity_user";
 
 DROP TRIGGER IF EXISTS "upsert_context_x" ON "public"."context_x";
 
@@ -208,7 +208,7 @@ SELECT
     c2.id,
     cu.user_id,
     c2.created_at,
-    GREATEST (cs.modified_at, cu.modified_at, c2.modified_at) AS modified_at,
+    GREATEST (cs.updated_at, cu.updated_at, c2.updated_at) AS updated_at,
     c2.name,
     replace_parent_path (c1.path, c2.path, COALESCE(cu.path, c1.path)) AS path,
     COALESCE(cs."order", (((EXTRACT(epoch FROM CURRENT_TIMESTAMP) * (1000)::numeric))::double precision * (10)::double precision)) AS "order",
@@ -307,7 +307,7 @@ CREATE OR REPLACE FUNCTION public.insert_activity_user ()
     AS $function$
 BEGIN
     IF nlevel (NEW.path) = 1 THEN
-        INSERT INTO public.activity_user (created_at, modified_at, user_id, activity_id)
+        INSERT INTO public.activity_user (created_at, updated_at, user_id, activity_id)
             VALUES (now(), now(), NEW.created_by, NEW.id);
     END IF;
     RETURN NEW;
@@ -583,7 +583,7 @@ CREATE OR REPLACE VIEW "public"."note_x" AS
 SELECT
     note.id,
     note.created_at,
-    note.modified_at,
+    note.updated_at,
     note.user_id,
     note.activity_id,
     note.topic_id,
@@ -779,20 +779,20 @@ CREATE TRIGGER set_activity_created_by
     FOR EACH ROW
     EXECUTE FUNCTION update_created_by ();
 
-CREATE TRIGGER set_activity_modified_at
+CREATE TRIGGER set_activity_updated_at
     BEFORE UPDATE ON public.activity
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER set_activity_settings_modified_at
+CREATE TRIGGER set_activity_settings_updated_at
     BEFORE UPDATE ON public.activity_settings
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER set_activity_user_modified_at
+CREATE TRIGGER set_activity_user_updated_at
     BEFORE UPDATE ON public.activity_user
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE TRIGGER upsert_activity_x
     INSTEAD OF INSERT OR UPDATE ON public.activity_x

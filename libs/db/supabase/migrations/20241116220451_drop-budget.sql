@@ -1,4 +1,4 @@
-DROP TRIGGER IF EXISTS "set_budget_modified_at" ON "public"."budget";
+DROP TRIGGER IF EXISTS "set_budget_updated_at" ON "public"."budget";
 
 DROP POLICY "Users can read/write their budgets" ON "public"."budget";
 

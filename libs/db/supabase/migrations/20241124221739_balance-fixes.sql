@@ -19,7 +19,7 @@ SELECT
     END AS type,
     count(*) AS count,
     sum(event_x.seconds) AS seconds,
-    max(event_x.modified_at) AS modified_at
+    max(event_x.updated_at) AS updated_at
 FROM
     event_x
 WHERE ((event_x.status <> 'cancelled'::event_status)
@@ -37,7 +37,7 @@ SELECT
     'session'::text AS type,
     count(*) AS count,
     (sum((EXTRACT(epoch FROM (upper(session.at) - lower(session.at))) / (60)::numeric)))::integer AS seconds,
-    max(session.modified_at) AS modified_at
+    max(session.updated_at) AS updated_at
 FROM
     session
 GROUP BY
@@ -56,7 +56,7 @@ SELECT
     END AS type,
     count(*) AS count,
     0 AS seconds,
-    max(note.modified_at) AS modified_at
+    max(note.updated_at) AS updated_at
 FROM
     note
 WHERE ((note.draft = FALSE)
@@ -80,7 +80,7 @@ SELECT
     b.type,
     sum(b.count) AS count,
     (sum(b.seconds))::integer AS seconds,
-    max(b.modified_at) AS modified_at
+    max(b.updated_at) AS updated_at
 FROM
     balance_without_children b
 WHERE (b.activity_id IS NULL)
@@ -96,7 +96,7 @@ SELECT
     b.type,
     sum(b.count) AS count,
     (sum(b.seconds))::integer AS seconds,
-    max(b.modified_at) AS modified_at
+    max(b.updated_at) AS updated_at
 FROM (balance_without_children b
     JOIN activity_children ac ON (b.activity_id = ac.child_id))
 WHERE (b.activity_id IS NOT NULL)

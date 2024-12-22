@@ -10,7 +10,7 @@ SELECT
     END AS type,
     count(*) AS count,
     sum(event_x.seconds) AS seconds,
-    max(event_x.modified_at) AS modified_at
+    max(event_x.updated_at) AS updated_at
 FROM
     event_x
 WHERE ((event_x.status <> 'cancelled'::event_status)
@@ -28,7 +28,7 @@ SELECT
     'session'::text AS type,
     count(*) AS count,
     (sum((EXTRACT(epoch FROM (upper(session.at) - lower(session.at))) / (60)::numeric)))::integer AS seconds,
-    max(session.modified_at) AS modified_at
+    max(session.updated_at) AS updated_at
 FROM
     session
 GROUP BY
@@ -47,7 +47,7 @@ SELECT
     END AS type,
     count(*) AS count,
     0 AS seconds,
-    max(note.modified_at) AS modified_at
+    max(note.updated_at) AS updated_at
 FROM
     note
 WHERE ((note.draft = FALSE)

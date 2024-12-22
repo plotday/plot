@@ -1,6 +1,6 @@
 CREATE TABLE "public"."invitee" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "event_id" uuid REFERENCES "event" ON DELETE CASCADE,
     "email" text NOT NULL CHECK (is_lower ("email")),
     "response" event_response,
@@ -15,10 +15,10 @@ CREATE INDEX invitee_event_id_idx ON public.invitee USING btree (event_id);
 ALTER publication supabase_realtime
     ADD TABLE public.invitee;
 
-CREATE TRIGGER set_invitee_modified_at
+CREATE TRIGGER set_invitee_updated_at
     BEFORE UPDATE ON "public"."invitee"
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE OR REPLACE FUNCTION public.contact (invitee)
     RETURNS SETOF contact ROWS 1

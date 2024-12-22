@@ -1,7 +1,7 @@
 CREATE TABLE "public"."calendar" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "archived_at" timestamp with time zone,
     "account_id" bigint NOT NULL REFERENCES "account" ON DELETE CASCADE,
     "provider_id" text NOT NULL,
@@ -38,8 +38,8 @@ CREATE OR REPLACE FUNCTION public.calendars (account)
         calendar.account_id = $1.id
 $function$;
 
-CREATE TRIGGER set_calendar_modified_at
+CREATE TRIGGER set_calendar_updated_at
     BEFORE UPDATE ON "public"."calendar"
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 

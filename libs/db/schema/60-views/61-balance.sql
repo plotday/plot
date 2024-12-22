@@ -12,7 +12,7 @@ SELECT
     END AS type,
     COUNT(*) AS "count",
     SUM(seconds) AS "seconds",
-    MAX(modified_at) AS modified_at
+    MAX(updated_at) AS updated_at
 FROM
     event_x
 WHERE
@@ -31,7 +31,7 @@ SELECT
     'session' AS type,
     count(*) AS "count",
     sum(EXTRACT(epoch FROM upper(at) - lower(at)))::integer AS seconds,
-    MAX(modified_at) AS modified_at
+    MAX(updated_at) AS updated_at
 FROM
     session
 GROUP BY
@@ -50,7 +50,7 @@ SELECT
     END AS type,
     COUNT(*) AS "count",
     0 AS "seconds",
-    MAX(modified_at) AS modified_at
+    MAX(updated_at) AS updated_at
 FROM
     "public"."note"
 WHERE
@@ -73,7 +73,7 @@ SELECT
     type,
     SUM(b.count) AS "count",
     SUM(b.seconds)::integer AS "seconds",
-    MAX(b.modified_at) AS modified_at
+    MAX(b.updated_at) AS updated_at
 FROM
     balance_without_children b
 WHERE
@@ -90,7 +90,7 @@ SELECT
     type,
     SUM(b.count) AS "count",
     SUM(b.seconds)::integer AS "seconds",
-    MAX(b.modified_at) AS modified_at
+    MAX(b.updated_at) AS updated_at
 FROM
     balance_without_children b
     JOIN activity_children ac ON b.activity_id = ac.child_id

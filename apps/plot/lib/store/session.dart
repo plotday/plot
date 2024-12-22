@@ -145,7 +145,7 @@ class Session extends SessionRow {
   Session({this.activity, required super.end})
       : super(
           id: Uuid.generate(),
-          modifiedAt: DateTime.now(),
+          updatedAt: DateTime.now(),
           activityId: activity?.id,
           start: DateTime.now(),
           pomodoro: null,
@@ -156,7 +156,7 @@ class Session extends SessionRow {
   Session.fromStore(SessionRow row, {this.activity})
       : super(
           id: row.id,
-          modifiedAt: row.modifiedAt,
+          updatedAt: row.updatedAt,
           activityId: row.activityId,
           start: row.start,
           end: row.end,
@@ -168,7 +168,7 @@ class Session extends SessionRow {
   @override
   Session copyWith(
           {Uuid? id,
-          DateTime? modifiedAt,
+          DateTime? updatedAt,
           Value<Uuid?> activityId = const Value.absent(),
           DateTime? start,
           DateTime? end,
@@ -177,7 +177,7 @@ class Session extends SessionRow {
           Value<DateTime?> pomodoroAt = const Value.absent()}) =>
       Session.fromStore(super.copyWith(
         id: id,
-        modifiedAt: DateTime.now(),
+        updatedAt: DateTime.now(),
         activityId: activityId,
         start: start,
         end: end,

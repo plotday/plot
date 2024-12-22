@@ -30,7 +30,7 @@ class Calendar extends CalendarRow {
   Calendar.fromStore(CalendarRow row)
       : super(
           id: row.id,
-          modifiedAt: row.modifiedAt,
+          updatedAt: row.updatedAt,
           name: row.name,
           enabled: row.enabled,
           accountId: row.accountId,
@@ -39,14 +39,14 @@ class Calendar extends CalendarRow {
   @override
   Calendar copyWith({
     int? id,
-    DateTime? modifiedAt,
+    DateTime? updatedAt,
     String? name,
     bool? enabled,
     int? accountId,
   }) =>
       Calendar.fromStore(super.copyWith(
         id: id,
-        modifiedAt: DateTime.now(),
+        updatedAt: DateTime.now(),
         name: name,
         enabled: enabled,
         accountId: accountId,

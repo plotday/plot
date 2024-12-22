@@ -13,7 +13,7 @@ DROP VIEW IF EXISTS "public"."event_x" CASCADE;
 DROP VIEW IF EXISTS "public"."event_invitees";
 
 ALTER TABLE "public"."invitee"
-    ADD COLUMN "modified_at" timestamp with time zone NOT NULL DEFAULT now();
+    ADD COLUMN "updated_at" timestamp with time zone NOT NULL DEFAULT now();
 
 SET check_function_bodies = OFF;
 
@@ -53,7 +53,7 @@ $function$;
 CREATE OR REPLACE VIEW "public"."event_invitees" AS
 SELECT
     i.event_id,
-    max(i.modified_at) AS modified_at,
+    max(i.updated_at) AS updated_at,
     (count(i.email))::integer AS invitee_count,
     (count(i.email) FILTER (WHERE (i.response = 'accepted'::event_response)))::integer AS attendee_count,
 array_agg(i.email) AS invitees,
@@ -82,7 +82,7 @@ WITH event_x1 AS (
         e_1.provider_id,
         COALESCE(e_1.series, e_1.provider_id) AS series,
         e_1.created_at,
-        GREATEST (e_1.modified_at, i.modified_at) AS modified_at,
+        GREATEST (e_1.updated_at, i.updated_at) AS updated_at,
         e_1.status,
         e_1.provider_link,
         e_1.summary,
@@ -135,7 +135,7 @@ SELECT
     e.provider_id,
     e.series,
     e.created_at,
-    e.modified_at,
+    e.updated_at,
     e.status,
     e.provider_link,
     e.summary,
@@ -379,10 +379,10 @@ CREATE TRIGGER upsert_event_x
     FOR EACH ROW
     EXECUTE FUNCTION handle_event_x_upsert ();
 
-CREATE TRIGGER set_invitee_modified_at
+CREATE TRIGGER set_invitee_updated_at
     BEFORE UPDATE ON public.invitee
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE OR REPLACE FUNCTION public.calendar (event_x)
     RETURNS SETOF calendar

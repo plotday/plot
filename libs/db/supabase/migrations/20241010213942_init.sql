@@ -114,7 +114,7 @@ CREATE TYPE "public"."provider" AS enum (
 CREATE TABLE "public"."account" (
     "id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL,
     "email" text NOT NULL,
     "credentials" jsonb,
@@ -126,7 +126,7 @@ ALTER TABLE "public"."account" ENABLE ROW LEVEL SECURITY;
 CREATE TABLE "public"."budget" (
     "id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL,
     "context_id" uuid,
     "week" daterange NOT NULL,
@@ -139,7 +139,7 @@ ALTER TABLE "public"."budget" ENABLE ROW LEVEL SECURITY;
 CREATE TABLE "public"."calendar" (
     "id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "account_id" bigint NOT NULL,
     "provider_id" text NOT NULL,
     "synced_dates" tstzrange,
@@ -173,7 +173,7 @@ ALTER TABLE "public"."contact" ENABLE ROW LEVEL SECURITY;
 CREATE TABLE "public"."context" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid_v7 (),
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "created_by" uuid NOT NULL,
     "name" text NOT NULL,
     "path" ltree NOT NULL
@@ -182,7 +182,7 @@ CREATE TABLE "public"."context" (
 ALTER TABLE "public"."context" ENABLE ROW LEVEL SECURITY;
 
 CREATE TABLE "public"."context_settings" (
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL,
     "context_id" uuid NOT NULL,
     "order" double precision NOT NULL,
@@ -193,7 +193,7 @@ ALTER TABLE "public"."context_settings" ENABLE ROW LEVEL SECURITY;
 
 CREATE TABLE "public"."context_user" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL,
     "context_id" uuid NOT NULL,
     "path" ltree
@@ -213,7 +213,7 @@ ALTER TABLE "public"."domain" ENABLE ROW LEVEL SECURITY;
 CREATE TABLE "public"."event" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid_v7 (),
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL,
     "calendar_id" bigint,
     "provider_id" text NOT NULL DEFAULT (gen_random_uuid ()) ::text,
@@ -258,7 +258,7 @@ ALTER TABLE "public"."invitee" ENABLE ROW LEVEL SECURITY;
 CREATE TABLE "public"."note" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid_v7 (),
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL,
     "context_id" uuid,
     "topic_id" uuid NOT NULL,
@@ -291,7 +291,7 @@ ALTER TABLE "public"."raw_event" ENABLE ROW LEVEL SECURITY;
 CREATE TABLE "public"."series" (
     "id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL,
     "series" text NOT NULL,
     "invitees" text[],
@@ -304,7 +304,7 @@ ALTER TABLE "public"."series" ENABLE ROW LEVEL SECURITY;
 CREATE TABLE "public"."session" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid_v7 (),
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL,
     "context_id" uuid,
     "at" tstzrange NOT NULL,
@@ -785,7 +785,7 @@ CREATE OR REPLACE FUNCTION public.insert_context_user ()
     AS $function$
 BEGIN
     IF nlevel (NEW.path) = 1 THEN
-        INSERT INTO public.context_user (created_at, modified_at, user_id, context_id)
+        INSERT INTO public.context_user (created_at, updated_at, user_id, context_id)
             VALUES (now(), now(), NEW.created_by, NEW.id);
     END IF;
     RETURN NEW;
@@ -993,12 +993,12 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.update_modified_at ()
+CREATE OR REPLACE FUNCTION public.update_updated_at ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     AS $function$
 BEGIN
-    NEW.modified_at = now();
+    NEW.updated_at = now();
     RETURN NEW;
 END;
 $function$;
@@ -1398,7 +1398,7 @@ SELECT
     c2.id,
     cu.user_id,
     c2.created_at,
-    GREATEST (cs.modified_at, cu.modified_at, c2.modified_at) AS modified_at,
+    GREATEST (cs.updated_at, cu.updated_at, c2.updated_at) AS updated_at,
     c2.name,
     replace_parent_path (c1.path, c2.path, COALESCE(cu.path, c1.path)) AS path,
     COALESCE(cs."order", (((EXTRACT(epoch FROM CURRENT_TIMESTAMP) * (1000)::numeric))::double precision * (10)::double precision)) AS "order",
@@ -1850,20 +1850,20 @@ CREATE TRIGGER on_account_created
     FOR EACH ROW
     EXECUTE FUNCTION insert_email_domain ();
 
-CREATE TRIGGER set_account_modified_at
+CREATE TRIGGER set_account_updated_at
     BEFORE UPDATE ON public.account
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER set_budget_modified_at
+CREATE TRIGGER set_budget_updated_at
     BEFORE UPDATE ON public.budget
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER set_calendar_modified_at
+CREATE TRIGGER set_calendar_updated_at
     BEFORE UPDATE ON public.calendar
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE TRIGGER on_contact_created
     AFTER INSERT ON public.contact
@@ -1880,20 +1880,20 @@ CREATE TRIGGER set_context_created_by
     FOR EACH ROW
     EXECUTE FUNCTION update_created_by ();
 
-CREATE TRIGGER set_context_modified_at
+CREATE TRIGGER set_context_updated_at
     BEFORE UPDATE ON public.context
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER set_context_settings_modified_at
+CREATE TRIGGER set_context_settings_updated_at
     BEFORE UPDATE ON public.context_settings
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER set_context_user_modified_at
+CREATE TRIGGER set_context_user_updated_at
     BEFORE UPDATE ON public.context_user
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE TRIGGER insert_context_x
     INSTEAD OF INSERT ON public.context_x
@@ -1905,36 +1905,36 @@ CREATE TRIGGER update_context_x
     FOR EACH ROW
     EXECUTE FUNCTION handle_context_x_update ();
 
-CREATE TRIGGER set_event_modified_at
+CREATE TRIGGER set_event_updated_at
     BEFORE UPDATE ON public.event
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE TRIGGER on_invitee_created
     AFTER INSERT ON public.invitee
     FOR EACH ROW
     EXECUTE FUNCTION insert_email_domain ();
 
-CREATE TRIGGER set_note_modified_at
+CREATE TRIGGER set_note_updated_at
     BEFORE UPDATE ON public.note
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER set_series_modified_at
+CREATE TRIGGER set_series_updated_at
     BEFORE UPDATE ON public.series
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER set_session_modified_at
+CREATE TRIGGER set_session_updated_at
     BEFORE UPDATE ON public.session
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE OR REPLACE VIEW "public"."note_x" AS
 SELECT
     note.id,
     note.created_at,
-    note.modified_at,
+    note.updated_at,
     note.user_id,
     note.context_id,
     note.topic_id,

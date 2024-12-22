@@ -293,7 +293,7 @@ class Balance extends BalanceRow {
 
   Balance.fromStore(BalanceRow row)
       : super(
-          modifiedAt: row.modifiedAt,
+          updatedAt: row.updatedAt,
           day: row.day,
           activityId: row.activityId,
           type: row.type,

@@ -1,7 +1,7 @@
 CREATE TABLE "public"."activity" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "draft" boolean NOT NULL DEFAULT FALSE,
     "archived_at" timestamp with time zone,
     "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
@@ -11,10 +11,10 @@ CREATE TABLE "public"."activity" (
 
 ALTER TABLE "public"."activity" ENABLE ROW LEVEL SECURITY;
 
-CREATE TRIGGER set_activity_modified_at
+CREATE TRIGGER set_activity_updated_at
     BEFORE UPDATE ON "public"."activity"
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE TRIGGER set_activity_created_by
     BEFORE INSERT ON "public"."activity"
@@ -23,7 +23,7 @@ CREATE TRIGGER set_activity_created_by
 
 CREATE TABLE "public"."activity_user" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "activity_id" uuid NOT NULL REFERENCES public.activity ON DELETE CASCADE,
     "path" ltree,
@@ -32,13 +32,13 @@ CREATE TABLE "public"."activity_user" (
 
 ALTER TABLE "public"."activity_user" ENABLE ROW LEVEL SECURITY;
 
-CREATE TRIGGER set_activity_user_modified_at
+CREATE TRIGGER set_activity_user_updated_at
     BEFORE UPDATE ON "public"."activity_user"
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE TABLE "public"."activity_settings" (
-    "modified_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "activity_id" uuid NOT NULL REFERENCES public.activity ON DELETE CASCADE,
     "order" double precision NOT NULL,
@@ -49,17 +49,17 @@ CREATE TABLE "public"."activity_settings" (
 
 ALTER TABLE "public"."activity_settings" ENABLE ROW LEVEL SECURITY;
 
-CREATE TRIGGER set_activity_settings_modified_at
+CREATE TRIGGER set_activity_settings_updated_at
     BEFORE UPDATE ON "public"."activity_settings"
     FOR EACH ROW
-    EXECUTE FUNCTION update_modified_at ();
+    EXECUTE FUNCTION update_updated_at ();
 
 CREATE OR REPLACE FUNCTION insert_activity_user ()
     RETURNS TRIGGER
     AS $$
 BEGIN
     IF nlevel (NEW.path) = 1 THEN
-        INSERT INTO public.activity_user (created_at, modified_at, user_id, activity_id)
+        INSERT INTO public.activity_user (created_at, updated_at, user_id, activity_id)
             VALUES (now(), now(), NEW.created_by, NEW.id);
     END IF;
     RETURN NEW;

@@ -6,7 +6,7 @@ class SyncStates extends Table {
   // Local timestamp of the most recent row pushed
   DateTimeColumn get pushedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
-  // Value of the modified_at field of the latest item pulled
+  // Value of the updated_at field of the latest item pulled
   DateTimeColumn get pulledAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   // Range synced

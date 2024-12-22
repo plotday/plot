@@ -20,7 +20,7 @@ CREATE OR REPLACE VIEW "public"."note_x" AS
 SELECT
     note.id,
     note.created_at,
-    note.modified_at,
+    note.updated_at,
     note.draft,
     note.archived_at,
     note.user_id,

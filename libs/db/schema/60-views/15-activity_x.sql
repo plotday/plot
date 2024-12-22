@@ -6,7 +6,7 @@ SELECT
     cu.user_id,
     c2.created_at,
     c2.draft,
-    GREATEST (cs.modified_at, cu.modified_at, c2.modified_at) AS modified_at,
+    GREATEST (cs.updated_at, cu.updated_at, c2.updated_at) AS updated_at,
     c2.name,
     replace_parent_path (c1.path, c2.path, COALESCE(cu.path, c1.path)) AS path,
     COALESCE(cs.order, (extract(epoch FROM CURRENT_TIMESTAMP) * 1000)::double PRECISION * 10) AS

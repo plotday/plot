@@ -369,15 +369,15 @@ class $AccountsTable extends Accounts
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
       'id', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _modifiedAtMeta =
-      const VerificationMeta('modifiedAt');
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
   @override
-  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
-      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> updatedAt =
+      GeneratedColumn<DateTime>('updated_at', aliasedName, false,
               type: DriftSqlType.dateTime,
               requiredDuringInsert: false,
               defaultValue: currentDateAndTime)
-          .withConverter<DateTime>($AccountsTable.$convertermodifiedAt);
+          .withConverter<DateTime>($AccountsTable.$converterupdatedAt);
   static const VerificationMeta _emailMeta = const VerificationMeta('email');
   @override
   late final GeneratedColumn<String> email = GeneratedColumn<String>(
@@ -391,7 +391,7 @@ class $AccountsTable extends Accounts
               type: DriftSqlType.string, requiredDuringInsert: true)
           .withConverter<AccountProvider>($AccountsTable.$converterprovider);
   @override
-  List<GeneratedColumn> get $columns => [id, modifiedAt, email, provider];
+  List<GeneratedColumn> get $columns => [id, updatedAt, email, provider];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -405,7 +405,7 @@ class $AccountsTable extends Accounts
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    context.handle(_modifiedAtMeta, const VerificationResult.success());
+    context.handle(_updatedAtMeta, const VerificationResult.success());
     if (data.containsKey('email')) {
       context.handle(
           _emailMeta, email.isAcceptableOrUnknown(data['email']!, _emailMeta));
@@ -424,9 +424,9 @@ class $AccountsTable extends Accounts
     return AccountRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      modifiedAt: $AccountsTable.$convertermodifiedAt.fromSql(attachedDatabase
+      updatedAt: $AccountsTable.$converterupdatedAt.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!),
       email: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}email'])!,
       provider: $AccountsTable.$converterprovider.fromSql(attachedDatabase
@@ -440,7 +440,7 @@ class $AccountsTable extends Accounts
     return $AccountsTable(attachedDatabase, alias);
   }
 
-  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+  static TypeConverter<DateTime, DateTime> $converterupdatedAt =
       const LocalDateTimeConverter();
   static JsonTypeConverter2<AccountProvider, String, String>
       $converterprovider =
@@ -449,12 +449,12 @@ class $AccountsTable extends Accounts
 
 class AccountRow extends DataClass implements Insertable<AccountRow> {
   final int id;
-  final DateTime modifiedAt;
+  final DateTime updatedAt;
   final String email;
   final AccountProvider provider;
   const AccountRow(
       {required this.id,
-      required this.modifiedAt,
+      required this.updatedAt,
       required this.email,
       required this.provider});
   @override
@@ -462,8 +462,8 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     {
-      map['modified_at'] = Variable<DateTime>(
-          $AccountsTable.$convertermodifiedAt.toSql(modifiedAt));
+      map['updated_at'] = Variable<DateTime>(
+          $AccountsTable.$converterupdatedAt.toSql(updatedAt));
     }
     map['email'] = Variable<String>(email);
     {
@@ -476,7 +476,7 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   AccountsCompanion toCompanion(bool nullToAbsent) {
     return AccountsCompanion(
       id: Value(id),
-      modifiedAt: Value(modifiedAt),
+      updatedAt: Value(updatedAt),
       email: Value(email),
       provider: Value(provider),
     );
@@ -487,7 +487,7 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return AccountRow(
       id: serializer.fromJson<int>(json['id']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
       email: serializer.fromJson<String>(json['email']),
       provider: $AccountsTable.$converterprovider
           .fromJson(serializer.fromJson<String>(json['provider'])),
@@ -498,7 +498,7 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'updated_at': serializer.toJson<DateTime>(updatedAt),
       'email': serializer.toJson<String>(email),
       'provider': serializer
           .toJson<String>($AccountsTable.$converterprovider.toJson(provider)),
@@ -507,20 +507,19 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
 
   AccountRow copyWith(
           {int? id,
-          DateTime? modifiedAt,
+          DateTime? updatedAt,
           String? email,
           AccountProvider? provider}) =>
       AccountRow(
         id: id ?? this.id,
-        modifiedAt: modifiedAt ?? this.modifiedAt,
+        updatedAt: updatedAt ?? this.updatedAt,
         email: email ?? this.email,
         provider: provider ?? this.provider,
       );
   AccountRow copyWithCompanion(AccountsCompanion data) {
     return AccountRow(
       id: data.id.present ? data.id.value : this.id,
-      modifiedAt:
-          data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       email: data.email.present ? data.email.value : this.email,
       provider: data.provider.present ? data.provider.value : this.provider,
     );
@@ -530,7 +529,7 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   String toString() {
     return (StringBuffer('AccountRow(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('email: $email, ')
           ..write('provider: $provider')
           ..write(')'))
@@ -538,44 +537,44 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, modifiedAt, email, provider);
+  int get hashCode => Object.hash(id, updatedAt, email, provider);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is AccountRow &&
           other.id == this.id &&
-          other.modifiedAt == this.modifiedAt &&
+          other.updatedAt == this.updatedAt &&
           other.email == this.email &&
           other.provider == this.provider);
 }
 
 class AccountsCompanion extends UpdateCompanion<AccountRow> {
   final Value<int> id;
-  final Value<DateTime> modifiedAt;
+  final Value<DateTime> updatedAt;
   final Value<String> email;
   final Value<AccountProvider> provider;
   const AccountsCompanion({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.email = const Value.absent(),
     this.provider = const Value.absent(),
   });
   AccountsCompanion.insert({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     required String email,
     required AccountProvider provider,
   })  : email = Value(email),
         provider = Value(provider);
   static Insertable<AccountRow> custom({
     Expression<int>? id,
-    Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? updatedAt,
     Expression<String>? email,
     Expression<String>? provider,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (email != null) 'email': email,
       if (provider != null) 'provider': provider,
     });
@@ -583,12 +582,12 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
 
   AccountsCompanion copyWith(
       {Value<int>? id,
-      Value<DateTime>? modifiedAt,
+      Value<DateTime>? updatedAt,
       Value<String>? email,
       Value<AccountProvider>? provider}) {
     return AccountsCompanion(
       id: id ?? this.id,
-      modifiedAt: modifiedAt ?? this.modifiedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       email: email ?? this.email,
       provider: provider ?? this.provider,
     );
@@ -600,9 +599,9 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
-    if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(
-          $AccountsTable.$convertermodifiedAt.toSql(modifiedAt.value));
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(
+          $AccountsTable.$converterupdatedAt.toSql(updatedAt.value));
     }
     if (email.present) {
       map['email'] = Variable<String>(email.value);
@@ -618,7 +617,7 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
   String toString() {
     return (StringBuffer('AccountsCompanion(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('email: $email, ')
           ..write('provider: $provider')
           ..write(')'))
@@ -637,15 +636,15 @@ class $CalendarsTable extends Calendars
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
       'id', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _modifiedAtMeta =
-      const VerificationMeta('modifiedAt');
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
   @override
-  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
-      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> updatedAt =
+      GeneratedColumn<DateTime>('updated_at', aliasedName, false,
               type: DriftSqlType.dateTime,
               requiredDuringInsert: false,
               defaultValue: currentDateAndTime)
-          .withConverter<DateTime>($CalendarsTable.$convertermodifiedAt);
+          .withConverter<DateTime>($CalendarsTable.$converterupdatedAt);
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -671,7 +670,7 @@ class $CalendarsTable extends Calendars
           GeneratedColumn.constraintIsAlways('REFERENCES accounts (id)'));
   @override
   List<GeneratedColumn> get $columns =>
-      [id, modifiedAt, name, enabled, accountId];
+      [id, updatedAt, name, enabled, accountId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -685,7 +684,7 @@ class $CalendarsTable extends Calendars
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    context.handle(_modifiedAtMeta, const VerificationResult.success());
+    context.handle(_updatedAtMeta, const VerificationResult.success());
     if (data.containsKey('name')) {
       context.handle(
           _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
@@ -715,9 +714,9 @@ class $CalendarsTable extends Calendars
     return CalendarRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      modifiedAt: $CalendarsTable.$convertermodifiedAt.fromSql(attachedDatabase
+      updatedAt: $CalendarsTable.$converterupdatedAt.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!),
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       enabled: attachedDatabase.typeMapping
@@ -732,19 +731,19 @@ class $CalendarsTable extends Calendars
     return $CalendarsTable(attachedDatabase, alias);
   }
 
-  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+  static TypeConverter<DateTime, DateTime> $converterupdatedAt =
       const LocalDateTimeConverter();
 }
 
 class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   final int id;
-  final DateTime modifiedAt;
+  final DateTime updatedAt;
   final String name;
   final bool enabled;
   final int accountId;
   const CalendarRow(
       {required this.id,
-      required this.modifiedAt,
+      required this.updatedAt,
       required this.name,
       required this.enabled,
       required this.accountId});
@@ -753,8 +752,8 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     {
-      map['modified_at'] = Variable<DateTime>(
-          $CalendarsTable.$convertermodifiedAt.toSql(modifiedAt));
+      map['updated_at'] = Variable<DateTime>(
+          $CalendarsTable.$converterupdatedAt.toSql(updatedAt));
     }
     map['name'] = Variable<String>(name);
     map['enabled'] = Variable<bool>(enabled);
@@ -765,7 +764,7 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   CalendarsCompanion toCompanion(bool nullToAbsent) {
     return CalendarsCompanion(
       id: Value(id),
-      modifiedAt: Value(modifiedAt),
+      updatedAt: Value(updatedAt),
       name: Value(name),
       enabled: Value(enabled),
       accountId: Value(accountId),
@@ -777,7 +776,7 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return CalendarRow(
       id: serializer.fromJson<int>(json['id']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
       name: serializer.fromJson<String>(json['name']),
       enabled: serializer.fromJson<bool>(json['enabled']),
       accountId: serializer.fromJson<int>(json['account_id']),
@@ -788,7 +787,7 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'updated_at': serializer.toJson<DateTime>(updatedAt),
       'name': serializer.toJson<String>(name),
       'enabled': serializer.toJson<bool>(enabled),
       'account_id': serializer.toJson<int>(accountId),
@@ -797,13 +796,13 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
 
   CalendarRow copyWith(
           {int? id,
-          DateTime? modifiedAt,
+          DateTime? updatedAt,
           String? name,
           bool? enabled,
           int? accountId}) =>
       CalendarRow(
         id: id ?? this.id,
-        modifiedAt: modifiedAt ?? this.modifiedAt,
+        updatedAt: updatedAt ?? this.updatedAt,
         name: name ?? this.name,
         enabled: enabled ?? this.enabled,
         accountId: accountId ?? this.accountId,
@@ -811,8 +810,7 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   CalendarRow copyWithCompanion(CalendarsCompanion data) {
     return CalendarRow(
       id: data.id.present ? data.id.value : this.id,
-      modifiedAt:
-          data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       name: data.name.present ? data.name.value : this.name,
       enabled: data.enabled.present ? data.enabled.value : this.enabled,
       accountId: data.accountId.present ? data.accountId.value : this.accountId,
@@ -823,7 +821,7 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   String toString() {
     return (StringBuffer('CalendarRow(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('name: $name, ')
           ..write('enabled: $enabled, ')
           ..write('accountId: $accountId')
@@ -832,13 +830,13 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, modifiedAt, name, enabled, accountId);
+  int get hashCode => Object.hash(id, updatedAt, name, enabled, accountId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is CalendarRow &&
           other.id == this.id &&
-          other.modifiedAt == this.modifiedAt &&
+          other.updatedAt == this.updatedAt &&
           other.name == this.name &&
           other.enabled == this.enabled &&
           other.accountId == this.accountId);
@@ -846,20 +844,20 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
 
 class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   final Value<int> id;
-  final Value<DateTime> modifiedAt;
+  final Value<DateTime> updatedAt;
   final Value<String> name;
   final Value<bool> enabled;
   final Value<int> accountId;
   const CalendarsCompanion({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.name = const Value.absent(),
     this.enabled = const Value.absent(),
     this.accountId = const Value.absent(),
   });
   CalendarsCompanion.insert({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     required String name,
     required bool enabled,
     required int accountId,
@@ -868,14 +866,14 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
         accountId = Value(accountId);
   static Insertable<CalendarRow> custom({
     Expression<int>? id,
-    Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? updatedAt,
     Expression<String>? name,
     Expression<bool>? enabled,
     Expression<int>? accountId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (name != null) 'name': name,
       if (enabled != null) 'enabled': enabled,
       if (accountId != null) 'account_id': accountId,
@@ -884,13 +882,13 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
 
   CalendarsCompanion copyWith(
       {Value<int>? id,
-      Value<DateTime>? modifiedAt,
+      Value<DateTime>? updatedAt,
       Value<String>? name,
       Value<bool>? enabled,
       Value<int>? accountId}) {
     return CalendarsCompanion(
       id: id ?? this.id,
-      modifiedAt: modifiedAt ?? this.modifiedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       name: name ?? this.name,
       enabled: enabled ?? this.enabled,
       accountId: accountId ?? this.accountId,
@@ -903,9 +901,9 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
-    if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(
-          $CalendarsTable.$convertermodifiedAt.toSql(modifiedAt.value));
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(
+          $CalendarsTable.$converterupdatedAt.toSql(updatedAt.value));
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -923,7 +921,7 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   String toString() {
     return (StringBuffer('CalendarsCompanion(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('name: $name, ')
           ..write('enabled: $enabled, ')
           ..write('accountId: $accountId')
@@ -946,15 +944,15 @@ class $ActivitiesTable extends Activities
               requiredDuringInsert: false,
               clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($ActivitiesTable.$converterid);
-  static const VerificationMeta _modifiedAtMeta =
-      const VerificationMeta('modifiedAt');
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
   @override
-  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
-      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> updatedAt =
+      GeneratedColumn<DateTime>('updated_at', aliasedName, false,
               type: DriftSqlType.dateTime,
               requiredDuringInsert: false,
               defaultValue: currentDateAndTime)
-          .withConverter<DateTime>($ActivitiesTable.$convertermodifiedAt);
+          .withConverter<DateTime>($ActivitiesTable.$converterupdatedAt);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
@@ -1011,7 +1009,7 @@ class $ActivitiesTable extends Activities
           .withConverter<ThemeColor>($ActivitiesTable.$convertercolor);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, modifiedAt, createdAt, draft, name, path, order, pomodoro, color];
+      [id, updatedAt, createdAt, draft, name, path, order, pomodoro, color];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1023,7 +1021,7 @@ class $ActivitiesTable extends Activities
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    context.handle(_modifiedAtMeta, const VerificationResult.success());
+    context.handle(_updatedAtMeta, const VerificationResult.success());
     context.handle(_createdAtMeta, const VerificationResult.success());
     if (data.containsKey('draft')) {
       context.handle(
@@ -1050,9 +1048,9 @@ class $ActivitiesTable extends Activities
     return ActivityRow(
       id: $ActivitiesTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      modifiedAt: $ActivitiesTable.$convertermodifiedAt.fromSql(attachedDatabase
+      updatedAt: $ActivitiesTable.$converterupdatedAt.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!),
       createdAt: $ActivitiesTable.$convertercreatedAt.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!),
@@ -1080,7 +1078,7 @@ class $ActivitiesTable extends Activities
   }
 
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
-  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+  static TypeConverter<DateTime, DateTime> $converterupdatedAt =
       const LocalDateTimeConverter();
   static TypeConverter<DateTime, DateTime> $convertercreatedAt =
       const LocalDateTimeConverter();
@@ -1094,7 +1092,7 @@ class $ActivitiesTable extends Activities
 
 class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final Uuid id;
-  final DateTime modifiedAt;
+  final DateTime updatedAt;
   final DateTime createdAt;
   final bool draft;
   final String name;
@@ -1104,7 +1102,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final ThemeColor color;
   const ActivityRow(
       {required this.id,
-      required this.modifiedAt,
+      required this.updatedAt,
       required this.createdAt,
       required this.draft,
       required this.name,
@@ -1119,8 +1117,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       map['id'] = Variable<Uint8List>($ActivitiesTable.$converterid.toSql(id));
     }
     {
-      map['modified_at'] = Variable<DateTime>(
-          $ActivitiesTable.$convertermodifiedAt.toSql(modifiedAt));
+      map['updated_at'] = Variable<DateTime>(
+          $ActivitiesTable.$converterupdatedAt.toSql(updatedAt));
     }
     {
       map['created_at'] = Variable<DateTime>(
@@ -1150,7 +1148,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   ActivitiesCompanion toCompanion(bool nullToAbsent) {
     return ActivitiesCompanion(
       id: Value(id),
-      modifiedAt: Value(modifiedAt),
+      updatedAt: Value(updatedAt),
       createdAt: Value(createdAt),
       draft: Value(draft),
       name: Value(name),
@@ -1166,7 +1164,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return ActivityRow(
       id: serializer.fromJson<Uuid>(json['id']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
       createdAt: serializer.fromJson<DateTime>(json['created_at']),
       draft: serializer.fromJson<bool>(json['draft']),
       name: serializer.fromJson<String>(json['name']),
@@ -1181,7 +1179,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
-      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'updated_at': serializer.toJson<DateTime>(updatedAt),
       'created_at': serializer.toJson<DateTime>(createdAt),
       'draft': serializer.toJson<bool>(draft),
       'name': serializer.toJson<String>(name),
@@ -1194,7 +1192,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
 
   ActivityRow copyWith(
           {Uuid? id,
-          DateTime? modifiedAt,
+          DateTime? updatedAt,
           DateTime? createdAt,
           bool? draft,
           String? name,
@@ -1204,7 +1202,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           ThemeColor? color}) =>
       ActivityRow(
         id: id ?? this.id,
-        modifiedAt: modifiedAt ?? this.modifiedAt,
+        updatedAt: updatedAt ?? this.updatedAt,
         createdAt: createdAt ?? this.createdAt,
         draft: draft ?? this.draft,
         name: name ?? this.name,
@@ -1216,8 +1214,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   ActivityRow copyWithCompanion(ActivitiesCompanion data) {
     return ActivityRow(
       id: data.id.present ? data.id.value : this.id,
-      modifiedAt:
-          data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       draft: data.draft.present ? data.draft.value : this.draft,
       name: data.name.present ? data.name.value : this.name,
@@ -1232,7 +1229,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   String toString() {
     return (StringBuffer('ActivityRow(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
           ..write('name: $name, ')
@@ -1246,13 +1243,13 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
 
   @override
   int get hashCode => Object.hash(
-      id, modifiedAt, createdAt, draft, name, path, order, pomodoro, color);
+      id, updatedAt, createdAt, draft, name, path, order, pomodoro, color);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ActivityRow &&
           other.id == this.id &&
-          other.modifiedAt == this.modifiedAt &&
+          other.updatedAt == this.updatedAt &&
           other.createdAt == this.createdAt &&
           other.draft == this.draft &&
           other.name == this.name &&
@@ -1264,7 +1261,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
 
 class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<Uuid> id;
-  final Value<DateTime> modifiedAt;
+  final Value<DateTime> updatedAt;
   final Value<DateTime> createdAt;
   final Value<bool> draft;
   final Value<String> name;
@@ -1275,7 +1272,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<int> rowid;
   const ActivitiesCompanion({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
     this.name = const Value.absent(),
@@ -1287,7 +1284,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   });
   ActivitiesCompanion.insert({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
     required String name,
@@ -1300,7 +1297,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
         path = Value(path);
   static Insertable<ActivityRow> custom({
     Expression<Uint8List>? id,
-    Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? updatedAt,
     Expression<DateTime>? createdAt,
     Expression<bool>? draft,
     Expression<String>? name,
@@ -1312,7 +1309,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (draft != null) 'draft': draft,
       if (name != null) 'name': name,
@@ -1326,7 +1323,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
 
   ActivitiesCompanion copyWith(
       {Value<Uuid>? id,
-      Value<DateTime>? modifiedAt,
+      Value<DateTime>? updatedAt,
       Value<DateTime>? createdAt,
       Value<bool>? draft,
       Value<String>? name,
@@ -1337,7 +1334,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       Value<int>? rowid}) {
     return ActivitiesCompanion(
       id: id ?? this.id,
-      modifiedAt: modifiedAt ?? this.modifiedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       createdAt: createdAt ?? this.createdAt,
       draft: draft ?? this.draft,
       name: name ?? this.name,
@@ -1356,9 +1353,9 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       map['id'] =
           Variable<Uint8List>($ActivitiesTable.$converterid.toSql(id.value));
     }
-    if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(
-          $ActivitiesTable.$convertermodifiedAt.toSql(modifiedAt.value));
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(
+          $ActivitiesTable.$converterupdatedAt.toSql(updatedAt.value));
     }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(
@@ -1396,7 +1393,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   String toString() {
     return (StringBuffer('ActivitiesCompanion(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
           ..write('name: $name, ')
@@ -1423,15 +1420,15 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
               requiredDuringInsert: false,
               clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($NotesTable.$converterid);
-  static const VerificationMeta _modifiedAtMeta =
-      const VerificationMeta('modifiedAt');
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
   @override
-  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
-      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> updatedAt =
+      GeneratedColumn<DateTime>('updated_at', aliasedName, false,
               type: DriftSqlType.dateTime,
               requiredDuringInsert: false,
               defaultValue: currentDateAndTime)
-          .withConverter<DateTime>($NotesTable.$convertermodifiedAt);
+          .withConverter<DateTime>($NotesTable.$converterupdatedAt);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
@@ -1540,7 +1537,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
   @override
   List<GeneratedColumn> get $columns => [
         id,
-        modifiedAt,
+        updatedAt,
         createdAt,
         draft,
         userId,
@@ -1566,7 +1563,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    context.handle(_modifiedAtMeta, const VerificationResult.success());
+    context.handle(_updatedAtMeta, const VerificationResult.success());
     context.handle(_createdAtMeta, const VerificationResult.success());
     if (data.containsKey('draft')) {
       context.handle(
@@ -1608,9 +1605,9 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
     return NoteRow(
       id: $NotesTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      modifiedAt: $NotesTable.$convertermodifiedAt.fromSql(attachedDatabase
+      updatedAt: $NotesTable.$converterupdatedAt.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!),
       createdAt: $NotesTable.$convertercreatedAt.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!),
@@ -1650,7 +1647,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
   }
 
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
-  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+  static TypeConverter<DateTime, DateTime> $converterupdatedAt =
       const LocalDateTimeConverter();
   static TypeConverter<DateTime, DateTime> $convertercreatedAt =
       const LocalDateTimeConverter();
@@ -1677,7 +1674,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
 
 class NoteRow extends DataClass implements Insertable<NoteRow> {
   final Uuid id;
-  final DateTime modifiedAt;
+  final DateTime updatedAt;
   final DateTime createdAt;
   final bool draft;
   final Uuid userId;
@@ -1693,7 +1690,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   final DateTime? doneAt;
   const NoteRow(
       {required this.id,
-      required this.modifiedAt,
+      required this.updatedAt,
       required this.createdAt,
       required this.draft,
       required this.userId,
@@ -1714,8 +1711,8 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       map['id'] = Variable<Uint8List>($NotesTable.$converterid.toSql(id));
     }
     {
-      map['modified_at'] = Variable<DateTime>(
-          $NotesTable.$convertermodifiedAt.toSql(modifiedAt));
+      map['updated_at'] =
+          Variable<DateTime>($NotesTable.$converterupdatedAt.toSql(updatedAt));
     }
     {
       map['created_at'] =
@@ -1759,7 +1756,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   NotesCompanion toCompanion(bool nullToAbsent) {
     return NotesCompanion(
       id: Value(id),
-      modifiedAt: Value(modifiedAt),
+      updatedAt: Value(updatedAt),
       createdAt: Value(createdAt),
       draft: Value(draft),
       userId: Value(userId),
@@ -1784,7 +1781,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return NoteRow(
       id: serializer.fromJson<Uuid>(json['id']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
       createdAt: serializer.fromJson<DateTime>(json['created_at']),
       draft: serializer.fromJson<bool>(json['draft']),
       userId: serializer.fromJson<Uuid>(json['user_id']),
@@ -1805,7 +1802,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
-      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'updated_at': serializer.toJson<DateTime>(updatedAt),
       'created_at': serializer.toJson<DateTime>(createdAt),
       'draft': serializer.toJson<bool>(draft),
       'user_id': serializer.toJson<Uuid>(userId),
@@ -1824,7 +1821,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
 
   NoteRow copyWith(
           {Uuid? id,
-          DateTime? modifiedAt,
+          DateTime? updatedAt,
           DateTime? createdAt,
           bool? draft,
           Uuid? userId,
@@ -1840,7 +1837,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           Value<DateTime?> doneAt = const Value.absent()}) =>
       NoteRow(
         id: id ?? this.id,
-        modifiedAt: modifiedAt ?? this.modifiedAt,
+        updatedAt: updatedAt ?? this.updatedAt,
         createdAt: createdAt ?? this.createdAt,
         draft: draft ?? this.draft,
         userId: userId ?? this.userId,
@@ -1858,8 +1855,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   NoteRow copyWithCompanion(NotesCompanion data) {
     return NoteRow(
       id: data.id.present ? data.id.value : this.id,
-      modifiedAt:
-          data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       draft: data.draft.present ? data.draft.value : this.draft,
       userId: data.userId.present ? data.userId.value : this.userId,
@@ -1881,7 +1877,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   String toString() {
     return (StringBuffer('NoteRow(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
           ..write('userId: $userId, ')
@@ -1902,7 +1898,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   @override
   int get hashCode => Object.hash(
       id,
-      modifiedAt,
+      updatedAt,
       createdAt,
       draft,
       userId,
@@ -1921,7 +1917,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       identical(this, other) ||
       (other is NoteRow &&
           other.id == this.id &&
-          other.modifiedAt == this.modifiedAt &&
+          other.updatedAt == this.updatedAt &&
           other.createdAt == this.createdAt &&
           other.draft == this.draft &&
           other.userId == this.userId &&
@@ -1939,7 +1935,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
 
 class NotesCompanion extends UpdateCompanion<NoteRow> {
   final Value<Uuid> id;
-  final Value<DateTime> modifiedAt;
+  final Value<DateTime> updatedAt;
   final Value<DateTime> createdAt;
   final Value<bool> draft;
   final Value<Uuid> userId;
@@ -1956,7 +1952,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   final Value<int> rowid;
   const NotesCompanion({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
     this.userId = const Value.absent(),
@@ -1974,7 +1970,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   });
   NotesCompanion.insert({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
     this.userId = const Value.absent(),
@@ -1993,7 +1989,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
         topicId = Value(topicId);
   static Insertable<NoteRow> custom({
     Expression<Uint8List>? id,
-    Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? updatedAt,
     Expression<DateTime>? createdAt,
     Expression<bool>? draft,
     Expression<Uint8List>? userId,
@@ -2011,7 +2007,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (draft != null) 'draft': draft,
       if (userId != null) 'user_id': userId,
@@ -2031,7 +2027,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
 
   NotesCompanion copyWith(
       {Value<Uuid>? id,
-      Value<DateTime>? modifiedAt,
+      Value<DateTime>? updatedAt,
       Value<DateTime>? createdAt,
       Value<bool>? draft,
       Value<Uuid>? userId,
@@ -2048,7 +2044,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       Value<int>? rowid}) {
     return NotesCompanion(
       id: id ?? this.id,
-      modifiedAt: modifiedAt ?? this.modifiedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       createdAt: createdAt ?? this.createdAt,
       draft: draft ?? this.draft,
       userId: userId ?? this.userId,
@@ -2072,9 +2068,9 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     if (id.present) {
       map['id'] = Variable<Uint8List>($NotesTable.$converterid.toSql(id.value));
     }
-    if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(
-          $NotesTable.$convertermodifiedAt.toSql(modifiedAt.value));
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(
+          $NotesTable.$converterupdatedAt.toSql(updatedAt.value));
     }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(
@@ -2133,7 +2129,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   String toString() {
     return (StringBuffer('NotesCompanion(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
           ..write('userId: $userId, ')
@@ -2166,15 +2162,15 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
               requiredDuringInsert: false,
               clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($EventsTable.$converterid);
-  static const VerificationMeta _modifiedAtMeta =
-      const VerificationMeta('modifiedAt');
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
   @override
-  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
-      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> updatedAt =
+      GeneratedColumn<DateTime>('updated_at', aliasedName, false,
               type: DriftSqlType.dateTime,
               requiredDuringInsert: false,
               defaultValue: currentDateAndTime)
-          .withConverter<DateTime>($EventsTable.$convertermodifiedAt);
+          .withConverter<DateTime>($EventsTable.$converterupdatedAt);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
@@ -2274,7 +2270,7 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
   @override
   List<GeneratedColumn> get $columns => [
         id,
-        modifiedAt,
+        updatedAt,
         createdAt,
         draft,
         name,
@@ -2299,7 +2295,7 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    context.handle(_modifiedAtMeta, const VerificationResult.success());
+    context.handle(_updatedAtMeta, const VerificationResult.success());
     context.handle(_createdAtMeta, const VerificationResult.success());
     if (data.containsKey('draft')) {
       context.handle(
@@ -2337,9 +2333,9 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
     return EventRow(
       id: $EventsTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      modifiedAt: $EventsTable.$convertermodifiedAt.fromSql(attachedDatabase
+      updatedAt: $EventsTable.$converterupdatedAt.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!),
       createdAt: $EventsTable.$convertercreatedAt.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!),
@@ -2378,7 +2374,7 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
   }
 
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
-  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+  static TypeConverter<DateTime, DateTime> $converterupdatedAt =
       const LocalDateTimeConverter();
   static TypeConverter<DateTime, DateTime> $convertercreatedAt =
       const LocalDateTimeConverter();
@@ -2404,7 +2400,7 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
 
 class EventRow extends DataClass implements Insertable<EventRow> {
   final Uuid id;
-  final DateTime modifiedAt;
+  final DateTime updatedAt;
   final DateTime createdAt;
   final bool draft;
   final String? name;
@@ -2419,7 +2415,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   final Uuid? activityId;
   const EventRow(
       {required this.id,
-      required this.modifiedAt,
+      required this.updatedAt,
       required this.createdAt,
       required this.draft,
       this.name,
@@ -2439,8 +2435,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       map['id'] = Variable<Uint8List>($EventsTable.$converterid.toSql(id));
     }
     {
-      map['modified_at'] = Variable<DateTime>(
-          $EventsTable.$convertermodifiedAt.toSql(modifiedAt));
+      map['updated_at'] =
+          Variable<DateTime>($EventsTable.$converterupdatedAt.toSql(updatedAt));
     }
     {
       map['created_at'] =
@@ -2487,7 +2483,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   EventsCompanion toCompanion(bool nullToAbsent) {
     return EventsCompanion(
       id: Value(id),
-      modifiedAt: Value(modifiedAt),
+      updatedAt: Value(updatedAt),
       createdAt: Value(createdAt),
       draft: Value(draft),
       name: name == null && nullToAbsent ? const Value.absent() : Value(name),
@@ -2511,7 +2507,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return EventRow(
       id: serializer.fromJson<Uuid>(json['id']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
       createdAt: serializer.fromJson<DateTime>(json['created_at']),
       draft: serializer.fromJson<bool>(json['draft']),
       name: serializer.fromJson<String?>(json['name']),
@@ -2535,7 +2531,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
-      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'updated_at': serializer.toJson<DateTime>(updatedAt),
       'created_at': serializer.toJson<DateTime>(createdAt),
       'draft': serializer.toJson<bool>(draft),
       'name': serializer.toJson<String?>(name),
@@ -2557,7 +2553,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
 
   EventRow copyWith(
           {Uuid? id,
-          DateTime? modifiedAt,
+          DateTime? updatedAt,
           DateTime? createdAt,
           bool? draft,
           Value<String?> name = const Value.absent(),
@@ -2572,7 +2568,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           Value<Uuid?> activityId = const Value.absent()}) =>
       EventRow(
         id: id ?? this.id,
-        modifiedAt: modifiedAt ?? this.modifiedAt,
+        updatedAt: updatedAt ?? this.updatedAt,
         createdAt: createdAt ?? this.createdAt,
         draft: draft ?? this.draft,
         name: name.present ? name.value : this.name,
@@ -2589,8 +2585,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   EventRow copyWithCompanion(EventsCompanion data) {
     return EventRow(
       id: data.id.present ? data.id.value : this.id,
-      modifiedAt:
-          data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       draft: data.draft.present ? data.draft.value : this.draft,
       name: data.name.present ? data.name.value : this.name,
@@ -2616,7 +2611,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   String toString() {
     return (StringBuffer('EventRow(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
           ..write('name: $name, ')
@@ -2636,7 +2631,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   @override
   int get hashCode => Object.hash(
       id,
-      modifiedAt,
+      updatedAt,
       createdAt,
       draft,
       name,
@@ -2654,7 +2649,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       identical(this, other) ||
       (other is EventRow &&
           other.id == this.id &&
-          other.modifiedAt == this.modifiedAt &&
+          other.updatedAt == this.updatedAt &&
           other.createdAt == this.createdAt &&
           other.draft == this.draft &&
           other.name == this.name &&
@@ -2671,7 +2666,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
 
 class EventsCompanion extends UpdateCompanion<EventRow> {
   final Value<Uuid> id;
-  final Value<DateTime> modifiedAt;
+  final Value<DateTime> updatedAt;
   final Value<DateTime> createdAt;
   final Value<bool> draft;
   final Value<String?> name;
@@ -2687,7 +2682,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   final Value<int> rowid;
   const EventsCompanion({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
     this.name = const Value.absent(),
@@ -2704,7 +2699,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   });
   EventsCompanion.insert({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
     this.name = const Value.absent(),
@@ -2722,7 +2717,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
         end = Value(end);
   static Insertable<EventRow> custom({
     Expression<Uint8List>? id,
-    Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? updatedAt,
     Expression<DateTime>? createdAt,
     Expression<bool>? draft,
     Expression<String>? name,
@@ -2739,7 +2734,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (draft != null) 'draft': draft,
       if (name != null) 'name': name,
@@ -2758,7 +2753,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
 
   EventsCompanion copyWith(
       {Value<Uuid>? id,
-      Value<DateTime>? modifiedAt,
+      Value<DateTime>? updatedAt,
       Value<DateTime>? createdAt,
       Value<bool>? draft,
       Value<String?>? name,
@@ -2774,7 +2769,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       Value<int>? rowid}) {
     return EventsCompanion(
       id: id ?? this.id,
-      modifiedAt: modifiedAt ?? this.modifiedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       createdAt: createdAt ?? this.createdAt,
       draft: draft ?? this.draft,
       name: name ?? this.name,
@@ -2798,9 +2793,9 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       map['id'] =
           Variable<Uint8List>($EventsTable.$converterid.toSql(id.value));
     }
-    if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(
-          $EventsTable.$convertermodifiedAt.toSql(modifiedAt.value));
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(
+          $EventsTable.$converterupdatedAt.toSql(updatedAt.value));
     }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(
@@ -2856,7 +2851,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   String toString() {
     return (StringBuffer('EventsCompanion(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
           ..write('name: $name, ')
@@ -2889,15 +2884,15 @@ class $SessionsTable extends Sessions
               requiredDuringInsert: false,
               clientDefault: () => Uuid.generate().toBytes())
           .withConverter<Uuid>($SessionsTable.$converterid);
-  static const VerificationMeta _modifiedAtMeta =
-      const VerificationMeta('modifiedAt');
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
   @override
-  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
-      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> updatedAt =
+      GeneratedColumn<DateTime>('updated_at', aliasedName, false,
               type: DriftSqlType.dateTime,
               requiredDuringInsert: false,
               defaultValue: currentDateAndTime)
-          .withConverter<DateTime>($SessionsTable.$convertermodifiedAt);
+          .withConverter<DateTime>($SessionsTable.$converterupdatedAt);
   static const VerificationMeta _activityIdMeta =
       const VerificationMeta('activityId');
   @override
@@ -2944,7 +2939,7 @@ class $SessionsTable extends Sessions
           .withConverter<DateTime?>($SessionsTable.$converterpomodoroAtn);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, modifiedAt, activityId, start, end, priority, pomodoro, pomodoroAt];
+      [id, updatedAt, activityId, start, end, priority, pomodoro, pomodoroAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2956,7 +2951,7 @@ class $SessionsTable extends Sessions
     final context = VerificationContext();
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
-    context.handle(_modifiedAtMeta, const VerificationResult.success());
+    context.handle(_updatedAtMeta, const VerificationResult.success());
     context.handle(_activityIdMeta, const VerificationResult.success());
     context.handle(_startMeta, const VerificationResult.success());
     context.handle(_endMeta, const VerificationResult.success());
@@ -2977,9 +2972,9 @@ class $SessionsTable extends Sessions
     return SessionRow(
       id: $SessionsTable.$converterid.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}id'])!),
-      modifiedAt: $SessionsTable.$convertermodifiedAt.fromSql(attachedDatabase
+      updatedAt: $SessionsTable.$converterupdatedAt.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!),
       activityId: $SessionsTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
@@ -3004,7 +2999,7 @@ class $SessionsTable extends Sessions
   }
 
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
-  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+  static TypeConverter<DateTime, DateTime> $converterupdatedAt =
       const LocalDateTimeConverter();
   static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
@@ -3026,7 +3021,7 @@ class $SessionsTable extends Sessions
 
 class SessionRow extends DataClass implements Insertable<SessionRow> {
   final Uuid id;
-  final DateTime modifiedAt;
+  final DateTime updatedAt;
   final Uuid? activityId;
   final DateTime start;
   final DateTime end;
@@ -3035,7 +3030,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   final DateTime? pomodoroAt;
   const SessionRow(
       {required this.id,
-      required this.modifiedAt,
+      required this.updatedAt,
       this.activityId,
       required this.start,
       required this.end,
@@ -3049,8 +3044,8 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       map['id'] = Variable<Uint8List>($SessionsTable.$converterid.toSql(id));
     }
     {
-      map['modified_at'] = Variable<DateTime>(
-          $SessionsTable.$convertermodifiedAt.toSql(modifiedAt));
+      map['updated_at'] = Variable<DateTime>(
+          $SessionsTable.$converterupdatedAt.toSql(updatedAt));
     }
     if (!nullToAbsent || activityId != null) {
       map['activity_id'] = Variable<Uint8List>(
@@ -3078,7 +3073,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   SessionsCompanion toCompanion(bool nullToAbsent) {
     return SessionsCompanion(
       id: Value(id),
-      modifiedAt: Value(modifiedAt),
+      updatedAt: Value(updatedAt),
       activityId: activityId == null && nullToAbsent
           ? const Value.absent()
           : Value(activityId),
@@ -3099,7 +3094,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return SessionRow(
       id: serializer.fromJson<Uuid>(json['id']),
-      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
       activityId: serializer.fromJson<Uuid?>(json['activity_id']),
       start: serializer.fromJson<DateTime>(json['start']),
       end: serializer.fromJson<DateTime>(json['end']),
@@ -3113,7 +3108,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
-      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'updated_at': serializer.toJson<DateTime>(updatedAt),
       'activity_id': serializer.toJson<Uuid?>(activityId),
       'start': serializer.toJson<DateTime>(start),
       'end': serializer.toJson<DateTime>(end),
@@ -3125,7 +3120,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
 
   SessionRow copyWith(
           {Uuid? id,
-          DateTime? modifiedAt,
+          DateTime? updatedAt,
           Value<Uuid?> activityId = const Value.absent(),
           DateTime? start,
           DateTime? end,
@@ -3134,7 +3129,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           Value<DateTime?> pomodoroAt = const Value.absent()}) =>
       SessionRow(
         id: id ?? this.id,
-        modifiedAt: modifiedAt ?? this.modifiedAt,
+        updatedAt: updatedAt ?? this.updatedAt,
         activityId: activityId.present ? activityId.value : this.activityId,
         start: start ?? this.start,
         end: end ?? this.end,
@@ -3145,8 +3140,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   SessionRow copyWithCompanion(SessionsCompanion data) {
     return SessionRow(
       id: data.id.present ? data.id.value : this.id,
-      modifiedAt:
-          data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       activityId:
           data.activityId.present ? data.activityId.value : this.activityId,
       start: data.start.present ? data.start.value : this.start,
@@ -3162,7 +3156,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   String toString() {
     return (StringBuffer('SessionRow(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('activityId: $activityId, ')
           ..write('start: $start, ')
           ..write('end: $end, ')
@@ -3175,13 +3169,13 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
 
   @override
   int get hashCode => Object.hash(
-      id, modifiedAt, activityId, start, end, priority, pomodoro, pomodoroAt);
+      id, updatedAt, activityId, start, end, priority, pomodoro, pomodoroAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is SessionRow &&
           other.id == this.id &&
-          other.modifiedAt == this.modifiedAt &&
+          other.updatedAt == this.updatedAt &&
           other.activityId == this.activityId &&
           other.start == this.start &&
           other.end == this.end &&
@@ -3192,7 +3186,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
 
 class SessionsCompanion extends UpdateCompanion<SessionRow> {
   final Value<Uuid> id;
-  final Value<DateTime> modifiedAt;
+  final Value<DateTime> updatedAt;
   final Value<Uuid?> activityId;
   final Value<DateTime> start;
   final Value<DateTime> end;
@@ -3202,7 +3196,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   final Value<int> rowid;
   const SessionsCompanion({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.activityId = const Value.absent(),
     this.start = const Value.absent(),
     this.end = const Value.absent(),
@@ -3213,7 +3207,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   });
   SessionsCompanion.insert({
     this.id = const Value.absent(),
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.activityId = const Value.absent(),
     required DateTime start,
     required DateTime end,
@@ -3225,7 +3219,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
         end = Value(end);
   static Insertable<SessionRow> custom({
     Expression<Uint8List>? id,
-    Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? updatedAt,
     Expression<Uint8List>? activityId,
     Expression<DateTime>? start,
     Expression<DateTime>? end,
@@ -3236,7 +3230,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (activityId != null) 'activity_id': activityId,
       if (start != null) 'start': start,
       if (end != null) 'end': end,
@@ -3249,7 +3243,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
 
   SessionsCompanion copyWith(
       {Value<Uuid>? id,
-      Value<DateTime>? modifiedAt,
+      Value<DateTime>? updatedAt,
       Value<Uuid?>? activityId,
       Value<DateTime>? start,
       Value<DateTime>? end,
@@ -3259,7 +3253,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       Value<int>? rowid}) {
     return SessionsCompanion(
       id: id ?? this.id,
-      modifiedAt: modifiedAt ?? this.modifiedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       activityId: activityId ?? this.activityId,
       start: start ?? this.start,
       end: end ?? this.end,
@@ -3277,9 +3271,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       map['id'] =
           Variable<Uint8List>($SessionsTable.$converterid.toSql(id.value));
     }
-    if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(
-          $SessionsTable.$convertermodifiedAt.toSql(modifiedAt.value));
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(
+          $SessionsTable.$converterupdatedAt.toSql(updatedAt.value));
     }
     if (activityId.present) {
       map['activity_id'] = Variable<Uint8List>(
@@ -3314,7 +3308,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   String toString() {
     return (StringBuffer('SessionsCompanion(')
           ..write('id: $id, ')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('activityId: $activityId, ')
           ..write('start: $start, ')
           ..write('end: $end, ')
@@ -3333,15 +3327,15 @@ class $BalancesTable extends Balances
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $BalancesTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _modifiedAtMeta =
-      const VerificationMeta('modifiedAt');
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
   @override
-  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> modifiedAt =
-      GeneratedColumn<DateTime>('modified_at', aliasedName, false,
+  late final GeneratedColumnWithTypeConverter<DateTime, DateTime> updatedAt =
+      GeneratedColumn<DateTime>('updated_at', aliasedName, false,
               type: DriftSqlType.dateTime,
               requiredDuringInsert: false,
               defaultValue: currentDateAndTime)
-          .withConverter<DateTime>($BalancesTable.$convertermodifiedAt);
+          .withConverter<DateTime>($BalancesTable.$converterupdatedAt);
   static const VerificationMeta _activityIdMeta =
       const VerificationMeta('activityId');
   @override
@@ -3381,7 +3375,7 @@ class $BalancesTable extends Balances
           .withConverter<Duration>($BalancesTable.$convertertime);
   @override
   List<GeneratedColumn> get $columns =>
-      [modifiedAt, activityId, day, type, count, time];
+      [updatedAt, activityId, day, type, count, time];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -3392,7 +3386,7 @@ class $BalancesTable extends Balances
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    context.handle(_modifiedAtMeta, const VerificationResult.success());
+    context.handle(_updatedAtMeta, const VerificationResult.success());
     context.handle(_activityIdMeta, const VerificationResult.success());
     context.handle(_dayMeta, const VerificationResult.success());
     context.handle(_typeMeta, const VerificationResult.success());
@@ -3410,9 +3404,9 @@ class $BalancesTable extends Balances
   BalanceRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return BalanceRow(
-      modifiedAt: $BalancesTable.$convertermodifiedAt.fromSql(attachedDatabase
+      updatedAt: $BalancesTable.$converterupdatedAt.fromSql(attachedDatabase
           .typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}modified_at'])!),
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!),
       activityId: $BalancesTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
@@ -3432,7 +3426,7 @@ class $BalancesTable extends Balances
     return $BalancesTable(attachedDatabase, alias);
   }
 
-  static TypeConverter<DateTime, DateTime> $convertermodifiedAt =
+  static TypeConverter<DateTime, DateTime> $converterupdatedAt =
       const LocalDateTimeConverter();
   static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
@@ -3446,14 +3440,14 @@ class $BalancesTable extends Balances
 }
 
 class BalanceRow extends DataClass implements Insertable<BalanceRow> {
-  final DateTime modifiedAt;
+  final DateTime updatedAt;
   final Uuid? activityId;
   final Date day;
   final BalanceType type;
   final int count;
   final Duration time;
   const BalanceRow(
-      {required this.modifiedAt,
+      {required this.updatedAt,
       this.activityId,
       required this.day,
       required this.type,
@@ -3463,8 +3457,8 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     {
-      map['modified_at'] = Variable<DateTime>(
-          $BalancesTable.$convertermodifiedAt.toSql(modifiedAt));
+      map['updated_at'] = Variable<DateTime>(
+          $BalancesTable.$converterupdatedAt.toSql(updatedAt));
     }
     if (!nullToAbsent || activityId != null) {
       map['activity_id'] = Variable<Uint8List>(
@@ -3485,7 +3479,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
 
   BalancesCompanion toCompanion(bool nullToAbsent) {
     return BalancesCompanion(
-      modifiedAt: Value(modifiedAt),
+      updatedAt: Value(updatedAt),
       activityId: activityId == null && nullToAbsent
           ? const Value.absent()
           : Value(activityId),
@@ -3500,7 +3494,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return BalanceRow(
-      modifiedAt: serializer.fromJson<DateTime>(json['modified_at']),
+      updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
       activityId: serializer.fromJson<Uuid?>(json['activity_id']),
       day: serializer.fromJson<Date>(json['day']),
       type: $BalancesTable.$convertertype
@@ -3513,7 +3507,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'modified_at': serializer.toJson<DateTime>(modifiedAt),
+      'updated_at': serializer.toJson<DateTime>(updatedAt),
       'activity_id': serializer.toJson<Uuid?>(activityId),
       'day': serializer.toJson<Date>(day),
       'type':
@@ -3524,14 +3518,14 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
   }
 
   BalanceRow copyWith(
-          {DateTime? modifiedAt,
+          {DateTime? updatedAt,
           Value<Uuid?> activityId = const Value.absent(),
           Date? day,
           BalanceType? type,
           int? count,
           Duration? time}) =>
       BalanceRow(
-        modifiedAt: modifiedAt ?? this.modifiedAt,
+        updatedAt: updatedAt ?? this.updatedAt,
         activityId: activityId.present ? activityId.value : this.activityId,
         day: day ?? this.day,
         type: type ?? this.type,
@@ -3540,8 +3534,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
       );
   BalanceRow copyWithCompanion(BalancesCompanion data) {
     return BalanceRow(
-      modifiedAt:
-          data.modifiedAt.present ? data.modifiedAt.value : this.modifiedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       activityId:
           data.activityId.present ? data.activityId.value : this.activityId,
       day: data.day.present ? data.day.value : this.day,
@@ -3554,7 +3547,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
   @override
   String toString() {
     return (StringBuffer('BalanceRow(')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('activityId: $activityId, ')
           ..write('day: $day, ')
           ..write('type: $type, ')
@@ -3566,12 +3559,12 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
 
   @override
   int get hashCode =>
-      Object.hash(modifiedAt, activityId, day, type, count, time);
+      Object.hash(updatedAt, activityId, day, type, count, time);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is BalanceRow &&
-          other.modifiedAt == this.modifiedAt &&
+          other.updatedAt == this.updatedAt &&
           other.activityId == this.activityId &&
           other.day == this.day &&
           other.type == this.type &&
@@ -3580,7 +3573,7 @@ class BalanceRow extends DataClass implements Insertable<BalanceRow> {
 }
 
 class BalancesCompanion extends UpdateCompanion<BalanceRow> {
-  final Value<DateTime> modifiedAt;
+  final Value<DateTime> updatedAt;
   final Value<Uuid?> activityId;
   final Value<Date> day;
   final Value<BalanceType> type;
@@ -3588,7 +3581,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   final Value<Duration> time;
   final Value<int> rowid;
   const BalancesCompanion({
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.activityId = const Value.absent(),
     this.day = const Value.absent(),
     this.type = const Value.absent(),
@@ -3597,7 +3590,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
     this.rowid = const Value.absent(),
   });
   BalancesCompanion.insert({
-    this.modifiedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.activityId = const Value.absent(),
     required Date day,
     required BalanceType type,
@@ -3607,7 +3600,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   })  : day = Value(day),
         type = Value(type);
   static Insertable<BalanceRow> custom({
-    Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? updatedAt,
     Expression<Uint8List>? activityId,
     Expression<String>? day,
     Expression<String>? type,
@@ -3616,7 +3609,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
-      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (activityId != null) 'activity_id': activityId,
       if (day != null) 'day': day,
       if (type != null) 'type': type,
@@ -3627,7 +3620,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   }
 
   BalancesCompanion copyWith(
-      {Value<DateTime>? modifiedAt,
+      {Value<DateTime>? updatedAt,
       Value<Uuid?>? activityId,
       Value<Date>? day,
       Value<BalanceType>? type,
@@ -3635,7 +3628,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
       Value<Duration>? time,
       Value<int>? rowid}) {
     return BalancesCompanion(
-      modifiedAt: modifiedAt ?? this.modifiedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       activityId: activityId ?? this.activityId,
       day: day ?? this.day,
       type: type ?? this.type,
@@ -3648,9 +3641,9 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (modifiedAt.present) {
-      map['modified_at'] = Variable<DateTime>(
-          $BalancesTable.$convertermodifiedAt.toSql(modifiedAt.value));
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(
+          $BalancesTable.$converterupdatedAt.toSql(updatedAt.value));
     }
     if (activityId.present) {
       map['activity_id'] = Variable<Uint8List>(
@@ -3680,7 +3673,7 @@ class BalancesCompanion extends UpdateCompanion<BalanceRow> {
   @override
   String toString() {
     return (StringBuffer('BalancesCompanion(')
-          ..write('modifiedAt: $modifiedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('activityId: $activityId, ')
           ..write('day: $day, ')
           ..write('type: $type, ')
@@ -3908,13 +3901,13 @@ typedef $$SyncStatesTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function()>;
 typedef $$AccountsTableCreateCompanionBuilder = AccountsCompanion Function({
   Value<int> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   required String email,
   required AccountProvider provider,
 });
 typedef $$AccountsTableUpdateCompanionBuilder = AccountsCompanion Function({
   Value<int> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<String> email,
   Value<AccountProvider> provider,
 });
@@ -3950,9 +3943,9 @@ class $$AccountsTableFilterComposer extends Composer<_$Store, $AccountsTable> {
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get updatedAt =>
       $composableBuilder(
-          column: $table.modifiedAt,
+          column: $table.updatedAt,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<String> get email => $composableBuilder(
@@ -3997,8 +3990,8 @@ class $$AccountsTableOrderingComposer
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<String> get email => $composableBuilder(
       column: $table.email, builder: (column) => ColumnOrderings(column));
@@ -4019,9 +4012,8 @@ class $$AccountsTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
-      $composableBuilder(
-          column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
   GeneratedColumn<String> get email =>
       $composableBuilder(column: $table.email, builder: (column) => column);
@@ -4075,25 +4067,25 @@ class $$AccountsTableTableManager extends RootTableManager<
               $$AccountsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<String> email = const Value.absent(),
             Value<AccountProvider> provider = const Value.absent(),
           }) =>
               AccountsCompanion(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             email: email,
             provider: provider,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             required String email,
             required AccountProvider provider,
           }) =>
               AccountsCompanion.insert(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             email: email,
             provider: provider,
           ),
@@ -4141,14 +4133,14 @@ typedef $$AccountsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool calendarsRefs})>;
 typedef $$CalendarsTableCreateCompanionBuilder = CalendarsCompanion Function({
   Value<int> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   required String name,
   required bool enabled,
   required int accountId,
 });
 typedef $$CalendarsTableUpdateCompanionBuilder = CalendarsCompanion Function({
   Value<int> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<String> name,
   Value<bool> enabled,
   Value<int> accountId,
@@ -4184,9 +4176,9 @@ class $$CalendarsTableFilterComposer
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get updatedAt =>
       $composableBuilder(
-          column: $table.modifiedAt,
+          column: $table.updatedAt,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<String> get name => $composableBuilder(
@@ -4228,8 +4220,8 @@ class $$CalendarsTableOrderingComposer
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<String> get name => $composableBuilder(
       column: $table.name, builder: (column) => ColumnOrderings(column));
@@ -4270,9 +4262,8 @@ class $$CalendarsTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
-      $composableBuilder(
-          column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
@@ -4325,28 +4316,28 @@ class $$CalendarsTableTableManager extends RootTableManager<
               $$CalendarsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<String> name = const Value.absent(),
             Value<bool> enabled = const Value.absent(),
             Value<int> accountId = const Value.absent(),
           }) =>
               CalendarsCompanion(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             name: name,
             enabled: enabled,
             accountId: accountId,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             required String name,
             required bool enabled,
             required int accountId,
           }) =>
               CalendarsCompanion.insert(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             name: name,
             enabled: enabled,
             accountId: accountId,
@@ -4409,7 +4400,7 @@ typedef $$CalendarsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool accountId})>;
 typedef $$ActivitiesTableCreateCompanionBuilder = ActivitiesCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
   required String name,
@@ -4421,7 +4412,7 @@ typedef $$ActivitiesTableCreateCompanionBuilder = ActivitiesCompanion Function({
 });
 typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
   Value<String> name,
@@ -4511,9 +4502,9 @@ class $$ActivitiesTableFilterComposer
           column: $table.id,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get updatedAt =>
       $composableBuilder(
-          column: $table.modifiedAt,
+          column: $table.updatedAt,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get createdAt =>
@@ -4644,8 +4635,8 @@ class $$ActivitiesTableOrderingComposer
   ColumnOrderings<Uint8List> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
@@ -4681,9 +4672,8 @@ class $$ActivitiesTableAnnotationComposer
   GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
-      $composableBuilder(
-          column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<DateTime, DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -4819,7 +4809,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
               $$ActivitiesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
             Value<String> name = const Value.absent(),
@@ -4831,7 +4821,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
           }) =>
               ActivitiesCompanion(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
             name: name,
@@ -4843,7 +4833,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
             required String name,
@@ -4855,7 +4845,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
           }) =>
               ActivitiesCompanion.insert(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
             name: name,
@@ -4960,7 +4950,7 @@ typedef $$ActivitiesTableProcessedTableManager = ProcessedTableManager<
         bool balancesRefs})>;
 typedef $$NotesTableCreateCompanionBuilder = NotesCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
   Value<Uuid> userId,
@@ -4978,7 +4968,7 @@ typedef $$NotesTableCreateCompanionBuilder = NotesCompanion Function({
 });
 typedef $$NotesTableUpdateCompanionBuilder = NotesCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
   Value<Uuid> userId,
@@ -5026,9 +5016,9 @@ class $$NotesTableFilterComposer extends Composer<_$Store, $NotesTable> {
           column: $table.id,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get updatedAt =>
       $composableBuilder(
-          column: $table.modifiedAt,
+          column: $table.updatedAt,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get createdAt =>
@@ -5113,8 +5103,8 @@ class $$NotesTableOrderingComposer extends Composer<_$Store, $NotesTable> {
   ColumnOrderings<Uint8List> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
@@ -5184,9 +5174,8 @@ class $$NotesTableAnnotationComposer extends Composer<_$Store, $NotesTable> {
   GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
-      $composableBuilder(
-          column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<DateTime, DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -5269,7 +5258,7 @@ class $$NotesTableTableManager extends RootTableManager<
               $$NotesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
             Value<Uuid> userId = const Value.absent(),
@@ -5287,7 +5276,7 @@ class $$NotesTableTableManager extends RootTableManager<
           }) =>
               NotesCompanion(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
             userId: userId,
@@ -5305,7 +5294,7 @@ class $$NotesTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
             Value<Uuid> userId = const Value.absent(),
@@ -5323,7 +5312,7 @@ class $$NotesTableTableManager extends RootTableManager<
           }) =>
               NotesCompanion.insert(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
             userId: userId,
@@ -5395,7 +5384,7 @@ typedef $$NotesTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool activityId})>;
 typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
   Value<String?> name,
@@ -5412,7 +5401,7 @@ typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
 });
 typedef $$EventsTableUpdateCompanionBuilder = EventsCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
   Value<String?> name,
@@ -5460,9 +5449,9 @@ class $$EventsTableFilterComposer extends Composer<_$Store, $EventsTable> {
           column: $table.id,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get updatedAt =>
       $composableBuilder(
-          column: $table.modifiedAt,
+          column: $table.updatedAt,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get createdAt =>
@@ -5545,8 +5534,8 @@ class $$EventsTableOrderingComposer extends Composer<_$Store, $EventsTable> {
   ColumnOrderings<Uint8List> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
@@ -5615,9 +5604,8 @@ class $$EventsTableAnnotationComposer extends Composer<_$Store, $EventsTable> {
   GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
-      $composableBuilder(
-          column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<DateTime, DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -5699,7 +5687,7 @@ class $$EventsTableTableManager extends RootTableManager<
               $$EventsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
             Value<String?> name = const Value.absent(),
@@ -5716,7 +5704,7 @@ class $$EventsTableTableManager extends RootTableManager<
           }) =>
               EventsCompanion(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
             name: name,
@@ -5733,7 +5721,7 @@ class $$EventsTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
             Value<String?> name = const Value.absent(),
@@ -5750,7 +5738,7 @@ class $$EventsTableTableManager extends RootTableManager<
           }) =>
               EventsCompanion.insert(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
             name: name,
@@ -5821,7 +5809,7 @@ typedef $$EventsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool activityId})>;
 typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<Uuid?> activityId,
   required DateTime start,
   required DateTime end,
@@ -5832,7 +5820,7 @@ typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
 });
 typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
   Value<Uuid> id,
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<Uuid?> activityId,
   Value<DateTime> start,
   Value<DateTime> end,
@@ -5874,9 +5862,9 @@ class $$SessionsTableFilterComposer extends Composer<_$Store, $SessionsTable> {
           column: $table.id,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
-  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get updatedAt =>
       $composableBuilder(
-          column: $table.modifiedAt,
+          column: $table.updatedAt,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get start =>
@@ -5935,8 +5923,8 @@ class $$SessionsTableOrderingComposer
   ColumnOrderings<Uint8List> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<DateTime> get start => $composableBuilder(
       column: $table.start, builder: (column) => ColumnOrderings(column));
@@ -5986,9 +5974,8 @@ class $$SessionsTableAnnotationComposer
   GeneratedColumnWithTypeConverter<Uuid, Uint8List> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
-      $composableBuilder(
-          column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<DateTime, DateTime> get start =>
       $composableBuilder(column: $table.start, builder: (column) => column);
@@ -6051,7 +6038,7 @@ class $$SessionsTableTableManager extends RootTableManager<
               $$SessionsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
             Value<DateTime> start = const Value.absent(),
             Value<DateTime> end = const Value.absent(),
@@ -6062,7 +6049,7 @@ class $$SessionsTableTableManager extends RootTableManager<
           }) =>
               SessionsCompanion(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             activityId: activityId,
             start: start,
             end: end,
@@ -6073,7 +6060,7 @@ class $$SessionsTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
             required DateTime start,
             required DateTime end,
@@ -6084,7 +6071,7 @@ class $$SessionsTableTableManager extends RootTableManager<
           }) =>
               SessionsCompanion.insert(
             id: id,
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             activityId: activityId,
             start: start,
             end: end,
@@ -6148,7 +6135,7 @@ typedef $$SessionsTableProcessedTableManager = ProcessedTableManager<
     SessionRow,
     PrefetchHooks Function({bool activityId})>;
 typedef $$BalancesTableCreateCompanionBuilder = BalancesCompanion Function({
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<Uuid?> activityId,
   required Date day,
   required BalanceType type,
@@ -6157,7 +6144,7 @@ typedef $$BalancesTableCreateCompanionBuilder = BalancesCompanion Function({
   Value<int> rowid,
 });
 typedef $$BalancesTableUpdateCompanionBuilder = BalancesCompanion Function({
-  Value<DateTime> modifiedAt,
+  Value<DateTime> updatedAt,
   Value<Uuid?> activityId,
   Value<Date> day,
   Value<BalanceType> type,
@@ -6193,9 +6180,9 @@ class $$BalancesTableFilterComposer extends Composer<_$Store, $BalancesTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get modifiedAt =>
+  ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get updatedAt =>
       $composableBuilder(
-          column: $table.modifiedAt,
+          column: $table.updatedAt,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<Date, Date, String> get day =>
@@ -6246,8 +6233,8 @@ class $$BalancesTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
-      column: $table.modifiedAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<String> get day => $composableBuilder(
       column: $table.day, builder: (column) => ColumnOrderings(column));
@@ -6291,9 +6278,8 @@ class $$BalancesTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumnWithTypeConverter<DateTime, DateTime> get modifiedAt =>
-      $composableBuilder(
-          column: $table.modifiedAt, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<DateTime, DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<Date, String> get day =>
       $composableBuilder(column: $table.day, builder: (column) => column);
@@ -6351,7 +6337,7 @@ class $$BalancesTableTableManager extends RootTableManager<
           createComputedFieldComposer: () =>
               $$BalancesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
             Value<Date> day = const Value.absent(),
             Value<BalanceType> type = const Value.absent(),
@@ -6360,7 +6346,7 @@ class $$BalancesTableTableManager extends RootTableManager<
             Value<int> rowid = const Value.absent(),
           }) =>
               BalancesCompanion(
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             activityId: activityId,
             day: day,
             type: type,
@@ -6369,7 +6355,7 @@ class $$BalancesTableTableManager extends RootTableManager<
             rowid: rowid,
           ),
           createCompanionCallback: ({
-            Value<DateTime> modifiedAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
             required Date day,
             required BalanceType type,
@@ -6378,7 +6364,7 @@ class $$BalancesTableTableManager extends RootTableManager<
             Value<int> rowid = const Value.absent(),
           }) =>
               BalancesCompanion.insert(
-            modifiedAt: modifiedAt,
+            updatedAt: updatedAt,
             activityId: activityId,
             day: day,
             type: type,

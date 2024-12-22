@@ -129,7 +129,7 @@ class Event extends EventRow {
   }) : super(
           id: Uuid.generate(),
           createdAt: DateTime.now(),
-          modifiedAt: DateTime.now(),
+          updatedAt: DateTime.now(),
           activityId: activity?.id,
           start: at.start,
           end: at.end,
@@ -139,7 +139,7 @@ class Event extends EventRow {
       : super(
           id: row.id,
           createdAt: row.createdAt,
-          modifiedAt: row.modifiedAt,
+          updatedAt: row.updatedAt,
           draft: row.draft,
           name: row.name,
           start: row.start,
@@ -156,7 +156,7 @@ class Event extends EventRow {
   @override
   Event copyWith({
     Uuid? id,
-    DateTime? modifiedAt,
+    DateTime? updatedAt,
     DateTime? createdAt,
     bool? draft,
     Value<Uuid?> activityId = const Value.absent(),
@@ -187,7 +187,7 @@ class Event extends EventRow {
         id: id,
         activityId: activityId,
         createdAt: publish ? DateTime.now() : this.createdAt,
-        modifiedAt: DateTime.now(),
+        updatedAt: DateTime.now(),
         draft: draft,
         start: start,
         end: end,

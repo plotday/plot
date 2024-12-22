@@ -37,7 +37,7 @@ part 'balance.dart';
 part 'store.g.dart';
 
 class StoreTable extends Table {
-  DateTimeColumn get modifiedAt => dateTime()
+  DateTimeColumn get updatedAt => dateTime()
       .withDefault(currentDateAndTime)
       .map(const LocalDateTimeConverter())();
 }
@@ -75,7 +75,7 @@ enum PullType {
 abstract class BaseTable {
   BaseTable({
     required this.table,
-    this.order = 'modified_at',
+    this.order = 'updated_at',
     this.ascending = true,
     this.upsertAsUpdate = false,
     String? name,
@@ -98,13 +98,13 @@ abstract class BaseTable {
   Future<
       (
         Iterable<Map<String, dynamic>> rows,
-        DateTime? lastModified,
+        DateTime? lastUpdated,
         (String?, String?)? range,
         bool more,
       )> get({
     (String?, String?)? include,
     (String?, String?)? exclude,
-    DateTime? modifiedSince,
+    DateTime? updatedSince,
   }) async {
     var query =
         Base.client.from(table).select().eq("user_id", Base.userId.toString());
@@ -129,8 +129,8 @@ abstract class BaseTable {
         query = query.lte(order, to);
       }
     }
-    if (modifiedSince != null) {
-      query = query.gt("modified_at", modifiedSince);
+    if (updatedSince != null) {
+      query = query.gt("updated_at", updatedSince);
     }
     query = filter(query);
     var query2 = sort(query);
@@ -145,20 +145,20 @@ abstract class BaseTable {
     } else if (rows.isNotEmpty) {
       range = (rows.first[order].toString(), rows.last[order].toString());
     }
-    DateTime lastModified;
+    DateTime lastUpdated;
     if (rows.isEmpty) {
       final localTimestamp = DateTime.now();
       final serverTimestamp =
           DateTime.parse(await Base.client.rpc<String>('server_timestamp'));
-      lastModified =
+      lastUpdated =
           preQueryTimestamp.add(serverTimestamp.difference(localTimestamp));
     } else {
-      lastModified = rows.map((row) {
-        return DateTime.parse(row['modified_at'] as String);
+      lastUpdated = rows.map((row) {
+        return DateTime.parse(row['updated_at'] as String);
       }).reduce((value, last) => value.isAfter(last) ? value : last);
     }
     final more = include != null || (limit != null && rows.length < limit!);
-    return (rows, lastModified, range, more);
+    return (rows, lastUpdated, range, more);
   }
 
   PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
@@ -255,10 +255,10 @@ class Store extends _$Store {
     final storeQuery = select(table);
     if (syncState?.pushedAt != null) {
       storeQuery.where((row) {
-        return row.modifiedAt.isBiggerThanValue(syncState!.pushedAt!);
+        return row.updatedAt.isBiggerThanValue(syncState!.pushedAt!);
       });
     }
-    storeQuery.orderBy([(t) => OrderingTerm(expression: t.modifiedAt)]);
+    storeQuery.orderBy([(t) => OrderingTerm(expression: t.updatedAt)]);
     final storeRows = await storeQuery.get();
     if (storeRows.isNotEmpty) {
       try {
@@ -312,13 +312,13 @@ class Store extends _$Store {
       return true;
     }
 
-    var (baseRows, lastModified, newRange, more) = (await baseTable.get(
+    var (baseRows, lastUpdated, newRange, more) = (await baseTable.get(
       include: range ??
           ([PullType.updates, PullType.more].contains(type)
               ? (syncState?.from, syncState?.to)
               : null),
       exclude: type == PullType.more ? (syncState?.from, syncState?.to) : null,
-      modifiedSince: type == PullType.more ? null : syncState?.pulledAt,
+      updatedSince: type == PullType.more ? null : syncState?.pulledAt,
     ));
     final (from, to) = newRange ?? (null, null);
 
@@ -333,7 +333,7 @@ class Store extends _$Store {
     await into(syncStates).insert(
       SyncStatesCompanion.insert(
         entity: entity,
-        pulledAt: Value(lastModified),
+        pulledAt: Value(lastUpdated),
         from: paged ? Value(from) : const Value.absent(),
         to: paged ? Value(to) : const Value.absent(),
         more: Value(paged ? more : false),
@@ -342,7 +342,7 @@ class Store extends _$Store {
       onConflict: DoUpdate(
         (old) => SyncStatesCompanion(
           entity: Value(entity),
-          pulledAt: Value(lastModified),
+          pulledAt: Value(lastUpdated),
           from: paged ? Value(from) : const Value.absent(),
           to: paged ? Value(to) : const Value.absent(),
           more: paged
@@ -359,7 +359,7 @@ class Store extends _$Store {
       await into(syncStates).insert(
         SyncStatesCompanion.insert(
           entity: baseTable.name,
-          pulledAt: Value(lastModified),
+          pulledAt: Value(lastUpdated),
           pushedAt: const Value(null),
         ),
         onConflict: DoNothing(),
@@ -393,7 +393,7 @@ class Store extends _$Store {
         ));
 
   @override
-  int get schemaVersion => 26;
+  int get schemaVersion => 27;
 
   @override
   MigrationStrategy get migration {

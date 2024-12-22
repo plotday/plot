@@ -68,7 +68,7 @@ class Account extends AccountRow {
   Account.fromStore(AccountRow row, {this.calendars})
       : super(
           id: row.id,
-          modifiedAt: row.modifiedAt,
+          updatedAt: row.updatedAt,
           email: row.email,
           provider: row.provider,
         );
@@ -76,12 +76,12 @@ class Account extends AccountRow {
   @override
   Account copyWith(
           {int? id,
-          DateTime? modifiedAt,
+          DateTime? updatedAt,
           String? email,
           AccountProvider? provider}) =>
       Account.fromStore(super.copyWith(
         id: id,
-        modifiedAt: DateTime.now(),
+        updatedAt: DateTime.now(),
         email: email,
         provider: provider,
       ));
