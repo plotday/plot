@@ -38,12 +38,12 @@ class EventWidget extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     TimeWidget(time: event.at.start),
-                    if (!event.draft ||
+                    if (!event.isBlank ||
                         (event.at.start.toTimeOfDay().isMidnight &&
                             event.at.end.toTimeOfDay().isMidnight)) ...[
                       const SizedBox(height: 4),
                       DurationText(
-                        duration: !event.draft ||
+                        duration: !event.isBlank ||
                                 !(event.at.start.toTimeOfDay().isMidnight ||
                                     event.at.end.toTimeOfDay().isMidnight)
                             ? event.at.duration

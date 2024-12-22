@@ -38,13 +38,11 @@ class ScheduleWidget extends StatelessWidget {
       builder: (context, index) {
         final day = schedule[range.start.addDays(index)];
         if (day == null) return null;
-        return Column(children: [
-          DayWidget(
-            day: day,
-            onSelect: onSelect,
-            selected: selected,
-          ),
-        ]);
+        return DayWidget(
+          day: day,
+          onSelect: onSelect,
+          selected: selected,
+        );
       },
     );
   }

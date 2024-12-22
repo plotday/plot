@@ -1,14 +1,17 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'package:plot/util/time.dart';
 // import 'package:plot/widget/macos/search_field.dart';
 
 class TimePicker extends StatefulWidget {
-  const TimePicker({required this.value, required this.onChanged, super.key});
+  const TimePicker(
+      {required this.value, required this.onChanged, this.after, super.key});
 
   final TimeOfDay value;
+  final TimeOfDay? after;
   final void Function(TimeOfDay) onChanged;
 
   @override
@@ -134,8 +137,16 @@ class TimePickerState extends State<TimePicker> {
               int mostRecentAP = newValue.text
                   .lastIndexOf(RegExp(r'[ap]'), newValue.selection.baseOffset);
               int firstAP = newValue.text.indexOf(RegExp(r'[ap]'));
+              // User just typed an 'a' or 'p'
               if (mostRecentAP >= 0) {
                 isPM = newValue.text[mostRecentAP] == 'p';
+                // Hour is greater than 12
+              } else if (hourValue != null && hourValue > 12) {
+                isPM = true;
+                // Needs to be after a value
+              } else if (widget.after != null && hourValue != null) {
+                isPM = hourValue > (widget.after!.hour % 12) &&
+                    widget.after!.period == material.DayPeriod.pm;
               } else if (firstAP >= 0) {
                 isPM = newValue.text[firstAP] == 'p';
               }
@@ -239,6 +250,7 @@ class TimeRangePicker extends StatelessWidget {
             );
           },
           value: value.end.toTimeOfDay(),
+          after: value.start.toTimeOfDay(),
         ),
       ],
     );

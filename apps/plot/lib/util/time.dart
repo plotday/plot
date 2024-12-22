@@ -307,7 +307,7 @@ class DateTimeRange extends Equatable {
 
   DateTimeRange max(DateTime end) => DateTimeRange(
         start.isAfter(end) ? end : start,
-        this.end.isAfter(end) ? this.end : end,
+        this.end.isAfter(end) ? end : this.end,
       );
 
   final DateTime start;
