@@ -1,8 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/store/store.dart';
 import 'package:plot/state/schedule.dart';
-import 'package:plot/util/time.dart';
 import 'package:plot/widget/widget.dart';
 
 class EventPage extends StatelessWidget {
@@ -17,7 +17,6 @@ class EventPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (state.selected.name != null) Text(state.selected.name!),
                 if (state.selected.activity?.name != null)
                   Text(state.selected.activity!.name),
                 Row(
@@ -35,6 +34,17 @@ class EventPage extends StatelessWidget {
                       value: state.selected.at,
                     ),
                   ],
+                ),
+                TextField(
+                  label: "Title",
+                  value: state.selected.name ?? "",
+                  onChanged: (name) {
+                    context.read<ScheduleBloc>().update(
+                          state.selected.copyWith(
+                            name: Value(name),
+                          ),
+                        );
+                  },
                 ),
               ],
             ),
