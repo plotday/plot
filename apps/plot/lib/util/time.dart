@@ -52,13 +52,13 @@ class Date extends Equatable {
   bool operator >=(Date other) => this == other || this > other;
 
   Duration difference(Date other) =>
-      Duration(days: toUTC().difference(other.toUTC()).inDays);
+      Duration(days: toUtc().difference(other.toUtc()).inDays);
 
   Date operator +(Duration duration) => addDays(duration.inDays);
   Date operator -(Duration duration) => addDays(-duration.inDays);
   Date addDays(int days, {TimeDirection direction = TimeDirection.ascending}) {
     final m = direction == TimeDirection.ascending ? 1 : -1;
-    return (toUTC() + Duration(days: days * m)).toDate();
+    return (toUtc() + Duration(days: days * m)).toDate();
   }
 
   Date subDays(int days) => addDays(-1 * days);
@@ -69,7 +69,7 @@ class Date extends Equatable {
 
   DateTime toDateTime({TimeOfDay time = const TimeOfDay(hour: 0, minute: 0)}) =>
       DateTime(year, month, day, time.hour, time.minute);
-  DateTime toUTC() => DateTime.utc(year, month, day);
+  DateTime toUtc() => DateTime.utc(year, month, day);
   Day toDateRange() => Day(this);
   DateTimeRange toDateTimeRange() => toDateRange().toDateTimeRange();
   DateTime toStart() => toDateTimeRange().start;
@@ -287,12 +287,28 @@ class DateTimeRange extends Equatable {
 
   DateTimeRange(this.start, this.end) {
     if (start.isAfter(end)) {
-      throw RangeError('Invalid Range');
+      throw RangeError('Invalid DateTimeRange: $start - $end');
     }
   }
 
-  DateTimeRange copyWith({DateTime? start, DateTime? end}) =>
-      DateTimeRange(start ?? this.start, end ?? this.end);
+  DateTimeRange copyWith({DateTime? start, DateTime? end, Duration? duration}) {
+    if (start != null && end == null && duration != null) {
+      end = start.add(duration);
+    } else if (start == null && end != null && duration != null) {
+      start = end.subtract(duration);
+    }
+    return DateTimeRange(start ?? this.start, end ?? this.end);
+  }
+
+  DateTimeRange min(DateTime start) => DateTimeRange(
+        this.start.isBefore(start) ? start : this.start,
+        end.isBefore(start) ? start : end,
+      );
+
+  DateTimeRange max(DateTime end) => DateTimeRange(
+        start.isAfter(end) ? end : start,
+        this.end.isAfter(end) ? this.end : end,
+      );
 
   final DateTime start;
   final DateTime end;
@@ -421,12 +437,14 @@ extension PlotDateTimeExtension on DateTime {
   DateTime round({int minutes = 30, bool down = true}) => sub(Duration(
       minutes: down ? minute % minutes : (minute % minutes) - minutes));
 
-  DateTime previousMidnight() => toTimeOfDay().isMidnight
-      ? DateTime.now().subtract(const Duration(days: 1))
-      : toDate().toDateTime();
-  DateTime nextMidnight() => toTimeOfDay().isMidnight
-      ? DateTime.now().add(const Duration(days: 1))
-      : toDate().next().toDateTime();
+  // DateTime previousMidnight() => toTimeOfDay().isMidnight
+  //     ? DateTime.now().subtract(const Duration(days: 1))
+  //     : toDate().toDateTime();
+  // DateTime nextMidnight() => toTimeOfDay().isMidnight
+  //     ? DateTime.now().add(const Duration(days: 1))
+  //     : toDate().next().toDateTime();
+  DateTime previousMidnight() => toDate().subDays(1).toDateTime();
+  DateTime nextMidnight() => toDate().addDays(1).toDateTime();
 }
 
 Duration durationFromString(String durationString) {
@@ -524,7 +542,7 @@ extension TimeOfDayExtension on TimeOfDay {
 
 TimeOfDay parseTimeOfDay(String str) {
   final pm = str.contains(RegExp(r'[pP]'));
-  str = str.toLowerCase().replaceAll(RegExp(r'[ap]m?'), '');
+  str = str.toLowerCase().replaceAll(RegExp(r'[ apm]'), '');
   final parts = str.trim().replaceAll(RegExp(r'[:.\s]'), ':').split(':');
   return TimeOfDay(
     hour: int.parse(parts[0]) + (pm ? 12 : 0),

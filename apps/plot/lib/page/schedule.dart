@@ -33,10 +33,10 @@ class SchedulePage extends StatelessWidget {
             context.read<ScheduleBloc>().watch(range);
           },
           onSelect: (event) {
-            if (event.draft) {
-              NewEventRoute.at(event.at).go(context);
-            } else {
+            if (event.savable) {
               EventRoute.byId(event.id).go(context);
+            } else {
+              NewEventRoute.at(event.at).go(context);
             }
           },
         ),

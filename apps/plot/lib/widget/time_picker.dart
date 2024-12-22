@@ -1,8 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'package:plot/util/time.dart';
-import 'package:plot/widget/macos/search_field.dart';
+// import 'package:plot/widget/macos/search_field.dart';
 
 class TimePicker extends StatefulWidget {
   const TimePicker({required this.value, required this.onChanged, super.key});
@@ -33,10 +34,11 @@ class TimePickerState extends State<TimePicker> {
 
   @override
   void didUpdateWidget(covariant TimePicker oldWidget) {
-    if (oldWidget.value != widget.value) {
+    if (oldWidget.value != widget.value &&
+        _controller.text != widget.value.format(context)) {
       _controller.text = widget.value.format(context);
+      super.didUpdateWidget(oldWidget);
     }
-    super.didUpdateWidget(oldWidget);
   }
 
   @override
@@ -56,7 +58,7 @@ class TimePickerState extends State<TimePicker> {
   Widget build(BuildContext context) {
     return SizedBox(
       width: 90,
-      child: MacosSearchField(
+      child: macos.MacosTextField(
         placeholder: 'HH:MM AM',
         autocorrect: false,
         maxLines: 1,
@@ -71,21 +73,22 @@ class TimePickerState extends State<TimePicker> {
             // ignore
           }
         },
-        onResultSelected: (result) {
-          try {
-            final time = parseTimeOfDay(result.searchKey);
-            widget.onChanged(time);
-          } catch (e) {
-            print(e);
-            // ignore
-          }
-        },
-        results: List.generate(96, (index) {
-          final hour = index ~/ 4;
-          final minute = (index % 4) * 15;
-          final time = TimeOfDay(hour: hour, minute: minute);
-          return SearchResultItem(time.format(context));
-        }),
+        // onResultSelected: (result) {
+        //   try {
+        //     print("onResultSelected: ${result.searchKey}");
+        //     final time = parseTimeOfDay(result.searchKey);
+        //     widget.onChanged(time);
+        //   } catch (e) {
+        //     print(e);
+        //     // ignore
+        //   }
+        // },
+        // results: List.generate(96, (index) {
+        //   final hour = index ~/ 4;
+        //   final minute = (index % 4) * 15;
+        //   final time = TimeOfDay(hour: hour, minute: minute);
+        //   return SearchResultItem(time.format(context));
+        // }),
         controller: _controller,
         focusNode: _focusNode,
         inputFormatters: [
@@ -98,11 +101,8 @@ class TimePickerState extends State<TimePicker> {
 
               // Normalize the input by removing non-numeric and non-colon characters
               String cleanedText = newValue.text
-                  .replaceAll(RegExp(r'[^0-9:apmAPM ]'), '')
-                  .toLowerCase();
-
-              cleanedText = cleanedText
-                  .replaceAll(RegExp(r'[ap]m?'), '')
+                  .toLowerCase()
+                  .replaceAll(RegExp(r'[^0-9:]'), '')
                   .replaceAll(RegExp(r'::*'), ':');
 
               // Split hours and minutes
@@ -129,10 +129,16 @@ class TimePickerState extends State<TimePicker> {
 
               // Determine AM/PM
               // Default to PM except for hours 8, 9, 10, 11
-              bool isPM = newValue.text.contains('p') ||
-                  !newValue.text.contains('a') &&
-                      hourValue != null &&
-                      (hourValue >= 12 || hourValue <= 8);
+              bool isPM =
+                  hourValue != null && (hourValue >= 12 || hourValue <= 8);
+              int mostRecentAP = newValue.text
+                  .lastIndexOf(RegExp(r'[ap]'), newValue.selection.baseOffset);
+              int firstAP = newValue.text.indexOf(RegExp(r'[ap]'));
+              if (mostRecentAP >= 0) {
+                isPM = newValue.text[mostRecentAP] == 'p';
+              } else if (firstAP >= 0) {
+                isPM = newValue.text[firstAP] == 'p';
+              }
               if (hourValue != null && hourValue > 12) {
                 hourValue %= 12;
               }
@@ -145,7 +151,6 @@ class TimePickerState extends State<TimePicker> {
               int selectionStart = formattedTime.length;
 
               if (hourValue == null) {
-                print("Case 0");
                 return TextEditingValue(
                   text: formattedTime,
                   selection: const TextSelection.collapsed(offset: 0),
@@ -155,35 +160,35 @@ class TimePickerState extends State<TimePicker> {
                   (!newValue.text.contains(':') ||
                       newValue.text.indexOf(':') >=
                           newValue.selection.baseOffset))) {
-                print("Case 1");
                 // Place cursor at the end of the hours
-                selectionStart = hours.length;
+                return TextEditingValue(
+                  text: formattedTime,
+                  selection: TextSelection.collapsed(
+                    offset: hours.length,
+                  ),
+                );
               } else if (minutes.isEmpty ||
                   newValue.text.indexOf(':') >= newValue.selection.baseOffset) {
-                print("Case 2");
                 selectionStart = hours.length + 1;
               } else if (minutes.length == 1 ||
                   newValue.text
                               .lastIndexOf(':', newValue.selection.baseOffset) -
                           newValue.selection.baseOffset <=
                       1) {
-                print("Case 3 ($hours) ($minutes)");
                 selectionStart = hours.length + 1 + minutes.length;
               } else if (minutes.length == 2) {
-                print("Case 4");
                 // Select AM/PM
                 selectionStart = hours.length + 1 + minutes.length + 1;
               }
               int selectionEnd = formattedTime.length;
 
-              print("${oldValue.text} -> "
-                  "${newValue.text} (${newValue.selection.baseOffset}, ${newValue.selection.extentOffset}) -> "
-                  "$formattedTime ($selectionStart, $selectionEnd)");
-
               return TextEditingValue(
-                  text: formattedTime,
-                  selection: TextSelection(
-                      baseOffset: selectionStart, extentOffset: selectionEnd));
+                text: formattedTime,
+                selection: TextSelection(
+                  baseOffset: selectionStart,
+                  extentOffset: selectionEnd,
+                ),
+              );
             },
           )
         ],
@@ -194,8 +199,11 @@ class TimePickerState extends State<TimePicker> {
 //→
 
 class TimeRangePicker extends StatelessWidget {
-  const TimeRangePicker(
-      {required this.value, required this.onChanged, super.key});
+  const TimeRangePicker({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
 
   final DateTimeRange value;
   final void Function(DateTimeRange) onChanged;
@@ -213,6 +221,7 @@ class TimeRangePicker extends StatelessWidget {
                   hour: time.hour,
                   minute: time.minute,
                 ),
+                duration: value.duration,
               ),
             );
           },
@@ -223,10 +232,9 @@ class TimeRangePicker extends StatelessWidget {
           onChanged: (time) {
             onChanged(
               value.copyWith(
-                end: value.end.copyWith(
-                  hour: time.hour,
-                  minute: time.minute,
-                ),
+                end: time > value.start.toTimeOfDay()
+                    ? value.start.at(time)
+                    : value.start.addDays(1).at(time),
               ),
             );
           },

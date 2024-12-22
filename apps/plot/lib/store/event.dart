@@ -172,19 +172,14 @@ class Event extends EventRow {
     bool? inviteesHidden,
     Value<String?> series = const Value.absent(),
   }) {
-    start ??= at?.start;
-    end ??= at?.end;
-    if (start != null && end != null && start.isAfter(end)) {
-      throw ArgumentError('Start must be before end');
-    }
-    if (start != null && end == null) {
-      end =
-          this.end.add(start.difference(this.start)).max(start.nextMidnight());
-    } else if (start == null && end != null) {
-      start = this
-          .start
-          .subtract(end.difference(this.end))
-          .min(end.previousMidnight());
+    if (start != null || end != null || at != null) {
+      start ??= at?.start ?? this.start;
+      end ??= at?.end ?? this.end;
+      at = DateTimeRange(start, end)
+          .min(start.startOfDay)
+          .max(start.nextMidnight());
+      start = at.start;
+      end = at.end;
     }
     final publish = this.draft && draft == false;
     return Event.fromStore(
@@ -208,6 +203,8 @@ class Event extends EventRow {
   }
 
   final Activity? activity;
+
+  bool get savable => name != null || activity != null;
 
   Future<void> save() =>
       Store.get.save(table, toCompanion(false), EventsBase());
@@ -295,18 +292,20 @@ class ScheduledDay extends Equatable {
             events.isEmpty
                 ? end
                 : start.at(events.first.at.start.toTimeOfDay())),
-        draft: true,
       ));
     }
     for (var i = 0; i < events.length; i++) {
       expanded.add(events[i]);
-      if (i + 1 == events.length || events[i].at.end < events[i + 1].at.start) {
+      // If there is a gap between events or at the end of the day
+      if ((i + 1 < events.length &&
+              events[i].at.end < events[i + 1].at.start) ||
+          (i + 1 == events.length &&
+              events[i].at.end.difference(end).inMinutes < 0)) {
         expanded.add(Event(
           at: DateTimeRange(
             events[i].at.end,
             i + 1 == events.length ? end : events[i + 1].at.start,
           ),
-          draft: true,
         ));
       }
     }

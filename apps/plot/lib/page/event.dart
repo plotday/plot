@@ -25,10 +25,10 @@ class EventPage extends StatelessWidget {
                     Text(state.selected.at.start.toDate().format()),
                     const SizedBox(width: 8),
                     TimeRangePicker(
-                      onChanged: (time) {
+                      onChanged: (at) {
                         context.read<ScheduleBloc>().update(
                               state.selected.copyWith(
-                                at: state.selected.at,
+                                at: at,
                               ),
                             );
                       },
