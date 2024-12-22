@@ -23,7 +23,7 @@ class TopicPage extends StatelessWidget {
                   context.read<ActivityBloc>().updateNote(state.topic.copyWith(
                         doAt: on ? Value(DateTime.now()) : const Value(null),
                       )),
-              child: const Text("Do now"),
+              label: const Text("Do now"),
             ),
             Switch(
               value: state.topic.pinned,
@@ -31,7 +31,7 @@ class TopicPage extends StatelessWidget {
                   context.read<ActivityBloc>().updateNote(state.topic.copyWith(
                         pinned: on,
                       )),
-              child: const Text("Pin"),
+              label: const Text("Pin"),
             ),
             SelectionArea(
                 child: Column(

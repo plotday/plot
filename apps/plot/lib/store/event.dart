@@ -195,6 +195,7 @@ class Event extends EventRow {
         response: response,
         status: status,
         visibility: visibility,
+        availability: availability,
         inviteesHidden: inviteesHidden,
         series: series,
       ),
@@ -204,7 +205,7 @@ class Event extends EventRow {
 
   final Activity? activity;
 
-  bool get savable => name != null || activity != null;
+  bool get isBlank => name == null && activity == null;
 
   Future<void> save() =>
       Store.get.save(table, toCompanion(false), EventsBase());

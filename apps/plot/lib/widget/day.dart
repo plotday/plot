@@ -110,21 +110,21 @@ class DayWidget extends StatelessWidget {
           onSelect: () => onSelect(Event(
             at: day.date.toDateTimeRange(),
           )),
-          selected: selected?.savable == false &&
+          selected: selected?.isBlank == true &&
               selected!.start.toDate() == day.date &&
               selected!.start <= day.events.first.start,
           firstEvent: day.events.firstOrNull,
           allDayEvents: day.allDayEvents,
         ),
         ...day.events
-            .where((e) => e.savable || !e.at.start.toTimeOfDay().isMidnight)
+            .where((e) => !e.isBlank || !e.at.start.toTimeOfDay().isMidnight)
             .map(
               (event) => EventWidget(
                 event: event,
                 onSelect: () => onSelect(event),
                 selected: event.id == selected?.id ||
-                    (selected?.savable == false &&
-                        !event.savable &&
+                    (selected?.isBlank == true &&
+                        event.isBlank &&
                         selected?.at.start == event.at.start),
               ),
             ),

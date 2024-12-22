@@ -14,11 +14,12 @@ class ToggleChoice<T> {
 }
 
 class Toggle<T> extends StatefulWidget {
-  const Toggle(
-      {required this.choices,
-      required this.selected,
-      required this.onSelect,
-      super.key});
+  const Toggle({
+    required this.choices,
+    required this.selected,
+    required this.onSelect,
+    super.key,
+  });
 
   final void Function(T) onSelect;
   final T selected;

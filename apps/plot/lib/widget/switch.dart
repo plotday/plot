@@ -6,14 +6,14 @@ import 'package:platform_builder/platform_builder.dart';
 
 class Switch extends StatelessWidget {
   const Switch({
-    required this.child,
+    required this.label,
     required this.onChanged,
     required this.value,
     super.key,
   });
 
   final ValueChanged<bool> onChanged;
-  final Widget child;
+  final Widget label;
   final bool value;
 
   @override
@@ -21,7 +21,7 @@ class Switch extends StatelessWidget {
     return PlatformBuilder(
       macOSBuilder: (_) => Row(
         children: <Widget>[
-          Expanded(child: child),
+          Expanded(child: label),
           macos.MacosSwitch(
             value: value,
             onChanged: onChanged,
@@ -36,7 +36,7 @@ class Switch extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20.0),
           child: Row(
             children: <Widget>[
-              Expanded(child: child),
+              Expanded(child: label),
               material.Switch(
                 value: value,
                 onChanged: (bool newValue) {

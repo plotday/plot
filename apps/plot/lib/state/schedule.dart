@@ -64,10 +64,10 @@ class ScheduleBloc extends Cubit<ScheduleState> {
   }
 
   void update(Event event) async {
-    if (event.savable) {
-      await event.save();
-    } else {
+    if (event.isBlank) {
       emit(state.copyWith(selected: Value(event)));
+    } else {
+      await event.save();
     }
   }
 

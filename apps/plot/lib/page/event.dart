@@ -46,6 +46,19 @@ class EventPage extends StatelessWidget {
                         );
                   },
                 ),
+                Switch(
+                  label: const Text("Bookable"),
+                  value: state.selected.availability == EventAvailability.free,
+                  onChanged: (free) {
+                    context.read<ScheduleBloc>().update(
+                          state.selected.copyWith(
+                            availability: free
+                                ? EventAvailability.free
+                                : EventAvailability.busy,
+                          ),
+                        );
+                  },
+                ),
               ],
             ),
           ),
