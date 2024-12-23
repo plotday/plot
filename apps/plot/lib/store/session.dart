@@ -12,7 +12,7 @@ enum SessionPriority implements Comparable<SessionPriority> {
 }
 
 @DataClassName('SessionRow')
-class Sessions extends UuidStoreTable {
+class Sessions extends UuidStoreTable with DeletableTable {
   BlobColumn get activityId => blob()
       .nullable()
       .map(const UuidConverter())
@@ -107,11 +107,16 @@ class Session extends SessionRow {
     DateRange? range,
     int? limit,
     bool withContext = false,
+    bool? deleted = false,
   }) {
     final query = Store.get.select(table);
     if (range != null) {
       query.where((t) => t.start.isBiggerOrEqualValue(range.start.toStart()));
       query.where((t) => t.end.isSmallerThanValue(range.end.toEnd()));
+    }
+    if (deleted != null) {
+      query.where(
+          (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
     }
     if (limit != null) {
       query.orderBy(
@@ -157,6 +162,7 @@ class Session extends SessionRow {
       : super(
           id: row.id,
           updatedAt: row.updatedAt,
+          deletedAt: row.deletedAt,
           activityId: row.activityId,
           start: row.start,
           end: row.end,
@@ -166,18 +172,21 @@ class Session extends SessionRow {
         );
 
   @override
-  Session copyWith(
-          {Uuid? id,
-          DateTime? updatedAt,
-          Value<Uuid?> activityId = const Value.absent(),
-          DateTime? start,
-          DateTime? end,
-          int? priority,
-          Value<Duration?> pomodoro = const Value.absent(),
-          Value<DateTime?> pomodoroAt = const Value.absent()}) =>
+  Session copyWith({
+    Uuid? id,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    Value<Uuid?> activityId = const Value.absent(),
+    DateTime? start,
+    DateTime? end,
+    int? priority,
+    Value<Duration?> pomodoro = const Value.absent(),
+    Value<DateTime?> pomodoroAt = const Value.absent(),
+  }) =>
       Session.fromStore(super.copyWith(
         id: id,
         updatedAt: DateTime.now(),
+        deletedAt: deletedAt,
         activityId: activityId,
         start: start,
         end: end,

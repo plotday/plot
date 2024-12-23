@@ -8,18 +8,24 @@ import 'package:plot/store/store.dart';
 part 'schedule_state.dart';
 
 class ScheduleBloc extends Cubit<ScheduleState> {
-  ScheduleBloc() : super(SelectedEventLoadingState()) {
+  ScheduleBloc() : super(ScheduleState()) {
     selectCurrent();
   }
 
   void select(Event event) {
+    if (state.selected?.id == event.id) {
+      return;
+    }
     emit(state.copyWith(selected: Value(event), day: event.start.toDate()));
-    // TODO watch for event changes
-    // _watchEvent(event.id);
+    if (event.unsaved) return;
+    _watchEvent(event.id);
   }
 
   Future<Event> selectById(EventId id) {
-    emit(SelectedEventLoadingState.copy(state));
+    if (state.selected?.id == id) {
+      return Future.value(state.selected!);
+    }
+    emit(state.copyWith(selected: const Value(null)));
     return _watchEvent(id);
   }
 
@@ -38,7 +44,7 @@ class ScheduleBloc extends Cubit<ScheduleState> {
 
     var schedule = state.schedule;
     if (!state.range.includes(today)) {
-      emit(SelectedEventLoadingState.copy(state.copyWith(day: now.toDate())));
+      emit(ScheduleState.copy(state.copyWith(day: now.toDate())));
       schedule = await watch(Day.today());
     }
 
@@ -63,19 +69,15 @@ class ScheduleBloc extends Cubit<ScheduleState> {
     return stream.first;
   }
 
-  void update(Event event) async {
-    if (event.isBlank) {
+  Future<void> update(Event event) async {
+    if (event.isBlank && event.unsaved) {
       emit(state.copyWith(selected: Value(event)));
     } else {
       await event.save();
+      if (event.unsaved && event.id == state.selected?.id) {
+        await _watchEvent(event.id);
+      }
     }
-  }
-
-  Event? get selected {
-    if (state is SelectedEventState) {
-      return (state as SelectedEventState).selected;
-    }
-    return null;
   }
 
   @override

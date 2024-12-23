@@ -36,10 +36,10 @@ export type Database = {
     Tables: {
       account: {
         Row: {
-          archived_at: string | null
           contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
+          deleted_at: string | null
           email: string
           id: number
           updated_at: string
@@ -48,20 +48,20 @@ export type Database = {
           organization: unknown | null
         }
         Insert: {
-          archived_at?: string | null
           contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
+          deleted_at?: string | null
           email: string
           id?: never
           updated_at?: string
           user_id: string
         }
         Update: {
-          archived_at?: string | null
           contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
+          deleted_at?: string | null
           email?: string
           id?: never
           updated_at?: string
@@ -79,9 +79,9 @@ export type Database = {
       }
       activity: {
         Row: {
-          archived_at: string | null
           created_at: string
           created_by: string
+          deleted_at: string | null
           draft: boolean
           id: string
           name: string
@@ -89,9 +89,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          archived_at?: string | null
           created_at?: string
           created_by: string
+          deleted_at?: string | null
           draft?: boolean
           id?: string
           name: string
@@ -99,9 +99,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          archived_at?: string | null
           created_at?: string
           created_by?: string
+          deleted_at?: string | null
           draft?: boolean
           id?: string
           name?: string
@@ -192,6 +192,7 @@ export type Database = {
         Row: {
           activity_id: string
           created_at: string
+          deleted_at: string | null
           path: unknown | null
           updated_at: string
           user_id: string
@@ -199,6 +200,7 @@ export type Database = {
         Insert: {
           activity_id: string
           created_at?: string
+          deleted_at?: string | null
           path?: unknown | null
           updated_at?: string
           user_id: string
@@ -206,6 +208,7 @@ export type Database = {
         Update: {
           activity_id?: string
           created_at?: string
+          deleted_at?: string | null
           path?: unknown | null
           updated_at?: string
           user_id?: string
@@ -258,8 +261,8 @@ export type Database = {
       calendar: {
         Row: {
           account_id: number
-          archived_at: string | null
           created_at: string
+          deleted_at: string | null
           enabled: boolean
           full_sync_at: string | null
           full_sync_started_at: string | null
@@ -280,8 +283,8 @@ export type Database = {
         }
         Insert: {
           account_id: number
-          archived_at?: string | null
           created_at?: string
+          deleted_at?: string | null
           enabled?: boolean
           full_sync_at?: string | null
           full_sync_started_at?: string | null
@@ -301,8 +304,8 @@ export type Database = {
         }
         Update: {
           account_id?: number
-          archived_at?: string | null
           created_at?: string
+          deleted_at?: string | null
           enabled?: boolean
           full_sync_at?: string | null
           full_sync_started_at?: string | null
@@ -334,26 +337,32 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string
+          deleted_at: string | null
           email: string
           id: number
           name: string | null
+          updated_at: string
           user_id: string
           organization: unknown | null
         }
         Insert: {
           avatar_url?: string | null
           created_at?: string
+          deleted_at?: string | null
           email: string
           id?: never
           name?: string | null
+          updated_at?: string
           user_id: string
         }
         Update: {
           avatar_url?: string | null
           created_at?: string
+          deleted_at?: string | null
           email?: string
           id?: never
           name?: string | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -397,12 +406,12 @@ export type Database = {
       }
       event: {
         Row: {
-          archived_at: string | null
           at: unknown
           availability: Database["public"]["Enums"]["event_availability"]
           calendar_id: number | null
           conferencing_url: string | null
           created_at: string
+          deleted_at: string | null
           description: string | null
           draft: boolean
           id: string
@@ -422,12 +431,12 @@ export type Database = {
           visibility: Database["public"]["Enums"]["event_visibility"]
         }
         Insert: {
-          archived_at?: string | null
           at: unknown
           availability?: Database["public"]["Enums"]["event_availability"]
           calendar_id?: number | null
           conferencing_url?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           draft?: boolean
           id?: string
@@ -447,12 +456,12 @@ export type Database = {
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
         Update: {
-          archived_at?: string | null
           at?: unknown
           availability?: Database["public"]["Enums"]["event_availability"]
           calendar_id?: number | null
           conferencing_url?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           draft?: boolean
           id?: string
@@ -512,6 +521,7 @@ export type Database = {
       invitee: {
         Row: {
           created_at: string
+          deleted_at: string | null
           email: string
           event_id: string | null
           is_optional: boolean
@@ -521,6 +531,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          deleted_at?: string | null
           email: string
           event_id?: string | null
           is_optional?: boolean
@@ -529,6 +540,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          deleted_at?: string | null
           email?: string
           event_id?: string | null
           is_optional?: boolean
@@ -555,9 +567,9 @@ export type Database = {
       note: {
         Row: {
           activity_id: string | null
-          archived_at: string | null
           body: string
           created_at: string
+          deleted_at: string | null
           do_at: string | null
           done_at: string | null
           draft: boolean
@@ -573,9 +585,9 @@ export type Database = {
         }
         Insert: {
           activity_id?: string | null
-          archived_at?: string | null
           body: string
           created_at?: string
+          deleted_at?: string | null
           do_at?: string | null
           done_at?: string | null
           draft?: boolean
@@ -591,9 +603,9 @@ export type Database = {
         }
         Update: {
           activity_id?: string | null
-          archived_at?: string | null
           body?: string
           created_at?: string
+          deleted_at?: string | null
           do_at?: string | null
           done_at?: string | null
           draft?: boolean
@@ -783,6 +795,7 @@ export type Database = {
           activity_id: string | null
           at: unknown
           created_at: string
+          deleted_at: string | null
           id: string
           pomodoro: number | null
           pomodoro_at: string | null
@@ -794,6 +807,7 @@ export type Database = {
           activity_id?: string | null
           at: unknown
           created_at?: string
+          deleted_at?: string | null
           id?: string
           pomodoro?: number | null
           pomodoro_at?: string | null
@@ -805,6 +819,7 @@ export type Database = {
           activity_id?: string | null
           at?: unknown
           created_at?: string
+          deleted_at?: string | null
           id?: string
           pomodoro?: number | null
           pomodoro_at?: string | null
@@ -940,6 +955,7 @@ export type Database = {
         Row: {
           color: number | null
           created_at: string | null
+          deleted_at: string | null
           draft: boolean | null
           id: string | null
           name: string | null
@@ -986,6 +1002,8 @@ export type Database = {
       event_invitees: {
         Row: {
           attendee_count: number | null
+          created_at: string | null
+          deleted_at: string | null
           event_id: string | null
           freemail_invitees: boolean | null
           invitee_count: number | null
@@ -1025,6 +1043,7 @@ export type Database = {
           conferencing_url: string | null
           created_at: string | null
           day: string | null
+          deleted_at: string | null
           description: string | null
           draft: boolean | null
           embedding: string | null
@@ -1141,9 +1160,9 @@ export type Database = {
         Row: {
           activity_id: string | null
           activity_path: unknown | null
-          archived_at: string | null
           body: string | null
           created_at: string | null
+          deleted_at: string | null
           do_at: string | null
           done_at: string | null
           draft: boolean | null
@@ -1240,10 +1259,10 @@ export type Database = {
           "": unknown
         }
         Returns: {
-          archived_at: string | null
           contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
+          deleted_at: string | null
           email: string
           id: number
           updated_at: string
@@ -1314,8 +1333,8 @@ export type Database = {
         }
         Returns: {
           account_id: number
-          archived_at: string | null
           created_at: string
+          deleted_at: string | null
           enabled: boolean
           full_sync_at: string | null
           full_sync_started_at: string | null
@@ -1340,8 +1359,8 @@ export type Database = {
         }
         Returns: {
           account_id: number
-          archived_at: string | null
           created_at: string
+          deleted_at: string | null
           enabled: boolean
           full_sync_at: string | null
           full_sync_started_at: string | null
@@ -1386,9 +1405,11 @@ export type Database = {
         Returns: {
           avatar_url: string | null
           created_at: string
+          deleted_at: string | null
           email: string
           id: number
           name: string | null
+          updated_at: string
           user_id: string
         }[]
       }
@@ -1410,6 +1431,7 @@ export type Database = {
         }
         Returns: {
           created_at: string
+          deleted_at: string | null
           email: string
           event_id: string | null
           is_optional: boolean

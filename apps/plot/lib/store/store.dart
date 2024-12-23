@@ -49,6 +49,11 @@ mixin DraftTable on Table {
   BoolColumn get draft => boolean().withDefault(const Constant(false))();
 }
 
+mixin DeletableTable on Table {
+  DateTimeColumn get deletedAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+}
+
 class IdStoreTable extends StoreTable {
   IntColumn get id => integer()();
 
@@ -393,7 +398,7 @@ class Store extends _$Store {
         ));
 
   @override
-  int get schemaVersion => 27;
+  int get schemaVersion => 29;
 
   @override
   MigrationStrategy get migration {

@@ -2,7 +2,7 @@ CREATE TABLE "public"."calendar" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "archived_at" timestamp with time zone,
+    "deleted_at" timestamp with time zone,
     "account_id" bigint NOT NULL REFERENCES "account" ON DELETE CASCADE,
     "provider_id" text NOT NULL,
     "synced_dates" tstzrange,

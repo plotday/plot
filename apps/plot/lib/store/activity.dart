@@ -4,7 +4,7 @@ typedef ActivityId = Uuid;
 typedef TopicId = Uuid;
 
 @DataClassName('ActivityRow')
-class Activities extends UuidStoreTable with DraftTable {
+class Activities extends UuidStoreTable with DraftTable, DeletableTable {
   TextColumn get name => text()();
   TextColumn get path => text().map(const PathConverter())();
   RealColumn get order => real()
@@ -47,8 +47,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     });
   }
 
-  static Stream<Map<Uuid, Activity>> watch() {
-    return watchAll().map((rows) {
+  static Stream<Map<Uuid, Activity>> watch({bool deleted = false}) {
+    return watchAll(deleted: deleted).map((rows) {
       final activities = <Uuid, Activity>{};
       void add(Activity activity) {
         activities[activity.id] = activity;
@@ -73,12 +73,15 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     });
   }
 
-  static Stream<List<Activity>> watchAll() => watchPath(null, depth: null);
+  static Stream<List<Activity>> watchAll({bool? deleted = false}) =>
+      watchPath(null, depth: null, deleted: deleted);
 
-  static Stream<List<Activity>> watchRoot({int? depth = 1}) =>
+  static Stream<List<Activity>> watchRoot(
+          {int? depth = 1, bool? deleted = false}) =>
       watchPath(null, depth: depth);
 
-  static Stream<List<Activity>> watchPath(Path? path, {int? depth = 1}) {
+  static Stream<List<Activity>> watchPath(Path? path,
+      {int? depth = 1, bool? deleted = false}) {
     final query = Store.get.select(table);
     if (path != null) {
       query.where((t) =>
@@ -88,6 +91,10 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     }
     if (depth != null) {
       query.where((t) => pathDepth(path, (path?.depth ?? 0) + depth));
+    }
+    if (deleted != null) {
+      query.where(
+          (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
     }
     // order by path so parents always precede children
     query.orderBy([(t) => OrderingTerm(expression: t.path)]);
@@ -143,6 +150,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
           id: row.id,
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
+          deletedAt: row.deletedAt,
           draft: row.draft,
           name: row.name,
           pomodoro: row.pomodoro,
@@ -161,6 +169,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Uuid? id,
     DateTime? updatedAt,
     DateTime? createdAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
     bool? draft,
     String? name,
     Path? path,
@@ -175,6 +184,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
           createdAt:
               this.draft && draft == false ? DateTime.now() : this.createdAt,
           updatedAt: DateTime.now(),
+          deletedAt: deletedAt,
           draft: draft,
           name: name,
           path: path,

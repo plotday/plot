@@ -1,7 +1,7 @@
 part of 'store.dart';
 
 @DataClassName('NoteRow')
-class Notes extends UuidStoreTable with DraftTable {
+class Notes extends UuidStoreTable with DraftTable, DeletableTable {
   BlobColumn get userId => blob()
       .clientDefault(() => Uuid.generate().toBytes())
       .map(const UuidConverter())();
@@ -111,13 +111,18 @@ class Note extends NoteRow implements Comparable<Note> {
   static bool hasMoreTopic(TopicId topicId) =>
       Store.get.hasMore(TopicNotesBase(topicId));
 
-  static Stream<List<Note>> watchActivity(Activity? activity) {
+  static Stream<List<Note>> watchActivity(Activity? activity,
+      {bool? deleted = false}) {
     pullActivity(activity?.path);
     final query = Store.get.select(table)..where((t) => t.root.equals(true));
     if (activity == null) {
       query.where((t) => t.activityId.isNull());
     } else {
       query.where((t) => t.activityId.equals(activity.id.toBytes()));
+    }
+    if (deleted != null) {
+      query.where(
+          (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
     }
 
     query.orderBy([
@@ -135,10 +140,16 @@ class Note extends NoteRow implements Comparable<Note> {
         .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
   }
 
-  static Stream<List<Note>> watchTopic(TopicId topicId) {
+  static Stream<List<Note>> watchTopic(TopicId topicId,
+      {bool? deleted = false}) {
     pullTopic(topicId);
-    return (Store.get.select(table)
-          ..where((t) => t.topicId.equals(topicId.toBytes()))
+    final query = Store.get.select(table)
+      ..where((t) => t.topicId.equals(topicId.toBytes()));
+    if (deleted != null) {
+      query.where(
+          (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
+    }
+    return (query
           ..orderBy([
             (t) => OrderingTerm.desc(t.root),
             (t) => OrderingTerm.desc(t.order)
@@ -149,7 +160,7 @@ class Note extends NoteRow implements Comparable<Note> {
 
   // Stream of items that are currently active, and will become active before
   // the end of the current day.
-  static Stream<List<Note>> watchActive() {
+  static Stream<List<Note>> watchActive({bool? deleted = false}) {
     return Date.current().switchMap((date) {
       pullActive(date.toEnd());
       final query = Store.get.select(table)
@@ -157,6 +168,10 @@ class Note extends NoteRow implements Comparable<Note> {
             t.draft.equals(false) &
             t.doAt.isSmallerThanValue(date.toEnd()) &
             t.doneAt.isNull());
+      if (deleted != null) {
+        query.where(
+            (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
+      }
       return query
           .watch()
           .map((rows) => rows.map((row) => Note.fromStore(row)).toList());
@@ -191,11 +206,12 @@ class Note extends NoteRow implements Comparable<Note> {
           activityId: row.activityId,
           body: row.body,
           createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          deletedAt: row.deletedAt,
           doAt: row.doAt,
           doneAt: row.doneAt,
           draft: row.draft,
           id: row.id,
-          updatedAt: row.updatedAt,
           order: row.order,
           orderedAt: row.orderedAt,
           pinned: row.pinned,
@@ -210,6 +226,7 @@ class Note extends NoteRow implements Comparable<Note> {
     Uuid? id,
     DateTime? updatedAt,
     DateTime? createdAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
     bool? draft,
     Uuid? userId,
     String? body,
@@ -245,6 +262,7 @@ class Note extends NoteRow implements Comparable<Note> {
       id: id ?? this.id,
       createdAt: publish ? DateTime.now() : this.createdAt,
       updatedAt: DateTime.now(),
+      deletedAt: deletedAt,
       draft: draft,
       userId: userId ?? this.userId,
       body: body ?? this.body,

@@ -3,7 +3,9 @@ CREATE OR REPLACE VIEW "public"."event_invitees" WITH ( security_invoker = TRUE)
 AS
 SELECT
     i.event_id AS event_id,
+    MAX(i.created_at) AS created_at,
     MAX(i.updated_at) AS updated_at,
+    MAX(i.deleted_at) AS deleted_at,
     count(i.email)::integer AS invitee_count,
     count(i.email) FILTER (WHERE (i.response = 'accepted'::event_response))::integer AS attendee_count,
 array_agg(i.email) AS invitees,
@@ -37,6 +39,7 @@ WITH event_x1 AS (
         COALESCE(e.series, e.provider_id) AS series,
         e.created_at AS created_at,
         GREATEST (e.updated_at, i.updated_at) AS updated_at,
+        GREATEST (e.deleted_at, i.deleted_at) AS deleted_at,
         e.draft AS draft,
         e.status AS status,
         e.provider_link AS provider_link,
@@ -110,11 +113,11 @@ CREATE OR REPLACE FUNCTION handle_event_x_upsert ()
 DECLARE
     invitee text;
 BEGIN
-    INSERT INTO event (id, user_id, name, at, calendar_id, status, provider_link, summary, description, visibility, availability, conferencing_url, organizer_email, response, series, invitees_hidden, draft)
-        VALUES (NEW.id, NEW.user_id, NEW.name, NEW.at, NEW.calendar_id, NEW.status, NEW.provider_link, NEW.summary, NEW.description, NEW.visibility, NEW.availability, NEW.conferencing_url, NEW.organizer_email, NEW.response, NEW.series, NEW.invitees_hidden, NEW.draft)
+    INSERT INTO event (id, user_id, name, at, calendar_id, status, provider_link, summary, description, visibility, availability, conferencing_url, organizer_email, response, series, invitees_hidden, draft, deleted_at)
+        VALUES (NEW.id, NEW.user_id, NEW.name, NEW.at, NEW.calendar_id, NEW.status, NEW.provider_link, NEW.summary, NEW.description, NEW.visibility, NEW.availability, NEW.conferencing_url, NEW.organizer_email, NEW.response, NEW.series, NEW.invitees_hidden, NEW.draft, NEW.deleted_at)
     ON CONFLICT (id)
         DO UPDATE SET
-            name = NEW.name, at = NEW.at, calendar_id = NEW.calendar_id, status = NEW.status, provider_link = NEW.provider_link, summary = NEW.summary, description = NEW.description, visibility = NEW.visibility, availability = NEW.availability, conferencing_url = NEW.conferencing_url, organizer_email = NEW.organizer_email, response = NEW.response, series = NEW.series, invitees_hidden = NEW.invitees_hidden, draft = NEW.draft;
+            name = NEW.name, at = NEW.at, calendar_id = NEW.calendar_id, status = NEW.status, provider_link = NEW.provider_link, summary = NEW.summary, description = NEW.description, visibility = NEW.visibility, availability = NEW.availability, conferencing_url = NEW.conferencing_url, organizer_email = NEW.organizer_email, response = NEW.response, series = NEW.series, invitees_hidden = NEW.invitees_hidden, draft = NEW.draft, deleted_at = NEW.deleted_at;
     IF OLD.invitees IS NOT NULL THEN
         -- Delete those invitees that are no longer present
         FOREACH invitee IN ARRAY OLD.invitees LOOP

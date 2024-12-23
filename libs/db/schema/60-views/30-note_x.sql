@@ -39,11 +39,11 @@ CREATE OR REPLACE FUNCTION handle_note_x_upsert ()
     RETURNS TRIGGER
     AS $$
 BEGIN
-    INSERT INTO note (user_id, id, draft, archived_at, activity_id, topic_id, body, root, pinned, "order", ordered_at, private, do_at, done_at)
-        VALUES (auth.uid (), NEW.id, NEW.draft, NEW.archived_at, NEW.activity_id, NEW.topic_id, NEW.body, NEW.root, NEW.pinned, NEW."order", NEW.ordered_at, NEW.private, NEW.do_at, NEW.done_at)
+    INSERT INTO note (user_id, id, draft, deleted_at, activity_id, topic_id, body, root, pinned, "order", ordered_at, private, do_at, done_at)
+        VALUES (auth.uid (), NEW.id, NEW.draft, NEW.deleted_at, NEW.activity_id, NEW.topic_id, NEW.body, NEW.root, NEW.pinned, NEW."order", NEW.ordered_at, NEW.private, NEW.do_at, NEW.done_at)
     ON CONFLICT (id)
         DO UPDATE SET
-            draft = NEW.draft, archived_at = NEW.archived_at, activity_id = NEW.activity_id, topic_id = NEW.topic_id, body = NEW.body, root = NEW.root, pinned = NEW.pinned, "order" = NEW."order", ordered_at = NEW.ordered_at, private = NEW.private, do_at = NEW.do_at, done_at = NEW.done_at;
+            draft = NEW.draft, deleted_at = NEW.deleted_at, activity_id = NEW.activity_id, topic_id = NEW.topic_id, body = NEW.body, root = NEW.root, pinned = NEW.pinned, "order" = NEW."order", ordered_at = NEW.ordered_at, private = NEW.private, do_at = NEW.do_at, done_at = NEW.done_at;
     RETURN NEW;
 END;
 $$

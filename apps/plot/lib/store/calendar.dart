@@ -1,7 +1,7 @@
 part of 'store.dart';
 
 @DataClassName('CalendarRow')
-class Calendars extends IdStoreTable {
+class Calendars extends IdStoreTable with DeletableTable {
   TextColumn get name => text()();
   BoolColumn get enabled => boolean()();
   IntColumn get accountId => integer().references(Accounts, #id)();
@@ -22,15 +22,21 @@ class Calendar extends CalendarRow {
   static Future<bool> pull() =>
       Store.get.pull(PullType.all, table, BalanceBase());
 
-  static Stream<List<Calendar>> watch() => Store.get
-      .select(table)
-      .watch()
-      .map((rows) => rows.map((row) => Calendar.fromStore(row)).toList());
+  static Stream<List<Calendar>> watch({bool? deleted = false}) =>
+      (Store.get.select(table)
+            ..where((t) => deleted == null
+                ? const Constant(true)
+                : deleted
+                    ? t.deletedAt.isNotNull()
+                    : t.deletedAt.isNull()))
+          .watch()
+          .map((rows) => rows.map((row) => Calendar.fromStore(row)).toList());
 
   Calendar.fromStore(CalendarRow row)
       : super(
           id: row.id,
           updatedAt: row.updatedAt,
+          deletedAt: row.deletedAt,
           name: row.name,
           enabled: row.enabled,
           accountId: row.accountId,
@@ -40,6 +46,7 @@ class Calendar extends CalendarRow {
   Calendar copyWith({
     int? id,
     DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
     String? name,
     bool? enabled,
     int? accountId,
@@ -47,6 +54,7 @@ class Calendar extends CalendarRow {
       Calendar.fromStore(super.copyWith(
         id: id,
         updatedAt: DateTime.now(),
+        deletedAt: deletedAt,
         name: name,
         enabled: enabled,
         accountId: accountId,

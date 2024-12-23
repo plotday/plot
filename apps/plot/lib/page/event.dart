@@ -11,61 +11,68 @@ class EventPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(builder: (context, state) {
-      return switch (state) {
-        SelectedEventState state => Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      if (state.selected == null) {
+        return const Center(child: Spinner());
+      }
+      return Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (state.selected!.activity?.name != null)
+              Text(state.selected!.activity!.name),
+            Row(
               children: [
-                if (state.selected.activity?.name != null)
-                  Text(state.selected.activity!.name),
-                Row(
-                  children: [
-                    Text(state.selected.at.start.toDate().format()),
-                    const SizedBox(width: 8),
-                    TimeRangePicker(
-                      onChanged: (at) {
-                        context.read<ScheduleBloc>().update(
-                              state.selected.copyWith(
-                                at: at,
-                              ),
-                            );
-                      },
-                      value: state.selected.at,
-                    ),
-                  ],
-                ),
-                TextField(
-                  label: "Title",
-                  value: state.selected.name ?? "",
-                  onChanged: (name) {
+                Text(state.selected!.at.start.toDate().format()),
+                const SizedBox(width: 8),
+                TimeRangePicker(
+                  onChanged: (at) {
                     context.read<ScheduleBloc>().update(
-                          state.selected.copyWith(
-                            name: Value(name),
+                          state.selected!.copyWith(
+                            at: at,
                           ),
                         );
                   },
-                ),
-                Switch(
-                  label: const Text("Bookable"),
-                  value: state.selected.availability == EventAvailability.free,
-                  onChanged: (free) {
-                    context.read<ScheduleBloc>().update(
-                          state.selected.copyWith(
-                            availability: free
-                                ? EventAvailability.free
-                                : EventAvailability.busy,
-                          ),
-                        );
-                  },
+                  value: state.selected!.at,
                 ),
               ],
             ),
-          ),
-        SelectedEventErrorState _ => const Center(child: Text("Error")),
-        SelectedEventLoadingState _ => const Center(child: Spinner()),
-        ScheduleState _ => const Center(child: Text("No event selected")),
-      };
+            TextField(
+              label: "Title",
+              value: state.selected!.name ?? "",
+              onChanged: (name) {
+                context.read<ScheduleBloc>().update(
+                      state.selected!.copyWith(
+                        name: Value(name),
+                      ),
+                    );
+              },
+            ),
+            Switch(
+              label: const Text("Bookable"),
+              value: state.selected!.availability == EventAvailability.free,
+              onChanged: (free) {
+                context.read<ScheduleBloc>().update(
+                      state.selected!.copyWith(
+                        availability: free
+                            ? EventAvailability.free
+                            : EventAvailability.busy,
+                      ),
+                    );
+              },
+            ),
+            Button(
+              onTap: () async {
+                await context.read<ScheduleBloc>().update(
+                    state.selected!.copyWith(deletedAt: Value(DateTime.now())));
+                if (!context.mounted) return;
+                context.read<ScheduleBloc>().selectCurrent();
+              },
+              child: const Text("Delete"),
+            )
+          ],
+        ),
+      );
     });
   }
 }

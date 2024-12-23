@@ -5,8 +5,9 @@ SELECT
     c2.id,
     cu.user_id,
     c2.created_at,
-    c2.draft,
     GREATEST (cs.updated_at, cu.updated_at, c2.updated_at) AS updated_at,
+    GREATEST (cu.deleted_at, c2.deleted_at) AS deleted_at,
+    c2.draft,
     c2.name,
     replace_parent_path (c1.path, c2.path, COALESCE(cu.path, c1.path)) AS path,
     COALESCE(cs.order, (extract(epoch FROM CURRENT_TIMESTAMP) * 1000)::double PRECISION * 10) AS
@@ -27,12 +28,12 @@ DECLARE
     _activity_id uuid;
 BEGIN
     _activity_id := NEW.id;
-    IF (OLD IS NULL OR (NEW.name IS DISTINCT FROM OLD.name OR NEW.path IS DISTINCT FROM OLD.path)) THEN
-        INSERT INTO activity (id, name, path, draft, created_by)
-            VALUES (NEW.id, NEW.name, NEW.path, NEW.draft, auth.uid ())
+    IF (OLD IS NULL OR (NEW.name IS DISTINCT FROM OLD.name OR NEW.path IS DISTINCT FROM OLD.path OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at)) THEN
+        INSERT INTO activity (id, name, path, draft, created_by, deleted_at)
+            VALUES (NEW.id, NEW.name, NEW.path, NEW.draft, auth.uid (), NEW.deleted_at)
         ON CONFLICT (id)
             DO UPDATE SET
-                name = NEW.name, path = NEW.path, draft = NEW.draft
+                name = NEW.name, path = NEW.path, draft = NEW.draft, deleted_at = NEW.deleted_at
             RETURNING
                 id INTO _activity_id;
     END IF;

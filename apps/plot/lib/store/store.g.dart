@@ -378,6 +378,13 @@ class $AccountsTable extends Accounts
               requiredDuringInsert: false,
               defaultValue: currentDateAndTime)
           .withConverter<DateTime>($AccountsTable.$converterupdatedAt);
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> deletedAt =
+      GeneratedColumn<DateTime>('deleted_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($AccountsTable.$converterdeletedAtn);
   static const VerificationMeta _emailMeta = const VerificationMeta('email');
   @override
   late final GeneratedColumn<String> email = GeneratedColumn<String>(
@@ -391,7 +398,8 @@ class $AccountsTable extends Accounts
               type: DriftSqlType.string, requiredDuringInsert: true)
           .withConverter<AccountProvider>($AccountsTable.$converterprovider);
   @override
-  List<GeneratedColumn> get $columns => [id, updatedAt, email, provider];
+  List<GeneratedColumn> get $columns =>
+      [id, updatedAt, deletedAt, email, provider];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -406,6 +414,7 @@ class $AccountsTable extends Accounts
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
     context.handle(_updatedAtMeta, const VerificationResult.success());
+    context.handle(_deletedAtMeta, const VerificationResult.success());
     if (data.containsKey('email')) {
       context.handle(
           _emailMeta, email.isAcceptableOrUnknown(data['email']!, _emailMeta));
@@ -427,6 +436,9 @@ class $AccountsTable extends Accounts
       updatedAt: $AccountsTable.$converterupdatedAt.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!),
+      deletedAt: $AccountsTable.$converterdeletedAtn.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at'])),
       email: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}email'])!,
       provider: $AccountsTable.$converterprovider.fromSql(attachedDatabase
@@ -442,6 +454,10 @@ class $AccountsTable extends Accounts
 
   static TypeConverter<DateTime, DateTime> $converterupdatedAt =
       const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $converterdeletedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterdeletedAtn =
+      NullAwareTypeConverter.wrap($converterdeletedAt);
   static JsonTypeConverter2<AccountProvider, String, String>
       $converterprovider =
       const EnumNameConverter<AccountProvider>(AccountProvider.values);
@@ -450,11 +466,13 @@ class $AccountsTable extends Accounts
 class AccountRow extends DataClass implements Insertable<AccountRow> {
   final int id;
   final DateTime updatedAt;
+  final DateTime? deletedAt;
   final String email;
   final AccountProvider provider;
   const AccountRow(
       {required this.id,
       required this.updatedAt,
+      this.deletedAt,
       required this.email,
       required this.provider});
   @override
@@ -464,6 +482,10 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     {
       map['updated_at'] = Variable<DateTime>(
           $AccountsTable.$converterupdatedAt.toSql(updatedAt));
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(
+          $AccountsTable.$converterdeletedAtn.toSql(deletedAt));
     }
     map['email'] = Variable<String>(email);
     {
@@ -477,6 +499,9 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     return AccountsCompanion(
       id: Value(id),
       updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
       email: Value(email),
       provider: Value(provider),
     );
@@ -488,6 +513,7 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     return AccountRow(
       id: serializer.fromJson<int>(json['id']),
       updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deleted_at']),
       email: serializer.fromJson<String>(json['email']),
       provider: $AccountsTable.$converterprovider
           .fromJson(serializer.fromJson<String>(json['provider'])),
@@ -499,6 +525,7 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'updated_at': serializer.toJson<DateTime>(updatedAt),
+      'deleted_at': serializer.toJson<DateTime?>(deletedAt),
       'email': serializer.toJson<String>(email),
       'provider': serializer
           .toJson<String>($AccountsTable.$converterprovider.toJson(provider)),
@@ -508,11 +535,13 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   AccountRow copyWith(
           {int? id,
           DateTime? updatedAt,
+          Value<DateTime?> deletedAt = const Value.absent(),
           String? email,
           AccountProvider? provider}) =>
       AccountRow(
         id: id ?? this.id,
         updatedAt: updatedAt ?? this.updatedAt,
+        deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
         email: email ?? this.email,
         provider: provider ?? this.provider,
       );
@@ -520,6 +549,7 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     return AccountRow(
       id: data.id.present ? data.id.value : this.id,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       email: data.email.present ? data.email.value : this.email,
       provider: data.provider.present ? data.provider.value : this.provider,
     );
@@ -530,6 +560,7 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
     return (StringBuffer('AccountRow(')
           ..write('id: $id, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('email: $email, ')
           ..write('provider: $provider')
           ..write(')'))
@@ -537,13 +568,14 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, updatedAt, email, provider);
+  int get hashCode => Object.hash(id, updatedAt, deletedAt, email, provider);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is AccountRow &&
           other.id == this.id &&
           other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
           other.email == this.email &&
           other.provider == this.provider);
 }
@@ -551,17 +583,20 @@ class AccountRow extends DataClass implements Insertable<AccountRow> {
 class AccountsCompanion extends UpdateCompanion<AccountRow> {
   final Value<int> id;
   final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
   final Value<String> email;
   final Value<AccountProvider> provider;
   const AccountsCompanion({
     this.id = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.email = const Value.absent(),
     this.provider = const Value.absent(),
   });
   AccountsCompanion.insert({
     this.id = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     required String email,
     required AccountProvider provider,
   })  : email = Value(email),
@@ -569,12 +604,14 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
   static Insertable<AccountRow> custom({
     Expression<int>? id,
     Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
     Expression<String>? email,
     Expression<String>? provider,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (email != null) 'email': email,
       if (provider != null) 'provider': provider,
     });
@@ -583,11 +620,13 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
   AccountsCompanion copyWith(
       {Value<int>? id,
       Value<DateTime>? updatedAt,
+      Value<DateTime?>? deletedAt,
       Value<String>? email,
       Value<AccountProvider>? provider}) {
     return AccountsCompanion(
       id: id ?? this.id,
       updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
       email: email ?? this.email,
       provider: provider ?? this.provider,
     );
@@ -602,6 +641,10 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(
           $AccountsTable.$converterupdatedAt.toSql(updatedAt.value));
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(
+          $AccountsTable.$converterdeletedAtn.toSql(deletedAt.value));
     }
     if (email.present) {
       map['email'] = Variable<String>(email.value);
@@ -618,6 +661,7 @@ class AccountsCompanion extends UpdateCompanion<AccountRow> {
     return (StringBuffer('AccountsCompanion(')
           ..write('id: $id, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('email: $email, ')
           ..write('provider: $provider')
           ..write(')'))
@@ -645,6 +689,13 @@ class $CalendarsTable extends Calendars
               requiredDuringInsert: false,
               defaultValue: currentDateAndTime)
           .withConverter<DateTime>($CalendarsTable.$converterupdatedAt);
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> deletedAt =
+      GeneratedColumn<DateTime>('deleted_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($CalendarsTable.$converterdeletedAtn);
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -670,7 +721,7 @@ class $CalendarsTable extends Calendars
           GeneratedColumn.constraintIsAlways('REFERENCES accounts (id)'));
   @override
   List<GeneratedColumn> get $columns =>
-      [id, updatedAt, name, enabled, accountId];
+      [id, updatedAt, deletedAt, name, enabled, accountId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -685,6 +736,7 @@ class $CalendarsTable extends Calendars
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
     context.handle(_updatedAtMeta, const VerificationResult.success());
+    context.handle(_deletedAtMeta, const VerificationResult.success());
     if (data.containsKey('name')) {
       context.handle(
           _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
@@ -717,6 +769,9 @@ class $CalendarsTable extends Calendars
       updatedAt: $CalendarsTable.$converterupdatedAt.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!),
+      deletedAt: $CalendarsTable.$converterdeletedAtn.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at'])),
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       enabled: attachedDatabase.typeMapping
@@ -733,17 +788,23 @@ class $CalendarsTable extends Calendars
 
   static TypeConverter<DateTime, DateTime> $converterupdatedAt =
       const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $converterdeletedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterdeletedAtn =
+      NullAwareTypeConverter.wrap($converterdeletedAt);
 }
 
 class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   final int id;
   final DateTime updatedAt;
+  final DateTime? deletedAt;
   final String name;
   final bool enabled;
   final int accountId;
   const CalendarRow(
       {required this.id,
       required this.updatedAt,
+      this.deletedAt,
       required this.name,
       required this.enabled,
       required this.accountId});
@@ -755,6 +816,10 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
       map['updated_at'] = Variable<DateTime>(
           $CalendarsTable.$converterupdatedAt.toSql(updatedAt));
     }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(
+          $CalendarsTable.$converterdeletedAtn.toSql(deletedAt));
+    }
     map['name'] = Variable<String>(name);
     map['enabled'] = Variable<bool>(enabled);
     map['account_id'] = Variable<int>(accountId);
@@ -765,6 +830,9 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
     return CalendarsCompanion(
       id: Value(id),
       updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
       name: Value(name),
       enabled: Value(enabled),
       accountId: Value(accountId),
@@ -777,6 +845,7 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
     return CalendarRow(
       id: serializer.fromJson<int>(json['id']),
       updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deleted_at']),
       name: serializer.fromJson<String>(json['name']),
       enabled: serializer.fromJson<bool>(json['enabled']),
       accountId: serializer.fromJson<int>(json['account_id']),
@@ -788,6 +857,7 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'updated_at': serializer.toJson<DateTime>(updatedAt),
+      'deleted_at': serializer.toJson<DateTime?>(deletedAt),
       'name': serializer.toJson<String>(name),
       'enabled': serializer.toJson<bool>(enabled),
       'account_id': serializer.toJson<int>(accountId),
@@ -797,12 +867,14 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   CalendarRow copyWith(
           {int? id,
           DateTime? updatedAt,
+          Value<DateTime?> deletedAt = const Value.absent(),
           String? name,
           bool? enabled,
           int? accountId}) =>
       CalendarRow(
         id: id ?? this.id,
         updatedAt: updatedAt ?? this.updatedAt,
+        deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
         name: name ?? this.name,
         enabled: enabled ?? this.enabled,
         accountId: accountId ?? this.accountId,
@@ -811,6 +883,7 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
     return CalendarRow(
       id: data.id.present ? data.id.value : this.id,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       name: data.name.present ? data.name.value : this.name,
       enabled: data.enabled.present ? data.enabled.value : this.enabled,
       accountId: data.accountId.present ? data.accountId.value : this.accountId,
@@ -822,6 +895,7 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
     return (StringBuffer('CalendarRow(')
           ..write('id: $id, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('name: $name, ')
           ..write('enabled: $enabled, ')
           ..write('accountId: $accountId')
@@ -830,13 +904,15 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, updatedAt, name, enabled, accountId);
+  int get hashCode =>
+      Object.hash(id, updatedAt, deletedAt, name, enabled, accountId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is CalendarRow &&
           other.id == this.id &&
           other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
           other.name == this.name &&
           other.enabled == this.enabled &&
           other.accountId == this.accountId);
@@ -845,12 +921,14 @@ class CalendarRow extends DataClass implements Insertable<CalendarRow> {
 class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   final Value<int> id;
   final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
   final Value<String> name;
   final Value<bool> enabled;
   final Value<int> accountId;
   const CalendarsCompanion({
     this.id = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.name = const Value.absent(),
     this.enabled = const Value.absent(),
     this.accountId = const Value.absent(),
@@ -858,6 +936,7 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   CalendarsCompanion.insert({
     this.id = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     required String name,
     required bool enabled,
     required int accountId,
@@ -867,6 +946,7 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   static Insertable<CalendarRow> custom({
     Expression<int>? id,
     Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
     Expression<String>? name,
     Expression<bool>? enabled,
     Expression<int>? accountId,
@@ -874,6 +954,7 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (name != null) 'name': name,
       if (enabled != null) 'enabled': enabled,
       if (accountId != null) 'account_id': accountId,
@@ -883,12 +964,14 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
   CalendarsCompanion copyWith(
       {Value<int>? id,
       Value<DateTime>? updatedAt,
+      Value<DateTime?>? deletedAt,
       Value<String>? name,
       Value<bool>? enabled,
       Value<int>? accountId}) {
     return CalendarsCompanion(
       id: id ?? this.id,
       updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
       name: name ?? this.name,
       enabled: enabled ?? this.enabled,
       accountId: accountId ?? this.accountId,
@@ -904,6 +987,10 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(
           $CalendarsTable.$converterupdatedAt.toSql(updatedAt.value));
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(
+          $CalendarsTable.$converterdeletedAtn.toSql(deletedAt.value));
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -922,6 +1009,7 @@ class CalendarsCompanion extends UpdateCompanion<CalendarRow> {
     return (StringBuffer('CalendarsCompanion(')
           ..write('id: $id, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('name: $name, ')
           ..write('enabled: $enabled, ')
           ..write('accountId: $accountId')
@@ -971,6 +1059,13 @@ class $ActivitiesTable extends Activities
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('CHECK ("draft" IN (0, 1))'),
       defaultValue: const Constant(false));
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> deletedAt =
+      GeneratedColumn<DateTime>('deleted_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($ActivitiesTable.$converterdeletedAtn);
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -1008,8 +1103,18 @@ class $ActivitiesTable extends Activities
               defaultValue: const Constant(0))
           .withConverter<ThemeColor>($ActivitiesTable.$convertercolor);
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, updatedAt, createdAt, draft, name, path, order, pomodoro, color];
+  List<GeneratedColumn> get $columns => [
+        id,
+        updatedAt,
+        createdAt,
+        draft,
+        deletedAt,
+        name,
+        path,
+        order,
+        pomodoro,
+        color
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1027,6 +1132,7 @@ class $ActivitiesTable extends Activities
       context.handle(
           _draftMeta, draft.isAcceptableOrUnknown(data['draft']!, _draftMeta));
     }
+    context.handle(_deletedAtMeta, const VerificationResult.success());
     if (data.containsKey('name')) {
       context.handle(
           _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
@@ -1056,6 +1162,9 @@ class $ActivitiesTable extends Activities
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!),
       draft: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}draft'])!,
+      deletedAt: $ActivitiesTable.$converterdeletedAtn.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at'])),
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       path: $ActivitiesTable.$converterpath.fromSql(attachedDatabase.typeMapping
@@ -1082,6 +1191,10 @@ class $ActivitiesTable extends Activities
       const LocalDateTimeConverter();
   static TypeConverter<DateTime, DateTime> $convertercreatedAt =
       const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $converterdeletedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterdeletedAtn =
+      NullAwareTypeConverter.wrap($converterdeletedAt);
   static TypeConverter<Path, String> $converterpath = const PathConverter();
   static TypeConverter<Order, double> $converterorder = const OrderConverter();
   static TypeConverter<Duration, int> $converterpomodoro =
@@ -1095,6 +1208,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final DateTime updatedAt;
   final DateTime createdAt;
   final bool draft;
+  final DateTime? deletedAt;
   final String name;
   final Path path;
   final Order order;
@@ -1105,6 +1219,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       required this.updatedAt,
       required this.createdAt,
       required this.draft,
+      this.deletedAt,
       required this.name,
       required this.path,
       required this.order,
@@ -1125,6 +1240,10 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           $ActivitiesTable.$convertercreatedAt.toSql(createdAt));
     }
     map['draft'] = Variable<bool>(draft);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(
+          $ActivitiesTable.$converterdeletedAtn.toSql(deletedAt));
+    }
     map['name'] = Variable<String>(name);
     {
       map['path'] =
@@ -1151,6 +1270,9 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       updatedAt: Value(updatedAt),
       createdAt: Value(createdAt),
       draft: Value(draft),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
       name: Value(name),
       path: Value(path),
       order: Value(order),
@@ -1167,6 +1289,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
       createdAt: serializer.fromJson<DateTime>(json['created_at']),
       draft: serializer.fromJson<bool>(json['draft']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deleted_at']),
       name: serializer.fromJson<String>(json['name']),
       path: serializer.fromJson<Path>(json['path']),
       order: serializer.fromJson<Order>(json['order']),
@@ -1182,6 +1305,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       'updated_at': serializer.toJson<DateTime>(updatedAt),
       'created_at': serializer.toJson<DateTime>(createdAt),
       'draft': serializer.toJson<bool>(draft),
+      'deleted_at': serializer.toJson<DateTime?>(deletedAt),
       'name': serializer.toJson<String>(name),
       'path': serializer.toJson<Path>(path),
       'order': serializer.toJson<Order>(order),
@@ -1195,6 +1319,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           DateTime? updatedAt,
           DateTime? createdAt,
           bool? draft,
+          Value<DateTime?> deletedAt = const Value.absent(),
           String? name,
           Path? path,
           Order? order,
@@ -1205,6 +1330,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
         updatedAt: updatedAt ?? this.updatedAt,
         createdAt: createdAt ?? this.createdAt,
         draft: draft ?? this.draft,
+        deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
         name: name ?? this.name,
         path: path ?? this.path,
         order: order ?? this.order,
@@ -1217,6 +1343,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       draft: data.draft.present ? data.draft.value : this.draft,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       name: data.name.present ? data.name.value : this.name,
       path: data.path.present ? data.path.value : this.path,
       order: data.order.present ? data.order.value : this.order,
@@ -1232,6 +1359,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('name: $name, ')
           ..write('path: $path, ')
           ..write('order: $order, ')
@@ -1242,8 +1370,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, updatedAt, createdAt, draft, name, path, order, pomodoro, color);
+  int get hashCode => Object.hash(id, updatedAt, createdAt, draft, deletedAt,
+      name, path, order, pomodoro, color);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1252,6 +1380,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           other.updatedAt == this.updatedAt &&
           other.createdAt == this.createdAt &&
           other.draft == this.draft &&
+          other.deletedAt == this.deletedAt &&
           other.name == this.name &&
           other.path == this.path &&
           other.order == this.order &&
@@ -1264,6 +1393,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<DateTime> updatedAt;
   final Value<DateTime> createdAt;
   final Value<bool> draft;
+  final Value<DateTime?> deletedAt;
   final Value<String> name;
   final Value<Path> path;
   final Value<Order> order;
@@ -1275,6 +1405,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.name = const Value.absent(),
     this.path = const Value.absent(),
     this.order = const Value.absent(),
@@ -1287,6 +1418,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     required String name,
     required Path path,
     this.order = const Value.absent(),
@@ -1300,6 +1432,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Expression<DateTime>? updatedAt,
     Expression<DateTime>? createdAt,
     Expression<bool>? draft,
+    Expression<DateTime>? deletedAt,
     Expression<String>? name,
     Expression<String>? path,
     Expression<double>? order,
@@ -1312,6 +1445,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       if (updatedAt != null) 'updated_at': updatedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (draft != null) 'draft': draft,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (name != null) 'name': name,
       if (path != null) 'path': path,
       if (order != null) 'order': order,
@@ -1326,6 +1460,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       Value<DateTime>? updatedAt,
       Value<DateTime>? createdAt,
       Value<bool>? draft,
+      Value<DateTime?>? deletedAt,
       Value<String>? name,
       Value<Path>? path,
       Value<Order>? order,
@@ -1337,6 +1472,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       updatedAt: updatedAt ?? this.updatedAt,
       createdAt: createdAt ?? this.createdAt,
       draft: draft ?? this.draft,
+      deletedAt: deletedAt ?? this.deletedAt,
       name: name ?? this.name,
       path: path ?? this.path,
       order: order ?? this.order,
@@ -1363,6 +1499,10 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     }
     if (draft.present) {
       map['draft'] = Variable<bool>(draft.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(
+          $ActivitiesTable.$converterdeletedAtn.toSql(deletedAt.value));
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -1396,6 +1536,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('name: $name, ')
           ..write('path: $path, ')
           ..write('order: $order, ')
@@ -1447,6 +1588,13 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('CHECK ("draft" IN (0, 1))'),
       defaultValue: const Constant(false));
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> deletedAt =
+      GeneratedColumn<DateTime>('deleted_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($NotesTable.$converterdeletedAtn);
   static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
   @override
   late final GeneratedColumnWithTypeConverter<Uuid, Uint8List> userId =
@@ -1540,6 +1688,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
         updatedAt,
         createdAt,
         draft,
+        deletedAt,
         userId,
         body,
         order,
@@ -1569,6 +1718,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       context.handle(
           _draftMeta, draft.isAcceptableOrUnknown(data['draft']!, _draftMeta));
     }
+    context.handle(_deletedAtMeta, const VerificationResult.success());
     context.handle(_userIdMeta, const VerificationResult.success());
     if (data.containsKey('body')) {
       context.handle(
@@ -1613,6 +1763,9 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!),
       draft: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}draft'])!,
+      deletedAt: $NotesTable.$converterdeletedAtn.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at'])),
       userId: $NotesTable.$converteruserId.fromSql(attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}user_id'])!),
       body: attachedDatabase.typeMapping
@@ -1651,6 +1804,10 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, NoteRow> {
       const LocalDateTimeConverter();
   static TypeConverter<DateTime, DateTime> $convertercreatedAt =
       const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $converterdeletedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterdeletedAtn =
+      NullAwareTypeConverter.wrap($converterdeletedAt);
   static TypeConverter<Uuid, Uint8List> $converteruserId =
       const UuidConverter();
   static TypeConverter<Order, double> $converterorder = const OrderConverter();
@@ -1677,6 +1834,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
   final DateTime updatedAt;
   final DateTime createdAt;
   final bool draft;
+  final DateTime? deletedAt;
   final Uuid userId;
   final String body;
   final Order order;
@@ -1693,6 +1851,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       required this.updatedAt,
       required this.createdAt,
       required this.draft,
+      this.deletedAt,
       required this.userId,
       required this.body,
       required this.order,
@@ -1719,6 +1878,10 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           Variable<DateTime>($NotesTable.$convertercreatedAt.toSql(createdAt));
     }
     map['draft'] = Variable<bool>(draft);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] =
+          Variable<DateTime>($NotesTable.$converterdeletedAtn.toSql(deletedAt));
+    }
     {
       map['user_id'] =
           Variable<Uint8List>($NotesTable.$converteruserId.toSql(userId));
@@ -1759,6 +1922,9 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       updatedAt: Value(updatedAt),
       createdAt: Value(createdAt),
       draft: Value(draft),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
       userId: Value(userId),
       body: Value(body),
       order: Value(order),
@@ -1784,6 +1950,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
       createdAt: serializer.fromJson<DateTime>(json['created_at']),
       draft: serializer.fromJson<bool>(json['draft']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deleted_at']),
       userId: serializer.fromJson<Uuid>(json['user_id']),
       body: serializer.fromJson<String>(json['body']),
       order: serializer.fromJson<Order>(json['order']),
@@ -1805,6 +1972,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       'updated_at': serializer.toJson<DateTime>(updatedAt),
       'created_at': serializer.toJson<DateTime>(createdAt),
       'draft': serializer.toJson<bool>(draft),
+      'deleted_at': serializer.toJson<DateTime?>(deletedAt),
       'user_id': serializer.toJson<Uuid>(userId),
       'body': serializer.toJson<String>(body),
       'order': serializer.toJson<Order>(order),
@@ -1824,6 +1992,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           DateTime? updatedAt,
           DateTime? createdAt,
           bool? draft,
+          Value<DateTime?> deletedAt = const Value.absent(),
           Uuid? userId,
           String? body,
           Order? order,
@@ -1840,6 +2009,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
         updatedAt: updatedAt ?? this.updatedAt,
         createdAt: createdAt ?? this.createdAt,
         draft: draft ?? this.draft,
+        deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
         userId: userId ?? this.userId,
         body: body ?? this.body,
         order: order ?? this.order,
@@ -1858,6 +2028,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       draft: data.draft.present ? data.draft.value : this.draft,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       userId: data.userId.present ? data.userId.value : this.userId,
       body: data.body.present ? data.body.value : this.body,
       order: data.order.present ? data.order.value : this.order,
@@ -1880,6 +2051,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('userId: $userId, ')
           ..write('body: $body, ')
           ..write('order: $order, ')
@@ -1901,6 +2073,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
       updatedAt,
       createdAt,
       draft,
+      deletedAt,
       userId,
       body,
       order,
@@ -1920,6 +2093,7 @@ class NoteRow extends DataClass implements Insertable<NoteRow> {
           other.updatedAt == this.updatedAt &&
           other.createdAt == this.createdAt &&
           other.draft == this.draft &&
+          other.deletedAt == this.deletedAt &&
           other.userId == this.userId &&
           other.body == this.body &&
           other.order == this.order &&
@@ -1938,6 +2112,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
   final Value<DateTime> updatedAt;
   final Value<DateTime> createdAt;
   final Value<bool> draft;
+  final Value<DateTime?> deletedAt;
   final Value<Uuid> userId;
   final Value<String> body;
   final Value<Order> order;
@@ -1955,6 +2130,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.userId = const Value.absent(),
     this.body = const Value.absent(),
     this.order = const Value.absent(),
@@ -1973,6 +2149,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.userId = const Value.absent(),
     required String body,
     this.order = const Value.absent(),
@@ -1992,6 +2169,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     Expression<DateTime>? updatedAt,
     Expression<DateTime>? createdAt,
     Expression<bool>? draft,
+    Expression<DateTime>? deletedAt,
     Expression<Uint8List>? userId,
     Expression<String>? body,
     Expression<double>? order,
@@ -2010,6 +2188,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       if (updatedAt != null) 'updated_at': updatedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (draft != null) 'draft': draft,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (userId != null) 'user_id': userId,
       if (body != null) 'body': body,
       if (order != null) 'order': order,
@@ -2030,6 +2209,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       Value<DateTime>? updatedAt,
       Value<DateTime>? createdAt,
       Value<bool>? draft,
+      Value<DateTime?>? deletedAt,
       Value<Uuid>? userId,
       Value<String>? body,
       Value<Order>? order,
@@ -2047,6 +2227,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
       updatedAt: updatedAt ?? this.updatedAt,
       createdAt: createdAt ?? this.createdAt,
       draft: draft ?? this.draft,
+      deletedAt: deletedAt ?? this.deletedAt,
       userId: userId ?? this.userId,
       body: body ?? this.body,
       order: order ?? this.order,
@@ -2078,6 +2259,10 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
     }
     if (draft.present) {
       map['draft'] = Variable<bool>(draft.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(
+          $NotesTable.$converterdeletedAtn.toSql(deletedAt.value));
     }
     if (userId.present) {
       map['user_id'] =
@@ -2132,6 +2317,7 @@ class NotesCompanion extends UpdateCompanion<NoteRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('userId: $userId, ')
           ..write('body: $body, ')
           ..write('order: $order, ')
@@ -2189,6 +2375,13 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('CHECK ("draft" IN (0, 1))'),
       defaultValue: const Constant(false));
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> deletedAt =
+      GeneratedColumn<DateTime>('deleted_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($EventsTable.$converterdeletedAtn);
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -2273,6 +2466,7 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
         updatedAt,
         createdAt,
         draft,
+        deletedAt,
         name,
         start,
         end,
@@ -2301,6 +2495,7 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       context.handle(
           _draftMeta, draft.isAcceptableOrUnknown(data['draft']!, _draftMeta));
     }
+    context.handle(_deletedAtMeta, const VerificationResult.success());
     if (data.containsKey('name')) {
       context.handle(
           _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
@@ -2341,6 +2536,9 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!),
       draft: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}draft'])!,
+      deletedAt: $EventsTable.$converterdeletedAtn.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at'])),
       name: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name']),
       start: $EventsTable.$converterstart.fromSql(attachedDatabase.typeMapping
@@ -2378,6 +2576,10 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
       const LocalDateTimeConverter();
   static TypeConverter<DateTime, DateTime> $convertercreatedAt =
       const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $converterdeletedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterdeletedAtn =
+      NullAwareTypeConverter.wrap($converterdeletedAt);
   static TypeConverter<DateTime, DateTime> $converterstart =
       const LocalDateTimeConverter();
   static TypeConverter<DateTime, DateTime> $converterend =
@@ -2403,6 +2605,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   final DateTime updatedAt;
   final DateTime createdAt;
   final bool draft;
+  final DateTime? deletedAt;
   final String? name;
   final DateTime start;
   final DateTime end;
@@ -2418,6 +2621,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       required this.updatedAt,
       required this.createdAt,
       required this.draft,
+      this.deletedAt,
       this.name,
       required this.start,
       required this.end,
@@ -2443,6 +2647,10 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           Variable<DateTime>($EventsTable.$convertercreatedAt.toSql(createdAt));
     }
     map['draft'] = Variable<bool>(draft);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(
+          $EventsTable.$converterdeletedAtn.toSql(deletedAt));
+    }
     if (!nullToAbsent || name != null) {
       map['name'] = Variable<String>(name);
     }
@@ -2486,6 +2694,9 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       updatedAt: Value(updatedAt),
       createdAt: Value(createdAt),
       draft: Value(draft),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
       name: name == null && nullToAbsent ? const Value.absent() : Value(name),
       start: Value(start),
       end: Value(end),
@@ -2510,6 +2721,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
       createdAt: serializer.fromJson<DateTime>(json['created_at']),
       draft: serializer.fromJson<bool>(json['draft']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deleted_at']),
       name: serializer.fromJson<String?>(json['name']),
       start: serializer.fromJson<DateTime>(json['start']),
       end: serializer.fromJson<DateTime>(json['end']),
@@ -2534,6 +2746,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       'updated_at': serializer.toJson<DateTime>(updatedAt),
       'created_at': serializer.toJson<DateTime>(createdAt),
       'draft': serializer.toJson<bool>(draft),
+      'deleted_at': serializer.toJson<DateTime?>(deletedAt),
       'name': serializer.toJson<String?>(name),
       'start': serializer.toJson<DateTime>(start),
       'end': serializer.toJson<DateTime>(end),
@@ -2556,6 +2769,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           DateTime? updatedAt,
           DateTime? createdAt,
           bool? draft,
+          Value<DateTime?> deletedAt = const Value.absent(),
           Value<String?> name = const Value.absent(),
           DateTime? start,
           DateTime? end,
@@ -2571,6 +2785,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
         updatedAt: updatedAt ?? this.updatedAt,
         createdAt: createdAt ?? this.createdAt,
         draft: draft ?? this.draft,
+        deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
         name: name.present ? name.value : this.name,
         start: start ?? this.start,
         end: end ?? this.end,
@@ -2588,6 +2803,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       draft: data.draft.present ? data.draft.value : this.draft,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       name: data.name.present ? data.name.value : this.name,
       start: data.start.present ? data.start.value : this.start,
       end: data.end.present ? data.end.value : this.end,
@@ -2614,6 +2830,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('name: $name, ')
           ..write('start: $start, ')
           ..write('end: $end, ')
@@ -2634,6 +2851,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       updatedAt,
       createdAt,
       draft,
+      deletedAt,
       name,
       start,
       end,
@@ -2652,6 +2870,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           other.updatedAt == this.updatedAt &&
           other.createdAt == this.createdAt &&
           other.draft == this.draft &&
+          other.deletedAt == this.deletedAt &&
           other.name == this.name &&
           other.start == this.start &&
           other.end == this.end &&
@@ -2669,6 +2888,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   final Value<DateTime> updatedAt;
   final Value<DateTime> createdAt;
   final Value<bool> draft;
+  final Value<DateTime?> deletedAt;
   final Value<String?> name;
   final Value<DateTime> start;
   final Value<DateTime> end;
@@ -2685,6 +2905,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.name = const Value.absent(),
     this.start = const Value.absent(),
     this.end = const Value.absent(),
@@ -2702,6 +2923,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     this.updatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.draft = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.name = const Value.absent(),
     required DateTime start,
     required DateTime end,
@@ -2720,6 +2942,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     Expression<DateTime>? updatedAt,
     Expression<DateTime>? createdAt,
     Expression<bool>? draft,
+    Expression<DateTime>? deletedAt,
     Expression<String>? name,
     Expression<DateTime>? start,
     Expression<DateTime>? end,
@@ -2737,6 +2960,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       if (updatedAt != null) 'updated_at': updatedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (draft != null) 'draft': draft,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (name != null) 'name': name,
       if (start != null) 'start': start,
       if (end != null) 'end': end,
@@ -2756,6 +2980,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       Value<DateTime>? updatedAt,
       Value<DateTime>? createdAt,
       Value<bool>? draft,
+      Value<DateTime?>? deletedAt,
       Value<String?>? name,
       Value<DateTime>? start,
       Value<DateTime>? end,
@@ -2772,6 +2997,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
       updatedAt: updatedAt ?? this.updatedAt,
       createdAt: createdAt ?? this.createdAt,
       draft: draft ?? this.draft,
+      deletedAt: deletedAt ?? this.deletedAt,
       name: name ?? this.name,
       start: start ?? this.start,
       end: end ?? this.end,
@@ -2803,6 +3029,10 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     }
     if (draft.present) {
       map['draft'] = Variable<bool>(draft.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(
+          $EventsTable.$converterdeletedAtn.toSql(deletedAt.value));
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -2854,6 +3084,7 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('draft: $draft, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('name: $name, ')
           ..write('start: $start, ')
           ..write('end: $end, ')
@@ -2893,6 +3124,13 @@ class $SessionsTable extends Sessions
               requiredDuringInsert: false,
               defaultValue: currentDateAndTime)
           .withConverter<DateTime>($SessionsTable.$converterupdatedAt);
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, DateTime> deletedAt =
+      GeneratedColumn<DateTime>('deleted_at', aliasedName, true,
+              type: DriftSqlType.dateTime, requiredDuringInsert: false)
+          .withConverter<DateTime?>($SessionsTable.$converterdeletedAtn);
   static const VerificationMeta _activityIdMeta =
       const VerificationMeta('activityId');
   @override
@@ -2938,8 +3176,17 @@ class $SessionsTable extends Sessions
               type: DriftSqlType.dateTime, requiredDuringInsert: false)
           .withConverter<DateTime?>($SessionsTable.$converterpomodoroAtn);
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, updatedAt, activityId, start, end, priority, pomodoro, pomodoroAt];
+  List<GeneratedColumn> get $columns => [
+        id,
+        updatedAt,
+        deletedAt,
+        activityId,
+        start,
+        end,
+        priority,
+        pomodoro,
+        pomodoroAt
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2952,6 +3199,7 @@ class $SessionsTable extends Sessions
     final data = instance.toColumns(true);
     context.handle(_idMeta, const VerificationResult.success());
     context.handle(_updatedAtMeta, const VerificationResult.success());
+    context.handle(_deletedAtMeta, const VerificationResult.success());
     context.handle(_activityIdMeta, const VerificationResult.success());
     context.handle(_startMeta, const VerificationResult.success());
     context.handle(_endMeta, const VerificationResult.success());
@@ -2975,6 +3223,9 @@ class $SessionsTable extends Sessions
       updatedAt: $SessionsTable.$converterupdatedAt.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!),
+      deletedAt: $SessionsTable.$converterdeletedAtn.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at'])),
       activityId: $SessionsTable.$converteractivityIdn.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}activity_id'])),
@@ -3001,6 +3252,10 @@ class $SessionsTable extends Sessions
   static TypeConverter<Uuid, Uint8List> $converterid = const UuidConverter();
   static TypeConverter<DateTime, DateTime> $converterupdatedAt =
       const LocalDateTimeConverter();
+  static TypeConverter<DateTime, DateTime> $converterdeletedAt =
+      const LocalDateTimeConverter();
+  static TypeConverter<DateTime?, DateTime?> $converterdeletedAtn =
+      NullAwareTypeConverter.wrap($converterdeletedAt);
   static TypeConverter<Uuid, Uint8List> $converteractivityId =
       const UuidConverter();
   static TypeConverter<Uuid?, Uint8List?> $converteractivityIdn =
@@ -3022,6 +3277,7 @@ class $SessionsTable extends Sessions
 class SessionRow extends DataClass implements Insertable<SessionRow> {
   final Uuid id;
   final DateTime updatedAt;
+  final DateTime? deletedAt;
   final Uuid? activityId;
   final DateTime start;
   final DateTime end;
@@ -3031,6 +3287,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   const SessionRow(
       {required this.id,
       required this.updatedAt,
+      this.deletedAt,
       this.activityId,
       required this.start,
       required this.end,
@@ -3046,6 +3303,10 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     {
       map['updated_at'] = Variable<DateTime>(
           $SessionsTable.$converterupdatedAt.toSql(updatedAt));
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(
+          $SessionsTable.$converterdeletedAtn.toSql(deletedAt));
     }
     if (!nullToAbsent || activityId != null) {
       map['activity_id'] = Variable<Uint8List>(
@@ -3074,6 +3335,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     return SessionsCompanion(
       id: Value(id),
       updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
       activityId: activityId == null && nullToAbsent
           ? const Value.absent()
           : Value(activityId),
@@ -3095,6 +3359,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     return SessionRow(
       id: serializer.fromJson<Uuid>(json['id']),
       updatedAt: serializer.fromJson<DateTime>(json['updated_at']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deleted_at']),
       activityId: serializer.fromJson<Uuid?>(json['activity_id']),
       start: serializer.fromJson<DateTime>(json['start']),
       end: serializer.fromJson<DateTime>(json['end']),
@@ -3109,6 +3374,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     return <String, dynamic>{
       'id': serializer.toJson<Uuid>(id),
       'updated_at': serializer.toJson<DateTime>(updatedAt),
+      'deleted_at': serializer.toJson<DateTime?>(deletedAt),
       'activity_id': serializer.toJson<Uuid?>(activityId),
       'start': serializer.toJson<DateTime>(start),
       'end': serializer.toJson<DateTime>(end),
@@ -3121,6 +3387,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   SessionRow copyWith(
           {Uuid? id,
           DateTime? updatedAt,
+          Value<DateTime?> deletedAt = const Value.absent(),
           Value<Uuid?> activityId = const Value.absent(),
           DateTime? start,
           DateTime? end,
@@ -3130,6 +3397,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       SessionRow(
         id: id ?? this.id,
         updatedAt: updatedAt ?? this.updatedAt,
+        deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
         activityId: activityId.present ? activityId.value : this.activityId,
         start: start ?? this.start,
         end: end ?? this.end,
@@ -3141,6 +3409,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     return SessionRow(
       id: data.id.present ? data.id.value : this.id,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       activityId:
           data.activityId.present ? data.activityId.value : this.activityId,
       start: data.start.present ? data.start.value : this.start,
@@ -3157,6 +3426,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     return (StringBuffer('SessionRow(')
           ..write('id: $id, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('activityId: $activityId, ')
           ..write('start: $start, ')
           ..write('end: $end, ')
@@ -3168,14 +3438,15 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, updatedAt, activityId, start, end, priority, pomodoro, pomodoroAt);
+  int get hashCode => Object.hash(id, updatedAt, deletedAt, activityId, start,
+      end, priority, pomodoro, pomodoroAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is SessionRow &&
           other.id == this.id &&
           other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
           other.activityId == this.activityId &&
           other.start == this.start &&
           other.end == this.end &&
@@ -3187,6 +3458,7 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
 class SessionsCompanion extends UpdateCompanion<SessionRow> {
   final Value<Uuid> id;
   final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
   final Value<Uuid?> activityId;
   final Value<DateTime> start;
   final Value<DateTime> end;
@@ -3197,6 +3469,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   const SessionsCompanion({
     this.id = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.activityId = const Value.absent(),
     this.start = const Value.absent(),
     this.end = const Value.absent(),
@@ -3208,6 +3481,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   SessionsCompanion.insert({
     this.id = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.activityId = const Value.absent(),
     required DateTime start,
     required DateTime end,
@@ -3220,6 +3494,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   static Insertable<SessionRow> custom({
     Expression<Uint8List>? id,
     Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
     Expression<Uint8List>? activityId,
     Expression<DateTime>? start,
     Expression<DateTime>? end,
@@ -3231,6 +3506,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (activityId != null) 'activity_id': activityId,
       if (start != null) 'start': start,
       if (end != null) 'end': end,
@@ -3244,6 +3520,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   SessionsCompanion copyWith(
       {Value<Uuid>? id,
       Value<DateTime>? updatedAt,
+      Value<DateTime?>? deletedAt,
       Value<Uuid?>? activityId,
       Value<DateTime>? start,
       Value<DateTime>? end,
@@ -3254,6 +3531,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     return SessionsCompanion(
       id: id ?? this.id,
       updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
       activityId: activityId ?? this.activityId,
       start: start ?? this.start,
       end: end ?? this.end,
@@ -3274,6 +3552,10 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(
           $SessionsTable.$converterupdatedAt.toSql(updatedAt.value));
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(
+          $SessionsTable.$converterdeletedAtn.toSql(deletedAt.value));
     }
     if (activityId.present) {
       map['activity_id'] = Variable<Uint8List>(
@@ -3309,6 +3591,7 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     return (StringBuffer('SessionsCompanion(')
           ..write('id: $id, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('activityId: $activityId, ')
           ..write('start: $start, ')
           ..write('end: $end, ')
@@ -3902,12 +4185,14 @@ typedef $$SyncStatesTableProcessedTableManager = ProcessedTableManager<
 typedef $$AccountsTableCreateCompanionBuilder = AccountsCompanion Function({
   Value<int> id,
   Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
   required String email,
   required AccountProvider provider,
 });
 typedef $$AccountsTableUpdateCompanionBuilder = AccountsCompanion Function({
   Value<int> id,
   Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
   Value<String> email,
   Value<AccountProvider> provider,
 });
@@ -3946,6 +4231,11 @@ class $$AccountsTableFilterComposer extends Composer<_$Store, $AccountsTable> {
   ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get updatedAt =>
       $composableBuilder(
           column: $table.updatedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime> get deletedAt =>
+      $composableBuilder(
+          column: $table.deletedAt,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<String> get email => $composableBuilder(
@@ -3993,6 +4283,9 @@ class $$AccountsTableOrderingComposer
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
       column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get email => $composableBuilder(
       column: $table.email, builder: (column) => ColumnOrderings(column));
 
@@ -4014,6 +4307,9 @@ class $$AccountsTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<DateTime, DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   GeneratedColumn<String> get email =>
       $composableBuilder(column: $table.email, builder: (column) => column);
@@ -4068,24 +4364,28 @@ class $$AccountsTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             Value<String> email = const Value.absent(),
             Value<AccountProvider> provider = const Value.absent(),
           }) =>
               AccountsCompanion(
             id: id,
             updatedAt: updatedAt,
+            deletedAt: deletedAt,
             email: email,
             provider: provider,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             required String email,
             required AccountProvider provider,
           }) =>
               AccountsCompanion.insert(
             id: id,
             updatedAt: updatedAt,
+            deletedAt: deletedAt,
             email: email,
             provider: provider,
           ),
@@ -4134,6 +4434,7 @@ typedef $$AccountsTableProcessedTableManager = ProcessedTableManager<
 typedef $$CalendarsTableCreateCompanionBuilder = CalendarsCompanion Function({
   Value<int> id,
   Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
   required String name,
   required bool enabled,
   required int accountId,
@@ -4141,6 +4442,7 @@ typedef $$CalendarsTableCreateCompanionBuilder = CalendarsCompanion Function({
 typedef $$CalendarsTableUpdateCompanionBuilder = CalendarsCompanion Function({
   Value<int> id,
   Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
   Value<String> name,
   Value<bool> enabled,
   Value<int> accountId,
@@ -4179,6 +4481,11 @@ class $$CalendarsTableFilterComposer
   ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get updatedAt =>
       $composableBuilder(
           column: $table.updatedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime> get deletedAt =>
+      $composableBuilder(
+          column: $table.deletedAt,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<String> get name => $composableBuilder(
@@ -4223,6 +4530,9 @@ class $$CalendarsTableOrderingComposer
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
       column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get name => $composableBuilder(
       column: $table.name, builder: (column) => ColumnOrderings(column));
 
@@ -4264,6 +4574,9 @@ class $$CalendarsTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<DateTime, DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
@@ -4317,6 +4630,7 @@ class $$CalendarsTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             Value<String> name = const Value.absent(),
             Value<bool> enabled = const Value.absent(),
             Value<int> accountId = const Value.absent(),
@@ -4324,6 +4638,7 @@ class $$CalendarsTableTableManager extends RootTableManager<
               CalendarsCompanion(
             id: id,
             updatedAt: updatedAt,
+            deletedAt: deletedAt,
             name: name,
             enabled: enabled,
             accountId: accountId,
@@ -4331,6 +4646,7 @@ class $$CalendarsTableTableManager extends RootTableManager<
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             required String name,
             required bool enabled,
             required int accountId,
@@ -4338,6 +4654,7 @@ class $$CalendarsTableTableManager extends RootTableManager<
               CalendarsCompanion.insert(
             id: id,
             updatedAt: updatedAt,
+            deletedAt: deletedAt,
             name: name,
             enabled: enabled,
             accountId: accountId,
@@ -4403,6 +4720,7 @@ typedef $$ActivitiesTableCreateCompanionBuilder = ActivitiesCompanion Function({
   Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
+  Value<DateTime?> deletedAt,
   required String name,
   required Path path,
   Value<Order> order,
@@ -4415,6 +4733,7 @@ typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
   Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
+  Value<DateTime?> deletedAt,
   Value<String> name,
   Value<Path> path,
   Value<Order> order,
@@ -4514,6 +4833,11 @@ class $$ActivitiesTableFilterComposer
 
   ColumnFilters<bool> get draft => $composableBuilder(
       column: $table.draft, builder: (column) => ColumnFilters(column));
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime> get deletedAt =>
+      $composableBuilder(
+          column: $table.deletedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<String> get name => $composableBuilder(
       column: $table.name, builder: (column) => ColumnFilters(column));
@@ -4644,6 +4968,9 @@ class $$ActivitiesTableOrderingComposer
   ColumnOrderings<bool> get draft => $composableBuilder(
       column: $table.draft, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get name => $composableBuilder(
       column: $table.name, builder: (column) => ColumnOrderings(column));
 
@@ -4680,6 +5007,9 @@ class $$ActivitiesTableAnnotationComposer
 
   GeneratedColumn<bool> get draft =>
       $composableBuilder(column: $table.draft, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
@@ -4812,6 +5142,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             Value<String> name = const Value.absent(),
             Value<Path> path = const Value.absent(),
             Value<Order> order = const Value.absent(),
@@ -4824,6 +5155,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
+            deletedAt: deletedAt,
             name: name,
             path: path,
             order: order,
@@ -4836,6 +5168,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             required String name,
             required Path path,
             Value<Order> order = const Value.absent(),
@@ -4848,6 +5181,7 @@ class $$ActivitiesTableTableManager extends RootTableManager<
             updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
+            deletedAt: deletedAt,
             name: name,
             path: path,
             order: order,
@@ -4953,6 +5287,7 @@ typedef $$NotesTableCreateCompanionBuilder = NotesCompanion Function({
   Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
+  Value<DateTime?> deletedAt,
   Value<Uuid> userId,
   required String body,
   Value<Order> order,
@@ -4971,6 +5306,7 @@ typedef $$NotesTableUpdateCompanionBuilder = NotesCompanion Function({
   Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
+  Value<DateTime?> deletedAt,
   Value<Uuid> userId,
   Value<String> body,
   Value<Order> order,
@@ -5028,6 +5364,11 @@ class $$NotesTableFilterComposer extends Composer<_$Store, $NotesTable> {
 
   ColumnFilters<bool> get draft => $composableBuilder(
       column: $table.draft, builder: (column) => ColumnFilters(column));
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime> get deletedAt =>
+      $composableBuilder(
+          column: $table.deletedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<Uuid, Uuid, Uint8List> get userId =>
       $composableBuilder(
@@ -5112,6 +5453,9 @@ class $$NotesTableOrderingComposer extends Composer<_$Store, $NotesTable> {
   ColumnOrderings<bool> get draft => $composableBuilder(
       column: $table.draft, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<Uint8List> get userId => $composableBuilder(
       column: $table.userId, builder: (column) => ColumnOrderings(column));
 
@@ -5182,6 +5526,9 @@ class $$NotesTableAnnotationComposer extends Composer<_$Store, $NotesTable> {
 
   GeneratedColumn<bool> get draft =>
       $composableBuilder(column: $table.draft, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<Uuid, Uint8List> get userId =>
       $composableBuilder(column: $table.userId, builder: (column) => column);
@@ -5261,6 +5608,7 @@ class $$NotesTableTableManager extends RootTableManager<
             Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             Value<Uuid> userId = const Value.absent(),
             Value<String> body = const Value.absent(),
             Value<Order> order = const Value.absent(),
@@ -5279,6 +5627,7 @@ class $$NotesTableTableManager extends RootTableManager<
             updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
+            deletedAt: deletedAt,
             userId: userId,
             body: body,
             order: order,
@@ -5297,6 +5646,7 @@ class $$NotesTableTableManager extends RootTableManager<
             Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             Value<Uuid> userId = const Value.absent(),
             required String body,
             Value<Order> order = const Value.absent(),
@@ -5315,6 +5665,7 @@ class $$NotesTableTableManager extends RootTableManager<
             updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
+            deletedAt: deletedAt,
             userId: userId,
             body: body,
             order: order,
@@ -5387,6 +5738,7 @@ typedef $$EventsTableCreateCompanionBuilder = EventsCompanion Function({
   Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
+  Value<DateTime?> deletedAt,
   Value<String?> name,
   required DateTime start,
   required DateTime end,
@@ -5404,6 +5756,7 @@ typedef $$EventsTableUpdateCompanionBuilder = EventsCompanion Function({
   Value<DateTime> updatedAt,
   Value<DateTime> createdAt,
   Value<bool> draft,
+  Value<DateTime?> deletedAt,
   Value<String?> name,
   Value<DateTime> start,
   Value<DateTime> end,
@@ -5461,6 +5814,11 @@ class $$EventsTableFilterComposer extends Composer<_$Store, $EventsTable> {
 
   ColumnFilters<bool> get draft => $composableBuilder(
       column: $table.draft, builder: (column) => ColumnFilters(column));
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime> get deletedAt =>
+      $composableBuilder(
+          column: $table.deletedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<String> get name => $composableBuilder(
       column: $table.name, builder: (column) => ColumnFilters(column));
@@ -5543,6 +5901,9 @@ class $$EventsTableOrderingComposer extends Composer<_$Store, $EventsTable> {
   ColumnOrderings<bool> get draft => $composableBuilder(
       column: $table.draft, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get name => $composableBuilder(
       column: $table.name, builder: (column) => ColumnOrderings(column));
 
@@ -5612,6 +5973,9 @@ class $$EventsTableAnnotationComposer extends Composer<_$Store, $EventsTable> {
 
   GeneratedColumn<bool> get draft =>
       $composableBuilder(column: $table.draft, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
@@ -5690,6 +6054,7 @@ class $$EventsTableTableManager extends RootTableManager<
             Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             Value<String?> name = const Value.absent(),
             Value<DateTime> start = const Value.absent(),
             Value<DateTime> end = const Value.absent(),
@@ -5707,6 +6072,7 @@ class $$EventsTableTableManager extends RootTableManager<
             updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
+            deletedAt: deletedAt,
             name: name,
             start: start,
             end: end,
@@ -5724,6 +6090,7 @@ class $$EventsTableTableManager extends RootTableManager<
             Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<bool> draft = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             Value<String?> name = const Value.absent(),
             required DateTime start,
             required DateTime end,
@@ -5741,6 +6108,7 @@ class $$EventsTableTableManager extends RootTableManager<
             updatedAt: updatedAt,
             createdAt: createdAt,
             draft: draft,
+            deletedAt: deletedAt,
             name: name,
             start: start,
             end: end,
@@ -5810,6 +6178,7 @@ typedef $$EventsTableProcessedTableManager = ProcessedTableManager<
 typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
   Value<Uuid> id,
   Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
   Value<Uuid?> activityId,
   required DateTime start,
   required DateTime end,
@@ -5821,6 +6190,7 @@ typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
 typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
   Value<Uuid> id,
   Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
   Value<Uuid?> activityId,
   Value<DateTime> start,
   Value<DateTime> end,
@@ -5865,6 +6235,11 @@ class $$SessionsTableFilterComposer extends Composer<_$Store, $SessionsTable> {
   ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get updatedAt =>
       $composableBuilder(
           column: $table.updatedAt,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, DateTime> get deletedAt =>
+      $composableBuilder(
+          column: $table.deletedAt,
           builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnWithTypeConverterFilters<DateTime, DateTime, DateTime> get start =>
@@ -5926,6 +6301,9 @@ class $$SessionsTableOrderingComposer
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
       column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get start => $composableBuilder(
       column: $table.start, builder: (column) => ColumnOrderings(column));
 
@@ -5976,6 +6354,9 @@ class $$SessionsTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<DateTime, DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<DateTime, DateTime> get start =>
       $composableBuilder(column: $table.start, builder: (column) => column);
@@ -6039,6 +6420,7 @@ class $$SessionsTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
             Value<DateTime> start = const Value.absent(),
             Value<DateTime> end = const Value.absent(),
@@ -6050,6 +6432,7 @@ class $$SessionsTableTableManager extends RootTableManager<
               SessionsCompanion(
             id: id,
             updatedAt: updatedAt,
+            deletedAt: deletedAt,
             activityId: activityId,
             start: start,
             end: end,
@@ -6061,6 +6444,7 @@ class $$SessionsTableTableManager extends RootTableManager<
           createCompanionCallback: ({
             Value<Uuid> id = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
+            Value<DateTime?> deletedAt = const Value.absent(),
             Value<Uuid?> activityId = const Value.absent(),
             required DateTime start,
             required DateTime end,
@@ -6072,6 +6456,7 @@ class $$SessionsTableTableManager extends RootTableManager<
               SessionsCompanion.insert(
             id: id,
             updatedAt: updatedAt,
+            deletedAt: deletedAt,
             activityId: activityId,
             start: start,
             end: end,

@@ -11,7 +11,7 @@ enum EventAvailability { busy, away, focus, free, location }
 typedef EventId = Uuid;
 
 @DataClassName('EventRow')
-class Events extends UuidStoreTable with DraftTable {
+class Events extends UuidStoreTable with DraftTable, DeletableTable {
   TextColumn get name => text().nullable()();
   DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();
   DateTimeColumn get end => dateTime().map(const LocalDateTimeConverter())();
@@ -81,13 +81,20 @@ class Event extends EventRow {
   static Stream<List<Event>> watch(
     DateRange range, {
     bool withActivity = false,
+    bool? deleted = false,
   }) {
     pullRange(range);
     final order =
         range.start <= range.end ? OrderingMode.asc : OrderingMode.desc;
-    final eventStream = (Store.get.select(table)
-          ..where((t) => t.start.isBiggerOrEqualValue(range.start.toStart()))
-          ..where((t) => t.start.isSmallerThanValue(range.end.toEnd()))
+
+    final query = Store.get.select(table)
+      ..where((t) => t.start.isBiggerOrEqualValue(range.start.toStart()))
+      ..where((t) => t.start.isSmallerThanValue(range.end.toEnd()));
+    if (deleted != null) {
+      query.where(
+          (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
+    }
+    final eventStream = (query
           ..orderBy([
             (t) => OrderingTerm(expression: t.start, mode: order),
             (t) => OrderingTerm(expression: t.end, mode: order)
@@ -126,7 +133,8 @@ class Event extends EventRow {
     super.inviteesHidden = false,
     super.draft = false,
     this.activity,
-  }) : super(
+  })  : unsaved = true,
+        super(
           id: Uuid.generate(),
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
@@ -135,11 +143,12 @@ class Event extends EventRow {
           end: at.end,
         );
 
-  Event.fromStore(EventRow row, {this.activity})
+  Event.fromStore(EventRow row, {this.activity, this.unsaved = false})
       : super(
           id: row.id,
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
+          deletedAt: row.deletedAt,
           draft: row.draft,
           name: row.name,
           start: row.start,
@@ -156,8 +165,9 @@ class Event extends EventRow {
   @override
   Event copyWith({
     Uuid? id,
-    DateTime? updatedAt,
     DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
     bool? draft,
     Value<Uuid?> activityId = const Value.absent(),
     Value<Activity?> activity = const Value.absent(),
@@ -188,6 +198,7 @@ class Event extends EventRow {
         activityId: activityId,
         createdAt: publish ? DateTime.now() : this.createdAt,
         updatedAt: DateTime.now(),
+        deletedAt: deletedAt,
         draft: draft,
         start: start,
         end: end,
@@ -200,10 +211,12 @@ class Event extends EventRow {
         series: series,
       ),
       activity: activity.present ? activity.value : null,
+      unsaved: unsaved,
     );
   }
 
   final Activity? activity;
+  final bool unsaved;
 
   bool get isBlank => name == null && activity == null;
 
@@ -225,8 +238,10 @@ class Event extends EventRow {
 }
 
 class ScheduledDay extends Equatable {
-  static Stream<Map<Date, ScheduledDay>> watch(DateRange range) {
-    return Event.watch(range, withActivity: true).map((events) {
+  static Stream<Map<Date, ScheduledDay>> watch(DateRange range,
+      {bool? deleted = false}) {
+    return Event.watch(range, withActivity: true, deleted: deleted)
+        .map((events) {
       var (start, end) = range.bounds;
 
       final direction =

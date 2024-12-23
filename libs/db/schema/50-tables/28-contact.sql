@@ -1,6 +1,8 @@
 CREATE TABLE "public"."contact" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "deleted_at" timestamp with time zone,
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "email" text NOT NULL CHECK (is_lower (email)),
     "name" text,

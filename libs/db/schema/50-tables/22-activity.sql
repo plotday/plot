@@ -2,8 +2,8 @@ CREATE TABLE "public"."activity" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "deleted_at" timestamp with time zone,
     "draft" boolean NOT NULL DEFAULT FALSE,
-    "archived_at" timestamp with time zone,
     "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "name" text NOT NULL,
     "path" ltree NOT NULL UNIQUE
@@ -24,6 +24,7 @@ CREATE TRIGGER set_activity_created_by
 CREATE TABLE "public"."activity_user" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "deleted_at" timestamp with time zone,
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "activity_id" uuid NOT NULL REFERENCES public.activity ON DELETE CASCADE,
     "path" ltree,
