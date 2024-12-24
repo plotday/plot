@@ -340,6 +340,7 @@ class _TripleRoutes extends ShellRouteData {
         builder: (context, state) => Header(
           activities: state.rootActivities,
           currentActivity: state.current,
+          balances: state.balances?[state.current?.id],
           onCurrentActivitySelected: (activity) {
             ActivityRoute.byId(activity?.id).go(context);
           },

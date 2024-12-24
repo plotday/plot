@@ -95,16 +95,26 @@ class ScaffoldState extends State<Scaffold> {
                     padding: _padding,
                     child: Row(
                       children: [
-                        if (backButton != null) backButton,
-                        if (widget.title != null) widget.title!,
-                        const Expanded(
-                          child: SizedBox(),
-                        ),
-                        ...(widget.actions ?? []).map(
-                          (action) => IconButton(
-                            icon: action.icon,
-                            onPressed: action.onPressed,
+                        Expanded(
+                          child: Row(
+                            children: [
+                              if (backButton != null) backButton,
+                              if (widget.title != null)
+                                Expanded(
+                                  child: widget.title!,
+                                ),
+                            ],
                           ),
+                        ),
+                        Row(
+                          children: (widget.actions ?? [])
+                              .map(
+                                (action) => IconButton(
+                                  icon: action.icon,
+                                  onPressed: action.onPressed,
+                                ),
+                              )
+                              .toList(),
                         ),
                       ],
                     ),

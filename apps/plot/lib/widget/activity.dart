@@ -3,28 +3,54 @@ import 'package:flutter/widgets.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 
+class ActivityBalance extends StatelessWidget {
+  const ActivityBalance({
+    required this.balances,
+    this.isNow = false,
+    super.key,
+  });
+
+  final BalanceByType balances;
+  final bool isNow;
+
+  Duration get past =>
+      (balances[BalanceType.accepted]?.pastTime ?? Duration.zero) +
+      (balances[BalanceType.session]?.pastTime ?? Duration.zero);
+  Duration get future =>
+      (balances[BalanceType.accepted]?.futureTime ?? Duration.zero) +
+      (balances[BalanceType.tentative]?.futureTime ?? Duration.zero) +
+      (balances[BalanceType.session]?.futureTime ?? Duration.zero);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (past >= const Duration(minutes: 1)) DurationText(duration: past),
+        if (isNow && future >= const Duration(minutes: 1)) ...[
+          const Text("+"),
+          DurationText(duration: future),
+        ],
+      ],
+    );
+  }
+}
+
 class ActivityWidget extends StatelessWidget {
   const ActivityWidget({
     required this.activity,
     this.balances,
-    super.key,
     this.onTap,
     this.selected = false,
     this.isNow = false,
+    super.key,
   });
+
   final Activity? activity;
   final BalanceByType? balances;
   final VoidCallback? onTap;
   final bool selected;
   final bool isNow;
-
-  Duration get past =>
-      (balances?[BalanceType.accepted]?.pastTime ?? Duration.zero) +
-      (balances?[BalanceType.session]?.pastTime ?? Duration.zero);
-  Duration get future =>
-      (balances?[BalanceType.accepted]?.futureTime ?? Duration.zero) +
-      (balances?[BalanceType.tentative]?.futureTime ?? Duration.zero) +
-      (balances?[BalanceType.session]?.futureTime ?? Duration.zero);
 
   @override
   Widget build(BuildContext context) {
@@ -44,68 +70,7 @@ class ActivityWidget extends StatelessWidget {
         children: [
           Text(activity?.name ?? 'Everything'),
           if (balances != null)
-            Row(
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    if (isNow && past + future >= const Duration(minutes: 1))
-                      DurationText(duration: past),
-                    if (isNow && past + future >= const Duration(minutes: 1))
-                      const Text("/"),
-                    if (past + future >= const Duration(minutes: 1))
-                      DurationText(duration: past + future),
-                  ],
-                ),
-                const SizedBox(width: 8),
-                // Row(
-                //   crossAxisAlignment: CrossAxisAlignment.center,
-                //   children: [
-                //     const Padding(
-                //       padding: EdgeInsets.only(bottom: 2.0),
-                //       child: Icon(material.Icons.hourglass_top, size: 14),
-                //     ),
-                //     DurationText(duration: balance!.budget)
-                //   ],
-                // )
-                // material.MenuAnchor(
-                //   builder: (BuildContext context,
-                //           material.MenuController controller, Widget? child) =>
-                //       material.InkWell(
-                //     child: Row(
-                //       crossAxisAlignment: CrossAxisAlignment.center,
-                //       children: [
-                //         const Padding(
-                //           padding: EdgeInsets.only(
-                //               bottom: 2.0), // Add 2px padding at the bottom
-                //           child: Icon(material.Icons.hourglass_top, size: 14),
-                //         ),
-                //         DurationText(duration: priority.budget)
-                //       ],
-                //     ),
-                //     onTap: () {
-                //       if (controller.isOpen) {
-                //         controller.close();
-                //       } else {
-                //         controller.open();
-                //       }
-                //     },
-                //   ),
-                //   menuChildren: [
-                //     for (var m = 0; m <= 120; m += 15)
-                //       material.MenuItemButton(
-                //         onPressed: () {
-                //           context.read<PriorityBloc>().changePriority(
-                //               priority.copyWith(budget: Duration(minutes: m)));
-                //         },
-                //         child: m == 0
-                //             ? const Text('Done')
-                //             : DurationText(duration: Duration(minutes: m)),
-                //       ),
-                //   ],
-                // ),
-              ],
-            ),
+            ActivityBalance(balances: balances!, isNow: isNow),
         ],
       ),
     );
