@@ -14,52 +14,40 @@ class ActivityBloc extends Cubit<ActivityState> {
           week: Week.current(),
         )) {
     setCurrent(null);
+    _activitySubscription = Activity.watchRoot().listen((activities) {
+      emit(state.copyWith(
+        activities: activities,
+      ));
+    });
   }
 
   void dispose() {
-    _activitySubscription?.cancel();
+    _activitySubscription.cancel();
     _balanceSubscription?.cancel();
     _noteSubscription?.cancel();
     _topicSubscription?.cancel();
   }
 
   void setCurrent(Activity? current) {
-    if (_activitySubscription != null && current?.id == state.current?.id) {
+    if (current?.id == state.current?.id) {
       return;
     }
 
-    _activitySubscription?.cancel();
     emit(state.copyWith(
       current: Value(current),
-      children: [],
       topicId: const Value(null),
       topicNotes: [],
     ));
-    if (current == null) {
-      _activitySubscription = Activity.watchRoot().listen((activities) {
-        emit(state.copyWith(
-          children: activities,
-        ));
-      });
-    } else {
-      _activitySubscription =
-          Activity.watchOne(current.id, depth: 1).listen((activity) {
-        emit(state.copyWith(
-          current: Value(activity),
-        ));
-      });
-    }
     _loadBalances();
     _loadNotes();
   }
 
   void setCurrentId(ActivityId? id) async {
-    if (_activitySubscription != null && id == state.current?.id) return;
-    _activitySubscription?.cancel();
+    if (id == state.current?.id) return;
     if (id == null) {
       setCurrent(null);
     } else {
-      final activity = await Activity.get(id);
+      final activity = state.activities[id];
       setCurrent(activity);
     }
   }
@@ -134,7 +122,7 @@ class ActivityBloc extends Cubit<ActivityState> {
     }
   }
 
-  StreamSubscription<dynamic>? _activitySubscription;
+  late final StreamSubscription<dynamic> _activitySubscription;
   StreamSubscription<BalanceByActivityType>? _balanceSubscription;
   StreamSubscription<List<Note>>? _noteSubscription;
   StreamSubscription<List<Note>>? _topicSubscription;

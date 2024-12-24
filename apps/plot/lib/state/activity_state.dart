@@ -14,8 +14,8 @@ final class ActivityState extends Equatable {
   ActivityState({
     required this.week,
     this.current,
-    List<Activity>? children,
-  })  : children = current?.children ?? children ?? const [],
+    this.rootActivities = const [],
+  })  : activities = _mapActivities(rootActivities),
         _notes = const [],
         moreNotes = true,
         topicNotes = [Note.draft(activityId: current?.id)],
@@ -32,13 +32,27 @@ final class ActivityState extends Equatable {
     required this.moreNotes,
     required this.moreTopicNotes,
     required this.topicId,
-    List<Activity>? children,
+    this.rootActivities = const [],
     this.balances,
-  })  : _notes = notes,
-        children = children ?? current?.children ?? const [];
+  })  : activities = _mapActivities(rootActivities),
+        _notes = notes;
+
+  static Map<ActivityId, Activity> _mapActivities(
+      List<Activity> rootActivities) {
+    final activities = <ActivityId, Activity>{};
+    for (final activity in rootActivities) {
+      activities[activity.id] = activity;
+      for (final child in activity.children) {
+        activities[child.id] = child;
+      }
+    }
+    return activities;
+  }
 
   final Activity? current;
-  final List<Activity> children;
+  final List<Activity> rootActivities;
+  final Map<ActivityId, Activity> activities;
+  List<Activity> get children => current?.children ?? rootActivities;
 
   final List<Note> _notes;
   final bool moreNotes;
@@ -60,7 +74,7 @@ final class ActivityState extends Equatable {
 
   ActivityState copyWith({
     Value<Activity?> current = const Value.absent(),
-    List<Activity>? children,
+    List<Activity>? activities,
     Week? week,
     Value<BalanceByActivityType?> balances = const Value.absent(),
     List<Note>? notes,
@@ -95,7 +109,7 @@ final class ActivityState extends Equatable {
     return ActivityState._(
       balances: balances.or(this.balances),
       current: current.or(this.current),
-      children: children ?? current.orNull?.children ?? this.children,
+      rootActivities: activities ?? rootActivities,
       week: week ?? this.week,
       notes: notes,
       moreNotes: moreNotes ?? this.moreNotes,
@@ -108,7 +122,7 @@ final class ActivityState extends Equatable {
   @override
   List<Object?> get props => [
         current,
-        children,
+        rootActivities,
         week,
         balances,
         _notes,

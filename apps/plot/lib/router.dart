@@ -337,9 +337,10 @@ class _TripleRoutes extends ShellRouteData {
       child,
       const SchedulePage(),
       title: BlocBuilder<ActivityBloc, ActivityState>(
-        builder: (context, state) => ActivitySelector(
-          selected: state.current,
-          onSelect: (activity) {
+        builder: (context, state) => Header(
+          activities: state.rootActivities,
+          currentActivity: state.current,
+          onCurrentActivitySelected: (activity) {
             ActivityRoute.byId(activity?.id).go(context);
           },
         ),

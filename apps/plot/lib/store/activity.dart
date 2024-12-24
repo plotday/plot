@@ -77,7 +77,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       watchPath(null, depth: null, deleted: deleted);
 
   static Stream<List<Activity>> watchRoot(
-          {int? depth = 1, bool? deleted = false}) =>
+          {int? depth, bool? deleted = false}) =>
       watchPath(null, depth: depth);
 
   static Stream<List<Activity>> watchPath(Path? path,
@@ -204,6 +204,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   bool isParent(Activity other) => path.isParent(other.path);
   List<Activity> get ancestry =>
       parent == null ? [this] : parent!.ancestry + [this];
+  List<Activity> get peers => parent?.children ?? [];
+  Activity get root => parent?.root ?? this;
 
   Future<void> save() => Store.get.save(table, this, ActivitiesBase());
 
