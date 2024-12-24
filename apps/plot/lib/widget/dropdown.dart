@@ -30,14 +30,19 @@ class Dropdown extends StatelessWidget {
           top: renderBox!.localToGlobal(Offset.zero).dy,
           left: renderBox.localToGlobal(Offset.zero).dx,
           width: renderBox.size.width,
-          child: PlatformBuilder(
-            macOSBuilder: (_) => macos.MacosOverlayFilter(
-              borderRadius: const BorderRadius.all(Radius.circular(7.0)),
-              child: dropdown,
-            ),
-            builder: (_) => material.Material(
-              elevation: 8,
-              child: dropdown,
+          child: TapRegion(
+            onTapOutside: (tap) {
+              controller.hide();
+            },
+            child: PlatformBuilder(
+              macOSBuilder: (_) => macos.MacosOverlayFilter(
+                borderRadius: const BorderRadius.all(Radius.circular(7.0)),
+                child: dropdown,
+              ),
+              builder: (_) => material.Material(
+                elevation: 8,
+                child: dropdown,
+              ),
             ),
           ),
         );
