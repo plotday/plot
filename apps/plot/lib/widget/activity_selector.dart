@@ -21,7 +21,7 @@ class ActivitySelector extends StatefulWidget {
 }
 
 class ActivitySelectorState extends State<ActivitySelector> {
-  final OverlayPortalController _controller = OverlayPortalController();
+  final DropdownController _controller = DropdownController();
 
   @override
   Widget build(BuildContext context) {
