@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:plot/widget/event_details.dart';
 
 import 'package:plot/widget/schedule.dart';
 import 'package:plot/widget/widget.dart';
@@ -23,22 +24,35 @@ class SchedulePage extends StatelessWidget {
             },
           ),
         ],
-        body: ScheduleWidget(
-          scrollController: ScrollControllerContext.of(context),
-          range: state.range,
-          anchor: state.anchor,
-          schedule: state.schedule,
-          selected: state.selected,
-          fetcher: (range) async {
-            context.read<ScheduleBloc>().watch(range);
-          },
-          onSelect: (event) {
-            if (event.isBlank) {
-              NewEventRoute.at(event.at).go(context);
-            } else {
-              EventRoute.byId(event.id).go(context);
-            }
-          },
+        body: Column(
+          children: [
+            if (state.selected != null)
+              EventDetails(
+                event: state.selected!,
+                onChanged: (event) {
+                  context.read<ScheduleBloc>().update(event);
+                },
+              ),
+            Expanded(
+              child: ScheduleWidget(
+                scrollController: ScrollControllerContext.of(context),
+                range: state.range,
+                anchor: state.anchor,
+                schedule: state.schedule,
+                selected: state.selected,
+                fetcher: (range) async {
+                  context.read<ScheduleBloc>().watch(range);
+                },
+                onSelect: (event) {
+                  if (event.isBlank) {
+                    NewEventRoute.at(event.at).go(context);
+                  } else {
+                    EventRoute.byId(event.id).go(context);
+                  }
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );

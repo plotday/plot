@@ -1,78 +1,39 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:plot/widget/event_details.dart';
 
-import 'package:plot/store/store.dart';
-import 'package:plot/state/schedule.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/state/schedule.dart';
+import 'package:plot/router.dart';
 
 class EventPage extends StatelessWidget {
   const EventPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ScheduleBloc, ScheduleState>(builder: (context, state) {
-      if (state.selected == null) {
-        return const Center(child: Spinner());
-      }
-      return Padding(
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return BlocBuilder<ScheduleBloc, ScheduleState>(
+      builder: (context, state) => Scaffold(
+        actions: [
+          ActionItem(
+            icon: const PlotIcon.today(),
+            label: 'Schedule',
+            showLabel: false,
+            onPressed: () {
+              HomeRoute.day(state.day).go(context);
+            },
+          ),
+        ],
+        body: Column(
           children: [
-            if (state.selected!.activity?.name != null)
-              Text(state.selected!.activity!.name),
-            Row(
-              children: [
-                Text(state.selected!.at.start.toDate().format()),
-                const SizedBox(width: 8),
-                TimeRangePicker(
-                  onChanged: (at) {
-                    context.read<ScheduleBloc>().update(
-                          state.selected!.copyWith(
-                            at: at,
-                          ),
-                        );
-                  },
-                  value: state.selected!.at,
-                ),
-              ],
-            ),
-            TextField(
-              label: "Title",
-              value: state.selected!.name ?? "",
-              onChanged: (name) {
-                context.read<ScheduleBloc>().update(
-                      state.selected!.copyWith(
-                        name: Value(name),
-                      ),
-                    );
+            EventDetails(
+              event: state.selected!,
+              onChanged: (event) {
+                context.read<ScheduleBloc>().update(event);
               },
             ),
-            Switch(
-              label: const Text("Bookable"),
-              value: state.selected!.availability == EventAvailability.free,
-              onChanged: (free) {
-                context.read<ScheduleBloc>().update(
-                      state.selected!.copyWith(
-                        availability: free
-                            ? EventAvailability.free
-                            : EventAvailability.busy,
-                      ),
-                    );
-              },
-            ),
-            Button(
-              onTap: () async {
-                await context.read<ScheduleBloc>().update(
-                    state.selected!.copyWith(deletedAt: Value(DateTime.now())));
-                if (!context.mounted) return;
-                context.read<ScheduleBloc>().selectCurrent();
-              },
-              child: const Text("Delete"),
-            )
           ],
         ),
-      );
-    });
+      ),
+    );
   }
 }

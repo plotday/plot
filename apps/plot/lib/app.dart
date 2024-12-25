@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:plot/state/root_provider.dart';
 
 import 'state/user.dart';
 import 'router.dart';
@@ -25,7 +26,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    router = Layout.getLayout(context).then((layout) => getRouter(layout));
+    router = Layout.init(context).then((layout) => getRouter(layout));
   }
 
   @override
@@ -41,8 +42,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
         if (!snapshot.hasData) {
           return const Center(child: Spinner());
         }
-        return BlocProvider<UserBloc>(
-          create: (_) => UserBloc(),
+        return RootProvider(
           child: BlocListener<UserBloc, UserState>(
             listener: (context, state) {
               snapshot.data?.refresh();

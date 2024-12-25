@@ -23,9 +23,19 @@ abstract class Route extends GoRouteData with EquatableMixin {
 
   @override
   Widget build(BuildContext context, GoRouterState state) {
-    _onBuild(context);
-    // TODO get layout from context
-    return buildAdaptive(context, state);
+    _onEnter(context);
+    switch (Layout.layout) {
+      case PanelLayout.sidebar:
+        return buildAdaptive(context, state);
+      case PanelLayout.tabbed:
+        return buildSingle(context, state);
+    }
+  }
+
+  @override
+  FutureOr<String?> redirect(BuildContext context, GoRouterState state) {
+    _onEnter(context);
+    return super.redirect(context, state);
   }
 
   Widget buildAdaptive(BuildContext context, GoRouterState state);
@@ -34,7 +44,7 @@ abstract class Route extends GoRouteData with EquatableMixin {
 
   void onEnter(BuildContext context) {}
 
-  void _onBuild(BuildContext context) {
+  void _onEnter(BuildContext context) {
     if (_last != this) {
       _last = this;
       onEnter(context);
@@ -131,6 +141,17 @@ class NewEventRoute extends Route {
   }
 
   @override
+  FutureOr<String?> redirect(BuildContext context, GoRouterState state) async {
+    final ret = await super.redirect(context, state);
+    if (ret != null) return ret;
+    if (Layout.layout == PanelLayout.sidebar && context.mounted) {
+      return ActivityRoute.byId(context.read<ActivityBloc>().state.current?.id)
+          .location;
+    }
+    return null;
+  }
+
+  @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
       const EventPage();
 
@@ -154,6 +175,17 @@ class EventRoute extends Route {
     final event = await context.read<ScheduleBloc>().selectById(eventId);
     if (!context.mounted) return;
     context.read<ActivityBloc>().setCurrentId(event.activityId);
+  }
+
+  @override
+  FutureOr<String?> redirect(BuildContext context, GoRouterState state) async {
+    final ret = await super.redirect(context, state);
+    if (ret != null) return ret;
+    if (Layout.layout == PanelLayout.sidebar && context.mounted) {
+      return ActivityRoute.byId(context.read<ActivityBloc>().state.current?.id)
+          .location;
+    }
+    return null;
   }
 
   @override
@@ -416,19 +448,8 @@ class _TabbedRoutes extends StatefulShellRouteData {
 
 GoRouter getRouter(PanelLayout layout) {
   return GoRouter(
-    routes: [
-      ShellRoute(
-        builder: (context, state, child) {
-          return RootProvider(
-            key: const Key('RootProvider'),
-            child: child,
-          );
-        },
-        routes: layout == PanelLayout.sidebar
-            ? [$_AdaptiveRoutes]
-            : [$_SingleRoutes],
-      ),
-    ],
+    routes:
+        layout == PanelLayout.sidebar ? [$_AdaptiveRoutes] : [$_SingleRoutes],
     redirect: (BuildContext context, GoRouterState state) async {
       // Using `of` method creates a dependency of StreamAuthScope. It will
       // cause go_router to reparse current route if StreamAuth has new sign-in

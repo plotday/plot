@@ -12,8 +12,10 @@ enum PanelLayout {
 }
 
 sealed class Layout extends StatelessWidget {
-  static Future<PanelLayout> getLayout(BuildContext context) async {
-    return PlatformResolver.current(
+  static late final PanelLayout layout;
+
+  static Future<PanelLayout> init(BuildContext context) async {
+    return layout = await PlatformResolver.current(
       iOSResolver: () async {
         final deviceInfo = DeviceInfoPlugin();
         final iosDeviceInfo = await deviceInfo.iosInfo;
