@@ -13,7 +13,8 @@ class ActivityBloc extends Cubit<ActivityState> {
       : super(ActivityState(
           week: Week.current(),
         )) {
-    setCurrent(null);
+    _loadBalances();
+    _loadNotes();
     _activitySubscription = Activity.watchRoot().listen((activities) {
       emit(state.copyWith(
         activities: activities,
