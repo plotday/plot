@@ -9,12 +9,14 @@ class Header extends StatelessWidget {
     required this.currentActivity,
     required this.onCurrentActivitySelected,
     this.balances,
+    this.isNow = true,
     super.key,
   });
 
   final List<Activity> activities;
   final Activity? currentActivity;
   final BalanceByType? balances;
+  final bool isNow;
   final void Function(Activity?) onCurrentActivitySelected;
 
   @override
@@ -32,7 +34,7 @@ class Header extends StatelessWidget {
         if (balances != null)
           ActivityBalance(
             balances: balances!,
-            isNow: true,
+            isNow: isNow,
           ),
       ],
     );

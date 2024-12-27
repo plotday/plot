@@ -373,6 +373,7 @@ class _TripleRoutes extends ShellRouteData {
           activities: state.rootActivities,
           currentActivity: state.current,
           balances: state.balances?[state.current?.id],
+          isNow: state.week.isNow(),
           onCurrentActivitySelected: (activity) {
             ActivityRoute.byId(activity?.id).go(context);
           },
