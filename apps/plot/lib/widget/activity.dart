@@ -24,7 +24,9 @@ class ActivityBalance extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      spacing: 4,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.ideographic,
       children: [
         if (past >= const Duration(minutes: 1)) DurationText(duration: past),
         if (isNow && future >= const Duration(minutes: 1)) ...[
