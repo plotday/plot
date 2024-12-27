@@ -64,7 +64,6 @@ dependencies:
   drift: ^2.21.0
   drift_flutter: ^0.2.1
   device_info_plus: ^11.1.0
-  figma_squircle: ^0.5.3
   flutter_resizable_container: ^3.0.3
   macos_window_utils: ^1.6.1
   font_awesome_flutter:
@@ -72,6 +71,9 @@ dependencies:
       url: git@github.com:plotday/font_awesome_flutter.git
   injector: ^3.0.0
   posthog_flutter: ^4.7.1
+  figma_squircle: # It was on 0.5.3 before being broken by Flutter 3.27.0. This is a fork that fixes it.
+      git:
+        url: https://github.com/Ax0elz/figma_squircle
 
 dev_dependencies:
   flutter_test:
