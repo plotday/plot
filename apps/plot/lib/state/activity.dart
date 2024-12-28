@@ -39,7 +39,6 @@ class ActivityBloc extends Cubit<ActivityState> {
       topicId: const Value(null),
       topicNotes: [],
     ));
-    _loadBalances();
     _loadNotes();
   }
 

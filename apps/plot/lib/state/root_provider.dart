@@ -32,12 +32,10 @@ class RootProviderState extends State<RootProvider> {
 
   void _onUserStateChange(UserState state) {
     if (state is UserSignedIn) {
-      print("RootProviderState._onUserStateChange IN");
       setState(() {
         _dataLoading = Store.get.sync().then((_) => true);
       });
     } else {
-      print("RootProviderState._onUserStateChange OUT");
       setState(() {
         _dataLoading = null;
       });

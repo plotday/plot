@@ -9,7 +9,6 @@ import 'state/user.dart';
 import 'state/schedule.dart';
 import 'state/activity.dart';
 import 'state/now.dart';
-import 'state/root_provider.dart';
 import 'page/page.dart';
 import 'widget/widget.dart';
 
