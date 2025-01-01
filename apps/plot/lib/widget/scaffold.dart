@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:macos_ui/macos_ui.dart' as macos;
-import 'app.dart';
+import 'layout.dart';
 import 'button.dart';
 
 class ActionItem {
@@ -47,7 +47,7 @@ class ScaffoldState extends State<Scaffold> {
       final pos = renderBox.localToGlobal(Offset.zero);
       setState(() {
         _padding = pos.dx == 0 && pos.dy == 0
-            ? AppWidget.toolbarPadding
+            ? Layout.toolbarPadding
             : EdgeInsets.zero;
       });
     }
@@ -60,7 +60,7 @@ class ScaffoldState extends State<Scaffold> {
         final width = constraints.maxWidth;
         final height = constraints.maxHeight;
         final hasToolbar = widget.title != null || widget.actions != null;
-        final topPadding = hasToolbar ? AppWidget.toolbarHeight : 0.0;
+        final topPadding = hasToolbar ? Layout.toolbarHeight : 0.0;
 
         return Stack(
           children: [
@@ -77,7 +77,7 @@ class ScaffoldState extends State<Scaffold> {
             if (hasToolbar)
               Positioned(
                 width: width,
-                height: AppWidget.toolbarHeight,
+                height: Layout.toolbarHeight,
                 child: Builder(builder: (BuildContext context) {
                   Widget? backButton = ModalRoute.of(context)?.canPop != true
                       ? null

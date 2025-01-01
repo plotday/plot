@@ -22,6 +22,7 @@ class MaterialLayout extends StatelessWidget {
       this.secondary,
       this.drawer,
       this.navigationShell,
+      this.title,
       super.key});
 
   // Displayed at all breakpoints
@@ -30,6 +31,7 @@ class MaterialLayout extends StatelessWidget {
   final Widget? secondary;
   // Displayed at triple breakpoints
   final Widget? drawer;
+  final Widget? title;
   // Displayed at single and double breakpoints
   final StatefulNavigationShell? navigationShell;
 
@@ -62,6 +64,14 @@ class MaterialLayout extends StatelessWidget {
             MaterialLayout.secondaryBreakpoint: SlotLayout.from(
               key: const Key('Secondary'),
               builder: (_) => secondary!,
+            ),
+          },
+        ),
+        topNavigation: SlotLayout(
+          config: <Breakpoint, SlotLayoutConfig>{
+            MaterialLayout.allBreakpoints: SlotLayout.from(
+              key: const Key('Title'),
+              builder: (_) => title!,
             ),
           },
         ),

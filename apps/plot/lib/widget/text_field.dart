@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart';
 
@@ -11,6 +12,11 @@ class TextField extends StatefulWidget {
     this.onSubmitted,
     this.controller,
     this.value,
+    this.autocorrect = true,
+    this.maxLines,
+    this.textAlign = TextAlign.start,
+    this.focusNode,
+    this.inputFormatters,
     super.key,
   });
 
@@ -19,6 +25,11 @@ class TextField extends StatefulWidget {
   final TextEditingController? controller;
   final String label;
   final String? value;
+  final bool autocorrect;
+  final int? maxLines;
+  final TextAlign textAlign;
+  final FocusNode? focusNode;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   TextFieldState createState() => TextFieldState();
@@ -58,6 +69,11 @@ class TextFieldState extends State<TextField> {
         onSubmitted: widget.onSubmitted,
         controller: _controller,
         placeholder: widget.label,
+        autocorrect: widget.autocorrect,
+        maxLines: widget.maxLines,
+        textAlign: widget.textAlign,
+        focusNode: widget.focusNode,
+        inputFormatters: widget.inputFormatters,
       ),
       builder: (_) => material.TextField(
         onChanged: widget.onChanged,
@@ -66,6 +82,11 @@ class TextFieldState extends State<TextField> {
         decoration: material.InputDecoration(
           labelText: widget.label,
         ),
+        autocorrect: widget.autocorrect,
+        maxLines: widget.maxLines,
+        textAlign: widget.textAlign,
+        focusNode: widget.focusNode,
+        inputFormatters: widget.inputFormatters,
       ),
     );
   }

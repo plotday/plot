@@ -4455,8 +4455,7 @@ final class $$CalendarsTableReferences
   static $AccountsTable _accountIdTable(_$Store db) => db.accounts.createAlias(
       $_aliasNameGenerator(db.calendars.accountId, db.accounts.id));
 
-  $$AccountsTableProcessedTableManager? get accountId {
-    if ($_item.accountId == null) return null;
+  $$AccountsTableProcessedTableManager get accountId {
     final manager = $$AccountsTableTableManager($_db, $_db.accounts)
         .filter((f) => f.id($_item.accountId!));
     final item = $_typedResult.readTableOrNull(_accountIdTable($_db));

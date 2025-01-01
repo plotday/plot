@@ -1,10 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart' as material;
-import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'package:plot/util/time.dart';
-// import 'package:plot/widget/macos/search_field.dart';
+import 'package:plot/widget/widget.dart';
 
 class TimePicker extends StatefulWidget {
   const TimePicker(
@@ -61,8 +60,8 @@ class TimePickerState extends State<TimePicker> {
   Widget build(BuildContext context) {
     return SizedBox(
       width: 90,
-      child: macos.MacosTextField(
-        placeholder: 'HH:MM AM',
+      child: TextField(
+        label: 'HH:MM AM',
         autocorrect: false,
         maxLines: 1,
         textAlign: TextAlign.center,

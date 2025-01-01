@@ -131,17 +131,16 @@ class Session extends SessionRow {
       sessionStream = Rx.combineLatest2(
           sessionStream,
           Activity.watch(),
-          (List<Session> sessions, Map<Uuid, Activity> contexts) => sessions
+          (List<Session> sessions, Map<Uuid, Activity> activities) => sessions
               .map((session) => Session.fromStore(session,
                   activity: session.activityId == null
                       ? null
-                      : contexts[session.activityId]))
+                      : activities[session.activityId]))
               .toList());
     }
 
     if (expiring) {
-      sessionStream =
-          sessionStream.transform(ExpiringStreamTransformer((sessions) {
+      return sessionStream.transform(ExpiringStreamTransformer((sessions) {
         final now = DateTime.now();
         final expiry = sessions.isEmpty || sessions.first.at.end.isBefore(now)
             ? null
