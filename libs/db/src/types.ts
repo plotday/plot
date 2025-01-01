@@ -72,6 +72,13 @@ export type Database = {
             foreignKeyName: "account_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -109,6 +116,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "activity_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "activity_created_by_fkey"
             columns: ["created_by"]
@@ -183,6 +197,13 @@ export type Database = {
             foreignKeyName: "activity_settings_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -248,6 +269,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "activity_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "activity_user_user_id_fkey"
@@ -370,6 +398,13 @@ export type Database = {
             foreignKeyName: "contact_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -486,6 +521,13 @@ export type Database = {
             columns: ["calendar_id"]
             isOneToOne: false
             referencedRelation: "calendar"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
             referencedColumns: ["id"]
           },
           {
@@ -659,6 +701,13 @@ export type Database = {
             foreignKeyName: "note_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -785,6 +834,13 @@ export type Database = {
             foreignKeyName: "series_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -867,6 +923,13 @@ export type Database = {
             foreignKeyName: "session_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -913,34 +976,17 @@ export type Database = {
             foreignKeyName: "tag_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tag_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
-      }
-      waitlist: {
-        Row: {
-          activated_at: string | null
-          created_at: string
-          email: string
-          id: number
-          invitation: string | null
-        }
-        Insert: {
-          activated_at?: string | null
-          created_at?: string
-          email: string
-          id?: number
-          invitation?: string | null
-        }
-        Update: {
-          activated_at?: string | null
-          created_at?: string
-          email?: string
-          id?: number
-          invitation?: string | null
-        }
-        Relationships: []
       }
     }
     Views: {
@@ -971,6 +1017,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -1095,6 +1148,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "event_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
         ]
       }
       gap: {
@@ -1144,17 +1204,14 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "event_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
         ]
-      }
-      invitation_admin: {
-        Row: {
-          code: string | null
-          created_at: string | null
-          id: number | null
-          remaining: number | null
-          uses: number | null
-        }
-        Relationships: []
       }
       note_x: {
         Row: {
@@ -1221,36 +1278,14 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "note_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
         ]
-      }
-      sync_admin: {
-        Row: {
-          account_id: number | null
-          calendar_provider_id: string | null
-          email: string | null
-          error: string | null
-          event_count: number | null
-          first_synced_at: string | null
-          full_sync_at: string | null
-          provider: Json | null
-          sync_seconds: number | null
-          synced_at: string | null
-        }
-        Relationships: []
-      }
-      waitlist_admin: {
-        Row: {
-          created_at: string | null
-          email: string | null
-          event_count: number | null
-          id: number | null
-          invitation: string | null
-          provider: Json | null
-          status: string | null
-          sync_accounts: string[] | null
-          sync_error: string[] | null
-        }
-        Relationships: []
       }
     }
     Functions: {

@@ -1,4 +1,4 @@
-CREATE OR REPLACE VIEW "public"."sync_admin" WITH ( security_invoker = FALSE)
+CREATE OR REPLACE VIEW "admin"."sync" WITH ( security_invoker = FALSE)
 -- for formatting
 AS
 SELECT
@@ -23,8 +23,4 @@ FROM
     LEFT OUTER JOIN event e ON (e.calendar_id = c.id)
 GROUP BY
     c.id;
-
-REVOKE ALL ON sync_admin FROM PUBLIC;
-
-GRANT SELECT ON sync_admin TO internal_admin;
 
