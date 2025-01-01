@@ -37,7 +37,7 @@ class RootProviderState extends State<RootProvider> {
       });
     } else {
       setState(() {
-        _dataLoading = null;
+        _dataLoading = Future.value(false);
       });
     }
   }

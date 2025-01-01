@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 
 import 'package:plot/base.dart';
 import 'package:plot/widget/widget.dart';
@@ -72,7 +73,7 @@ class AccountPage extends StatelessWidget {
                 onTap: () async {
                   try {
                     await Base.client.auth.signOut();
-                  } on AuthException catch (e) {
+                  } on supa.AuthException catch (e) {
                     if (!context.mounted) return;
                     print("Sign out error: ${e.message}");
                     // SnackBar(

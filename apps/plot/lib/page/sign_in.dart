@@ -1,7 +1,6 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
@@ -16,52 +15,22 @@ class SignInPage extends StatefulWidget {
 class _SignInPageState extends State<SignInPage> {
   bool? _signedIn;
 
-  late final StreamSubscription<AuthState> _authSubscription;
+  late final StreamSubscription<User?> _userSubscription;
 
   @override
   void initState() {
-    _initbase();
+    _userSubscription = Base.user.listen((user) {
+      setState(() {
+        _signedIn = user != null;
+      });
+    });
     super.initState();
   }
 
   @override
   void dispose() {
-    _authSubscription.cancel();
+    _userSubscription.cancel();
     super.dispose();
-  }
-
-  void _initbase() {
-    _authSubscription = Base.client.auth.onAuthStateChange.listen((data) {
-      switch (data.event) {
-        case AuthChangeEvent.initialSession:
-          setState(() {
-            _signedIn = data.session?.accessToken != null;
-          });
-          break;
-        case AuthChangeEvent.signedIn:
-          setState(() {
-            _signedIn = true;
-          });
-          break;
-        case AuthChangeEvent.signedOut:
-          setState(() {
-            _signedIn = false;
-          });
-          break;
-        default:
-          break;
-      }
-      if (data.session?.user == null) {
-        Sentry.configureScope((scope) => scope.setUser(null));
-      } else {
-        Sentry.configureScope(
-          (scope) => scope.setUser(SentryUser(
-            id: data.session!.user.id,
-            email: data.session!.user.email,
-          )),
-        );
-      }
-    });
   }
 
   @override

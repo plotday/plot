@@ -7,6 +7,7 @@ import 'package:rxdart/rxdart.dart';
 import 'package:collection/collection.dart';
 import 'package:equatable/equatable.dart';
 import 'package:injector/injector.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
