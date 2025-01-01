@@ -108,46 +108,11 @@ class Balance extends BalanceRow {
 
       final eventStats = !range.includes(today)
           ? Stream.value(BalanceByActivityType.from({}))
-          : Event.watch(today.toDateRange())
-              .transform(ExpiringStreamTransformer((events) {
+          : ScheduledDay.watchToday().map(((day) {
               final now = DateTime.now();
-
-              final currentEvent =
-                  events.any((event) => event.at.includes(now));
-              DateTime? expiry;
-              if (currentEvent) {
-                if (now.second < 50) {
-                  expiry = now + const Duration(seconds: 10);
-                } else {
-                  final nextMinute = now.add(const Duration(minutes: 1));
-                  expiry = DateTime(
-                    nextMinute.year,
-                    nextMinute.month,
-                    nextMinute.day,
-                    nextMinute.hour,
-                    nextMinute.minute,
-                    0,
-                    0,
-                  );
-                }
-              } else {
-                expiry = events
-                    .map((event) => event.at.start.isAfter(now)
-                        ? event.at.start
-                        : event.at.end)
-                    .where((time) => time.isAfter(now))
-                    .fold(
-                        null,
-                        (a, b) => a == null
-                            ? b
-                            : a.isBefore(b)
-                                ? a
-                                : b);
-              }
-
-              return ExpiringResult(
-                value: groupBy(events, (Event e) => (e.activityId, e.response))
-                    .map((key, events) {
+              return groupBy(
+                  day.events, (Event e) => (e.activityId, e.response)).map(
+                (key, events) {
                   final activityId = key.$1;
                   final response = key.$2;
                   final type = switch (response) {
@@ -183,8 +148,7 @@ class Balance extends BalanceRow {
                               .fold(Duration.zero, (a, b) => a + b),
                     )
                   });
-                }),
-                expiry: expiry,
+                },
               );
             }));
 
@@ -220,17 +184,21 @@ class Balance extends BalanceRow {
 
       final sessionStats = !range.includes(today)
           ? Stream.value(BalanceByActivityType.from({}))
-          : Session.watch(range: today.toDateRange()).map((sessions) =>
-              groupBy(sessions, (session) => session.activityId)
+          : Session.watch(range: today.toDateRange(), expiring: true)
+              .map((sessions) {
+              final now = DateTime.now();
+              return groupBy(sessions, (session) => session.activityId)
                   .map((activityId, groupedSessions) => MapEntry(activityId, {
                         BalanceType.session: BalanceStats(
                           pastCount: groupedSessions.length,
                           pastTime: groupedSessions
-                              .map((session) =>
-                                  session.end.difference(session.start))
+                              .map((session) => session.end
+                                  .max(now)
+                                  .difference(session.start))
                               .fold(Duration.zero, (a, b) => a + b),
                         )
-                      })));
+                      }));
+            });
 
       return Rx.combineLatest2(
           balanceStats,

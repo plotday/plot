@@ -108,27 +108,27 @@ class Session extends SessionRow {
     int? limit,
     bool withContext = false,
     bool? deleted = false,
+    bool expiring = false, // emit every minute
   }) {
     final query = Store.get.select(table);
     if (range != null) {
-      query.where((t) => t.start.isBiggerOrEqualValue(range.start.toStart()));
-      query.where((t) => t.end.isSmallerThanValue(range.end.toEnd()));
+      query.where((t) => t.start.isSmallerThanValue(range.end.toEnd()));
+      query.where((t) => t.end.isBiggerThanValue(range.start.toStart()));
     }
     if (deleted != null) {
       query.where(
           (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
     }
+    query.orderBy(
+        [(t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc)]);
     if (limit != null) {
-      query.orderBy(
-          [(t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc)]);
       query.limit(limit);
     }
-    final sessionStream = query.watch().map(
+    var sessionStream = query.watch().map(
           (rows) => rows.map((row) => Session.fromStore(row)).toList(),
         );
-
     if (withContext) {
-      return Rx.combineLatest2(
+      sessionStream = Rx.combineLatest2(
           sessionStream,
           Activity.watch(),
           (List<Session> sessions, Map<Uuid, Activity> contexts) => sessions
@@ -138,11 +138,33 @@ class Session extends SessionRow {
                       : contexts[session.activityId]))
               .toList());
     }
+
+    if (expiring) {
+      sessionStream =
+          sessionStream.transform(ExpiringStreamTransformer((sessions) {
+        final now = DateTime.now();
+        final expiry = sessions.isEmpty || sessions.first.at.end.isBefore(now)
+            ? null
+            : (now +
+                    Duration(
+                        seconds: sessions.first.at.start.second +
+                            (now.second < sessions.first.at.start.second
+                                ? 0
+                                : 60) -
+                            now.second))
+                .max(sessions.first.at.end);
+        return ExpiringResult(
+          value: sessions,
+          expiry: expiry,
+        );
+      }));
+    }
+
     return sessionStream;
   }
 
   static Stream<Session?> watchCurrent() =>
-      watch(withContext: true, limit: 10).map((sessions) {
+      watch(withContext: true, limit: 1, expiring: true).map((sessions) {
         final session = sessions.firstOrNull;
         return session?.at.isNow() == true ? session : null;
       });

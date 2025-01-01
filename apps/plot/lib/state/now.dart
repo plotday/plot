@@ -4,44 +4,44 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/util/clock.dart';
 
 part 'now_state.dart';
 
 class NowBloc extends Cubit<NowState> {
   NowBloc() : super(NowState()) {
-    _secondsSubscription = Clock().seconds.listen((now) {
-      emit(state.copyWith());
-      if (_eventSubscription == null || !state.now.isSameDay(now)) {
-        _eventSubscription =
-            ScheduledDay.watch(Day(now.toDate())).listen((day) {
-          emit(state.copyWith(
-            day: day[now.toDate()],
-          ));
-        });
-      }
+    _scheduleSubscription = ScheduledDay.watchToday().listen((day) {
+      emit(state.copyWith(
+        day: day,
+      ));
     });
     _sessionSubscription = Session.watchCurrent()
         .listen((session) => emit(state.copyWith(session: session)));
   }
 
-  StreamSubscription<void>? _secondsSubscription;
+  StreamSubscription<void>? _scheduleSubscription;
   StreamSubscription<Session?>? _sessionSubscription;
-  StreamSubscription<void>? _eventSubscription;
+  Timer? _sessionTimer;
 
   @override
   Future<void> close() {
-    _secondsSubscription?.cancel();
+    _scheduleSubscription?.cancel();
     _sessionSubscription?.cancel();
-    _eventSubscription?.cancel();
+    _sessionTimer?.cancel();
     return super.close();
   }
 
   void setActivity(Activity? activity) async {
     if (state.session?.activity == activity) return;
-    // TODO properly set and extend time
-    await Session.resume(activity,
-        end: state.endFor(activity) ?? DateTime.now().addMinutes(5));
+    _sessionTimer?.cancel();
+    await state.session?.copyWith(end: DateTime.now()).save();
+    await Session.resume(
+      activity,
+      end: state.endFor(activity) ?? DateTime.now().addMinutes(3),
+    );
+    // _sessionTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    //   print("Adding 30 seconds to session");
+    //   state.session?.copyWith(end: DateTime.now().addMinutes(1)).save();
+    // });
   }
 
   // Future<void> _newActive(Emitter<NowState> emit, Session block) async {

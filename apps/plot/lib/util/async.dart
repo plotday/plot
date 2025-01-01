@@ -36,38 +36,41 @@ class ExpiringStreamTransformer<T, S> extends StreamTransformerBase<T, S> {
   @override
   Stream<S> bind(Stream<T> stream) {
     late StreamController<S> controller;
-    var subscriptions = <StreamSubscription<T>>[];
+    StreamSubscription<T>? subscription;
+    Timer? timer;
+
+    void handle(T event) {
+      timer?.cancel();
+
+      final result = map(event);
+      controller.add(result.value);
+
+      if (result.expiry != null) {
+        final duration = result.expiry!.difference(DateTime.now());
+        timer = Timer(duration, () {
+          handle(event);
+        });
+      }
+    }
+
     controller = StreamController<S>(
       onListen: () {
-        subscriptions = <StreamSubscription<T>>[
-          stream.listen(
-            (event) {
-              final result = map(event);
-
-              // Emit the mapped value
-              controller.add(result.value);
-
-              if (result.expiry != null) {
-                // Set up a timer to re-map and emit the value and expiry again
-                final duration = result.expiry!.difference(DateTime.now());
-                Timer(duration, () {
-                  final expiredValueResult = map(event);
-                  controller.add(expiredValueResult.value);
-                });
-              }
-            },
-            onError: controller.addError,
-            onDone: controller.close,
-            cancelOnError: false,
-          )
-        ];
+        subscription = stream.listen(
+          handle,
+          onError: controller.addError,
+          onDone: () {
+            timer?.cancel();
+            controller.close();
+          },
+          cancelOnError: false,
+        );
       },
       onCancel: () {
-        for (final subscription in subscriptions) {
-          subscription.cancel();
-        }
+        timer?.cancel();
+        subscription?.cancel();
       },
     );
+
     return controller.stream;
   }
 }

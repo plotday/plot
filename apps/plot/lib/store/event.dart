@@ -263,6 +263,34 @@ class ScheduledDay extends Equatable {
     });
   }
 
+  static Stream<ScheduledDay> watchToday() {
+    return Date.current().switchMap((today) => Event.watch(today.toDateRange())
+            .transform(ExpiringStreamTransformer((events) {
+          final now = DateTime.now();
+          final currentEvent = events.any((event) => event.at.includes(now));
+          DateTime? expiry;
+          if (currentEvent) {
+            // Expire every minute on the minute
+            expiry = now + Duration(seconds: 60 - now.second);
+          } else {
+            // Find the earliest event start or end following now
+            expiry = events.fold(
+                null,
+                (DateTime? next, Event e) => e.at.start.isAfter(now) &&
+                        (next == null || next.isAfter(e.at.start))
+                    ? e.at.start
+                    : e.at.end.isAfter(now) &&
+                            (next == null || next.isAfter(e.at.end))
+                        ? e.at.end
+                        : next);
+          }
+          return ExpiringResult(
+            value: ScheduledDay(today, events),
+            expiry: expiry,
+          );
+        })));
+  }
+
   ScheduledDay(this.date, List<Event> events)
       : events = _addGaps(
             date,
