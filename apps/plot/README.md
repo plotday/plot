@@ -1,16 +1,7 @@
-# calendar
+# Plot
 
-A new Flutter project.
+## Updating Drift
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Two Drift dependancies are copied into the `web` folder:
+1. [sqlite3](https://github.com/simolus3/sqlite3.dart/releases) `sqlite3.wasm`
+1. [Drift](https://github.com/simolus3/drift/releases) `drift_worker.dart.js`

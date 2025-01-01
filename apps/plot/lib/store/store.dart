@@ -393,9 +393,10 @@ class Store extends _$Store {
   Store._()
       : super(driftDatabase(
           name: 'plot',
-          // native: const DriftNativeOptions(
-          //   shareAcrossIsolates: true,
-          // ),
+          web: DriftWebOptions(
+            sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+            driftWorker: Uri.parse('drift_worker.dart.js'),
+          ),
         ));
 
   @override
