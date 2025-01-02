@@ -1,5 +1,0 @@
-slug: view_invitations
-name: View invitations
-sql:
-  resource: plot
-  entrypoint: view_invitations.sql

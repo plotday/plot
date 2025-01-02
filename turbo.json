@@ -96,7 +96,7 @@
         "@plotday/db#start"
       ]
     },
-    "@plotday/web#build": {
+    "@plotday/site#build": {
       "outputs": [
         "build/**",
         "public/build/**",

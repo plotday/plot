@@ -13,9 +13,8 @@ git push origin main
 
 ## Local setup
 
-1. [Install pnpm](https://pnpm.io/installation)
-1. [Install pgFormatter](https://github.com/darold/pgFormatter) (`brew install pgformatter`)
-1. [Instal Airplane](https://docs.airplane.dev/platform/airplane-cli) (`brew install airplanedev/tap/airplane`)
+1. [Install asdf](https://asdf-vm.com/): `brew install asdf && asdf install`
+1. [Install pgFormatter](https://github.com/darold/pgFormatter): `brew install pgformatter`
 1. `pnpm install`
 1. Create `.env` files:
    1. `.env.local`
@@ -33,7 +32,7 @@ git push origin main
       1. `TEST_GOOGLE_ACCOUNT_REFRESH_TOKEN`
       1. `TEST_OUTLOOK_ACCOUNT_ACCESS_TOKEN`
       1. `TEST_OUTLOOK_ACCOUNT_REFRESH_TOKEN`
-1. `pnpm dlx supabase link --project-ref PROJECT_ID`
+1. `pnpx supabase link --project-ref PROJECT_ID`
 
 ## Local dev
 

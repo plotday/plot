@@ -1,1 +1,0 @@
-SELECT * from invitation_admin;
