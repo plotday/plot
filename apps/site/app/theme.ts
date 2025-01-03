@@ -70,8 +70,8 @@ export const theme: MantineThemeOverride = createTheme({
   primaryColor: "brand",
   primaryShade: { light: 6, dark: 4 },
   defaultGradient: {
-    from: "secondary",
-    to: "brand",
+    from: "brand",
+    to: "secondary",
     deg: 45,
   },
   variantColorResolver,

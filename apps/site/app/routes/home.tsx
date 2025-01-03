@@ -1,15 +1,24 @@
 import { useState } from "react";
 
-import { Box, Container, Flex, List, Stack, Text, Title } from "@mantine/core";
+import {
+  Box,
+  Button,
+  Container,
+  Flex,
+  List,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
 
 import {
-  IconCalendarCheck,
+  IconCalendarBolt,
   IconScaleOutline,
   IconShieldCheckered,
 } from "@tabler/icons-react";
+import { Link } from "react-router";
 
 import { Balance } from "../components/balance";
-import { WaitlistForm } from "../components/waitlist";
 import type { Route } from "./+types/home";
 import classes from "./home.module.css";
 
@@ -21,7 +30,7 @@ export function meta({}: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Plot is a calendar that actively reduces your meeting load so you can engage well while making progress on what matters most.",
+        "Plot is a calendar for making progress on your priorities while keeping on top of everything else.",
     },
     {
       "og:image": "https://plot.day/assets/p.png",
@@ -30,17 +39,12 @@ export function meta({}: Route.MetaArgs) {
       "twitter:title": "Plot",
     },
     {
-      "twitter:description":
-        "A calendar for those who want to be better than busy",
+      "twitter:description": "Be better than busy",
     },
     {
       "twitter:image": "https://plot.day/assets/p.png",
     },
   ];
-}
-
-export function loader({ context }: Route.LoaderArgs) {
-  return { message: context.VALUE_FROM_CLOUDFLARE };
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {
@@ -58,21 +62,13 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               than busy
             </Title>
 
-            <Text>
+            <Text fz={18}>
               Plot is a calendar that{" "}
-              <Text span variant="gradient" fw={600}>
-                reduces meeting overload
+              <Text span variant="gradient" fw={600} fz={18}>
+                drives progress on your priorities
               </Text>{" "}
-              so you can engage well while making progress on what moves you
-              forward.
+              while keeping you on top of everything else.
             </Text>
-            <Stack gap="md">
-              <WaitlistForm />
-              <Text c="dimmed" fz="xs">
-                We're currently onboarding early adopters personally to ensure
-                we deliver on the level of transformation we intend.
-              </Text>
-            </Stack>
           </Stack>
         </Container>
       </Box>
@@ -80,11 +76,11 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         <Container size="xl">
           <Stack gap="md">
             <Title order={3} size="h1">
-              What is your{" "}
+              Where do you want to{" "}
               <Text span inherit variant="gradient">
-                ideal
-              </Text>{" "}
-              work week?
+                invest your time
+              </Text>
+              ?
             </Title>
             <Balance target={target} onChange={setTarget} />
           </Stack>
@@ -99,36 +95,44 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             <Stack gap="xs">
               <List center spacing="sm">
                 <List.Item
+                  lh={1.2}
                   icon={
                     <Flex c="secondary">
-                      <IconShieldCheckered />
+                      <IconCalendarBolt />
                     </Flex>
                   }
                 >
-                  Find and protect time for what matters
+                  Clarity on the next most important activity, even on days that
+                  don't unfold as planned
                 </List.Item>
                 <List.Item
-                  icon={
-                    <Flex c="secondary">
-                      <IconCalendarCheck />
-                    </Flex>
-                  }
-                >
-                  Always prepared, with 100% follow-through
-                </List.Item>
-                <List.Item
+                  lh={1.2}
                   icon={
                     <Flex c="secondary">
                       <IconScaleOutline />
                     </Flex>
                   }
                 >
-                  Put meetings on a diet with clever alternatives
+                  Put time-consuming activities like meetings and email on a
+                  diet
+                </List.Item>
+                <List.Item
+                  lh={1.2}
+                  icon={
+                    <Flex c="secondary">
+                      <IconShieldCheckered />
+                    </Flex>
+                  }
+                >
+                  Protect your focus while being confident nothing will get
+                  dropped
                 </List.Item>
               </List>
             </Stack>
             <Box mt="lg" mb="lg">
-              <WaitlistForm />
+              <Button variant="gradient" component={Link} to="/start" w="100%">
+                Get Started
+              </Button>
             </Box>
           </Stack>
         </Container>

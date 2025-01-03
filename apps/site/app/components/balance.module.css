@@ -7,7 +7,7 @@
 }
 .sliderTrack {
   &:before {
-    background-color: var(--mantine-color-brand-5);
+    background-color: var(--mantine-color-secondary-5);
   }
 }
 

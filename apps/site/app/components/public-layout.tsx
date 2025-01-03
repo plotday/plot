@@ -6,6 +6,7 @@ import {
   Box,
   Button,
   Group,
+  Title,
   UnstyledButton,
 } from "@mantine/core";
 
@@ -32,11 +33,14 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           <UnstyledButton component={Link} to="/" pt={6} pb={6}>
             <Logo />
           </UnstyledButton>
+          {location.pathname.startsWith("/start") && (
+            <Title order={2}>Get Started</Title>
+          )}
         </Group>
         <Group>
-          {false && location.pathname !== "/login" && (
-            <Button variant="outline" component={Link} to="/login">
-              Sign in
+          {!location.pathname.startsWith("/start") && (
+            <Button variant="outline" component={Link} to="/start">
+              Get Started
             </Button>
           )}
         </Group>
@@ -48,19 +52,20 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
 function AppFooter() {
   return (
     <Box p="md" className={classes.footer}>
-      <Group justify="space-between" align="normal">
-        <Group gap="lg" align="normal">
-          <Anchor href="mailto:team@plot.day" title="Email">
+      <Group justify="space-between">
+        <Group gap="lg">
+          <Anchor href="mailto:team@plot.day" title="Email" lh="normal">
             <IconMail />
           </Anchor>
           <Anchor
             href="https://linkedin.com/company/plot-tech/"
             title="LinkedIn"
+            lh="normal"
           >
             <IconBrandLinkedin />
           </Anchor>
         </Group>
-        <Group gap="lg" align="normal">
+        <Group gap="lg">
           <Anchor component={Link} to={`/terms`}>
             Terms of Service
           </Anchor>

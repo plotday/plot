@@ -5,9 +5,9 @@ import { useMediaQuery } from "@mantine/hooks";
 
 import classes from "./balance.module.css";
 
-const WEEKLY_HOURS = 40;
+const WEEKLY_HOURS = 116;
 
-export const MEETING_ACTIVITIES = [
+export const EVERYTHING_ELSE = [
   "Team meeting",
   "Cross-functional project sync",
   "1:1 with your manager",
@@ -40,7 +40,7 @@ export const MEETING_ACTIVITIES = [
   "Compliance training",
 ];
 
-export const NON_MEETING_ACTIVITIES = [
+export const PRIORITIES = [
   "Deep focus work",
   "Collaborate with colleagues on a project",
   "Prepare for a meeting to make it effective for all attendees",
@@ -105,18 +105,18 @@ export function Balance({
   return (
     <Stack gap="md">
       <Group justify="space-between">
-        <Text fz="xl" fw={700} c="secondary">
-          Meetings
-        </Text>
         <Text fz="xl" fw={700} c="brand">
+          Priorities
+        </Text>
+        <Text fz="xl" fw={700} c="secondary">
           Everything Else
         </Text>
       </Group>
       <Slider
-        color="secondary"
+        color="brand"
         value={target}
         onChange={onChange}
-        label={(value) => `${value} hours of meetings per week`}
+        label={(value) => `${value} hours per week`}
         max={WEEKLY_HOURS}
         step={0.5}
         marks={[
@@ -136,10 +136,7 @@ export function Balance({
           pr={{ base: "sm", lg: "md" }}
           display={target > 1 ? "block" : "none"}
         >
-          <Activities
-            color={classes.meetingText}
-            activities={MEETING_ACTIVITIES}
-          />
+          <Activities activities={PRIORITIES} color={classes.nonMeetingText} />
         </Box>
         <Box
           w={`${((WEEKLY_HOURS - target) / WEEKLY_HOURS) * 100}%`}
@@ -149,8 +146,8 @@ export function Balance({
           display={target < WEEKLY_HOURS - 1 ? "block" : "none"}
         >
           <Activities
-            color={classes.nonMeetingText}
-            activities={NON_MEETING_ACTIVITIES}
+            activities={EVERYTHING_ELSE}
+            color={classes.meetingText}
           />
         </Box>
       </Group>
