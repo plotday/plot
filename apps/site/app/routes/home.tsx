@@ -57,9 +57,8 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           <Stack gap="xl">
             <Title order={2} className={classes.title}>
               <Text span inherit variant="gradient">
-                Better
-              </Text>{" "}
-              than busy
+                Better than busy
+              </Text>
             </Title>
 
             <Text fz={18}>

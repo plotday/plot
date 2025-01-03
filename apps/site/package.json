@@ -8,7 +8,7 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "pnpm run build && wrangler deploy",
     "typecheck": "react-router typegen && tsc"
   },
   "dependencies": {
