@@ -5,6 +5,7 @@
   "scripts": {
     "install": "[ \"$CF_PAGES\" = \"1\" ] || npip install",
     "build": "turbo run build",
+    "deploy:site": "nx deploy @plotday/site",
     "deploy:workers": "turbo deploy --filter={./workers/*}",
     "deploy:workers:changed": "turbo deploy --filter={./workers/*}...[HEAD^1]",
     "dev": "turbo run dev --concurrency=18",
@@ -44,7 +45,9 @@
     "turbo": "^1.12.3",
     "typescript": "^5.1.6",
     "vitest": "^0.33.0",
-    "wrangler": "^3.60.1"
+    "wrangler": "^3.60.1",
+    "nx": "20.3.0",
+    "@nx/vite": "20.3.0"
   },
   "python": {
     "dependencies": {
@@ -52,3 +55,4 @@
     }
   }
 }
+

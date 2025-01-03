@@ -1,0 +1,42 @@
+{
+  "targetDefaults": {
+    "lint": {
+      "dependsOn": [
+        "^lint"
+      ],
+      "cache": true
+    },
+    "build": {
+      "dependsOn": [
+        "^build",
+        "lint"
+      ],
+      "outputs": [
+        "{projectRoot}/build"
+      ],
+      "cache": true
+    },
+    "deploy": {
+      "dependsOn": [
+        "build",
+        "^deploy"
+      ],
+      "cache": true
+    },
+    "test": {
+      "dependsOn": [
+        "@plotday/db#start"
+      ],
+      "cache": true
+    },
+    "start": {
+      "cache": false
+    },
+    "stop": {
+      "cache": false
+    }
+  },
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "defaultBase": "main",
+  "nxCloudId": "6777e9b3e81c511e7d1c3116"
+}

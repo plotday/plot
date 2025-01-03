@@ -25,3 +25,8 @@ coverage
 
 # react-email
 .react-email
+
+
+
+.nx/cache
+.nx/workspace-data

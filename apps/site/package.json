@@ -8,8 +8,8 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "wrangler dev",
-    "deploy": "pnpm run build && wrangler deploy",
-    "typecheck": "react-router typegen && tsc"
+    "deploy": "wrangler deploy",
+    "types": "react-router typegen && tsc"
   },
   "dependencies": {
     "@mantine/core": "7.15.2",
@@ -37,5 +37,8 @@
     "vite": "^5.4.11",
     "vite-tsconfig-paths": "^5.1.4",
     "wrangler": "^3.87.0"
+  },
+  "engines": {
+    "node": ">=22 <23"
   }
 }
