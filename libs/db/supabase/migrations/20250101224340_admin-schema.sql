@@ -2,7 +2,7 @@ CREATE SCHEMA IF NOT EXISTS "admin";
 
 CREATE EXTENSION IF NOT EXISTS "pgtap" WITH SCHEMA "extensions" version '1.2.0';
 
-CREATE EXTENSION IF NOT EXISTS "plpgsql_check" WITH SCHEMA "extensions" version '2.2';
+CREATE EXTENSION IF NOT EXISTS "plpgsql_check" WITH SCHEMA "extensions";
 
 DROP POLICY "internal_admin can edit the wailist" ON "public"."waitlist";
 

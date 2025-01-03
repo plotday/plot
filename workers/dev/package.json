@@ -8,8 +8,7 @@
     "dev": "pnpm run dev:config && pnpm run dev:start",
     "dev:config": "../../scripts/gen-env $npm_package_env_vars > .dev.vars",
     "dev:start": "wrangler dev --env development --test-scheduled",
-    "lint": "tsc && eslint .",
-    "pre-commit": "pnpm install --silent --frozen-lockfile"
+    "lint": "tsc && eslint ."
   },
   "dependencies": {
     "@plotday/api": "workspace:^",

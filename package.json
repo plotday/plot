@@ -19,6 +19,8 @@
     "migrate": "turbo run migrate",
     "lint": "turbo run lint --filter=!@plotday/dev-worker --concurrency=100%",
     "pre-commit": "turbo --output-logs=errors-only run pre-commit",
+    "pre-commit:workspace": "pnpm pre-commit:pnpm-installed",
+    "pre-commit:pnpm-installed": "pnpm install --silent --frozen-lockfile",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
@@ -55,4 +57,3 @@
     }
   }
 }
-
