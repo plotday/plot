@@ -16,6 +16,5 @@
   ],
   "theme_color": "#239870",
   "background_color": "#239870",
-  "start_url": "/prep",
-  "display": "standalone"
+  "start_url": "/"
 }
