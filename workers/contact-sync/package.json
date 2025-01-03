@@ -13,7 +13,6 @@
   "dependencies": {
     "@plotday/cal": "workspace:^",
     "@plotday/db": "workspace:^",
-    "@plotday/worker-request": "workspace:^",
     "@supabase/supabase-js": "^2.38.4",
     "@worker-tools/json-fetch": "2.1.0-pre.6",
     "toucan-js": "^3.3.0"

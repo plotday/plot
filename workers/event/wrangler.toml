@@ -22,3 +22,6 @@ compatibility_date = "2023-07-10"
 
 [placement]
   mode = "smart"
+
+[ai]
+  binding = "ai"

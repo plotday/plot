@@ -4,12 +4,11 @@ import type { SupabaseClient } from "./";
 import { safeQuery } from "./query";
 
 export function urlToPath(url: string) {
-  return url.replaceAll("+", "").replaceAll("-", "_").replaceAll(":", ".");
+  return url.replaceAll("/", ".").replaceAll("-", "_");
 }
 
 export function pathToUrl(path: string) {
-  const parts = path.replaceAll("_", "-").split(".");
-  return "/+" + [parts[0], parts.slice(1).join(":")].join("/");
+  return `/@/${path.replaceAll(".", "/").replaceAll("_", "-")}`;
 }
 
 export function nameToPath(name: string) {
@@ -19,7 +18,7 @@ export function nameToPath(name: string) {
     .toLowerCase();
 }
 
-export async function emailToCategory(supabase: SupabaseClient, email: string) {
+export async function emailToActivity(supabase: SupabaseClient, email: string) {
   const parts = email.split("@");
   let domain = parts[parts.length - 1];
 
@@ -27,7 +26,7 @@ export async function emailToCategory(supabase: SupabaseClient, email: string) {
     await supabase
       .from("domain")
       .select("organization(name)")
-      .eq("domain", domain)
+      .eq("name", domain)
       .single()
   );
   if (!domainRecord.organization) {
@@ -54,46 +53,4 @@ export async function emailToCategory(supabase: SupabaseClient, email: string) {
     name,
     path: domain.replaceAll(".", "-"),
   };
-}
-
-export async function createCategories(
-  supabaseAdmin: SupabaseClient,
-  userId: number,
-  email: string,
-  updateDefault = false
-) {
-  const { path, name } = await emailToCategory(supabaseAdmin, email);
-  safeQuery(
-    await supabaseAdmin
-      .from("category")
-      .upsert(
-        [
-          {
-            user_id: userId,
-            name,
-            path,
-            priority: "O",
-          },
-          {
-            user_id: userId,
-            name: "Meetings",
-            path: `${path}.meetings`,
-            priority: "M",
-          },
-        ],
-        { onConflict: "user_id,path", ignoreDuplicates: true }
-      )
-      .select()
-  );
-
-  if (updateDefault) {
-    safeQuery(
-      await supabaseAdmin
-        .from("user")
-        .update({ default_category: path })
-        .eq("id", userId)
-    );
-  }
-
-  return path;
 }

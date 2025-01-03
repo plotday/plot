@@ -1,9 +1,0 @@
-slug: add_to_waitlist
-name: Add to waitlist
-parameters:
-  - slug: email
-    name: Email
-    type: shorttext
-sql:
-  resource: plot
-  entrypoint: add_to_waitlist.sql

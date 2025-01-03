@@ -1,0 +1,115 @@
+part of 'now.dart';
+
+final class NowState extends Equatable {
+  NowState({
+    this.session,
+    ScheduledDay? day,
+  })  : now = DateTime.now(),
+        _day = day;
+
+  final DateTime now;
+  final Session? session;
+  final ScheduledDay? _day;
+
+  List<Event> get scheduled =>
+      _day?.events.where((event) => event.at.includes(now)).toList() ?? [];
+
+  List<Event> get next {
+    if (_day == null) return const [];
+    final events = _day.events;
+    int first = -1;
+    int last = events.length;
+    for (int i = 0; i < events.length; i++) {
+      if (events[i].start.isAfter(now)) {
+        if (first == -1) {
+          first = i;
+        } else if (!events[i].start.isAtSameMomentAs(events[first].start)) {
+          last = i;
+          break;
+        }
+      }
+    }
+    if (first == -1) {
+      return [];
+    }
+    return events.sublist(first, last);
+  }
+
+  List<Event> get previous {
+    if (_day == null) return const [];
+    final events = _day.events;
+    int first = 0;
+    int last = events.length;
+    for (int i = events.length - 1; i >= 0; i--) {
+      if (events[i].start.isBefore(now)) {
+        if (!events[i].start.isAtSameMomentAs(events[first].start)) {
+          first = i;
+        }
+      } else {
+        last = i;
+        break;
+      }
+    }
+    return events.sublist(first, last);
+  }
+
+  @override
+  List<Object?> get props => [session, scheduled, next, previous];
+
+  Activity? get context => session?.activity ?? scheduled.firstOrNull?.activity;
+  Event get current =>
+      scheduled.firstOrNull ??
+      Event(
+        at: DateTimeRange(previous.firstOrNull?.at.end ?? now.round(),
+            next.firstOrNull?.at.start ?? now.round(down: false)),
+        activity: context,
+      );
+
+  DateTimeRange? get pomodoro {
+    if (session?.pomodoro == null || session?.pomodoroAt == null) return null;
+    return DateTimeRange(
+        session!.pomodoroAt!, session!.pomodoroAt!.add(session!.pomodoro!));
+  }
+
+  // TODO change to range
+  DateTime? get start =>
+      pomodoro?.start ??
+      session?.at.start ?? // TODO: follow back
+      scheduled.firstOrNull?.at.start ??
+      previous.firstOrNull?.at.end;
+  DateTime? get end =>
+      pomodoro?.end ??
+      (scheduled.firstOrNull?.activity == context
+          ? scheduled.firstOrNull?.at.end
+          : null) ??
+      next.firstOrNull?.at.start;
+
+  DateTime? endFor(Activity? context) {
+    if (context == this.context && end != null) {
+      return end;
+    }
+    return next.firstOrNull?.at.start;
+  }
+
+  Duration? get elapsed => start != null ? now.difference(start!) : null;
+  Duration? get remaining =>
+      end != null && end!.isBefore(now) ? end!.difference(now) : null;
+
+  bool get finite => start != null && end != null;
+  Duration? get duration => finite ? end!.difference(start!) : null;
+  double? get progress => finite
+      ? now.isBefore(end!)
+          ? elapsed!.inSeconds / duration!.inSeconds
+          : 1
+      : null;
+
+  NowState copyWith({
+    Session? session,
+    ScheduledDay? day,
+  }) {
+    return NowState(
+      session: session ?? this.session,
+      day: day ?? _day,
+    );
+  }
+}

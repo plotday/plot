@@ -263,7 +263,7 @@ function transformResponse(response: string | null | undefined): EventResponse {
   }
 }
 
-export function transform(rawEvent: RawEvent): Event {
+export function transform(rawEvent: RawEvent, accountEmail: string): Event {
   const event: OutlookEvent = rawEvent.data;
   const id = rawEvent.id;
 
@@ -280,23 +280,33 @@ export function transform(rawEvent: RawEvent): Event {
     };
   }
 
-  let organizerFound = false;
+  let response: EventResponse = event.responseStatus
+    ? transformResponse(event.responseStatus.response)
+    : "accepted";
+  let isOptional = false;
+  let organizerFound = organizerEmail === accountEmail;
   const invitees: Invitee[] =
     event.attendees?.reduce?.((ret, attendee) => {
       const email = attendee.emailAddress?.address?.toLowerCase();
       if (!email || attendee.type === "resource") return ret;
       const isOrganizer = email === organizerEmail;
       if (isOrganizer) organizerFound = true;
-      const response = isOrganizer
+      const inviteeResponse = isOrganizer
         ? "accepted"
         : transformResponse(attendee.status?.response);
+      const inviteeOptional = attendee.type === "optional";
+      if (email.toLowerCase() === accountEmail.toLowerCase()) {
+        response = inviteeResponse;
+        isOptional = inviteeOptional;
+        return ret;
+      }
       return [
         ...ret,
         {
           email,
           name: normalizeName(attendee.emailAddress?.name),
-          response,
-          isOptional: attendee.type === "optional",
+          response: inviteeResponse,
+          isOptional: inviteeOptional,
         } as Invitee,
       ];
     }, [] as Invitee[]) || [];
@@ -375,6 +385,8 @@ export function transform(rawEvent: RawEvent): Event {
     series: event.seriesMasterId || undefined,
     name: event.subject || undefined,
     status,
+    response,
+    isOptional,
     createdAt: event.createdDateTime
       ? new Date(event.createdDateTime)
       : undefined,

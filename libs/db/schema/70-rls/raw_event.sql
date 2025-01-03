@@ -1,2 +1,0 @@
-ALTER TABLE "public"."raw_event" ENABLE ROW LEVEL SECURITY;
-

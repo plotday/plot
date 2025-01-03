@@ -6,7 +6,7 @@ BEGIN
             pg_catalog.pg_roles
         WHERE
             rolname = 'internal_admin') THEN
-    RAISE NOTICE 'Role "my_user" already exists. Skipping.';
+    RAISE NOTICE 'Role "internal_admin" already exists. Skipping.';
 ELSE
     CREATE ROLE internal_admin WITH LOGIN;
 END IF;

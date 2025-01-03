@@ -1,4 +1,5 @@
 #!/bin/bash
+# Create a unified .env file from multiple root .env files
 
 if [ -z ${NODE_ENV} ]; then
   if [ -z ${DEPLOY_ENV} ]; then
@@ -10,29 +11,40 @@ fi
 
 ENV_PATH="$(dirname -- "${BASH_SOURCE[0]}")/.."
 
-# ALL_VARS=$(cat $ENV_PATH/.env $ENV_PATH/.env.$NODE_ENV $ENV_PATH/.env.local $ENV_PATH/.env.$NODE_ENV.local 2> /dev/null | grep -v '^#')
-
-var_names=$@
+var_names=$npm_package_deploy_vars
 
 files=("$ENV_PATH/.env" "$ENV_PATH/.env.$NODE_ENV" "$ENV_PATH/.env.local" "$ENV_PATH/.env.$NODE_ENV.local")
 
-ALL_VARS=NODE_ENV=$NODE_ENV
 for file in "${files[@]}"; do
     # Check if the file exists
     if [ -f "$file" ]; then
         # Read each line from the file and check for a match
         while read -r line; do
+            # Skip lines that start with a hash
+            [[ $line =~ ^#.*$ ]] && continue
+
+            # Skip line without an equal sign
+            [[ $line =~ ^[^=]*= ]] || continue
+
             # Extract the variable name from each line using parameter expansion
             var_name="${line%=*}"
+            # Extract the variable value from each line using parameter expansion
+            var_value="${line#*=}"
 
-            # Check if the variable name is in the list of names provided
-            if [[ " ${var_names[*]} " =~ " $var_name " ]]; then
-                # Print the matching line
-ALL_VARS="$line
-$ALL_VARS"
-            fi
+            export $var_name=$var_value
         done < "$file"
     fi
 done
 
-echo "$ALL_VARS" | awk -F '=' '!seen[$1]++{ print }' | tac
+fail=0
+for var_name in $@; do
+  if [ -z "${!var_name}" ]; then
+    echo "!!! Environment variable $var_name not set" >&2
+    fail=1
+  else
+    echo $var_name=${!var_name}
+  fi
+done
+if [ $fail -eq 1 ]; then
+  exit 1
+fi

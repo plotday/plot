@@ -4,7 +4,6 @@ import { createClient as supabaseCreateClient } from "@supabase/supabase-js";
 import type { Calendar, CalendarCredentials } from "@plotday/cal";
 import { toDate } from "@plotday/tz";
 
-import { createCategories } from "./path";
 import { safeQuery } from "./query";
 import type { Database } from "./types";
 
@@ -29,112 +28,96 @@ export async function getAccount(supabase: SupabaseClient, accountId: number) {
   return account;
 }
 
-export async function buildCredentials(
-  account: Awaited<ReturnType<typeof getAccount>>
-): Promise<CalendarCredentials> {
-  if (!account.email) throw new Error(`Account ${account.id} missing email`);
-  if (
-    !account.credentials ||
-    typeof account.credentials !== "object" ||
-    !("access_token" in account.credentials) ||
-    typeof account.credentials.access_token !== "string" ||
-    !("refresh_token" in account.credentials) ||
-    typeof account.credentials.refresh_token !== "string"
-  ) {
-    throw new Error(`Account ${account.id} missing credentials`);
-  }
-  return {
-    provider: account.provider,
-    email: account.email,
-    access_token: account.credentials.access_token,
-    refresh_token: account.credentials.refresh_token,
-    scopes: (account.credentials.scopes ?? []) as string[],
-  };
-}
 export async function getCredentials(
   supabase: SupabaseClient,
   accountId: number
 ): Promise<CalendarCredentials> {
   const account = await getAccount(supabase, accountId);
   if (!account.email) throw new Error(`Account ${accountId} missing email`);
-  return buildCredentials(account);
+  if (!account.credentials)
+    throw new Error(`Account ${accountId} missing credentials`);
+  return account.credentials as CalendarCredentials;
 }
 
 export async function saveCredentials(
   supabase: SupabaseClient,
-  accountId: number,
+  userId: string,
   credentials: CalendarCredentials,
   onlyIfUpdated: boolean = false
 ) {
   if (onlyIfUpdated && !credentials.updated) return;
+  const { updated, ...rest } = credentials;
   safeQuery(
-    await supabase.from("account").update({ credentials }).eq("id", accountId)
+    await supabase
+      .from("account")
+      .update({ credentials: rest })
+      .eq("user_id", userId)
+      .eq("email", credentials.email)
   );
   if (onlyIfUpdated) {
     credentials.updated = false;
   }
 }
 
-export function parseDateRange(range: string) {
-  return range.replaceAll(/["[\]()]/g, "").split(",");
+export function parseDateRange(range: string | unknown) {
+  const [start, end] = (range as string).replaceAll(/["[\]()]/g, "").split(",");
+  return {
+    start,
+    end,
+  };
 }
 
-export function parseDatetimeRange(range: string, tz: string) {
-  return parseDateRange(range).map((d) => toDate(d, tz));
+export function parseDatetimeRange(range: string | unknown, tz?: string) {
+  const { start, end } = parseDateRange(range);
+  return {
+    start: tz ? toDate(start, tz) : new Date(start),
+    end: tz ? toDate(end, tz) : new Date(end),
+  };
+}
+
+export function formatDatetimeRange(start: Date, end: Date) {
+  return `[${start.toISOString()},${end.toISOString()})`;
 }
 
 export async function saveCalendars(
   supabase: SupabaseClient,
-  userId: number,
   accountId: number,
   calendars: Calendar[]
 ) {
   const primaryCalendar = calendars.find((c) => c.primary);
   if (!primaryCalendar) throw new Error("No primary calendar");
-  const category = await createCategories(
-    supabase,
-    userId,
-    primaryCalendar.account
-  );
-  const result = safeQuery(
-    await supabase
-      .from("calendar")
-      .upsert(
-        calendars.map((calendar) => ({
-          account_id: accountId,
-          provider_id: calendar.id,
-          name: calendar.name,
-          enabled: calendar.primary,
-          category,
-        })),
-        { onConflict: "account_id, provider_id", ignoreDuplicates: true }
-      )
-      .select()
-  );
-
-  const categories = safeQuery(
-    await supabase
-      .from("category")
-      .select()
-      .eq("user_id", userId)
-      .in("path", [category, `${category}.meetings`])
-  );
-
   safeQuery(
-    await supabase.from("event_rule").upsert(
-      result.flatMap((calendar) =>
-        categories.map((c) => ({
-          user_id: userId,
-          calendar_id: calendar.id,
-          ...((c.path as string).endsWith(".meetings")
-            ? { type: "meeting" as Database["public"]["Enums"]["event_type"] }
-            : {}),
-          category_id: c.id,
-        }))
-      )
+    await supabase.from("calendar").upsert(
+      calendars.map((calendar) => ({
+        account_id: accountId,
+        provider_id: calendar.id,
+        name: calendar.name,
+        enabled: calendar.primary,
+      })),
+      { onConflict: "account_id, provider_id", ignoreDuplicates: true }
     )
   );
-  return result;
+  const dbCalendars = safeQuery(
+    await supabase.from("calendar").select().eq("account_id", accountId)
+  );
+  const deletedCalendars = dbCalendars.filter(
+    (dbCalendar) =>
+      !calendars.some((calendar) => calendar.id === dbCalendar.provider_id)
+  );
+  if (deletedCalendars.length > 0) {
+    safeQuery(
+      await supabase
+        .from("calendar")
+        .delete()
+        .in(
+          "id",
+          deletedCalendars.map((calendar) => calendar.id)
+        )
+    );
+  }
+  return dbCalendars.filter(
+    (dbCalendar) => !deletedCalendars.includes(dbCalendar)
+  );
 }
 
 export type {
@@ -144,9 +127,7 @@ export type {
   DbEvents,
   DbEvent,
 } from "./event";
-export { Event } from "./event";
+export { Event, calendarToDb } from "./event";
 
 export { safeQuery } from "./query";
-
-export * from "./category";
 export * from "./path";

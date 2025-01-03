@@ -1,0 +1,74 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+
+import 'package:plot/widget/auth_button.dart';
+import 'package:plot/base.dart';
+
+class SignInPage extends StatefulWidget {
+  const SignInPage({super.key});
+
+  @override
+  State<SignInPage> createState() => _SignInPageState();
+}
+
+class _SignInPageState extends State<SignInPage> {
+  bool? _signedIn;
+
+  late final StreamSubscription<User?> _userSubscription;
+
+  @override
+  void initState() {
+    _userSubscription = Base.user.listen((user) {
+      setState(() {
+        _signedIn = user != null;
+      });
+    });
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    _userSubscription.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_signedIn == null) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    return Scaffold(
+        appBar: AppBar(
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          title: const Text('Plot'),
+        ),
+        body: Center(
+          child: AuthButton(
+            onSignIn: (auth) async {
+              if (auth.idToken == null) return;
+              try {
+                await Base.client.auth.signInWithIdToken(
+                  provider: OAuthProvider.google,
+                  idToken: auth.idToken!,
+                  accessToken: auth.accessToken,
+                );
+              } on AuthException catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(e.message),
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                );
+              }
+            },
+          ),
+        ));
+  }
+}

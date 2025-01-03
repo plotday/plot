@@ -6,10 +6,6 @@ compatibility_date = "2023-07-10"
   vars = { ENV = "production" }
 
 [[env.production.queues.producers]]
-  queue = "plot-sync-production-queue"
-  binding = "SYNC_QUEUE"
-
-[[env.production.queues.producers]]
   queue = "plot-event-production-queue"
   binding = "EVENT_QUEUE"
 

@@ -1,1 +1,0 @@
-DELETE FROM invitation WHERE id = {{params.id}};

@@ -6,7 +6,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export interface Database {
+export type Database = {
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -36,80 +36,262 @@ export interface Database {
     Tables: {
       account: {
         Row: {
-          auth_user_id: string
           contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
-          domain_id: number | null
-          email: string | null
+          deleted_at: string | null
+          email: string
           id: number
-          provider: Database["public"]["Enums"]["provider"]
-          user_id: number
+          updated_at: string
+          user_id: string
           calendars: unknown | null
           organization: unknown | null
         }
         Insert: {
-          auth_user_id: string
           contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
-          domain_id?: number | null
-          email?: string | null
-          id?: number
-          provider: Database["public"]["Enums"]["provider"]
-          user_id: number
+          deleted_at?: string | null
+          email: string
+          id?: never
+          updated_at?: string
+          user_id: string
         }
         Update: {
-          auth_user_id?: string
           contact_sync_state?: Json | null
           created_at?: string
           credentials?: Json | null
-          domain_id?: number | null
-          email?: string | null
-          id?: number
-          provider?: Database["public"]["Enums"]["provider"]
-          user_id?: number
+          deleted_at?: string | null
+          email?: string
+          id?: never
+          updated_at?: string
+          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "account_auth_user_id_fkey"
-            columns: ["auth_user_id"]
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "account_domain_id_fkey"
-            columns: ["domain_id"]
-            referencedRelation: "domain"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "account_user_id_fkey"
             columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "user"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "account_user_id_fkey"
             columns: ["user_id"]
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      activity: {
+        Row: {
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          draft: boolean
+          id: string
+          name: string
+          path: unknown
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          draft?: boolean
+          id?: string
+          name: string
+          path: unknown
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          draft?: boolean
+          id?: string
+          name?: string
+          path?: unknown
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "account_user_id_fkey"
+            foreignKeyName: "activity_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      activity_settings: {
+        Row: {
+          activity_id: string
+          color: number
+          order: number
+          pomodoro: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          activity_id: string
+          color?: number
+          order: number
+          pomodoro?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          activity_id?: string
+          color?: number
+          order?: number
+          pomodoro?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_settings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_settings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_settings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_settings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_settings_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "activity_settings_user_id_fkey"
             columns: ["user_id"]
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          }
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      activity_user: {
+        Row: {
+          activity_id: string
+          created_at: string
+          deleted_at: string | null
+          path: unknown | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          activity_id: string
+          created_at?: string
+          deleted_at?: string | null
+          path?: unknown | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          activity_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          path?: unknown | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_user_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_user_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_user_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_user_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_user_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "activity_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
         ]
       }
       calendar: {
         Row: {
           account_id: number
-          category: string | null
           created_at: string
+          deleted_at: string | null
           enabled: boolean
-          ends_at: string | null
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
@@ -117,10 +299,11 @@ export interface Database {
           provider_id: string
           ready: boolean
           sequence: number
-          starts_at: string | null
           sync_error: string | null
           sync_state: string | null
           synced_at: string | null
+          synced_dates: unknown | null
+          updated_at: string
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -128,42 +311,42 @@ export interface Database {
         }
         Insert: {
           account_id: number
-          category?: string | null
           created_at?: string
+          deleted_at?: string | null
           enabled?: boolean
-          ends_at?: string | null
           full_sync_at?: string | null
           full_sync_started_at?: string | null
-          id?: number
+          id?: never
           name?: string | null
           provider_id: string
           ready?: boolean
           sequence?: number
-          starts_at?: string | null
           sync_error?: string | null
           sync_state?: string | null
           synced_at?: string | null
+          synced_dates?: unknown | null
+          updated_at?: string
           watch_expires_at?: string | null
           watch_id?: string | null
           watch_secret?: string | null
         }
         Update: {
           account_id?: number
-          category?: string | null
           created_at?: string
+          deleted_at?: string | null
           enabled?: boolean
-          ends_at?: string | null
           full_sync_at?: string | null
           full_sync_started_at?: string | null
-          id?: number
+          id?: never
           name?: string | null
           provider_id?: string
           ready?: boolean
           sequence?: number
-          starts_at?: string | null
           sync_error?: string | null
           sync_state?: string | null
           synced_at?: string | null
+          synced_dates?: unknown | null
+          updated_at?: string
           watch_expires_at?: string | null
           watch_id?: string | null
           watch_secret?: string | null
@@ -172,334 +355,207 @@ export interface Database {
           {
             foreignKeyName: "calendar_account_id_fkey"
             columns: ["account_id"]
+            isOneToOne: false
             referencedRelation: "account"
             referencedColumns: ["id"]
-          }
-        ]
-      }
-      category: {
-        Row: {
-          budget_weekly: number | null
-          created_at: string | null
-          id: number
-          minimize: boolean
-          name: string
-          path: unknown
-          priority: string
-          user_id: number
-        }
-        Insert: {
-          budget_weekly?: number | null
-          created_at?: string | null
-          id?: number
-          minimize?: boolean
-          name: string
-          path: unknown
-          priority?: string
-          user_id: number
-        }
-        Update: {
-          budget_weekly?: number | null
-          created_at?: string | null
-          id?: number
-          minimize?: boolean
-          name?: string
-          path?: unknown
-          priority?: string
-          user_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "category_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "user"
-            referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "category_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "category_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          }
         ]
       }
       contact: {
         Row: {
           avatar_url: string | null
-          contact_user_id: number | null
           created_at: string
-          domain_id: number | null
-          email: string | null
+          deleted_at: string | null
+          email: string
           id: number
           name: string | null
-          user_id: number
+          updated_at: string
+          user_id: string
           organization: unknown | null
         }
         Insert: {
           avatar_url?: string | null
-          contact_user_id?: number | null
           created_at?: string
-          domain_id?: number | null
-          email?: string | null
-          id?: number
+          deleted_at?: string | null
+          email: string
+          id?: never
           name?: string | null
-          user_id: number
+          updated_at?: string
+          user_id: string
         }
         Update: {
           avatar_url?: string | null
-          contact_user_id?: number | null
           created_at?: string
-          domain_id?: number | null
-          email?: string | null
-          id?: number
+          deleted_at?: string | null
+          email?: string
+          id?: never
           name?: string | null
-          user_id?: number
+          updated_at?: string
+          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "contact_contact_user_id_fkey"
-            columns: ["contact_user_id"]
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "contact_contact_user_id_fkey"
-            columns: ["contact_user_id"]
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "contact_contact_user_id_fkey"
-            columns: ["contact_user_id"]
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "contact_domain_id_fkey"
-            columns: ["domain_id"]
-            referencedRelation: "domain"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "contact_user_id_fkey"
             columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "user"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "contact_user_id_fkey"
             columns: ["user_id"]
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "contact_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          }
         ]
       }
       domain: {
         Row: {
-          created_at: string | null
-          domain: string
+          created_at: string
           id: number
+          name: string
           organization_id: number | null
         }
         Insert: {
-          created_at?: string | null
-          domain: string
-          id?: number
+          created_at?: string
+          id?: never
+          name: string
           organization_id?: number | null
         }
         Update: {
-          created_at?: string | null
-          domain?: string
-          id?: number
+          created_at?: string
+          id?: never
+          name?: string
           organization_id?: number | null
         }
         Relationships: [
           {
             foreignKeyName: "domain_organization_id_fkey"
             columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organization"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
       event: {
         Row: {
           at: unknown
-          attended: unknown | null
           availability: Database["public"]["Enums"]["event_availability"]
-          calendar_id: number
+          calendar_id: number | null
           conferencing_url: string | null
           created_at: string
+          deleted_at: string | null
           description: string | null
-          id: number
+          draft: boolean
+          id: string
           invitees_hidden: boolean
           name: string | null
+          optional: boolean
           organizer_email: string | null
           provider_id: string
           provider_link: string | null
+          response: Database["public"]["Enums"]["event_response"] | null
           sequence: number
           series: string | null
           status: Database["public"]["Enums"]["event_status"]
           summary: string | null
+          updated_at: string
+          user_id: string
           visibility: Database["public"]["Enums"]["event_visibility"]
         }
         Insert: {
           at: unknown
-          attended?: unknown | null
           availability?: Database["public"]["Enums"]["event_availability"]
-          calendar_id: number
+          calendar_id?: number | null
           conferencing_url?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
-          id?: number
+          draft?: boolean
+          id?: string
           invitees_hidden?: boolean
           name?: string | null
+          optional?: boolean
           organizer_email?: string | null
-          provider_id: string
+          provider_id?: string
           provider_link?: string | null
+          response?: Database["public"]["Enums"]["event_response"] | null
           sequence?: number
           series?: string | null
           status?: Database["public"]["Enums"]["event_status"]
           summary?: string | null
+          updated_at?: string
+          user_id: string
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
         Update: {
           at?: unknown
-          attended?: unknown | null
           availability?: Database["public"]["Enums"]["event_availability"]
-          calendar_id?: number
+          calendar_id?: number | null
           conferencing_url?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
-          id?: number
+          draft?: boolean
+          id?: string
           invitees_hidden?: boolean
           name?: string | null
+          optional?: boolean
           organizer_email?: string | null
           provider_id?: string
           provider_link?: string | null
+          response?: Database["public"]["Enums"]["event_response"] | null
           sequence?: number
           series?: string | null
           status?: Database["public"]["Enums"]["event_status"]
           summary?: string | null
+          updated_at?: string
+          user_id?: string
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
         Relationships: [
           {
             foreignKeyName: "event_calendar_id_fkey"
             columns: ["calendar_id"]
-            referencedRelation: "calendar"
-            referencedColumns: ["id"]
-          }
-        ]
-      }
-      event_rule: {
-        Row: {
-          calendar_id: number | null
-          category_id: number | null
-          created_at: string | null
-          id: number
-          internal: Database["public"]["Enums"]["event_internal"] | null
-          invitee_domain: string | null
-          invitees: string[] | null
-          name: string | null
-          series: string | null
-          type: Database["public"]["Enums"]["event_type"] | null
-          user_id: number
-        }
-        Insert: {
-          calendar_id?: number | null
-          category_id?: number | null
-          created_at?: string | null
-          id?: number
-          internal?: Database["public"]["Enums"]["event_internal"] | null
-          invitee_domain?: string | null
-          invitees?: string[] | null
-          name?: string | null
-          series?: string | null
-          type?: Database["public"]["Enums"]["event_type"] | null
-          user_id: number
-        }
-        Update: {
-          calendar_id?: number | null
-          category_id?: number | null
-          created_at?: string | null
-          id?: number
-          internal?: Database["public"]["Enums"]["event_internal"] | null
-          invitee_domain?: string | null
-          invitees?: string[] | null
-          name?: string | null
-          series?: string | null
-          type?: Database["public"]["Enums"]["event_type"] | null
-          user_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "event_rule_calendar_id_fkey"
-            columns: ["calendar_id"]
+            isOneToOne: false
             referencedRelation: "calendar"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "event_rule_category_id_fkey"
-            columns: ["category_id"]
-            referencedRelation: "category"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "event_rule_category_id_fkey"
-            columns: ["category_id"]
-            referencedRelation: "event_x"
-            referencedColumns: ["category_id"]
-          },
-          {
-            foreignKeyName: "event_rule_user_id_fkey"
+            foreignKeyName: "event_user_id_fkey"
             columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "user"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "event_rule_user_id_fkey"
+            foreignKeyName: "event_user_id_fkey"
             columns: ["user_id"]
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "event_rule_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          }
         ]
       }
       invitation: {
         Row: {
           code: string
-          created_at: string | null
+          created_at: string
           id: number
           remaining: number
         }
         Insert: {
           code: string
-          created_at?: string | null
-          id?: number
+          created_at?: string
+          id?: never
           remaining?: number
         }
         Update: {
           code?: string
-          created_at?: string | null
-          id?: number
+          created_at?: string
+          id?: never
           remaining?: number
         }
         Relationships: []
@@ -507,88 +563,154 @@ export interface Database {
       invitee: {
         Row: {
           created_at: string
+          deleted_at: string | null
           email: string
-          event_id: number
+          event_id: string | null
           is_optional: boolean
           response: Database["public"]["Enums"]["event_response"] | null
+          updated_at: string
           contact: unknown | null
         }
         Insert: {
           created_at?: string
+          deleted_at?: string | null
           email: string
-          event_id: number
+          event_id?: string | null
           is_optional?: boolean
           response?: Database["public"]["Enums"]["event_response"] | null
+          updated_at?: string
         }
         Update: {
           created_at?: string
+          deleted_at?: string | null
           email?: string
-          event_id?: number
+          event_id?: string | null
           is_optional?: boolean
           response?: Database["public"]["Enums"]["event_response"] | null
+          updated_at?: string
         }
         Relationships: [
           {
             foreignKeyName: "invitee_event_id_fkey"
             columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "event"
             referencedColumns: ["id"]
-          }
+          },
+          {
+            foreignKeyName: "invitee_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["id"]
+          },
         ]
       }
       note: {
         Row: {
-          author: number | null
+          activity_id: string | null
           body: string
-          category_id: number
-          created_at: string | null
-          id: number
+          created_at: string
+          deleted_at: string | null
+          do_at: string | null
+          done_at: string | null
+          draft: boolean
+          id: string
+          order: number
+          ordered_at: string
+          pinned: boolean
+          private: boolean
+          root: boolean
+          topic_id: string
+          updated_at: string
+          user_id: string
         }
         Insert: {
-          author?: number | null
+          activity_id?: string | null
           body: string
-          category_id: number
-          created_at?: string | null
-          id?: number
+          created_at?: string
+          deleted_at?: string | null
+          do_at?: string | null
+          done_at?: string | null
+          draft?: boolean
+          id?: string
+          order: number
+          ordered_at?: string
+          pinned?: boolean
+          private?: boolean
+          root?: boolean
+          topic_id: string
+          updated_at?: string
+          user_id: string
         }
         Update: {
-          author?: number | null
+          activity_id?: string | null
           body?: string
-          category_id?: number
-          created_at?: string | null
-          id?: number
+          created_at?: string
+          deleted_at?: string | null
+          do_at?: string | null
+          done_at?: string | null
+          draft?: boolean
+          id?: string
+          order?: number
+          ordered_at?: string
+          pinned?: boolean
+          private?: boolean
+          root?: boolean
+          topic_id?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "note_author_fkey"
-            columns: ["author"]
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "note_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "user"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "note_author_fkey"
-            columns: ["author"]
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "note_author_fkey"
-            columns: ["author"]
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "note_category_id_fkey"
-            columns: ["category_id"]
-            referencedRelation: "category"
+            foreignKeyName: "note_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "note_category_id_fkey"
-            columns: ["category_id"]
-            referencedRelation: "event_x"
-            referencedColumns: ["category_id"]
-          }
         ]
       }
       organization: {
@@ -599,106 +721,392 @@ export interface Database {
         }
         Insert: {
           created_at?: string
-          id?: number
+          id?: never
           name: string
         }
         Update: {
           created_at?: string
-          id?: number
+          id?: never
           name?: string
         }
         Relationships: []
       }
       raw_event: {
         Row: {
-          calendar_id: number
+          calendar_id: number | null
           created_at: string
           event: Json
           id: number
           provider_id: string
         }
         Insert: {
-          calendar_id: number
+          calendar_id?: number | null
           created_at?: string
           event: Json
-          id?: number
+          id?: never
           provider_id: string
         }
         Update: {
-          calendar_id?: number
+          calendar_id?: number | null
           created_at?: string
           event?: Json
-          id?: number
+          id?: never
           provider_id?: string
         }
         Relationships: [
           {
             foreignKeyName: "raw_event_calendar_id_fkey"
             columns: ["calendar_id"]
+            isOneToOne: false
             referencedRelation: "calendar"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
-      user: {
+      series: {
         Row: {
-          activated_at: string | null
-          avatar_url: string | null
+          activity_id: string | null
           created_at: string
-          default_category: string | null
-          email: string
+          embedding: string | null
           id: number
-          invitation: string | null
-          name: string | null
-          timezone: string | null
+          invitees: string[] | null
+          series: string
+          updated_at: string
+          user_id: string
         }
         Insert: {
-          activated_at?: string | null
-          avatar_url?: string | null
+          activity_id?: string | null
           created_at?: string
-          default_category?: string | null
-          email: string
-          id?: number
-          invitation?: string | null
-          name?: string | null
-          timezone?: string | null
+          embedding?: string | null
+          id?: never
+          invitees?: string[] | null
+          series: string
+          updated_at?: string
+          user_id: string
         }
         Update: {
-          activated_at?: string | null
-          avatar_url?: string | null
+          activity_id?: string | null
           created_at?: string
-          default_category?: string | null
-          email?: string
-          id?: number
-          invitation?: string | null
-          name?: string | null
-          timezone?: string | null
+          embedding?: string | null
+          id?: never
+          invitees?: string[] | null
+          series?: string
+          updated_at?: string
+          user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "series_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session: {
+        Row: {
+          activity_id: string | null
+          at: unknown
+          created_at: string
+          deleted_at: string | null
+          id: string
+          pomodoro: number | null
+          pomodoro_at: string | null
+          priority: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          activity_id?: string | null
+          at: unknown
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          pomodoro?: number | null
+          pomodoro_at?: string | null
+          priority?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          activity_id?: string | null
+          at?: unknown
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          pomodoro?: number | null
+          pomodoro_at?: string | null
+          priority?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "session_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "session_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tag: {
+        Row: {
+          created_at: string
+          emoji: string
+          id: number
+          note_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          emoji: string
+          id?: never
+          note_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          id?: never
+          note_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tag_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tag_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "note_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tag_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tag_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
+      activity_children: {
+        Row: {
+          child_id: string | null
+          id: string | null
+        }
+        Relationships: []
+      }
+      activity_x: {
+        Row: {
+          color: number | null
+          created_at: string | null
+          deleted_at: string | null
+          draft: boolean | null
+          id: string | null
+          name: string | null
+          order: number | null
+          path: unknown | null
+          pomodoro: number | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_user_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      balance: {
+        Row: {
+          activity_id: string | null
+          count: number | null
+          day: string | null
+          seconds: number | null
+          type: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      balance_without_children: {
+        Row: {
+          activity_id: string | null
+          count: number | null
+          day: string | null
+          seconds: number | null
+          type: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      event_invitees: {
+        Row: {
+          attendee_count: number | null
+          created_at: string | null
+          deleted_at: string | null
+          event_id: string | null
+          freemail_invitees: boolean | null
+          invitee_count: number | null
+          invitee_domains: string[] | null
+          invitee_organization_ids: number[] | null
+          invitees: string[] | null
+          size: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invitee_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "event"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invitee_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_x: {
         Row: {
+          account_id: number | null
+          activity_id: string | null
+          activity_path: unknown | null
           all_day: boolean | null
           at: unknown | null
           attendee_count: number | null
           availability: Database["public"]["Enums"]["event_availability"] | null
           calendar_id: number | null
-          category_id: number | null
-          category_path: unknown | null
           conferencing_url: string | null
           created_at: string | null
           day: string | null
+          deleted_at: string | null
           description: string | null
-          id: number | null
+          draft: boolean | null
+          embedding: string | null
+          external: boolean | null
+          id: string | null
           initiated: boolean | null
-          internal: Database["public"]["Enums"]["event_internal"] | null
           invitee_count: number | null
           invitee_domains: string[] | null
           invitees: string[] | null
           invitees_hidden: boolean | null
-          minutes: number | null
           name: string | null
           notice: number | null
           organizer_email: string | null
@@ -707,23 +1115,54 @@ export interface Database {
           recurring: boolean | null
           response: Database["public"]["Enums"]["event_response"] | null
           rounded_length: number | null
+          seconds: number | null
           series: string | null
           size: string | null
           speedy: boolean | null
           status: Database["public"]["Enums"]["event_status"] | null
           summary: string | null
           type: Database["public"]["Enums"]["event_type"] | null
-          user_id: number | null
+          updated_at: string | null
+          user_id: string | null
           visibility: Database["public"]["Enums"]["event_visibility"] | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "calendar_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "account"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_calendar_id_fkey"
+            columns: ["calendar_id"]
+            isOneToOne: false
+            referencedRelation: "calendar"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       gap: {
         Row: {
           at: unknown | null
           day: string | null
-          minutes: number | null
-          user_id: number | null
+          seconds: number | null
+          user_id: string | null
         }
         Relationships: []
       }
@@ -732,7 +1171,7 @@ export interface Database {
           day: string | null
           focus: number | null
           total: number | null
-          user_id: number | null
+          user_id: string | null
         }
         Relationships: []
       }
@@ -741,96 +1180,112 @@ export interface Database {
           focus: number | null
           month: string | null
           total: number | null
-          user_id: number | null
+          user_id: string | null
         }
         Relationships: []
       }
       insight: {
         Row: {
-          category_path: unknown | null
+          activity_path: unknown | null
           count: number | null
           day: string | null
-          minutes: number | null
           name: string | null
           response: Database["public"]["Enums"]["event_response"] | null
+          seconds: number | null
           type: Database["public"]["Enums"]["event_type"] | null
-          user_id: number | null
+          user_id: string | null
           value: string | null
-        }
-        Relationships: []
-      }
-      insight_weekly: {
-        Row: {
-          count: number | null
-          minutes: number | null
-          name: string | null
-          path: unknown | null
-          pending_count: number | null
-          pending_minutes: number | null
-          type: Database["public"]["Enums"]["event_type"] | null
-          user_id: number | null
-          value: string | null
-          week: unknown | null
         }
         Relationships: [
           {
-            foreignKeyName: "category_user_id_fkey"
+            foreignKeyName: "event_user_id_fkey"
             columns: ["user_id"]
-            referencedRelation: "user"
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "category_user_id_fkey"
+            foreignKeyName: "event_user_id_fkey"
             columns: ["user_id"]
-            referencedRelation: "event_x"
-            referencedColumns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "category_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "insight"
-            referencedColumns: ["user_id"]
-          }
         ]
       }
-      invitation_admin: {
+      note_x: {
         Row: {
-          code: string | null
+          activity_id: string | null
+          activity_path: unknown | null
+          body: string | null
           created_at: string | null
-          id: number | null
-          remaining: number | null
-          uses: number | null
+          deleted_at: string | null
+          do_at: string | null
+          done_at: string | null
+          draft: boolean | null
+          id: string | null
+          order: number | null
+          order_x: number | null
+          ordered_at: string | null
+          pinned: boolean | null
+          private: boolean | null
+          root: boolean | null
+          tags: Json | null
+          topic_id: string | null
+          updated_at: string | null
+          user_id: string | null
         }
-        Relationships: []
-      }
-      sync_admin: {
-        Row: {
-          account_id: number | null
-          calendar_provider_id: string | null
-          email: string | null
-          error: string | null
-          event_count: number | null
-          first_synced_at: string | null
-          full_sync_at: string | null
-          provider: Database["public"]["Enums"]["provider"] | null
-          sync_seconds: number | null
-          synced_at: string | null
-        }
-        Relationships: []
-      }
-      waitlist_admin: {
-        Row: {
-          created_at: string | null
-          email: string | null
-          event_count: number | null
-          id: number | null
-          invitation: string | null
-          provider: Database["public"]["Enums"]["provider"][] | null
-          status: string | null
-          sync_accounts: string[] | null
-          sync_error: string[] | null
-        }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["activity_id"]
+          },
+          {
+            foreignKeyName: "note_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
@@ -839,31 +1294,14 @@ export interface Database {
           "": unknown
         }
         Returns: {
-          auth_user_id: string
           contact_sync_state: Json | null
           created_at: string
           credentials: Json | null
-          domain_id: number | null
-          email: string | null
+          deleted_at: string | null
+          email: string
           id: number
-          provider: Database["public"]["Enums"]["provider"]
-          user_id: number
-        }[]
-      }
-      accounts: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          auth_user_id: string
-          contact_sync_state: Json | null
-          created_at: string
-          credentials: Json | null
-          domain_id: number | null
-          email: string | null
-          id: number
-          provider: Database["public"]["Enums"]["provider"]
-          user_id: number
+          updated_at: string
+          user_id: string
         }[]
       }
       all_views_secure: {
@@ -899,12 +1337,6 @@ export interface Database {
         }
         Returns: string
       }
-      calc_minutes: {
-        Args: {
-          at: unknown
-        }
-        Returns: number
-      }
       calc_notice: {
         Args: {
           created_at: string
@@ -915,6 +1347,12 @@ export interface Database {
       calc_rounded_length: {
         Args: {
           at: unknown
+        }
+        Returns: number
+      }
+      calc_seconds: {
+        Args: {
+          r: unknown
         }
         Returns: number
       }
@@ -930,10 +1368,9 @@ export interface Database {
         }
         Returns: {
           account_id: number
-          category: string | null
           created_at: string
+          deleted_at: string | null
           enabled: boolean
-          ends_at: string | null
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
@@ -941,10 +1378,11 @@ export interface Database {
           provider_id: string
           ready: boolean
           sequence: number
-          starts_at: string | null
           sync_error: string | null
           sync_state: string | null
           synced_at: string | null
+          synced_dates: unknown | null
+          updated_at: string
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -956,10 +1394,9 @@ export interface Database {
         }
         Returns: {
           account_id: number
-          category: string | null
           created_at: string
+          deleted_at: string | null
           enabled: boolean
-          ends_at: string | null
           full_sync_at: string | null
           full_sync_started_at: string | null
           id: number
@@ -967,15 +1404,29 @@ export interface Database {
           provider_id: string
           ready: boolean
           sequence: number
-          starts_at: string | null
           sync_error: string | null
           sync_state: string | null
           synced_at: string | null
+          synced_dates: unknown | null
+          updated_at: string
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
         }[]
       }
+      can_access_activity:
+        | {
+            Args: {
+              _activity_id: string
+            }
+            Returns: boolean
+          }
+        | {
+            Args: {
+              _activity_path: unknown
+            }
+            Returns: boolean
+          }
       cancel_events: {
         Args: {
           _events: Database["public"]["CompositeTypes"]["event_ids"][]
@@ -988,40 +1439,25 @@ export interface Database {
         }
         Returns: {
           avatar_url: string | null
-          contact_user_id: number | null
           created_at: string
-          domain_id: number | null
-          email: string | null
+          deleted_at: string | null
+          email: string
           id: number
           name: string | null
-          user_id: number
+          updated_at: string
+          user_id: string
         }[]
       }
-      domain: {
-        Args: {
-          "": unknown
-        }
-        Returns: {
-          created_at: string | null
-          domain: string
-          id: number
-          organization_id: number | null
-        }[]
-      }
-      extract_minutes: {
-        Args: {
-          r: unknown
-        }
-        Returns: number
-      }
-      get_or_create_domain_id: {
+      get_domain: {
         Args: {
           email: string
         }
-        Returns: number
+        Returns: string
       }
-      get_user_id: {
-        Args: Record<PropertyKey, never>
+      insert_domain: {
+        Args: {
+          email: string
+        }
         Returns: number
       }
       invitee: {
@@ -1030,16 +1466,29 @@ export interface Database {
         }
         Returns: {
           created_at: string
+          deleted_at: string | null
           email: string
-          event_id: number
+          event_id: string | null
           is_optional: boolean
           response: Database["public"]["Enums"]["event_response"] | null
+          updated_at: string
         }[]
       }
-      is_user_account: {
+      is_finite: {
         Args: {
-          auth_user_id: string
-          user_id: number
+          test: unknown
+        }
+        Returns: boolean
+      }
+      is_lower: {
+        Args: {
+          "": string
+        }
+        Returns: boolean
+      }
+      is_week: {
+        Args: {
+          p_week: unknown
         }
         Returns: boolean
       }
@@ -1064,10 +1513,34 @@ export interface Database {
               name: string
             }[]
           }
+      parent_path: {
+        Args: {
+          p: unknown
+        }
+        Returns: unknown
+      }
       redeem_invitation: {
         Args: {
           _user_id: number
           _invitation: string
+        }
+        Returns: undefined
+      }
+      replace_parent_path: {
+        Args: {
+          parent_path: unknown
+          child_path: unknown
+          new_parent_path: unknown
+        }
+        Returns: unknown
+      }
+      server_timestamp: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      update_topic_root: {
+        Args: {
+          note_id: string
         }
         Returns: undefined
       }
@@ -1079,10 +1552,14 @@ export interface Database {
       }
       upsert_invitees: {
         Args: {
-          _event_ids: number[]
+          _event_ids: string[]
           _invitees: Database["public"]["CompositeTypes"]["invitee_upsert"][]
         }
         Returns: undefined
+      }
+      user_timezone: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
       week_from_date: {
         Args: {
@@ -1100,7 +1577,7 @@ export interface Database {
       }
     }
     Enums: {
-      event_availability: "busy" | "away" | "focus" | "free"
+      event_availability: "busy" | "away" | "focus" | "free" | "location"
       event_internal: "internal" | "external"
       event_response: "accepted" | "declined" | "tentative"
       event_status: "confirmed" | "cancelled" | "tentative"
@@ -1114,24 +1591,23 @@ export interface Database {
       location_type: "room" | "address" | "other"
       meeting_size: "1:1" | "Small" | "Medium" | "Large" | "XL" | "XXL"
       provider: "google" | "outlook"
-      user_status: "waitlisted" | "active"
     }
     CompositeTypes: {
       contact_upsert: {
-        calendar_id: number
-        email: string
-        name: string
-        avatar_url: string
+        calendar_id: number | null
+        email: string | null
+        name: string | null
+        avatar_url: string | null
       }
       event_ids: {
-        calendar_id: number
-        provider_id: string
+        calendar_id: number | null
+        provider_id: string | null
       }
       invitee_upsert: {
-        event_id: number
-        email: string
-        response: Database["public"]["Enums"]["event_response"]
-        is_optional: boolean
+        event_id: string | null
+        email: string | null
+        response: Database["public"]["Enums"]["event_response"] | null
+        is_optional: boolean | null
       }
     }
   }
@@ -1146,6 +1622,7 @@ export interface Database {
           id: string
           name: string
           owner: string | null
+          owner_id: string | null
           public: boolean | null
           updated_at: string | null
         }
@@ -1157,6 +1634,7 @@ export interface Database {
           id: string
           name: string
           owner?: string | null
+          owner_id?: string | null
           public?: boolean | null
           updated_at?: string | null
         }
@@ -1168,17 +1646,11 @@ export interface Database {
           id?: string
           name?: string
           owner?: string | null
+          owner_id?: string | null
           public?: boolean | null
           updated_at?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "buckets_owner_fkey"
-            columns: ["owner"]
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          }
-        ]
+        Relationships: []
       }
       migrations: {
         Row: {
@@ -1210,8 +1682,10 @@ export interface Database {
           metadata: Json | null
           name: string | null
           owner: string | null
+          owner_id: string | null
           path_tokens: string[] | null
           updated_at: string | null
+          user_metadata: Json | null
           version: string | null
         }
         Insert: {
@@ -1222,8 +1696,10 @@ export interface Database {
           metadata?: Json | null
           name?: string | null
           owner?: string | null
+          owner_id?: string | null
           path_tokens?: string[] | null
           updated_at?: string | null
+          user_metadata?: Json | null
           version?: string | null
         }
         Update: {
@@ -1234,17 +1710,118 @@ export interface Database {
           metadata?: Json | null
           name?: string | null
           owner?: string | null
+          owner_id?: string | null
           path_tokens?: string[] | null
           updated_at?: string | null
+          user_metadata?: Json | null
           version?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "objects_bucketId_fkey"
             columns: ["bucket_id"]
+            isOneToOne: false
             referencedRelation: "buckets"
             referencedColumns: ["id"]
-          }
+          },
+        ]
+      }
+      s3_multipart_uploads: {
+        Row: {
+          bucket_id: string
+          created_at: string
+          id: string
+          in_progress_size: number
+          key: string
+          owner_id: string | null
+          upload_signature: string
+          user_metadata: Json | null
+          version: string
+        }
+        Insert: {
+          bucket_id: string
+          created_at?: string
+          id: string
+          in_progress_size?: number
+          key: string
+          owner_id?: string | null
+          upload_signature: string
+          user_metadata?: Json | null
+          version: string
+        }
+        Update: {
+          bucket_id?: string
+          created_at?: string
+          id?: string
+          in_progress_size?: number
+          key?: string
+          owner_id?: string | null
+          upload_signature?: string
+          user_metadata?: Json | null
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "s3_multipart_uploads_bucket_id_fkey"
+            columns: ["bucket_id"]
+            isOneToOne: false
+            referencedRelation: "buckets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      s3_multipart_uploads_parts: {
+        Row: {
+          bucket_id: string
+          created_at: string
+          etag: string
+          id: string
+          key: string
+          owner_id: string | null
+          part_number: number
+          size: number
+          upload_id: string
+          version: string
+        }
+        Insert: {
+          bucket_id: string
+          created_at?: string
+          etag: string
+          id?: string
+          key: string
+          owner_id?: string | null
+          part_number: number
+          size?: number
+          upload_id: string
+          version: string
+        }
+        Update: {
+          bucket_id?: string
+          created_at?: string
+          etag?: string
+          id?: string
+          key?: string
+          owner_id?: string | null
+          part_number?: number
+          size?: number
+          upload_id?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "s3_multipart_uploads_parts_bucket_id_fkey"
+            columns: ["bucket_id"]
+            isOneToOne: false
+            referencedRelation: "buckets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "s3_multipart_uploads_parts_upload_id_fkey"
+            columns: ["upload_id"]
+            isOneToOne: false
+            referencedRelation: "s3_multipart_uploads"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
@@ -1277,7 +1854,7 @@ export interface Database {
         Args: {
           name: string
         }
-        Returns: unknown
+        Returns: string[]
       }
       get_size_by_bucket: {
         Args: Record<PropertyKey, never>
@@ -1285,6 +1862,41 @@ export interface Database {
           size: number
           bucket_id: string
         }[]
+      }
+      list_multipart_uploads_with_delimiter: {
+        Args: {
+          bucket_id: string
+          prefix_param: string
+          delimiter_param: string
+          max_keys?: number
+          next_key_token?: string
+          next_upload_token?: string
+        }
+        Returns: {
+          key: string
+          id: string
+          created_at: string
+        }[]
+      }
+      list_objects_with_delimiter: {
+        Args: {
+          bucket_id: string
+          prefix_param: string
+          delimiter_param: string
+          max_keys?: number
+          start_after?: string
+          next_token?: string
+        }
+        Returns: {
+          name: string
+          id: string
+          metadata: Json
+          updated_at: string
+        }[]
+      }
+      operation: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
       search: {
         Args: {
@@ -1315,4 +1927,86 @@ export interface Database {
     }
   }
 }
+
+type PublicSchema = Database[Extract<keyof Database, "public">]
+
+export type Tables<
+  PublicTableNameOrOptions extends
+    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+        Database[PublicTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
+        PublicSchema["Views"])
+    ? (PublicSchema["Tables"] &
+        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  PublicEnumNameOrOptions extends
+    | keyof PublicSchema["Enums"]
+    | { schema: keyof Database },
+  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = PublicEnumNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
+    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
+    : never
 

@@ -1,11 +1,9 @@
+import apiWorker from "@plotday/api";
 import contactSyncWorker from "@plotday/contact-sync";
+import type { ContactSyncRequest } from "@plotday/contact-sync";
 import eventWorker from "@plotday/event-sync";
 import syncWorker from "@plotday/sync";
-import type {
-  ContactSyncRequest,
-  EventSyncRequest,
-  SyncRequest,
-} from "@plotday/worker-request";
+import type { EventSyncRequest, SyncRequest } from "@plotday/sync";
 
 interface Env {
   readonly ENV?: string;
@@ -15,6 +13,7 @@ interface Env {
   readonly API_KEY: string;
 
   readonly SUPABASE_URL: string;
+  readonly SUPABASE_ANON_KEY: string;
   readonly SUPABASE_SERVICE_KEY: string;
   readonly SENTRY_DSN: string;
   readonly GOOGLE_CLIENT_ID: string;
@@ -30,7 +29,7 @@ interface Env {
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
-    return await syncWorker.fetch(req, env);
+    return await apiWorker.fetch(req, env);
   },
 
   async queue(batch: MessageBatch, env: Env): Promise<void> {

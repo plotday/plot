@@ -1,0 +1,358 @@
+part of 'store.dart';
+
+enum EventResponse { accepted, declined, tentative }
+
+enum EventStatus { confirmed, cancelled, tentative }
+
+enum EventVisibility { normal, private, confidential, public, personal }
+
+enum EventAvailability { busy, away, focus, free, location }
+
+typedef EventId = Uuid;
+
+@DataClassName('EventRow')
+class Events extends UuidStoreTable with DraftTable, DeletableTable {
+  TextColumn get name => text().nullable()();
+  DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();
+  DateTimeColumn get end => dateTime().map(const LocalDateTimeConverter())();
+  TextColumn get series => text().nullable()();
+  TextColumn get response => textEnum<EventResponse>()
+      .withDefault(Constant(EventResponse.accepted.toString()))();
+  TextColumn get status => textEnum<EventStatus>()
+      .withDefault(Constant(EventStatus.confirmed.toString()))();
+  TextColumn get visibility => textEnum<EventVisibility>()
+      .withDefault(Constant(EventVisibility.normal.toString()))();
+  TextColumn get availability => textEnum<EventAvailability>()
+      .withDefault(Constant(EventAvailability.free.toString()))();
+  BoolColumn get inviteesHidden =>
+      boolean().withDefault(const Constant(false))();
+  BlobColumn get activityId => blob()
+      .nullable()
+      .map(const UuidConverter())
+      .references(Activities, #id)();
+}
+
+class EventsBase extends BaseTable {
+  EventsBase({super.filterName, super.ascending, super.limit})
+      : super(
+          table: 'event_x',
+          name: 'events',
+          upsertAsUpdate: true,
+          order: 'day',
+        );
+
+  @override
+  Map<String, dynamic> toBase(DataClass row) {
+    final json = super.toBase(row);
+    final range = DateTimeRange(DateTime.parse(json['start'] as String),
+        DateTime.parse(json['end'] as String));
+    json['at'] = range.toDb();
+    json['user_id'] = Base.userId.toString();
+    json.remove('start');
+    json.remove('end');
+    return json;
+  }
+
+  @override
+  EventRow fromBase(Map<String, dynamic> json) {
+    final range = DateTimeRange.fromString(json['at'] as String);
+    json['start'] = range.start.toDb();
+    json['end'] = range.end.toDb();
+    return EventRow.fromJson(json);
+  }
+
+  @override
+  PostgrestTransformBuilder<T2> sort<T2>(PostgrestTransformBuilder<T2> query) {
+    // While we fetch and order by 'day', we want the sort to be more granular
+    return query.order('at', ascending: true);
+  }
+}
+
+class Event extends EventRow {
+  static TableInfo<Events, EventRow> get table => Store.get.events;
+
+  static Future<void> push() => Store.get.push(table, EventsBase());
+  static Future<bool> pull() =>
+      Store.get.pull(PullType.updates, table, EventsBase());
+  static Future<bool> pullRange(DateRange range) =>
+      Store.get.pull(PullType.more, table, EventsBase(),
+          range: (range.start.toString(), range.end.toString()));
+
+  static Stream<List<Event>> watch(
+    DateRange range, {
+    bool withActivity = false,
+    bool? deleted = false,
+  }) {
+    pullRange(range);
+    final order =
+        range.start <= range.end ? OrderingMode.asc : OrderingMode.desc;
+
+    final query = Store.get.select(table)
+      ..where((t) => t.start.isBiggerOrEqualValue(range.start.toStart()))
+      ..where((t) => t.start.isSmallerThanValue(range.end.toEnd()));
+    if (deleted != null) {
+      query.where(
+          (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
+    }
+    final eventStream = (query
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.start, mode: order),
+            (t) => OrderingTerm(expression: t.end, mode: order)
+          ]))
+        .watch()
+        .map((rows) => rows.map((row) => Event.fromStore(row)).toList());
+    if (withActivity) {
+      return Rx.combineLatest2(eventStream, Activity.watch(),
+          (List<Event> events, Map<Uuid, Activity> activities) {
+        final ret = events
+            .map((event) => Event.fromStore(event,
+                activity: event.activityId == null
+                    ? null
+                    : activities[event.activityId]))
+            .toList();
+        return ret;
+      });
+    }
+    return eventStream;
+  }
+
+  static Stream<Event> watchOne(EventId id) {
+    // TODO if not found, pull
+    final query = Store.get.select(table)
+      ..where((t) => t.id.equals(id.toBytes()));
+    return query.watchSingle().map((row) => Event.fromStore(row));
+  }
+
+  Event({
+    required DateTimeRange at,
+    super.name,
+    super.response = EventResponse.accepted,
+    super.status = EventStatus.confirmed,
+    super.visibility = EventVisibility.normal,
+    super.availability = EventAvailability.free,
+    super.inviteesHidden = false,
+    super.draft = false,
+    this.activity,
+  })  : unsaved = true,
+        super(
+          id: Uuid.generate(),
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          activityId: activity?.id,
+          start: at.start,
+          end: at.end,
+        );
+
+  Event.fromStore(EventRow row, {this.activity, this.unsaved = false})
+      : super(
+          id: row.id,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          deletedAt: row.deletedAt,
+          draft: row.draft,
+          name: row.name,
+          start: row.start,
+          end: row.end,
+          series: row.series,
+          response: row.response,
+          status: row.status,
+          visibility: row.visibility,
+          availability: row.availability,
+          inviteesHidden: row.inviteesHidden,
+          activityId: activity?.id ?? row.activityId,
+        );
+
+  @override
+  Event copyWith({
+    Uuid? id,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    bool? draft,
+    Value<Uuid?> activityId = const Value.absent(),
+    Value<Activity?> activity = const Value.absent(),
+    DateTime? start,
+    DateTime? end,
+    DateTimeRange? at,
+    Value<String?> name = const Value.absent(),
+    EventResponse? response,
+    EventStatus? status,
+    EventVisibility? visibility,
+    EventAvailability? availability,
+    bool? inviteesHidden,
+    Value<String?> series = const Value.absent(),
+  }) {
+    if (start != null || end != null || at != null) {
+      start ??= at?.start ?? this.start;
+      end ??= at?.end ?? this.end;
+      at = DateTimeRange(start, end)
+          .min(start.startOfDay)
+          .max(start.nextMidnight());
+      start = at.start;
+      end = at.end;
+    }
+    final publish = this.draft && draft == false;
+    return Event.fromStore(
+      super.copyWith(
+        id: id,
+        activityId: activityId,
+        createdAt: publish ? DateTime.now() : this.createdAt,
+        updatedAt: DateTime.now(),
+        deletedAt: deletedAt,
+        draft: draft,
+        start: start,
+        end: end,
+        name: name,
+        response: response,
+        status: status,
+        visibility: visibility,
+        availability: availability,
+        inviteesHidden: inviteesHidden,
+        series: series,
+      ),
+      activity: activity.present ? activity.value : null,
+      unsaved: unsaved,
+    );
+  }
+
+  final Activity? activity;
+  final bool unsaved;
+
+  bool get isBlank => name == null && activity == null;
+
+  Future<void> save() =>
+      Store.get.save(table, toCompanion(false), EventsBase());
+
+  DateTimeRange get at => DateTimeRange(start, end);
+
+  BalanceType get balanceType {
+    switch (response) {
+      case EventResponse.accepted:
+        return BalanceType.accepted;
+      case EventResponse.declined:
+        return BalanceType.declined;
+      case EventResponse.tentative:
+        return BalanceType.tentative;
+    }
+  }
+}
+
+class ScheduledDay extends Equatable {
+  static Stream<Map<Date, ScheduledDay>> watch(DateRange range,
+      {bool? deleted = false}) {
+    return Event.watch(range, withActivity: true, deleted: deleted)
+        .map((events) {
+      var (start, end) = range.bounds;
+
+      final direction =
+          start < end ? TimeDirection.ascending : TimeDirection.descending;
+      Map<Date, ScheduledDay> days = {};
+      Iterator<Event> eventIterator = events.iterator;
+      bool hasMore = eventIterator.moveNext();
+
+      while (start != end) {
+        List<Event> dayEvents = [];
+        while (hasMore && eventIterator.current.start.toDate() == start) {
+          dayEvents.add(eventIterator.current);
+          hasMore = eventIterator.moveNext();
+        }
+        days[start] = ScheduledDay(start, dayEvents);
+        start = start.next(direction: direction);
+      }
+      return days;
+    });
+  }
+
+  static Stream<ScheduledDay> watchToday() {
+    return Date.current().switchMap((today) => Event.watch(today.toDateRange())
+            .transform(ExpiringStreamTransformer((events) {
+          final now = DateTime.now();
+          final currentEvent = events.any((event) => event.at.includes(now));
+          DateTime? expiry;
+          if (currentEvent) {
+            // Expire every minute on the minute
+            expiry = now + Duration(seconds: 60 - now.second);
+          } else {
+            // Find the earliest event start or end following now
+            expiry = events.fold(
+                null,
+                (DateTime? next, Event e) => e.at.start.isAfter(now) &&
+                        (next == null || next.isAfter(e.at.start))
+                    ? e.at.start
+                    : e.at.end.isAfter(now) &&
+                            (next == null || next.isAfter(e.at.end))
+                        ? e.at.end
+                        : next);
+          }
+          return ExpiringResult(
+            value: ScheduledDay(today, events),
+            expiry: expiry,
+          );
+        })));
+  }
+
+  ScheduledDay(this.date, List<Event> events)
+      : events = _addGaps(
+            date,
+            events
+                .where((e) => e.at.duration < const Duration(hours: 22))
+                .toList()),
+        allDayEvents = events
+            .where((e) => e.at.duration >= const Duration(hours: 22))
+            .toList();
+
+  final Date date;
+  final List<Event> events;
+  final List<Event> allDayEvents;
+
+  ScheduledDay copyWith(Event event) {
+    final list = events.where((e) => e.id != event.id).toList();
+    var index = list.indexWhere((i) => i.at < event.at);
+    if (index == -1) {
+      index = list.length;
+    }
+    list.insert(index, event);
+    return ScheduledDay(date, list);
+  }
+
+  Event getAt(DateTime time) {
+    return events.firstWhere((e) => e.at.includes(time));
+  }
+
+  @override
+  List<Object> get props => [date, events];
+
+  /* Private */
+
+  static List<Event> _addGaps(Date date, List<Event> events) {
+    List<Event> expanded = [];
+    final start = date.toDateTime();
+    final end = start.nextDay;
+    if (events.isEmpty ||
+        events.first.at.start.difference(start).inMinutes > 0) {
+      expanded.add(Event(
+        at: DateTimeRange(
+            start,
+            events.isEmpty
+                ? end
+                : start.at(events.first.at.start.toTimeOfDay())),
+      ));
+    }
+    for (var i = 0; i < events.length; i++) {
+      expanded.add(events[i]);
+      // If there is a gap between events or at the end of the day
+      if ((i + 1 < events.length &&
+              events[i].at.end < events[i + 1].at.start) ||
+          (i + 1 == events.length &&
+              events[i].at.end.difference(end).inMinutes < 0)) {
+        expanded.add(Event(
+          at: DateTimeRange(
+            events[i].at.end,
+            i + 1 == events.length ? end : events[i + 1].at.start,
+          ),
+        ));
+      }
+    }
+    return expanded;
+  }
+}

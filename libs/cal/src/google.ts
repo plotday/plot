@@ -1,3 +1,4 @@
+import jwt from "@tsndr/cloudflare-worker-jwt";
 import { jsonFetch as fetch } from "@worker-tools/json-fetch";
 import type { calendar_v3, people_v1 } from "googleapis";
 
@@ -107,6 +108,13 @@ class GoogleApi {
             throw new Error(await response.text());
           }
           break;
+        case 400:
+          const body = await response.json();
+          if ((body as any).status === "FAILED_PRECONDITION") {
+            // For contact requests, this indicates a sync token is expired.
+            return null;
+          }
+          throw new Error("Invalid request", { cause: body });
         case 410:
           // This indicates a full sync is required
           // https://developers.google.com/calendar/api/guides/sync#full_sync_required_by_server
@@ -263,8 +271,10 @@ function transformResponse(response: string | null | undefined): EventResponse {
 
 export function transform(rawEvent: RawEvent): Event {
   const event: GoogleEvent = rawEvent.data as GoogleEvent;
-  const id = rawEvent.id;
+  return fromGoogleEvent(event);
+}
 
+export function fromGoogleEvent(event: GoogleEvent): Event {
   const startString = event.start?.dateTime || event.start?.date;
   const startsAt = startString ? new Date(startString) : undefined;
   const endString = event.end?.dateTime || event.end?.date;
@@ -280,11 +290,20 @@ export function transform(rawEvent: RawEvent): Event {
 
   const attendees: GoogleAttendee[] = event.attendees || [];
 
-  let organizerFound = false;
+  let response: EventResponse = "accepted";
+  let isOptional = false;
+  let organizerFound = event.organizer?.self ?? false;
   let invitees: Invitee[] =
     attendees.reduce((ret, attendee) => {
       if (!attendee.email || attendee.resource) return ret;
-      if (attendee.email === organizer?.email) organizerFound = true;
+      if (attendee.organizer || attendee.email === organizer?.email) {
+        organizerFound = true;
+      }
+      if (attendee.self) {
+        response = transformResponse(attendee.responseStatus);
+        isOptional = !!attendee.optional;
+        return ret;
+      }
       return [
         ...ret,
         {
@@ -385,11 +404,13 @@ export function transform(rawEvent: RawEvent): Event {
   );
 
   return {
-    id,
+    id: event.id!,
     providerLink: event.htmlLink || undefined,
     series: event.recurringEventId || undefined,
     name: event.summary || undefined,
     status,
+    response,
+    isOptional,
     createdAt: event.created ? new Date(event.created) : undefined,
     startsAt,
     endsAt,
@@ -415,22 +436,48 @@ export function transform(rawEvent: RawEvent): Event {
   };
 }
 
-export async function update(
-  _config: CalendarConfig,
-  _credentials: CalendarCredentials,
-  _calendarId: string,
-  _eventId: string,
-  _changes: Partial<Event>
+function toGoogleEvent(event: Partial<Event>) {
+  let googleChanges = {} as GoogleEvent;
+  if (event.name) googleChanges.summary = event.name;
+  if (event.startsAt)
+    googleChanges.start = { dateTime: toGoogleDate(event.startsAt) };
+  if (event.endsAt)
+    googleChanges.end = { dateTime: toGoogleDate(event.endsAt) };
+  return googleChanges;
+}
+
+export async function create(
+  config: CalendarConfig,
+  credentials: CalendarCredentials,
+  calendarId: string,
+  event: Partial<Event>
 ) {
-  throw new Error("Not implemented");
-  // const api = new GoogleApi(config, credentials);
-  // let googleChanges = {} as GoogleEvent;
-  // await api.call(
-  //   "PATCH",
-  //   `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`,
-  //   undefined,
-  //   googleChanges
-  // );
+  const api = new GoogleApi(config, credentials);
+  let googleChanges = toGoogleEvent(event);
+  const newEvent = (await api.call(
+    "POST",
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
+    undefined,
+    googleChanges
+  )) as GoogleEvent;
+  return fromGoogleEvent(newEvent);
+}
+
+export async function update(
+  config: CalendarConfig,
+  credentials: CalendarCredentials,
+  calendarId: string,
+  eventId: string,
+  changes: Partial<Event>
+) {
+  const api = new GoogleApi(config, credentials);
+  let googleChanges = toGoogleEvent(changes);
+  await api.call(
+    "PATCH",
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`,
+    undefined,
+    googleChanges
+  );
 }
 
 export async function respond(
@@ -544,23 +591,30 @@ export async function getContacts(
         (scope) => scope === "https://www.googleapis.com/auth/contacts.readonly"
       )
     ) {
-      const response = (await api.call(
-        "GET",
-        "https://people.googleapis.com/v1/people/me/connections",
-        {
-          requestSyncToken: true,
-          ...(tokens.connections?.nextPageToken
-            ? {
-                pageToken: tokens.connections?.nextPageToken,
-              }
-            : tokens.connections?.nextSyncToken
-            ? {
-                syncToken: tokens.connections?.nextSyncToken,
-              }
-            : {}),
-          personFields: "names,emailAddresses,photos",
-        }
-      )) as people_v1.Schema$ListConnectionsResponse;
+      let response = undefined;
+      while (true) {
+        response = (await api.call(
+          "GET",
+          "https://people.googleapis.com/v1/people/me/connections",
+          {
+            requestSyncToken: true,
+            ...(tokens.connections?.nextPageToken
+              ? {
+                  pageToken: tokens.connections?.nextPageToken,
+                }
+              : tokens.connections?.nextSyncToken
+              ? {
+                  syncToken: tokens.connections?.nextSyncToken,
+                }
+              : {}),
+            personFields: "names,emailAddresses,photos",
+          }
+        )) as people_v1.Schema$ListConnectionsResponse;
+        if (response !== null) break;
+        if (!tokens.connections) break;
+        tokens.connections = undefined;
+        continue;
+      }
       for (const c of response.connections ?? []) {
         for (const e of c.emailAddresses ?? []) {
           if (!e.value) continue;
@@ -595,23 +649,30 @@ export async function getContacts(
           scope === "https://www.googleapis.com/auth/contacts.other.readonly"
       )
     ) {
-      const response = (await api.call(
-        "GET",
-        "https://people.googleapis.com/v1/otherContacts",
-        {
-          requestSyncToken: true,
-          ...(tokens.other?.nextPageToken
-            ? {
-                pageToken: tokens.other?.nextPageToken,
-              }
-            : tokens.other?.nextSyncToken
-            ? {
-                syncToken: tokens.other?.nextSyncToken,
-              }
-            : {}),
-          readMask: "names,emailAddresses,photos",
-        }
-      )) as people_v1.Schema$ListOtherContactsResponse;
+      let response = undefined;
+      while (true) {
+        response = (await api.call(
+          "GET",
+          "https://people.googleapis.com/v1/otherContacts",
+          {
+            requestSyncToken: true,
+            ...(tokens.other?.nextPageToken
+              ? {
+                  pageToken: tokens.other?.nextPageToken,
+                }
+              : tokens.other?.nextSyncToken
+              ? {
+                  syncToken: tokens.other?.nextSyncToken,
+                }
+              : {}),
+            readMask: "names,emailAddresses,photos",
+          }
+        )) as people_v1.Schema$ListOtherContactsResponse;
+        if (response !== null) break;
+        if (!tokens.other) break;
+        tokens.other = undefined;
+        continue;
+      }
       for (const c of response.otherContacts ?? []) {
         for (const e of c.emailAddresses ?? []) {
           if (!e.value) continue;
@@ -648,5 +709,64 @@ export async function getContacts(
       more,
       state: JSON.stringify(tokens),
     },
+  };
+}
+
+export async function getCredentials(
+  config: CalendarConfig,
+  code: string
+): Promise<CalendarCredentials> {
+  if (!config.authCallbackUrl) {
+    throw new Error("Missing authCallbackUrl");
+  }
+  const payload = {
+    client_id: config.googleClientId,
+    client_secret: config.googleOauthSecret,
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: config.authCallbackUrl,
+  };
+  const body = new URLSearchParams(payload);
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error);
+  }
+  const creds = await response.json();
+  if (creds === null || typeof creds !== "object") {
+    throw new Error("Invalid response");
+  }
+  if (!("id_token" in creds)) {
+    throw new Error("Missing ID token");
+  }
+  if (!("access_token" in creds)) {
+    throw new Error("Missing access token");
+  }
+  if (!("refresh_token" in creds)) {
+    throw new Error("Missing refresh token");
+  }
+  if (!("scope" in creds)) {
+    throw new Error("Missing scopes");
+  }
+
+  const token = jwt.decode(creds.id_token as string);
+  const email = token.payload?.email;
+  if (!email) {
+    throw new Error("Missing email");
+  }
+
+  return {
+    ...creds,
+    access_token: creds.access_token as string,
+    refresh_token: creds.refresh_token as string,
+    scopes: (creds.scope as string).split(" "),
+    provider: "google",
+    email,
   };
 }

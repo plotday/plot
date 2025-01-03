@@ -1,9 +1,10 @@
 {
+  "name": "@plotday/plot",
   "private": true,
-  "license": "MIT",
+  "license": "UNLICENSED",
   "scripts": {
+    "install": "[ \"$CF_PAGES\" = \"1\" ] || npip install",
     "build": "turbo run build",
-    "build:web": "turbo run build --filter=@plotday/web && ln -sfn apps/web/functions functions",
     "deploy:workers": "turbo deploy --filter={./workers/*}",
     "deploy:workers:changed": "turbo deploy --filter={./workers/*}...[HEAD^1]",
     "dev": "turbo run dev --concurrency=18",
@@ -14,8 +15,9 @@
     "diff-schema-db": "pnpm --filter @plotday/db run diff-schema-db",
     "gen-migration": "pnpm --filter @plotday/db run gen-migration",
     "new-migration": "pnpm --filter @plotday/db run new-migration",
+    "migrate": "turbo run migrate",
     "lint": "turbo run lint --filter=!@plotday/dev-worker --concurrency=100%",
-    "pre-commit": "pnpm install --frozen-lockfile && turbo run lint && turbo run pre-commit",
+    "pre-commit": "turbo --output-logs=errors-only run pre-commit",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
@@ -24,7 +26,9 @@
     "restart": "echo .",
     "update": "pnpm update --latest --recursive",
     "prepare": "husky install",
-    "tracker:pull": "pnpm --filter @plotday/tracker tracker:pull"
+    "tracker:pull": "pnpm --filter @plotday/tracker tracker:pull",
+    "nopy": "nopy",
+    "npip": "npip"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230724.0",
@@ -34,13 +38,17 @@
     "@turbo/gen": "^1.9.7",
     "eslint": "^8.38.0",
     "husky": "^8.0.0",
+    "nopy": "^0.2.9",
     "prettier": "^2.5.1",
     "react-email": "^1.9.4",
-    "turbo": "^1.10.16",
+    "turbo": "^1.12.3",
     "typescript": "^5.1.6",
     "vitest": "^0.33.0",
-    "wrangler": "3.10.1"
+    "wrangler": "^3.60.1"
   },
-  "packageManager": "pnpm@8.6.6",
-  "name": "@plotday/plot"
+  "python": {
+    "dependencies": {
+      "tusker": ""
+    }
+  }
 }
