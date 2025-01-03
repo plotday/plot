@@ -2,6 +2,7 @@
   "name": "@plotday/plot",
   "private": true,
   "license": "UNLICENSED",
+  "packageManager": "pnpm@9.10.0",
   "scripts": {
     "install": "[ \"$CF_PAGES\" = \"1\" ] || npip install",
     "build": "turbo run build",
