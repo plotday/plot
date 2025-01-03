@@ -6,6 +6,12 @@
       ],
       "cache": true
     },
+    "pre-commit:workspace": {
+      "cache": true
+    },
+    "pre-commit": {
+      "cache": true
+    },
     "build": {
       "dependsOn": [
         "^build",
