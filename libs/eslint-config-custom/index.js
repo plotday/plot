@@ -1,5 +1,5 @@
 module.exports = {
-  extends: ["@remix-run/eslint-config", "turbo", "prettier"],
+  extends: ["@remix-run/eslint-config", "prettier"],
   ignorePatterns: ["**/build/**", "**/dist/**", "**/node_modules/**"],
   rules: {
     "react-hooks/rules-of-hooks": "error",

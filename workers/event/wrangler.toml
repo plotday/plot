@@ -1,6 +1,7 @@
 name = "event-sync"
 main = "src/index.ts"
 compatibility_date = "2024-11-18"
+compatibility_flags = ["nodejs_compat"]
 upload_source_maps = true
 
 [[queues.consumers]]

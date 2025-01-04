@@ -7,7 +7,7 @@
   "env_vars": "GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET",
   "private": true,
   "scripts": {
-    "gen-env": "../../scripts/gen-env $npm_package_env_vars",
+    "gen-env": "../../scripts/gen-env development $npm_package_env_vars",
     "start": "export $(pnpm --silent gen-env) && export OPENAI_API_KEY=$(cat ~/.config/openai.token) && supabase start",
     "stop": "export $(pnpm --silent gen-env) && supabase stop",
     "status": "export $(pnpm --silent gen-env) && supabase status",
@@ -30,10 +30,10 @@
     "test": "export $(pnpm --silent gen-env) && pnpm run test:setup && pnpm run test:lint && pnpm run test:run",
     "test:setup": "supabase start -x gotrue,realtime,storage-api,imgproxy,inbucket,studio,edge-runtime",
     "test:lint": "supabase db lint",
+    "test:run": "supabase db test",
     "pre-commit": "pnpm --silent pre-commit:migrations && pnpm --silent pre-commit:types",
     "pre-commit:migrations": "pnpm --silent diff-schema-migrations | tee /dev/tty | (! grep -q .)",
     "pre-commit:types": "export $(pnpm --silent gen-env) && supabase gen types typescript --local | diff src/types.ts -",
-    "test:run": "supabase db test",
     "supabase": "export $(pnpm --silent gen-env) && supabase",
     "migrate": "export $(pnpm --silent gen-env) && supabase db push"
   },

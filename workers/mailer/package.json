@@ -6,8 +6,8 @@
   "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN RESEND_API_KEY",
   "scripts": {
     "dev": "pnpm run dev:config && pnpm run dev:start",
-    "dev:config": "../../scripts/gen-env $npm_package_env_vars > .dev.vars",
-    "dev:start": "wrangler dev --env development",
+    "dev:config": "../../scripts/gen-env development $npm_package_env_vars > .dev.vars",
+    "dev:start": "wrangler dev --inspector-port 9230",
     "deploy": "../../scripts/deploy-worker",
     "deploy-vars": "../../scripts/deploy-worker-vars",
     "lint": "tsc && eslint ."
