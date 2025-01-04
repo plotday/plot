@@ -1,31 +1,31 @@
-name = "plot-dev"
+name = "dev"
 main = "src/index.ts"
 compatibility_date = "2024-11-18"
 
 [[queues.producers]]
-  queue = "plot-sync-development-queue"
+  queue = "sync-dev"
   binding = "SYNC_QUEUE"
 
 [[queues.producers]]
-  queue = "plot-contact-sync-development-queue"
+  queue = "contact-sync-dev"
   binding = "CONTACT_SYNC_QUEUE"
 
 [[queues.producers]]
-  queue = "plot-event-development-queue"
+  queue = "event-sync-dev"
   binding = "EVENT_QUEUE"
 
 [[queues.consumers]]
-  queue = "plot-sync-development-queue"
+  queue = "sync-dev"
   max_batch_size = 1
   max_retries = 0
 
 [[queues.consumers]]
-  queue = "plot-contact-sync-development-queue"
+  queue = "contact-sync-dev"
   max_batch_size = 1
   max_retries = 0
 
 [[queues.consumers]]
-  queue = "plot-event-development-queue"
+  queue = "event-sync-dev"
   max_batch_size = 10
   max_batch_timeout = 3
   max_retries = 0

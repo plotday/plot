@@ -1,18 +1,18 @@
-name = "plot-sync"
+name = "sync"
 main = "src/index.ts"
 compatibility_date = "2024-11-18"
 upload_source_maps = true
 
 [[queues.producers]]
-  queue = "plot-event-queue"
+  queue = "event-sync"
   binding = "EVENT_QUEUE"
 
 [[queues.producers]]
-  queue = "plot-contact-sync-queue"
+  queue = "contact-sync"
   binding = "CONTACT_SYNC_QUEUE"
 
 [[queues.consumers]]
-  queue = "plot-sync-queue"
+  queue = "sync"
   max_batch_size = 1
   max_retries = 5
 

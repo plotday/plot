@@ -1,10 +1,10 @@
-name = "plot-contact-sync"
+name = "contact-sync"
 main = "src/index.ts"
 compatibility_date = "2024-11-18"
 upload_source_maps = true
 
 [[queues.consumers]]
-  queue = "plot-contact-sync-queue"
+  queue = "contact-sync"
   max_batch_size = 1
   max_retries = 5
 

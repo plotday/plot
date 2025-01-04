@@ -1,10 +1,10 @@
-name = "plot-mail"
+name = "mail"
 main = "src/index.ts"
 compatibility_date = "2024-11-18"
 upload_source_maps = true
 
 [[queues.consumers]]
-  queue = "plot-mail-queue"
+  queue = "mail"
   max_batch_size = 20
   max_batch_timeout = 3
   max_retries = 3

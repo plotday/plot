@@ -1,10 +1,10 @@
-name = "plot-event-sync"
+name = "event-sync"
 main = "src/index.ts"
 compatibility_date = "2024-11-18"
 upload_source_maps = true
 
 [[queues.consumers]]
-  queue = "plot-event-queue"
+  queue = "event-sync"
   max_batch_size = 100
   max_batch_timeout = 3
   max_retries = 3

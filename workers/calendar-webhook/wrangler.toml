@@ -1,10 +1,10 @@
-name = "plot-calendar-webhook"
+name = "calendar-webhook"
 main = "src/index.ts"
 compatibility_date = "2024-11-18"
 upload_source_maps = true
 
 [[queues.producers]]
-  queue = "plot-sync-queue"
+  queue = "sync"
   binding = "SYNC_QUEUE"
 
 [triggers]
