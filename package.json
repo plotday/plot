@@ -8,6 +8,7 @@
     "build": "turbo run build",
     "deploy:site": "nx deploy @plotday/site",
     "deploy:workers": "nx run-many -t deploy --projects=tag:worker",
+    "deploy:workers:vars": "nx run-many -t deploy-vars --projects=tag:worker",
     "deploy:workers:changed": "nx affected -t deploy --projects=tag:worker",
     "dev": "turbo run dev --concurrency=18",
     "types": "nx run-many -t types",

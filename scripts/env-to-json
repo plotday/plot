@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Start the JSON string
+echo -n "{"
+
+first=1
+while IFS= read -r line || [ -n "$line" ]; do
+    # Trim whitespaces around the line
+    line=$(echo "$line" | awk '{$1=$1; print}')
+    
+    # Skip empty lines and comments
+    if [[ -z "$line" || "$line" == \#* ]] ; then
+        continue
+    fi
+
+    # Extract key and value
+    key=$(echo "$line" | cut -d '=' -f 1)
+    value=$(echo "$line" | cut -d '=' -f 2-)
+
+    # Strip quotes if value is quoted
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+        value=${value:1:-1}
+    fi
+
+    # Comma separator formatting, skip it for the first entry
+    if [ "$first" -eq 0 ]; then
+        echo -n ","
+    fi
+    first=0
+
+    # Print key-value pair as JSON
+    echo -n "\"$key\":\"$value\""
+done
+
+# End the JSON string
+echo "}"

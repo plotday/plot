@@ -9,6 +9,7 @@
     "dev:config": "../../scripts/gen-env $npm_package_env_vars > .dev.vars",
     "dev:start": "wrangler dev --env development",
     "deploy": "../../scripts/deploy-worker",
+    "deploy-vars": "../../scripts/deploy-worker-vars",
     "lint": "tsc && eslint ."
   },
   "dependencies": {

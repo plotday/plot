@@ -8,6 +8,7 @@
   "deploy_vars": "SENTY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL",
   "scripts": {
     "deploy": "../../scripts/deploy-worker",
+    "deploy-vars": "../../scripts/deploy-worker-vars",
     "lint": "tsc && eslint ."
   },
   "dependencies": {
