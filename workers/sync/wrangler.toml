@@ -1,42 +1,20 @@
 name = "plot-sync"
 main = "src/index.ts"
-compatibility_date = "2023-07-10"
+compatibility_date = "2024-11-18"
+upload_source_maps = true
 
-[env.production]
-  vars = { ENV = "production" }
-
-[[env.production.queues.producers]]
-  queue = "plot-event-production-queue"
+[[queues.producers]]
+  queue = "plot-event-queue"
   binding = "EVENT_QUEUE"
 
-[[env.production.queues.producers]]
-  queue = "plot-contact-sync-production-queue"
+[[queues.producers]]
+  queue = "plot-contact-sync-queue"
   binding = "CONTACT_SYNC_QUEUE"
 
-[[env.production.queues.consumers]]
-  queue = "plot-sync-production-queue"
+[[queues.consumers]]
+  queue = "plot-sync-queue"
   max_batch_size = 1
   max_retries = 5
 
-[env.production.triggers]
+[triggers]
   crons = ["*/47 * * * *"]
-
-[env.staging]
-  vars = { ENV = "staging" }
-
-[[env.staging.queues.producers]]
-  queue = "plot-sync-staging-queue"
-  binding = "SYNC_QUEUE"
-
-[[env.staging.queues.producers]]
-  queue = "plot-event-staging-queue"
-  binding = "EVENT_QUEUE"
-
-[[env.staging.queues.producers]]
-  queue = "plot-contact-sync-staging-queue"
-  binding = "CONTACT_SYNC_QUEUE"
-
-[[env.staging.queues.consumers]]
-  queue = "plot-sync-staging-queue"
-  max_batch_size = 1
-  max_retries = 5

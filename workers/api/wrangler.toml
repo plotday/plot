@@ -1,17 +1,9 @@
 name = "api"
 main = "src/index.ts"
-compatibility_date = "2023-12-01"
+compatibility_date = "2024-11-18"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
 
-[env.production]
-  vars = { ENV = "production" }
-
-[[env.production.queues.producers]]
-  queue = "plot-sync-production-queue"
-  binding = "SYNC_QUEUE"
-
-[env.staging]
-  vars = { ENV = "staging" }
-
-[[env.staging.queues.producers]]
-  queue = "plot-sync-staging-queue"
+[[queues.producers]]
+  queue = "plot-sync-queue"
   binding = "SYNC_QUEUE"

@@ -3,8 +3,7 @@
   "version": "0.0.2",
   "sideEffects": false,
   "private": true,
-  "env_vars": "SENTRY_DSN SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT RESEND_API_KEY",
-  "deploy_vars": "SENTRY_DSN",
+  "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN RESEND_API_KEY",
   "scripts": {
     "dev": "pnpm run dev:config && pnpm run dev:start",
     "dev:config": "../../scripts/gen-env $npm_package_env_vars > .dev.vars",
@@ -19,5 +18,10 @@
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*"
+  },
+  "nx": {
+    "tags": [
+      "worker"
+    ]
   }
 }

@@ -1,37 +1,13 @@
 name = "plot-mail"
 main = "src/index.ts"
-compatibility_date = "2023-07-10"
+compatibility_date = "2024-11-18"
+upload_source_maps = true
 
-[env.production]
-  vars = { ENV = "production" }
-
-[[env.production.queues.consumers]]
-  queue = "plot-mail-production-queue"
+[[queues.consumers]]
+  queue = "plot-mail-queue"
   max_batch_size = 20
   max_batch_timeout = 3
   max_retries = 3
-
-[env.staging]
-  vars = { ENV = "staging" }
-
-[[env.staging.queues.consumers]]
-  queue = "plot-mail-staging-queue"
-  max_batch_size = 20
-  max_batch_timeout = 3
-  max_retries = 3
-
-[env.development]
-  vars = { ENV = "development" }
-
-[[env.development.queues.producers]]
-  queue = "plot-mail-development-queue"
-  binding = "QUEUE"
-
-[[env.development.queues.consumers]]
-  queue = "plot-mail-development-queue"
-  max_retries = 0
-  max_batch_size = 20
-  max_batch_timeout = 3
 
 [placement]
   mode = "smart"

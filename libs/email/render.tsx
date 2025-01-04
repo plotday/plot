@@ -1,6 +1,6 @@
 import { render as reactEmailRender } from "@react-email/render";
 
-import WaitlistWelcome from "./src/waitlist-welcome";
+import WaitlistWelcome from "./emails/waitlist-welcome";
 
 export type EmailType = "waitlist-welcome";
 

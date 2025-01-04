@@ -1,35 +1,15 @@
 name = "plot-calendar-webhook"
 main = "src/index.ts"
-compatibility_date = "2023-07-10"
+compatibility_date = "2024-11-18"
+upload_source_maps = true
 
-[env.production]
-  vars = { ENV = "production" }
-
-[[env.production.queues.producers]]
-  queue = "plot-sync-production-queue"
+[[queues.producers]]
+  queue = "plot-sync-queue"
   binding = "SYNC_QUEUE"
 
-[env.production.triggers]
-# every 5 minutes
-crons = ["*/5 * * * *"]
-
-[env.staging]
-  vars = { ENV = "staging" }
-
-[[env.staging.queues.producers]]
-  queue = "plot-sync-staging-queue"
-  binding = "SYNC_QUEUE"
-
-[env.staging.triggers]
-# every 30 minutes
-crons = ["*/30 * * * *"]
-
-[env.development]
-  vars = { ENV = "development" }
-
-[[env.development.queues.producers]]
-  queue = "plot-sync-development-queue"
-  binding = "SYNC_QUEUE"
+[triggers]
+  # every 5 minutes
+  crons = ["*/5 * * * *"]
 
 [dev]
   port = 8785

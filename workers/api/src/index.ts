@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 
+import { withSentry } from "@sentry/cloudflare";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
@@ -11,6 +12,8 @@ import { create, respond, update } from "./event";
 import { addAccount, syncCalendar } from "./sync";
 
 export type Bindings = {
+  readonly SENTRY_DSN: string;
+
   readonly SUPABASE_URL: string;
   readonly SUPABASE_ANON_KEY: string;
   readonly SUPABASE_SERVICE_KEY: string;
@@ -135,4 +138,9 @@ app.patch("/event/:id", async (c) => {
   return c.json(dbEvent);
 });
 
-export default app;
+export default withSentry(
+  (env) => ({
+    dsn: (env as Bindings).SENTRY_DSN,
+  }),
+  app as any
+);

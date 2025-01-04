@@ -4,21 +4,30 @@
   "types": "src/index.ts",
   "sideEffects": false,
   "private": true,
-  "deploy_vars": "SENTRY_DSN SUPABASE_URL GOOGLE_CLIENT_ID MICROSOFT_CLIENT_ID CALENDAR_WEBHOOK_URL AUTH_CALLBACK_URL",
+  "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL GOOGLE_CLIENT_ID MICROSOFT_CLIENT_ID CALENDAR_WEBHOOK_URL AUTH_CALLBACK_URL",
   "scripts": {
+    "gen-env": "../../scripts/gen-env development",
     "deploy": "../../scripts/deploy-worker",
     "lint": "tsc && eslint ."
   },
   "dependencies": {
     "@plotday/cal": "workspace:^",
     "@plotday/db": "workspace:^",
+    "@sentry/cli": "^2.19.4",
+    "@sentry/cloudflare": "^8.47.0",
     "@supabase/supabase-js": "^2.38.4",
-    "hono": "^4.4.5"
+    "hono": "^4.6.15"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20231218.0",
-    "@plotday/sync": "workspace:^",
     "@plotday/eslint-config-custom": "workspace:*",
+    "@plotday/sync": "workspace:^",
     "@plotday/tsconfig": "workspace:*"
+  },
+  "nx": {
+    "tags": [
+      "worker"
+    ]
   }
 }
+

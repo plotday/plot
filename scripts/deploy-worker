@@ -1,26 +1,14 @@
 #!/bin/bash
 
-export RELEASE=${GITHUB_SHA:-dev} $(../../scripts/gen-env $npm_package_env_vars)
-export PACKAGE=$(echo $npm_package_name | cut -d'/' -f2)
+set -euo pipefail
 
-DEPLOY_VAR_NAMES="$npm_package_deploy_vars RELEASE PACKAGE"
-DEPLOY_VARS=
+RELEASE=${GITHUB_SHA:-dev}
+PACKAGE=$(echo $npm_package_name | cut -d'/' -f2)
+ENV=${ENV:-production}
+DEPLOY_VARS=$($(dirname "$0")/gen-env $ENV RELEASE=$RELEASE PACKAGE=$PACKAGE | sed 's/=\([^=]*\)$/:\1/')
+export SENTRY_AUTH_TOKEN=$(op read op://Development/Sentry/credential)
 
-fail=0
-for var_name in $DEPLOY_VAR_NAMES; do
-  if [ -z "${!var_name}" ]; then
-    echo "!!! Environment variable $var_name not set" >&2
-    fail=1
-  else
-    DEPLOY_VARS="$DEPLOY_VARS $var_name:${!var_name}"
-  fi
-done
-if [ $fail -eq 1 ]; then
-  echo "--fail"
-  exit 1
-fi
-
-wrangler deploy --env ${DEPLOY_ENV:-production} --dry-run --outdir build --node-compat true
-sentry-cli sourcemaps inject build
-sentry-cli sourcemaps upload --release=$RELEASE --dist=$PACKAGE build
-wrangler deploy --var $DEPLOY_VARS --env ${DEPLOY_ENV:-production} --no-bundle --node-compat false build/index.js
+wrangler deploy --dry-run --outdir build
+sentry-cli sourcemaps inject --org plotday --project workers build
+wrangler deploy --var $DEPLOY_VARS --no-bundle build/index.js
+sentry-cli sourcemaps upload --org plotday --project workers --release=$RELEASE --dist=$PACKAGE build

@@ -106,7 +106,7 @@ class _AuthButtonState extends State<AuthButton> {
     }
 
     const callbackUrlScheme = 'plot-auth';
-    final callbackUrl = kIsWeb ? Env.authCallbackUrl : '$callbackUrlScheme:/';
+    const callbackUrl = kIsWeb ? null : '$callbackUrlScheme:/';
 
     final url = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
       'response_type': 'code',

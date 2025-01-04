@@ -7,19 +7,19 @@
   "private": true,
   "env_vars": "",
   "scripts": {
-    "dev": "cd ../.. && pnpm dev:email",
+    "dev": "email dev",
     "lint": "tsc && eslint ."
   },
   "dependencies": {
-    "@react-email/button": "^0.0.10",
-    "@react-email/html": "^0.0.4",
-    "@react-email/render": "^0.0.7",
-    "@react-email/text": "^0.0.5",
-    "react": "^18.2.0"
+    "@react-email/components": "^0.0.31",
+    "@react-email/render": "^1.0.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
-    "@types/react": "^18.0.35"
+    "@types/react": "^19.0.1",
+    "react-email": "^3.0.4"
   }
 }

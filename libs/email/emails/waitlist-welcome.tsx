@@ -1,5 +1,4 @@
-import { Html } from "@react-email/html";
-import { Text } from "@react-email/text";
+import { Html, Text } from "@react-email/components";
 
 export default function Email() {
   return (

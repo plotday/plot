@@ -58,7 +58,7 @@ dependencies:
   url_launcher: ^6.2.6
   go_router_builder: ^2.7.0
   platform_builder: ^3.0.0
-  sentry_flutter: ^8.7.0
+  sentry_flutter: ^8.12.0
   uuid: ^4.4.2
   meta: ^1.12.0
   drift: ^2.23.0
@@ -132,33 +132,38 @@ flutter:
 
 scripts:
   env:
-    echo: ../../scripts/gen-env SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_DSN SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID AUTH_CALLBACK_URL
-    default: $env:echo > .env
-    android: $env:echo | sed 's/localhost/10.0.2.2/' > .env
+    dev:
+      echo: ../../scripts/gen-env Development SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT SENTRY_DSN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID
+      default: $env:dev:echo > .env
+      android: $env:dev:echo | sed 's/localhost/10.0.2.2/' > .env
+    prod:
+      echo: ../../scripts/gen-env Production SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT SENTRY_DSN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID
+      default: $env:prod:echo > .env
+      android: $env:prod:echo | sed 's/localhost/10.0.2.2/' > .env
   build:
     watch: flutter pub run build_runner watch
     web:
-      - $env:default
-      - flutter pub get && flutter build web --release --source-maps --base-href=/
+      - $env:prod:default
+      - flutter pub run build_runner build && flutter build web --release --source-maps --base-href=/
   dev:
     macos:
-      - $env:default
+      - $env:dev:default
       - flutter run -d macOS
     android: 
       - flutter emulators --launch Medium_Phone_API_34
-      - $env:android
+      - $env:dev:android
       - flutter run -d android
     web:
-      - $env:default
+      - $env:dev:default
       - flutter run -d chrome --web-port 8788
   deploy:
-    web: wrangler pages deploy build/web --project-name=calendar --branch ${DEPLOY_ENV:-staging} --commit-hash ${GITHUB_SHA:-dev} && flutter packages pub run sentry_dart_plugin
+    web: wrangler pages deploy build/web --project-name=app --branch ${DEPLOY_ENV:-staging} --commit-hash ${GITHUB_SHA:-$(git rev-parse HEAD)} && flutter packages pub run sentry_dart_plugin
 
 sentry:
   upload_debug_symbols: true
   upload_source_maps: true
   upload_sources: false
-  project: plot
+  project: app
   org: plotday
   auth_token: 64dca705edd146e48e0fd30f58430d6dd88b213d3adf478689309bc3a79a6e3c
 

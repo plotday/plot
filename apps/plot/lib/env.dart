@@ -7,7 +7,6 @@ abstract class Env {
   static final String supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
 
   static final String apiRoot = dotenv.env['API_ROOT']!;
-  static final String authCallbackUrl = dotenv.env['AUTH_CALLBACK_URL']!;
 
   static final String googleClientId = dotenv.env['GOOGLE_CLIENT_ID']!;
   static final String googleIosClientId = dotenv.env['GOOGLE_IOS_CLIENT_ID']!;

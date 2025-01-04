@@ -1,4 +1,4 @@
-package day.plot.calendar
+package day.plot.app
 
 import io.flutter.embedding.android.FlutterActivity
 

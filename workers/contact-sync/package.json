@@ -5,7 +5,7 @@
   "sideEffects": false,
   "version": "0.0.4",
   "private": true,
-  "deploy_vars": "SENTRY_DSN SUPABASE_URL GOOGLE_CLIENT_ID MICROSOFT_CLIENT_ID",
+  "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL GOOGLE_CLIENT_ID MICROSOFT_CLIENT_ID",
   "scripts": {
     "deploy": "../../scripts/deploy-worker",
     "lint": "tsc && eslint ."
@@ -20,5 +20,10 @@
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*"
+  },
+  "nx": {
+    "tags": [
+      "worker"
+    ]
   }
 }

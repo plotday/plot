@@ -1,1 +1,4 @@
 .dev.vars
+
+# Sentry Config File
+.sentryclirc
