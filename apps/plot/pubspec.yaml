@@ -39,8 +39,8 @@ dependencies:
   equatable: ^2.0.5
   bloc_concurrency: ^0.2.3
   adaptive_theme: ^3.4.1
-  google_sign_in: ^6.2.1
-  google_sign_in_web: ^0.12.3+1
+  google_sign_in: ^6.2.2
+  google_sign_in_web: ^0.12.4+3
   social_login_buttons: ^1.0.7
   dart_date:
     git:
@@ -133,11 +133,11 @@ flutter:
 scripts:
   env:
     dev:
-      echo: ../../scripts/gen-env Development SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT SENTRY_DSN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID
+      echo: ../../scripts/gen-env development SENTRY_PROJECT=app SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_DSN:SENTRY_APP_DSN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID
       default: $env:dev:echo > .env
       android: $env:dev:echo | sed 's/localhost/10.0.2.2/' > .env
     prod:
-      echo: ../../scripts/gen-env Production SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT SENTRY_DSN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID
+      echo: ../../scripts/gen-env production SENTRY_PROJECT=app SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_DSN:SENTRY_APP_DSN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID
       default: $env:prod:echo > .env
       android: $env:prod:echo | sed 's/localhost/10.0.2.2/' > .env
   build:

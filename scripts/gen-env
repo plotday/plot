@@ -11,7 +11,7 @@ case $ENV in
   production)
     ;;
   *)
-    echo "Usage: $0 <development|production> [VAR]+"
+    echo "Usage: $0 <development|production> [VAR]+" >&2
     exit 1
     ;;
 esac
