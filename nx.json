@@ -24,8 +24,7 @@
     },
     "deploy": {
       "dependsOn": [
-        "build",
-        "^deploy"
+        "build"
       ],
       "cache": true
     },
