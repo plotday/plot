@@ -4,6 +4,9 @@ set -euo pipefail
 
 RELEASE=${GITHUB_SHA:-$(git rev-parse HEAD)}
 PACKAGE=$(echo $npm_package_name | cut -d'/' -f2)
+if [[ -z "$SENTRY_AUTH_TOKEN" ]]; then
+  export SENTRY_AUTH_TOKEN=$(op read op://Development/Sentry/credential)
+fi
 
 wrangler deploy --dry-run --outdir build
 sentry-cli sourcemaps inject --org plotday --project workers build
