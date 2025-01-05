@@ -1,4 +1,4 @@
-# Plot
+# Plot App
 
 ## Updating Drift
 
