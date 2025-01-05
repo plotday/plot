@@ -25,6 +25,8 @@ interface Env {
   readonly SYNC_QUEUE: Queue<SyncRequest>;
   readonly EVENT_QUEUE: Queue<EventSyncRequest>;
   readonly CONTACT_SYNC_QUEUE: Queue<ContactSyncRequest>;
+
+  ai: any;
 }
 
 export default {
@@ -34,15 +36,15 @@ export default {
 
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     switch (batch.queue) {
-      case "plot-sync-development-queue":
+      case "sync":
         await syncWorker.queue(batch as MessageBatch<SyncRequest>, env);
         break;
 
-      case "plot-event-development-queue":
+      case "event-sync":
         await eventWorker.queue(batch as MessageBatch<EventSyncRequest>, env);
         break;
 
-      case "plot-contact-sync-development-queue":
+      case "contact-sync":
         await contactSyncWorker.queue(
           batch as MessageBatch<ContactSyncRequest>,
           env

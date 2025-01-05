@@ -106,17 +106,18 @@ class _AuthButtonState extends State<AuthButton> {
     }
 
     const callbackUrlScheme = 'plot-auth';
-    const callbackUrl = kIsWeb ? null : '$callbackUrlScheme:/';
+    final callbackUrl = kIsWeb ? Env.authCallbackUrl : '$callbackUrlScheme:/';
 
-    final url = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
+    final args = {
       'response_type': 'code',
       'client_id': Env.googleClientId,
       'redirect_uri': callbackUrl,
       'scope': widget.scopes!.join(' '),
       'access_type': 'offline',
       'include_granted_scopes': 'true',
-      'prompt': 'select_account',
-    });
+      'prompt': 'select_account consent',
+    };
+    final url = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', args);
 
     // Present the dialog to the user
     final result = await FlutterWebAuth2.authenticate(
