@@ -18,6 +18,10 @@ jobs:
         with:
           fetch-depth: 2
 
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
       - name: Load secrets
         uses: 1password/load-secrets-action@v2
         with:

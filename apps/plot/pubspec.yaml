@@ -43,10 +43,7 @@ dependencies:
   google_sign_in: ^6.2.2
   google_sign_in_web: ^0.12.4+3
   social_login_buttons: ^1.0.7
-  dart_date:
-    git:
-      url: git@github.com:plotday/dart_date.git
-      ref: c77f713
+  dart_date: ^1.4.0
   http: ^1.2.0
   sentry_dart_plugin: ^2.1.0
   flutter_web_auth_2: ^4.0.0-alpha.0
