@@ -18,6 +18,7 @@ version: 1.0.0+1
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
+  flutter: 3.27.1
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -144,7 +145,7 @@ scripts:
     watch: flutter pub run build_runner watch
     web:
       - $env:prod:default
-      - flutter pub run build_runner build && flutter build web --release --source-maps --base-href=/
+      - flutter pub run build_runner build && flutter build web --release --source-maps --base-href=/ && flutter packages pub run sentry_dart_plugin
   dev:
     macos:
       - $env:dev:default
@@ -157,7 +158,7 @@ scripts:
       - $env:dev:default
       - flutter run -d chrome --web-port 8788
   deploy:
-    web: wrangler pages deploy build/web --project-name=app --branch ${DEPLOY_ENV:-staging} --commit-hash ${GITHUB_SHA:-$(git rev-parse HEAD)} && flutter packages pub run sentry_dart_plugin
+    web: wrangler pages deploy build/web --project-name=app --commit-hash ${GITHUB_SHA:-$(git rev-parse HEAD)} 
 
 sentry:
   upload_debug_symbols: true
