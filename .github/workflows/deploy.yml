@@ -24,8 +24,8 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: op://app-cicd/hello-world/secret
-          CLOUDFLARE_API_TOKEN: op://app-cicd/hello-world/secret
+          CLOUDFLARE_ACCOUNT_ID: op://Deploy/Cloudflare/username
+          CLOUDFLARE_API_TOKEN: op://Deploy/Cloudflare/credential
 
       - uses: subosito/flutter-action@v2
         with:
