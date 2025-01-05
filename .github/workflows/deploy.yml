@@ -30,7 +30,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version-file: pubspec.yaml
+          flutter-version-file: apps/plot/pubspec.yaml
           cache: true
 
       - name: Install derry
