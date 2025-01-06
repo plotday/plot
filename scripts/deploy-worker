@@ -11,5 +11,5 @@ fi
 
 wrangler deploy --dry-run --outdir build
 sentry-cli sourcemaps inject --org plotday --project workers build
-wrangler deploy --var PACKAGE:$PACKAGE RELEASE:$RELEASE --no-bundle build/index.js
+wrangler deploy --no-bundle build/index.js
 sentry-cli sourcemaps upload --org plotday --project workers --release=$RELEASE --dist=$PACKAGE build
