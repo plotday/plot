@@ -1,3 +1,7 @@
+# build_runner output
+lib/router.g.dart
+lib/store/store.g.dart
+
 # Miscellaneous
 *.class
 *.log
