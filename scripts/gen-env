@@ -79,4 +79,4 @@ if [ $fail -eq 1 ]; then
   exit 1
 fi
 
-printf "%s" "$result" | $(dirname "$0")/op inject
+printf "%s" "$result" | op inject
