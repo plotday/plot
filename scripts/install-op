@@ -58,12 +58,5 @@ install_op_cli() {
 
 # Main action of the script
 
-if [[ "$OP_CLI_VERSION" == "latest" ]]; then
-    get_latest_cli_version non_beta
-elif [[ "$OP_CLI_VERSION" == "latest-beta" ]]; then
-    get_latest_cli_version beta
-else
-    OP_CLI_VERSION="v$OP_CLI_VERSION"
-fi
-
+get_latest_cli_version non_beta
 install_op_cli
