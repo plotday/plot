@@ -9,7 +9,7 @@
     "dev:config": "../../scripts/gen-env development $npm_package_env_vars > .dev.vars",
     "dev:start": "wrangler dev --inspector-port 9230",
     "deploy": "../../scripts/deploy-worker",
-    "deploy-vars": "../../scripts/deploy-worker-vars",
+    "deploy:vars": "../../scripts/deploy-worker-vars",
     "lint": "tsc && eslint ."
   },
   "dependencies": {

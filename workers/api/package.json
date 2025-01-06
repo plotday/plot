@@ -7,7 +7,7 @@
   "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL GOOGLE_CLIENT_ID MICROSOFT_CLIENT_ID CALENDAR_WEBHOOK_URL AUTH_CALLBACK_URL",
   "scripts": {
     "deploy": "../../scripts/deploy-worker",
-    "deploy-vars": "../../scripts/deploy-worker-vars",
+    "deploy:vars": "../../scripts/deploy-worker-vars",
     "lint": "tsc && eslint ."
   },
   "dependencies": {
@@ -30,4 +30,3 @@
     ]
   }
 }
-

@@ -4,11 +4,12 @@ set -euo pipefail
 
 ENV=${ENV:-production}
 ALL=$($(dirname "$0")/gen-env $ENV)
-SECRETS=$(echo "$ALL" | grep 'SECRET|KEY|TOKEN' || true)
+SECRETS=$(echo "$ALL" | grep -E 'SECRET|KEY|TOKEN' || true)
 SECRETS=$(echo "$SECRETS" | $(dirname "$0")/env-to-json)
-VARS=$(echo "$ALL" | grep -v 'SECRET|KEY|TOKEN' || true)
+VARS=$(echo "$ALL" | grep -Ev 'SECRET|KEY|TOKEN' || true)
 VARS=$(echo "$VARS" | sed 's/=\([^=]*\)$/:\1/')
 
+echo "$SECRETS" | wrangler versions secret bulk 
 wrangler deploy --dry-run --outdir build
 sentry-cli sourcemaps inject --org plotday --project workers build
 wrangler deploy --var $VARS --no-bundle build/index.js
