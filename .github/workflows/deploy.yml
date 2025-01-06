@@ -55,7 +55,7 @@ jobs:
           run_install: false
 
       - name: Install wrangler
-        run: pnpm install wrangler
+        run: pnpm install -w wrangler
 
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
