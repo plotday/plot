@@ -4,7 +4,7 @@ set -euo pipefail
 
 RELEASE=${GITHUB_SHA:-$(git rev-parse HEAD)}
 PACKAGE=$(echo $npm_package_name | cut -d'/' -f2)
-export SENTRY_AUTH_TOKEN=$(echo "$SENTRY_AUTH_TOKEN" | op inject)
+export SENTRY_AUTH_TOKEN=$(echo "$SENTRY_AUTH_TOKEN" | $(dirname "$0")/op inject)
 
 wrangler deploy --dry-run --outdir build
 sentry-cli sourcemaps inject --org plotday --project workers build
