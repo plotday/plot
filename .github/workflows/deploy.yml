@@ -48,6 +48,12 @@ jobs:
       - name: Build
         run: cd apps/plot && derry build web
 
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          version: 9
+          run_install: false
+
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
