@@ -3,10 +3,6 @@ import type { ContactSyncRequest } from "@plotday/contact-sync";
 import type { EventSyncRequest, SyncRequest } from "./";
 
 export interface Env {
-  readonly ENV?: string;
-  readonly RELEASE?: string;
-  readonly PACKAGE?: string;
-
   readonly API_KEY: string;
 
   readonly SUPABASE_URL: string;

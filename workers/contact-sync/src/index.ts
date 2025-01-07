@@ -1,4 +1,4 @@
-import { Toucan } from "toucan-js";
+import * as Sentry from "@sentry/cloudflare";
 
 import type {
   CalendarConfig,
@@ -20,10 +20,6 @@ export type ContactSyncRequest = {
 };
 
 interface Env {
-  readonly ENV?: string;
-  readonly RELEASE?: string;
-  readonly PACKAGE?: string;
-
   readonly API_KEY: string;
 
   readonly SUPABASE_URL: string;
@@ -95,44 +91,42 @@ async function runSync(
   );
 }
 
-export default {
-  async queue(
-    batch: MessageBatch<ContactSyncRequest>,
-    env: Env
-  ): Promise<void> {
-    const Sentry = new Toucan({
-      dsn: env.SENTRY_DSN,
-      environment: env.ENV,
-      release: env.RELEASE,
-      dist: env.PACKAGE,
-    });
+export default Sentry.withSentry(
+  (env) => ({
+    dsn: env.SENTRY_DSN,
+    environment: ENV,
+    release: RELEASE,
+    dist: PACKAGE,
+  }),
+  {
+    async queue(batch, env: Env): Promise<void> {
+      const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
-    const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
-
-    for (const m of batch.messages) {
-      try {
-        const message = m as Message<ContactSyncRequest>;
-        const accountId = message.body.accountId;
-        console.log(`Starting sync (${accountId})`);
+      for (const m of batch.messages) {
         try {
-          await runSync(env, supabase, accountId, !!message.body.full);
-          console.log(`Sync complete (${accountId})`);
-          message.ack();
+          const message = m as Message<ContactSyncRequest>;
+          const accountId = message.body.accountId;
+          console.log(`Starting sync (${accountId})`);
+          try {
+            await runSync(env, supabase, accountId, !!message.body.full);
+            console.log(`Sync complete (${accountId})`);
+            message.ack();
+          } catch (e) {
+            console.error(e);
+            Sentry.withScope((scope) => {
+              scope.setExtra("account-id", accountId);
+              Sentry.captureException(e);
+            });
+            message.retry();
+          }
         } catch (e) {
           console.error(e);
-          Sentry.withScope((scope) => {
-            scope.setExtra("account-id", accountId);
-            Sentry.captureException(e);
-          });
-          message.retry();
+          Sentry.captureException(e);
+          // It's a failure, but it will never succeed because the parameters
+          // are wrong.
+          m.ack();
         }
-      } catch (e) {
-        console.error(e);
-        Sentry.captureException(e);
-        // It's a failure, but it will never succeed because the parameters
-        // are wrong.
-        m.ack();
       }
-    }
-  },
-};
+    },
+  }
+);

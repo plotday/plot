@@ -4,6 +4,11 @@ compatibility_date = "2024-11-18"
 compatibility_flags = ["nodejs_compat"]
 upload_source_maps = true
 
+[define]
+  ENV = '"development"'
+  RELEASE = '"dev"'
+  PACKAGE = '"event"'
+
 [[queues.consumers]]
   queue = "event-sync"
   max_batch_size = 100
@@ -15,3 +20,6 @@ upload_source_maps = true
 
 [ai]
   binding = "ai"
+
+[observability.logs]
+  enabled = true

@@ -6,10 +6,6 @@ import syncWorker from "@plotday/sync";
 import type { EventSyncRequest, SyncRequest } from "@plotday/sync";
 
 interface Env {
-  readonly ENV?: string;
-  readonly RELEASE?: string;
-  readonly PACKAGE?: string;
-
   readonly API_KEY: string;
 
   readonly SUPABASE_URL: string;

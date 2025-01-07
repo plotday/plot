@@ -12,6 +12,9 @@ import { create, respond, update } from "./event";
 import { addAccount, syncCalendar } from "./sync";
 
 export type Bindings = {
+  readonly ENV?: string;
+  readonly RELEASE?: string;
+  readonly PACKAGE?: string;
   readonly SENTRY_DSN: string;
 
   readonly SUPABASE_URL: string;
@@ -141,6 +144,9 @@ app.patch("/event/:id", async (c) => {
 export default withSentry(
   (env) => ({
     dsn: (env as Bindings).SENTRY_DSN,
+    release: RELEASE,
+    dist: PACKAGE,
+    environment: ENV,
   }),
   app as any
 );

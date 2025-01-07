@@ -1,4 +1,4 @@
-import { Toucan } from "toucan-js";
+import * as Sentry from "@sentry/cloudflare";
 
 import type { CalendarConfig, OutlookChangeNotification } from "@plotday/cal";
 import { deleteWatch, watch } from "@plotday/cal";
@@ -14,10 +14,6 @@ import type { SyncRequest } from "@plotday/sync";
 type Calendar = Database["public"]["Tables"]["calendar"]["Row"];
 
 export interface Env {
-  readonly ENV?: string;
-  readonly RELEASE?: string;
-  readonly PACKAGE?: string;
-
   readonly SUPABASE_URL: string;
   readonly SUPABASE_SERVICE_KEY: string;
   readonly SENTRY_DSN: string;
@@ -29,7 +25,7 @@ export interface Env {
   readonly SYNC_QUEUE: Queue<SyncRequest>;
 }
 
-let Sentry: Toucan | null = null;
+console.log(ENV, RELEASE, PACKAGE);
 
 function handleException(e: any, extra?: Record<string, any>) {
   if (e instanceof Response) throw e;
@@ -64,37 +60,37 @@ function getCalendarConfig(env: Env): CalendarConfig {
   };
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    Sentry = new Toucan({
-      dsn: env.SENTRY_DSN,
-      request,
-      environment: env.ENV,
-      release: env.RELEASE,
-      dist: env.PACKAGE,
-    });
-
-    try {
-      const url = new URL(request.url);
-      switch (url.pathname) {
-        case "/google":
-          return await handleGoogle(request, env);
-        case "/outlook":
-          return await handleOutlook(request, env);
-        default:
-          return new Response(JSON.stringify("No matching path"), {
-            status: 404,
-          });
+export default Sentry.withSentry(
+  (env) => ({
+    dsn: env.SENTRY_DSN,
+    environment: ENV,
+    release: RELEASE,
+    dist: PACKAGE,
+  }),
+  {
+    async fetch(request: Request, env: Env) {
+      try {
+        const url = new URL(request.url);
+        switch (url.pathname) {
+          case "/google":
+            return await handleGoogle(request, env);
+          case "/outlook":
+            return await handleOutlook(request, env);
+          default:
+            return new Response(JSON.stringify("No matching path"), {
+              status: 404,
+            });
+        }
+      } catch (e) {
+        return handleException(e);
       }
-    } catch (e) {
-      return handleException(e);
-    }
-  },
+    },
 
-  async scheduled(_event: ScheduledEvent, env: Env) {
-    await renewWatches(env);
-  },
-};
+    async scheduled(_event, env) {
+      await renewWatches(env);
+    },
+  }
+);
 
 async function queueSync(
   env: Env,

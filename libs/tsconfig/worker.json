@@ -4,9 +4,16 @@
   "display": "Cloudflare Worker",
   "compilerOptions": {
     "target": "ESNext",
-    "lib": ["ES2021", "ES2022.error", "WebWorker"],
+    "lib": [
+      "ES2021",
+      "ES2022.error",
+      "WebWorker"
+    ],
     "module": "ESNext",
-    "types": ["@cloudflare/workers-types"],
+    "types": [
+      "@cloudflare/workers-types",
+      "../../libs/tsconfig/workers.d.ts"
+    ],
     "resolveJsonModule": true,
     "allowJs": true,
     "checkJs": false,

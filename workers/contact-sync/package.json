@@ -16,7 +16,7 @@
     "@plotday/db": "workspace:^",
     "@supabase/supabase-js": "^2.38.4",
     "@worker-tools/json-fetch": "2.1.0-pre.6",
-    "toucan-js": "^3.3.0"
+    "@sentry/cloudflare": "^8.47.0"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",

@@ -13,13 +13,12 @@
   "dependencies": {
     "@plotday/cal": "workspace:^",
     "@plotday/db": "workspace:^",
-    "@sentry/cli": "^2.19.4",
     "@sentry/cloudflare": "^8.47.0",
     "@supabase/supabase-js": "^2.38.4",
     "hono": "^4.6.15"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20231218.0",
+    "@cloudflare/workers-types": "^4.20241230.0",
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/sync": "workspace:^",
     "@plotday/tsconfig": "workspace:*"
