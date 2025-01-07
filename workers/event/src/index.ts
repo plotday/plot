@@ -84,7 +84,7 @@ async function generateEmbeddings(env: Env, text: string[]) {
   if (text.length === 0) return [];
   console.log(`Generating ${text.length} embeddings`);
   let embeddings: never[];
-  if (env.ENV === "development") {
+  if (ENV === "development") {
     const response = await fetch(
       "https://api.cloudflare.com/client/v4/accounts/34ceb662899230b63c7e8114eaf9277c/ai/run/@cf/baai/bge-small-en-v1.5",
       {
