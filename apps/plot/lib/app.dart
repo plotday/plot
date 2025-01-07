@@ -36,7 +36,11 @@ class AppState extends State<App> with WidgetsBindingObserver {
         if (snapshot.hasError) {
           print(snapshot.error);
           print(snapshot.stackTrace);
-          return const Center(child: Text("Something went wrong"));
+          return const Center(
+              child: Text(
+            "Something went wrong",
+            textDirection: TextDirection.ltr,
+          ));
         }
         if (!snapshot.hasData) {
           return const Center(child: Spinner());
