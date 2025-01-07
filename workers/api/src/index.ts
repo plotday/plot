@@ -12,9 +12,6 @@ import { create, respond, update } from "./event";
 import { addAccount, syncCalendar } from "./sync";
 
 export type Bindings = {
-  readonly ENV?: string;
-  readonly RELEASE?: string;
-  readonly PACKAGE?: string;
   readonly SENTRY_DSN: string;
 
   readonly SUPABASE_URL: string;
