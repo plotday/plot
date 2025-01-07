@@ -10,6 +10,5 @@ VARS=$(echo "$ALL" | grep -Ev 'SECRET|KEY|TOKEN' || true)
 VARS=$(echo "$VARS" | sed 's/=\([^=]*\)$/:\1/')
 
 echo "$SECRETS" | wrangler versions secret bulk 
-wrangler deploy --dry-run --outdir build
-sentry-cli sourcemaps inject --org plotday --project workers build
-wrangler deploy --var $VARS --no-bundle build/index.js
+export DEPLOY_VARS="$VARS"
+$(dirname "$0")/deploy-worker

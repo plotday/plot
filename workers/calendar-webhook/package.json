@@ -3,7 +3,7 @@
   "version": "0.0.2",
   "sideEffects": false,
   "private": true,
-  "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL GOOGLE_CLIENT_ID MICROSOFT_CLIENT_ID",
+  "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL SUPABASE_SERVICE_KEY GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET",
   "scripts": {
     "dev": "pnpm run dev:config && pnpm run dev:start",
     "dev:config": "../../scripts/gen-env development $npm_package_env_vars > .dev.vars",
