@@ -14,7 +14,13 @@ elif [[ -n "$(which op)" ]]; then
   export SENTRY_AUTH_TOKEN=$(op read op://Development/Sentry/credential)
 fi
 
+if [[ -v DEPLOY_VARS ]]; then
+  VARS="--var $DEPLOY_VARS"
+else
+  VARS="--keep-vars"
+fi
+
 wrangler deploy --dry-run --outdir build --define $definitions
 sentry-cli sourcemaps inject --org plotday --project workers build
-wrangler deploy --no-bundle build/index.js --define $definitions --var ${DEPLOY_VARS:-""}
+wrangler deploy --no-bundle build/index.js --define $definitions $VARS
 sentry-cli sourcemaps upload --org plotday --project workers --release=$RELEASE --dist=$PACKAGE build
