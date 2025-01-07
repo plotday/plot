@@ -1,12 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
 
 ENV=${ENV:-production}
 RELEASE=${GITHUB_SHA:-$(git rev-parse HEAD)}
-definitions="ENV:$ENV RELEASE:$RELEASE"
+definitions="ENV:\"$ENV\" RELEASE:\"$RELEASE\""
 
-if [[ -n "$SENTRY_AUTH_TOKEN_CF" ]]; then
+if [[ -v SENTRY_AUTH_TOKEN_CF ]]; then
   export SENTRY_AUTH_TOKEN="$SENTRY_AUTH_TOKEN_CF"
 fi
 
