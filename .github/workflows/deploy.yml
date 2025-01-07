@@ -5,6 +5,8 @@ on:
       - main
     paths:
       - 'apps/plot/**'
+      - '.env'
+      - '.env.production'
 permissions:
   contents: read
   deployments: write
