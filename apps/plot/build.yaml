@@ -4,7 +4,7 @@ targets:
       go_router_builder:
         generate_for:
           include:
-            - 'lib/router.dart'
+            - 'lib/router_*.dart'
       drift_dev:
         options:
           store_date_time_values_as_text: true

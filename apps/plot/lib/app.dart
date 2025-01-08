@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -25,7 +26,20 @@ class AppState extends State<App> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    router = Layout.init(context).then((layout) => getRouter(layout));
+
+    final routeCompleter = Completer<GoRouter>();
+    router = routeCompleter.future;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Layout.init(context)
+          .then((layout) => routeCompleter.complete(getRouter(layout)))
+          .catchError((dynamic error) {
+        if (error is Object) {
+          routeCompleter.completeError(error);
+        } else {
+          routeCompleter.completeError("Unknown error");
+        }
+      });
+    });
   }
 
   @override

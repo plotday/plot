@@ -11,8 +11,10 @@ import 'state/activity.dart';
 import 'state/now.dart';
 import 'page/page.dart';
 import 'widget/widget.dart';
+import "router_tabbed.dart" show $_SingleRoutes;
+import "router_adaptive.dart";
 
-part 'router.g.dart';
+export "router_adaptive.dart";
 
 @immutable
 abstract class Route extends GoRouteData with EquatableMixin {
@@ -196,8 +198,23 @@ class EventRoute extends Route {
 }
 
 @immutable
-class ActivityRoute extends Route {
-  static const path = '/activity/:activityIdString';
+class ActivitiesRoute extends Route {
+  static const path = '/activity';
+
+  const ActivitiesRoute();
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const Spinner();
+
+  @override
+  List<Object?> get props => [];
+}
+
+@immutable
+class ActivityRoute extends ActivitiesRoute {
+  static const path = '${ActivitiesRoute.path}/$subPath';
+  static const subPath = ':activityIdString';
   static const rootId = 'root';
 
   ActivityRoute({required this.activityIdString})
@@ -326,124 +343,16 @@ class ActivityBranch extends StatefulShellBranchData {
   const ActivityBranch();
 }
 
+class NewBranch extends StatefulShellBranchData {
+  const NewBranch();
+}
+
 class ScheduleBranch extends StatefulShellBranchData {
   const ScheduleBranch();
 }
 
 class MoreBranch extends StatefulShellBranchData {
   const MoreBranch();
-}
-
-@TypedShellRoute<_AdaptiveRoutes>(routes: <TypedRoute<RouteData>>[
-  TypedGoRoute<LoginRoute>(path: LoginRoute.path),
-  TypedGoRoute<SettingsRoute>(path: SettingsRoute.path),
-  TypedShellRoute<_TripleRoutes>(routes: <TypedRoute<RouteData>>[
-    TypedGoRoute<HomeRoute>(path: HomeRoute.path),
-    TypedGoRoute<NewEventRoute>(path: NewEventRoute.path),
-    TypedGoRoute<EventRoute>(path: EventRoute.path),
-    TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
-    TypedGoRoute<NewRoute>(path: NewRoute.path), // TODO redirect
-    TypedGoRoute<ActivityAddRoute>(path: ActivityAddRoute.path),
-    TypedGoRoute<TopicRoute>(path: TopicRoute.path),
-  ]),
-])
-@immutable
-class _AdaptiveRoutes extends ShellRouteData {
-  const _AdaptiveRoutes();
-
-  @override
-  Widget builder(BuildContext context, GoRouterState state, Widget child) {
-    return child;
-  }
-}
-
-@immutable
-class _TripleRoutes extends ShellRouteData {
-  const _TripleRoutes();
-
-  @override
-  Widget builder(BuildContext context, GoRouterState state, Widget child) {
-    return SidebarLayout(
-      const ActivityPage(),
-      child,
-      const SchedulePage(),
-      title: BlocBuilder<ActivityBloc, ActivityState>(
-        builder: (context, state) => Header(
-          activities: state.rootActivities,
-          currentActivity: state.current,
-          balances: state.balances?[state.current?.id],
-          isNow: state.week.isNow(),
-          onCurrentActivitySelected: (activity) {
-            ActivityRoute.byId(activity?.id).go(context);
-          },
-        ),
-      ),
-    );
-  }
-}
-
-@TypedShellRoute<_SingleRoutes>(routes: <TypedRoute<RouteData>>[
-  TypedGoRoute<LoginRoute>(path: LoginRoute.path),
-  TypedStatefulShellRoute<_TabbedRoutes>(
-    branches: [
-      TypedStatefulShellBranch<ScheduleBranch>(
-        routes: <TypedGoRoute<GoRouteData>>[
-          TypedGoRoute<HomeRoute>(
-            path: HomeRoute.path,
-            routes: [
-              TypedGoRoute<NewEventRoute>(path: NewEventRoute.path),
-              TypedGoRoute<EventRoute>(path: EventRoute.path),
-            ],
-          ),
-        ],
-      ),
-      TypedStatefulShellBranch<ActivityBranch>(
-        routes: <TypedGoRoute<GoRouteData>>[
-          TypedGoRoute<ActivityRoute>(
-            path: ActivityRoute.path,
-            routes: [
-              TypedGoRoute<NewRoute>(path: NewRoute.subPath),
-              TypedGoRoute<ActivityAddRoute>(path: ActivityAddRoute.subPath),
-              TypedGoRoute<TopicRoute>(
-                path: TopicRoute.subPath,
-              ),
-            ],
-          ),
-        ],
-      ),
-      TypedStatefulShellBranch<MoreBranch>(
-        routes: <TypedGoRoute<GoRouteData>>[
-          TypedGoRoute<SettingsRoute>(path: SettingsRoute.path),
-        ],
-      ),
-    ],
-  ),
-])
-@immutable
-class _SingleRoutes extends ShellRouteData {
-  const _SingleRoutes();
-
-  @override
-  Widget builder(BuildContext context, GoRouterState state, Widget child) {
-    return child;
-  }
-}
-
-@immutable
-class _TabbedRoutes extends StatefulShellRouteData {
-  const _TabbedRoutes();
-
-  @override
-  Widget builder(
-    BuildContext context,
-    GoRouterState state,
-    StatefulNavigationShell navigationShell,
-  ) {
-    return TabbedLayout(
-      navigationShell,
-      navigationShell: navigationShell,
-    );
-  }
 }
 
 GoRouter getRouter(PanelLayout layout) {
