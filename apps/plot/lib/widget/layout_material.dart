@@ -71,7 +71,7 @@ class MaterialLayout extends StatelessWidget {
           config: <Breakpoint, SlotLayoutConfig>{
             MaterialLayout.allBreakpoints: SlotLayout.from(
               key: const Key('Title'),
-              builder: (_) => title!,
+              builder: (_) => title ?? const Text('Plot'),
             ),
           },
         ),
@@ -86,12 +86,12 @@ class MaterialLayout extends StatelessWidget {
                   : (_) => AdaptiveScaffold.standardBottomNavigationBar(
                         destinations: const [
                           NavigationDestination(
-                            icon: Icon(Icons.calendar_today),
-                            label: 'Schedule',
-                          ),
-                          NavigationDestination(
                             icon: Icon(Icons.crisis_alert),
                             label: 'Priorities',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.calendar_today),
+                            label: 'Schedule',
                           ),
                           // NavigationDestination(
                           //   icon: Icon(Icons.schedule),
