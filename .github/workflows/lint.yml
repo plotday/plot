@@ -27,5 +27,13 @@ jobs:
     - name: Install dependencies
       run: pnpm install
 
+    - name: Install Perl
+      uses: shogo82148/actions-setup-perl@v1
+      with:
+        perl-version: "5.38"
+
+    - name: Install pg_format
+      run: cpanm install pg_format
+
     - name: Run Linter
       run: pnpm run lint
