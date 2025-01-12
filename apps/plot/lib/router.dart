@@ -280,7 +280,7 @@ class ActivityRoute extends PriorityRoute {
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const PriorityPage();
+      const ActivityPage();
 
   @override
   List<Object?> get props => [activityId];
@@ -306,12 +306,8 @@ class NewActivityRoute extends PriorityRoute {
   }
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const ActivityPage();
-
-  @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const PriorityPage();
+      const NewPage();
 
   @override
   List<Object?> get props => [priorityIdString];
