@@ -41,7 +41,9 @@ class ActivityPage extends StatelessWidget {
               SelectionArea(
                   child: Column(
                 children: state.activityNotes
-                    .take(state.activityNotes.length - 1)
+                    .take(state.activityNotes.isNotEmpty
+                        ? state.activityNotes.length - 1
+                        : 0)
                     .map((note) => NoteWidget(note: note))
                     .toList(),
               )),

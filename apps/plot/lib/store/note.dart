@@ -26,8 +26,8 @@ class NotesBase extends BaseTable {
     super.filterName,
   }) : super(
           table: 'note_x',
+          writeTable: 'note',
           name: 'notes',
-          upsertAsUpdate: true,
           order: 'order_x',
           ascending: false,
         );

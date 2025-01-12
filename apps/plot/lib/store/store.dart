@@ -82,6 +82,7 @@ enum PullType {
 abstract class BaseTable {
   BaseTable({
     required this.table,
+    this.writeTable,
     this.order = 'updated_at',
     this.ascending = true,
     this.upsertAsUpdate = false,
@@ -91,6 +92,9 @@ abstract class BaseTable {
   }) : name = name ?? "${table}s";
 
   final String table;
+
+  /// Override the table for writes.
+  final String? writeTable;
   final String name;
   final String? filterName;
   String get fullName => "$name${filterName == null ? "" : ":$filterName"}";
@@ -183,12 +187,12 @@ abstract class BaseTable {
       for (final row in rows) {
         final id = row['id'] as Object;
         final rest = Map<String, dynamic>.from(row)..remove('id');
-        await Base.client.from(table).update(rest).eq('id', id);
+        await Base.client.from(writeTable ?? table).update(rest).eq('id', id);
       }
     } else if (upsertAsUpdate) {
-      await Base.client.from(table).insert(rows.toList());
+      await Base.client.from(writeTable ?? table).insert(rows.toList());
     } else {
-      await Base.client.from(table).upsert(rows.toList());
+      await Base.client.from(writeTable ?? table).upsert(rows.toList());
     }
   }
 }

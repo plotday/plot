@@ -32,8 +32,8 @@ class ActivitiesBase extends BaseTable {
     super.filterName,
   }) : super(
           table: 'activity_x',
+          writeTable: 'activity',
           name: 'activities',
-          upsertAsUpdate: true,
           order: 'order_x',
           ascending: false,
         );

@@ -29,22 +29,3 @@ FROM
 GROUP BY
     note.id;
 
-CREATE OR REPLACE FUNCTION handle_note_x_upsert ()
-    RETURNS TRIGGER
-    AS $$
-BEGIN
-    INSERT INTO note (user_id, id, draft, deleted_at, activity_id, body, pinned, "order", ordered_at, private)
-        VALUES (auth.uid (), NEW.id, NEW.draft, NEW.deleted_at, NEW.activity_id, NEW.body, NEW.pinned, NEW."order", NEW.ordered_at, NEW.private)
-    ON CONFLICT (id)
-        DO UPDATE SET
-            draft = NEW.draft, deleted_at = NEW.deleted_at, activity_id = NEW.activity_id, body = NEW.body, pinned = NEW.pinned, "order" = NEW."order", ordered_at = NEW.ordered_at, private = NEW.private;
-    RETURN NEW;
-END;
-$$
-LANGUAGE plpgsql;
-
-CREATE TRIGGER upsert_note_x
-    INSTEAD OF INSERT OR UPDATE ON note_x
-    FOR EACH ROW
-    EXECUTE FUNCTION handle_note_x_upsert ();
-
