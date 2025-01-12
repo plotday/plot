@@ -33,7 +33,7 @@ jobs:
     - name: Install pg_format
       run: |
         curl -L -o pg_format.zip https://github.com/darold/pgFormatter/archive/refs/tags/v5.5.zip
-        unzip -d $HOME/pg_format $ZIP_FILE
+        unzip $ZIP_FILE -d $HOME/pg_format
         mv $HOME/pg_format/pgFormatter*/* pg_format/
         chmod +x $HOME/pg_format/pg_format
         echo "$HOME/pg_format" >> "$GITHUB_PATH"
