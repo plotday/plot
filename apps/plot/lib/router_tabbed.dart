@@ -10,25 +10,20 @@ part 'router_tabbed.g.dart';
   TypedGoRoute<LoginRoute>(path: LoginRoute.path),
   TypedStatefulShellRoute<_TabbedRoutes>(
     branches: [
-      TypedStatefulShellBranch<ActivityBranch>(
+      TypedStatefulShellBranch<PrioritiesBranch>(
         routes: <TypedGoRoute<GoRouteData>>[
-          TypedGoRoute<ActivitiesRoute>(
-            path: ActivitiesRoute.path,
-            routes: [
-              TypedGoRoute<NewRoute>(path: NewRoute.subPath),
-              TypedGoRoute<ActivityRoute>(path: ActivityRoute.subPath),
-              // TypedGoRoute<ActivityAddRoute>(path: ActivityAddRoute.subPath),
-              TypedGoRoute<TopicRoute>(
-                path: TopicRoute.subPath,
-              ),
-            ],
+          TypedGoRoute<PrioritiesRoute>(
+            path: PrioritiesRoute.path,
+          ),
+          TypedGoRoute<PriorityRoute>(
+            path: PriorityRoute.path,
           ),
         ],
       ),
       TypedStatefulShellBranch<ScheduleBranch>(
         routes: <TypedGoRoute<GoRouteData>>[
-          TypedGoRoute<HomeRoute>(
-            path: HomeRoute.path,
+          TypedGoRoute<PrioritiesRoute>(
+            path: PrioritiesRoute.path,
           ),
         ],
       ),

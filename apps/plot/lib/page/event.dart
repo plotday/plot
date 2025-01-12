@@ -19,7 +19,7 @@ class EventPage extends StatelessWidget {
             label: 'Schedule',
             showLabel: false,
             onPressed: () {
-              HomeRoute.day(state.day).go(context);
+              PrioritiesRoute.day(state.day).go(context);
             },
           ),
         ],

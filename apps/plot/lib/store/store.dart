@@ -29,8 +29,9 @@ export 'package:plot/util/order.dart';
 part 'sync.dart';
 part 'account.dart';
 part 'calendar.dart';
-part 'activity.dart';
+part 'priority.dart';
 part 'note.dart';
+part 'activity.dart';
 part 'event.dart';
 part 'session.dart';
 part 'balance.dart';
@@ -196,8 +197,9 @@ abstract class BaseTable {
   SyncStates,
   Accounts,
   Calendars,
-  Activities,
+  Priorities,
   Notes,
+  Activities,
   Events,
   Sessions,
   Balances,
@@ -382,6 +384,7 @@ class Store extends _$Store {
   Future<void> sync() async {
     await Future.wait([
       Account.push().then((_) => Account.pull()),
+      Priority.push().then((_) => Priority.pull()),
       Activity.push().then((_) => Activity.pull()),
       Note.push().then((_) => Note.pull()),
       Event.push().then((_) => Event.pull()),
@@ -400,7 +403,7 @@ class Store extends _$Store {
         ));
 
   @override
-  int get schemaVersion => 29;
+  int get schemaVersion => 30;
 
   @override
   MigrationStrategy get migration {

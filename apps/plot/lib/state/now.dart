@@ -30,7 +30,7 @@ class NowBloc extends Cubit<NowState> {
     return super.close();
   }
 
-  void setActivity(Activity? activity) async {
+  void setPriority(Priority? activity) async {
     if (state.session?.activity == activity) return;
     _sessionTimer?.cancel();
     await state.session?.copyWith(end: DateTime.now()).save();

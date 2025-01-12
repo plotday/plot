@@ -13,10 +13,10 @@ enum SessionPriority implements Comparable<SessionPriority> {
 
 @DataClassName('SessionRow')
 class Sessions extends UuidStoreTable with DeletableTable {
-  BlobColumn get activityId => blob()
+  BlobColumn get priorityId => blob()
       .nullable()
       .map(const UuidConverter())
-      .references(Activities, #id)();
+      .references(Priorities, #id)();
 
   DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();
   DateTimeColumn get end => dateTime().map(const LocalDateTimeConverter())();
@@ -60,7 +60,7 @@ class Session extends SessionRow {
   static Future<bool> pull() =>
       Store.get.pull(PullType.updates, table, SessionsBase());
 
-  static Future<Session> resume(Activity? activity,
+  static Future<Session> resume(Priority? activity,
       {required DateTime end}) async {
     var session = await _latest();
     Session? previous;
@@ -88,10 +88,10 @@ class Session extends SessionRow {
     return session;
   }
 
-  static Future<Session?> _latest({Activity? context}) async {
+  static Future<Session?> _latest({Priority? context}) async {
     final query = Store.get.select(table);
     if (context != null) {
-      query.where((t) => t.activityId.equals(context.id.toBytes()));
+      query.where((t) => t.priorityId.equals(context.id.toBytes()));
     }
     final row = await (query
           ..orderBy([
@@ -130,12 +130,12 @@ class Session extends SessionRow {
     if (withContext) {
       sessionStream = Rx.combineLatest2(
           sessionStream,
-          Activity.watch(),
-          (List<Session> sessions, Map<Uuid, Activity> activities) => sessions
+          Priority.watch(),
+          (List<Session> sessions, Map<Uuid, Priority> activities) => sessions
               .map((session) => Session.fromStore(session,
-                  activity: session.activityId == null
+                  activity: session.priorityId == null
                       ? null
-                      : activities[session.activityId]))
+                      : activities[session.priorityId]))
               .toList());
     }
 
@@ -172,7 +172,7 @@ class Session extends SessionRow {
       : super(
           id: Uuid.generate(),
           updatedAt: DateTime.now(),
-          activityId: activity?.id,
+          priorityId: activity?.id,
           start: DateTime.now(),
           pomodoro: null,
           pomodoroAt: null,
@@ -184,7 +184,7 @@ class Session extends SessionRow {
           id: row.id,
           updatedAt: row.updatedAt,
           deletedAt: row.deletedAt,
-          activityId: row.activityId,
+          priorityId: row.priorityId,
           start: row.start,
           end: row.end,
           pomodoro: row.pomodoro,
@@ -197,7 +197,7 @@ class Session extends SessionRow {
     Uuid? id,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
-    Value<Uuid?> activityId = const Value.absent(),
+    Value<Uuid?> priorityId = const Value.absent(),
     DateTime? start,
     DateTime? end,
     int? priority,
@@ -208,7 +208,7 @@ class Session extends SessionRow {
         id: id,
         updatedAt: DateTime.now(),
         deletedAt: deletedAt,
-        activityId: activityId,
+        priorityId: priorityId,
         start: start,
         end: end,
         priority: priority,
@@ -216,7 +216,7 @@ class Session extends SessionRow {
         pomodoroAt: pomodoroAt,
       ));
 
-  final Activity? activity;
+  final Priority? activity;
 
   Future<void> save() =>
       Store.get.save(table, toCompanion(false), SessionsBase());

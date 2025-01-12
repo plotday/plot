@@ -1,14 +1,14 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/state/activity.dart';
+import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/page/new_topic.dart';
 import 'package:plot/page/new_activity.dart';
+import 'package:plot/page/new_priority.dart';
 
 enum NewType {
-  topic,
   activity,
+  priority,
 }
 
 class NewPage extends StatefulWidget {
@@ -19,11 +19,11 @@ class NewPage extends StatefulWidget {
 }
 
 class NewPageState extends State<NewPage> {
-  NewType selected = NewType.topic;
+  NewType selected = NewType.activity;
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ActivityBloc, ActivityState>(
+    return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16.0),
         child: Column(
@@ -31,8 +31,8 @@ class NewPageState extends State<NewPage> {
           children: [
             Toggle(
               choices: const [
-                ToggleChoice(value: NewType.topic, label: 'Topic'),
                 ToggleChoice(value: NewType.activity, label: 'Activity'),
+                ToggleChoice(value: NewType.priority, label: 'Priority'),
               ],
               selected: selected,
               onSelect: (choice) {
@@ -42,8 +42,8 @@ class NewPageState extends State<NewPage> {
               },
             ),
             const SizedBox(height: 8),
-            if (selected == NewType.topic) const NewTopic(),
             if (selected == NewType.activity) const NewActivity(),
+            if (selected == NewType.priority) const NewPriority(),
           ],
         ),
       ),

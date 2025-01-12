@@ -56,7 +56,7 @@ final class NowState extends Equatable {
   @override
   List<Object?> get props => [session, scheduled, next, previous];
 
-  Activity? get context => session?.activity ?? scheduled.firstOrNull?.activity;
+  Priority? get context => session?.activity ?? scheduled.firstOrNull?.activity;
   Event get current =>
       scheduled.firstOrNull ??
       Event(
@@ -84,7 +84,7 @@ final class NowState extends Equatable {
           : null) ??
       next.firstOrNull?.at.start;
 
-  DateTime? endFor(Activity? context) {
+  DateTime? endFor(Priority? context) {
     if (context == this.context && end != null) {
       return end;
     }

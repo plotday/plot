@@ -37,6 +37,7 @@ class InputActionState extends State<InputAction> {
         Expanded(
           child: TextField(
             label: widget.label,
+            maxLines: 1,
             onSubmitted: (value) {
               _onSubmit();
             },

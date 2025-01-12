@@ -51,7 +51,7 @@ class _SignInPageState extends State<SignInPage> {
         body: Center(
           child: AuthButton(
             onSignIn: (auth) async {
-              if (auth.idToken == null) return;
+              if (auth.idToken == null) throw Exception('No idToken');
               try {
                 await Base.client.auth.signInWithIdToken(
                   provider: OAuthProvider.google,

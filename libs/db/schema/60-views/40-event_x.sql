@@ -88,24 +88,24 @@ WITH event_x1 AS (
 )
 SELECT
     e.*,
-    ctx.id AS activity_id,
-    ctx.path AS activity_path
+    ctx.id AS priority_id,
+    ctx.path AS priority_path
 FROM
     event_x1 e
     LEFT JOIN LATERAL (
         SELECT
-            activity_id
+            priority_id
         FROM
             series
         WHERE
             user_id = e.user_id
-            AND activity_id IS NOT NULL
+            AND priority_id IS NOT NULL
         ORDER BY
             series = e.series DESC,
             invitees = e.invitees DESC,
             embedding <-> e.embedding DESC
         LIMIT 1) AS s ON TRUE
-    LEFT JOIN activity ctx ON ctx.id = s.activity_id;
+    LEFT JOIN priority ctx ON ctx.id = s.priority_id;
 
 CREATE OR REPLACE FUNCTION handle_event_x_upsert ()
     RETURNS TRIGGER

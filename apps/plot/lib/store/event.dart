@@ -26,10 +26,10 @@ class Events extends UuidStoreTable with DraftTable, DeletableTable {
       .withDefault(Constant(EventAvailability.free.toString()))();
   BoolColumn get inviteesHidden =>
       boolean().withDefault(const Constant(false))();
-  BlobColumn get activityId => blob()
+  BlobColumn get priorityId => blob()
       .nullable()
       .map(const UuidConverter())
-      .references(Activities, #id)();
+      .references(Priorities, #id)();
 }
 
 class EventsBase extends BaseTable {
@@ -80,7 +80,7 @@ class Event extends EventRow {
 
   static Stream<List<Event>> watch(
     DateRange range, {
-    bool withActivity = false,
+    bool withPriority = false,
     bool? deleted = false,
   }) {
     pullRange(range);
@@ -101,14 +101,14 @@ class Event extends EventRow {
           ]))
         .watch()
         .map((rows) => rows.map((row) => Event.fromStore(row)).toList());
-    if (withActivity) {
-      return Rx.combineLatest2(eventStream, Activity.watch(),
-          (List<Event> events, Map<Uuid, Activity> activities) {
+    if (withPriority) {
+      return Rx.combineLatest2(eventStream, Priority.watch(),
+          (List<Event> events, Map<Uuid, Priority> activities) {
         final ret = events
             .map((event) => Event.fromStore(event,
-                activity: event.activityId == null
+                activity: event.priorityId == null
                     ? null
-                    : activities[event.activityId]))
+                    : activities[event.priorityId]))
             .toList();
         return ret;
       });
@@ -138,7 +138,7 @@ class Event extends EventRow {
           id: Uuid.generate(),
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
-          activityId: activity?.id,
+          priorityId: activity?.id,
           start: at.start,
           end: at.end,
         );
@@ -159,7 +159,7 @@ class Event extends EventRow {
           visibility: row.visibility,
           availability: row.availability,
           inviteesHidden: row.inviteesHidden,
-          activityId: activity?.id ?? row.activityId,
+          priorityId: activity?.id ?? row.priorityId,
         );
 
   @override
@@ -169,8 +169,8 @@ class Event extends EventRow {
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
     bool? draft,
-    Value<Uuid?> activityId = const Value.absent(),
-    Value<Activity?> activity = const Value.absent(),
+    Value<Uuid?> priorityId = const Value.absent(),
+    Value<Priority?> activity = const Value.absent(),
     DateTime? start,
     DateTime? end,
     DateTimeRange? at,
@@ -195,7 +195,7 @@ class Event extends EventRow {
     return Event.fromStore(
       super.copyWith(
         id: id,
-        activityId: activityId,
+        priorityId: priorityId,
         createdAt: publish ? DateTime.now() : this.createdAt,
         updatedAt: DateTime.now(),
         deletedAt: deletedAt,
@@ -215,7 +215,7 @@ class Event extends EventRow {
     );
   }
 
-  final Activity? activity;
+  final Priority? activity;
   final bool unsaved;
 
   bool get isBlank => name == null && activity == null;
@@ -240,7 +240,7 @@ class Event extends EventRow {
 class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> watch(DateRange range,
       {bool? deleted = false}) {
-    return Event.watch(range, withActivity: true, deleted: deleted)
+    return Event.watch(range, withPriority: true, deleted: deleted)
         .map((events) {
       var (start, end) = range.bounds;
 

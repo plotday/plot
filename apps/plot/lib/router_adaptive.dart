@@ -4,7 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'widget/widget.dart';
 import 'page/page.dart';
-import 'state/activity.dart';
+import 'state/priority.dart';
 import 'router.dart';
 
 part 'router_adaptive.g.dart';
@@ -13,13 +13,17 @@ part 'router_adaptive.g.dart';
   TypedGoRoute<LoginRoute>(path: LoginRoute.path),
   TypedGoRoute<SettingsRoute>(path: SettingsRoute.path),
   TypedShellRoute<_TripleRoutes>(routes: <TypedRoute<RouteData>>[
-    TypedGoRoute<HomeRoute>(path: HomeRoute.path),
+    TypedGoRoute<PrioritiesRoute>(path: PrioritiesRoute.path, routes: [
+      TypedGoRoute<NewActivityRoute>(path: NewActivityRoute.path),
+      TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
+    ]),
+    TypedGoRoute<PriorityRoute>(path: PriorityRoute.path, routes: [
+      TypedGoRoute<NewActivityRoute>(path: NewActivityRoute.path),
+      TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
+    ]),
     TypedGoRoute<NewEventRoute>(path: NewEventRoute.path),
     TypedGoRoute<EventRoute>(path: EventRoute.path),
-    TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
-    TypedGoRoute<NewRoute>(path: NewRoute.path), // TODO redirect
-    TypedGoRoute<ActivityAddRoute>(path: ActivityAddRoute.path),
-    TypedGoRoute<TopicRoute>(path: TopicRoute.path),
+    TypedGoRoute<NewPriorityRoute>(path: NewPriorityRoute.path),
   ]),
 ])
 @immutable
@@ -39,17 +43,17 @@ class _TripleRoutes extends ShellRouteData {
   @override
   Widget builder(BuildContext context, GoRouterState state, Widget child) {
     return SidebarLayout(
-      const ActivityPage(),
+      const PriorityPage(),
       child,
       const SchedulePage(),
-      title: BlocBuilder<ActivityBloc, ActivityState>(
+      title: BlocBuilder<PriorityBloc, PriorityState>(
         builder: (context, state) => Header(
-          activities: state.rootActivities,
-          currentActivity: state.current,
+          priorities: state.rootPriorities,
+          currentPriority: state.current,
           balances: state.balances?[state.current?.id],
           isNow: state.week.isNow(),
-          onCurrentActivitySelected: (activity) {
-            ActivityRoute.byId(activity?.id).go(context);
+          onCurrentPrioritySelected: (priority) {
+            PrioritiesRoute.byId(priority?.id).go(context);
           },
         ),
       ),

@@ -4,23 +4,23 @@ import 'package:flutter/material.dart' as material;
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 
-class ActivitySelector extends StatefulWidget {
-  const ActivitySelector({
-    required this.activities,
+class PrioritySelector extends StatefulWidget {
+  const PrioritySelector({
+    required this.priorities,
     required this.selected,
     required this.onSelect,
     super.key,
   });
 
-  final Activity? selected;
-  final List<Activity> activities;
-  final void Function(Activity?) onSelect;
+  final Priority? selected;
+  final List<Priority> priorities;
+  final void Function(Priority?) onSelect;
 
   @override
-  ActivitySelectorState createState() => ActivitySelectorState();
+  PrioritySelectorState createState() => PrioritySelectorState();
 }
 
-class ActivitySelectorState extends State<ActivitySelector> {
+class PrioritySelectorState extends State<PrioritySelector> {
   final DropdownController _controller = DropdownController();
 
   @override
@@ -29,17 +29,17 @@ class ActivitySelectorState extends State<ActivitySelector> {
       controller: _controller,
       dropdown: Column(
         children: [
-          for (final activity in (widget.selected == null
-              ? widget.activities
+          for (final priority in (widget.selected == null
+              ? widget.priorities
               : widget.selected!.children))
             ListTile(
                 onTap: () {
-                  widget.onSelect(activity);
+                  widget.onSelect(priority);
                 },
                 title: Wrap(spacing: 4, children: [
                   if (widget.selected != null)
                     const PlotIcon.right(size: 14, color: material.Colors.grey),
-                  Text(activity.name),
+                  Text(priority.name),
                 ])),
         ],
       ),
