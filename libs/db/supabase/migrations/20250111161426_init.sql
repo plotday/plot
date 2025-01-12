@@ -61,6 +61,23 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions" version '1.1
 
 CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA "extensions" version '0.8.0';
 
+DO $do$
+BEGIN
+    IF EXISTS (
+        SELECT
+        FROM
+            pg_catalog.pg_roles
+        WHERE
+            rolname = 'internal_admin') THEN
+    RAISE NOTICE 'Role "internal_admin" already exists. Skipping.';
+ELSE
+    CREATE ROLE internal_admin WITH LOGIN;
+END IF;
+END
+$do$;
+
+GRANT ALL privileges ON ALL TABLES IN SCHEMA public TO internal_admin;
+
 CREATE TYPE "public"."event_availability" AS enum (
     'busy',
     'away',
