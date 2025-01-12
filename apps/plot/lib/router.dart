@@ -82,8 +82,6 @@ class SettingsRoute extends Route {
   List<Object?> get props => [];
 }
 
-// TODO redirect /
-
 @immutable
 class ScheduleRoute extends Route {
   static const path = '/schedule';
@@ -119,8 +117,8 @@ class EventRoute extends Route {
   static const path = ':eventIdString';
 
   EventRoute({required this.eventIdString})
-      : eventId = Uuid.fromString(eventIdString);
-  EventRoute.byId(this.eventId) : eventIdString = eventId.toString();
+      : eventId = Uuid.fromShortString(eventIdString);
+  EventRoute.byId(this.eventId) : eventIdString = eventId.toShortString();
 
   final String eventIdString;
   final EventId eventId;
@@ -193,10 +191,10 @@ class PriorityRoute extends Route {
   PriorityRoute({required this.priorityIdString})
       : priorityId = priorityIdString == _root
             ? null
-            : Uuid.fromString(priorityIdString);
+            : Uuid.fromShortString(priorityIdString);
   PriorityRoute.byId(PriorityId? id)
       : priorityId = id,
-        priorityIdString = id == null ? _root : id.toString();
+        priorityIdString = id == null ? _root : id.toShortString();
   const PriorityRoute.root()
       : priorityId = null,
         priorityIdString = _root;
@@ -256,11 +254,12 @@ class ActivityRoute extends PriorityRoute {
 
   ActivityRoute(
       {required this.priorityIdString, required this.activityIdString})
-      : activityId = ActivityId.fromString(activityIdString),
+      : activityId = ActivityId.fromShortString(activityIdString),
         super(priorityIdString: priorityIdString);
-  ActivityRoute.byId(PriorityId? priorityId, this.activityId)
-      : priorityIdString = priorityId?.toString() ?? PriorityRoute._root,
-        activityIdString = activityId.toString(),
+  ActivityRoute.byId(PriorityId? priorityId, ActivityId activityId)
+      : priorityIdString = priorityId?.toShortString() ?? PriorityRoute._root,
+        activityId = activityId,
+        activityIdString = activityId.toShortString(),
         super.byId(priorityId);
 
   @override
@@ -339,6 +338,7 @@ GoRouter getRouter(PanelLayout layout) {
     routes:
         layout == PanelLayout.sidebar ? [$_AdaptiveRoutes] : [$_SingleRoutes],
     redirect: (BuildContext context, GoRouterState state) async {
+      print(state.uri);
       // Using `of` method creates a dependency of StreamAuthScope. It will
       // cause go_router to reparse current route if StreamAuth has new sign-in
       // information.
