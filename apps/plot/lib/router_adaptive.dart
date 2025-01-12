@@ -13,17 +13,15 @@ part 'router_adaptive.g.dart';
   TypedGoRoute<LoginRoute>(path: LoginRoute.path),
   TypedGoRoute<SettingsRoute>(path: SettingsRoute.path),
   TypedShellRoute<_TripleRoutes>(routes: <TypedRoute<RouteData>>[
-    TypedGoRoute<PrioritiesRoute>(path: PrioritiesRoute.path, routes: [
-      TypedGoRoute<NewActivityRoute>(path: NewActivityRoute.path),
-      TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
-    ]),
+    TypedGoRoute<NewPriorityRoute>(path: NewPriorityRoute.path),
     TypedGoRoute<PriorityRoute>(path: PriorityRoute.path, routes: [
       TypedGoRoute<NewActivityRoute>(path: NewActivityRoute.path),
       TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
     ]),
-    TypedGoRoute<NewEventRoute>(path: NewEventRoute.path),
-    TypedGoRoute<EventRoute>(path: EventRoute.path),
-    TypedGoRoute<NewPriorityRoute>(path: NewPriorityRoute.path),
+    TypedGoRoute<ScheduleRoute>(path: ScheduleRoute.path, routes: [
+      TypedGoRoute<NewEventRoute>(path: NewEventRoute.path),
+      TypedGoRoute<EventRoute>(path: EventRoute.path),
+    ]),
   ]),
 ])
 @immutable
@@ -53,7 +51,7 @@ class _TripleRoutes extends ShellRouteData {
           balances: state.balances?[state.current?.id],
           isNow: state.week.isNow(),
           onCurrentPrioritySelected: (priority) {
-            PrioritiesRoute.byId(priority?.id).go(context);
+            PriorityRoute.byId(priority?.id).go(context);
           },
         ),
       ),

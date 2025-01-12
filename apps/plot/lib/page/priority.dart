@@ -65,7 +65,7 @@ class PriorityPage extends StatelessWidget {
               showLabel: false,
               onPressed: () {
                 if (state.current == null) {
-                  PrioritiesRoute().go(context);
+                  const PriorityRoute.root().go(context);
                 } else {
                   NewActivityRoute.byId(state.current!.id).go(context);
                 }

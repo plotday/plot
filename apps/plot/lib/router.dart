@@ -82,42 +82,11 @@ class SettingsRoute extends Route {
   List<Object?> get props => [];
 }
 
-@immutable
-class PrioritiesRoute extends Route {
-  static const path = '/';
-
-  PrioritiesRoute({this.d})
-      : day = d == null ? Date.today() : Date.fromString(d);
-  const PrioritiesRoute.day(this.day) : d = null;
-  factory PrioritiesRoute.byId(PriorityId? priorityId) =>
-      priorityId == null ? PrioritiesRoute() : PriorityRoute.byId(priorityId);
-
-  final Date day;
-  final String? d;
-
-  @override
-  void onEnter(BuildContext context) {
-    context.read<PriorityBloc>()
-      ..setCurrent(null)
-      ..setActivity(null);
-    context.read<NowBloc>().setPriority(null);
-  }
-
-  @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const NewPage();
-
-  @override
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const SchedulePage();
-
-  @override
-  List<Object?> get props => [];
-}
+// TODO redirect /
 
 @immutable
 class ScheduleRoute extends Route {
-  static const path = '/';
+  static const path = '/schedule';
 
   ScheduleRoute({this.d}) : day = d == null ? Date.today() : Date.fromString(d);
   const ScheduleRoute.day(this.day) : d = null;
@@ -146,8 +115,38 @@ class ScheduleRoute extends Route {
 }
 
 @immutable
+class EventRoute extends Route {
+  static const path = ':eventIdString';
+
+  EventRoute({required this.eventIdString})
+      : eventId = Uuid.fromString(eventIdString);
+  EventRoute.byId(this.eventId) : eventIdString = eventId.toString();
+
+  final String eventIdString;
+  final EventId eventId;
+
+  @override
+  void onEnter(BuildContext context) async {
+    final event = await context.read<ScheduleBloc>().selectById(eventId);
+    if (!context.mounted) return;
+    context.read<PriorityBloc>().setCurrentId(event.priorityId);
+  }
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const NewPage();
+
+  @override
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const EventPage();
+
+  @override
+  List<Object?> get props => [eventId];
+}
+
+@immutable
 class NewEventRoute extends Route {
-  static const path = '/schedule/new';
+  static const path = 'new';
 
   NewEventRoute({
     this.name,
@@ -175,19 +174,11 @@ class NewEventRoute extends Route {
   }
 
   @override
-  FutureOr<String?> redirect(BuildContext context, GoRouterState state) async {
-    final ret = await super.redirect(context, state);
-    if (ret != null) return ret;
-    if (Layout.layout == PanelLayout.sidebar && context.mounted) {
-      return PrioritiesRoute.byId(
-              context.read<PriorityBloc>().state.current?.id)
-          .location;
-    }
-    return null;
-  }
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const NewPage();
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
       const EventPage();
 
   @override
@@ -195,55 +186,23 @@ class NewEventRoute extends Route {
 }
 
 @immutable
-class EventRoute extends Route {
-  static const path = '/schedule/:eventIdString';
-
-  EventRoute({required this.eventIdString})
-      : eventId = Uuid.fromString(eventIdString);
-  EventRoute.byId(this.eventId) : eventIdString = eventId.toString();
-
-  final String eventIdString;
-  final EventId eventId;
-
-  @override
-  void onEnter(BuildContext context) async {
-    final event = await context.read<ScheduleBloc>().selectById(eventId);
-    if (!context.mounted) return;
-    context.read<PriorityBloc>().setCurrentId(event.priorityId);
-  }
-
-  @override
-  FutureOr<String?> redirect(BuildContext context, GoRouterState state) async {
-    final ret = await super.redirect(context, state);
-    if (ret != null) return ret;
-    if (Layout.layout == PanelLayout.sidebar && context.mounted) {
-      return PrioritiesRoute.byId(
-              context.read<PriorityBloc>().state.current?.id)
-          .location;
-    }
-    return null;
-  }
-
-  @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const EventPage();
-
-  @override
-  List<Object?> get props => [eventId];
-}
-
-@immutable
-class PriorityRoute extends PrioritiesRoute {
-  static const path = '/priority/:priorityIdString';
+class PriorityRoute extends Route {
+  static const path = '/priorities/:priorityIdString';
+  static const _root = 'top';
 
   PriorityRoute({required this.priorityIdString})
-      : priorityId = Uuid.fromString(priorityIdString);
-  PriorityRoute.byId(PriorityId id)
+      : priorityId = priorityIdString == _root
+            ? null
+            : Uuid.fromString(priorityIdString);
+  PriorityRoute.byId(PriorityId? id)
       : priorityId = id,
-        priorityIdString = id.toString();
+        priorityIdString = id == null ? _root : id.toString();
+  const PriorityRoute.root()
+      : priorityId = null,
+        priorityIdString = _root;
 
   final String priorityIdString;
-  final PriorityId priorityId;
+  final PriorityId? priorityId;
 
   @override
   void onEnter(BuildContext context) async {
@@ -270,13 +229,42 @@ class PriorityRoute extends PrioritiesRoute {
 }
 
 @immutable
-class ActivityRoute extends Route {
-  static const path = '/activity/:activityIdString';
+class NewPriorityRoute extends Route {
+  static const path = '/priorities/new';
 
-  ActivityRoute({required this.activityIdString})
-      : activityId = ActivityId.fromString(activityIdString);
+  const NewPriorityRoute({this.priorityIdString});
+  NewPriorityRoute.byId(PriorityId? priorityId)
+      : priorityIdString = priorityId?.toString();
+
+  final String? priorityIdString;
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const NewPage();
+
+  @override
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const NewPage();
+
+  @override
+  List<Object?> get props => [priorityIdString];
+}
+
+@immutable
+class ActivityRoute extends PriorityRoute {
+  static const path = ':activityIdString';
+
+  ActivityRoute(
+      {required this.priorityIdString, required this.activityIdString})
+      : activityId = ActivityId.fromString(activityIdString),
+        super(priorityIdString: priorityIdString);
   ActivityRoute.byId(PriorityId? priorityId, this.activityId)
-      : activityIdString = activityId.toString();
+      : priorityIdString = priorityId?.toString() ?? PriorityRoute._root,
+        activityIdString = activityId.toString(),
+        super.byId(priorityId);
+
+  @override
+  final String priorityIdString;
 
   final String activityIdString;
   final ActivityId? activityId;
@@ -300,11 +288,17 @@ class ActivityRoute extends Route {
 }
 
 @immutable
-class NewActivityRoute extends Route {
-  static const path = '/activity/new';
+class NewActivityRoute extends PriorityRoute {
+  static const path = 'new';
 
-  const NewActivityRoute();
-  const NewActivityRoute.byId(PriorityId? priorityId);
+  NewActivityRoute({required this.priorityIdString})
+      : super(priorityIdString: priorityIdString);
+  NewActivityRoute.byId(PriorityId? priorityId)
+      : priorityIdString = priorityId?.toString() ?? PriorityRoute._root,
+        super.byId(priorityId);
+
+  @override
+  final String priorityIdString;
 
   @override
   void onEnter(BuildContext context) {
@@ -321,28 +315,6 @@ class NewActivityRoute extends Route {
       const PriorityPage();
 
   @override
-  List<Object?> get props => [];
-}
-
-@immutable
-class NewPriorityRoute extends Route {
-  static const path = '/priority/new';
-
-  const NewPriorityRoute({this.priorityIdString});
-  NewPriorityRoute.byId(PriorityId? priorityId)
-      : priorityIdString = priorityId?.toString();
-
-  final String? priorityIdString;
-
-  @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const NewPage();
-
-  @override
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const NewPage();
-
-  @override
   List<Object?> get props => [priorityIdString];
 }
 
@@ -350,12 +322,12 @@ class PrioritiesBranch extends StatefulShellBranchData {
   const PrioritiesBranch();
 }
 
-class NewBranch extends StatefulShellBranchData {
-  const NewBranch();
-}
-
 class ScheduleBranch extends StatefulShellBranchData {
   const ScheduleBranch();
+}
+
+class NewBranch extends StatefulShellBranchData {
+  const NewBranch();
 }
 
 class MoreBranch extends StatefulShellBranchData {
@@ -378,8 +350,8 @@ GoRouter getRouter(PanelLayout layout) {
 
       // if the user is logged in but still on the login page, send them to
       // the home page
-      if (loggingIn) {
-        return PrioritiesRoute.path;
+      if (loggingIn || state.fullPath == null || state.fullPath!.isEmpty) {
+        return const PriorityRoute.root().location;
       }
 
       // no need to redirect at all
