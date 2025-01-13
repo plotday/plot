@@ -53,7 +53,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   void setActivityId(ActivityId? activityId) {
-    if (activityId == state.activity?.id) return;
+    if (activityId == state.activity.id) return;
     if (activityId == null) {
       setActivity(null);
     } else {
@@ -66,7 +66,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// If [activity] is null, the current draft activity (or a new one) is set.
   void setActivity(Activity? activity) {
     activity ??= state.draftActivity;
-    if (activity?.id == state.activity?.id) {
+    if (activity.id == state.activity.id) {
       return;
     }
     emit(state.copyWith(activity: Value(activity), activityNotes: []));
@@ -106,7 +106,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void _loadActivityNotes() {
     _noteSubscription?.cancel();
-    final activityId = state.activity?.id;
+    final activityId = state.activity.id;
     if (activityId != null) {
       _noteSubscription = Note.watchActivity(activityId).listen((notes) {
         emit(state.copyWith(
@@ -128,8 +128,8 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   Future<void> updateNote(Note note) async {
-    final activityUpdate = !note.draft && note.activityId == state.activity?.id
-        ? state.activity!.copyWith(order: Order.first())
+    final activityUpdate = !note.draft && note.activityId == state.activity.id
+        ? state.activity.copyWith(order: Order.first())
         : null;
     try {
       // TODO debounce save
