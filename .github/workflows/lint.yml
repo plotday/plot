@@ -72,11 +72,8 @@ jobs:
     #     echo "anon_key=${{steps.supabase-branch.outputs.anon_key}}"
     #     echo "service_role_key=${{steps.supabase-branch.outputs.service_role_key}}"
 
-    - uses: supabase/setup-cli@v1
-      with:
-        version: latest
-    - run: supabase init
-    - run: supabase db start
+    - name: Start Supabase
+      run: cd libs/db && supabase db start
 
     - name: Lint
       run: pnpm run lint
