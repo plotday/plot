@@ -29,7 +29,7 @@
     "dump-seed": "supabase db dump --data-only -f supabase/seed.sql",
     "lint": "pnpm --silent lint:view-security && pnpm --silent lint:pending-migrations && pnpm --silent lint:pending-types",
     "lint:view-security": "grep -ri '\\(CREATE\\( OR REPLACE\\)\\?\\|REPLACE\\) VIEW ' schema/ | ( ! grep --invert-match security_invoker )",
-    "lint:pending-migrations": "pnpm --silent diff-schema-migrations | tee /dev/tty | (! grep -q .)",
+    "lint:pending-migrations": "pnpm --silent diff-schema-migrations | (! grep -q .)",
     "lint:pending-types": "export $(pnpm --silent fake-env) && supabase gen types typescript --local | diff src/types.ts -",
     "test": "export $(pnpm --silent fake-env) && pnpm run test:setup && pnpm run test:lint && pnpm run test:run",
     "test:setup": "supabase start -x gotrue,realtime,storage-api,imgproxy,inbucket,studio,edge-runtime",
