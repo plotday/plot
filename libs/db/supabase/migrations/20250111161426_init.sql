@@ -30,36 +30,36 @@ DROP EXTENSION IF EXISTS "supabase-dbdev";
 
 CREATE EXTENSION "supabase-dbdev";
 
-CREATE EXTENSION IF NOT EXISTS "btree_gist" WITH SCHEMA "extensions" version '1.7';
+CREATE EXTENSION IF NOT EXISTS "btree_gist" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "http" WITH SCHEMA "extensions" version '1.6';
+CREATE EXTENSION IF NOT EXISTS "http" WITH SCHEMA "extensions";
 
 SELECT
     *
 FROM
     dbdev.install ('kiwicopple-pg_idkit');
 
-CREATE EXTENSION IF NOT EXISTS "kiwicopple-pg_idkit" WITH SCHEMA "extensions" version '0.0.4';
+CREATE EXTENSION IF NOT EXISTS "kiwicopple-pg_idkit" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "ltree" WITH SCHEMA "extensions" version '1.2';
+CREATE EXTENSION IF NOT EXISTS "ltree" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA "extensions" version '0.14.0';
+CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions" version '1.10';
+CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "pg_tle" WITH SCHEMA "pgtle" version '1.4.0';
+CREATE EXTENSION IF NOT EXISTS "pg_tle" WITH SCHEMA "pgtle";
 
-CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions" version '1.3';
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "pgjwt" WITH SCHEMA "extensions" version '0.2.0';
+CREATE EXTENSION IF NOT EXISTS "pgjwt" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "pgtap" WITH SCHEMA "extensions" version '1.2.0';
+CREATE EXTENSION IF NOT EXISTS "pgtap" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "plpgsql_check" WITH SCHEMA "extensions" version '2.7';
+CREATE EXTENSION IF NOT EXISTS "plpgsql_check" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions" version '1.1';
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA "extensions" version '0.8.0';
+CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA "extensions";
 
 DO $do$
 BEGIN
