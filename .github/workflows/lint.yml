@@ -73,7 +73,7 @@ jobs:
     #     echo "service_role_key=${{steps.supabase-branch.outputs.service_role_key}}"
 
     - name: Start Supabase
-      run: cd libs/db && supabase db start
+      run: cd libs/db && pnpm exec supabase db start
 
     - name: Lint
       run: pnpm run lint
