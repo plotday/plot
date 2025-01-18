@@ -7,7 +7,7 @@ import 'package:equatable/equatable.dart';
 import 'store/store.dart';
 import 'state/user.dart';
 import 'state/schedule.dart';
-import 'state/activity.dart';
+import 'state/priority.dart';
 import 'state/now.dart';
 import 'page/page.dart';
 import 'widget/widget.dart';
@@ -83,21 +83,21 @@ class SettingsRoute extends Route {
 }
 
 @immutable
-class HomeRoute extends Route {
-  static const path = '/';
+class ScheduleRoute extends Route {
+  static const path = '/schedule';
 
-  HomeRoute({this.d}) : day = d == null ? Date.today() : Date.fromString(d);
-  const HomeRoute.day(this.day) : d = null;
+  ScheduleRoute({this.d}) : day = d == null ? Date.today() : Date.fromString(d);
+  const ScheduleRoute.day(this.day) : d = null;
 
   final Date day;
   final String? d;
 
   @override
   void onEnter(BuildContext context) {
-    context.read<ActivityBloc>()
+    context.read<PriorityBloc>()
       ..setCurrent(null)
-      ..setTopic(null);
-    context.read<NowBloc>().setActivity(null);
+      ..setActivity(null);
+    context.read<NowBloc>().setPriority(null);
   }
 
   @override
@@ -113,8 +113,38 @@ class HomeRoute extends Route {
 }
 
 @immutable
+class EventRoute extends Route {
+  static const path = ':eventIdString';
+
+  EventRoute({required this.eventIdString})
+      : eventId = Uuid.fromShortString(eventIdString);
+  EventRoute.byId(this.eventId) : eventIdString = eventId.toShortString();
+
+  final String eventIdString;
+  final EventId eventId;
+
+  @override
+  void onEnter(BuildContext context) async {
+    final event = await context.read<ScheduleBloc>().selectById(eventId);
+    if (!context.mounted) return;
+    context.read<PriorityBloc>().setCurrentId(event.priorityId);
+  }
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const NewPage();
+
+  @override
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const EventPage();
+
+  @override
+  List<Object?> get props => [eventId];
+}
+
+@immutable
 class NewEventRoute extends Route {
-  static const path = '/schedule/new';
+  static const path = 'new';
 
   NewEventRoute({
     this.name,
@@ -142,18 +172,11 @@ class NewEventRoute extends Route {
   }
 
   @override
-  FutureOr<String?> redirect(BuildContext context, GoRouterState state) async {
-    final ret = await super.redirect(context, state);
-    if (ret != null) return ret;
-    if (Layout.layout == PanelLayout.sidebar && context.mounted) {
-      return ActivityRoute.byId(context.read<ActivityBloc>().state.current?.id)
-          .location;
-    }
-    return null;
-  }
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const NewPage();
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
       const EventPage();
 
   @override
@@ -161,90 +184,99 @@ class NewEventRoute extends Route {
 }
 
 @immutable
-class EventRoute extends Route {
-  static const path = '/schedule/:eventIdString';
+class PriorityRoute extends Route {
+  static const path = '/priorities/:priorityIdString';
+  static const _root = 'top';
 
-  EventRoute({required this.eventIdString})
-      : eventId = Uuid.fromString(eventIdString);
-  EventRoute.byId(this.eventId) : eventIdString = eventId.toString();
-
-  final String eventIdString;
-  final EventId eventId;
-
-  @override
-  void onEnter(BuildContext context) async {
-    final event = await context.read<ScheduleBloc>().selectById(eventId);
-    if (!context.mounted) return;
-    context.read<ActivityBloc>().setCurrentId(event.activityId);
-  }
-
-  @override
-  FutureOr<String?> redirect(BuildContext context, GoRouterState state) async {
-    final ret = await super.redirect(context, state);
-    if (ret != null) return ret;
-    if (Layout.layout == PanelLayout.sidebar && context.mounted) {
-      return ActivityRoute.byId(context.read<ActivityBloc>().state.current?.id)
-          .location;
-    }
-    return null;
-  }
-
-  @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const EventPage();
-
-  @override
-  List<Object?> get props => [eventId];
-}
-
-@immutable
-class ActivitiesRoute extends Route {
-  static const path = '/activity';
-
-  const ActivitiesRoute();
-
-  @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const Spinner();
-
-  @override
-  List<Object?> get props => [];
-}
-
-@immutable
-class ActivityRoute extends ActivitiesRoute {
-  static const path = '${ActivitiesRoute.path}/$subPath';
-  static const subPath = ':activityIdString';
-  static const rootId = 'root';
-
-  ActivityRoute({required this.activityIdString})
-      : activityId = activityIdString == rootId
+  PriorityRoute({required this.priorityIdString})
+      : priorityId = priorityIdString == _root
             ? null
-            : Uuid.fromString(activityIdString);
-  ActivityRoute.byId(this.activityId)
-      : activityIdString = activityId?.toString() ?? rootId;
-  const ActivityRoute.root()
-      : activityIdString = rootId,
-        activityId = null;
+            : Uuid.fromShortString(priorityIdString);
+  PriorityRoute.byId(PriorityId? id)
+      : priorityId = id,
+        priorityIdString = id == null ? _root : id.toShortString();
+  const PriorityRoute.root()
+      : priorityId = null,
+        priorityIdString = _root;
 
-  final String activityIdString;
-  final ActivityId? activityId;
+  final String priorityIdString;
+  final PriorityId? priorityId;
 
   @override
   void onEnter(BuildContext context) async {
-    context.read<ActivityBloc>().setCurrentId(activityId);
-    if (activityId == null) {
-      context.read<NowBloc>().setActivity(null);
+    context.read<PriorityBloc>().setCurrentId(priorityId);
+    if (priorityId == null) {
+      context.read<NowBloc>().setPriority(null);
       return;
     }
-    Activity activity = await Activity.get(activityId!);
+    Priority activity = await Priority.get(priorityId!);
     if (!context.mounted) return;
-    context.read<NowBloc>().setActivity(activity);
+    context.read<NowBloc>().setPriority(activity);
   }
 
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
       const NewPage();
+
+  @override
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const PriorityPage();
+
+  @override
+  List<Object?> get props => [priorityId];
+}
+
+@immutable
+class NewPriorityRoute extends Route {
+  static const path = '/priorities/new';
+
+  const NewPriorityRoute({this.priorityIdString});
+  NewPriorityRoute.byId(PriorityId? priorityId)
+      : priorityIdString = priorityId?.toString();
+
+  final String? priorityIdString;
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const NewPage();
+
+  @override
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const NewPage();
+
+  @override
+  List<Object?> get props => [priorityIdString];
+}
+
+@immutable
+class ActivityRoute extends PriorityRoute {
+  static const path = ':activityIdString';
+
+  ActivityRoute(
+      {required this.priorityIdString, required this.activityIdString})
+      : activityId = ActivityId.fromShortString(activityIdString),
+        super(priorityIdString: priorityIdString);
+  ActivityRoute.byId(PriorityId? priorityId, ActivityId activityId)
+      : priorityIdString = priorityId?.toShortString() ?? PriorityRoute._root,
+        activityId = activityId,
+        activityIdString = activityId.toShortString(),
+        super.byId(priorityId);
+
+  @override
+  final String priorityIdString;
+
+  final String activityIdString;
+  final ActivityId? activityId;
+
+  @override
+  void onEnter(BuildContext context) {
+    super.onEnter(context);
+    context.read<PriorityBloc>().setActivityId(activityId);
+  }
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const ActivityPage();
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
@@ -255,100 +287,42 @@ class ActivityRoute extends ActivitiesRoute {
 }
 
 @immutable
-class TopicRoute extends ActivityRoute {
-  static const path = '${ActivityRoute.path}/$subPath';
-  static const subPath = ':topicIdString';
+class NewActivityRoute extends PriorityRoute {
+  static const path = 'new';
 
-  TopicRoute({required this.activityIdString, required this.topicIdString})
-      : topicId = TopicId.fromString(topicIdString),
-        super(activityIdString: activityIdString);
-  TopicRoute.byId(ActivityId? activityId, this.topicId)
-      : activityIdString = activityId?.toString() ?? ActivityRoute.rootId,
-        topicIdString = topicId.toString(),
-        super.byId(activityId);
+  NewActivityRoute({required this.priorityIdString})
+      : super(priorityIdString: priorityIdString);
+  NewActivityRoute.byId(PriorityId? priorityId)
+      : priorityIdString = priorityId?.toString() ?? PriorityRoute._root,
+        super.byId(priorityId);
 
-  final String activityIdString;
-  final String topicIdString;
-  final TopicId? topicId;
+  @override
+  final String priorityIdString;
 
   @override
   void onEnter(BuildContext context) {
     super.onEnter(context);
-    context.read<ActivityBloc>().setTopic(topicId);
+    context.read<PriorityBloc>().setActivity(null);
   }
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const TopicPage();
-
-  @override
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const ActivityPage();
-
-  @override
-  List<Object?> get props => super.props + [topicId];
-}
-
-@immutable
-class ActivityAddRoute extends ActivityRoute {
-  static const path = '${ActivityRoute.path}/$subPath';
-  static const subPath = 'new';
-
-  ActivityAddRoute({required this.activityIdString})
-      : super(activityIdString: activityIdString);
-  ActivityAddRoute.byId(ActivityId? activityId)
-      : activityIdString = activityId?.toString() ?? ActivityRoute.rootId,
-        super.byId(activityId);
-
-  final String activityIdString;
-
-  @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const NewPage();
-
-  @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
       const NewPage();
-}
-
-@immutable
-class NewRoute extends ActivityRoute {
-  static const path = '${ActivityRoute.path}/$subPath';
-  static const subPath = 'new';
-
-  NewRoute({required this.activityIdString})
-      : super(activityIdString: activityIdString);
-  NewRoute.byId(ActivityId activityId)
-      : activityIdString = activityId?.toString() ?? ActivityRoute.rootId,
-        super.byId(activityId);
-
-  final String activityIdString;
 
   @override
-  void onEnter(BuildContext context) {
-    super.onEnter(context);
-    context.read<ActivityBloc>().setTopic(null);
-  }
-
-  @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const NewPage();
-
-  @override
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const NewPage();
+  List<Object?> get props => [priorityIdString];
 }
 
-class ActivityBranch extends StatefulShellBranchData {
-  const ActivityBranch();
-}
-
-class NewBranch extends StatefulShellBranchData {
-  const NewBranch();
+class PrioritiesBranch extends StatefulShellBranchData {
+  const PrioritiesBranch();
 }
 
 class ScheduleBranch extends StatefulShellBranchData {
   const ScheduleBranch();
+}
+
+class NewBranch extends StatefulShellBranchData {
+  const NewBranch();
 }
 
 class MoreBranch extends StatefulShellBranchData {
@@ -360,6 +334,7 @@ GoRouter getRouter(PanelLayout layout) {
     routes:
         layout == PanelLayout.sidebar ? [$_AdaptiveRoutes] : [$_SingleRoutes],
     redirect: (BuildContext context, GoRouterState state) async {
+      print(state.uri);
       // Using `of` method creates a dependency of StreamAuthScope. It will
       // cause go_router to reparse current route if StreamAuth has new sign-in
       // information.
@@ -371,8 +346,8 @@ GoRouter getRouter(PanelLayout layout) {
 
       // if the user is logged in but still on the login page, send them to
       // the home page
-      if (loggingIn) {
-        return HomeRoute.path;
+      if (loggingIn || state.fullPath == null || state.fullPath!.isEmpty) {
+        return const PriorityRoute.root().location;
       }
 
       // no need to redirect at all

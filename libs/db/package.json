@@ -8,10 +8,12 @@
   "private": true,
   "scripts": {
     "gen-env": "../../scripts/gen-env development $npm_package_env_vars",
+    "fake-env": "for name in $npm_package_env_vars; do echo $name=foo; done",
     "start": "export $(pnpm --silent gen-env) && export OPENAI_API_KEY=$(cat ~/.config/openai.token) && supabase start",
+    "start:db": "export $(pnpm --silent fake-env) && supabase start db",
     "stop": "export $(pnpm --silent gen-env) && supabase stop",
     "status": "export $(pnpm --silent gen-env) && supabase status",
-    "types": "export $(pnpm --silent gen-env) && supabase gen types typescript --local > src/types.ts",
+    "types": "export $(pnpm --silent fake-env) && supabase gen types typescript --local > src/types.ts",
     "gen-migration": "{ pnpm --silent diff-schema-migrations && pnpm --silent gen-view-sec; } | supabase migration new",
     "gen-view-sec": "grep -rhi 'CREATE\\( OR REPLACE\\)\\? \\+VIEW ' ./schema/ | sed 's/OR REPLACE //' | sed 's/CREATE VIEW \\(.*\\) WITH (\\(.*\\))/ALTER VIEW \\1 SET (\\2);/'",
     "diff-db-schema": "DIFF_SOURCE=database DIFF_TARGET=schema pnpm --silent tusker:diff && pnpm --silent tusker:clean",
@@ -27,14 +29,14 @@
     "dump-seed": "supabase db dump --data-only -f supabase/seed.sql",
     "lint": "pnpm --silent lint:view-security && pnpm --silent lint:pending-migrations && pnpm --silent lint:pending-types",
     "lint:view-security": "grep -ri '\\(CREATE\\( OR REPLACE\\)\\?\\|REPLACE\\) VIEW ' schema/ | ( ! grep --invert-match security_invoker )",
-    "lint:pending-migrations": "pnpm --silent diff-schema-migrations | tee /dev/tty | (! grep -q .)",
-    "lint:pending-types": "export $(pnpm --silent gen-env) && supabase gen types typescript --local | diff src/types.ts -",
-    "test": "export $(pnpm --silent gen-env) && pnpm run test:setup && pnpm run test:lint && pnpm run test:run",
+    "lint:pending-migrations": "pnpm --silent diff-schema-migrations | (! grep -q .)",
+    "lint:pending-types": "export $(pnpm --silent fake-env) && supabase gen types typescript --local | diff src/types.ts -",
+    "test": "export $(pnpm --silent fake-env) && pnpm run test:setup && pnpm run test:lint && pnpm run test:run",
     "test:setup": "supabase start -x gotrue,realtime,storage-api,imgproxy,inbucket,studio,edge-runtime",
     "test:lint": "supabase db lint",
     "test:run": "supabase db test",
-    "supabase": "export $(pnpm --silent gen-env) && supabase",
-    "migrate": "export $(pnpm --silent gen-env) && supabase db push"
+    "supabase": "export $(pnpm --silent fake-env) && supabase",
+    "migrate": "export $(pnpm --silent fake-env) && supabase db push"
   },
   "devDependencies": {
     "@plotday/tsconfig": "workspace:^",

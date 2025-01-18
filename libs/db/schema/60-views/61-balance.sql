@@ -4,7 +4,7 @@ AS
 SELECT
     user_id,
     day,
-    activity_id,
+    priority_id,
     CASE WHEN response IS NULL THEN
         'tentative'
     ELSE
@@ -21,13 +21,13 @@ WHERE
 GROUP BY
     user_id,
     day,
-    activity_id,
+    priority_id,
     response
 UNION ALL
 SELECT
     user_id,
     (lower(at) at time zone user_timezone ())::date AS day,
-    activity_id,
+    priority_id,
     'session' AS type,
     count(*) AS "count",
     sum(EXTRACT(epoch FROM upper(at) - lower(at)))::integer AS seconds,
@@ -37,12 +37,12 @@ FROM
 GROUP BY
     user_id,
     day,
-    activity_id
+    priority_id
 UNION ALL
 SELECT
     user_id,
     (COALESCE(done_at, do_at) at time zone user_timezone ())::date AS day,
-    activity_id,
+    priority_id,
     CASE WHEN done_at IS NULL THEN
         'todo'
     ELSE
@@ -52,7 +52,7 @@ SELECT
     0 AS "seconds",
     MAX(updated_at) AS updated_at
 FROM
-    "public"."note"
+    "public"."activity"
 WHERE
     draft = FALSE
     AND do_at IS NOT NULL
@@ -60,7 +60,7 @@ WHERE
 GROUP BY
     user_id,
     day,
-    activity_id,
+    priority_id,
     type;
 
 CREATE OR REPLACE VIEW balance WITH ( security_invoker = TRUE)
@@ -69,7 +69,7 @@ AS
 SELECT
     user_id,
     day,
-    NULL AS activity_id,
+    NULL AS priority_id,
     type,
     SUM(b.count) AS "count",
     SUM(b.seconds)::integer AS "seconds",
@@ -77,7 +77,7 @@ SELECT
 FROM
     balance_without_children b
 WHERE
-    b.activity_id IS NULL
+    b.priority_id IS NULL
 GROUP BY
     user_id,
     day,
@@ -86,19 +86,19 @@ UNION ALL
 SELECT
     user_id,
     day,
-    activity_id,
+    priority_id,
     type,
     SUM(b.count) AS "count",
     SUM(b.seconds)::integer AS "seconds",
     MAX(b.updated_at) AS updated_at
 FROM
     balance_without_children b
-    JOIN activity_children ac ON b.activity_id = ac.child_id
+    JOIN priority_children ac ON b.priority_id = ac.child_id
 WHERE
-    b.activity_id IS NOT NULL
+    b.priority_id IS NOT NULL
 GROUP BY
     user_id,
     day,
-    activity_id,
+    priority_id,
     type;
 

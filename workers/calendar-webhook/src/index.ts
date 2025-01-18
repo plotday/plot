@@ -1,3 +1,4 @@
+import { Request, Response } from "@cloudflare/workers-types";
 import * as Sentry from "@sentry/cloudflare";
 
 import type { CalendarConfig, OutlookChangeNotification } from "@plotday/cal";

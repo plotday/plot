@@ -72,6 +72,7 @@ dependencies:
   figma_squircle: # It was on 0.5.3 before being broken by Flutter 3.27.0. This is a fork that fixes it.
       git:
         url: https://github.com/Ax0elz/figma_squircle
+  b: ^0.2.0
 
 dev_dependencies:
   flutter_test:

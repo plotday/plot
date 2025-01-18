@@ -29,8 +29,9 @@ export 'package:plot/util/order.dart';
 part 'sync.dart';
 part 'account.dart';
 part 'calendar.dart';
-part 'activity.dart';
+part 'priority.dart';
 part 'note.dart';
+part 'activity.dart';
 part 'event.dart';
 part 'session.dart';
 part 'balance.dart';
@@ -81,6 +82,7 @@ enum PullType {
 abstract class BaseTable {
   BaseTable({
     required this.table,
+    this.writeTable,
     this.order = 'updated_at',
     this.ascending = true,
     this.upsertAsUpdate = false,
@@ -90,6 +92,9 @@ abstract class BaseTable {
   }) : name = name ?? "${table}s";
 
   final String table;
+
+  /// Override the table for writes.
+  final String? writeTable;
   final String name;
   final String? filterName;
   String get fullName => "$name${filterName == null ? "" : ":$filterName"}";
@@ -182,12 +187,12 @@ abstract class BaseTable {
       for (final row in rows) {
         final id = row['id'] as Object;
         final rest = Map<String, dynamic>.from(row)..remove('id');
-        await Base.client.from(table).update(rest).eq('id', id);
+        await Base.client.from(writeTable ?? table).update(rest).eq('id', id);
       }
     } else if (upsertAsUpdate) {
-      await Base.client.from(table).insert(rows.toList());
+      await Base.client.from(writeTable ?? table).insert(rows.toList());
     } else {
-      await Base.client.from(table).upsert(rows.toList());
+      await Base.client.from(writeTable ?? table).upsert(rows.toList());
     }
   }
 }
@@ -196,8 +201,9 @@ abstract class BaseTable {
   SyncStates,
   Accounts,
   Calendars,
-  Activities,
+  Priorities,
   Notes,
+  Activities,
   Events,
   Sessions,
   Balances,
@@ -382,6 +388,7 @@ class Store extends _$Store {
   Future<void> sync() async {
     await Future.wait([
       Account.push().then((_) => Account.pull()),
+      Priority.push().then((_) => Priority.pull()),
       Activity.push().then((_) => Activity.pull()),
       Note.push().then((_) => Note.pull()),
       Event.push().then((_) => Event.pull()),
@@ -400,7 +407,7 @@ class Store extends _$Store {
         ));
 
   @override
-  int get schemaVersion => 29;
+  int get schemaVersion => 30;
 
   @override
   MigrationStrategy get migration {

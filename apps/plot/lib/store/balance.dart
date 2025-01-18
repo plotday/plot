@@ -10,15 +10,15 @@ enum BalanceType {
 }
 
 typedef BalanceByType = Map<BalanceType, BalanceStats>;
-typedef BalanceByActivityType = Map<ActivityId?, BalanceByType>;
-typedef BalanceByDateActivityType = Map<Date, BalanceByActivityType>;
+typedef BalanceByPriorityType = Map<PriorityId?, BalanceByType>;
+typedef BalanceByDatePriorityType = Map<Date, BalanceByPriorityType>;
 
 @DataClassName('BalanceRow')
 class Balances extends StoreTable {
-  BlobColumn get activityId => blob()
+  BlobColumn get priorityId => blob()
       .nullable()
       .map(const UuidConverter())
-      .references(Activities, #id)();
+      .references(Priorities, #id)();
   TextColumn get day => text().map(const DateConverter())();
   TextColumn get type => textEnum<BalanceType>()();
 
@@ -29,7 +29,7 @@ class Balances extends StoreTable {
       integer().withDefault(const Constant(0)).map(const DurationConverter())();
 
   @override
-  Set<Column> get primaryKey => {activityId, day, type};
+  Set<Column> get primaryKey => {priorityId, day, type};
 }
 
 class BalanceBase extends BaseTable {
@@ -75,7 +75,7 @@ class Balance extends BalanceRow {
   ) =>
       Store.get.pull(PullType.all, table, WeekBalanceBase(week));
 
-  static Stream<BalanceByDateActivityType> watchDaily(DateRange range) {
+  static Stream<BalanceByDatePriorityType> watchDaily(DateRange range) {
     pullRange(range);
 
     return Date.current().switchMap((today) {
@@ -85,9 +85,9 @@ class Balance extends BalanceRow {
         ..where((t) => t.day.isNotValue(today.toString()))
         ..where((t) => t.day.isSmallerThanValue(range.end.toString()));
       final balanceStats = query.watch().map((List<BalanceRow> rows) {
-        final BalanceByDateActivityType result = {};
+        final BalanceByDatePriorityType result = {};
         for (final row in rows) {
-          final activityId = row.activityId;
+          final priorityId = row.priorityId;
           final day = row.day;
           final type = row.type;
           final balanceStat = row.day < today
@@ -100,20 +100,20 @@ class Balance extends BalanceRow {
                   futureCount: row.count,
                 );
           result.putIfAbsent(day, () => {});
-          result[day]!.putIfAbsent(activityId, () => {});
-          result[day]![activityId]![type] = balanceStat;
+          result[day]!.putIfAbsent(priorityId, () => {});
+          result[day]![priorityId]![type] = balanceStat;
         }
         return result;
       });
 
       final eventStats = !range.includes(today)
-          ? Stream.value(BalanceByActivityType.from({}))
+          ? Stream.value(BalanceByPriorityType.from({}))
           : ScheduledDay.watchToday().map(((day) {
               final now = DateTime.now();
               return groupBy(
-                  day.events, (Event e) => (e.activityId, e.response)).map(
+                  day.events, (Event e) => (e.priorityId, e.response)).map(
                 (key, events) {
-                  final activityId = key.$1;
+                  final priorityId = key.$1;
                   final response = key.$2;
                   final type = switch (response) {
                     EventResponse.accepted => BalanceType.accepted,
@@ -126,7 +126,7 @@ class Balance extends BalanceRow {
                       events.where((event) => event.at.includes(now));
                   final futureEvents =
                       events.where((event) => event.at.start.isAfter(now));
-                  return MapEntry(activityId, {
+                  return MapEntry(priorityId, {
                     type: BalanceStats(
                       pastCount: pastEvents.length,
                       pastTime: pastEvents
@@ -152,25 +152,26 @@ class Balance extends BalanceRow {
               );
             }));
 
-      final noteStats = !range.includes(today)
-          ? Stream.value(BalanceByActivityType.from({}))
-          : Note.watchActive().transform(ExpiringStreamTransformer((notes) {
+      final activityStats = !range.includes(today)
+          ? Stream.value(BalanceByPriorityType.from({}))
+          : Activity.watchActive()
+              .transform(ExpiringStreamTransformer((activities) {
               final now = DateTime.now();
               return ExpiringResult(
-                value: groupBy(notes, (note) => note.activityId)
-                    .map((activityId, notes) {
-                  final pastCount = notes
-                      .where((note) => note.doAt!.isSameOrBefore(now))
+                value: groupBy(activities, (activity) => activity.priorityId)
+                    .map((priorityId, activities) {
+                  final pastCount = activities
+                      .where((activity) => activity.doAt!.isSameOrBefore(now))
                       .length;
-                  return MapEntry(activityId, {
+                  return MapEntry(priorityId, {
                     BalanceType.todo: BalanceStats(
                       pastCount: pastCount,
-                      futureCount: notes.length - pastCount,
+                      futureCount: activities.length - pastCount,
                     )
                   });
                 }),
-                expiry: notes
-                    .map((note) => note.doAt!)
+                expiry: activities
+                    .map((activity) => activity.doAt!)
                     .where((start) => start.isAfter(now))
                     .fold(
                         null,
@@ -183,12 +184,12 @@ class Balance extends BalanceRow {
             }));
 
       final sessionStats = !range.includes(today)
-          ? Stream.value(BalanceByActivityType.from({}))
+          ? Stream.value(BalanceByPriorityType.from({}))
           : Session.watch(range: today.toDateRange(), expiring: true)
               .map((sessions) {
               final now = DateTime.now();
-              return groupBy(sessions, (session) => session.activityId)
-                  .map((activityId, groupedSessions) => MapEntry(activityId, {
+              return groupBy(sessions, (session) => session.priorityId)
+                  .map((priorityId, groupedSessions) => MapEntry(priorityId, {
                         BalanceType.session: BalanceStats(
                           pastCount: groupedSessions.length,
                           pastTime: groupedSessions
@@ -203,9 +204,9 @@ class Balance extends BalanceRow {
       return Rx.combineLatest2(
           balanceStats,
           Rx.combineLatest4(
-            Activity.watchAll(),
+            Priority.watchAll(),
             eventStats,
-            noteStats,
+            activityStats,
             sessionStats,
             (activities, events, notes, sessions) {
               return combineNestedMaps([
@@ -215,8 +216,8 @@ class Balance extends BalanceRow {
               ]);
             },
           ), (
-        BalanceByDateActivityType balanceMap,
-        BalanceByActivityType todayMap,
+        BalanceByDatePriorityType balanceMap,
+        BalanceByPriorityType todayMap,
       ) {
         balanceMap[today] = todayMap;
         return balanceMap;
@@ -224,17 +225,17 @@ class Balance extends BalanceRow {
     });
   }
 
-  static Stream<BalanceByActivityType> watch(DateRange range) {
+  static Stream<BalanceByPriorityType> watch(DateRange range) {
     return Rx.combineLatest2(Date.current(), watchDaily(range),
         (today, dailyBalanceMap) {
-      final combinedBalanceByActivityType = <ActivityId?, BalanceByType>{};
+      final combinedBalanceByPriorityType = <PriorityId?, BalanceByType>{};
       for (var date in dailyBalanceMap.keys) {
-        final balanceByActivityType = dailyBalanceMap[date]!;
-        for (var activityEntry in balanceByActivityType.entries) {
-          final activityId = activityEntry.key;
+        final balanceByPriorityType = dailyBalanceMap[date]!;
+        for (var activityEntry in balanceByPriorityType.entries) {
+          final priorityId = activityEntry.key;
           final balanceByType = activityEntry.value;
-          final combinedBalanceByType = combinedBalanceByActivityType
-              .putIfAbsent(activityId, () => <BalanceType, BalanceStats>{});
+          final combinedBalanceByType = combinedBalanceByPriorityType
+              .putIfAbsent(priorityId, () => <BalanceType, BalanceStats>{});
 
           for (var balanceTypeEntry in balanceByType.entries) {
             final balanceType = balanceTypeEntry.key;
@@ -255,7 +256,7 @@ class Balance extends BalanceRow {
         }
       }
 
-      return combinedBalanceByActivityType;
+      return combinedBalanceByPriorityType;
     });
   }
 
@@ -263,7 +264,7 @@ class Balance extends BalanceRow {
       : super(
           updatedAt: row.updatedAt,
           day: row.day,
-          activityId: row.activityId,
+          priorityId: row.priorityId,
           type: row.type,
           count: row.count,
           time: row.time,
@@ -298,27 +299,27 @@ class BalanceStats {
       'BalanceStats(count: $pastCount/$count, time: $pastTime/$time)';
 }
 
-BalanceByActivityType _aggregateChildBalances(
-  BalanceByActivityType balanceByActivity,
-  List<Activity> children,
-  ActivityId? activityId,
+BalanceByPriorityType _aggregateChildBalances(
+  BalanceByPriorityType balanceByPriority,
+  List<Priority> children,
+  PriorityId? priorityId,
 ) {
-  BalanceByActivityType newBalances = {};
-  if (balanceByActivity[activityId]?.isNotEmpty == true) {
-    newBalances[activityId] = Map.of(balanceByActivity[activityId]!);
+  BalanceByPriorityType newBalances = {};
+  if (balanceByPriority[priorityId]?.isNotEmpty == true) {
+    newBalances[priorityId] = Map.of(balanceByPriority[priorityId]!);
   }
   for (var child in children) {
     final childBalances =
-        _aggregateChildBalances(balanceByActivity, child.children, child.id);
+        _aggregateChildBalances(balanceByPriority, child.children, child.id);
     if (childBalances.isEmpty) continue;
     newBalances.addAll(childBalances);
-    if (newBalances[activityId] == null) {
-      newBalances[activityId] = childBalances[child.id]!;
+    if (newBalances[priorityId] == null) {
+      newBalances[priorityId] = childBalances[child.id]!;
       continue;
     }
     final BalanceByType newBalance = {};
     for (var balanceType in BalanceType.values) {
-      final balanceStat1 = newBalances[activityId]![balanceType];
+      final balanceStat1 = newBalances[priorityId]![balanceType];
       final balanceStat2 = childBalances[child.id]![balanceType];
       if (balanceStat1 == null && balanceStat2 == null) continue;
       if (balanceStat1 == null || balanceStat2 == null) {
@@ -327,7 +328,7 @@ BalanceByActivityType _aggregateChildBalances(
       }
       newBalance[balanceType] = balanceStat1 + balanceStat2;
     }
-    newBalances[activityId] = newBalance;
+    newBalances[priorityId] = newBalance;
   }
   return newBalances;
 }

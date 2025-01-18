@@ -5,19 +5,19 @@ import 'package:plot/store/store.dart';
 
 class Header extends StatelessWidget {
   const Header({
-    required this.activities,
-    required this.currentActivity,
-    required this.onCurrentActivitySelected,
+    required this.priorities,
+    required this.currentPriority,
+    required this.onCurrentPrioritySelected,
     this.balances,
     this.isNow = true,
     super.key,
   });
 
-  final List<Activity> activities;
-  final Activity? currentActivity;
+  final List<Priority> priorities;
+  final Priority? currentPriority;
   final BalanceByType? balances;
   final bool isNow;
-  final void Function(Activity?) onCurrentActivitySelected;
+  final void Function(Priority?) onCurrentPrioritySelected;
 
   @override
   Widget build(BuildContext context) {
@@ -25,14 +25,14 @@ class Header extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Expanded(
-          child: ActivitySelector(
-            activities: activities,
-            selected: currentActivity,
-            onSelect: onCurrentActivitySelected,
+          child: PrioritySelector(
+            priorities: priorities,
+            selected: currentPriority,
+            onSelect: onCurrentPrioritySelected,
           ),
         ),
         if (balances != null)
-          ActivityBalance(
+          PriorityBalance(
             balances: balances!,
             isNow: isNow,
           ),

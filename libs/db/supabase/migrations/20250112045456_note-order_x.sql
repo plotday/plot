@@ -1,58 +1,62 @@
+DROP TRIGGER IF EXISTS "upsert_note_x" ON "public"."note_x";
+
+DROP VIEW IF EXISTS "public"."note_x";
+
+ALTER TABLE "public"."note"
+    ALTER COLUMN "activity_id" SET NOT NULL;
+
 CREATE OR REPLACE VIEW "public"."note_x" AS
 SELECT
     note.id,
     note.created_at,
     note.updated_at,
+    note.deleted_at,
     note.draft,
-    note.archived_at,
     note.user_id,
     note.activity_id,
-    note.topic_id,
     note.body,
-    note.root,
     note.pinned,
     note."order",
     note.ordered_at,
     note.private,
-    note.do_at,
-    note.done_at,
-    activity.path AS activity_path,
     CASE WHEN (note.pinned = TRUE) THEN
-        (('200000000000000'::numeric)::double precision + note."order")
-    WHEN (note.do_at <= now()) THEN
-        ((('100000000000000'::numeric + (EXTRACT(epoch FROM note.do_at) * '1000'::numeric)))::double precision + (note."order" / ('10000000'::numeric)::double precision))
+        (('100000000000000'::numeric)::double precision + note."order")
     ELSE
         note."order"
     END AS order_x,
     COALESCE(jsonb_object_agg(tag_users.emoji, tag_users.user_ids) FILTER (WHERE (tag_users.emoji IS NOT NULL)), '{}'::jsonb) AS tags
-FROM ((note
-    LEFT JOIN activity ON (note.activity_id = activity.id))
+FROM (note
     LEFT JOIN (
         SELECT
-            tag.note_id,
+            tag.item_id,
             tag.emoji,
             array_agg(tag.user_id ORDER BY tag.user_id) AS user_ids
         FROM
             tag
-        GROUP BY
-            tag.note_id,
-            tag.emoji) tag_users ON (note.id = tag_users.note_id))
+        WHERE (tag.item_type = 'note'::item_type)
+    GROUP BY
+        tag.item_id,
+        tag.emoji) tag_users ON (note.id = tag_users.item_id))
 GROUP BY
-    note.id,
-    activity.path;
+    note.id;
+
+CREATE TRIGGER upsert_note_x
+    INSTEAD OF INSERT OR UPDATE ON public.note_x
+    FOR EACH ROW
+    EXECUTE FUNCTION handle_note_x_upsert ();
 
 ALTER VIEW note_x SET ( security_invoker = TRUE);
 ALTER VIEW gap SET ( security_invoker = TRUE);
 ALTER VIEW gap_monthly SET ( security_invoker = TRUE);
 ALTER VIEW gap_daily SET ( security_invoker = TRUE);
 ALTER VIEW insight SET ( security_invoker = TRUE);
--- ALTER VIEW insight_weekly SET ( security_invoker = TRUE);
-ALTER VIEW "public"."invitation_admin" SET ( security_invoker = FALSE);
+ALTER VIEW "admin"."sync" SET ( security_invoker = FALSE);
+ALTER VIEW "admin"."invitation" SET ( security_invoker = FALSE);
+ALTER VIEW activity_x SET ( security_invoker = TRUE);
 ALTER VIEW "public"."event_invitees" SET ( security_invoker = TRUE);
 ALTER VIEW "public"."event_x" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."waitlist_admin" SET ( security_invoker = FALSE);
-ALTER VIEW "public"."activity_x" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."activity_children" SET ( security_invoker = TRUE);
+ALTER VIEW "admin"."user" SET ( security_invoker = FALSE);
 ALTER VIEW balance_without_children SET ( security_invoker = TRUE);
 ALTER VIEW balance SET ( security_invoker = TRUE);
-ALTER VIEW "public"."sync_admin" SET ( security_invoker = FALSE);
+ALTER VIEW "public"."priority_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_children" SET ( security_invoker = TRUE);

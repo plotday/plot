@@ -1,4 +1,4 @@
-CREATE TABLE "public"."activity" (
+CREATE TABLE "public"."priority" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9,58 +9,58 @@ CREATE TABLE "public"."activity" (
     "path" ltree NOT NULL UNIQUE
 );
 
-ALTER TABLE "public"."activity" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."priority" ENABLE ROW LEVEL SECURITY;
 
-CREATE TRIGGER set_activity_updated_at
-    BEFORE UPDATE ON "public"."activity"
+CREATE TRIGGER set_priority_updated_at
+    BEFORE UPDATE ON "public"."priority"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER set_activity_created_by
-    BEFORE INSERT ON "public"."activity"
+CREATE TRIGGER set_priority_created_by
+    BEFORE INSERT ON "public"."priority"
     FOR EACH ROW
     EXECUTE FUNCTION update_created_by ();
 
-CREATE TABLE "public"."activity_user" (
+CREATE TABLE "public"."priority_user" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "deleted_at" timestamp with time zone,
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
-    "activity_id" uuid NOT NULL REFERENCES public.activity ON DELETE CASCADE,
+    "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "path" ltree,
-    CONSTRAINT activity_user_user_path_unique UNIQUE (user_id, path)
+    CONSTRAINT priority_user_user_path_unique UNIQUE (user_id, path)
 );
 
-ALTER TABLE "public"."activity_user" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."priority_user" ENABLE ROW LEVEL SECURITY;
 
-CREATE TRIGGER set_activity_user_updated_at
-    BEFORE UPDATE ON "public"."activity_user"
+CREATE TRIGGER set_priority_user_updated_at
+    BEFORE UPDATE ON "public"."priority_user"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
-CREATE TABLE "public"."activity_settings" (
+CREATE TABLE "public"."priority_settings" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
-    "activity_id" uuid NOT NULL REFERENCES public.activity ON DELETE CASCADE,
+    "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "order" double precision NOT NULL,
     "pomodoro" integer NOT NULL DEFAULT 25 * 60,
     "color" integer NOT NULL DEFAULT 0,
-    CONSTRAINT user_activity_unique UNIQUE ("user_id", "activity_id")
+    CONSTRAINT user_priority_unique UNIQUE ("user_id", "priority_id")
 );
 
-ALTER TABLE "public"."activity_settings" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."priority_settings" ENABLE ROW LEVEL SECURITY;
 
-CREATE TRIGGER set_activity_settings_updated_at
-    BEFORE UPDATE ON "public"."activity_settings"
+CREATE TRIGGER set_priority_settings_updated_at
+    BEFORE UPDATE ON "public"."priority_settings"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
-CREATE OR REPLACE FUNCTION insert_activity_user ()
+CREATE OR REPLACE FUNCTION insert_priority_user ()
     RETURNS TRIGGER
     AS $$
 BEGIN
     IF nlevel (NEW.path) = 1 THEN
-        INSERT INTO public.activity_user (created_at, updated_at, user_id, activity_id)
+        INSERT INTO public.priority_user (created_at, updated_at, user_id, priority_id)
             VALUES (now(), now(), NEW.created_by, NEW.id);
     END IF;
     RETURN NEW;
@@ -69,12 +69,12 @@ $$
 LANGUAGE plpgsql
 SECURITY DEFINER;
 
-REVOKE EXECUTE ON FUNCTION insert_activity_user () FROM anon;
+REVOKE EXECUTE ON FUNCTION insert_priority_user () FROM anon;
 
-REVOKE EXECUTE ON FUNCTION insert_activity_user () FROM authenticated;
+REVOKE EXECUTE ON FUNCTION insert_priority_user () FROM authenticated;
 
-CREATE TRIGGER activity_insert_trigger
-    AFTER INSERT ON public.activity
+CREATE TRIGGER priority_insert_trigger
+    AFTER INSERT ON public.priority
     FOR EACH ROW
-    EXECUTE FUNCTION insert_activity_user ();
+    EXECUTE FUNCTION insert_priority_user ();
 

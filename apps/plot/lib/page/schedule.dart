@@ -20,7 +20,7 @@ class SchedulePage extends StatelessWidget {
             label: 'Schedule',
             showLabel: false,
             onPressed: () {
-              HomeRoute.day(state.day).go(context);
+              ScheduleRoute.day(state.day).go(context);
             },
           ),
         ],

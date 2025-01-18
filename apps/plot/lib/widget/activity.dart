@@ -1,80 +1,81 @@
 import 'package:flutter/widgets.dart';
+import 'package:posthog_flutter/posthog_flutter.dart';
 
+import 'package:plot/util/theme_color.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-
-class ActivityBalance extends StatelessWidget {
-  const ActivityBalance({
-    required this.balances,
-    this.isNow = false,
-    super.key,
-  });
-
-  final BalanceByType balances;
-  final bool isNow;
-
-  Duration get past =>
-      (balances[BalanceType.accepted]?.pastTime ?? Duration.zero) +
-      (balances[BalanceType.session]?.pastTime ?? Duration.zero);
-  Duration get future =>
-      (balances[BalanceType.accepted]?.futureTime ?? Duration.zero) +
-      (balances[BalanceType.tentative]?.futureTime ?? Duration.zero) +
-      (balances[BalanceType.session]?.futureTime ?? Duration.zero);
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      spacing: 4,
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.ideographic,
-      children: [
-        if (past >= const Duration(minutes: 1)) DurationText(duration: past),
-        if (isNow && future >= const Duration(minutes: 1)) ...[
-          const Text("+"),
-          DurationText(duration: future),
-        ],
-      ],
-    );
-  }
-}
 
 class ActivityWidget extends StatelessWidget {
   const ActivityWidget({
     required this.activity,
-    this.balances,
+    required this.onChange,
     this.onTap,
     this.selected = false,
-    this.isNow = false,
     super.key,
   });
 
-  final Activity? activity;
-  final BalanceByType? balances;
+  final Activity activity;
   final VoidCallback? onTap;
+  final void Function(Activity) onChange;
   final bool selected;
-  final bool isNow;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      onTap: () {
-        onTap?.call();
-      },
+      onTap: onTap,
       selected: selected,
-      key: ValueKey(activity?.id.toString()),
-      leading: (balances?[BalanceType.todo]?.count != null &&
-              balances![BalanceType.todo]!.count > 0)
-          ? Badge(count: balances![BalanceType.todo]!.count)
-          : null,
-      leadingSize: const Size(16, 16),
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(activity?.name ?? 'Everything'),
-          if (balances != null)
-            ActivityBalance(balances: balances!, isNow: isNow),
-        ],
-      ),
+      leading: switch (activity) {
+        _ when activity.doNow => IconButton(
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              onChange(activity.copyWith(doneAt: Value(DateTime.now())));
+              Posthog().capture(
+                eventName: 'Activity Started',
+              );
+            },
+            icon: PlotIcon.todo(
+              color: const ThemeColor.defaultColor().getForeground(context),
+            ),
+          ),
+        _ when activity.done => IconButton(
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              onChange(activity.copyWith(doAt: Value(DateTime.now())));
+              Posthog().capture(
+                eventName: 'Activity Completed',
+              );
+            },
+            icon: PlotIcon.done(
+              color: const ThemeColor.defaultColor().getForeground(context),
+            ),
+          ),
+        _ when activity.scheduled => IconButton(
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              Posthog().capture(
+                eventName: 'Activity Scheduled',
+              );
+            },
+            icon: PlotIcon.scheduled(
+              color: const ThemeColor.defaultColor().getForeground(context),
+            ),
+          ),
+        _ when activity.pinned => IconButton(
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              onChange(activity.copyWith(pinned: false));
+              Posthog().capture(
+                eventName: 'Activity Un-pinned',
+              );
+            },
+            icon: PlotIcon.pinned(
+              color: const ThemeColor.defaultColor().getForeground(context),
+            ),
+          ),
+        _ => null,
+      },
+      leadingSize: const Size(18, 18),
+      title: Text(activity.body),
     );
   }
 }
