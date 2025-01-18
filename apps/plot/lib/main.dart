@@ -17,12 +17,18 @@ Future<void> main() async {
       options.beforeSend = (event, hint) => kDebugMode ? null : event;
     },
     appRunner: () async {
-      await dotenv.load(fileName: ".env");
-      await Base.init();
-      await Store.init();
-      GoRouter.optionURLReflectsImperativeAPIs = true;
-      usePathUrlStrategy();
-      return runApp(const App());
+      try {
+        await dotenv.load(fileName: ".env");
+        await Base.init();
+        await Store.init();
+        GoRouter.optionURLReflectsImperativeAPIs = true;
+        usePathUrlStrategy();
+        return runApp(const App());
+      } on Error catch (e) {
+        print("Error initializing app: $e");
+        print(e.stackTrace);
+        rethrow;
+      }
     },
   );
 }

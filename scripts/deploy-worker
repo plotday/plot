@@ -11,7 +11,7 @@ if [[ -v SENTRY_AUTH_TOKEN_CF ]]; then
   echo Setting SENTRY_AUTH_TOKEN
   export SENTRY_AUTH_TOKEN="$SENTRY_AUTH_TOKEN_CF"
 elif [[ -n "$(which op)" ]]; then
-  export SENTRY_AUTH_TOKEN=$(op read op://Development/Sentry/credential)
+  export SENTRY_AUTH_TOKEN=$(op --account plotco read op://Development/Sentry/credential)
 fi
 
 if [[ -v DEPLOY_VARS ]]; then
