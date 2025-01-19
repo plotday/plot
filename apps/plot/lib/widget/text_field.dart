@@ -17,6 +17,7 @@ class TextField extends StatefulWidget {
     this.textAlign = TextAlign.start,
     this.focusNode,
     this.inputFormatters,
+    this.autofocus = false,
     super.key,
   });
 
@@ -30,6 +31,7 @@ class TextField extends StatefulWidget {
   final TextAlign textAlign;
   final FocusNode? focusNode;
   final List<TextInputFormatter>? inputFormatters;
+  final bool autofocus;
 
   @override
   TextFieldState createState() => TextFieldState();
@@ -74,19 +76,21 @@ class TextFieldState extends State<TextField> {
         textAlign: widget.textAlign,
         focusNode: widget.focusNode,
         inputFormatters: widget.inputFormatters,
+        autofocus: widget.autofocus,
       ),
       builder: (_) => material.TextField(
         onChanged: widget.onChanged,
         onSubmitted: widget.onSubmitted,
         controller: _controller,
         decoration: material.InputDecoration(
-          labelText: widget.label,
+          hintText: widget.label,
         ),
         autocorrect: widget.autocorrect,
         maxLines: widget.maxLines,
         textAlign: widget.textAlign,
         focusNode: widget.focusNode,
         inputFormatters: widget.inputFormatters,
+        autofocus: widget.autofocus,
       ),
     );
   }

@@ -3,10 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart' as material;
 
 import 'package:plot/command/command.dart';
+import 'text_field.dart';
+import 'list_tile.dart';
+import 'dialog.dart';
 
 class CommandBar extends StatefulWidget {
   static Future<T?> show<T>(BuildContext context, Commands commands) =>
-      material.showDialog<T>(
+      Dialog.show<T>(
         context: context,
         builder: (context) => CommandBar(commands),
       );
@@ -105,35 +108,38 @@ class CommandBarState extends State<CommandBar> {
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
-    final heightConstraint = mediaQuery.size.height * 0.5;
+    final heightConstraint = mediaQuery.size.height * 0.8;
     return KeyboardListener(
       focusNode: FocusNode(),
       onKeyEvent: _onKeyAction,
-      child: material.Dialog(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              commands.title,
-              style: material.Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 16),
-            material.TextField(
-              controller: _controller,
-              autofocus: true,
-              decoration:
-                  const material.InputDecoration(hintText: 'Type your command'),
-            ),
-            const SizedBox(height: 16),
-            Flexible(
-              child: Container(
-                constraints: BoxConstraints(maxHeight: heightConstraint),
+      child: Dialog(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: heightConstraint,
+            maxWidth: 750,
+          ),
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                commands.title,
+                style: material.Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                label: 'Type your command',
+              ),
+              const SizedBox(height: 16),
+              Flexible(
                 child: ListView.builder(
                   shrinkWrap: true,
                   itemCount: _allCommandsCount(),
                   itemBuilder: (context, index) {
                     final command = _getCommandAtIndex(index);
-                    return material.ListTile(
+                    return ListTile(
                       leading: command.icon,
                       title: Text(command.title),
                       subtitle: command.subtitle != null
@@ -145,8 +151,8 @@ class CommandBarState extends State<CommandBar> {
                   },
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
