@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/material.dart' as material;
 
 import 'package:plot/command/command.dart';
 import 'text_field.dart';
@@ -122,15 +121,11 @@ class CommandBarState extends State<CommandBar> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                commands.title,
-                style: material.Theme.of(context).textTheme.titleLarge,
-              ),
               const SizedBox(height: 16),
               TextField(
                 controller: _controller,
                 autofocus: true,
-                label: 'Type your command',
+                label: widget.commands.prompt,
               ),
               const SizedBox(height: 16),
               Flexible(

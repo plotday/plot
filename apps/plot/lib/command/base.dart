@@ -98,11 +98,9 @@ class CommandGroup {
 
 abstract class Commands {
   Commands({
-    required this.title,
     required this.prompt,
   });
 
-  final String title;
   final String prompt;
 
   Future<List<CommandGroup>> list({String? search});

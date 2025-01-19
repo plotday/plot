@@ -16,7 +16,7 @@ class PickPriority extends Commands {
     return await CommandBar.show(
       context,
       PickPriority(
-        title: 'Pick a priority',
+        prompt: 'Pick a priority',
         priorities: context.read<PriorityBloc>().state.recent,
       ),
     );
@@ -24,8 +24,8 @@ class PickPriority extends Commands {
 
   PickPriority({
     required this.priorities,
-    required super.title,
-  }) : super(prompt: 'Search priorities');
+    required super.prompt,
+  });
 
   final List<Priority> priorities;
 
@@ -56,7 +56,7 @@ class ChangePriority extends ShowCommand<Priority> {
             meta: true,
           ),
           commands: (context) => PickPriority(
-            title: 'Switch priorities',
+            prompt: 'Switch priorities',
             priorities: context.read<PriorityBloc>().state.recent,
           ),
         );

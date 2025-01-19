@@ -9,7 +9,7 @@ class GlobalCommands extends Commands {
     ChangePriority(),
   ];
 
-  GlobalCommands() : super(title: 'Run a command', prompt: 'Search commands');
+  GlobalCommands() : super(prompt: 'Run a command');
 
   @override
   Future<List<CommandGroup>> list({String? search}) async {
