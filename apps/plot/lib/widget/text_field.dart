@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart';
-
 import 'package:platform_builder/platform_builder.dart';
 
 class TextField extends StatefulWidget {
