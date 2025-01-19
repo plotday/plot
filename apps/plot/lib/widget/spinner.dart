@@ -11,13 +11,13 @@ class Spinner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-        // macOSBuilder: (_) => Row(
-        //   spacing: 8,
-        //   children: [
-        //     if (message != null) Text(message!),
-        //     const macos.ProgressCircle(),
-        //   ],
-        // ),
+        macOSBuilder: (_) => Row(
+              spacing: 8,
+              children: [
+                if (message != null) Text(message!),
+                const macos.ProgressCircle(),
+              ],
+            ),
         builder: (_) => message == null
             ? const CircularProgressIndicator()
             : Row(
