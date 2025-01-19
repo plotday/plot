@@ -27,4 +27,6 @@ class PlotIcon extends FaIcon {
       : super(FontAwesomeIcons.plusLarge);
   const PlotIcon.startOfDay({super.size, super.color, super.key})
       : super(FontAwesomeIcons.sunHaze);
+  const PlotIcon.priority({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.rankingStar);
 }

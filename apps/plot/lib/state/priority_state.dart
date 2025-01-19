@@ -53,6 +53,7 @@ final class PriorityState extends Equatable {
   final List<Priority> rootPriorities;
   final Map<PriorityId, Priority> priorities;
   List<Priority> get children => current?.children ?? rootPriorities;
+  List<Priority> get recent => priorities.values.toList();
 
   final List<Activity>? _activities;
   bool get loading => _activities == null;
