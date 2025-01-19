@@ -23,16 +23,14 @@ abstract class Command {
   Command({
     required this.title,
     this.subtitle,
-    required this.icon,
+    this.icon,
     this.shortcut,
-    this.shortcutKeys,
   });
 
   final String title;
   final String? subtitle; // type
-  final PlotIcon icon;
-  final String? shortcut;
-  final String? shortcutKeys;
+  final PlotIcon? icon;
+  final ShortcutActivator? shortcut;
 
   Future<CommandReturn> run(BuildContext context);
 }
@@ -58,7 +56,8 @@ class ShowCommand<T> extends Command {
   ShowCommand({
     required super.title,
     super.subtitle,
-    required super.icon,
+    super.icon,
+    super.shortcut,
     required this.commands,
   });
 

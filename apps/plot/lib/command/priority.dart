@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'command.dart';
@@ -50,6 +51,10 @@ class ChangePriority extends ShowCommand<Priority> {
       : super(
           title: 'Switch priorities',
           icon: const PlotIcon.priority(),
+          shortcut: const SingleActivator(
+            LogicalKeyboardKey.keyJ,
+            meta: true,
+          ),
           commands: (context) => PickPriority(
             title: 'Switch priorities',
             priorities: context.read<PriorityBloc>().state.recent,
