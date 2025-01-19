@@ -26,6 +26,7 @@ class CommandBarState extends State<CommandBar> {
   List<CommandGroup> _filteredCommandGroups = [];
   int _focusedCommandIndex = 0;
   late Commands commands = widget.commands;
+  Widget? child;
 
   @override
   void initState() {
@@ -96,6 +97,8 @@ class CommandBarState extends State<CommandBar> {
       if (result is CommandCommands) {
         commands = result.commands;
         _initCommands();
+      } else if (result is CommandPage) {
+        setState(() => child = result.child);
       } else if (result is CommandValue && mounted) {
         Navigator.of(context).pop(result.value);
       }
@@ -108,6 +111,18 @@ class CommandBarState extends State<CommandBar> {
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final heightConstraint = mediaQuery.size.height * 0.8;
+    if (child != null) {
+      return Dialog(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: heightConstraint,
+            maxWidth: 750,
+          ),
+          padding: const EdgeInsets.all(16.0),
+          child: child,
+        ),
+      );
+    }
     return KeyboardListener(
       focusNode: FocusNode(),
       onKeyEvent: _onKeyAction,
@@ -121,31 +136,33 @@ class CommandBarState extends State<CommandBar> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(height: 16),
-              TextField(
-                controller: _controller,
-                autofocus: true,
-                label: widget.commands.prompt,
-              ),
-              const SizedBox(height: 16),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _allCommandsCount(),
-                  itemBuilder: (context, index) {
-                    final command = _getCommandAtIndex(index);
-                    return ListTile(
-                      leading: command.icon,
-                      title: Text(command.title),
-                      subtitle: command.subtitle != null
-                          ? Text(command.subtitle!)
-                          : null,
-                      selected: index == _focusedCommandIndex,
-                      onTap: _executeCommand,
-                    );
-                  },
+              if (child != null) child!,
+              if (child == null) ...[
+                TextField(
+                  controller: _controller,
+                  autofocus: true,
+                  label: widget.commands.prompt,
                 ),
-              ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _allCommandsCount(),
+                    itemBuilder: (context, index) {
+                      final command = _getCommandAtIndex(index);
+                      return ListTile(
+                        leading: command.icon,
+                        title: Text(command.title),
+                        subtitle: command.subtitle != null
+                            ? Text(command.subtitle!)
+                            : null,
+                        selected: index == _focusedCommandIndex,
+                        onTap: _executeCommand,
+                      );
+                    },
+                  ),
+                ),
+              ],
             ],
           ),
         ),

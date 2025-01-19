@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 
 import 'command.dart';
+import 'settings.dart';
 
 class GlobalCommands extends Commands {
   static final List<Command> all = [
     ChangePriority(),
+    ShowSettings(),
   ];
 
   GlobalCommands() : super(prompt: 'Run a command');

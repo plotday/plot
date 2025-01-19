@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:plot/router.dart';
+import 'package:plot/command/command.dart';
 
 enum MenuSelection {
   settings,
@@ -27,7 +27,7 @@ class _GlobalMenuState extends State<GlobalMenu> {
               members: <PlatformMenuItem>[
                 PlatformMenuItem(
                   onSelected: () {
-                    const SettingsRoute().push<void>(context);
+                    context.run(ShowSettings());
                   },
                   label: "Settings",
                 ),

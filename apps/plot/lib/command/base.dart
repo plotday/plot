@@ -19,6 +19,11 @@ class CommandCommands extends CommandReturn {
   final Commands commands;
 }
 
+class CommandPage extends CommandReturn {
+  CommandPage(this.child);
+  final Widget child;
+}
+
 abstract class Command {
   Command({
     required this.title,
