@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import 'package:plot/command/command.dart';
 import 'text_field.dart';
-import 'list_tile.dart';
 import 'dialog.dart';
 
 class CommandBar extends StatefulWidget {
@@ -26,7 +25,8 @@ class CommandBarState extends State<CommandBar> {
   List<CommandGroup> _filteredCommandGroups = [];
   int _focusedCommandIndex = 0;
   late Commands commands = widget.commands;
-  Widget? child;
+  Widget? _child;
+  String? _error;
 
   @override
   void initState() {
@@ -34,24 +34,27 @@ class CommandBarState extends State<CommandBar> {
 
     _initCommands();
 
-    _controller.addListener(_onTextChanged);
+    _controller.addListener(_initCommands);
   }
 
   void _initCommands() async {
-    final commandsList = await commands.list();
-    setState(() {
-      _filteredCommandGroups = commandsList;
-    });
-  }
-
-  void _onTextChanged() async {
-    final searchText = _controller.text;
-
-    final commandsList = await commands.list(search: searchText);
-    setState(() {
-      _filteredCommandGroups = commandsList;
-      _focusedCommandIndex = 0;
-    });
+    try {
+      setState(() {
+        _filteredCommandGroups = [];
+        _error = null;
+      });
+      final searchText = _controller.text;
+      final commandsList = await commands.list(search: searchText);
+      setState(() {
+        _filteredCommandGroups = commandsList;
+        _focusedCommandIndex = 0;
+      });
+    } catch (e) {
+      print('Error initializing commands: $e');
+      setState(() {
+        _error = 'Search failed.';
+      });
+    }
   }
 
   void _onKeyAction(KeyEvent event) {
@@ -98,7 +101,7 @@ class CommandBarState extends State<CommandBar> {
         commands = result.commands;
         _initCommands();
       } else if (result is CommandPage) {
-        setState(() => child = result.child);
+        setState(() => _child = result.child);
       } else if (result is CommandValue && mounted) {
         Navigator.of(context).pop(result.value);
       }
@@ -111,7 +114,7 @@ class CommandBarState extends State<CommandBar> {
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final heightConstraint = mediaQuery.size.height * 0.8;
-    if (child != null) {
+    if (_child != null) {
       return Dialog(
         child: Container(
           constraints: BoxConstraints(
@@ -119,7 +122,7 @@ class CommandBarState extends State<CommandBar> {
             maxWidth: 750,
           ),
           padding: const EdgeInsets.all(16.0),
-          child: child,
+          child: _child,
         ),
       );
     }
@@ -136,8 +139,9 @@ class CommandBarState extends State<CommandBar> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (child != null) child!,
-              if (child == null) ...[
+              if (_error != null) Text(_error!),
+              if (_child != null) _child!,
+              if (_child == null) ...[
                 TextField(
                   controller: _controller,
                   autofocus: true,
@@ -150,12 +154,8 @@ class CommandBarState extends State<CommandBar> {
                     itemCount: _allCommandsCount(),
                     itemBuilder: (context, index) {
                       final command = _getCommandAtIndex(index);
-                      return ListTile(
-                        leading: command.icon,
-                        title: Text(command.title),
-                        subtitle: command.subtitle != null
-                            ? Text(command.subtitle!)
-                            : null,
+                      return command.build(
+                        context,
                         selected: index == _focusedCommandIndex,
                         onTap: _executeCommand,
                       );

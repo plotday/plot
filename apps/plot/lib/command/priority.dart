@@ -3,10 +3,35 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'command.dart';
-import 'package:plot/widget/icon.dart';
-import 'package:plot/widget/command_bar.dart';
+import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
+
+class PriorityCommand extends ValueCommand<Priority?> {
+  PriorityCommand(
+    this.priority,
+  ) : super(
+          title: priority?.name ?? 'All Priorities',
+          icon: const PlotIcon.priority(),
+          value: priority,
+        );
+
+  final Priority? priority;
+
+  @override
+  Widget build(
+    BuildContext context, {
+    bool selected = false,
+    void Function()? onTap,
+  }) =>
+      ListTile(
+        leading: icon,
+        title: PriorityLabel(priority: priority),
+        subtitle: subtitle != null ? Text(subtitle!) : null,
+        selected: selected,
+        onTap: onTap,
+      );
+}
 
 class PickPriority extends Commands {
   static Future<Priority?> show({
@@ -27,20 +52,15 @@ class PickPriority extends Commands {
     required super.prompt,
   });
 
-  final List<Priority> priorities;
+  final List<Priority?> priorities;
 
   @override
   Future<List<CommandGroup>> list({String? search}) async {
     return [
       CommandGroup(
         title: 'Recent',
-        commands: priorities
-            .map((priority) => ValueCommand(
-                  title: priority.name,
-                  icon: const PlotIcon.priority(),
-                  value: priority,
-                ))
-            .toList(),
+        commands:
+            priorities.map((priority) => PriorityCommand(priority)).toList(),
       ),
     ];
   }

@@ -1,7 +1,42 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart' as material;
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+
+class PriorityLabel extends StatelessWidget {
+  const PriorityLabel({required this.priority, super.key});
+
+  final Priority? priority;
+
+  @override
+  Widget build(BuildContext context) {
+    if (priority == null) {
+      return const Text('All Priorities');
+    }
+    final ancestors = priority!.ancestors;
+    return Wrap(
+      spacing: 8,
+      children: [
+        Text(priority!.name),
+        if (ancestors.isNotEmpty)
+          ...(List<Widget>.of([
+                const PlotIcon.pipe(size: 14, color: material.Colors.grey)
+              ]) +
+              ancestors
+                  .map((a) => Text(a.name))
+                  .toList()
+                  .expand((widget) => [
+                        widget,
+                        const PlotIcon.right(
+                            size: 14, color: material.Colors.grey)
+                      ])
+                  .toList()
+            ..removeLast())
+      ],
+    );
+  }
+}
 
 class PriorityBalance extends StatelessWidget {
   const PriorityBalance({
@@ -38,8 +73,8 @@ class PriorityBalance extends StatelessWidget {
   }
 }
 
-class PriorityWidget extends StatelessWidget {
-  const PriorityWidget({
+class PriorityTile extends StatelessWidget {
+  const PriorityTile({
     required this.priority,
     this.balances,
     this.onTap,

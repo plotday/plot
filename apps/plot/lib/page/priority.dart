@@ -91,7 +91,7 @@ class PriorityPage extends StatelessWidget {
                 ),
                 ReorderableListView(
                   list: state.children,
-                  itemBuilder: (buildContext, item) => PriorityWidget(
+                  itemBuilder: (buildContext, item) => PriorityTile(
                       priority: item,
                       balances: state.balances?[item.id],
                       isNow: state.week.isNow(),

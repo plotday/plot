@@ -2,6 +2,7 @@ export 'activity.dart';
 export 'badge.dart';
 export 'bidirectional_list.dart';
 export 'button.dart';
+export 'command_bar.dart';
 export 'dropdown.dart';
 export 'header.dart';
 export 'icon.dart';

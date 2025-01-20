@@ -199,8 +199,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   bool isParent(Priority other) => path.isParent(other.path);
-  List<Priority> get ancestry =>
-      parent == null ? [this] : parent!.ancestry + [this];
+  List<Priority> get ancestors =>
+      parent == null ? [] : parent!.ancestors + [parent!];
   List<Priority> get peers => parent?.children ?? [];
   Priority get root => parent?.root ?? this;
 

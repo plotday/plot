@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:plot/widget/icon.dart';
-import 'package:plot/widget/command_bar.dart';
+import 'package:plot/widget/widget.dart';
 
 sealed class CommandReturn {}
 
@@ -38,6 +37,19 @@ abstract class Command {
   final ShortcutActivator? shortcut;
 
   Future<CommandReturn> run(BuildContext context);
+
+  Widget build(
+    BuildContext context, {
+    bool selected = false,
+    void Function()? onTap,
+  }) =>
+      ListTile(
+        leading: icon,
+        title: Text(title),
+        subtitle: subtitle != null ? Text(subtitle!) : null,
+        selected: selected,
+        onTap: onTap,
+      );
 }
 
 /// A command for returning a value
@@ -70,14 +82,20 @@ class ShowCommand<T> extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final value = await CommandBar.show<T>(
-      context,
-      commands(context),
-    );
-    if (context.mounted) {
-      onSelect(context, value);
+    try {
+      final value = await CommandBar.show<T>(
+        context,
+        commands(context),
+      );
+      if (context.mounted) {
+        onSelect(context, value);
+      }
+      return CommandValue(value);
+    } on Error catch (e) {
+      print(e);
+      print(e.stackTrace);
+      rethrow;
     }
-    return CommandValue(value);
   }
 
   void onSelect(BuildContext context, T? value) {}

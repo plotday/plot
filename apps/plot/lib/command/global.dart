@@ -45,7 +45,14 @@ class GlobalShortcuts extends StatelessWidget {
             ? bindings
             : {
                 ...bindings,
-                command.shortcut!: () => context.run(command),
+                command.shortcut!: () {
+                  try {
+                    context.run(command);
+                  } catch (e) {
+                    print('Error running command: $e');
+                    rethrow;
+                  }
+                },
               },
       ),
       child: child,
