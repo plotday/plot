@@ -59,14 +59,14 @@ class PriorityBalance extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      spacing: 4,
+      spacing: 8,
       crossAxisAlignment: CrossAxisAlignment.baseline,
       textBaseline: TextBaseline.ideographic,
       children: [
-        if (past >= const Duration(minutes: 1)) DurationText(duration: past),
+        if (past >= const Duration(minutes: 1))
+          DurationText(duration: past, icon: const PlotIcon.up(size: 14)),
         if (isNow && future >= const Duration(minutes: 1)) ...[
-          const Text("+"),
-          DurationText(duration: future),
+          DurationText(duration: future, icon: const PlotIcon.down(size: 14)),
         ],
       ],
     );

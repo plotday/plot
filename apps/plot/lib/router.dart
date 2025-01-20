@@ -205,7 +205,7 @@ class PriorityRoute extends Route {
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const PriorityPage();
+      const Scaffold(header: PriorityHeader(), body: PriorityPage());
 
   @override
   List<Object?> get props => [priorityId];

@@ -5,16 +5,16 @@ import 'package:figma_squircle/figma_squircle.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 import 'package:macos_window_utils/widgets/visual_effect_subview_container/visual_effect_subview_container.dart';
 
-import 'package:plot/page/widget/global_menu.dart';
+import 'global_menu.dart';
 import 'scaffold.dart';
 
 class MacLayout extends StatelessWidget {
-  const MacLayout(this.left, this.main, this.right, {this.title, super.key});
+  const MacLayout(this.left, this.main, this.right, {this.header, super.key});
 
   final Widget main;
   final Widget? right;
   final Widget left;
-  final Widget? title;
+  final Widget? header;
 
   @override
   Widget build(BuildContext context) {
@@ -35,24 +35,24 @@ class MacLayout extends StatelessWidget {
               .withLightness(isDark ? 0.2 : 0.8)
               .withSaturation(isDark ? 0.7 : 1.0)
               .toColor()
-              .withOpacity(0.35),
-          child: ResizableContainer(
-            direction: Axis.horizontal,
-            divider: const ResizableDivider(
-              color: MacosColors.transparent,
-              thickness: 4.0,
-            ),
-            children: [
-              ResizableChild(
-                size: const ResizableSize.ratio(0.20),
-                minSize: 200,
-                maxSize: 400,
-                child: left,
+              .withValues(alpha: 0.35),
+          child: Scaffold(
+            header: header,
+            body: ResizableContainer(
+              direction: Axis.horizontal,
+              divider: const ResizableDivider(
+                color: MacosColors.transparent,
+                thickness: 4.0,
               ),
-              ResizableChild(
-                child: Scaffold(
-                  title: title,
-                  body: Column(
+              children: [
+                ResizableChild(
+                  size: const ResizableSize.ratio(0.20),
+                  minSize: 200,
+                  maxSize: 400,
+                  child: left,
+                ),
+                ResizableChild(
+                  child: Column(
                     children: [
                       Expanded(
                         child: ClipSmoothRect(
@@ -72,15 +72,15 @@ class MacLayout extends StatelessWidget {
                     ],
                   ),
                 ),
-              ),
-              if (right != null)
-                ResizableChild(
-                  size: const ResizableSize.ratio(0.20),
-                  minSize: 350,
-                  maxSize: 500,
-                  child: right!,
-                ),
-            ],
+                if (right != null)
+                  ResizableChild(
+                    size: const ResizableSize.ratio(0.20),
+                    minSize: 350,
+                    maxSize: 500,
+                    child: right!,
+                  ),
+              ],
+            ),
           ),
         ),
       ),

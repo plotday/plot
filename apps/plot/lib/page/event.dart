@@ -12,9 +12,30 @@ class EventPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
-      builder: (context, state) => Scaffold(
+      builder: (context, state) => Column(
+        children: [
+          EventDetails(
+            event: state.selected!,
+            onChanged: (event) {
+              context.read<ScheduleBloc>().update(event);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class EventHeader extends StatelessWidget {
+  const EventHeader({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<ScheduleBloc, ScheduleState>(
+      builder: (context, state) => Header(
+        title: state.selected?.name ?? 'Event',
         actions: [
-          ActionItem(
+          HeaderAction(
             icon: const PlotIcon.today(),
             label: 'Schedule',
             showLabel: false,
@@ -23,16 +44,6 @@ class EventPage extends StatelessWidget {
             },
           ),
         ],
-        body: Column(
-          children: [
-            EventDetails(
-              event: state.selected!,
-              onChanged: (event) {
-                context.read<ScheduleBloc>().update(event);
-              },
-            ),
-          ],
-        ),
       ),
     );
   }

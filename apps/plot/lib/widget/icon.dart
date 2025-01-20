@@ -13,6 +13,10 @@ class PlotIcon extends FaIcon {
       : super(FontAwesomeIcons.chevronLeft);
   const PlotIcon.right({super.size, super.color, super.key})
       : super(FontAwesomeIcons.chevronRight);
+  const PlotIcon.up({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.caretUp);
+  const PlotIcon.down({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.caretDown);
   const PlotIcon.pipe({super.size, super.color, super.key})
       : super(FontAwesomeIcons.pipe);
   const PlotIcon.todo({super.size, super.color, super.key})
