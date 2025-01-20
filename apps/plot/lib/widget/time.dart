@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:plot/util/time.dart';
 import 'package:plot/util/theme_color.dart';
+import 'package:plot/widget/widget.dart';
 
 class SmallCapsWidget extends StatelessWidget {
   const SmallCapsWidget({required this.text, super.key});
@@ -100,45 +101,52 @@ class DurationWidget extends StatelessWidget {
 }
 
 class DurationText extends StatelessWidget {
-  const DurationText({required this.duration, super.key});
+  const DurationText({required this.duration, this.icon, super.key});
 
   final Duration duration;
+  final PlotIcon? icon;
 
   @override
   Widget build(BuildContext context) {
-    return Text.rich(
-      TextSpan(
-        style: const TextStyle(
-          fontSize: 12,
-          height: 1,
+    return Row(
+      spacing: 4,
+      children: [
+        if (icon != null) icon!,
+        Text.rich(
+          TextSpan(
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1,
+            ),
+            children: <TextSpan>[
+              if (!duration.hasHours && !duration.hasMinutes)
+                const TextSpan(
+                  text: '—',
+                ),
+              if (duration.hasHours)
+                TextSpan(
+                  text: duration.hoursString,
+                ),
+              if (duration.hasHours)
+                const TextSpan(
+                  text: 'h',
+                  style: TextStyle(fontSize: 10),
+                ),
+              if (duration.hasHours && duration.hasMinutes)
+                const TextSpan(text: ' '),
+              if (duration.hasMinutes)
+                TextSpan(
+                  text: duration.minutesString,
+                ),
+              if (duration.hasMinutes)
+                const TextSpan(
+                  text: 'm',
+                  style: TextStyle(fontSize: 10),
+                ),
+            ],
+          ),
         ),
-        children: <TextSpan>[
-          if (!duration.hasHours && !duration.hasMinutes)
-            const TextSpan(
-              text: '—',
-            ),
-          if (duration.hasHours)
-            TextSpan(
-              text: duration.hoursString,
-            ),
-          if (duration.hasHours)
-            const TextSpan(
-              text: 'h',
-              style: TextStyle(fontSize: 10),
-            ),
-          if (duration.hasHours && duration.hasMinutes)
-            const TextSpan(text: ' '),
-          if (duration.hasMinutes)
-            TextSpan(
-              text: duration.minutesString,
-            ),
-          if (duration.hasMinutes)
-            const TextSpan(
-              text: 'm',
-              style: TextStyle(fontSize: 10),
-            ),
-        ],
-      ),
+      ],
     );
   }
 }

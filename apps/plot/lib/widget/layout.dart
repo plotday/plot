@@ -30,7 +30,7 @@ sealed class Layout extends StatelessWidget {
         buttonType: NSWindowButtonType.zoomButton,
       );
       toolbarPadding = EdgeInsets.only(
-        left: lastWindowButtonPos.right + 8.0,
+        left: lastWindowButtonPos.right,
       );
     } else {
       toolbarHeight = 32.0;
@@ -94,7 +94,7 @@ final class SidebarLayout extends Layout {
     this.left,
     this.main,
     this.right, {
-    this.title,
+    this.header,
     super.key,
   });
 
@@ -105,13 +105,13 @@ final class SidebarLayout extends Layout {
         left,
         main,
         right,
-        title: title,
+        header: header,
       ),
       builder: (_) => MaterialLayout(
         drawer: left,
         primary: main,
         secondary: right,
-        title: title,
+        header: header,
       ),
     );
   }
@@ -119,5 +119,5 @@ final class SidebarLayout extends Layout {
   final Widget left;
   final Widget main;
   final Widget right;
-  final Widget? title;
+  final Widget? header;
 }

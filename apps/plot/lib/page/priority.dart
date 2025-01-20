@@ -51,85 +51,94 @@ class ReorderableActivitiesView extends StatelessWidget {
       );
 }
 
+class PriorityHeader extends StatelessWidget {
+  const PriorityHeader({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<PriorityBloc, PriorityState>(
+      builder: (buildContext, state) => Header(
+        title: state.current?.name ?? 'All Priorities',
+        actions: [
+          HeaderAction(
+            icon: const PlotIcon.add(),
+            label: 'New',
+            showLabel: false,
+            onPressed: () {
+              NewActivityRoute.byId(state.current?.id).go(context);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class PriorityPage extends StatelessWidget {
   const PriorityPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
-      builder: (buildContext, state) => Scaffold(
-          actions: [
-            ActionItem(
-              icon: const PlotIcon.add(),
-              label: 'New',
-              showLabel: false,
-              onPressed: () {
-                NewActivityRoute.byId(state.current?.id).go(context);
+      builder: (buildContext, state) => BidirectionalList(
+        scrollController: ScrollControllerContext.of(context),
+        count: state.inactiveActivities.length,
+        builder: (context, index) => ActivityWidget(
+          activity: state.inactiveActivities[index],
+          selected: state.activity.id == state.inactiveActivities[index].id,
+          onChange: (activity) =>
+              context.read<PriorityBloc>().updateActivity(activity),
+          onTap: () => ActivityRoute.byId(
+            state.inactiveActivities[index].priorityId,
+            state.inactiveActivities[index].id,
+          ).go(context),
+        ),
+        header: Column(
+          children: [
+            WeekSelector(
+              week: state.week,
+              onSelect: (week) => context.read<PriorityBloc>().setWeek(week),
+            ),
+            ReorderableListView(
+              list: state.children,
+              itemBuilder: (buildContext, item) => PriorityTile(
+                  priority: item,
+                  balances: state.balances?[item.id],
+                  isNow: state.week.isNow(),
+                  onTap: () {
+                    if (item.id == null) return;
+                    PriorityRoute.byId(item.id).go(context);
+                  }),
+              shrinkWrap: true,
+              onReorder: (int oldIndex, int newIndex) async {
+                var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+                var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+                Priority? previous;
+                if (previousIndex >= 0) {
+                  previous = state.children[previousIndex];
+                }
+                Priority? next;
+                if (nextIndex < state.children.length) {
+                  next = state.children[nextIndex];
+                }
+                state.children[oldIndex]
+                    .copyWith(
+                      order: Order.between(previous?.order, next?.order),
+                    )
+                    .save();
               },
             ),
+            ReorderableActivitiesView(
+              activities: state.pinnedActivities,
+              selected: state.activity.id,
+            ),
+            ReorderableActivitiesView(
+              activities: state.activeActivities,
+              selected: state.activity.id,
+            ),
           ],
-          body: BidirectionalList(
-            scrollController: ScrollControllerContext.of(context),
-            count: state.inactiveActivities.length,
-            builder: (context, index) => ActivityWidget(
-              activity: state.inactiveActivities[index],
-              selected:
-                  state.activity?.id == state.inactiveActivities[index].id,
-              onChange: (activity) =>
-                  context.read<PriorityBloc>().updateActivity(activity),
-              onTap: () => ActivityRoute.byId(
-                state.inactiveActivities[index].priorityId,
-                state.inactiveActivities[index].id,
-              ).go(context),
-            ),
-            header: Column(
-              children: [
-                WeekSelector(
-                  week: state.week,
-                  onSelect: (week) =>
-                      context.read<PriorityBloc>().setWeek(week),
-                ),
-                ReorderableListView(
-                  list: state.children,
-                  itemBuilder: (buildContext, item) => PriorityTile(
-                      priority: item,
-                      balances: state.balances?[item.id],
-                      isNow: state.week.isNow(),
-                      onTap: () {
-                        if (item.id == null) return;
-                        PriorityRoute.byId(item.id).go(context);
-                      }),
-                  shrinkWrap: true,
-                  onReorder: (int oldIndex, int newIndex) async {
-                    var previousIndex =
-                        newIndex + (newIndex < oldIndex ? -1 : 0);
-                    var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-                    Priority? previous;
-                    if (previousIndex >= 0) {
-                      previous = state.children[previousIndex];
-                    }
-                    Priority? next;
-                    if (nextIndex < state.children.length) {
-                      next = state.children[nextIndex];
-                    }
-                    state.children[oldIndex]
-                        .copyWith(
-                          order: Order.between(previous?.order, next?.order),
-                        )
-                        .save();
-                  },
-                ),
-                ReorderableActivitiesView(
-                  activities: state.pinnedActivities,
-                  selected: state.activity?.id,
-                ),
-                ReorderableActivitiesView(
-                  activities: state.activeActivities,
-                  selected: state.activity?.id,
-                ),
-              ],
-            ),
-          )),
+        ),
+      ),
     );
   }
 }

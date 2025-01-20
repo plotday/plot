@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:plot/command/command.dart';
+
 class MaterialLayout extends StatelessWidget {
   static const singleBreakpoint = WidthPlatformBreakpoint(end: 600);
   static const doubleBreakpoint = WidthPlatformBreakpoint(begin: 600, end: 840);
@@ -22,7 +24,7 @@ class MaterialLayout extends StatelessWidget {
       this.secondary,
       this.drawer,
       this.navigationShell,
-      this.title,
+      this.header,
       super.key});
 
   // Displayed at all breakpoints
@@ -31,7 +33,7 @@ class MaterialLayout extends StatelessWidget {
   final Widget? secondary;
   // Displayed at triple breakpoints
   final Widget? drawer;
-  final Widget? title;
+  final Widget? header;
   // Displayed at single and double breakpoints
   final StatefulNavigationShell? navigationShell;
 
@@ -71,7 +73,7 @@ class MaterialLayout extends StatelessWidget {
           config: <Breakpoint, SlotLayoutConfig>{
             MaterialLayout.allBreakpoints: SlotLayout.from(
               key: const Key('Title'),
-              builder: (_) => title ?? const Text('Plot'),
+              builder: (_) => header ?? const Text('Plot'),
             ),
           },
         ),
@@ -93,18 +95,18 @@ class MaterialLayout extends StatelessWidget {
                             icon: Icon(Icons.calendar_today),
                             label: 'Schedule',
                           ),
-                          // NavigationDestination(
-                          //   icon: Icon(Icons.schedule),
-                          //   label: 'Now',
-                          // ),
-                          // NavigationDestination(
-                          //   icon: Icon(Icons.settings),
-                          //   label: 'Settings',
-                          // ),
+                          NavigationDestination(
+                            icon: Icon(Icons.settings),
+                            label: 'Settings',
+                          ),
                         ],
                         currentIndex: navigationShell!.currentIndex,
                         onDestinationSelected: (int index) {
                           if (navigationShell == null) return;
+                          if (index == 2) {
+                            context.run(ShowSettings());
+                            return;
+                          }
                           navigationShell!.goBranch(index);
                         },
                       ),

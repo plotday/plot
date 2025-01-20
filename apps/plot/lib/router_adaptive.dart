@@ -45,8 +45,8 @@ class _TripleRoutes extends ShellRouteData {
         const PriorityPage(),
         child,
         const SchedulePage(),
-        title: BlocBuilder<PriorityBloc, PriorityState>(
-          builder: (context, state) => Header(
+        header: BlocBuilder<PriorityBloc, PriorityState>(
+          builder: (context, state) => GlobalHeader(
             priorities: state.rootPriorities,
             currentPriority: state.current,
             balances: state.balances?[state.current?.id],

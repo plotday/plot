@@ -13,9 +13,50 @@ class SchedulePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
-      builder: (context, state) => Scaffold(
+      builder: (context, state) => Column(
+        children: [
+          if (state.selected != null)
+            EventDetails(
+              event: state.selected!,
+              onChanged: (event) {
+                context.read<ScheduleBloc>().update(event);
+              },
+            ),
+          Expanded(
+            child: ScheduleWidget(
+              scrollController: ScrollControllerContext.of(context),
+              range: state.range,
+              anchor: state.anchor,
+              schedule: state.schedule,
+              selected: state.selected,
+              fetcher: (range) async {
+                context.read<ScheduleBloc>().watch(range);
+              },
+              onSelect: (event) {
+                if (event.isBlank) {
+                  NewEventRoute.at(event.at).go(context);
+                } else {
+                  EventRoute.byId(event.id).go(context);
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ScheduleHeader extends StatelessWidget {
+  const ScheduleHeader({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<ScheduleBloc, ScheduleState>(
+      builder: (context, state) => Header(
+        title: 'Schedule',
         actions: [
-          ActionItem(
+          HeaderAction(
             icon: const PlotIcon.today(),
             label: 'Schedule',
             showLabel: false,
@@ -24,36 +65,6 @@ class SchedulePage extends StatelessWidget {
             },
           ),
         ],
-        body: Column(
-          children: [
-            if (state.selected != null)
-              EventDetails(
-                event: state.selected!,
-                onChanged: (event) {
-                  context.read<ScheduleBloc>().update(event);
-                },
-              ),
-            Expanded(
-              child: ScheduleWidget(
-                scrollController: ScrollControllerContext.of(context),
-                range: state.range,
-                anchor: state.anchor,
-                schedule: state.schedule,
-                selected: state.selected,
-                fetcher: (range) async {
-                  context.read<ScheduleBloc>().watch(range);
-                },
-                onSelect: (event) {
-                  if (event.isBlank) {
-                    NewEventRoute.at(event.at).go(context);
-                  } else {
-                    EventRoute.byId(event.id).go(context);
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
