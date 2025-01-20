@@ -1,0 +1,88 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import 'command.dart';
+import 'package:plot/widget/widget.dart';
+import 'package:plot/store/store.dart';
+import 'package:plot/state/priority.dart';
+
+class PriorityCommand extends ValueCommand<Priority?> {
+  PriorityCommand(
+    this.priority,
+  ) : super(
+          title: priority?.name ?? 'All Priorities',
+          icon: const PlotIcon.priority(),
+          value: priority,
+        );
+
+  final Priority? priority;
+
+  @override
+  Widget build(
+    BuildContext context, {
+    bool selected = false,
+    void Function()? onTap,
+  }) =>
+      ListTile(
+        leading: icon,
+        title: PriorityLabel(priority: priority),
+        subtitle: subtitle != null ? Text(subtitle!) : null,
+        selected: selected,
+        onTap: onTap,
+      );
+}
+
+class PickPriority extends Commands {
+  static Future<Priority?> show({
+    required BuildContext context,
+    Priority? defaultPriority,
+  }) async {
+    return await CommandBar.show(
+      context,
+      PickPriority(
+        prompt: 'Pick a priority',
+        priorities: context.read<PriorityBloc>().state.recent,
+      ),
+    );
+  }
+
+  PickPriority({
+    required this.priorities,
+    required super.prompt,
+  });
+
+  final List<Priority?> priorities;
+
+  @override
+  Future<List<CommandGroup>> list({String? search}) async {
+    return [
+      CommandGroup(
+        title: 'Recent',
+        commands:
+            priorities.map((priority) => PriorityCommand(priority)).toList(),
+      ),
+    ];
+  }
+}
+
+class ChangePriority extends ShowCommand<Priority> {
+  ChangePriority()
+      : super(
+          title: 'Switch priorities',
+          icon: const PlotIcon.priority(),
+          shortcut: const SingleActivator(
+            LogicalKeyboardKey.keyJ,
+            meta: true,
+          ),
+          commands: (context) => PickPriority(
+            prompt: 'Switch priorities',
+            priorities: context.read<PriorityBloc>().state.recent,
+          ),
+        );
+
+  @override
+  void onSelect(BuildContext context, Priority? value) async {
+    context.read<PriorityBloc>().setCurrent(value);
+  }
+}

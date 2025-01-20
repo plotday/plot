@@ -113,6 +113,8 @@ abstract class DateRange extends Equatable {
 
   Date get start;
   Date get end;
+  Date get first => start;
+  Date get last => end.subDays(1);
   DateRange previous();
   DateRange next();
 
@@ -213,7 +215,7 @@ class Week extends DateRange {
   @override
   String format() {
     final week =
-        "${start.toDateTime().format('MMM d')} - ${end.month == start.month ? '' : "${end.toDateTime().format('MMM')} "}${end.toDateTime().format('d')}";
+        "${first.toDateTime().format('MMM d')} – ${last.month == first.month ? '' : "${last.toDateTime().format('MMM')} "}${last.toDateTime().format('d')}";
     if (isNow()) {
       return "This week ($week)";
     } else if (next().isNow()) {

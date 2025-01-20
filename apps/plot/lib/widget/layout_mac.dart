@@ -76,8 +76,8 @@ class MacLayout extends StatelessWidget {
               if (right != null)
                 ResizableChild(
                   size: const ResizableSize.ratio(0.20),
-                  minSize: 200,
-                  maxSize: 400,
+                  minSize: 350,
+                  maxSize: 500,
                   child: right!,
                 ),
             ],

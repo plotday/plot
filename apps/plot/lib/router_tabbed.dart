@@ -27,11 +27,6 @@ part 'router_tabbed.g.dart';
           ]),
         ],
       ),
-      TypedStatefulShellBranch<MoreBranch>(
-        routes: <TypedGoRoute<GoRouteData>>[
-          TypedGoRoute<SettingsRoute>(path: SettingsRoute.path),
-        ],
-      ),
     ],
   ),
 ])

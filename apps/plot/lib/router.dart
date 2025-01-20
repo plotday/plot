@@ -68,21 +68,6 @@ class LoginRoute extends Route {
 }
 
 @immutable
-class SettingsRoute extends Route {
-  static const path = '/settings';
-
-  const SettingsRoute();
-
-  @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) {
-    return const AccountPage();
-  }
-
-  @override
-  List<Object?> get props => [];
-}
-
-@immutable
 class ScheduleRoute extends Route {
   static const path = '/schedule';
 
@@ -323,10 +308,6 @@ class ScheduleBranch extends StatefulShellBranchData {
 
 class NewBranch extends StatefulShellBranchData {
   const NewBranch();
-}
-
-class MoreBranch extends StatefulShellBranchData {
-  const MoreBranch();
 }
 
 GoRouter getRouter(PanelLayout layout) {

@@ -24,10 +24,10 @@ Future<void> main() async {
         GoRouter.optionURLReflectsImperativeAPIs = true;
         usePathUrlStrategy();
         return runApp(const App());
-      } on Error catch (e) {
-        print("Error initializing app: $e");
-        print(e.stackTrace);
-        rethrow;
+      } on Error catch (error) {
+        print(error);
+        print(error.stackTrace);
+        return runApp(ErrorApp(error: error.toString()));
       }
     },
   );

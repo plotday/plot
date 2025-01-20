@@ -13,6 +13,8 @@ class PlotIcon extends FaIcon {
       : super(FontAwesomeIcons.chevronLeft);
   const PlotIcon.right({super.size, super.color, super.key})
       : super(FontAwesomeIcons.chevronRight);
+  const PlotIcon.pipe({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.pipe);
   const PlotIcon.todo({super.size, super.color, super.key})
       : super(FontAwesomeIcons.circle);
   const PlotIcon.done({super.size, super.color, super.key})
@@ -27,4 +29,6 @@ class PlotIcon extends FaIcon {
       : super(FontAwesomeIcons.plusLarge);
   const PlotIcon.startOfDay({super.size, super.color, super.key})
       : super(FontAwesomeIcons.sunHaze);
+  const PlotIcon.priority({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.rankingStar);
 }
