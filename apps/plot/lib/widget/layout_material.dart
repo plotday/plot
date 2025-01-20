@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:plot/command/command.dart';
+
 class MaterialLayout extends StatelessWidget {
   static const singleBreakpoint = WidthPlatformBreakpoint(end: 600);
   static const doubleBreakpoint = WidthPlatformBreakpoint(begin: 600, end: 840);
@@ -93,18 +95,18 @@ class MaterialLayout extends StatelessWidget {
                             icon: Icon(Icons.calendar_today),
                             label: 'Schedule',
                           ),
-                          // NavigationDestination(
-                          //   icon: Icon(Icons.schedule),
-                          //   label: 'Now',
-                          // ),
-                          // NavigationDestination(
-                          //   icon: Icon(Icons.settings),
-                          //   label: 'Settings',
-                          // ),
+                          NavigationDestination(
+                            icon: Icon(Icons.settings),
+                            label: 'Settings',
+                          ),
                         ],
                         currentIndex: navigationShell!.currentIndex,
                         onDestinationSelected: (int index) {
                           if (navigationShell == null) return;
+                          if (index == 2) {
+                            context.run(ShowSettings());
+                            return;
+                          }
                           navigationShell!.goBranch(index);
                         },
                       ),
