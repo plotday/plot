@@ -109,6 +109,7 @@ class DurationText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       spacing: 4,
       children: [
         if (icon != null) icon!,

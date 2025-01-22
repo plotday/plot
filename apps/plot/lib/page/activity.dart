@@ -66,6 +66,7 @@ class ActivityPage extends StatelessWidget {
                 label:
                     state.activity.draft ? "Create an activity" : "Add a note",
               ),
+              // const Editor(label: 'Start an activity'),
             ],
           ),
         );

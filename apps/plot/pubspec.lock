@@ -102,6 +102,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.11.0"
+  attributed_text:
+    dependency: transitive
+    description:
+      name: attributed_text
+      sha256: d16c10850371421a778474ac24c24b4ab8708e3e53f3796f8d9ea2a41a25a59a
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.4.2"
   b:
     dependency: "direct main"
     description:
@@ -465,6 +473,22 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_test_robots:
+    dependency: transitive
+    description:
+      name: flutter_test_robots
+      sha256: "3b00f2081148bde55190997c2772f934ad2f4529cbcfc4ccfa593f8ddc117a28"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.24"
+  flutter_test_runners:
+    dependency: transitive
+    description:
+      name: flutter_test_runners
+      sha256: cc575117ed66a79185a26995399d7048341517a1bd21188cb43753739627832d
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.4"
   flutter_web_auth_2:
     dependency: "direct main"
     description:
@@ -486,6 +510,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  follow_the_leader:
+    dependency: transitive
+    description:
+      name: follow_the_leader
+      sha256: "798baf5211ca2461c8462d4c8e94f57bf989758f8204056d607eb9a20f1cf794"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.4+8"
   font_awesome_flutter:
     dependency: "direct main"
     description:
@@ -735,6 +767,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.1"
+  linkify:
+    dependency: transitive
+    description:
+      name: linkify
+      sha256: "4139ea77f4651ab9c315b577da2dd108d9aa0bd84b5d03d33323f1970c645832"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.0.0"
   lints:
     dependency: transitive
     description:
@@ -823,6 +863,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.2"
+  overlord:
+    dependency: transitive
+    description:
+      name: overlord
+      sha256: "576256bc9ce3fb0ae3042bbb26eed67bdb26a5045dd7e3c851aae65b0bbab2f5"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.3+5"
   package_config:
     dependency: transitive
     description:
@@ -1292,6 +1340,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.8.2"
+  super_editor:
+    dependency: "direct main"
+    description:
+      name: super_editor
+      sha256: ae69b2eaf5bc0c88e6c732bb0c31274d6ff248a0fc9f22bd4cb66ec4d6b09921
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.0-dev.15"
+  super_keyboard:
+    dependency: transitive
+    description:
+      name: super_keyboard
+      sha256: c8e303cd7bc1fc62732213f0f2660273a078be23eae7a4219d0ab3dd0b0ccb9a
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.0"
+  super_text_layout:
+    dependency: transitive
+    description:
+      name: super_text_layout
+      sha256: e25f01ceb809118da66fd095b3dcdc608a611bf45e364f303e7f9f0af0c5f8d1
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.18"
   system_info2:
     dependency: transitive
     description:

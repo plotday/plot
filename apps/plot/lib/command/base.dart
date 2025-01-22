@@ -102,8 +102,16 @@ class ShowCommand<T> extends Command {
 }
 
 extension BuildContextCommandExtension on BuildContext {
-  void run(Command command) {
-    command.run(this);
+  Future<T?> run<T>(Command command) async {
+    final next = await command.run(this);
+    if (next is CommandValue<T>) {
+      return next.value;
+    } else if (next is CommandCommands) {
+      return await CommandBar.show<T>(this, next.commands);
+    } else if (next is CommandPage) {
+      await Dialog.show<void>(context: this, builder: (context) => next.child);
+    }
+    return null;
   }
 }
 

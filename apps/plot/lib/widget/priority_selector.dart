@@ -23,11 +23,22 @@ class PrioritySelector extends StatefulWidget {
 class PrioritySelectorState extends State<PrioritySelector> {
   @override
   Widget build(BuildContext context) {
-    return Tapable(
-      onTap: () {
-        context.run(ChangePriority());
-      },
-      child: PriorityLabel(priority: widget.selected),
+    return Row(
+      spacing: 4,
+      children: [
+        Tapable(
+          onTap: () {
+            context.run(ChangePriority());
+          },
+          child: PriorityLabel(priority: widget.selected),
+        ),
+        IconButton(
+          icon: const PlotIcon.add(),
+          onPressed: () {
+            context.run(NewPriority());
+          },
+        )
+      ],
     );
   }
 }

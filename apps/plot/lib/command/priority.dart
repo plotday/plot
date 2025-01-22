@@ -6,6 +6,7 @@ import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/page/page.dart';
 
 class PriorityCommand extends ValueCommand<Priority?> {
   PriorityCommand(
@@ -84,5 +85,17 @@ class ChangePriority extends ShowCommand<Priority> {
   @override
   void onSelect(BuildContext context, Priority? value) async {
     context.read<PriorityBloc>().setCurrent(value);
+  }
+}
+
+class NewPriority extends Command {
+  NewPriority()
+      : super(
+          title: 'New priority',
+        );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return CommandPage(const NewPriorityPage());
   }
 }
