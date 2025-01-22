@@ -1,52 +1,57 @@
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' as material;
-import 'package:macos_ui/macos_ui.dart' as macos;
+import 'package:flutter/widgets.dart';
 import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
-import 'package:super_editor/super_text_field.dart';
+import 'package:super_editor_markdown/super_editor_markdown.dart';
+import 'package:flutter/material.dart' as material;
+import 'package:macos_ui/macos_ui.dart' as macos;
+
+import 'button.dart';
 
 class Editor extends StatefulWidget {
   const Editor({
-    required this.label,
+    this.hint,
+    this.autofocus = false,
+    this.onSubmitted,
     super.key,
   });
 
-  final String label;
+  final String? hint;
+  final bool autofocus;
+  final ValueChanged<String>? onSubmitted;
 
   @override
   State<Editor> createState() => EditorState();
 }
 
 class EditorState extends State<Editor> {
+  final GlobalKey _docLayoutKey = GlobalKey();
   late FocusNode _editorFocusNode;
   late ScrollController _scrollController;
   late MutableDocument _document;
-  final _textController = ImeAttributedTextEditingController(
-    controller:
-        AttributedTextEditingController(text: AttributedText('something')),
-  );
+  late MutableDocumentComposer _composer;
+  late super_editor.Editor _editor;
 
   @override
   void initState() {
     super.initState();
     _editorFocusNode = FocusNode();
     _scrollController = ScrollController();
-    _document = MutableDocument(
-      nodes: [
-        ParagraphNode(
-          id: super_editor.Editor.createNodeId(),
-          text: AttributedText('Example Document'),
-          metadata: const {
-            'blockType': header1Attribution,
-          },
-        ),
-      ],
+    _document = MutableDocument(nodes: [
+      ParagraphNode(
+        id: super_editor.Editor.createNodeId(),
+        text: AttributedText(),
+      ),
+    ]);
+    _composer = MutableDocumentComposer();
+    _editor = createDefaultDocumentEditor(
+      document: _document,
+      composer: _composer,
+      isHistoryEnabled: true,
     );
   }
 
   @override
   void dispose() {
-    _textController.dispose();
     _scrollController.dispose();
     _editorFocusNode.dispose();
     super.dispose();
@@ -54,71 +59,72 @@ class EditorState extends State<Editor> {
 
   @override
   Widget build(BuildContext context) {
-    return TapRegion(
-      groupId: "textfields",
-      onTapOutside: (_) => _editorFocusNode.unfocus(),
-      child: TextFieldBorder(
-        focusNode: _editorFocusNode,
-        borderBuilder: _borderBuilder,
-        child: SuperTextField(
-          lineHeight: 1.2,
-          focusNode: _editorFocusNode,
-          controlsColor: material.Colors.white,
-          configuration: SuperTextFieldPlatformConfiguration.desktop,
-          textController: _textController,
-          textStyleBuilder: _textStyleBuilder,
-          hintBuilder: _createHintBuilder(widget.label),
-          hintBehavior: HintBehavior.displayHintUntilTextEntered,
-          padding: const EdgeInsets.all(4),
-          minLines: 1,
-          maxLines: 5,
-          inputSource: TextInputSource.keyboard,
+    return Container(
+      decoration: BoxDecoration(
+        color: macos.MacosDynamicColor.resolve(
+          macos.MacosColors.controlBackgroundColor,
+          context,
         ),
-      ),
-    );
-  }
-
-  BoxDecoration _borderBuilder(TextFieldBorderState borderState) {
-    return BoxDecoration(
-      borderRadius: BorderRadius.circular(7),
-      color: borderState.hasFocus
-          ? material.Colors.transparent
-          : macos.MacosDynamicColor.maybeResolve(
-              macos.MacosColors.controlBackgroundColor,
+        border: Border(
+          top: BorderSide(
+            width: 1.0,
+            color: macos.MacosDynamicColor.resolve(
+              macos.MacosColors.separatorColor,
               context,
             ),
-      border: Border.all(
-        color: borderState.hasError
-            ? material.Colors.red
-            : borderState.hasFocus
-                ? macos.MacosTheme.of(context).brightness.isDark
-                    ? const Color.fromRGBO(26, 169, 255, 0.3)
-                    : const Color.fromRGBO(0, 103, 244, 0.25)
-                : material.Colors.transparent,
-        width: 3,
+          ),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SuperEditor(
+            editor: _editor,
+            focusNode: _editorFocusNode,
+            shrinkWrap: true,
+            scrollController: _scrollController,
+            documentLayoutKey: _docLayoutKey,
+            stylesheet: Stylesheet(
+              inlineTextStyler: defaultInlineTextStyler,
+              documentPadding:
+                  const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              rules: [
+                StyleRule(
+                  BlockSelector.all,
+                  (doc, docNode) {
+                    return {
+                      Styles.textStyle: const TextStyle(
+                        color: material.Colors.white,
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    };
+                  },
+                ),
+              ],
+            ),
+            documentOverlayBuilders: [
+              DefaultCaretOverlayBuilder(
+                caretStyle:
+                    const CaretStyle().copyWith(color: material.Colors.white),
+              ),
+            ],
+            componentBuilders: [
+              TaskComponentBuilder(_editor),
+              ...defaultComponentBuilders,
+            ],
+          ),
+          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+            Button(
+              onTap: () {
+                final md = serializeDocumentToMarkdown(_document);
+                widget.onSubmitted?.call(md);
+              },
+              child: const Text('Add'),
+            ),
+          ]),
+        ],
       ),
     );
-  }
-
-  TextStyle _textStyleBuilder(Set<Attribution> attributions) {
-    return macos.MacosTheme.of(context).typography.body;
-  }
-
-  WidgetBuilder _createHintBuilder(String hintText) {
-    return (BuildContext context) {
-      return Text(
-        hintText,
-        style: macos.MacosTheme.of(context).typography.body.merge(
-              TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-                color: macos.MacosDynamicColor.maybeResolve(
-                  CupertinoColors.placeholderText,
-                  context,
-                ),
-              ),
-            ),
-      );
-    };
   }
 }
