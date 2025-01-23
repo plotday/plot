@@ -6,13 +6,14 @@ import 'package:platform_builder/platform_builder.dart';
 enum ButtonStyle { primary, secondary }
 
 class Button extends StatelessWidget {
-  const Button(
-      {required this.child,
-      required this.onTap,
-      this.style = ButtonStyle.primary,
-      super.key});
+  const Button({
+    required this.child,
+    required this.onTap,
+    this.style = ButtonStyle.primary,
+    super.key,
+  });
 
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Widget child;
   final ButtonStyle style;
 

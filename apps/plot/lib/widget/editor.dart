@@ -30,24 +30,32 @@ class EditorState extends State<Editor> {
   late MutableDocument _document;
   late MutableDocumentComposer _composer;
   late super_editor.Editor _editor;
+  bool _isEmpty = true;
+
+  void clear() {
+    setState(() {
+      // Clear the document
+      _document = MutableDocument.empty();
+      _document.addListener((_) {
+        setState(() {
+          _isEmpty = _document.hasEquivalentContent(MutableDocument.empty());
+        });
+      });
+      _composer = MutableDocumentComposer();
+      _editor = createDefaultDocumentEditor(
+        document: _document,
+        composer: _composer,
+        isHistoryEnabled: true,
+      );
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     _editorFocusNode = FocusNode();
     _scrollController = ScrollController();
-    _document = MutableDocument(nodes: [
-      ParagraphNode(
-        id: super_editor.Editor.createNodeId(),
-        text: AttributedText(),
-      ),
-    ]);
-    _composer = MutableDocumentComposer();
-    _editor = createDefaultDocumentEditor(
-      document: _document,
-      composer: _composer,
-      isHistoryEnabled: true,
-    );
+    clear();
   }
 
   @override
@@ -79,6 +87,7 @@ class EditorState extends State<Editor> {
         mainAxisSize: MainAxisSize.min,
         children: [
           SuperEditor(
+            autofocus: widget.autofocus,
             editor: _editor,
             focusNode: _editorFocusNode,
             shrinkWrap: true,
@@ -114,15 +123,24 @@ class EditorState extends State<Editor> {
               ...defaultComponentBuilders,
             ],
           ),
-          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-            Button(
-              onTap: () {
-                final md = serializeDocumentToMarkdown(_document);
-                widget.onSubmitted?.call(md);
-              },
-              child: const Text('Add'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Button(
+                  onTap: _isEmpty
+                      ? null
+                      : () {
+                          final md = serializeDocumentToMarkdown(_document);
+                          widget.onSubmitted?.call(md);
+                          clear();
+                        },
+                  child: const Text('Add'),
+                ),
+              ],
             ),
-          ]),
+          ),
         ],
       ),
     );
