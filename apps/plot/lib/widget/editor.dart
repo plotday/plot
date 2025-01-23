@@ -67,81 +67,85 @@ class EditorState extends State<Editor> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: macos.MacosDynamicColor.resolve(
-          macos.MacosColors.controlBackgroundColor,
-          context,
-        ),
-        border: Border(
-          top: BorderSide(
-            width: 1.0,
-            color: macos.MacosDynamicColor.resolve(
-              macos.MacosColors.separatorColor,
-              context,
-            ),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => _editorFocusNode.requestFocus(),
+      child: Container(
+        decoration: BoxDecoration(
+          color: macos.MacosDynamicColor.resolve(
+            macos.MacosColors.controlBackgroundColor,
+            context,
           ),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SuperEditor(
-            autofocus: widget.autofocus,
-            editor: _editor,
-            focusNode: _editorFocusNode,
-            shrinkWrap: true,
-            scrollController: _scrollController,
-            documentLayoutKey: _docLayoutKey,
-            stylesheet: Stylesheet(
-              inlineTextStyler: defaultInlineTextStyler,
-              documentPadding:
-                  const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              rules: [
-                StyleRule(
-                  BlockSelector.all,
-                  (doc, docNode) {
-                    return {
-                      Styles.textStyle: const TextStyle(
-                        color: material.Colors.white,
-                        fontSize: 14,
-                        height: 1.4,
-                      ),
-                    };
-                  },
-                ),
-              ],
-            ),
-            documentOverlayBuilders: [
-              DefaultCaretOverlayBuilder(
-                caretStyle:
-                    const CaretStyle().copyWith(color: material.Colors.white),
+          border: Border(
+            top: BorderSide(
+              width: 1.0,
+              color: macos.MacosDynamicColor.resolve(
+                macos.MacosColors.separatorColor,
+                context,
               ),
-            ],
-            componentBuilders: [
-              TaskComponentBuilder(_editor),
-              ...defaultComponentBuilders,
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Button(
-                  onTap: _isEmpty
-                      ? null
-                      : () {
-                          final md = serializeDocumentToMarkdown(_document);
-                          widget.onSubmitted?.call(md);
-                          clear();
-                        },
-                  child: const Text('Add'),
-                ),
-              ],
             ),
           ),
-        ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SuperEditor(
+              autofocus: widget.autofocus,
+              editor: _editor,
+              focusNode: _editorFocusNode,
+              shrinkWrap: true,
+              scrollController: _scrollController,
+              documentLayoutKey: _docLayoutKey,
+              stylesheet: Stylesheet(
+                inlineTextStyler: defaultInlineTextStyler,
+                documentPadding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                rules: [
+                  StyleRule(
+                    BlockSelector.all,
+                    (doc, docNode) {
+                      return {
+                        Styles.textStyle: const TextStyle(
+                          color: material.Colors.white,
+                          fontSize: 14,
+                          height: 1.4,
+                        ),
+                      };
+                    },
+                  ),
+                ],
+              ),
+              documentOverlayBuilders: [
+                DefaultCaretOverlayBuilder(
+                  caretStyle:
+                      const CaretStyle().copyWith(color: material.Colors.white),
+                ),
+              ],
+              componentBuilders: [
+                TaskComponentBuilder(_editor),
+                ...defaultComponentBuilders,
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Button(
+                    onTap: _isEmpty
+                        ? null
+                        : () {
+                            final md = serializeDocumentToMarkdown(_document);
+                            widget.onSubmitted?.call(md);
+                            clear();
+                          },
+                    child: const Text('Add'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
