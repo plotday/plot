@@ -37,13 +37,7 @@ class ActivityPage extends StatelessWidget {
               label: const Text("Pin"),
             ),
             Expanded(
-              child: CustomScrollView(
-                slivers: state.activityNotes
-                    .map(
-                      (note) => NoteWidget(note: note),
-                    )
-                    .toList(),
-              ),
+              child: NotesView(notes: state.activityNotes),
             ),
             Editor(
               hint: state.activityNotes.isNotEmpty

@@ -75,6 +75,7 @@ dependencies:
   b: ^0.2.0
   super_editor: ^0.3.0-dev.15
   super_editor_markdown: ^0.1.7
+  sliver_tools: ^0.2.12
 
 dev_dependencies:
   flutter_test:

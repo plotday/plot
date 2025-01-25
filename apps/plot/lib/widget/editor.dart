@@ -152,20 +152,43 @@ class EditorState extends State<Editor> {
   }
 }
 
-class Viewer extends StatelessWidget {
-  Viewer({
-    required String markdown,
+class Viewer extends StatefulWidget {
+  const Viewer({
+    required this.markdown,
     super.key,
-  }) : document = deserializeMarkdownToDocument(markdown);
+  });
 
-  final Document document;
+  final String markdown;
+
+  @override
+  ViewerState createState() => ViewerState();
+}
+
+class ViewerState extends State<Viewer> {
+  late final Document document;
+  late final ValueNotifier<DocumentSelection?> _selection;
+  final _selectionLayerLinks = SelectionLayerLinks();
+
+  @override
+  void initState() {
+    super.initState();
+    document = deserializeMarkdownToDocument(widget.markdown);
+    _selection = ValueNotifier<DocumentSelection?>(null);
+  }
+
+  @override
+  void dispose() {
+    _selection.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return SuperReader(
       document: document,
       stylesheet: _styles,
-      shrinkWrap: true,
+      selection: _selection,
+      selectionLayerLinks: _selectionLayerLinks,
     );
   }
 }
