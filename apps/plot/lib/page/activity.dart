@@ -18,40 +18,31 @@ class ActivityPage extends StatelessWidget {
         }
         return Column(
           children: [
+            Switch(
+              value: state.activity.doAt != null,
+              onChanged: (on) => context
+                  .read<PriorityBloc>()
+                  .updateActivity(state.activity.copyWith(
+                    doAt: on ? Value(DateTime.now()) : const Value(null),
+                  )),
+              label: const Text("Do now"),
+            ),
+            Switch(
+              value: state.activity.pinned,
+              onChanged: (on) => context
+                  .read<PriorityBloc>()
+                  .updateActivity(state.activity.copyWith(
+                    pinned: on,
+                  )),
+              label: const Text("Pin"),
+            ),
             Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    Switch(
-                      value: state.activity.doAt != null,
-                      onChanged: (on) => context
-                          .read<PriorityBloc>()
-                          .updateActivity(state.activity.copyWith(
-                            doAt:
-                                on ? Value(DateTime.now()) : const Value(null),
-                          )),
-                      label: const Text("Do now"),
-                    ),
-                    Switch(
-                      value: state.activity.pinned,
-                      onChanged: (on) => context
-                          .read<PriorityBloc>()
-                          .updateActivity(state.activity.copyWith(
-                            pinned: on,
-                          )),
-                      label: const Text("Pin"),
-                    ),
-                    SelectionArea(
-                        child: Column(
-                      children: state.activityNotes
-                          .take(state.activityNotes.isNotEmpty
-                              ? state.activityNotes.length - 1
-                              : 0)
-                          .map((note) => NoteWidget(note: note))
-                          .toList(),
-                    )),
-                  ],
-                ),
+              child: CustomScrollView(
+                slivers: state.activityNotes
+                    .map(
+                      (note) => NoteWidget(note: note),
+                    )
+                    .toList(),
               ),
             ),
             Editor(

@@ -7,6 +7,25 @@ import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'button.dart';
 
+final _styles = Stylesheet(
+  inlineTextStyler: defaultInlineTextStyler,
+  documentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+  rules: [
+    StyleRule(
+      BlockSelector.all,
+      (doc, docNode) {
+        return {
+          Styles.textStyle: const TextStyle(
+            color: material.Colors.white,
+            fontSize: 14,
+            height: 1.4,
+          ),
+        };
+      },
+    ),
+  ],
+);
+
 class Editor extends StatefulWidget {
   const Editor({
     this.hint,
@@ -96,25 +115,7 @@ class EditorState extends State<Editor> {
               shrinkWrap: true,
               scrollController: _scrollController,
               documentLayoutKey: _docLayoutKey,
-              stylesheet: Stylesheet(
-                inlineTextStyler: defaultInlineTextStyler,
-                documentPadding:
-                    const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                rules: [
-                  StyleRule(
-                    BlockSelector.all,
-                    (doc, docNode) {
-                      return {
-                        Styles.textStyle: const TextStyle(
-                          color: material.Colors.white,
-                          fontSize: 14,
-                          height: 1.4,
-                        ),
-                      };
-                    },
-                  ),
-                ],
-              ),
+              stylesheet: _styles,
               documentOverlayBuilders: [
                 DefaultCaretOverlayBuilder(
                   caretStyle:
@@ -147,6 +148,24 @@ class EditorState extends State<Editor> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class Viewer extends StatelessWidget {
+  Viewer({
+    required String markdown,
+    super.key,
+  }) : document = deserializeMarkdownToDocument(markdown);
+
+  final Document document;
+
+  @override
+  Widget build(BuildContext context) {
+    return SuperReader(
+      document: document,
+      stylesheet: _styles,
+      shrinkWrap: true,
     );
   }
 }
