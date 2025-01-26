@@ -71,7 +71,8 @@ class CommandBarState extends State<CommandBar> {
                   _allCommandsCount();
         });
       } else if (event.logicalKey == LogicalKeyboardKey.enter) {
-        _executeCommand();
+        final focusedCommand = _getFocusedCommand();
+        _executeCommand(focusedCommand);
       }
     }
   }
@@ -92,10 +93,9 @@ class CommandBarState extends State<CommandBar> {
     throw Exception('Focused command index out of bounds');
   }
 
-  void _executeCommand() async {
+  void _executeCommand(Command command) async {
     try {
-      final focusedCommand = _getFocusedCommand();
-      final result = await focusedCommand.run(context);
+      final result = await command.run(context);
 
       if (result is CommandCommands) {
         commands = result.commands;
@@ -142,7 +142,7 @@ class CommandBarState extends State<CommandBar> {
                     return command.build(
                       context,
                       selected: index == _focusedCommandIndex,
-                      onTap: _executeCommand,
+                      onTap: () => _executeCommand(command),
                     );
                   },
                 ),
