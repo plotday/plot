@@ -25,6 +25,18 @@ class ActivityWidget extends StatelessWidget {
       onTap: onTap,
       selected: selected,
       leading: switch (activity) {
+        _ when activity.pinned => IconButton(
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              onChange(activity.copyWith(pinned: false));
+              Posthog().capture(
+                eventName: 'Activity Un-pinned',
+              );
+            },
+            icon: PlotIcon.pinned(
+              color: const ThemeColor.defaultColor().getForeground(context),
+            ),
+          ),
         _ when activity.doNow => IconButton(
             padding: EdgeInsets.zero,
             onPressed: () {
@@ -57,18 +69,6 @@ class ActivityWidget extends StatelessWidget {
               );
             },
             icon: PlotIcon.scheduled(
-              color: const ThemeColor.defaultColor().getForeground(context),
-            ),
-          ),
-        _ when activity.pinned => IconButton(
-            padding: EdgeInsets.zero,
-            onPressed: () {
-              onChange(activity.copyWith(pinned: false));
-              Posthog().capture(
-                eventName: 'Activity Un-pinned',
-              );
-            },
-            icon: PlotIcon.pinned(
               color: const ThemeColor.defaultColor().getForeground(context),
             ),
           ),
