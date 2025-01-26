@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:dart_date/dart_date.dart';
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:equatable/equatable.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 export 'package:dart_date/dart_date.dart' hide Interval;
 export 'package:flutter/material.dart' show TimeOfDay;
@@ -439,14 +440,10 @@ extension PlotDateTimeExtension on DateTime {
   DateTime round({int minutes = 30, bool down = true}) => sub(Duration(
       minutes: down ? minute % minutes : (minute % minutes) - minutes));
 
-  // DateTime previousMidnight() => toTimeOfDay().isMidnight
-  //     ? DateTime.now().subtract(const Duration(days: 1))
-  //     : toDate().toDateTime();
-  // DateTime nextMidnight() => toTimeOfDay().isMidnight
-  //     ? DateTime.now().add(const Duration(days: 1))
-  //     : toDate().next().toDateTime();
   DateTime previousMidnight() => toDate().subDays(1).toDateTime();
   DateTime nextMidnight() => toDate().addDays(1).toDateTime();
+
+  String toTimeAgo() => timeago.format(this);
 }
 
 Duration durationFromString(String durationString) {
