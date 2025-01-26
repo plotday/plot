@@ -16,52 +16,51 @@ class ActivityToolbar extends StatelessWidget {
   final Activity activity;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (!activity.doNow && !activity.done)
-              IconButton(
-                icon: const PlotIcon.doNow(),
-                onPressed: () => context.read<PriorityBloc>().updateActivity(
-                      activity.copyWith(
-                        doAt: activity.doNow
-                            ? const Value(null)
-                            : Value(DateTime.now()),
-                      ),
+  Widget build(BuildContext context) => Header(
+        actions: [
+          if (!activity.doNow && !activity.done)
+            HeaderAction(
+              icon: const PlotIcon.doNow(),
+              label: 'Do Now',
+              onPressed: () => context.read<PriorityBloc>().updateActivity(
+                    activity.copyWith(
+                      doAt: activity.doNow
+                          ? const Value(null)
+                          : Value(DateTime.now()),
                     ),
-              ),
-            if (activity.doNow)
-              IconButton(
-                icon: const PlotIcon.done(),
-                onPressed: () => context.read<PriorityBloc>().updateActivity(
-                      activity.copyWith(
-                        doneAt: Value(DateTime.now()),
-                      ),
+                  ),
+            ),
+          if (activity.doNow)
+            HeaderAction(
+              icon: const PlotIcon.done(),
+              label: 'Done',
+              onPressed: () => context.read<PriorityBloc>().updateActivity(
+                    activity.copyWith(
+                      doneAt: Value(DateTime.now()),
                     ),
-              ),
-            if (activity.done)
-              IconButton(
-                icon: const PlotIcon.done(),
-                onPressed: () => context.read<PriorityBloc>().updateActivity(
-                      activity.copyWith(
-                        doneAt: const Value(null),
-                      ),
+                  ),
+            ),
+          if (activity.done)
+            HeaderAction(
+              icon: const PlotIcon.done(),
+              label: 'Not Done',
+              onPressed: () => context.read<PriorityBloc>().updateActivity(
+                    activity.copyWith(
+                      doneAt: const Value(null),
                     ),
-              ),
-            if (!activity.doNow)
-              IconButton(
-                icon: const PlotIcon.pinned(),
-                onPressed: () => context.read<PriorityBloc>().updateActivity(
-                      activity.copyWith(
-                        pinned: !activity.pinned,
-                      ),
+                  ),
+            ),
+          if (!activity.doNow)
+            HeaderAction(
+              icon: const PlotIcon.pinned(),
+              label: activity.pinned ? 'Unpin' : 'Pin',
+              onPressed: () => context.read<PriorityBloc>().updateActivity(
+                    activity.copyWith(
+                      pinned: !activity.pinned,
                     ),
-              ),
-          ],
-        ),
+                  ),
+            ),
+        ],
       );
 }
 
