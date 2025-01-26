@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:sliver_tools/sliver_tools.dart';
 
 import 'package:plot/store/store.dart';
 import 'editor.dart';
@@ -17,11 +16,9 @@ class NoteWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var children = [
-      SliverToBoxAdapter(
-        child: Row(children: [
-          Text(note.createdAt.toString()),
-        ]),
-      ),
+      Row(children: [
+        Text(note.createdAt.toString()),
+      ]),
       Viewer(
         markdown: note.body,
       ),
@@ -29,7 +26,7 @@ class NoteWidget extends StatelessWidget {
     if (reverse) {
       children = children.reversed.toList();
     }
-    return MultiSliver(children: children);
+    return Column(children: children);
   }
 }
 
@@ -40,15 +37,16 @@ class NotesView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
+    return ListView.builder(
       reverse: true,
-      slivers: notes.reversed
-          .map((note) => NoteWidget(
-                key: ValueKey(note.id),
-                note: note,
-                reverse: true,
-              ))
-          .toList(),
+      itemCount: notes.length,
+      itemBuilder: (context, index) {
+        final note = notes[notes.length - index - 1];
+        return NoteWidget(
+          key: ValueKey(note.id),
+          note: note,
+        );
+      },
     );
   }
 }

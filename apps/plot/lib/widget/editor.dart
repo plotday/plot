@@ -6,6 +6,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'button.dart';
+import 'sliver.dart';
 
 final _styles = Stylesheet(
   inlineTextStyler: defaultInlineTextStyler,
@@ -202,11 +203,13 @@ class ViewerState extends State<Viewer> {
 
   @override
   Widget build(BuildContext context) {
-    return SuperReader(
-      document: document,
-      stylesheet: _styles,
-      selection: _selection,
-      selectionLayerLinks: _selectionLayerLinks,
+    return BoxToSliverAdapter(
+      child: SuperReader(
+        document: document,
+        stylesheet: _styles,
+        selection: _selection,
+        selectionLayerLinks: _selectionLayerLinks,
+      ),
     );
   }
 }

@@ -18,6 +18,7 @@ export 'scaffold.dart';
 export 'scroll_context.dart';
 export 'select.dart';
 export 'selectable_text.dart';
+export 'sliver.dart';
 export 'spinner.dart';
 export 'squiggle.dart';
 export 'switch.dart';
