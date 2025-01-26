@@ -16,58 +16,51 @@ class ActivityPage extends StatelessWidget {
         if (state.loading) {
           return const Spinner();
         }
-        return Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              Switch(
-                value: state.activity.doAt != null,
-                onChanged: (on) => context
-                    .read<PriorityBloc>()
-                    .updateActivity(state.activity.copyWith(
-                      doAt: on ? Value(DateTime.now()) : const Value(null),
-                    )),
-                label: const Text("Do now"),
-              ),
-              Switch(
-                value: state.activity.pinned,
-                onChanged: (on) => context
-                    .read<PriorityBloc>()
-                    .updateActivity(state.activity.copyWith(
-                      pinned: on,
-                    )),
-                label: const Text("Pin"),
-              ),
-              SelectionArea(
-                  child: Column(
-                children: state.activityNotes
-                    .take(state.activityNotes.isNotEmpty
-                        ? state.activityNotes.length - 1
-                        : 0)
-                    .map((note) => NoteWidget(note: note))
-                    .toList(),
-              )),
-              InputAction(
-                // TODO update body while editing
-                onAdd: (body) async {
-                  if (state.activity.draft) {
-                    await context.read<PriorityBloc>().updateActivity(
-                        state.activity.copyWith(body: body, draft: false));
-                    if (context.mounted) {
-                      ActivityRoute.byId(
-                              state.activity.priorityId, state.activity.id)
-                          .go(context);
-                    }
-                    return;
+        return Column(
+          children: [
+            Switch(
+              value: state.activity.doAt != null,
+              onChanged: (on) => context
+                  .read<PriorityBloc>()
+                  .updateActivity(state.activity.copyWith(
+                    doAt: on ? Value(DateTime.now()) : const Value(null),
+                  )),
+              label: const Text("Do now"),
+            ),
+            Switch(
+              value: state.activity.pinned,
+              onChanged: (on) => context
+                  .read<PriorityBloc>()
+                  .updateActivity(state.activity.copyWith(
+                    pinned: on,
+                  )),
+              label: const Text("Pin"),
+            ),
+            Expanded(
+              child: NotesView(notes: state.activityNotes),
+            ),
+            Editor(
+              hint: state.activityNotes.isNotEmpty
+                  ? 'Start an activity'
+                  : 'Add a note',
+              autofocus: true,
+              onSubmitted: (body) async {
+                if (state.activity.draft) {
+                  await context.read<PriorityBloc>().updateActivity(
+                      state.activity.copyWith(body: body, draft: false));
+                  if (context.mounted) {
+                    ActivityRoute.byId(
+                            state.activity.priorityId, state.activity.id)
+                        .go(context);
                   }
-                  await context.read<PriorityBloc>().updateNote(
-                      state.draft.copyWith(body: body, draft: false));
-                },
-                label:
-                    state.activity.draft ? "Create an activity" : "Add a note",
-              ),
-            ],
-          ),
+                  return;
+                }
+                await context
+                    .read<PriorityBloc>()
+                    .updateNote(state.draft.copyWith(body: body, draft: false));
+              },
+            ),
+          ],
         );
       });
 }

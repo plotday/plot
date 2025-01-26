@@ -19,7 +19,7 @@ final class PriorityState extends Equatable {
         _activities = null,
         _activity = null,
         moreActivities = true,
-        activityNotes = [],
+        _activityNotes = [],
         moreActivityNotes = false,
         balances = null;
 
@@ -27,7 +27,7 @@ final class PriorityState extends Equatable {
     required this.week,
     required this.current,
     required List<Activity>? activities,
-    required this.activityNotes,
+    required List<Note> activityNotes,
     required this.moreActivities,
     required this.moreActivityNotes,
     required Activity? activity,
@@ -35,7 +35,8 @@ final class PriorityState extends Equatable {
     this.balances,
   })  : priorities = _mapPriorities(rootPriorities),
         _activities = activities,
-        _activity = activity;
+        _activity = activity,
+        _activityNotes = activityNotes;
 
   static Map<PriorityId, Priority> _mapPriorities(
       List<Priority> rootPriorities) {
@@ -75,9 +76,11 @@ final class PriorityState extends Equatable {
 
   final Activity? _activity;
   Activity get activity => _activity ?? draftActivity;
-  final List<Note> activityNotes;
+  final List<Note> _activityNotes;
+  List<Note> get activityNotes =>
+      _activityNotes.whereNot((note) => note.draft).toList();
   final bool moreActivityNotes;
-  Note get draft => activityNotes.last;
+  Note get draft => _activityNotes.reversed.where((note) => note.draft).first;
 
   final Week week;
   final BalanceByPriorityType? balances;
@@ -96,7 +99,7 @@ final class PriorityState extends Equatable {
     if (activity.or(_activity) == null) {
       activityNotes ??= const [];
     }
-    activityNotes ??= this.activityNotes;
+    activityNotes ??= _activityNotes;
     // If the updated activities include the current activity, update it.
     if (activities != null && !activity.present && _activity != null) {
       final currentActivity =
@@ -138,7 +141,7 @@ final class PriorityState extends Equatable {
         _activities,
         moreActivities,
         _activity,
-        activityNotes,
+        _activityNotes,
         moreActivityNotes,
       ];
 }

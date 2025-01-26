@@ -87,7 +87,7 @@ class ScheduleRoute extends Route {
 
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const NewPage();
+      const ActivityPage();
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
@@ -117,7 +117,7 @@ class EventRoute extends Route {
 
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const NewPage();
+      const ActivityPage();
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
@@ -158,7 +158,7 @@ class NewEventRoute extends Route {
 
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const NewPage();
+      const ActivityPage();
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
@@ -201,7 +201,7 @@ class PriorityRoute extends Route {
 
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const NewPage();
+      const ActivityPage();
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
@@ -223,11 +223,11 @@ class NewPriorityRoute extends Route {
 
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const NewPage();
+      const ActivityPage();
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const NewPage();
+      const ActivityPage();
 
   @override
   List<Object?> get props => [priorityIdString];
@@ -292,7 +292,7 @@ class NewActivityRoute extends PriorityRoute {
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const NewPage();
+      const ActivityPage();
 
   @override
   List<Object?> get props => [priorityIdString];

@@ -112,59 +112,43 @@ class CommandBarState extends State<CommandBar> {
 
   @override
   Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    final heightConstraint = mediaQuery.size.height * 0.8;
     if (_child != null) {
       return Dialog(
-        child: Container(
-          constraints: BoxConstraints(
-            maxHeight: heightConstraint,
-            maxWidth: 750,
-          ),
-          padding: const EdgeInsets.all(16.0),
-          child: _child,
-        ),
+        child: _child!,
       );
     }
     return KeyboardListener(
       focusNode: FocusNode(),
       onKeyEvent: _onKeyAction,
       child: Dialog(
-        child: Container(
-          constraints: BoxConstraints(
-            maxHeight: heightConstraint,
-            maxWidth: 750,
-          ),
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_error != null) Text(_error!),
-              if (_child != null) _child!,
-              if (_child == null) ...[
-                TextField(
-                  controller: _controller,
-                  autofocus: true,
-                  label: widget.commands.prompt,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_error != null) Text(_error!),
+            if (_child != null) _child!,
+            if (_child == null) ...[
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                label: widget.commands.prompt,
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _allCommandsCount(),
+                  itemBuilder: (context, index) {
+                    final command = _getCommandAtIndex(index);
+                    return command.build(
+                      context,
+                      selected: index == _focusedCommandIndex,
+                      onTap: _executeCommand,
+                    );
+                  },
                 ),
-                const SizedBox(height: 16),
-                Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _allCommandsCount(),
-                    itemBuilder: (context, index) {
-                      final command = _getCommandAtIndex(index);
-                      return command.build(
-                        context,
-                        selected: index == _focusedCommandIndex,
-                        onTap: _executeCommand,
-                      );
-                    },
-                  ),
-                ),
-              ],
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );

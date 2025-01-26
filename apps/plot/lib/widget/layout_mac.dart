@@ -1,14 +1,32 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart';
+import 'package:macos_window_utils/macos_window_utils.dart' as macos_win;
+import 'package:macos_window_utils/macos/ns_window_button_type.dart';
 import 'package:figma_squircle/figma_squircle.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 import 'package:macos_window_utils/widgets/visual_effect_subview_container/visual_effect_subview_container.dart';
 
 import 'global_menu.dart';
 import 'scaffold.dart';
+import 'layout.dart';
 
 class MacLayout extends StatelessWidget {
+  static Future<void> init(BuildContext context) async {
+    await const MacosWindowUtilsConfig(
+      toolbarStyle: NSWindowToolbarStyle.unifiedCompact,
+    ).apply();
+    Layout.toolbarHeight =
+        await macos_win.WindowManipulator.getTitlebarHeight();
+    final lastWindowButtonPos =
+        await macos_win.WindowManipulator.getStandardWindowButtonPosition(
+      buttonType: NSWindowButtonType.zoomButton,
+    );
+    Layout.toolbarPadding = EdgeInsets.only(
+      left: lastWindowButtonPos.right,
+    );
+  }
+
   const MacLayout(this.left, this.main, this.right, {this.header, super.key});
 
   final Widget main;
@@ -75,8 +93,8 @@ class MacLayout extends StatelessWidget {
                 if (right != null)
                   ResizableChild(
                     size: const ResizableSize.ratio(0.20),
-                    minSize: 350,
-                    maxSize: 500,
+                    minSize: 400,
+                    maxSize: 600,
                     child: right!,
                   ),
               ],
