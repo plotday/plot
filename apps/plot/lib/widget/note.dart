@@ -7,14 +7,16 @@ import 'editor.dart';
 class NoteWidget extends StatelessWidget {
   const NoteWidget({
     required this.note,
+    this.reverse = false,
     super.key,
   });
 
   final Note note;
+  final bool reverse;
 
   @override
   Widget build(BuildContext context) {
-    return MultiSliver(children: [
+    var children = [
       SliverToBoxAdapter(
         child: Row(children: [
           Text(note.createdAt.toString()),
@@ -23,7 +25,11 @@ class NoteWidget extends StatelessWidget {
       Viewer(
         markdown: note.body,
       ),
-    ]);
+    ];
+    if (reverse) {
+      children = children.reversed.toList();
+    }
+    return MultiSliver(children: children);
   }
 }
 
@@ -35,7 +41,14 @@ class NotesView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CustomScrollView(
-      slivers: notes.map((note) => NoteWidget(note: note)).toList(),
+      reverse: true,
+      slivers: notes.reversed
+          .map((note) => NoteWidget(
+                key: ValueKey(note.id),
+                note: note,
+                reverse: true,
+              ))
+          .toList(),
     );
   }
 }

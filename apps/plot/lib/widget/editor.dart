@@ -165,15 +165,33 @@ class Viewer extends StatefulWidget {
 }
 
 class ViewerState extends State<Viewer> {
-  late final Document document;
+  late Document document; // no need for `late final` if we're updating it
   late final ValueNotifier<DocumentSelection?> _selection;
   final _selectionLayerLinks = SelectionLayerLinks();
 
   @override
   void initState() {
     super.initState();
+    // Initialize the Document and ValueNotifier
+    _initializeDocumentAndSelection();
+  }
+
+  // Utility method for initialization that's reusable
+  void _initializeDocumentAndSelection() {
     document = deserializeMarkdownToDocument(widget.markdown);
     _selection = ValueNotifier<DocumentSelection?>(null);
+  }
+
+  @override
+  void didUpdateWidget(Viewer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Check if markdown has changed
+    if (oldWidget.markdown != widget.markdown) {
+      // Update the document when the markdown changes
+      setState(() {
+        document = deserializeMarkdownToDocument(widget.markdown);
+      });
+    }
   }
 
   @override

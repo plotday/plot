@@ -16,6 +16,7 @@ class ActivityPage extends StatelessWidget {
         if (state.loading) {
           return const Spinner();
         }
+        print("last note: ${state.activityNotes.lastOrNull?.body}");
         return Column(
           children: [
             Switch(
