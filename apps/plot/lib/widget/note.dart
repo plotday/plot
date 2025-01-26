@@ -6,27 +6,27 @@ import 'editor.dart';
 class NoteWidget extends StatelessWidget {
   const NoteWidget({
     required this.note,
-    this.reverse = false,
     super.key,
   });
 
   final Note note;
-  final bool reverse;
 
   @override
   Widget build(BuildContext context) {
-    var children = [
-      Row(children: [
-        Text(note.createdAt.toString()),
-      ]),
+    return Column(children: [
       Viewer(
         markdown: note.body,
       ),
-    ];
-    if (reverse) {
-      children = children.reversed.toList();
-    }
-    return Column(children: children);
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(note.createdAt.toTimeAgo()),
+          ],
+        ),
+      ),
+    ]);
   }
 }
 
