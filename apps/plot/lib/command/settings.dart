@@ -7,18 +7,14 @@ import 'package:plot/base.dart';
 import 'command.dart';
 import 'package:plot/page/calendar_settings.dart';
 
-class SettingsCommands extends Commands {
-  SettingsCommands() : super(prompt: 'Settings');
-
-  @override
-  Future<List<CommandGroup>> list({String? search}) async {
-    return [
-      CommandGroup(title: 'Settings', commands: [
-        CalendarSettings(),
-        SignOut(),
-      ])
-    ];
-  }
+class SettingsCommands extends StaticCommands {
+  SettingsCommands()
+      : super(commands: [
+          CommandGroup(title: 'Settings', commands: [
+            CalendarSettings(),
+            SignOut(),
+          ]),
+        ], prompt: 'Settings');
 }
 
 class ShowSettings extends ShowCommand<void> {

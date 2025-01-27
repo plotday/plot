@@ -3,20 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 
 import 'command.dart';
-import 'settings.dart';
 
-class GlobalCommands extends Commands {
+class GlobalCommands extends StaticCommands {
   static final List<Command> all = [
     ChangePriority(),
     ShowSettings(),
   ];
 
-  GlobalCommands() : super(prompt: 'Run a command');
-
-  @override
-  Future<List<CommandGroup>> list({String? search}) async {
-    return [CommandGroup(title: 'Recent', commands: all)];
-  }
+  GlobalCommands()
+      : super(
+            prompt: 'Run a command',
+            commands: [CommandGroup(title: 'Recent', commands: all)]);
 }
 
 class ShowGlobalCommands extends ShowCommand<void> {
@@ -47,7 +44,7 @@ class GlobalShortcuts extends StatelessWidget {
                 ...bindings,
                 command.shortcut!: () {
                   try {
-                    context.run(command);
+                    context.run<void>(command);
                   } catch (e) {
                     print('Error running command: $e');
                     rethrow;

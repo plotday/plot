@@ -136,3 +136,42 @@ abstract class Commands {
 
   Future<List<CommandGroup>> list({String? search});
 }
+
+class StaticCommands extends Commands {
+  StaticCommands({required this.commands, required super.prompt});
+
+  final List<CommandGroup> commands;
+
+  @override
+  Future<List<CommandGroup>> list({String? search}) async {
+    // If search is null or empty, return all commands
+    if (search == null || search.isEmpty) {
+      return commands;
+    }
+
+    String searchLower = search.toLowerCase();
+
+    // Filter the commands based on the search query
+    List<CommandGroup> filteredCommandGroups = [];
+
+    for (var group in commands) {
+      // Filter commands within the group
+      List<Command> matchingCommands = group.commands.where((command) {
+        return command.title.toLowerCase().contains(searchLower);
+      }).toList();
+
+      // If any commands match, include the group with matching commands
+      if (matchingCommands.isNotEmpty) {
+        filteredCommandGroups.add(
+          CommandGroup(
+            title: group.title,
+            subtitle: group.subtitle,
+            commands: matchingCommands,
+          ),
+        );
+      }
+    }
+
+    return filteredCommandGroups;
+  }
+}

@@ -34,7 +34,7 @@ class PriorityCommand extends ValueCommand<Priority?> {
       );
 }
 
-class PickPriority extends Commands {
+class PickPriority extends StaticCommands {
   static Future<Priority?> show({
     required BuildContext context,
     Priority? defaultPriority,
@@ -51,20 +51,16 @@ class PickPriority extends Commands {
   PickPriority({
     required this.priorities,
     required super.prompt,
-  });
+  }) : super(commands: [
+          CommandGroup(
+            title: 'Recent',
+            commands: priorities
+                .map((priority) => PriorityCommand(priority))
+                .toList(),
+          ),
+        ]);
 
   final List<Priority?> priorities;
-
-  @override
-  Future<List<CommandGroup>> list({String? search}) async {
-    return [
-      CommandGroup(
-        title: 'Recent',
-        commands:
-            priorities.map((priority) => PriorityCommand(priority)).toList(),
-      ),
-    ];
-  }
 }
 
 class ChangePriority extends ShowCommand<Priority> {
