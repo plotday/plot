@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
 import 'package:super_editor_markdown/super_editor_markdown.dart';
@@ -87,69 +88,81 @@ class EditorState extends State<Editor> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: () => _editorFocusNode.requestFocus(),
-      child: Container(
-        decoration: BoxDecoration(
-          color: macos.MacosDynamicColor.resolve(
-            macos.MacosColors.controlBackgroundColor,
-            context,
-          ),
-          border: Border(
-            top: BorderSide(
-              width: 1.0,
-              color: macos.MacosDynamicColor.resolve(
-                macos.MacosColors.separatorColor,
-                context,
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(
+          LogicalKeyboardKey.enter,
+          meta: true,
+        ): () {
+          submit();
+          _editorFocusNode.requestFocus();
+        }
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => _editorFocusNode.requestFocus(),
+        child: Container(
+          decoration: BoxDecoration(
+            color: macos.MacosDynamicColor.resolve(
+              macos.MacosColors.controlBackgroundColor,
+              context,
+            ),
+            border: Border(
+              top: BorderSide(
+                width: 1.0,
+                color: macos.MacosDynamicColor.resolve(
+                  macos.MacosColors.separatorColor,
+                  context,
+                ),
               ),
             ),
           ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SuperEditor(
-              autofocus: widget.autofocus,
-              editor: _editor,
-              focusNode: _editorFocusNode,
-              shrinkWrap: true,
-              scrollController: _scrollController,
-              documentLayoutKey: _docLayoutKey,
-              stylesheet: _styles,
-              documentOverlayBuilders: [
-                DefaultCaretOverlayBuilder(
-                  caretStyle:
-                      const CaretStyle().copyWith(color: material.Colors.white),
-                ),
-              ],
-              componentBuilders: [
-                TaskComponentBuilder(_editor),
-                ...defaultComponentBuilders,
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Button(
-                    onTap: _isEmpty
-                        ? null
-                        : () {
-                            final md = serializeDocumentToMarkdown(_document);
-                            widget.onSubmitted?.call(md);
-                            clear();
-                          },
-                    child: const Text('Add'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SuperEditor(
+                autofocus: widget.autofocus,
+                editor: _editor,
+                focusNode: _editorFocusNode,
+                shrinkWrap: true,
+                scrollController: _scrollController,
+                documentLayoutKey: _docLayoutKey,
+                stylesheet: _styles,
+                documentOverlayBuilders: [
+                  DefaultCaretOverlayBuilder(
+                    caretStyle: const CaretStyle()
+                        .copyWith(color: material.Colors.white),
                   ),
                 ],
+                componentBuilders: [
+                  TaskComponentBuilder(_editor),
+                  ...defaultComponentBuilders,
+                ],
               ),
-            ),
-          ],
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Button(
+                      onTap: _isEmpty ? null : submit,
+                      child: const Text('Add'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  void submit() {
+    final md = serializeDocumentToMarkdown(_document);
+    widget.onSubmitted?.call(md);
+    clear();
   }
 }
 
