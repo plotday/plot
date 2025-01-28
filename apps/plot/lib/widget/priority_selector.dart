@@ -28,14 +28,14 @@ class PrioritySelectorState extends State<PrioritySelector> {
       children: [
         Tapable(
           onTap: () {
-            context.run(ChangePriority());
+            context.run<void>(ChangePriority());
           },
           child: PriorityLabel(priority: widget.selected),
         ),
         IconButton(
           icon: const PlotIcon.add(),
           onPressed: () {
-            context.run(NewPriority());
+            context.run<void>(NewPriority());
           },
         )
       ],

@@ -19,9 +19,8 @@ class ActivityToolbar extends StatelessWidget {
   Widget build(BuildContext context) => Header(
         actions: [
           if (!activity.doNow && !activity.done)
-            HeaderAction(
+            IconButton(
               icon: const PlotIcon.doNow(),
-              label: 'Do Now',
               onPressed: () => context.read<PriorityBloc>().updateActivity(
                     activity.copyWith(
                       doAt: activity.doNow
@@ -31,9 +30,8 @@ class ActivityToolbar extends StatelessWidget {
                   ),
             ),
           if (activity.doNow)
-            HeaderAction(
+            IconButton(
               icon: const PlotIcon.done(),
-              label: 'Done',
               onPressed: () => context.read<PriorityBloc>().updateActivity(
                     activity.copyWith(
                       doneAt: Value(DateTime.now()),
@@ -41,9 +39,8 @@ class ActivityToolbar extends StatelessWidget {
                   ),
             ),
           if (activity.done)
-            HeaderAction(
+            IconButton(
               icon: const PlotIcon.done(),
-              label: 'Not Done',
               onPressed: () => context.read<PriorityBloc>().updateActivity(
                     activity.copyWith(
                       doneAt: const Value(null),
@@ -51,9 +48,8 @@ class ActivityToolbar extends StatelessWidget {
                   ),
             ),
           if (!activity.doNow)
-            HeaderAction(
+            IconButton(
               icon: const PlotIcon.pinned(),
-              label: activity.pinned ? 'Unpin' : 'Pin',
               onPressed: () => context.read<PriorityBloc>().updateActivity(
                     activity.copyWith(
                       pinned: !activity.pinned,

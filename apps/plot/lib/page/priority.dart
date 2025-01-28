@@ -58,12 +58,23 @@ class PriorityHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (buildContext, state) => Header(
-        title: state.current?.name ?? 'All Priorities',
+        main: Expanded(
+          child: PrioritySelector(
+            priorities: state.rootPriorities,
+            selected: state.current,
+            onSelect: (priority) {
+              PriorityRoute.byId(priority?.id).go(context);
+            },
+          ),
+        ),
         actions: [
-          HeaderAction(
+          if (state.balances?[state.current?.id] != null)
+            PriorityBalance(
+              balances: state.balances![state.current?.id]!,
+              isNow: state.week.isNow(),
+            ),
+          IconButton(
             icon: const PlotIcon.add(),
-            label: 'New',
-            showLabel: false,
             onPressed: () {
               NewActivityRoute.byId(state.current?.id).go(context);
             },
@@ -100,7 +111,7 @@ class PriorityPage extends StatelessWidget {
               onSelect: (week) => context.read<PriorityBloc>().setWeek(week),
             ),
             ReorderableListView(
-              list: state.children,
+              list: state.activeChildren,
               itemBuilder: (buildContext, item) => PriorityTile(
                   priority: item,
                   balances: state.balances?[item.id],
@@ -115,13 +126,13 @@ class PriorityPage extends StatelessWidget {
                 var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
                 Priority? previous;
                 if (previousIndex >= 0) {
-                  previous = state.children[previousIndex];
+                  previous = state.activeChildren[previousIndex];
                 }
                 Priority? next;
-                if (nextIndex < state.children.length) {
-                  next = state.children[nextIndex];
+                if (nextIndex < state.activeChildren.length) {
+                  next = state.activeChildren[nextIndex];
                 }
-                state.children[oldIndex]
+                state.activeChildren[oldIndex]
                     .copyWith(
                       order: Order.between(previous?.order, next?.order),
                     )

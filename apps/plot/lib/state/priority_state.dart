@@ -54,6 +54,11 @@ final class PriorityState extends Equatable {
   final List<Priority> rootPriorities;
   final Map<PriorityId, Priority> priorities;
   List<Priority> get children => current?.children ?? rootPriorities;
+  List<Priority> get activeChildren => priorities.values
+      .where((priority) =>
+          (current == null || current!.isParent(priority)) &&
+          (balances?[priority.id]?[BalanceType.todo]?.count ?? 0) > 0)
+      .toList();
   List<Priority?> get recent =>
       List<Priority?>.of([null]) + priorities.values.toList();
 

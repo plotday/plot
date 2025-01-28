@@ -15,9 +15,9 @@ class PriorityBloc extends Cubit<PriorityState> {
         )) {
     _loadBalances();
     _loadActivites();
-    _prioritySubscription = Priority.watchRoot().listen((activities) {
+    _prioritySubscription = Priority.watchRoot().listen((priorities) {
       emit(state.copyWith(
-        priorities: activities,
+        priorities: priorities,
       ));
     });
   }
