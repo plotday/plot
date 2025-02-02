@@ -9,51 +9,67 @@ import 'package:plot/store/store.dart';
 part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
-  PriorityBloc()
-      : super(PriorityState(
-          week: Week.current(),
-        )) {
-    _loadBalances();
-    _loadActivites();
-    _prioritySubscription = Priority.watchRoot().listen((priorities) {
-      emit(state.copyWith(
-        priorities: priorities,
-      ));
-    });
+  PriorityBloc() : super(const NoPriorityState());
+
+  void _reset() {
+    _prioritySubscription?.cancel();
+    _prioritySubscription = null;
+    _noteSubscription?.cancel();
+    _noteSubscription = null;
+    _activitiesSubscription?.cancel();
+    _activitiesSubscription = null;
   }
 
   void dispose() {
-    _prioritySubscription.cancel();
-    _balanceSubscription?.cancel();
-    _noteSubscription?.cancel();
-    _activitiesSubscription?.cancel();
+    _reset();
   }
 
+  PrioritySelectedState get selectedState => state as PrioritySelectedState;
+
   void setCurrent(Priority? current) {
-    if (current?.id == state.current?.id) {
+    if (switch (state) {
+      PrioritySelectedState state => state.current.id == current?.id,
+      NoPriorityState _ => current == null,
+    }) {
       return;
     }
 
-    emit(state.copyWith(
-      current: Value(current),
-      activity: const Value(null),
-      activityNotes: [],
+    _reset();
+
+    if (current == null) {
+      emit(const NoPriorityState());
+      return;
+    }
+
+    emit(PrioritySelectedState(
+      current: current,
     ));
+    _prioritySubscription = Priority.watchOne(
+      current.id,
+    ).listen((priority) {
+      emit(selectedState.copyWith(current: priority));
+    });
     _loadActivites();
   }
 
   void setCurrentId(PriorityId? id) async {
-    if (id == state.current?.id) return;
+    if (switch (state) {
+      PrioritySelectedState state => state.current.id == id,
+      NoPriorityState _ => id == null,
+    }) {
+      return;
+    }
+    _reset();
     if (id == null) {
       setCurrent(null);
     } else {
-      final activity = state.priorities[id];
-      setCurrent(activity);
+      final priority = await Priority.get(id);
+      setCurrent(priority);
     }
   }
 
   void setActivityId(ActivityId? activityId) {
-    if (activityId == state.activity.id) return;
+    if (activityId == selectedState.activity.id) return;
     if (activityId == null) {
       setActivity(null);
     } else {
@@ -65,11 +81,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   ///
   /// If [activity] is null, the current draft activity (or a new one) is set.
   void setActivity(Activity? activity) {
-    activity ??= state.draftActivity;
-    if (activity.id == state.activity.id) {
+    activity ??= selectedState.draftActivity;
+    if (activity.id == selectedState.activity.id) {
       return;
     }
-    emit(state.copyWith(activity: Value(activity), activityNotes: []));
+    emit(selectedState.copyWith(activity: Value(activity), activityNotes: []));
     _loadActivityNotes();
   }
 
@@ -77,28 +93,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     await activity.save();
   }
 
-  void setWeek(Week week) async {
-    if (state.week == week) return;
-    emit(state.copyWith(week: week, balances: const Value(null)));
-    _loadBalances();
-  }
-
-  void _loadBalances() async {
-    _balanceSubscription?.cancel();
-    _balanceSubscription = Balance.watch(state.week).listen(
-      (balances) {
-        emit(state.copyWith(balances: Value(balances)));
-      },
-    );
-  }
-
   void _loadActivites() {
     _activitiesSubscription?.cancel();
     _activitiesSubscription =
-        Activity.watchPriority(state.current).listen((activities) {
-      emit(state.copyWith(
+        Activity.watchPriority(selectedState.current).listen((activities) {
+      emit(selectedState.copyWith(
         activities: activities,
-        moreActivities: Activity.hasMorePriority(state.current?.path),
+        moreActivities: Activity.hasMorePriority(selectedState.current.path),
       ));
     });
     _loadActivityNotes();
@@ -106,10 +107,10 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void _loadActivityNotes() {
     _noteSubscription?.cancel();
-    final activityId = state.activity.id;
+    final activityId = selectedState.activity.id;
     if (activityId != null) {
       _noteSubscription = Note.watchActivity(activityId).listen((notes) {
-        emit(state.copyWith(
+        emit(selectedState.copyWith(
           activityNotes: notes,
           moreActivityNotes: Note.hasMoreActivity(activityId),
         ));
@@ -128,9 +129,10 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   Future<void> updateNote(Note note) async {
-    final activityUpdate = !note.draft && note.activityId == state.activity.id
-        ? state.activity.copyWith(order: Order.first())
-        : null;
+    final activityUpdate =
+        !note.draft && note.activityId == selectedState.activity.id
+            ? selectedState.activity.copyWith(order: Order.first())
+            : null;
     try {
       // TODO debounce save
       await Future.wait([
@@ -143,8 +145,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
-  late final StreamSubscription<dynamic> _prioritySubscription;
-  StreamSubscription<BalanceByPriorityType>? _balanceSubscription;
+  StreamSubscription<Priority>? _prioritySubscription;
   StreamSubscription<List<Note>>? _noteSubscription;
   StreamSubscription<List<Activity>>? _activitiesSubscription;
 }

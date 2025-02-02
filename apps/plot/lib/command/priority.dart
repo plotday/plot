@@ -5,7 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/state/priority.dart';
+import 'package:plot/state/priorities.dart';
 import 'package:plot/page/page.dart';
 import 'package:plot/router.dart';
 
@@ -44,7 +44,7 @@ class PickPriority extends StaticCommands {
       context,
       PickPriority(
         prompt: 'Pick a priority',
-        priorities: context.read<PriorityBloc>().state.recent,
+        priorities: context.read<PrioritiesBloc>().state.recent,
       ),
     );
   }
@@ -75,13 +75,13 @@ class ChangePriority extends ShowCommand<Priority> {
           ),
           commands: (context) => PickPriority(
             prompt: 'Switch priorities',
-            priorities: context.read<PriorityBloc>().state.recent,
+            priorities: context.read<PrioritiesBloc>().state.recent,
           ),
         );
 
   @override
-  void onSelect(BuildContext context, Priority? value) async {
-    PriorityRoute.byId(value?.id).go(context);
+  void onSelect(BuildContext context, Priority value) async {
+    PriorityRoute.byId(value.id).go(context);
   }
 }
 

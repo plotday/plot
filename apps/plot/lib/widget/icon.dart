@@ -37,4 +37,6 @@ class PlotIcon extends FaIcon {
       : super(FontAwesomeIcons.sunHaze);
   const PlotIcon.priority({super.size, super.color, super.key})
       : super(FontAwesomeIcons.rankingStar);
+  const PlotIcon.priorities({super.size, super.color, super.key})
+      : super(FontAwesomeIcons.house);
 }

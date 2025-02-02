@@ -12,6 +12,7 @@ import 'state/user.dart';
 import 'router.dart';
 import 'widget/layout.dart';
 import 'widget/spinner.dart';
+import 'command/global.dart';
 
 class App extends StatefulWidget {
   const App({super.key});
@@ -66,41 +67,43 @@ class AppState extends State<App> with WidgetsBindingObserver {
               listener: (context, state) {
                 snapshot.data?.refresh();
               },
-              child: PlatformBuilder(
-                builder: (context) => AdaptiveTheme(
-                  light: material.ThemeData(
-                    colorScheme: material.ColorScheme.fromSeed(
-                      seedColor: const Color(0x002BDD66),
-                      brightness: material.Brightness.light,
+              child: GlobalShortcuts(
+                child: PlatformBuilder(
+                  builder: (context) => AdaptiveTheme(
+                    light: material.ThemeData(
+                      colorScheme: material.ColorScheme.fromSeed(
+                        seedColor: const Color(0x002BDD66),
+                        brightness: material.Brightness.light,
+                      ),
                     ),
-                  ),
-                  dark: material.ThemeData(
-                    colorScheme: material.ColorScheme.fromSeed(
-                      seedColor: const Color(0x002BDD66),
-                      brightness: material.Brightness.dark,
+                    dark: material.ThemeData(
+                      colorScheme: material.ColorScheme.fromSeed(
+                        seedColor: const Color(0x002BDD66),
+                        brightness: material.Brightness.dark,
+                      ),
                     ),
+                    debugShowFloatingThemeButton: true,
+                    initial: AdaptiveThemeMode.system,
+                    builder: (theme, darkTheme) => snapshot.data == null
+                        ? material.MaterialApp(
+                            theme: theme,
+                            darkTheme: darkTheme,
+                          )
+                        : material.MaterialApp.router(
+                            title: 'Plot',
+                            theme: theme,
+                            darkTheme: darkTheme,
+                            routerConfig: snapshot.data,
+                          ),
                   ),
-                  debugShowFloatingThemeButton: true,
-                  initial: AdaptiveThemeMode.system,
-                  builder: (theme, darkTheme) => snapshot.data == null
-                      ? material.MaterialApp(
-                          theme: theme,
-                          darkTheme: darkTheme,
-                        )
-                      : material.MaterialApp.router(
+                  macOSBuilder: (context) => snapshot.data == null
+                      ? const macos.MacosApp()
+                      : macos.MacosApp.router(
                           title: 'Plot',
-                          theme: theme,
-                          darkTheme: darkTheme,
+                          debugShowCheckedModeBanner: false,
                           routerConfig: snapshot.data,
                         ),
                 ),
-                macOSBuilder: (context) => snapshot.data == null
-                    ? const macos.MacosApp()
-                    : macos.MacosApp.router(
-                        title: 'Plot',
-                        debugShowCheckedModeBanner: false,
-                        routerConfig: snapshot.data,
-                      ),
               ),
             ),
           );

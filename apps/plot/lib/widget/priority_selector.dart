@@ -14,7 +14,7 @@ class PrioritySelector extends StatefulWidget {
 
   final Priority? selected;
   final List<Priority> priorities;
-  final void Function(Priority?) onSelect;
+  final void Function(Priority) onSelect;
 
   @override
   PrioritySelectorState createState() => PrioritySelectorState();

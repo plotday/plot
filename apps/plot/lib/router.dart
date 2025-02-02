@@ -169,8 +169,51 @@ class NewEventRoute extends Route {
 }
 
 @immutable
-class PriorityRoute extends Route {
+class PrioritiesRoute extends Route {
   static const path = '/priorities/:priorityIdString';
+  static const _all = 'all';
+
+  PrioritiesRoute({required this.priorityIdString})
+      : priorityId = priorityIdString == _all
+            ? null
+            : Uuid.fromShortString(priorityIdString);
+  PrioritiesRoute.byId(PriorityId? id)
+      : priorityId = id,
+        priorityIdString = id == null ? _all : id.toShortString();
+  const PrioritiesRoute.all()
+      : priorityId = null,
+        priorityIdString = _all;
+
+  final String priorityIdString;
+  final PriorityId? priorityId;
+
+  // @override
+  // void onEnter(BuildContext context) async {
+  //   context.read<PriorityBloc>().setCurrentId(priorityId);
+  //   if (priorityId == null) {
+  //     context.read<NowBloc>().setPriority(null);
+  //     return;
+  //   }
+  //   Priority activity = await Priority.get(priorityId!);
+  //   if (!context.mounted) return;
+  //   context.read<NowBloc>().setPriority(activity);
+  // }
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const PrioritiesPage();
+
+  @override
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const Scaffold(body: PrioritiesPage());
+
+  @override
+  List<Object?> get props => [priorityId];
+}
+
+@immutable
+class PriorityRoute extends Route {
+  static const path = '/priority/:priorityIdString';
   static const _root = 'top';
 
   PriorityRoute({required this.priorityIdString})
@@ -213,7 +256,7 @@ class PriorityRoute extends Route {
 
 @immutable
 class NewPriorityRoute extends Route {
-  static const path = '/priorities/new';
+  static const path = '/priority/new';
 
   const NewPriorityRoute({this.priorityIdString});
   NewPriorityRoute.byId(PriorityId? priorityId)
@@ -328,7 +371,7 @@ GoRouter getRouter(PanelLayout layout) {
       // if the user is logged in but still on the login page, send them to
       // the home page
       if (loggingIn || state.fullPath == null || state.fullPath!.isEmpty) {
-        return const PriorityRoute.root().location;
+        return const PrioritiesRoute.all().location;
       }
 
       // no need to redirect at all

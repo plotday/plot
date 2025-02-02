@@ -12,6 +12,7 @@ part 'router_tabbed.g.dart';
     branches: [
       TypedStatefulShellBranch<PrioritiesBranch>(
         routes: <TypedGoRoute<GoRouteData>>[
+          TypedGoRoute<PrioritiesRoute>(path: PrioritiesRoute.path),
           TypedGoRoute<NewPriorityRoute>(path: NewPriorityRoute.path),
           TypedGoRoute<PriorityRoute>(path: PriorityRoute.path, routes: [
             TypedGoRoute<NewActivityRoute>(path: NewActivityRoute.path),

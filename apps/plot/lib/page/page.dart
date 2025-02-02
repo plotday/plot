@@ -2,6 +2,7 @@ export 'activity.dart';
 export 'calendar_settings.dart';
 export 'event.dart';
 export 'new_priority.dart';
+export 'priorities.dart';
 export 'priority.dart';
 export 'schedule.dart';
 export 'sign_in.dart';

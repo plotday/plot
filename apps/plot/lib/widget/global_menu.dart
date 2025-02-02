@@ -27,7 +27,7 @@ class _GlobalMenuState extends State<GlobalMenu> {
               members: <PlatformMenuItem>[
                 PlatformMenuItem(
                   onSelected: () {
-                    context.run(ShowSettings());
+                    context.run<void>(ShowSettings());
                   },
                   label: "Settings",
                 ),

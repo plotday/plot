@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/router.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/priorities.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 
@@ -56,32 +57,44 @@ class PriorityHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<PriorityBloc, PriorityState>(
-      builder: (buildContext, state) => Header(
+    return Builder(builder: (context) {
+      final prioritiesState = context.watch<PrioritiesBloc>().state;
+      final priorityState = context.watch<PriorityBloc>().selectedState;
+      return Header(
         main: Expanded(
-          child: PrioritySelector(
-            priorities: state.rootPriorities,
-            selected: state.current,
-            onSelect: (priority) {
-              PriorityRoute.byId(priority?.id).go(context);
-            },
+          child: Row(
+            children: [
+              IconButton(
+                icon: const PlotIcon.priorities(),
+                onPressed: () {
+                  const PrioritiesRoute.all().go(context);
+                },
+              ),
+              PrioritySelector(
+                priorities: prioritiesState.rootPriorities,
+                selected: priorityState.current,
+                onSelect: (priority) {
+                  PriorityRoute.byId(priority.id).go(context);
+                },
+              ),
+            ],
           ),
         ),
         actions: [
-          if (state.balances?[state.current?.id] != null)
+          if (prioritiesState.balances?[priorityState.current.id] != null)
             PriorityBalance(
-              balances: state.balances![state.current?.id]!,
-              isNow: state.week.isNow(),
+              balances: prioritiesState.balances![priorityState.current.id]!,
+              isNow: prioritiesState.week.isNow(),
             ),
           IconButton(
             icon: const PlotIcon.add(),
             onPressed: () {
-              NewActivityRoute.byId(state.current?.id).go(context);
+              NewActivityRoute.byId(priorityState.current.id).go(context);
             },
           ),
         ],
-      ),
-    );
+      );
+    });
   }
 }
 
@@ -91,7 +104,9 @@ class PriorityPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
-      builder: (buildContext, state) => BidirectionalList(
+        builder: (context, generalState) {
+      final state = generalState as PrioritySelectedState;
+      return BidirectionalList(
         scrollController: ScrollControllerContext.of(context),
         count: state.inactiveActivities.length,
         builder: (context, index) => ActivityWidget(
@@ -106,39 +121,6 @@ class PriorityPage extends StatelessWidget {
         ),
         header: Column(
           children: [
-            WeekSelector(
-              week: state.week,
-              onSelect: (week) => context.read<PriorityBloc>().setWeek(week),
-            ),
-            ReorderableListView(
-              list: state.activeChildren,
-              itemBuilder: (buildContext, item) => PriorityTile(
-                  priority: item,
-                  balances: state.balances?[item.id],
-                  isNow: state.week.isNow(),
-                  onTap: () {
-                    if (item.id == null) return;
-                    PriorityRoute.byId(item.id).go(context);
-                  }),
-              shrinkWrap: true,
-              onReorder: (int oldIndex, int newIndex) async {
-                var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-                var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-                Priority? previous;
-                if (previousIndex >= 0) {
-                  previous = state.activeChildren[previousIndex];
-                }
-                Priority? next;
-                if (nextIndex < state.activeChildren.length) {
-                  next = state.activeChildren[nextIndex];
-                }
-                state.activeChildren[oldIndex]
-                    .copyWith(
-                      order: Order.between(previous?.order, next?.order),
-                    )
-                    .save();
-              },
-            ),
             ReorderableActivitiesView(
               activities: state.pinnedActivities,
               selected: state.activity.id,
@@ -149,7 +131,7 @@ class PriorityPage extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
+      );
+    });
   }
 }
