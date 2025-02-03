@@ -59,7 +59,9 @@ class PriorityHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Builder(builder: (context) {
       final prioritiesState = context.watch<PrioritiesBloc>().state;
-      final priorityState = context.watch<PriorityBloc>().selectedState;
+      final priorityState = context.watch<PriorityBloc>().state;
+      final currentPriority =
+          priorityState is PrioritySelectedState ? priorityState.current : null;
       return Header(
         main: Expanded(
           child: Row(
@@ -72,7 +74,7 @@ class PriorityHeader extends StatelessWidget {
               ),
               PrioritySelector(
                 priorities: prioritiesState.rootPriorities,
-                selected: priorityState.current,
+                selected: currentPriority,
                 onSelect: (priority) {
                   PriorityRoute.byId(priority.id).go(context);
                 },
@@ -81,17 +83,19 @@ class PriorityHeader extends StatelessWidget {
           ),
         ),
         actions: [
-          if (prioritiesState.balances?[priorityState.current.id] != null)
+          if (currentPriority != null &&
+              prioritiesState.balances?[currentPriority.id] != null)
             PriorityBalance(
-              balances: prioritiesState.balances![priorityState.current.id]!,
+              balances: prioritiesState.balances![currentPriority.id]!,
               isNow: prioritiesState.week.isNow(),
             ),
-          IconButton(
-            icon: const PlotIcon.add(),
-            onPressed: () {
-              NewActivityRoute.byId(priorityState.current.id).go(context);
-            },
-          ),
+          if (currentPriority != null)
+            IconButton(
+              icon: const PlotIcon.add(),
+              onPressed: () {
+                NewActivityRoute.byId(currentPriority.id).go(context);
+              },
+            ),
         ],
       );
     });
