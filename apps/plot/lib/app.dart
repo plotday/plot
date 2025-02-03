@@ -13,8 +13,6 @@ import 'router.dart';
 import 'widget/window.dart';
 import 'widget/layout.dart';
 import 'widget/spinner.dart';
-import 'widget/global_menu.dart';
-import 'command/global.dart';
 
 class App extends StatefulWidget {
   const App({super.key});
@@ -70,45 +68,41 @@ class AppState extends State<App> with WidgetsBindingObserver {
               listener: (context, state) {
                 snapshot.data?.refresh();
               },
-              child: GlobalShortcuts(
-                child: GlobalMenu(
-                  child: PlatformBuilder(
-                    builder: (context) => AdaptiveTheme(
-                      light: material.ThemeData(
-                        colorScheme: material.ColorScheme.fromSeed(
-                          seedColor: const Color(0x002BDD66),
-                          brightness: material.Brightness.light,
-                        ),
-                      ),
-                      dark: material.ThemeData(
-                        colorScheme: material.ColorScheme.fromSeed(
-                          seedColor: const Color(0x002BDD66),
-                          brightness: material.Brightness.dark,
-                        ),
-                      ),
-                      debugShowFloatingThemeButton: true,
-                      initial: AdaptiveThemeMode.system,
-                      builder: (theme, darkTheme) => snapshot.data == null
-                          ? material.MaterialApp(
-                              theme: theme,
-                              darkTheme: darkTheme,
-                            )
-                          : material.MaterialApp.router(
-                              title: 'Plot',
-                              theme: theme,
-                              darkTheme: darkTheme,
-                              routerConfig: snapshot.data,
-                            ),
+              child: PlatformBuilder(
+                builder: (context) => AdaptiveTheme(
+                  light: material.ThemeData(
+                    colorScheme: material.ColorScheme.fromSeed(
+                      seedColor: const Color(0x002BDD66),
+                      brightness: material.Brightness.light,
                     ),
-                    macOSBuilder: (context) => snapshot.data == null
-                        ? const macos.MacosApp()
-                        : macos.MacosApp.router(
-                            title: 'Plot',
-                            debugShowCheckedModeBanner: false,
-                            routerConfig: snapshot.data,
-                          ),
                   ),
+                  dark: material.ThemeData(
+                    colorScheme: material.ColorScheme.fromSeed(
+                      seedColor: const Color(0x002BDD66),
+                      brightness: material.Brightness.dark,
+                    ),
+                  ),
+                  debugShowFloatingThemeButton: true,
+                  initial: AdaptiveThemeMode.system,
+                  builder: (theme, darkTheme) => snapshot.data == null
+                      ? material.MaterialApp(
+                          theme: theme,
+                          darkTheme: darkTheme,
+                        )
+                      : material.MaterialApp.router(
+                          title: 'Plot',
+                          theme: theme,
+                          darkTheme: darkTheme,
+                          routerConfig: snapshot.data,
+                        ),
                 ),
+                macOSBuilder: (context) => snapshot.data == null
+                    ? const macos.MacosApp()
+                    : macos.MacosApp.router(
+                        title: 'Plot',
+                        debugShowCheckedModeBanner: false,
+                        routerConfig: snapshot.data,
+                      ),
               ),
             ),
           );

@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'widget/widget.dart';
 import 'page/page.dart';
 import 'router.dart';
+import 'widget/global_menu.dart';
+import 'command/global.dart';
 
 part 'router_adaptive.g.dart';
 
@@ -30,7 +32,9 @@ class _AdaptiveRoutes extends ShellRouteData {
 
   @override
   Widget builder(BuildContext context, GoRouterState state, Widget child) {
-    return child;
+    return GlobalShortcuts(
+      child: GlobalMenu(child: child),
+    );
   }
 }
 
