@@ -30,8 +30,17 @@ final class PrioritiesState extends Equatable {
   final Priority? filter;
   final List<Priority> rootPriorities;
   final Map<PriorityId, Priority> priorities;
+  List<Priority> get all {
+    List<Priority> allPriorities = priorities.values.toList();
+    allPriorities.sort((a, b) => a.order.compareTo(b.order));
+    return allPriorities;
+  }
+
   List<Priority> get children => filter?.children ?? rootPriorities;
-  List<Priority> get activeChildren => priorities.values
+  List<Priority> get filtered => all
+      .where((priority) => filter == null || filter!.isParent(priority))
+      .toList();
+  List<Priority> get activeChildren => all
       .where((priority) =>
           (filter == null || filter!.isParent(priority)) &&
           (balances?[priority.id]?[BalanceType.todo]?.count ?? 0) > 0)

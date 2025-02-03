@@ -49,7 +49,7 @@ class PrioritiesPage extends StatelessWidget {
               onSelect: (week) => context.read<PrioritiesBloc>().setWeek(week),
             ),
             ReorderableListView(
-              list: state.activeChildren,
+              list: state.filtered,
               itemBuilder: (context, item) => PriorityTile(
                   priority: item,
                   balances: state.balances?[item.id],
@@ -64,13 +64,13 @@ class PrioritiesPage extends StatelessWidget {
                 var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
                 Priority? previous;
                 if (previousIndex >= 0) {
-                  previous = state.activeChildren[previousIndex];
+                  previous = state.filtered[previousIndex];
                 }
                 Priority? next;
-                if (nextIndex < state.activeChildren.length) {
-                  next = state.activeChildren[nextIndex];
+                if (nextIndex < state.filtered.length) {
+                  next = state.filtered[nextIndex];
                 }
-                state.activeChildren[oldIndex]
+                state.filtered[oldIndex]
                     .copyWith(
                       order: Order.between(previous?.order, next?.order),
                     )
