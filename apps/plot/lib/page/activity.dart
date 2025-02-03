@@ -87,11 +87,11 @@ class ActivityPage extends StatelessWidget {
               autofocus: true,
               onSubmitted: (body) async {
                 if (state.activity.draft) {
-                  await context.read<PriorityBloc>().updateActivity(
-                      state.activity.copyWith(body: body, draft: false));
+                  final activity =
+                      state.activity.copyWith(body: body, draft: false);
+                  await context.read<PriorityBloc>().updateActivity(activity);
                   if (context.mounted) {
-                    ActivityRoute.byId(
-                            state.activity.priorityId, state.activity.id)
+                    ActivityRoute.byId(activity.priorityId, activity.id)
                         .go(context);
                   }
                   return;

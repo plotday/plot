@@ -136,6 +136,17 @@ class PriorityPage extends StatelessWidget {
               activities: state.activeActivities,
               selected: state.activity.id,
             ),
+            ListTile(
+              leadingSize: const Size(18, 18),
+              title: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [Text('+')],
+              ),
+              selected: state.activity.draft,
+              onTap: () {
+                NewActivityRoute.byId(state.current.id).go(context);
+              },
+            ),
           ],
         ),
       );
