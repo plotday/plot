@@ -2,10 +2,15 @@ part of 'priority.dart';
 
 sealed class PriorityState extends Equatable {
   const PriorityState();
+
+  bool get loading => false;
 }
 
 final class NoPriorityState extends PriorityState {
   const NoPriorityState();
+
+  @override
+  bool get loading => true;
 
   @override
   List<Object?> get props => [];
@@ -43,7 +48,7 @@ final class PrioritySelectedState extends PriorityState {
 
   final Priority current;
   final List<Activity>? _activities;
-  bool get loading => _activities == null;
+  bool get activityLoading => _activities == null;
   final bool moreActivities;
   List<Activity> get pinnedActivities => _activities == null
       ? const []

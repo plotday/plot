@@ -105,6 +105,9 @@ class PriorityPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
         builder: (context, generalState) {
+      if (generalState.loading) {
+        return const Spinner();
+      }
       final state = generalState as PrioritySelectedState;
       return BidirectionalList(
         scrollController: ScrollControllerContext.of(context),

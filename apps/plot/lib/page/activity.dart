@@ -67,8 +67,11 @@ class ActivityPage extends StatelessWidget {
   Widget build(BuildContext context) =>
       BlocBuilder<PriorityBloc, PriorityState>(
           builder: (context, generalState) {
+        if (generalState.loading) {
+          return const Spinner();
+        }
         final state = generalState as PrioritySelectedState;
-        if (state.loading) {
+        if (state.activityLoading) {
           return const Spinner();
         }
         return Column(
