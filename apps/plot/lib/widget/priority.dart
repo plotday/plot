@@ -83,7 +83,7 @@ class PriorityTile extends StatelessWidget {
     super.key,
   });
 
-  final Priority? priority;
+  final Priority priority;
   final BalanceByType? balances;
   final VoidCallback? onTap;
   final bool selected;
@@ -96,7 +96,7 @@ class PriorityTile extends StatelessWidget {
         onTap?.call();
       },
       selected: selected,
-      key: ValueKey(priority?.id.toString()),
+      key: ValueKey(priority.id.toString()),
       leading: (balances?[BalanceType.todo]?.count != null &&
               balances![BalanceType.todo]!.count > 0)
           ? Badge(count: balances![BalanceType.todo]!.count)
@@ -105,7 +105,7 @@ class PriorityTile extends StatelessWidget {
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(priority?.name ?? 'Everything'),
+          PriorityLabel(priority: priority),
           if (balances != null)
             PriorityBalance(balances: balances!, isNow: isNow),
         ],
