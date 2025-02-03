@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
+import "window.dart";
 import "layout_material.dart";
 import "layout_mac.dart";
 
@@ -13,16 +14,8 @@ enum PanelLayout {
 
 sealed class Layout extends StatelessWidget {
   static late final PanelLayout layout;
-  static late final double toolbarHeight;
-  static late final EdgeInsetsGeometry toolbarPadding;
 
   static Future<PanelLayout> init(BuildContext context) async {
-    if (Platform.instance.isMacOS) {
-      await MacLayout.init(context);
-    } else {
-      toolbarHeight = 32.0;
-      toolbarPadding = const EdgeInsets.all(0);
-    }
     return layout = await PlatformResolver.current(
       iOSResolver: () async {
         final deviceInfo = DeviceInfoPlugin();
@@ -88,11 +81,13 @@ final class SidebarLayout extends Layout {
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      macOSBuilder: (_) => MacLayout(
-        left,
-        main,
-        right,
-        header: header,
+      macOSBuilder: (_) => Window(
+        child: MacLayout(
+          left,
+          main,
+          right,
+          header: header,
+        ),
       ),
       builder: (_) => MaterialLayout(
         drawer: left,

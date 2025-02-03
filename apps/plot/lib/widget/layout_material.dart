@@ -104,7 +104,7 @@ class MaterialLayout extends StatelessWidget {
                         onDestinationSelected: (int index) {
                           if (navigationShell == null) return;
                           if (index == 2) {
-                            context.run(ShowSettings());
+                            context.run<void>(ShowSettings());
                             return;
                           }
                           navigationShell!.goBranch(index);

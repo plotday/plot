@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'layout.dart';
+import 'window.dart';
 
 class Scaffold extends StatefulWidget {
   const Scaffold({required this.body, this.header, super.key});
@@ -31,7 +31,7 @@ class ScaffoldState extends State<Scaffold> {
       final pos = renderBox.localToGlobal(Offset.zero);
       setState(() {
         _padding = pos.dx == 0 && pos.dy == 0
-            ? Layout.toolbarPadding
+            ? Window.toolbarPadding
             : EdgeInsets.zero;
       });
     }
@@ -44,7 +44,7 @@ class ScaffoldState extends State<Scaffold> {
         final width = constraints.maxWidth;
         final height = constraints.maxHeight;
         final hasHeader = widget.header != null;
-        final topPadding = hasHeader ? Layout.toolbarHeight : 0.0;
+        final topPadding = hasHeader ? Window.toolbarHeight : 0.0;
 
         return Stack(
           children: [
@@ -63,7 +63,7 @@ class ScaffoldState extends State<Scaffold> {
               Positioned(
                 top: 0,
                 width: width,
-                height: Layout.toolbarHeight,
+                height: Window.toolbarHeight,
                 child: Builder(builder: (BuildContext context) {
                   return Padding(
                     key: _toolbarKey,
