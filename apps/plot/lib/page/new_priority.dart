@@ -20,9 +20,9 @@ class NewPriorityPage extends StatelessWidget {
                 onSubmitted: (name) async {
                   final priority = Priority(
                     name: name,
-                    parent: state.current,
-                    order:
-                        Order.between(state.children.lastOrNull?.order, null),
+                    parent:
+                        state is PrioritySelectedState ? state.current : null,
+                    order: Order.first(),
                   );
                   await priority.save();
                   if (context.mounted) {

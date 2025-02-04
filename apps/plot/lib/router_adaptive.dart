@@ -1,18 +1,20 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'widget/widget.dart';
-import 'command/global.dart';
 import 'page/page.dart';
-import 'state/priority.dart';
 import 'router.dart';
+import 'widget/global_menu.dart';
+import 'command/global.dart';
 
 part 'router_adaptive.g.dart';
 
 @TypedShellRoute<_AdaptiveRoutes>(routes: <TypedRoute<RouteData>>[
   TypedGoRoute<LoginRoute>(path: LoginRoute.path),
-  TypedShellRoute<_TripleRoutes>(routes: <TypedRoute<RouteData>>[
+  TypedShellRoute<_PrioritiesRoutes>(routes: <TypedRoute<RouteData>>[
+    TypedGoRoute<PrioritiesRoute>(path: PrioritiesRoute.path),
+  ]),
+  TypedShellRoute<_PriorityRoutes>(routes: <TypedRoute<RouteData>>[
     TypedGoRoute<NewPriorityRoute>(path: NewPriorityRoute.path),
     TypedGoRoute<PriorityRoute>(path: PriorityRoute.path, routes: [
       TypedGoRoute<NewActivityRoute>(path: NewActivityRoute.path),
@@ -30,33 +32,38 @@ class _AdaptiveRoutes extends ShellRouteData {
 
   @override
   Widget builder(BuildContext context, GoRouterState state, Widget child) {
-    return child;
+    return GlobalShortcuts(
+      child: GlobalMenu(child: child),
+    );
   }
 }
 
 @immutable
-class _TripleRoutes extends ShellRouteData {
-  const _TripleRoutes();
+class _PrioritiesRoutes extends ShellRouteData {
+  const _PrioritiesRoutes();
 
   @override
   Widget builder(BuildContext context, GoRouterState state, Widget child) {
-    return GlobalShortcuts(
-      child: SidebarLayout(
-        const PriorityPage(),
-        child,
-        const SchedulePage(),
-        header: BlocBuilder<PriorityBloc, PriorityState>(
-          builder: (context, state) => GlobalHeader(
-            priorities: state.rootPriorities,
-            currentPriority: state.current,
-            balances: state.balances?[state.current?.id],
-            isNow: state.week.isNow(),
-            onCurrentPrioritySelected: (priority) {
-              PriorityRoute.byId(priority?.id).go(context);
-            },
-          ),
-        ),
-      ),
+    return SidebarLayout(
+      const PrioritiesNav(),
+      child,
+      const SchedulePage(),
+      header: const PrioritiesHeader(),
+    );
+  }
+}
+
+@immutable
+class _PriorityRoutes extends ShellRouteData {
+  const _PriorityRoutes();
+
+  @override
+  Widget builder(BuildContext context, GoRouterState state, Widget child) {
+    return SidebarLayout(
+      const PriorityPage(),
+      child,
+      const SchedulePage(),
+      header: const PriorityHeader(),
     );
   }
 }

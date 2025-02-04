@@ -6,18 +6,13 @@ enum MenuSelection {
   settings,
 }
 
-class GlobalMenu extends StatefulWidget {
+class GlobalMenu extends StatelessWidget {
   const GlobalMenu({required this.child, super.key});
 
-  @override
-  State<GlobalMenu> createState() => _GlobalMenuState();
-
   final Widget child;
-}
 
-class _GlobalMenuState extends State<GlobalMenu> {
   @override
-  Widget build(BuildContext contet) {
+  Widget build(BuildContext context) {
     return PlatformMenuBar(
       menus: <PlatformMenuItem>[
         PlatformMenu(
@@ -27,7 +22,7 @@ class _GlobalMenuState extends State<GlobalMenu> {
               members: <PlatformMenuItem>[
                 PlatformMenuItem(
                   onSelected: () {
-                    context.run(ShowSettings());
+                    context.run<void>(ShowSettings());
                   },
                   label: "Settings",
                 ),
@@ -40,7 +35,7 @@ class _GlobalMenuState extends State<GlobalMenu> {
           ],
         ),
       ],
-      child: widget.child,
+      child: child,
     );
   }
 }

@@ -87,7 +87,7 @@ class ShowCommand<T> extends Command {
         context,
         commands(context),
       );
-      if (context.mounted) {
+      if (context.mounted && value != null) {
         onSelect(context, value);
       }
       return CommandValue(value);
@@ -98,7 +98,7 @@ class ShowCommand<T> extends Command {
     }
   }
 
-  void onSelect(BuildContext context, T? value) {}
+  void onSelect(BuildContext context, T value) {}
 }
 
 extension BuildContextCommandExtension on BuildContext {

@@ -19,9 +19,8 @@ class ActivityToolbar extends StatelessWidget {
   Widget build(BuildContext context) => Header(
         actions: [
           if (!activity.doNow && !activity.done)
-            HeaderAction(
+            IconButton(
               icon: const PlotIcon.doNow(),
-              label: 'Do Now',
               onPressed: () => context.read<PriorityBloc>().updateActivity(
                     activity.copyWith(
                       doAt: activity.doNow
@@ -31,9 +30,8 @@ class ActivityToolbar extends StatelessWidget {
                   ),
             ),
           if (activity.doNow)
-            HeaderAction(
+            IconButton(
               icon: const PlotIcon.done(),
-              label: 'Done',
               onPressed: () => context.read<PriorityBloc>().updateActivity(
                     activity.copyWith(
                       doneAt: Value(DateTime.now()),
@@ -41,9 +39,8 @@ class ActivityToolbar extends StatelessWidget {
                   ),
             ),
           if (activity.done)
-            HeaderAction(
+            IconButton(
               icon: const PlotIcon.done(),
-              label: 'Not Done',
               onPressed: () => context.read<PriorityBloc>().updateActivity(
                     activity.copyWith(
                       doneAt: const Value(null),
@@ -51,9 +48,8 @@ class ActivityToolbar extends StatelessWidget {
                   ),
             ),
           if (!activity.doNow)
-            HeaderAction(
+            IconButton(
               icon: const PlotIcon.pinned(),
-              label: activity.pinned ? 'Unpin' : 'Pin',
               onPressed: () => context.read<PriorityBloc>().updateActivity(
                     activity.copyWith(
                       pinned: !activity.pinned,
@@ -69,8 +65,13 @@ class ActivityPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      BlocBuilder<PriorityBloc, PriorityState>(builder: (context, state) {
-        if (state.loading) {
+      BlocBuilder<PriorityBloc, PriorityState>(
+          builder: (context, generalState) {
+        if (generalState.loading) {
+          return const Spinner();
+        }
+        final state = generalState as PrioritySelectedState;
+        if (state.activityLoading) {
           return const Spinner();
         }
         return Column(
@@ -86,11 +87,11 @@ class ActivityPage extends StatelessWidget {
               autofocus: true,
               onSubmitted: (body) async {
                 if (state.activity.draft) {
-                  await context.read<PriorityBloc>().updateActivity(
-                      state.activity.copyWith(body: body, draft: false));
+                  final activity =
+                      state.activity.copyWith(body: body, draft: false);
+                  await context.read<PriorityBloc>().updateActivity(activity);
                   if (context.mounted) {
-                    ActivityRoute.byId(
-                            state.activity.priorityId, state.activity.id)
+                    ActivityRoute.byId(activity.priorityId, activity.id)
                         .go(context);
                   }
                   return;

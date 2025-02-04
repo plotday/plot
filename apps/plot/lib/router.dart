@@ -169,34 +169,66 @@ class NewEventRoute extends Route {
 }
 
 @immutable
-class PriorityRoute extends Route {
+class PrioritiesRoute extends Route {
   static const path = '/priorities/:priorityIdString';
-  static const _root = 'top';
+  static const _all = 'all';
 
-  PriorityRoute({required this.priorityIdString})
-      : priorityId = priorityIdString == _root
+  PrioritiesRoute({required this.priorityIdString})
+      : priorityId = priorityIdString == _all
             ? null
             : Uuid.fromShortString(priorityIdString);
-  PriorityRoute.byId(PriorityId? id)
+  PrioritiesRoute.byId(PriorityId? id)
       : priorityId = id,
-        priorityIdString = id == null ? _root : id.toShortString();
-  const PriorityRoute.root()
+        priorityIdString = id == null ? _all : id.toShortString();
+  const PrioritiesRoute.all()
       : priorityId = null,
-        priorityIdString = _root;
+        priorityIdString = _all;
 
   final String priorityIdString;
   final PriorityId? priorityId;
 
+  // @override
+  // void onEnter(BuildContext context) async {
+  //   context.read<PriorityBloc>().setCurrentId(priorityId);
+  //   if (priorityId == null) {
+  //     context.read<NowBloc>().setPriority(null);
+  //     return;
+  //   }
+  //   Priority activity = await Priority.get(priorityId!);
+  //   if (!context.mounted) return;
+  //   context.read<NowBloc>().setPriority(activity);
+  // }
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const PrioritiesPage();
+
+  @override
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      const Scaffold(body: PrioritiesPage());
+
+  @override
+  List<Object?> get props => [priorityId];
+}
+
+@immutable
+class PriorityRoute extends Route {
+  static const path = '/priority/:priorityIdString';
+
+  PriorityRoute({required this.priorityIdString})
+      : priorityId = Uuid.fromShortString(priorityIdString);
+  PriorityRoute.byId(this.priorityId)
+      : priorityIdString = priorityId.toShortString();
+
+  final String priorityIdString;
+  final PriorityId priorityId;
+
   @override
   void onEnter(BuildContext context) async {
     context.read<PriorityBloc>().setCurrentId(priorityId);
-    if (priorityId == null) {
-      context.read<NowBloc>().setPriority(null);
-      return;
-    }
-    Priority activity = await Priority.get(priorityId!);
+    Priority priority = await Priority.get(priorityId!);
     if (!context.mounted) return;
-    context.read<NowBloc>().setPriority(activity);
+    context.read<NowBloc>().setPriority(priority);
   }
 
   @override
@@ -213,7 +245,7 @@ class PriorityRoute extends Route {
 
 @immutable
 class NewPriorityRoute extends Route {
-  static const path = '/priorities/new';
+  static const path = '/priority/new';
 
   const NewPriorityRoute({this.priorityIdString});
   NewPriorityRoute.byId(PriorityId? priorityId)
@@ -241,8 +273,8 @@ class ActivityRoute extends PriorityRoute {
       {required this.priorityIdString, required this.activityIdString})
       : activityId = ActivityId.fromShortString(activityIdString),
         super(priorityIdString: priorityIdString);
-  ActivityRoute.byId(PriorityId? priorityId, ActivityId activityId)
-      : priorityIdString = priorityId?.toShortString() ?? PriorityRoute._root,
+  ActivityRoute.byId(PriorityId priorityId, ActivityId activityId)
+      : priorityIdString = priorityId.toShortString(),
         activityId = activityId,
         activityIdString = activityId.toShortString(),
         super.byId(priorityId);
@@ -277,8 +309,8 @@ class NewActivityRoute extends PriorityRoute {
 
   NewActivityRoute({required this.priorityIdString})
       : super(priorityIdString: priorityIdString);
-  NewActivityRoute.byId(PriorityId? priorityId)
-      : priorityIdString = priorityId?.toString() ?? PriorityRoute._root,
+  NewActivityRoute.byId(PriorityId priorityId)
+      : priorityIdString = priorityId.toShortString(),
         super.byId(priorityId);
 
   @override
@@ -328,7 +360,7 @@ GoRouter getRouter(PanelLayout layout) {
       // if the user is logged in but still on the login page, send them to
       // the home page
       if (loggingIn || state.fullPath == null || state.fullPath!.isEmpty) {
-        return const PriorityRoute.root().location;
+        return const PrioritiesRoute.all().location;
       }
 
       // no need to redirect at all

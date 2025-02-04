@@ -10,6 +10,7 @@ import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'state/user.dart';
 import 'router.dart';
+import 'widget/window.dart';
 import 'widget/layout.dart';
 import 'widget/spinner.dart';
 
@@ -30,6 +31,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
     final routeCompleter = Completer<GoRouter>();
     router = routeCompleter.future;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      Window.init();
       Layout.init(context)
           .then((layout) => routeCompleter.complete(getRouter(layout)))
           .catchError((dynamic error) {

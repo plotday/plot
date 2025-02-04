@@ -16,10 +16,8 @@ class Activities extends UuidStoreTable with DraftTable, DeletableTable {
       .map(const LocalDateTimeConverter())();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
-  BlobColumn get priorityId => blob()
-      .nullable()
-      .map(const UuidConverter())
-      .references(Priorities, #id)();
+  BlobColumn get priorityId =>
+      blob().map(const UuidConverter()).references(Priorities, #id)();
   DateTimeColumn get doAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get doneAt =>
@@ -92,15 +90,11 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         .then(Activity.fromStore);
   }
 
-  static Stream<List<Activity>> watchPriority(Priority? priority,
+  static Stream<List<Activity>> watchPriority(Priority priority,
       {bool? deleted = false}) {
-    pullPriority(priority?.path);
+    pullPriority(priority.path);
     final query = Store.get.select(table);
-    if (priority == null) {
-      query.where((t) => t.priorityId.isNull());
-    } else {
-      query.where((t) => t.priorityId.equals(priority.id.toBytes()));
-    }
+    query.where((t) => t.priorityId.equals(priority.id.toBytes()));
     if (deleted != null) {
       query.where(
           (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
@@ -142,7 +136,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   }
 
   factory Activity.draft({
-    required PriorityId? priorityId,
+    required PriorityId priorityId,
   }) {
     final id = Uuid.generate();
     final now = DateTime.now();
@@ -194,7 +188,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     bool? pinned,
     bool? private,
     ActivityId? activityId,
-    Value<PriorityId?> priorityId = const Value.absent(),
+    PriorityId? priorityId,
     Value<DateTime?> doAt = const Value.absent(),
     Value<DateTime?> doneAt = const Value.absent(),
   }) {
@@ -217,17 +211,17 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       order ??= Order.first();
     }
     return Activity.fromStore(super.copyWith(
-      id: id ?? this.id,
       createdAt: publish ? DateTime.now() : this.createdAt,
       updatedAt: DateTime.now(),
-      deletedAt: deletedAt,
-      draft: draft,
-      userId: userId ?? this.userId,
-      body: body ?? this.body,
-      order: order ?? this.order,
       orderedAt: orderedAt ?? (order != null ? DateTime.now() : this.orderedAt),
-      pinned: pinned ?? this.pinned,
-      private: private ?? this.private,
+      deletedAt: deletedAt,
+      id: id,
+      draft: draft,
+      userId: userId,
+      body: body,
+      order: order,
+      pinned: pinned,
+      private: private,
       priorityId: priorityId,
       doAt: doAt,
       doneAt: doneAt,
