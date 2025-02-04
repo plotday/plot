@@ -20,7 +20,7 @@ class EventDetails extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (event.activity?.name != null) Text(event.activity!.name),
+          if (event.priority?.name != null) Text(event.priority!.name),
           Row(
             children: [
               Text(event.at.start.toDate().format()),
@@ -44,6 +44,16 @@ class EventDetails extends StatelessWidget {
               onChanged(
                 event.copyWith(
                   name: Value(name),
+                ),
+              );
+            },
+          ),
+          PrioritySelector(
+            selected: event.priority,
+            onSelect: (priority) {
+              onChanged(
+                event.copyWith(
+                  priorityId: Value(priority.id),
                 ),
               );
             },

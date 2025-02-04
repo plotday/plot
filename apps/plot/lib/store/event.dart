@@ -103,12 +103,12 @@ class Event extends EventRow {
         .map((rows) => rows.map((row) => Event.fromStore(row)).toList());
     if (withPriority) {
       return Rx.combineLatest2(eventStream, Priority.watch(),
-          (List<Event> events, Map<Uuid, Priority> activities) {
+          (List<Event> events, Map<Uuid, Priority> priorities) {
         final ret = events
             .map((event) => Event.fromStore(event,
-                activity: event.priorityId == null
+                priority: event.priorityId == null
                     ? null
-                    : activities[event.priorityId]))
+                    : priorities[event.priorityId]))
             .toList();
         return ret;
       });
@@ -116,11 +116,22 @@ class Event extends EventRow {
     return eventStream;
   }
 
-  static Stream<Event> watchOne(EventId id) {
+  static Stream<Event> watchOne(
+    EventId id, {
+    bool withPriority = false,
+  }) {
     // TODO if not found, pull
     final query = Store.get.select(table)
       ..where((t) => t.id.equals(id.toBytes()));
-    return query.watchSingle().map((row) => Event.fromStore(row));
+    return query.watchSingle().asyncExpand((row) async* {
+      if (withPriority && row.priorityId != null) {
+        final priorityStream = Priority.watchOne(row.priorityId!);
+        yield* priorityStream
+            .map((priority) => Event.fromStore(row, priority: priority));
+      } else {
+        yield Event.fromStore(row);
+      }
+    });
   }
 
   Event({
@@ -132,18 +143,18 @@ class Event extends EventRow {
     super.availability = EventAvailability.free,
     super.inviteesHidden = false,
     super.draft = false,
-    this.activity,
+    this.priority,
   })  : unsaved = true,
         super(
           id: Uuid.generate(),
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
-          priorityId: activity?.id,
+          priorityId: priority?.id,
           start: at.start,
           end: at.end,
         );
 
-  Event.fromStore(EventRow row, {this.activity, this.unsaved = false})
+  Event.fromStore(EventRow row, {this.priority, this.unsaved = false})
       : super(
           id: row.id,
           createdAt: row.createdAt,
@@ -159,7 +170,7 @@ class Event extends EventRow {
           visibility: row.visibility,
           availability: row.availability,
           inviteesHidden: row.inviteesHidden,
-          priorityId: activity?.id ?? row.priorityId,
+          priorityId: priority?.id ?? row.priorityId,
         );
 
   @override
@@ -210,15 +221,15 @@ class Event extends EventRow {
         inviteesHidden: inviteesHidden,
         series: series,
       ),
-      activity: activity.present ? activity.value : null,
+      priority: activity.present ? activity.value : null,
       unsaved: unsaved,
     );
   }
 
-  final Priority? activity;
+  final Priority? priority;
   final bool unsaved;
 
-  bool get isBlank => name == null && activity == null;
+  bool get isBlank => name == null && priority == null;
 
   Future<void> save() =>
       Store.get.save(table, toCompanion(false), EventsBase());

@@ -61,7 +61,7 @@ class PickPriority extends StaticCommands {
           ),
         ]);
 
-  final List<Priority?> priorities;
+  final List<Priority> priorities;
 }
 
 class ChangePriority extends ShowCommand<Priority> {

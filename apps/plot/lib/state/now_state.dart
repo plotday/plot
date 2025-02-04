@@ -57,13 +57,13 @@ final class NowState extends Equatable {
   List<Object?> get props => [session, scheduled, next, previous];
 
   Priority? get priority =>
-      session?.activity ?? scheduled.firstOrNull?.activity;
+      session?.activity ?? scheduled.firstOrNull?.priority;
   Event get current =>
       scheduled.firstOrNull ??
       Event(
         at: DateTimeRange(previous.firstOrNull?.at.end ?? now.round(),
             next.firstOrNull?.at.start ?? now.round(down: false)),
-        activity: priority,
+        priority: priority,
       );
 
   DateTimeRange? get pomodoro {
@@ -80,7 +80,7 @@ final class NowState extends Equatable {
       previous.firstOrNull?.at.end;
   DateTime? get end =>
       pomodoro?.end ??
-      (scheduled.firstOrNull?.activity == priority
+      (scheduled.firstOrNull?.priority == priority
           ? scheduled.firstOrNull?.at.end
           : null) ??
       next.firstOrNull?.at.start;
