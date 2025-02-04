@@ -81,6 +81,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   ///
   /// If [activity] is null, the current draft activity (or a new one) is set.
   void setActivity(Activity? activity) {
+    if (state is NoPriorityState) return;
     activity ??= selectedState.draftActivity;
     if (activity.id == selectedState.activity.id) {
       return;
