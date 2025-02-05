@@ -64,44 +64,44 @@ class ActivityPage extends StatelessWidget {
   const ActivityPage({super.key});
 
   @override
-  Widget build(BuildContext context) =>
-      BlocBuilder<PriorityBloc, PriorityState>(
-          builder: (context, generalState) {
-        if (generalState.loading) {
-          return const Spinner();
-        }
-        final state = generalState as PrioritySelectedState;
-        if (state.activityLoading) {
-          return const Spinner();
-        }
-        return Column(
-          children: [
-            ActivityToolbar(activity: state.activity),
-            Expanded(
-              child: NotesView(notes: state.activityNotes),
-            ),
-            Editor(
-              hint: state.activityNotes.isNotEmpty
-                  ? 'Start an activity'
-                  : 'Add a note',
-              autofocus: true,
-              onSubmitted: (body) async {
-                if (state.activity.draft) {
-                  final activity =
-                      state.activity.copyWith(body: body, draft: false);
-                  await context.read<PriorityBloc>().updateActivity(activity);
-                  if (context.mounted) {
-                    ActivityRoute.byId(activity.priorityId, activity.id)
-                        .go(context);
-                  }
-                  return;
+  Widget build(BuildContext context) {
+    return BlocBuilder<PriorityBloc, PriorityState>(builder: (context, state) {
+      // Added a null check and some safety conditions
+      if (state is! PrioritySelectedState) {
+        return const Spinner();
+      }
+
+      if (state.loading || state.activityLoading) {
+        return const Spinner();
+      }
+
+      return Column(
+        children: [
+          ActivityToolbar(activity: state.activity),
+          Expanded(child: NotesView(notes: state.activityNotes)),
+          Editor(
+            hint: state.activityNotes.isNotEmpty
+                ? 'Start an activity'
+                : 'Add a note',
+            autofocus: true,
+            onSubmitted: (body) async {
+              if (state.activity.draft) {
+                final activity =
+                    state.activity.copyWith(body: body, draft: false);
+                await context.read<PriorityBloc>().updateActivity(activity);
+                if (context.mounted) {
+                  ActivityRoute.byId(activity.priorityId, activity.id)
+                      .go(context);
                 }
-                await context
-                    .read<PriorityBloc>()
-                    .updateNote(state.draft.copyWith(body: body, draft: false));
-              },
-            ),
-          ],
-        );
-      });
+                return;
+              }
+              await context
+                  .read<PriorityBloc>()
+                  .updateNote(state.draft.copyWith(body: body, draft: false));
+            },
+          )
+        ],
+      );
+    });
+  }
 }

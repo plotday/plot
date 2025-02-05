@@ -52,7 +52,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _loadActivites();
   }
 
-  void setCurrentId(PriorityId? id) async {
+  Future<void> setCurrentId(PriorityId? id) async {
     if (switch (state) {
       PrioritySelectedState state => state.current.id == id,
       NoPriorityState _ => id == null,
