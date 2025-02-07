@@ -31,7 +31,15 @@ class PrioritiesHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Header(title: 'Priorities');
+    return Header(
+      title: 'Priorities',
+      actions: [
+        IconButton(
+          icon: const PlotIcon.add(),
+          onPressed: () => const NewPriorityRoute().go(context),
+        ),
+      ],
+    );
   }
 }
 

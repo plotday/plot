@@ -96,7 +96,7 @@ export type Database = {
           order: number
           ordered_at: string
           pinned: boolean
-          priority_id: string | null
+          priority_id: string
           private: boolean
           updated_at: string
           user_id: string
@@ -112,7 +112,7 @@ export type Database = {
           order: number
           ordered_at?: string
           pinned?: boolean
-          priority_id?: string | null
+          priority_id: string
           private?: boolean
           updated_at?: string
           user_id: string
@@ -128,7 +128,7 @@ export type Database = {
           order?: number
           ordered_at?: string
           pinned?: boolean
-          priority_id?: string | null
+          priority_id?: string
           private?: boolean
           updated_at?: string
           user_id?: string
@@ -648,7 +648,9 @@ export type Database = {
       priority_settings: {
         Row: {
           color: number
+          is_default: boolean
           order: number
+          path: unknown | null
           pomodoro: number
           priority_id: string
           updated_at: string
@@ -656,7 +658,9 @@ export type Database = {
         }
         Insert: {
           color?: number
+          is_default?: boolean
           order: number
+          path?: unknown | null
           pomodoro?: number
           priority_id: string
           updated_at?: string
@@ -664,7 +668,9 @@ export type Database = {
         }
         Update: {
           color?: number
+          is_default?: boolean
           order?: number
+          path?: unknown | null
           pomodoro?: number
           priority_id?: string
           updated_at?: string
@@ -726,7 +732,6 @@ export type Database = {
         Row: {
           created_at: string
           deleted_at: string | null
-          path: unknown | null
           priority_id: string
           updated_at: string
           user_id: string
@@ -734,7 +739,6 @@ export type Database = {
         Insert: {
           created_at?: string
           deleted_at?: string | null
-          path?: unknown | null
           priority_id: string
           updated_at?: string
           user_id: string
@@ -742,7 +746,6 @@ export type Database = {
         Update: {
           created_at?: string
           deleted_at?: string | null
-          path?: unknown | null
           priority_id?: string
           updated_at?: string
           user_id?: string
@@ -1366,6 +1369,7 @@ export type Database = {
           deleted_at: string | null
           draft: boolean | null
           id: string | null
+          is_default: boolean | null
           name: string | null
           order: number | null
           path: unknown | null
@@ -1550,6 +1554,12 @@ export type Database = {
           updated_at: string
           user_id: string
         }[]
+      }
+      generate_path: {
+        Args: {
+          parent?: string
+        }
+        Returns: string
       }
       get_domain: {
         Args: {

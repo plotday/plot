@@ -102,13 +102,14 @@ class Event extends EventRow {
         .watch()
         .map((rows) => rows.map((row) => Event.fromStore(row)).toList());
     if (withPriority) {
-      return Rx.combineLatest2(eventStream, Priority.watch(),
-          (List<Event> events, Map<Uuid, Priority> priorities) {
+      return Rx.combineLatest3(
+          eventStream, Priority.watch(), Priority.watchDefault(),
+          (events, priorities, defaultPriority) {
         final ret = events
             .map((event) => Event.fromStore(event,
                 priority: event.priorityId == null
-                    ? null
-                    : priorities[event.priorityId]))
+                    ? defaultPriority
+                    : priorities[event.priorityId] ?? defaultPriority))
             .toList();
         return ret;
       });
@@ -229,8 +230,6 @@ class Event extends EventRow {
   final Priority? priority;
   final bool unsaved;
 
-  bool get isBlank => name == null && priority == null;
-
   Future<void> save() =>
       Store.get.save(table, toCompanion(false), EventsBase());
 
@@ -251,8 +250,9 @@ class Event extends EventRow {
 class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> watch(DateRange range,
       {bool? deleted = false}) {
-    return Event.watch(range, withPriority: true, deleted: deleted)
-        .map((events) {
+    return Rx.combineLatest2(
+        Event.watch(range, withPriority: true, deleted: deleted),
+        Priority.watchDefault(), (events, defaultPriority) {
       var (start, end) = range.bounds;
 
       final direction =
@@ -267,7 +267,8 @@ class ScheduledDay extends Equatable {
           dayEvents.add(eventIterator.current);
           hasMore = eventIterator.moveNext();
         }
-        days[start] = ScheduledDay(start, dayEvents);
+        days[start] = ScheduledDay(
+            date: start, events: dayEvents, defaultPriority: defaultPriority);
         start = start.next(direction: direction);
       }
       return days;
@@ -275,39 +276,49 @@ class ScheduledDay extends Equatable {
   }
 
   static Stream<ScheduledDay> watchToday() {
-    return Date.current().switchMap((today) => Event.watch(today.toDateRange())
-            .transform(ExpiringStreamTransformer((events) {
-          final now = DateTime.now();
-          final currentEvent = events.any((event) => event.at.includes(now));
-          DateTime? expiry;
-          if (currentEvent) {
-            // Expire every minute on the minute
-            expiry = now + Duration(seconds: 60 - now.second);
-          } else {
-            // Find the earliest event start or end following now
-            expiry = events.fold(
-                null,
-                (DateTime? next, Event e) => e.at.start.isAfter(now) &&
-                        (next == null || next.isAfter(e.at.start))
-                    ? e.at.start
-                    : e.at.end.isAfter(now) &&
-                            (next == null || next.isAfter(e.at.end))
-                        ? e.at.end
-                        : next);
-          }
-          return ExpiringResult(
-            value: ScheduledDay(today, events),
-            expiry: expiry,
-          );
-        })));
+    return Priority.watchDefault().switchMap((defaultPriority) => Date.current()
+        .switchMap((today) => Event.watch(today.toDateRange())
+                .transform(ExpiringStreamTransformer((events) {
+              final now = DateTime.now();
+              final currentEvent =
+                  events.any((event) => event.at.includes(now));
+              DateTime? expiry;
+              if (currentEvent) {
+                // Expire every minute on the minute
+                expiry = now + Duration(seconds: 60 - now.second);
+              } else {
+                // Find the earliest event start or end following now
+                expiry = events.fold(
+                    null,
+                    (DateTime? next, Event e) => e.at.start.isAfter(now) &&
+                            (next == null || next.isAfter(e.at.start))
+                        ? e.at.start
+                        : e.at.end.isAfter(now) &&
+                                (next == null || next.isAfter(e.at.end))
+                            ? e.at.end
+                            : next);
+              }
+              return ExpiringResult(
+                value: ScheduledDay(
+                    date: today,
+                    events: events,
+                    defaultPriority: defaultPriority),
+                expiry: expiry,
+              );
+            }))));
   }
 
-  ScheduledDay(this.date, List<Event> events)
-      : events = _addGaps(
-            date,
-            events
-                .where((e) => e.at.duration < const Duration(hours: 22))
-                .toList()),
+  ScheduledDay({
+    required this.date,
+    required List<Event> events,
+    required this.defaultPriority,
+  })  : events = _addGaps(
+          date,
+          events
+              .where((e) => e.at.duration < const Duration(hours: 22))
+              .toList(),
+          defaultPriority,
+        ),
         allDayEvents = events
             .where((e) => e.at.duration >= const Duration(hours: 22))
             .toList();
@@ -315,6 +326,7 @@ class ScheduledDay extends Equatable {
   final Date date;
   final List<Event> events;
   final List<Event> allDayEvents;
+  final Priority defaultPriority;
 
   ScheduledDay copyWith(Event event) {
     final list = events.where((e) => e.id != event.id).toList();
@@ -323,7 +335,8 @@ class ScheduledDay extends Equatable {
       index = list.length;
     }
     list.insert(index, event);
-    return ScheduledDay(date, list);
+    return ScheduledDay(
+        date: date, events: list, defaultPriority: defaultPriority);
   }
 
   Event getAt(DateTime time) {
@@ -335,7 +348,8 @@ class ScheduledDay extends Equatable {
 
   /* Private */
 
-  static List<Event> _addGaps(Date date, List<Event> events) {
+  static List<Event> _addGaps(
+      Date date, List<Event> events, Priority defaultPriority) {
     List<Event> expanded = [];
     final start = date.toDateTime();
     final end = start.nextDay;
@@ -347,6 +361,7 @@ class ScheduledDay extends Equatable {
             events.isEmpty
                 ? end
                 : start.at(events.first.at.start.toTimeOfDay())),
+        priority: defaultPriority,
       ));
     }
     for (var i = 0; i < events.length; i++) {
@@ -361,6 +376,7 @@ class ScheduledDay extends Equatable {
             events[i].at.end,
             i + 1 == events.length ? end : events[i + 1].at.start,
           ),
+          priority: defaultPriority,
         ));
       }
     }

@@ -15,6 +15,7 @@ class Priorities extends UuidStoreTable with DraftTable, DeletableTable {
   IntColumn get color => integer()
       .withDefault(const Constant(0))
       .map(const ThemeColorConverter())();
+  BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -44,6 +45,20 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .then(Priority.fromStore);
   }
 
+  static Future<Priority> getDefault() async {
+    return await (Store.get.select(table)
+          ..orderBy([
+            (t) =>
+                OrderingTerm(expression: t.isDefault, mode: OrderingMode.desc),
+            // If no priority is marked default, fall back to the first one created
+            (t) =>
+                OrderingTerm(expression: t.createdAt, mode: OrderingMode.asc),
+          ])
+          ..limit(1))
+        .getSingle()
+        .then(Priority.fromStore);
+  }
+
   static Stream<Map<Uuid, Priority>> watch({bool deleted = false}) {
     return watchAll(deleted: deleted).map((rows) {
       final priorities = <Uuid, Priority>{};
@@ -58,6 +73,15 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         add(row);
       }
       return priorities;
+    });
+  }
+
+  static Stream<Priority> watchDefault({int depth = 0}) {
+    final query = Store.get.select(table);
+    query.where((t) => t.isDefault.equals(true));
+    return query.watchSingle().asyncExpand((row) {
+      return watchPath(row.path, depth: depth)
+          .map((contexts) => contexts.first);
     });
   }
 
@@ -136,6 +160,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
           draft: false,
+          isDefault: false,
           path: Path.generate(parent: parent?.path),
         ) {
     parent?._addChild(this);
@@ -152,6 +177,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
           name: row.name,
           pomodoro: row.pomodoro,
           color: row.color,
+          isDefault: row.isDefault,
           order: row.order,
           path: row.path,
         ) {
@@ -173,6 +199,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Order? order,
     Duration? pomodoro,
     ThemeColor? color,
+    bool? isDefault,
     Priority? parent,
   }) =>
       Priority.fromStore(
@@ -188,6 +215,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
           order: order,
           pomodoro: pomodoro,
           color: color,
+          isDefault: isDefault,
         ),
         parent: parent ?? this.parent,
         children: children,

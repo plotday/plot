@@ -70,7 +70,7 @@ class ScheduleBloc extends Cubit<ScheduleState> {
   }
 
   Future<void> update(Event event) async {
-    if (event.isBlank && event.unsaved) {
+    if (event.unsaved) {
       emit(state.copyWith(selected: Value(event)));
     } else {
       await event.save();

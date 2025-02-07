@@ -21,14 +21,14 @@ CREATE TRIGGER set_priority_created_by
     FOR EACH ROW
     EXECUTE FUNCTION update_created_by ();
 
+-- Only path roots get entries
 CREATE TABLE "public"."priority_user" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "deleted_at" timestamp with time zone,
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
-    "path" ltree,
-    CONSTRAINT priority_user_user_path_unique UNIQUE (user_id, path)
+    CONSTRAINT priority_user_unique UNIQUE (user_id, priority_id)
 );
 
 ALTER TABLE "public"."priority_user" ENABLE ROW LEVEL SECURITY;
@@ -42,11 +42,18 @@ CREATE TABLE "public"."priority_settings" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
+    -- If set, overrides the path root. Only used for shared priorities.
+    "path" ltree,
     "order" double precision NOT NULL,
     "pomodoro" integer NOT NULL DEFAULT 25 * 60,
     "color" integer NOT NULL DEFAULT 0,
+    "is_default" boolean NOT NULL DEFAULT FALSE,
     CONSTRAINT user_priority_unique UNIQUE ("user_id", "priority_id")
 );
+
+CREATE UNIQUE INDEX ON public.priority_settings (user_id)
+WHERE
+    is_default = TRUE;
 
 ALTER TABLE "public"."priority_settings" ENABLE ROW LEVEL SECURITY;
 

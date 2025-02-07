@@ -9,11 +9,12 @@ SELECT
     GREATEST (cu.deleted_at, c2.deleted_at) AS deleted_at,
     c2.draft,
     c2.name,
-    replace_parent_path (c1.path, c2.path, COALESCE(cu.path, c1.path)) AS path,
+    replace_parent_path (c1.path, c2.path, COALESCE(cs.path, c1.path)) AS path,
     COALESCE(cs.order, (extract(epoch FROM CURRENT_TIMESTAMP) * 1000)::double PRECISION * 10) AS
 ORDER,
 cs.pomodoro AS pomodoro,
-cs.color AS color
+cs.color AS color,
+cs.is_default AS is_default
 FROM
     priority_user cu
     JOIN priority c1 ON cu.priority_id = c1.id
@@ -37,12 +38,12 @@ BEGIN
             RETURNING
                 id INTO _priority_id;
     END IF;
-    IF (OLD IS NULL AND (NEW.order IS NOT NULL OR NEW.pomodoro IS NOT NULL OR NEW.color IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."order" IS DISTINCT FROM OLD."order" OR NEW.pomodoro IS DISTINCT FROM OLD.pomodoro OR NEW.color IS DISTINCT FROM OLD.color)) THEN
-        INSERT INTO priority_settings (user_id, priority_id, "order", pomodoro, color)
-            VALUES (auth.uid (), _priority_id, NEW.order, COALESCE(NEW.pomodoro, 25 * 60), COALESCE(NEW.color, 0))
+    IF (OLD IS NULL AND (NEW.order IS NOT NULL OR NEW.pomodoro IS NOT NULL OR NEW.color IS NOT NULL OR NEW.is_default IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."order" IS DISTINCT FROM OLD."order" OR NEW.pomodoro IS DISTINCT FROM OLD.pomodoro OR NEW.color IS DISTINCT FROM OLD.color OR NEW.is_default IS DISTINCT FROM OLD.is_default)) THEN
+        INSERT INTO priority_settings (user_id, priority_id, "order", pomodoro, color, is_default)
+            VALUES (auth.uid (), _priority_id, NEW.order, COALESCE(NEW.pomodoro, 25 * 60), COALESCE(NEW.color, 0), COALESCE(NEW.is_default, FALSE))
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
-                "order" = COALESCE(NEW.order, priority_settings."order"), pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro), color = COALESCE(NEW.color, priority_settings.color);
+                "order" = COALESCE(NEW.order, priority_settings."order"), pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro), color = COALESCE(NEW.color, priority_settings.color), is_default = COALESCE(NEW.is_default, priority_settings.is_default);
     END IF;
     RETURN NEW;
 END;
