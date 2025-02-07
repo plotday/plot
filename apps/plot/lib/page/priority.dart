@@ -72,7 +72,7 @@ class PriorityHeader extends StatelessWidget {
                   const PrioritiesRoute.all().go(context);
                 },
               ),
-              PrioritySelector(
+              PrioritySwitcher(
                 priorities: prioritiesState.rootPriorities,
                 selected: currentPriority,
                 onSelect: (priority) {

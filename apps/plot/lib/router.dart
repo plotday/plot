@@ -22,9 +22,24 @@ abstract class Route extends GoRouteData with EquatableMixin {
 
   const Route();
 
+  Future<void> onEnter(BuildContext context) async {}
+
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const SizedBox(
+        width: 0,
+        height: 0,
+      );
+  Widget buildSingle(BuildContext context, GoRouterState state) =>
+      buildAdaptive(context, state);
+
+  FutureOr<String?> redirectAdaptive(
+          BuildContext context, GoRouterState state) =>
+      null;
+  FutureOr<String?> redirectSingle(BuildContext context, GoRouterState state) =>
+      null;
+
   @override
   Widget build(BuildContext context, GoRouterState state) {
-    _onEnter(context);
     switch (Layout.layout) {
       case PanelLayout.sidebar:
         return buildAdaptive(context, state);
@@ -34,21 +49,23 @@ abstract class Route extends GoRouteData with EquatableMixin {
   }
 
   @override
-  FutureOr<String?> redirect(BuildContext context, GoRouterState state) {
-    _onEnter(context);
-    return super.redirect(context, state);
+  FutureOr<String?> redirect(BuildContext context, GoRouterState state) async {
+    await _onEnter(context);
+    if (!context.mounted) return null;
+    switch (Layout.layout) {
+      case PanelLayout.sidebar:
+        return redirectAdaptive(context, state);
+      case PanelLayout.tabbed:
+        return redirectSingle(context, state);
+    }
   }
 
-  Widget buildAdaptive(BuildContext context, GoRouterState state);
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
-      buildAdaptive(context, state);
-
-  void onEnter(BuildContext context) {}
-
-  void _onEnter(BuildContext context) {
+  Future<void> _onEnter(BuildContext context) async {
     if (_last != this) {
       _last = this;
-      onEnter(context);
+      await onEnter(context);
+    } else {
+      print('onEnter already called');
     }
   }
 }
@@ -78,7 +95,7 @@ class ScheduleRoute extends Route {
   final String? d;
 
   @override
-  void onEnter(BuildContext context) {
+  Future<void> onEnter(BuildContext context) async {
     context.read<PriorityBloc>()
       ..setCurrent(null)
       ..setActivity(null);
@@ -109,15 +126,19 @@ class EventRoute extends Route {
   final EventId eventId;
 
   @override
-  void onEnter(BuildContext context) async {
+  Future<void> onEnter(BuildContext context) async {
     final event = await context.read<ScheduleBloc>().selectById(eventId);
     if (!context.mounted) return;
-    context.read<PriorityBloc>().setCurrentId(event.priorityId);
+    await context.read<PriorityBloc>().setCurrentId(event.priorityId);
   }
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const ActivityPage();
+  Future<String?> redirectAdaptive(
+      BuildContext context, GoRouterState state) async {
+    final priority =
+        (context.read<PriorityBloc>().state as PrioritySelectedState).current;
+    return PriorityRoute.byId(priority.id).location;
+  }
 
   @override
   Widget buildSingle(BuildContext context, GoRouterState state) =>
@@ -146,7 +167,7 @@ class NewEventRoute extends Route {
   final String? name;
 
   @override
-  void onEnter(BuildContext context) async {
+  Future<void> onEnter(BuildContext context) async {
     context.read<ScheduleBloc>().select(
           Event(
             name: name,
@@ -224,7 +245,7 @@ class PriorityRoute extends Route {
   final PriorityId priorityId;
 
   @override
-  void onEnter(BuildContext context) async {
+  Future<void> onEnter(BuildContext context) async {
     context.read<PriorityBloc>().setCurrentId(priorityId);
     Priority priority = await Priority.get(priorityId!);
     if (!context.mounted) return;
@@ -286,7 +307,7 @@ class ActivityRoute extends PriorityRoute {
   final ActivityId? activityId;
 
   @override
-  void onEnter(BuildContext context) {
+  Future<void> onEnter(BuildContext context) async {
     super.onEnter(context);
     context.read<PriorityBloc>().setActivityId(activityId);
   }
@@ -317,8 +338,9 @@ class NewActivityRoute extends PriorityRoute {
   final String priorityIdString;
 
   @override
-  void onEnter(BuildContext context) {
-    super.onEnter(context);
+  Future<void> onEnter(BuildContext context) async {
+    await super.onEnter(context);
+    if (!context.mounted) return;
     context.read<PriorityBloc>().setActivity(null);
   }
 

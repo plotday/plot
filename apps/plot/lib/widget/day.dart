@@ -3,14 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/theme_color.dart';
 import 'event.dart';
-import 'squiggle.dart';
 
 class DateWidget extends StatelessWidget {
   const DateWidget({
     required this.day,
     required this.onSelect,
     this.selected = false,
-    this.firstEvent,
     this.allDayEvents = const [],
     super.key,
   });
@@ -18,7 +16,6 @@ class DateWidget extends StatelessWidget {
   final ScheduledDay day;
   final bool selected;
   final void Function() onSelect;
-  final Event? firstEvent;
   final List<Event> allDayEvents;
 
   @override
@@ -64,27 +61,46 @@ class DateWidget extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              const Expanded(child: Squiggle()),
-              // Expanded(
-              //   child: Row(
-              //     children: [
-              //       Text(
-              //         day.date.year == DateTime.now().year
-              //             ? day.date.toDateTime().format('MMMM')
-              //             : day.date.toDateTime().format('MMMM yyyy'),
-              //         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              //               color: Colors.grey,
-              //             ),
-              //         textAlign: TextAlign.end,
-              //       ),
-              //     ],
-              //   ),
-              // ),
+              Expanded(
+                child: Row(
+                  children: [
+                    Text(
+                      day.date.year == DateTime.now().year
+                          ? day.date.toDateTime().format('MMMM')
+                          : day.date.toDateTime().format('MMMM yyyy'),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: Colors.grey,
+                          ),
+                      textAlign: TextAlign.end,
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+class PriorityBlockWidget extends StatelessWidget {
+  const PriorityBlockWidget({
+    required this.priority,
+    required this.children,
+    super.key,
+  });
+
+  final Priority priority;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+        // color: const ThemeColor.defaultColor().getBackground(context),
+        child: Column(
+      children: children,
+    ));
   }
 }
 
@@ -102,33 +118,51 @@ class DayWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    List<Widget> children = [
+      DateWidget(
+        day: day,
+        onSelect: () => {},
+        allDayEvents: day.allDayEvents,
+      ),
+    ];
+
+    List<Event> currentEvents = [];
+    Priority? currentPriority;
+
+    void addPriorityBlock() {
+      if (currentEvents.isEmpty || currentPriority == null) return;
+      children.add(
+        PriorityBlockWidget(
+          priority: currentPriority,
+          children: currentEvents
+              .map(
+                (e) => EventWidget(
+                  event: e,
+                  onSelect: () => onSelect(e),
+                  selected: e.id == selected?.id ||
+                      (selected?.unsaved == true &&
+                          selected?.at.start == e.at.start),
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+
+    for (final event in day.events) {
+      if (currentPriority == event.priority) {
+        currentEvents.add(event);
+      } else {
+        addPriorityBlock();
+        currentPriority = event.priority;
+        currentEvents = [event];
+      }
+    }
+    addPriorityBlock();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        DateWidget(
-          day: day,
-          onSelect: () => onSelect(Event(
-            at: day.date.toDateTimeRange(),
-          )),
-          selected: selected?.isBlank == true &&
-              selected!.start.toDate() == day.date &&
-              selected!.start <= day.events.first.start,
-          firstEvent: day.events.firstOrNull,
-          allDayEvents: day.allDayEvents,
-        ),
-        ...day.events
-            .where((e) => !e.isBlank || !e.at.start.toTimeOfDay().isMidnight)
-            .map(
-              (event) => EventWidget(
-                event: event,
-                onSelect: () => onSelect(event),
-                selected: event.id == selected?.id ||
-                    (selected?.isBlank == true &&
-                        event.isBlank &&
-                        selected?.at.start == event.at.start),
-              ),
-            ),
-      ],
+      children: children,
     );
   }
 }

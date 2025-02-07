@@ -4,8 +4,35 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
-class PrioritySelector extends StatefulWidget {
+class PrioritySelector extends StatelessWidget {
   const PrioritySelector({
+    required this.selected,
+    required this.onSelect,
+    super.key,
+  });
+
+  final Priority? selected;
+  final void Function(Priority) onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tapable(
+      onTap: () async {
+        final priority = await PickPriority.show(
+          context: context,
+          defaultPriority: selected,
+        );
+        if (priority != null) {
+          onSelect(priority);
+        }
+      },
+      child: PriorityLabel(priority: selected),
+    );
+  }
+}
+
+class PrioritySwitcher extends StatefulWidget {
+  const PrioritySwitcher({
     required this.priorities,
     required this.selected,
     required this.onSelect,
@@ -17,10 +44,10 @@ class PrioritySelector extends StatefulWidget {
   final void Function(Priority) onSelect;
 
   @override
-  PrioritySelectorState createState() => PrioritySelectorState();
+  PrioritySwitcherState createState() => PrioritySwitcherState();
 }
 
-class PrioritySelectorState extends State<PrioritySelector> {
+class PrioritySwitcherState extends State<PrioritySwitcher> {
   @override
   Widget build(BuildContext context) {
     return Row(

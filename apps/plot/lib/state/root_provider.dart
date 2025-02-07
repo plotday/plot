@@ -28,17 +28,26 @@ class RootProvider extends StatefulWidget {
   final Widget child;
 }
 
+class _LoadingState {
+  final bool isSignedIn;
+  final Priority? defaultPriority;
+
+  _LoadingState({required this.isSignedIn, this.defaultPriority});
+}
+
 class RootProviderState extends State<RootProvider> {
-  Future<bool>? _dataLoading;
+  Future<_LoadingState>? _dataLoading;
 
   void _onUserStateChange(UserState state) {
     if (state is UserSignedIn) {
       setState(() {
-        _dataLoading = Store.get.sync().then((_) => true);
+        _dataLoading = Store.get.sync().then((_) => Priority.getDefault()).then(
+            (defaultPriority) => _LoadingState(
+                isSignedIn: true, defaultPriority: defaultPriority));
       });
     } else {
       setState(() {
-        _dataLoading = Future.value(false);
+        _dataLoading = Future.value(_LoadingState(isSignedIn: false));
       });
     }
   }
@@ -70,7 +79,10 @@ class RootProviderState extends State<RootProvider> {
             }
             return MultiBlocProvider(
               providers: [
-                BlocProvider(create: (_) => NowBloc()),
+                BlocProvider(
+                    create: (_) => NowBloc(
+                          defaultPriority: snapshot.data!.defaultPriority!,
+                        )),
                 BlocProvider(create: (_) => ScheduleBloc()),
                 BlocProvider(create: (_) => AccountsBloc()),
                 BlocProvider(create: (_) => PrioritiesBloc()),

@@ -37,15 +37,14 @@ class EventWidget extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    TimeWidget(time: event.at.start),
-                    if (!event.isBlank ||
-                        (event.at.start.toTimeOfDay().isMidnight &&
-                            event.at.end.toTimeOfDay().isMidnight)) ...[
+                    if (!event.at.start.toTimeOfDay().isMidnight)
+                      TimeWidget(time: event.at.start),
+                    if (!event.at.start.toTimeOfDay().isMidnight &&
+                        !event.at.end.toTimeOfDay().isMidnight) ...[
                       const SizedBox(height: 4),
                       DurationText(
-                        duration: !event.isBlank ||
-                                !(event.at.start.toTimeOfDay().isMidnight ||
-                                    event.at.end.toTimeOfDay().isMidnight)
+                        duration: !(event.at.start.toTimeOfDay().isMidnight ||
+                                event.at.end.toTimeOfDay().isMidnight)
                             ? event.at.duration
                             : Duration.zero,
                       ),
@@ -58,7 +57,7 @@ class EventWidget extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (event.name == null && event.activity == null)
+                    if (event.name == null)
                       const SizedBox(
                         height: 16,
                         child: Squiggle(),
@@ -70,12 +69,7 @@ class EventWidget extends StatelessWidget {
                             fontWeight: FontWeight.w500, height: 1.0),
                         overflow: TextOverflow.ellipsis,
                       ),
-                    if (event.name != null && event.activity != null)
-                      const SizedBox(height: 4),
-                    if (event.activity != null)
-                      Text(
-                        event.activity!.name,
-                      ),
+                    if (event.name != null) const SizedBox(height: 4),
                   ],
                 ),
               ),

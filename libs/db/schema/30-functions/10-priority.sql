@@ -26,3 +26,24 @@ END;
 $$
 LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION generate_path (parent text DEFAULT NULL)
+    RETURNS text
+    AS $$
+DECLARE
+    characters text := 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    random_path text := '';
+    prefix text := '';
+    random_int integer;
+BEGIN
+    IF parent IS NOT NULL THEN
+        prefix := parent || '.';
+    END IF;
+    FOR i IN 1..4 LOOP
+        random_int := floor(random() * length(characters))::integer + 1;
+        random_path := random_path || substr(characters, random_int, 1);
+    END LOOP;
+    RETURN prefix || random_path;
+END;
+$$
+LANGUAGE plpgsql;
+

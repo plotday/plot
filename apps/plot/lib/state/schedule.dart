@@ -31,7 +31,7 @@ class ScheduleBloc extends Cubit<ScheduleState> {
 
   Future<Event> _watchEvent(EventId id) {
     _eventSubscription?.cancel();
-    final stream = Event.watchOne(id).asBroadcastStream();
+    final stream = Event.watchOne(id, withPriority: true).asBroadcastStream();
     _eventSubscription = stream.listen((event) {
       emit(state.copyWith(selected: Value(event), day: event.start.toDate()));
     });
@@ -70,7 +70,7 @@ class ScheduleBloc extends Cubit<ScheduleState> {
   }
 
   Future<void> update(Event event) async {
-    if (event.isBlank && event.unsaved) {
+    if (event.unsaved) {
       emit(state.copyWith(selected: Value(event)));
     } else {
       await event.save();

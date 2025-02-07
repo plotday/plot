@@ -8,7 +8,8 @@ import 'package:plot/store/store.dart';
 part 'now_state.dart';
 
 class NowBloc extends Cubit<NowState> {
-  NowBloc() : super(NowState()) {
+  NowBloc({required Priority defaultPriority})
+      : super(NowState(defaultPriority: defaultPriority)) {
     _scheduleSubscription = ScheduledDay.watchToday().listen((day) {
       emit(state.copyWith(
         day: day,

@@ -45,8 +45,7 @@ final class PrioritiesState extends Equatable {
           (filter == null || filter!.isParent(priority)) &&
           (balances?[priority.id]?[BalanceType.todo]?.count ?? 0) > 0)
       .toList();
-  List<Priority?> get recent =>
-      List<Priority?>.of([null]) + priorities.values.toList();
+  List<Priority> get recent => priorities.values.toList();
 
   final Week week;
   final BalanceByPriorityType? balances;
