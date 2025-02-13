@@ -15,7 +15,7 @@ class PrioritiesPage extends StatelessWidget {
     return BlocBuilder<PriorityBloc, PriorityState>(
         builder: (context, generalState) {
       if (generalState.loading) {
-        return const Spinner();
+        return _PrioritiesSection();
       }
       final state = generalState as PrioritySelectedState;
       return BidirectionalList(
