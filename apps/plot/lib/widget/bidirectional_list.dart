@@ -8,6 +8,8 @@ import 'package:plot/widget/widget.dart';
 typedef ItemBuilder = Widget? Function(BuildContext context, int index);
 typedef ItemFetcher = Future<void> Function(int move, int count);
 
+// BidirectionalList must fill a fixed size, so any other items that scroll with
+// the list must be added to header.
 class BidirectionalList extends StatefulWidget {
   final ItemBuilder builder;
   final ItemFetcher? fetcher;

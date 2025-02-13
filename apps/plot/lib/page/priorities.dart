@@ -5,57 +5,119 @@ import 'package:plot/router.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-
-class PrioritiesNav extends StatelessWidget {
-  const PrioritiesNav({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return BlocBuilder<PrioritiesBloc, PrioritiesState>(
-      builder: (context, state) {
-        return Column(
-          children: [
-            ListTile(
-              title: const Text('All'),
-              onTap: () => const PrioritiesRoute.all().go(context),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class PrioritiesHeader extends StatelessWidget {
-  const PrioritiesHeader({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Header(
-      title: 'Priorities',
-      actions: [
-        IconButton(
-          icon: const PlotIcon.add(),
-          onPressed: () => const NewPriorityRoute().go(context),
-        ),
-      ],
-    );
-  }
-}
+import 'package:plot/state/priority.dart';
 
 class PrioritiesPage extends StatelessWidget {
   const PrioritiesPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    return BlocBuilder<PriorityBloc, PriorityState>(
+        builder: (context, generalState) {
+      if (generalState.loading) {
+        return const Spinner();
+      }
+      final state = generalState as PrioritySelectedState;
+      return BidirectionalList(
+        scrollController: ScrollControllerContext.of(context),
+        count: state.inactiveActivities.length,
+        builder: (context, index) => ActivityWidget(
+          activity: state.inactiveActivities[index],
+          selected: state.activity.id == state.inactiveActivities[index].id,
+          onChange: (activity) =>
+              context.read<PriorityBloc>().updateActivity(activity),
+          onTap: () => ActivityRoute.byId(
+            state.inactiveActivities[index].priorityId,
+            state.inactiveActivities[index].id,
+          ).go(context),
+        ),
+        header: Column(
+          children: [
+            _PrioritiesSection(),
+            _ReorderableActivitiesView(
+              activities: state.pinnedActivities,
+              selected: state.activity.id,
+            ),
+            _ReorderableActivitiesView(
+              activities: state.activeActivities,
+              selected: state.activity.id,
+            ),
+            ListTile(
+              leadingSize: const Size(18, 18),
+              title: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [Text('+')],
+              ),
+              selected: state.activity.draft,
+              onTap: () {
+                NewActivityRoute.byId(state.current.id).go(context);
+              },
+            ),
+          ],
+        ),
+      );
+    });
+  }
+}
+
+class PriorityHeader extends StatelessWidget {
+  const PriorityHeader({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Builder(builder: (context) {
+      final prioritiesState = context.watch<PrioritiesBloc>().state;
+      final priorityState = context.watch<PriorityBloc>().state;
+      final currentPriority =
+          priorityState is PrioritySelectedState ? priorityState.current : null;
+      return Header(
+        main: Expanded(
+          child: Row(
+            children: [
+              IconButton(
+                icon: const PlotIcon.priorities(),
+                onPressed: () {
+                  const PrioritiesRoute().go(context);
+                },
+              ),
+              PrioritySelector(
+                selected: currentPriority,
+                onSelect: (priority) {
+                  PriorityRoute.byId(priority.id).go(context);
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          if (currentPriority != null &&
+              prioritiesState.balances?[currentPriority.id] != null)
+            PriorityBalance(
+              balances: prioritiesState.balances![currentPriority.id]!,
+              isNow: prioritiesState.week.isNow(),
+            ),
+          if (currentPriority != null)
+            IconButton(
+              icon: const PlotIcon.add(),
+              onPressed: () {
+                NewActivityRoute.byId(currentPriority.id).go(context);
+              },
+            ),
+        ],
+      );
+    });
+  }
+}
+
+class _PrioritiesSection extends StatelessWidget {
+  const _PrioritiesSection();
+
+  @override
+  Widget build(BuildContext context) {
     return BlocBuilder<PrioritiesBloc, PrioritiesState>(
       builder: (context, state) {
         return Column(
           children: [
-            WeekSelector(
-              week: state.week,
-              onSelect: (week) => context.read<PrioritiesBloc>().setWeek(week),
-            ),
             ReorderableListView(
               list: state.filtered,
               itemBuilder: (context, item) => PriorityTile(
@@ -90,4 +152,48 @@ class PrioritiesPage extends StatelessWidget {
       },
     );
   }
+}
+
+class _ReorderableActivitiesView extends StatelessWidget {
+  const _ReorderableActivitiesView({required this.activities, this.selected});
+
+  final List<Activity> activities;
+  final ActivityId? selected;
+
+  @override
+  Widget build(BuildContext context) => ReorderableListView(
+        list: activities,
+        itemBuilder: (buildContext, item) => ActivityWidget(
+          activity: item,
+          selected: selected == item.id,
+          onChange: (activity) =>
+              context.read<PriorityBloc>().updateActivity(activity),
+          onTap: () => ActivityRoute.byId(
+            item.priorityId,
+            item.id,
+          ).go(context),
+        ),
+        shrinkWrap: true,
+        onReorder: (int oldIndex, int newIndex) async {
+          var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+          var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+          Activity activity = activities[oldIndex];
+          Activity? previous;
+          if (previousIndex >= 0) {
+            previous = activities[previousIndex];
+          }
+          Activity? next;
+          if (nextIndex < activities.length) {
+            next = activities[nextIndex];
+          }
+          context.read<PriorityBloc>().updateActivity(activity.copyWith(
+                order: Order.between(previous?.order, next?.order),
+                // Action activities are sorted first by doAt, so we need to set this
+                // to have the same doAt as one of its neighbours.
+                doAt: activity.doNow
+                    ? Value(previous?.doAt ?? next?.doAt ?? activity.doAt)
+                    : const Value.absent(),
+              ));
+        },
+      );
 }

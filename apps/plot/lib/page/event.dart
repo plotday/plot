@@ -38,7 +38,7 @@ class EventHeader extends StatelessWidget {
           IconButton(
             icon: const PlotIcon.today(),
             onPressed: () {
-              ScheduleRoute.day(state.day).go(context);
+              ScheduleRoute().go(context);
             },
           ),
         ],

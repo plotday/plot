@@ -11,18 +11,16 @@ part 'router_adaptive.g.dart';
 
 @TypedShellRoute<_AdaptiveRoutes>(routes: <TypedRoute<RouteData>>[
   TypedGoRoute<LoginRoute>(path: LoginRoute.path),
-  TypedShellRoute<_PrioritiesRoutes>(routes: <TypedRoute<RouteData>>[
-    TypedGoRoute<PrioritiesRoute>(path: PrioritiesRoute.path),
-  ]),
+  TypedGoRoute<NowRoute>(path: NowRoute.path),
   TypedShellRoute<_PriorityRoutes>(routes: <TypedRoute<RouteData>>[
+    TypedGoRoute<PrioritiesRoute>(path: PrioritiesRoute.path),
     TypedGoRoute<NewPriorityRoute>(path: NewPriorityRoute.path),
+    TypedGoRoute<ScheduleRoute>(path: ScheduleRoute.path),
+    TypedGoRoute<NewEventRoute>(path: NewEventRoute.path),
+    TypedGoRoute<EventRoute>(path: EventRoute.path),
     TypedGoRoute<PriorityRoute>(path: PriorityRoute.path, routes: [
       TypedGoRoute<NewActivityRoute>(path: NewActivityRoute.path),
       TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
-    ]),
-    TypedGoRoute<ScheduleRoute>(path: ScheduleRoute.path, routes: [
-      TypedGoRoute<NewEventRoute>(path: NewEventRoute.path),
-      TypedGoRoute<EventRoute>(path: EventRoute.path),
     ]),
   ]),
 ])
@@ -39,28 +37,13 @@ class _AdaptiveRoutes extends ShellRouteData {
 }
 
 @immutable
-class _PrioritiesRoutes extends ShellRouteData {
-  const _PrioritiesRoutes();
-
-  @override
-  Widget builder(BuildContext context, GoRouterState state, Widget child) {
-    return SidebarLayout(
-      const PrioritiesNav(),
-      child,
-      const SchedulePage(),
-      header: const PrioritiesHeader(),
-    );
-  }
-}
-
-@immutable
 class _PriorityRoutes extends ShellRouteData {
   const _PriorityRoutes();
 
   @override
   Widget builder(BuildContext context, GoRouterState state, Widget child) {
     return SidebarLayout(
-      const PriorityPage(),
+      const PrioritiesPage(),
       child,
       const SchedulePage(),
       header: const PriorityHeader(),
