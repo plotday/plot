@@ -9,26 +9,31 @@ import 'app.dart';
 import 'base.dart';
 import 'store/store.dart';
 
+Future<void> run() async {
+  try {
+    await dotenv.load(fileName: ".env");
+    await Base.init();
+    await Store.init();
+    GoRouter.optionURLReflectsImperativeAPIs = true;
+    usePathUrlStrategy();
+    return runApp(const App());
+  } on Error catch (error) {
+    print(error);
+    print(error.stackTrace);
+    return runApp(ErrorApp(error: error.toString()));
+  }
+}
+
 Future<void> main() async {
-  await SentryFlutter.init(
-    (options) {
-      options.dsn =
-          "https://08fa5e400fac463fb57de5e33405db0b@o338620.ingest.sentry.io/4505551857057792";
-      options.beforeSend = (event, hint) => kDebugMode ? null : event;
-    },
-    appRunner: () async {
-      try {
-        await dotenv.load(fileName: ".env");
-        await Base.init();
-        await Store.init();
-        GoRouter.optionURLReflectsImperativeAPIs = true;
-        usePathUrlStrategy();
-        return runApp(const App());
-      } on Error catch (error) {
-        print(error);
-        print(error.stackTrace);
-        return runApp(ErrorApp(error: error.toString()));
-      }
-    },
-  );
+  if (kDebugMode) {
+    await run();
+  } else {
+    await SentryFlutter.init(
+      (options) {
+        options.dsn =
+            "https://08fa5e400fac463fb57de5e33405db0b@o338620.ingest.sentry.io/4505551857057792";
+      },
+      appRunner: run,
+    );
+  }
 }
