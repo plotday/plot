@@ -41,9 +41,13 @@ class RootProviderState extends State<RootProvider> {
   void _onUserStateChange(UserState state) {
     if (state is UserSignedIn) {
       setState(() {
-        _dataLoading = Store.get.sync().then((_) => Priority.getDefault()).then(
-            (defaultPriority) => _LoadingState(
-                isSignedIn: true, defaultPriority: defaultPriority));
+        _dataLoading = Store.get
+            .sync()
+            .then((_) => Priority.getDefault())
+            .then((defaultPriority) => _LoadingState(
+                  isSignedIn: true,
+                  defaultPriority: defaultPriority,
+                ));
       });
     } else {
       setState(() {
@@ -76,6 +80,9 @@ class RootProviderState extends State<RootProvider> {
             }
             if (!snapshot.hasData) {
               return const Center(child: Spinner());
+            }
+            if (snapshot.data!.defaultPriority == null) {
+              return const Center(child: Text("No default priority"));
             }
             return MultiBlocProvider(
               providers: [

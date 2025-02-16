@@ -45,7 +45,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .then(Priority.fromStore);
   }
 
-  static Future<Priority> getDefault() async {
+  static Future<Priority?> getDefault() async {
     return await (Store.get.select(table)
           ..orderBy([
             (t) =>
@@ -55,8 +55,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                 OrderingTerm(expression: t.createdAt, mode: OrderingMode.asc),
           ])
           ..limit(1))
-        .getSingle()
-        .then(Priority.fromStore);
+        .getSingleOrNull()
+        .then((p) => p == null ? null : Priority.fromStore(p));
   }
 
   static Stream<Map<Uuid, Priority>> watch({bool deleted = false}) {
