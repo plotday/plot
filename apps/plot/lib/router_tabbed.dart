@@ -8,6 +8,7 @@ part 'router_tabbed.g.dart';
 
 @TypedShellRoute<_SingleRoutes>(routes: <TypedRoute<RouteData>>[
   TypedGoRoute<LoginRoute>(path: LoginRoute.path),
+  TypedGoRoute<NowRoute>(path: NowRoute.path),
   TypedStatefulShellRoute<_TabbedRoutes>(
     branches: [
       TypedStatefulShellBranch<PrioritiesBranch>(
