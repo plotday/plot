@@ -10,6 +10,7 @@ import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/spinner.dart';
+import 'package:plot/app.dart';
 
 class BlocErrorLogger extends BlocObserver {
   @override
@@ -76,13 +77,16 @@ class RootProviderState extends State<RootProvider> {
             if (snapshot.hasError) {
               print(snapshot.error);
               print(snapshot.stackTrace);
-              return const Center(child: Text("Error loading data"));
+              return ErrorApp(error: "Error loading data");
             }
             if (!snapshot.hasData) {
               return const Center(child: Spinner());
             }
+            if (!snapshot.data!.isSignedIn) {
+              return widget.child;
+            }
             if (snapshot.data!.defaultPriority == null) {
-              return const Center(child: Text("No default priority"));
+              return ErrorApp(error: "No default priority");
             }
             return MultiBlocProvider(
               providers: [

@@ -11,8 +11,8 @@ import 'package:macos_ui/macos_ui.dart' as macos;
 import 'state/user.dart';
 import 'router.dart';
 import 'widget/window.dart';
-import 'widget/layout.dart';
-import 'widget/spinner.dart';
+import 'widget/widget.dart';
+import 'command/settings.dart';
 
 class App extends StatefulWidget {
   const App({super.key});
@@ -130,6 +130,12 @@ class ErrorApp extends StatelessWidget {
                 children: [
                   const Text('Failed to start Plot.'),
                   Text('Error: $error'),
+                  Button(
+                    onTap: () {
+                      SignOut().run(context);
+                    },
+                    child: const Text('Sign Out'),
+                  ),
                 ],
               ),
             ),
