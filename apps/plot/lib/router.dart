@@ -1,14 +1,16 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:rxdart/rxdart.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'store/store.dart';
 import 'state/user.dart';
 import 'state/schedule.dart';
 import 'state/priority.dart';
 import 'state/now.dart';
+import 'state/onboarding.dart';
 import 'page/page.dart';
 import 'widget/widget.dart';
 import "router_tabbed.dart" show $_SingleRoutes;
@@ -76,6 +78,20 @@ class LoginRoute extends Route {
   @override
   Widget buildAdaptive(BuildContext context, GoRouterState state) =>
       const SignInPage();
+
+  @override
+  List<Object?> get props => [];
+}
+
+@immutable
+class OnboardingRoute extends Route {
+  static const path = '/start';
+
+  const OnboardingRoute();
+
+  @override
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const OnboardingPage();
 
   @override
   List<Object?> get props => [];
@@ -186,14 +202,8 @@ class NowRoute extends Route {
   const NowRoute();
 
   @override
-  FutureOr<String?> redirect(BuildContext context, GoRouterState state) {
-    final priorityId = context.read<NowBloc>().state.priority.id;
-    if (priorityId == null) {
-      return const PrioritiesRoute().location;
-    } else {
-      return PriorityRoute.byId(priorityId).location;
-    }
-  }
+  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+      const NowPage();
 
   @override
   List<Object?> get props => [];
@@ -352,29 +362,81 @@ class NewBranch extends StatefulShellBranchData {
   const NewBranch();
 }
 
-GoRouter getRouter(PanelLayout layout) {
-  return GoRouter(
-    routes:
-        layout == PanelLayout.sidebar ? [$_AdaptiveRoutes] : [$_SingleRoutes],
-    redirect: (BuildContext context, GoRouterState state) async {
-      print(state.uri);
-      // Using `of` method creates a dependency of StreamAuthScope. It will
-      // cause go_router to reparse current route if StreamAuth has new sign-in
-      // information.
-      final bool loggedIn = context.read<UserBloc>().state is UserSignedIn;
-      final bool loggingIn = state.matchedLocation == '/login';
-      if (!loggedIn) {
-        return const LoginRoute().location;
-      }
+class RouterBuilder extends StatefulWidget {
+  final PanelLayout layout;
+  final Widget Function(BuildContext, GoRouter) builder;
 
-      // if the user is logged in but still on the login page, send them to
-      // the home page
-      if (loggingIn || state.fullPath == null || state.fullPath!.isEmpty) {
-        return const PrioritiesRoute().location;
-      }
+  const RouterBuilder({required this.layout, required this.builder, super.key});
 
-      // no need to redirect at all
-      return null;
-    },
-  );
+  @override
+  RouterBuilderState createState() => RouterBuilderState();
+}
+
+class RouterBuilderState extends State<RouterBuilder> {
+  late GoRouter _router;
+  Uri? redirectTo;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = _createRouter();
+  }
+
+  GoRouter _createRouter() {
+    return GoRouter(
+      routes: widget.layout == PanelLayout.sidebar
+          ? [$_AdaptiveRoutes]
+          : [$_SingleRoutes],
+      redirect: (BuildContext context, GoRouterState state) async {
+        print(state.uri);
+
+        if (context.read<UserBloc>().state is! UserSignedIn) {
+          redirectTo ??= state.uri;
+          return const LoginRoute().location;
+        }
+
+        if (context.read<OnboardingBloc>().state is! OnboardingCompleteState) {
+          redirectTo ??= state.uri;
+          return const OnboardingRoute().location;
+        }
+
+        if (['/login', '/start']
+                .contains(redirectTo?.path ?? state.matchedLocation) ||
+            state.fullPath == null ||
+            state.fullPath!.isEmpty) {
+          redirectTo = null;
+          return const NowRoute().location;
+        }
+
+        if (redirectTo != null) {
+          final uri = redirectTo!;
+          redirectTo = null;
+          return uri.toString();
+        }
+
+        // No redirect
+        return null;
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<UserBloc, UserState>(
+      listener: (context, state) {
+        _router.refresh();
+      },
+      builder: (context, state) {
+        if (state is UserSignedIn) {
+          return BlocListener<OnboardingBloc, OnboardingState>(
+            listener: (context, state) {
+              _router.refresh();
+            },
+            child: widget.builder(context, _router),
+          );
+        }
+        return widget.builder(context, _router);
+      },
+    );
+  }
 }

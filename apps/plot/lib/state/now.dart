@@ -2,38 +2,45 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/store/store.dart';
 
 part 'now_state.dart';
 
 class NowBloc extends Cubit<NowState> {
-  NowBloc({required Priority defaultPriority})
-      : super(NowState(defaultPriority: defaultPriority)) {
-    _scheduleSubscription = ScheduledDay.watchToday().listen((day) {
-      emit(state.copyWith(
-        day: day,
-      ));
+  NowBloc() : super(const NowLoadingState()) {
+    _subscription = Rx.combineLatest3(
+      Priority.watchDefault(),
+      ScheduledDay.watchToday(),
+      Session.watchCurrent(),
+      (priority, day, session) {
+        if (priority == null) {
+          return const NowLoadingState();
+        } else {
+          return NowLoadedState(
+            defaultPriority: priority,
+            day: day,
+            session: session,
+          );
+        }
+      },
+    ).listen((state) {
+      emit(state);
     });
-    _sessionSubscription = Session.watchCurrent()
-        .listen((session) => emit(state.copyWith(session: session)));
   }
 
-  StreamSubscription<void>? _scheduleSubscription;
-  StreamSubscription<Session?>? _sessionSubscription;
-  Timer? _sessionTimer;
+  late StreamSubscription<void> _subscription;
 
   @override
   Future<void> close() {
-    _scheduleSubscription?.cancel();
-    _sessionSubscription?.cancel();
-    _sessionTimer?.cancel();
+    _subscription.cancel();
     return super.close();
   }
 
   void setPriority(Priority? activity) async {
+    final state = this.state as NowLoadedState;
     if (state.session?.activity == activity) return;
-    _sessionTimer?.cancel();
     await state.session?.copyWith(end: DateTime.now()).save();
     await Session.resume(
       activity,

@@ -268,7 +268,7 @@ class ScheduledDay extends Equatable {
           hasMore = eventIterator.moveNext();
         }
         days[start] = ScheduledDay(
-            date: start, events: dayEvents, defaultPriority: defaultPriority);
+            date: start, events: dayEvents, defaultPriority: defaultPriority!);
         start = start.next(direction: direction);
       }
       return days;
@@ -302,7 +302,7 @@ class ScheduledDay extends Equatable {
                 value: ScheduledDay(
                     date: today,
                     events: events,
-                    defaultPriority: defaultPriority),
+                    defaultPriority: defaultPriority!),
                 expiry: expiry,
               );
             }))));

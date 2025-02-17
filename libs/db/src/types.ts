@@ -600,7 +600,7 @@ export type Database = {
       priority: {
         Row: {
           created_at: string
-          created_by: string
+          created_by: string | null
           deleted_at: string | null
           draft: boolean
           id: string
@@ -610,7 +610,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          created_by: string
+          created_by?: string | null
           deleted_at?: string | null
           draft?: boolean
           id?: string
@@ -620,7 +620,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          created_by?: string
+          created_by?: string | null
           deleted_at?: string | null
           draft?: boolean
           id?: string
@@ -1557,9 +1557,9 @@ export type Database = {
       }
       generate_path: {
         Args: {
-          parent?: string
+          parent?: unknown
         }
-        Returns: string
+        Returns: unknown
       }
       get_domain: {
         Args: {

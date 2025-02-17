@@ -3,6 +3,8 @@ import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
 import 'package:platform_builder/platform_builder.dart';
 
+import 'spinner.dart';
+
 enum ButtonStyle { primary, secondary }
 
 class Button extends StatelessWidget {
@@ -10,16 +12,18 @@ class Button extends StatelessWidget {
     required this.child,
     required this.onTap,
     this.style = ButtonStyle.primary,
+    this.loading = false,
     super.key,
   });
 
   final VoidCallback? onTap;
   final Widget child;
   final ButtonStyle style;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
-    return PlatformBuilder(
+    final button = PlatformBuilder(
       macOSBuilder: (_) => macos.PushButton(
         onPressed: onTap,
         controlSize: macos.ControlSize.regular,
@@ -35,6 +39,17 @@ class Button extends StatelessWidget {
               onPressed: onTap,
               child: child,
             ),
+    );
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Opacity(
+          opacity: loading ? 0.0 : 1.0,
+          child: button,
+        ),
+        if (loading) Spinner(),
+      ],
     );
   }
 }

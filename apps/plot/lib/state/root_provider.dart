@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -8,9 +7,8 @@ import 'package:plot/state/schedule.dart';
 import 'package:plot/state/accounts.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/store/store.dart';
-import 'package:plot/widget/spinner.dart';
-import 'package:plot/app.dart';
+import 'package:plot/state/onboarding.dart';
+import 'package:plot/page/loading.dart';
 
 class BlocErrorLogger extends BlocObserver {
   @override
@@ -29,34 +27,7 @@ class RootProvider extends StatefulWidget {
   final Widget child;
 }
 
-class _LoadingState {
-  final bool isSignedIn;
-  final Priority? defaultPriority;
-
-  _LoadingState({required this.isSignedIn, this.defaultPriority});
-}
-
 class RootProviderState extends State<RootProvider> {
-  Future<_LoadingState>? _dataLoading;
-
-  void _onUserStateChange(UserState state) {
-    if (state is UserSignedIn) {
-      setState(() {
-        _dataLoading = Store.get
-            .sync()
-            .then((_) => Priority.getDefault())
-            .then((defaultPriority) => _LoadingState(
-                  isSignedIn: true,
-                  defaultPriority: defaultPriority,
-                ));
-      });
-    } else {
-      setState(() {
-        _dataLoading = Future.value(_LoadingState(isSignedIn: false));
-      });
-    }
-  }
-
   @override
   void initState() {
     super.initState();
@@ -67,48 +38,25 @@ class RootProviderState extends State<RootProvider> {
   Widget build(BuildContext context) {
     return BlocProvider<UserBloc>(
       create: (_) => UserBloc(),
-      child: BlocListener<UserBloc, UserState>(
-        listener: (context, state) {
-          _onUserStateChange(state);
+      child: BlocBuilder<UserBloc, UserState>(
+        builder: (context, state) {
+          return switch (state) {
+            UserLoading _ => const LoadingPage(),
+            UserSignedOut _ => widget.child,
+            UserSignedIn _ => MultiBlocProvider(
+                providers: [
+                  BlocProvider(create: (_) => OnboardingBloc()),
+                  BlocProvider(create: (_) => AccountsBloc()),
+                  BlocProvider(create: (_) => PrioritiesBloc()),
+                  BlocProvider(create: (_) => NowBloc()),
+                  BlocProvider(create: (_) => ScheduleBloc()),
+                  BlocProvider(create: (_) => PriorityBloc()),
+                ],
+                child: widget.child,
+              ),
+          };
         },
-        child: FutureBuilder(
-          future: _dataLoading,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              print(snapshot.error);
-              print(snapshot.stackTrace);
-              return ErrorApp(error: "Error loading data");
-            }
-            if (!snapshot.hasData) {
-              return const Center(child: Spinner());
-            }
-            if (!snapshot.data!.isSignedIn) {
-              return widget.child;
-            }
-            if (snapshot.data!.defaultPriority == null) {
-              return ErrorApp(error: "No default priority");
-            }
-            return MultiBlocProvider(
-              providers: [
-                BlocProvider(
-                    create: (_) => NowBloc(
-                          defaultPriority: snapshot.data!.defaultPriority!,
-                        )),
-                BlocProvider(create: (_) => ScheduleBloc()),
-                BlocProvider(create: (_) => AccountsBloc()),
-                BlocProvider(create: (_) => PrioritiesBloc()),
-                BlocProvider(create: (_) => PriorityBloc()),
-              ],
-              child: widget.child,
-            );
-          },
-        ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 }

@@ -63,7 +63,7 @@ CREATE POLICY "Users can see who shares their activities" ON public.priority_use
 
 CREATE POLICY "Users can create new root activities" ON public.priority
     FOR INSERT TO authenticated
-        WITH CHECK (nlevel (priority.path) = 1);
+        WITH CHECK (extensions.nlevel (priority.path) = 1);
 
 CREATE POLICY "Users can create new activities in their activities" ON public.priority
     FOR INSERT TO authenticated
@@ -72,7 +72,7 @@ CREATE POLICY "Users can create new activities in their activities" ON public.pr
 CREATE POLICY "Users can update their activities" ON public.priority
     FOR UPDATE TO authenticated
         USING (can_access_priority (id))
-        WITH CHECK (nlevel (priority.path) = 1
+        WITH CHECK (extensions.nlevel (priority.path) = 1
             OR can_access_priority (parent_path (priority.path)));
 
 CREATE POLICY "Users can read/write their priority settings" ON "public"."priority_settings"

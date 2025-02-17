@@ -1,23 +1,33 @@
 part of 'now.dart';
 
-final class NowState extends Equatable {
-  NowState({
+sealed class NowState extends Equatable {
+  const NowState();
+}
+
+final class NowLoadingState extends NowState {
+  const NowLoadingState();
+
+  @override
+  List<Object?> get props => [];
+}
+
+final class NowLoadedState extends NowState {
+  NowLoadedState({
     required this.defaultPriority,
+    required ScheduledDay day,
     this.session,
-    ScheduledDay? day,
   })  : now = DateTime.now(),
         _day = day;
 
   final DateTime now;
   final Session? session;
-  final ScheduledDay? _day;
+  final ScheduledDay _day;
   final Priority defaultPriority;
 
   List<Event> get scheduled =>
-      _day?.events.where((event) => event.at.includes(now)).toList() ?? [];
+      _day.events.where((event) => event.at.includes(now)).toList();
 
   List<Event> get next {
-    if (_day == null) return const [];
     final events = _day.events;
     int first = -1;
     int last = events.length;
@@ -38,7 +48,6 @@ final class NowState extends Equatable {
   }
 
   List<Event> get previous {
-    if (_day == null) return const [];
     final events = _day.events;
     int first = 0;
     int last = events.length;
@@ -111,7 +120,7 @@ final class NowState extends Equatable {
     ScheduledDay? day,
     Priority? defaultPriority,
   }) {
-    return NowState(
+    return NowLoadedState(
       session: session ?? this.session,
       day: day ?? _day,
       defaultPriority: defaultPriority ?? this.defaultPriority,

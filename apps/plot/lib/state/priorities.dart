@@ -1,7 +1,7 @@
 import 'dart:async';
-
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:collection/collection.dart';
 
 import 'package:plot/store/store.dart';
 
@@ -17,6 +17,9 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
       emit(state.copyWith(
         priorities: priorities,
       ));
+      if (state.balances == null && state.defaultPriority != null) {
+        _loadBalances();
+      }
     });
   }
 
@@ -37,6 +40,9 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
 
   void _loadBalances() async {
     _balanceSubscription?.cancel();
+    // We can't listen to balances without a default priority, since it is
+    // needed for default event priority.
+    if (state.defaultPriority == null) return;
     _balanceSubscription = Balance.watch(state.week).listen(
       (balances) {
         emit(state.copyWith(balances: Value(balances)));

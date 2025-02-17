@@ -50,12 +50,6 @@ class ActivityNotesBase extends NotesBase {
   PostgrestFilterBuilder<T> filter<T>(PostgrestFilterBuilder<T> query) {
     return query.eq('activity_id', activityId.value);
   }
-
-  @override
-  PostgrestTransformBuilder<T2> sort<T2>(PostgrestTransformBuilder<T2> query) {
-    // Sort the root note before the rest of the activity notes
-    return super.sort(query.order('root', ascending: false));
-  }
 }
 
 class ActiveNotesBase extends NotesBase {

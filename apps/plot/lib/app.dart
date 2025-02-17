@@ -1,17 +1,15 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 import 'package:plot/state/root_provider.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:adaptive_theme/adaptive_theme.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
 
-import 'state/user.dart';
 import 'router.dart';
 import 'widget/window.dart';
 import 'widget/widget.dart';
+import 'page/loading.dart';
 import 'command/settings.dart';
 
 class App extends StatefulWidget {
@@ -22,23 +20,26 @@ class App extends StatefulWidget {
 }
 
 class AppState extends State<App> with WidgetsBindingObserver {
-  late Future<GoRouter> router;
+  late Future<PanelLayout> layout;
 
   @override
   void initState() {
     super.initState();
 
-    final routeCompleter = Completer<GoRouter>();
-    router = routeCompleter.future;
+    final layoutCompleter = Completer<PanelLayout>();
+    layout = layoutCompleter.future;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Window.init();
-      Layout.init(context)
-          .then((layout) => routeCompleter.complete(getRouter(layout)))
-          .catchError((dynamic error) {
+      Layout.init(context).then((layout) {
+        if (!mounted) {
+          throw "Context is not mounted";
+        }
+        return layoutCompleter.complete(layout);
+      }).catchError((dynamic error) {
         if (error is Object) {
-          routeCompleter.completeError(error);
+          layoutCompleter.completeError(error);
         } else {
-          routeCompleter.completeError("Unknown error");
+          layoutCompleter.completeError("Unknown error");
         }
       });
     });
@@ -49,7 +50,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
     return Directionality(
       textDirection: TextDirection.ltr,
       child: FutureBuilder(
-        future: router,
+        future: layout,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             print(snapshot.error);
@@ -57,18 +58,15 @@ class AppState extends State<App> with WidgetsBindingObserver {
             return const Center(
                 child: Text(
               "Something went wrong",
-              textDirection: TextDirection.ltr,
             ));
           }
           if (!snapshot.hasData) {
-            return const Center(child: Spinner());
+            return const LoadingPage();
           }
           return RootProvider(
-            child: BlocListener<UserBloc, UserState>(
-              listener: (context, state) {
-                snapshot.data?.refresh();
-              },
-              child: PlatformBuilder(
+            child: RouterBuilder(
+              layout: snapshot.data!,
+              builder: (context, router) => PlatformBuilder(
                 builder: (context) => AdaptiveTheme(
                   light: material.ThemeData(
                     colorScheme: material.ColorScheme.fromSeed(
@@ -93,7 +91,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
                           title: 'Plot',
                           theme: theme,
                           darkTheme: darkTheme,
-                          routerConfig: snapshot.data,
+                          routerConfig: router,
                         ),
                 ),
                 macOSBuilder: (context) => snapshot.data == null
@@ -101,7 +99,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
                     : macos.MacosApp.router(
                         title: 'Plot',
                         debugShowCheckedModeBanner: false,
-                        routerConfig: snapshot.data,
+                        routerConfig: router,
                       ),
               ),
             ),

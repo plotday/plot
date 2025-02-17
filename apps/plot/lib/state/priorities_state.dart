@@ -6,6 +6,7 @@ final class PrioritiesState extends Equatable {
     this.rootPriorities = const [],
     this.filter,
   })  : priorities = _mapPriorities(rootPriorities),
+        defaultPriority = _findDefaultPriority(rootPriorities),
         balances = null;
 
   PrioritiesState._({
@@ -13,7 +14,8 @@ final class PrioritiesState extends Equatable {
     this.rootPriorities = const [],
     this.balances,
     this.filter,
-  }) : priorities = _mapPriorities(rootPriorities);
+  })  : priorities = _mapPriorities(rootPriorities),
+        defaultPriority = _findDefaultPriority(rootPriorities);
 
   static Map<PriorityId, Priority> _mapPriorities(
       List<Priority> rootPriorities) {
@@ -27,8 +29,13 @@ final class PrioritiesState extends Equatable {
     return priorities;
   }
 
+  static Priority? _findDefaultPriority(List<Priority> rootPriorities) {
+    return rootPriorities.firstWhereOrNull((priority) => priority.isDefault);
+  }
+
   final Priority? filter;
   final List<Priority> rootPriorities;
+  final Priority? defaultPriority;
   final Map<PriorityId, Priority> priorities;
   List<Priority> get all {
     List<Priority> allPriorities = priorities.values.toList();

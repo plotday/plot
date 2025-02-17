@@ -1,4 +1,7 @@
 import 'package:flutter/widgets.dart';
+import 'package:platform_builder/platform_builder.dart';
+import 'package:flutter/material.dart' as material;
+
 import 'window.dart';
 
 class Scaffold extends StatefulWidget {
@@ -46,7 +49,7 @@ class ScaffoldState extends State<Scaffold> {
         final hasHeader = widget.header != null;
         final topPadding = hasHeader ? Window.toolbarHeight : 0.0;
 
-        return Stack(
+        final page = Stack(
           children: [
             // Body
             Positioned(
@@ -73,6 +76,13 @@ class ScaffoldState extends State<Scaffold> {
                 }),
               ),
           ],
+        );
+
+        return PlatformBuilder(
+          androidBuilder: (_) => material.Material(
+            child: page,
+          ),
+          builder: (_) => page,
         );
       },
     );

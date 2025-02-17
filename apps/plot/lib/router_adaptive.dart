@@ -11,6 +11,7 @@ part 'router_adaptive.g.dart';
 
 @TypedShellRoute<_AdaptiveRoutes>(routes: <TypedRoute<RouteData>>[
   TypedGoRoute<LoginRoute>(path: LoginRoute.path),
+  TypedGoRoute<OnboardingRoute>(path: OnboardingRoute.path),
   TypedGoRoute<NowRoute>(path: NowRoute.path),
   TypedShellRoute<_PriorityRoutes>(routes: <TypedRoute<RouteData>>[
     TypedGoRoute<PrioritiesRoute>(path: PrioritiesRoute.path),

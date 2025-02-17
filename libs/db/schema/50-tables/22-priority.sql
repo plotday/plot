@@ -4,7 +4,7 @@ CREATE TABLE "public"."priority" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "deleted_at" timestamp with time zone,
     "draft" boolean NOT NULL DEFAULT FALSE,
-    "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+    "created_by" uuid REFERENCES auth.users ON DELETE CASCADE,
     "name" text NOT NULL,
     "path" ltree NOT NULL UNIQUE
 );
@@ -66,7 +66,7 @@ CREATE OR REPLACE FUNCTION insert_priority_user ()
     RETURNS TRIGGER
     AS $$
 BEGIN
-    IF nlevel (NEW.path) = 1 THEN
+    IF extensions.nlevel (NEW.path) = 1 THEN
         INSERT INTO public.priority_user (created_at, updated_at, user_id, priority_id)
             VALUES (now(), now(), NEW.created_by, NEW.id);
     END IF;
