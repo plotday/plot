@@ -1,4 +1,5 @@
 export 'activity.dart';
+export 'alert.dart';
 export 'badge.dart';
 export 'bidirectional_list.dart';
 export 'button.dart';
