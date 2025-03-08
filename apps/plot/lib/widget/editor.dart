@@ -3,24 +3,75 @@ import 'package:flutter/services.dart';
 import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
 import 'package:super_editor_markdown/super_editor_markdown.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
+import 'package:flutter/material.dart' as material;
 
 import 'button.dart';
 import 'sliver.dart';
 
 final _styles = Stylesheet(
+  documentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
   inlineTextStyler: defaultInlineTextStyler,
-  documentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+  inlineWidgetBuilders: defaultInlineWidgetBuilderChain,
   rules: [
     StyleRule(
       BlockSelector.all,
       (doc, docNode) {
         return {
+          Styles.padding: const CascadingPadding.symmetric(horizontal: 0),
+          // Styles.textStyle: const TextStyle(
+          //   color: Color(0x00000000),
+          // ),
+        };
+      },
+    ),
+    StyleRule(
+      const BlockSelector("paragraph"),
+      (doc, docNode) {
+        return {
+          Styles.padding: const CascadingPadding.only(top: 16),
+        };
+      },
+    ),
+    StyleRule(
+      BlockSelector.all.last(),
+      (doc, docNode) {
+        return {
+          Styles.padding: const CascadingPadding.only(bottom: 0),
+        };
+      },
+    ),
+  ],
+);
+
+final _darkStyles = _styles.copyWith(
+  addRulesBefore: [
+    StyleRule(
+      BlockSelector.all,
+      (doc, docNode) {
+        return {
           Styles.textStyle: const TextStyle(
-            color: material.Colors.white,
-            fontSize: 14,
-            height: 1.4,
+            color: Color(0xFFFFFFFF),
+          ),
+        };
+      },
+    ),
+    StyleRule(
+      const BlockSelector("header1"),
+      (doc, docNode) {
+        return {
+          Styles.textStyle: const TextStyle(
+            color: Color(0xFF888888),
+          ),
+        };
+      },
+    ),
+    StyleRule(
+      const BlockSelector("header2"),
+      (doc, docNode) {
+        return {
+          Styles.textStyle: const TextStyle(
+            color: Color(0xFF888888),
           ),
         };
       },
@@ -88,6 +139,8 @@ class EditorState extends State<Editor> {
 
   @override
   Widget build(BuildContext context) {
+    bool isDark =
+        MediaQuery.of(context).platformBrightness == material.Brightness.dark;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(
@@ -102,11 +155,8 @@ class EditorState extends State<Editor> {
         behavior: HitTestBehavior.translucent,
         onTap: () => _editorFocusNode.requestFocus(),
         child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
-            color: macos.MacosDynamicColor.resolve(
-              macos.MacosColors.controlBackgroundColor,
-              context,
-            ),
             border: Border(
               top: BorderSide(
                 width: 1.0,
@@ -127,21 +177,22 @@ class EditorState extends State<Editor> {
                 shrinkWrap: true,
                 scrollController: _scrollController,
                 documentLayoutKey: _docLayoutKey,
-                stylesheet: _styles,
                 documentOverlayBuilders: [
                   DefaultCaretOverlayBuilder(
-                    caretStyle: const CaretStyle()
-                        .copyWith(color: material.Colors.white),
+                    caretStyle: CaretStyle().copyWith(
+                        color: isDark
+                            ? material.Colors.white
+                            : material.Colors.black),
                   ),
                 ],
+                stylesheet: isDark ? _darkStyles : _styles,
                 componentBuilders: [
                   TaskComponentBuilder(_editor),
                   ...defaultComponentBuilders,
                 ],
               ),
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -216,10 +267,12 @@ class ViewerState extends State<Viewer> {
 
   @override
   Widget build(BuildContext context) {
+    bool isDark =
+        MediaQuery.of(context).platformBrightness == material.Brightness.dark;
     return BoxToSliverAdapter(
       child: SuperReader(
         document: document,
-        stylesheet: _styles,
+        stylesheet: isDark ? _darkStyles : _styles,
         selection: _selection,
         selectionLayerLinks: _selectionLayerLinks,
       ),
