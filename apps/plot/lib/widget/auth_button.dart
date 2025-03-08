@@ -1,12 +1,13 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:social_login_buttons/social_login_buttons.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 
 import 'package:plot/env.dart';
+import 'package:plot/widget/widget.dart';
 import 'package:plot/util/google_sign_in.dart';
 
 class ProviderAuth {
@@ -94,17 +95,11 @@ class _AuthButtonState extends State<AuthButton> {
       await _googleSignIn.signIn();
     } on String catch (message) {
       if (mounted) {
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        );
+        Alert.show(context, message);
       }
     } on Exception catch (e) {
       if (mounted) {
-        SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        );
+        Alert.show(context, e.toString());
       }
     }
   }

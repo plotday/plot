@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 import 'package:plot/widget/widget.dart';
