@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos_ui;
 import 'package:platform_builder/platform_builder.dart';
@@ -11,6 +12,7 @@ class ListTile extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.leading,
+    this.trailing,
     this.leadingSize,
     this.onTap,
     this.selected = false,
@@ -23,6 +25,7 @@ class ListTile extends StatelessWidget {
   final Widget title;
   final Widget? subtitle;
   final Widget? leading;
+  final Widget? trailing;
   final Size? leadingSize;
   final ThemeColor color;
 
@@ -38,7 +41,13 @@ class ListTile extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
             child: macos_ui.MacosListTile(
-              title: title,
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  title,
+                  if (trailing != null) trailing!,
+                ],
+              ),
               subtitle: subtitle,
               leading: leadingSize != null
                   ? SizedBox.fromSize(
@@ -56,6 +65,31 @@ class ListTile extends StatelessWidget {
         selected: selected,
         tileColor: selected ? color.getBackground(context) : null,
       ),
+    );
+  }
+}
+
+class ListHeader extends StatelessWidget {
+  const ListHeader({
+    required this.title,
+    this.action,
+    super.key,
+  });
+
+  final String title;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(
+        title.toUpperCase(),
+        overflow: TextOverflow.ellipsis,
+        style: context.theme.typography.xs.copyWith(
+          color: context.theme.colorScheme.mutedForeground,
+        ),
+      ),
+      trailing: action,
     );
   }
 }

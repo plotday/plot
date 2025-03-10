@@ -33,25 +33,33 @@ class PrioritiesPage extends StatelessWidget {
         ),
         header: Column(
           children: [
+            ListHeader(
+              title: "Priorities",
+              action: IconButton(
+                icon: const PlotIcon.add(),
+                onPressed: () {},
+              ),
+            ),
             _PrioritiesSection(),
-            _ReorderableActivitiesView(
-              activities: state.pinnedActivities,
-              selected: state.activity.id,
+            ListHeader(
+              title: "Now",
+              action: IconButton(
+                icon: const PlotIcon.add(),
+                onPressed: () {
+                  NewActivityRoute.byId(state.current.id).go(context);
+                },
+              ),
             ),
             _ReorderableActivitiesView(
               activities: state.activeActivities,
               selected: state.activity.id,
             ),
-            ListTile(
-              leadingSize: const Size(18, 18),
-              title: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [Text('+')],
+            ListHeader(
+              title: "Activity",
+              action: IconButton(
+                icon: const PlotIcon.add(),
+                onPressed: () {},
               ),
-              selected: state.activity.draft,
-              onTap: () {
-                NewActivityRoute.byId(state.current.id).go(context);
-              },
             ),
           ],
         ),
