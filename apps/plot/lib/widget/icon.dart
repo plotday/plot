@@ -1,42 +1,20 @@
+import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:platform_builder/platform_builder.dart';
-import 'package:flutter/material.dart' as material;
 
-class PlotIcon extends FaIcon {
-  PlotIcon.back({super.size, super.color, super.key})
-      : super(PlatformResolver.current(
-          macOSResolver: () => material.Icons.arrow_back_ios_new_rounded,
-          iOSResolver: () => material.Icons.arrow_back_ios_new_rounded,
-          defaultResolver: () => material.Icons.arrow_back,
-        ));
-  const PlotIcon.left({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.chevronLeft);
-  const PlotIcon.right({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.chevronRight);
-  const PlotIcon.up({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.caretUp);
-  const PlotIcon.down({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.caretDown);
-  const PlotIcon.pipe({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.pipe);
-  const PlotIcon.todo({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.circle);
-  const PlotIcon.doNow({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.play);
-  const PlotIcon.done({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.check);
-  const PlotIcon.scheduled({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.alarmClock);
-  const PlotIcon.pinned({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.thumbtack);
-  const PlotIcon.today({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.calendar);
-  const PlotIcon.add({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.plusLarge);
-  const PlotIcon.startOfDay({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.sunHaze);
-  const PlotIcon.priority({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.rankingStar);
-  const PlotIcon.priorities({super.size, super.color, super.key})
-      : super(FontAwesomeIcons.house);
+class PlotIcon {
+  static const IconData left = FontAwesomeIcons.chevronLeft;
+  static const IconData right = FontAwesomeIcons.chevronRight;
+  static const IconData up = FontAwesomeIcons.caretUp;
+  static const IconData down = FontAwesomeIcons.caretDown;
+  static const IconData pipe = FontAwesomeIcons.pipe;
+  static const IconData todo = FontAwesomeIcons.circle;
+  static const IconData doNow = FontAwesomeIcons.play;
+  static const IconData done = FontAwesomeIcons.check;
+  static const IconData scheduled = FontAwesomeIcons.alarmClock;
+  static const IconData pinned = FontAwesomeIcons.thumbtack;
+  static const IconData today = FontAwesomeIcons.calendar;
+  static const IconData add = FontAwesomeIcons.plusLarge;
+  static const IconData startOfDay = FontAwesomeIcons.sunHaze;
+  static const IconData priority = FontAwesomeIcons.rankingStar;
+  static const IconData priorities = FontAwesomeIcons.house;
 }

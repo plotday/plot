@@ -36,7 +36,7 @@ class EventHeader extends StatelessWidget {
         title: state.selected?.name ?? 'Event',
         actions: [
           IconButton(
-            icon: const PlotIcon.today(),
+            icon: PlotIcon.today,
             onPressed: () {
               ScheduleRoute().go(context);
             },

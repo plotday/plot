@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/router.dart';
 import 'package:plot/state/priorities.dart';
@@ -18,51 +19,60 @@ class PrioritiesPage extends StatelessWidget {
         return _PrioritiesSection();
       }
       final state = generalState as PrioritySelectedState;
-      return BidirectionalList(
-        scrollController: ScrollControllerContext.of(context),
-        count: state.inactiveActivities.length,
-        builder: (context, index) => ActivityWidget(
-          activity: state.inactiveActivities[index],
-          selected: state.activity.id == state.inactiveActivities[index].id,
-          onChange: (activity) =>
-              context.read<PriorityBloc>().updateActivity(activity),
-          onTap: () => ActivityRoute.byId(
-            state.inactiveActivities[index].priorityId,
-            state.inactiveActivities[index].id,
-          ).go(context),
-        ),
-        header: Column(
-          children: [
-            ListHeader(
-              title: "Priorities",
-              action: IconButton(
-                icon: const PlotIcon.add(),
-                onPressed: () {},
-              ),
+      return BlocBuilder<PrioritiesBloc, PrioritiesState>(
+        builder: (context, prioritiesState) {
+          return BidirectionalList(
+            scrollController: ScrollControllerContext.of(context),
+            count: state.inactiveActivities.length,
+            builder: (context, index) => ActivityWidget(
+              activity: state.inactiveActivities[index],
+              selected: state.activity.id == state.inactiveActivities[index].id,
+              onChange: (activity) =>
+                  context.read<PriorityBloc>().updateActivity(activity),
+              onTap: () => ActivityRoute.byId(
+                state.inactiveActivities[index].priorityId,
+                state.inactiveActivities[index].id,
+              ).go(context),
             ),
-            _PrioritiesSection(),
-            ListHeader(
-              title: "Now",
-              action: IconButton(
-                icon: const PlotIcon.add(),
-                onPressed: () {
-                  NewActivityRoute.byId(state.current.id).go(context);
-                },
-              ),
+            header: Column(
+              children: [
+                PriorityTile(
+                    priority: state.current,
+                    balances: prioritiesState.balances?[state.current.id],
+                    maxTime: prioritiesState.maxTime,
+                    onTap: () {}),
+                ListHeader(
+                  title: "Priorities",
+                  action: IconButton(
+                    icon: PlotIcon.add,
+                    onPressed: () {},
+                  ),
+                ),
+                _PrioritiesSection(),
+                ListHeader(
+                  title: "Now",
+                  action: IconButton(
+                    icon: PlotIcon.add,
+                    onPressed: () {
+                      NewActivityRoute.byId(state.current.id).go(context);
+                    },
+                  ),
+                ),
+                _ReorderableActivitiesView(
+                  activities: state.activeActivities,
+                  selected: state.activity.id,
+                ),
+                ListHeader(
+                  title: "Activity",
+                  action: IconButton(
+                    icon: PlotIcon.add,
+                    onPressed: () {},
+                  ),
+                ),
+              ],
             ),
-            _ReorderableActivitiesView(
-              activities: state.activeActivities,
-              selected: state.activity.id,
-            ),
-            ListHeader(
-              title: "Activity",
-              action: IconButton(
-                icon: const PlotIcon.add(),
-                onPressed: () {},
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       );
     });
   }
@@ -83,7 +93,7 @@ class PriorityHeader extends StatelessWidget {
           child: Row(
             children: [
               IconButton(
-                icon: const PlotIcon.priorities(),
+                icon: PlotIcon.priorities,
                 onPressed: () {
                   const PrioritiesRoute().go(context);
                 },
@@ -102,11 +112,11 @@ class PriorityHeader extends StatelessWidget {
               prioritiesState.balances?[currentPriority.id] != null)
             PriorityBalance(
               balances: prioritiesState.balances![currentPriority.id]!,
-              isNow: prioritiesState.week.isNow(),
+              max: prioritiesState.maxTime,
             ),
           if (currentPriority != null)
             IconButton(
-              icon: const PlotIcon.add(),
+              icon: PlotIcon.add,
               onPressed: () {
                 NewActivityRoute.byId(currentPriority.id).go(context);
               },
@@ -131,7 +141,7 @@ class _PrioritiesSection extends StatelessWidget {
               itemBuilder: (context, item) => PriorityTile(
                   priority: item,
                   balances: state.balances?[item.id],
-                  isNow: state.week.isNow(),
+                  maxTime: state.maxTime,
                   onTap: () {
                     if (item.id == null) return;
                     PriorityRoute.byId(item.id).go(context);

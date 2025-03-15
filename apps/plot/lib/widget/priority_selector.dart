@@ -60,7 +60,7 @@ class PrioritySwitcherState extends State<PrioritySwitcher> {
           child: PriorityLabel(priority: widget.selected),
         ),
         IconButton(
-          icon: const PlotIcon.add(),
+          icon: PlotIcon.add,
           onPressed: () {
             context.run<void>(NewPriority());
           },

@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/widget/widget.dart';
 
@@ -33,7 +34,7 @@ abstract class Command {
 
   final String title;
   final String? subtitle; // type
-  final PlotIcon? icon;
+  final IconData? icon;
   final ShortcutActivator? shortcut;
 
   Future<CommandReturn> run(BuildContext context);
@@ -44,7 +45,7 @@ abstract class Command {
     void Function()? onTap,
   }) =>
       ListTile(
-        leading: icon,
+        leading: icon == null ? null : FIcon.data(icon!),
         title: Text(title),
         subtitle: subtitle != null ? Text(subtitle!) : null,
         selected: selected,

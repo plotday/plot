@@ -57,7 +57,7 @@ class ScheduleHeader extends StatelessWidget {
         title: 'Schedule',
         actions: [
           IconButton(
-            icon: const PlotIcon.today(),
+            icon: PlotIcon.today,
             onPressed: () {
               ScheduleRoute().go(context);
             },

@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter/material.dart' as material;
-import 'package:macos_ui/macos_ui.dart' as macos;
 import 'package:platform_builder/platform_builder.dart';
 
 import 'spinner.dart';
@@ -24,13 +24,7 @@ class Button extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final button = PlatformBuilder(
-      macOSBuilder: (_) => macos.PushButton(
-        onPressed: onTap,
-        controlSize: macos.ControlSize.regular,
-        secondary: style == ButtonStyle.secondary,
-        child: child,
-      ),
-      builder: (_) => style == ButtonStyle.primary
+      androidBuilder: (_) => style == ButtonStyle.primary
           ? material.FilledButton(
               onPressed: onTap,
               child: child,
@@ -39,6 +33,10 @@ class Button extends StatelessWidget {
               onPressed: onTap,
               child: child,
             ),
+      builder: (_) => FButton(
+        onPress: onTap,
+        label: child,
+      ),
     );
 
     return Stack(
@@ -58,25 +56,23 @@ class IconButton extends StatelessWidget {
   const IconButton({
     required this.icon,
     required this.onPressed,
-    this.padding = const EdgeInsets.all(8),
     super.key,
   });
 
   final VoidCallback onPressed;
-  final Widget icon;
-  final EdgeInsets padding;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      macOSBuilder: (_) => macos.MacosIconButton(
-        padding: padding,
+      androidBuilder: (_) => material.IconButton(
         onPressed: onPressed,
-        icon: icon,
+        icon: material.Icon(icon),
       ),
-      builder: (_) => material.IconButton(
-        onPressed: onPressed,
-        icon: icon,
+      builder: (_) => FButton.icon(
+        style: FButtonStyle.ghost,
+        onPress: onPressed,
+        child: FIcon.data(icon, size: 14),
       ),
     );
   }

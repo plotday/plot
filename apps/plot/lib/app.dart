@@ -51,68 +51,75 @@ class AppState extends State<App> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.ltr,
-      child: FutureBuilder(
-        future: layout,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            print(snapshot.error);
-            print(snapshot.stackTrace);
-            return const Center(
-                child: Text(
-              "Something went wrong",
-            ));
-          }
-          if (!snapshot.hasData) {
-            return const LoadingPage();
-          }
-          return RootProvider(
-            child: RouterBuilder(
-              layout: snapshot.data!,
-              builder: (context, router) => FTheme(
-                data:
-                    MediaQuery.platformBrightnessOf(context) == Brightness.light
-                        ? FThemes.zinc.light
-                        : FThemes.zinc.dark,
-                child: PlatformBuilder(
-                  builder: (context) => AdaptiveTheme(
-                    light: material.ThemeData(
-                      colorScheme: material.ColorScheme.fromSeed(
-                        seedColor: const Color(0x002BDD66),
-                        brightness: material.Brightness.light,
+      child: ColourScheme(
+        child: FutureBuilder(
+          future: layout,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              print(snapshot.error);
+              print(snapshot.stackTrace);
+              return const Center(
+                  child: Text(
+                "Something went wrong",
+              ));
+            }
+            if (!snapshot.hasData) {
+              return const LoadingPage();
+            }
+            return RootProvider(
+              child: RouterBuilder(
+                layout: snapshot.data!,
+                builder: (context, router) => FTheme(
+                  data: FThemeData(
+                    colorScheme: context.colour.toFColorScheme(),
+                  ),
+                  child: PlatformBuilder(
+                    builder: (context) => AdaptiveTheme(
+                      light: material.ThemeData(
+                        colorScheme: material.ColorScheme.fromSeed(
+                          seedColor: const Color(0x002BDD66),
+                          brightness: material.Brightness.light,
+                        ),
                       ),
-                    ),
-                    dark: material.ThemeData(
-                      colorScheme: material.ColorScheme.fromSeed(
-                        seedColor: const Color(0x002BDD66),
-                        brightness: material.Brightness.dark,
+                      dark: material.ThemeData(
+                        colorScheme: material.ColorScheme.fromSeed(
+                          seedColor: const Color(0x002BDD66),
+                          brightness: material.Brightness.dark,
+                        ),
                       ),
+                      debugShowFloatingThemeButton: true,
+                      initial: AdaptiveThemeMode.system,
+                      builder: (theme, darkTheme) => snapshot.data == null
+                          ? material.MaterialApp(
+                              theme: theme,
+                              darkTheme: darkTheme,
+                            )
+                          : material.MaterialApp.router(
+                              title: 'Plot',
+                              theme: theme,
+                              darkTheme: darkTheme,
+                              routerConfig: router,
+                            ),
                     ),
-                    debugShowFloatingThemeButton: true,
-                    initial: AdaptiveThemeMode.system,
-                    builder: (theme, darkTheme) => snapshot.data == null
-                        ? material.MaterialApp(
-                            theme: theme,
-                            darkTheme: darkTheme,
+                    macOSBuilder: (context) => snapshot.data == null
+                        ? macos.MacosApp(
+                            theme: (context.colour.brightness ==
+                                        Brightness.light
+                                    ? macos.MacosThemeData.light()
+                                    : macos.MacosThemeData.dark())
+                                .copyWith(primaryColor: context.colour.accent),
                           )
-                        : material.MaterialApp.router(
+                        : macos.MacosApp.router(
                             title: 'Plot',
-                            theme: theme,
-                            darkTheme: darkTheme,
+                            debugShowCheckedModeBanner: false,
                             routerConfig: router,
                           ),
                   ),
-                  macOSBuilder: (context) => snapshot.data == null
-                      ? const macos.MacosApp()
-                      : macos.MacosApp.router(
-                          title: 'Plot',
-                          debugShowCheckedModeBanner: false,
-                          routerConfig: router,
-                        ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

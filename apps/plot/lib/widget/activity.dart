@@ -26,51 +26,39 @@ class ActivityWidget extends StatelessWidget {
       selected: selected,
       leading: switch (activity) {
         _ when activity.pinned => IconButton(
-            padding: EdgeInsets.zero,
             onPressed: () {
               onChange(activity.copyWith(pinned: false));
               Posthog().capture(
                 eventName: 'Activity Un-pinned',
               );
             },
-            icon: PlotIcon.pinned(
-              color: const ThemeColor.defaultColor().getForeground(context),
-            ),
+            icon: PlotIcon.pinned,
           ),
         _ when activity.doNow => IconButton(
-            padding: EdgeInsets.zero,
             onPressed: () {
               onChange(activity.copyWith(doneAt: Value(DateTime.now())));
               Posthog().capture(
                 eventName: 'Activity Started',
               );
             },
-            icon: PlotIcon.todo(
-              color: const ThemeColor.defaultColor().getForeground(context),
-            ),
+            icon: PlotIcon.todo,
           ),
         _ when activity.done => IconButton(
-            padding: EdgeInsets.zero,
             onPressed: () {
               onChange(activity.copyWith(doAt: Value(DateTime.now())));
               Posthog().capture(
                 eventName: 'Activity Completed',
               );
             },
-            icon: PlotIcon.done(
-              color: const ThemeColor.defaultColor().getForeground(context),
-            ),
+            icon: PlotIcon.done,
           ),
         _ when activity.scheduled => IconButton(
-            padding: EdgeInsets.zero,
             onPressed: () {
               Posthog().capture(
                 eventName: 'Activity Scheduled',
               );
             },
-            icon: PlotIcon.scheduled(
-              color: const ThemeColor.defaultColor().getForeground(context),
-            ),
+            icon: PlotIcon.scheduled,
           ),
         _ => null,
       },

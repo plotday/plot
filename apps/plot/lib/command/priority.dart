@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:forui/forui.dart';
 
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
@@ -14,7 +15,7 @@ class PriorityCommand extends ValueCommand<Priority?> {
     this.priority,
   ) : super(
           title: priority?.name ?? 'All Priorities',
-          icon: const PlotIcon.priority(),
+          icon: PlotIcon.priority,
           value: priority,
         );
 
@@ -27,7 +28,7 @@ class PriorityCommand extends ValueCommand<Priority?> {
     void Function()? onTap,
   }) =>
       ListTile(
-        leading: icon,
+        leading: FIcon.data(icon!),
         title: PriorityLabel(priority: priority),
         subtitle: subtitle != null ? Text(subtitle!) : null,
         selected: selected,
@@ -68,7 +69,7 @@ class ChangePriority extends ShowCommand<Priority> {
   ChangePriority()
       : super(
           title: 'Switch priorities',
-          icon: const PlotIcon.priority(),
+          icon: PlotIcon.priority,
           shortcut: const SingleActivator(
             LogicalKeyboardKey.keyJ,
             meta: true,

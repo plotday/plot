@@ -7,7 +7,8 @@ final class PrioritiesState extends Equatable {
     this.filter,
   })  : priorities = _mapPriorities(rootPriorities),
         defaultPriority = _findDefaultPriority(rootPriorities),
-        balances = null;
+        balances = null,
+        maxTime = Duration.zero;
 
   PrioritiesState._({
     required this.week,
@@ -15,7 +16,15 @@ final class PrioritiesState extends Equatable {
     this.balances,
     this.filter,
   })  : priorities = _mapPriorities(rootPriorities),
-        defaultPriority = _findDefaultPriority(rootPriorities);
+        defaultPriority = _findDefaultPriority(rootPriorities),
+        maxTime = Duration(
+            minutes: balances?.values
+                    .map((b) => b.values.fold(
+                        0,
+                        (a, b) =>
+                            a + b.pastTime.inMinutes + b.futureTime.inMinutes))
+                    .fold<int>(0, (a, b) => max(a, b)) ??
+                0);
 
   static Map<PriorityId, Priority> _mapPriorities(
       List<Priority> rootPriorities) {
@@ -56,6 +65,7 @@ final class PrioritiesState extends Equatable {
 
   final Week week;
   final BalanceByPriorityType? balances;
+  final Duration maxTime;
 
   PrioritiesState copyWith({
     List<Priority>? priorities,
