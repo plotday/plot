@@ -30,4 +30,3 @@ export 'text_field.dart';
 export 'time.dart';
 export 'time_picker.dart';
 export 'toggle.dart';
-export 'week_selector.dart';

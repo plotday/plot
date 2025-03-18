@@ -55,14 +55,6 @@ class ScheduleHeader extends StatelessWidget {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, state) => Header(
         title: 'Schedule',
-        actions: [
-          IconButton(
-            icon: PlotIcon.today,
-            onPressed: () {
-              ScheduleRoute().go(context);
-            },
-          ),
-        ],
       ),
     );
   }

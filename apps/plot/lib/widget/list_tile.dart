@@ -1,95 +1,108 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
-import 'package:flutter/material.dart' as material;
-import 'package:macos_ui/macos_ui.dart' as macos_ui;
-import 'package:platform_builder/platform_builder.dart';
 
-import 'package:plot/util/theme_color.dart';
-import 'tapable.dart';
+import 'package:plot/command/command.dart';
+import 'button.dart';
+import 'colour_scheme.dart';
 
-class ListTile extends StatelessWidget {
-  const ListTile({
+enum ListTileStyle { command, header }
+
+class ListTile extends StatefulWidget {
+  const ListTile.header({
     required this.title,
-    this.subtitle,
-    this.leading,
-    this.trailing,
-    this.leadingSize,
-    this.onTap,
-    this.selected = false,
-    ThemeColor? color,
-    super.key,
-  }) : color = color ?? const ThemeColor.defaultColor();
 
-  final VoidCallback? onTap;
-  final bool selected;
-  final Widget title;
-  final Widget? subtitle;
-  final Widget? leading;
-  final Widget? trailing;
-  final Size? leadingSize;
-  final ThemeColor color;
+    /// Secondary commands visible on the right.
+    this.commands = const [],
+
+    /// Commands revealed on hover or long press.
+    this.hiddenCommands = const [],
+    super.key,
+  })  : style = ListTileStyle.command,
+        command = null,
+        details = null,
+        highlighted = false;
+
+  ListTile.command(
+    Command command, {
+    /// The primary command run when the tile is tapped.
+    /// Secondary commands visible on the right.
+    this.commands = const [],
+
+    /// Commands revealed on hover or long press.
+    this.hiddenCommands = const [],
+
+    /// Extra details shown below the title.
+    this.details,
+
+    /// Highlight the tile (often when unread).
+    this.highlighted = false,
+    super.key,
+  })  : style = ListTileStyle.header,
+        command = command,
+        title = command.title;
+
+  final ListTileStyle style;
+  final bool highlighted;
+  final Widget? details;
+  final Command? command;
+  final List<Command> commands;
+  final List<Command> hiddenCommands;
+  final String title;
+
+  @override
+  State<ListTile> createState() => _ListTileState();
+}
+
+class _ListTileState extends State<ListTile> {
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
-    return PlatformBuilder(
-      macOSBuilder: (_) => Tapable(
-        onTap: onTap,
+    return GestureDetector(
+      onTap: widget.command != null ? () => widget.command!.run(context) : null,
+      child: FocusableActionDetector(
+        // actions: _actionMap,
+        // shortcuts: _shortcutMap,
+        onShowFocusHighlight: (focused) => setState(() => _focused = focused),
+        onShowHoverHighlight: (hovered) {
+          if (hovered) {
+            FocusScope.of(context).requestFocus(FocusNode());
+          }
+        },
         child: Container(
-          color: selected
-              ? const ThemeColor.defaultColor().getBackground(context)
-              : material.Colors.transparent,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-            child: macos_ui.MacosListTile(
-              title: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  title,
-                  if (trailing != null) trailing!,
-                ],
+          color: _focused ? context.colour.background : null,
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            children: [
+              if (widget.command?.icon != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: FIcon.data(widget.command!.icon!, size: 12),
+                ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.title,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.theme.typography.xs.copyWith(
+                        color: widget.highlighted
+                            ? null
+                            : context.theme.colorScheme.mutedForeground,
+                      ),
+                    ),
+                    if (widget.command?.description != null)
+                      Text(widget.command!.description!),
+                    if (widget.details != null) widget.details!,
+                  ],
+                ),
               ),
-              subtitle: subtitle,
-              leading: leadingSize != null
-                  ? SizedBox.fromSize(
-                      size: leadingSize!, child: Center(child: leading))
-                  : leading,
-            ),
+              ...widget.commands.map((c) => Button.icon(c)),
+            ],
           ),
         ),
       ),
-      builder: (_) => material.ListTile(
-        onTap: onTap,
-        title: title,
-        subtitle: subtitle,
-        leading: leading,
-        selected: selected,
-        tileColor: selected ? color.getBackground(context) : null,
-      ),
-    );
-  }
-}
-
-class ListHeader extends StatelessWidget {
-  const ListHeader({
-    required this.title,
-    this.action,
-    super.key,
-  });
-
-  final String title;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      title: Text(
-        title.toUpperCase(),
-        overflow: TextOverflow.ellipsis,
-        style: context.theme.typography.xs.copyWith(
-          color: context.theme.colorScheme.mutedForeground,
-        ),
-      ),
-      trailing: action,
     );
   }
 }

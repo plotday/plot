@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:equatable/equatable.dart';
-import 'package:rxdart/rxdart.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'store/store.dart';
@@ -13,51 +12,22 @@ import 'state/now.dart';
 import 'state/onboarding.dart';
 import 'page/page.dart';
 import 'widget/widget.dart';
-import "router_tabbed.dart" show $_SingleRoutes;
-import "router_adaptive.dart";
 
-export "router_adaptive.dart";
+part 'router.g.dart';
 
 @immutable
 abstract class Route extends GoRouteData with EquatableMixin {
-  static Route? _last;
-
   const Route();
 
   Future<void> onEnter(BuildContext context) async {}
 
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      throw UnimplementedError();
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
-      buildAdaptive(context, state);
-
-  FutureOr<String?> redirectAdaptive(
-          BuildContext context, GoRouterState state) =>
-      null;
-  FutureOr<String?> redirectSingle(BuildContext context, GoRouterState state) =>
-      null;
-
-  @override
-  Widget build(BuildContext context, GoRouterState state) {
-    switch (Layout.layout) {
-      case PanelLayout.sidebar:
-        return buildAdaptive(context, state);
-      case PanelLayout.tabbed:
-        return buildSingle(context, state);
-    }
-  }
-
   @override
   FutureOr<String?> redirect(BuildContext context, GoRouterState state) async {
     await _onEnter(context);
-    if (!context.mounted) return null;
-    switch (Layout.layout) {
-      case PanelLayout.sidebar:
-        return redirectAdaptive(context, state);
-      case PanelLayout.tabbed:
-        return redirectSingle(context, state);
-    }
+    return null;
   }
+
+  static Route? _last;
 
   Future<void> _onEnter(BuildContext context) async {
     if (_last != this) {
@@ -76,8 +46,7 @@ class LoginRoute extends Route {
   const LoginRoute();
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const SignInPage();
+  Widget build(BuildContext context, GoRouterState state) => const SignInPage();
 
   @override
   List<Object?> get props => [];
@@ -90,7 +59,7 @@ class OnboardingRoute extends Route {
   const OnboardingRoute();
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+  Widget build(BuildContext context, GoRouterState state) =>
       const OnboardingPage();
 
   @override
@@ -112,12 +81,13 @@ class ScheduleRoute extends Route {
   }
 
   @override
-  FutureOr<String?> redirectAdaptive(
-          BuildContext context, GoRouterState state) =>
-      const NowRoute().location;
+  FutureOr<String?> redirect(BuildContext context, GoRouterState state) async {
+    await super.redirect(context, state);
+    return const NowRoute().location;
+  }
 
   @override
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
+  Widget build(BuildContext context, GoRouterState state) =>
       const SchedulePage();
 
   @override
@@ -143,12 +113,7 @@ class EventRoute extends Route {
   }
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const PriorityPage();
-
-  @override
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const EventPage();
+  Widget build(BuildContext context, GoRouterState state) => const EventPage();
 
   @override
   List<Object?> get props => [eventId];
@@ -184,12 +149,7 @@ class NewEventRoute extends Route {
   }
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const PriorityPage();
-
-  @override
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const EventPage();
+  Widget build(BuildContext context, GoRouterState state) => const EventPage();
 
   @override
   List<Object?> get props => [at, name];
@@ -202,8 +162,7 @@ class NowRoute extends Route {
   const NowRoute();
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const NowPage();
+  Widget build(BuildContext context, GoRouterState state) => const NowPage();
 
   @override
   List<Object?> get props => [];
@@ -222,11 +181,7 @@ class PrioritiesRoute extends Route {
   }
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const PriorityPage();
-
-  @override
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
+  Widget build(BuildContext context, GoRouterState state) =>
       const PrioritiesPage();
 
   @override
@@ -254,11 +209,7 @@ class PriorityRoute extends Route {
   }
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
-      const PriorityPage();
-
-  @override
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
+  Widget build(BuildContext context, GoRouterState state) =>
       const PrioritiesPage();
 
   @override
@@ -286,13 +237,8 @@ class NewActivityRoute extends PriorityRoute {
   }
 
   @override
-  FutureOr<String?> redirectAdaptive(
-          BuildContext context, GoRouterState state) =>
-      PriorityRoute(priorityIdString: priorityIdString).location;
-
-  @override
-  Widget buildSingle(BuildContext context, GoRouterState state) =>
-      const PriorityPage();
+  Widget build(BuildContext context, GoRouterState state) =>
+      const ActivityPage();
 
   @override
   List<Object?> get props => [priorityIdString];
@@ -309,7 +255,7 @@ class NewPriorityRoute extends Route {
   final String? priorityIdString;
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+  Widget build(BuildContext context, GoRouterState state) =>
       const NewPriorityPage();
 
   @override
@@ -324,17 +270,20 @@ class ActivityRoute extends PriorityRoute {
       {required this.priorityIdString, required this.activityIdString})
       : activityId = ActivityId.fromShortString(activityIdString),
         super(priorityIdString: priorityIdString);
-  ActivityRoute.byId(PriorityId priorityId, ActivityId activityId)
+  ActivityRoute.byActivity(Activity activity)
+      : priorityIdString = activity.priorityId.toShortString(),
+        activityId = activity.id,
+        activityIdString = activity.id.toShortString(),
+        super.byId(activity.priorityId);
+  ActivityRoute.byId({required PriorityId priorityId, required this.activityId})
       : priorityIdString = priorityId.toShortString(),
-        activityId = activityId,
         activityIdString = activityId.toShortString(),
         super.byId(priorityId);
 
   @override
   final String priorityIdString;
-
   final String activityIdString;
-  final ActivityId? activityId;
+  final ActivityId activityId;
 
   @override
   Future<void> onEnter(BuildContext context) async {
@@ -343,7 +292,7 @@ class ActivityRoute extends PriorityRoute {
   }
 
   @override
-  Widget buildAdaptive(BuildContext context, GoRouterState state) =>
+  Widget build(BuildContext context, GoRouterState state) =>
       const ActivityPage();
 
   @override
@@ -363,10 +312,9 @@ class NewBranch extends StatefulShellBranchData {
 }
 
 class RouterBuilder extends StatefulWidget {
-  final PanelLayout layout;
   final Widget Function(BuildContext, GoRouter) builder;
 
-  const RouterBuilder({required this.layout, required this.builder, super.key});
+  const RouterBuilder({required this.builder, super.key});
 
   @override
   RouterBuilderState createState() => RouterBuilderState();
@@ -384,9 +332,7 @@ class RouterBuilderState extends State<RouterBuilder> {
 
   GoRouter _createRouter() {
     return GoRouter(
-      routes: widget.layout == PanelLayout.sidebar
-          ? [$_AdaptiveRoutes]
-          : [$_SingleRoutes],
+      routes: [$_Routes],
       redirect: (BuildContext context, GoRouterState state) async {
         print(state.uri);
 
@@ -437,6 +383,60 @@ class RouterBuilderState extends State<RouterBuilder> {
         }
         return widget.builder(context, _router);
       },
+    );
+  }
+}
+
+@TypedShellRoute<_Routes>(routes: <TypedRoute<RouteData>>[
+  TypedGoRoute<LoginRoute>(path: LoginRoute.path),
+  TypedGoRoute<OnboardingRoute>(path: OnboardingRoute.path),
+  TypedGoRoute<NowRoute>(path: NowRoute.path),
+  TypedStatefulShellRoute<_TabbedRoutes>(
+    branches: [
+      TypedStatefulShellBranch<PrioritiesBranch>(
+        routes: <TypedGoRoute<GoRouteData>>[
+          TypedGoRoute<PrioritiesRoute>(path: PrioritiesRoute.path),
+          TypedGoRoute<NewPriorityRoute>(path: NewPriorityRoute.path),
+          TypedGoRoute<PriorityRoute>(path: PriorityRoute.path, routes: [
+            TypedGoRoute<NewActivityRoute>(path: NewActivityRoute.path),
+            TypedGoRoute<ActivityRoute>(path: ActivityRoute.path),
+          ]),
+        ],
+      ),
+      TypedStatefulShellBranch<ScheduleBranch>(
+        routes: <TypedGoRoute<GoRouteData>>[
+          TypedGoRoute<ScheduleRoute>(path: ScheduleRoute.path, routes: [
+            TypedGoRoute<NewEventRoute>(path: NewEventRoute.path),
+            TypedGoRoute<EventRoute>(path: EventRoute.path),
+          ]),
+        ],
+      ),
+    ],
+  ),
+])
+@immutable
+class _Routes extends ShellRouteData {
+  const _Routes();
+
+  @override
+  Widget builder(BuildContext context, GoRouterState state, Widget child) {
+    return child;
+  }
+}
+
+@immutable
+class _TabbedRoutes extends StatefulShellRouteData {
+  const _TabbedRoutes();
+
+  @override
+  Widget builder(
+    BuildContext context,
+    GoRouterState state,
+    StatefulNavigationShell navigationShell,
+  ) {
+    return Layout(
+      navigationShell,
+      navigationShell: navigationShell,
     );
   }
 }

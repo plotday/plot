@@ -12,6 +12,7 @@ class Spinner extends StatelessWidget {
   Widget build(BuildContext context) {
     return PlatformBuilder(
         macOSBuilder: (_) => Row(
+              mainAxisSize: MainAxisSize.min,
               spacing: 8,
               children: [
                 if (message != null) Text(message!),

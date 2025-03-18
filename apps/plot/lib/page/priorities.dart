@@ -1,12 +1,12 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:forui/forui.dart';
 
 import 'package:plot/router.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/command/command.dart';
 
 class PrioritiesPage extends StatelessWidget {
   const PrioritiesPage({super.key});
@@ -26,102 +26,42 @@ class PrioritiesPage extends StatelessWidget {
             count: state.inactiveActivities.length,
             builder: (context, index) => ActivityWidget(
               activity: state.inactiveActivities[index],
-              selected: state.activity.id == state.inactiveActivities[index].id,
-              onChange: (activity) =>
-                  context.read<PriorityBloc>().updateActivity(activity),
-              onTap: () => ActivityRoute.byId(
-                state.inactiveActivities[index].priorityId,
-                state.inactiveActivities[index].id,
-              ).go(context),
             ),
             header: Column(
               children: [
                 PriorityTile(
-                    priority: state.current,
-                    balances: prioritiesState.balances?[state.current.id],
-                    maxTime: prioritiesState.maxTime,
-                    onTap: () {}),
-                ListHeader(
+                  priority: state.current,
+                  balances: prioritiesState.balances?[state.current.id],
+                  maxTime: prioritiesState.maxTime,
+                ),
+                ListTile.header(
                   title: "Priorities",
-                  action: IconButton(
-                    icon: PlotIcon.add,
-                    onPressed: () {},
-                  ),
+                  commands: [
+                    NewPriority(),
+                  ],
                 ),
                 _PrioritiesSection(),
-                ListHeader(
+                ListTile.header(
                   title: "Now",
-                  action: IconButton(
-                    icon: PlotIcon.add,
-                    onPressed: () {
-                      NewActivityRoute.byId(state.current.id).go(context);
-                    },
-                  ),
+                  commands: [
+                    // TODO mark started
+                    NewActivity(),
+                  ],
                 ),
                 _ReorderableActivitiesView(
                   activities: state.activeActivities,
                   selected: state.activity.id,
                 ),
-                ListHeader(
+                ListTile.header(
                   title: "Activity",
-                  action: IconButton(
-                    icon: PlotIcon.add,
-                    onPressed: () {},
-                  ),
+                  commands: [
+                    NewActivity(),
+                  ],
                 ),
               ],
             ),
           );
         },
-      );
-    });
-  }
-}
-
-class PriorityHeader extends StatelessWidget {
-  const PriorityHeader({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Builder(builder: (context) {
-      final prioritiesState = context.watch<PrioritiesBloc>().state;
-      final priorityState = context.watch<PriorityBloc>().state;
-      final currentPriority =
-          priorityState is PrioritySelectedState ? priorityState.current : null;
-      return Header(
-        main: Expanded(
-          child: Row(
-            children: [
-              IconButton(
-                icon: PlotIcon.priorities,
-                onPressed: () {
-                  const PrioritiesRoute().go(context);
-                },
-              ),
-              PrioritySelector(
-                selected: currentPriority,
-                onSelect: (priority) {
-                  PriorityRoute.byId(priority.id).go(context);
-                },
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          if (currentPriority != null &&
-              prioritiesState.balances?[currentPriority.id] != null)
-            PriorityBalance(
-              balances: prioritiesState.balances![currentPriority.id]!,
-              max: prioritiesState.maxTime,
-            ),
-          if (currentPriority != null)
-            IconButton(
-              icon: PlotIcon.add,
-              onPressed: () {
-                NewActivityRoute.byId(currentPriority.id).go(context);
-              },
-            ),
-        ],
       );
     });
   }
@@ -139,13 +79,10 @@ class _PrioritiesSection extends StatelessWidget {
             ReorderableListView(
               list: state.filtered,
               itemBuilder: (context, item) => PriorityTile(
-                  priority: item,
-                  balances: state.balances?[item.id],
-                  maxTime: state.maxTime,
-                  onTap: () {
-                    if (item.id == null) return;
-                    PriorityRoute.byId(item.id).go(context);
-                  }),
+                priority: item,
+                balances: state.balances?[item.id],
+                maxTime: state.maxTime,
+              ),
               shrinkWrap: true,
               onReorder: (int oldIndex, int newIndex) async {
                 var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
@@ -183,13 +120,6 @@ class _ReorderableActivitiesView extends StatelessWidget {
         list: activities,
         itemBuilder: (buildContext, item) => ActivityWidget(
           activity: item,
-          selected: selected == item.id,
-          onChange: (activity) =>
-              context.read<PriorityBloc>().updateActivity(activity),
-          onTap: () => ActivityRoute.byId(
-            item.priorityId,
-            item.id,
-          ).go(context),
         ),
         shrinkWrap: true,
         onReorder: (int oldIndex, int newIndex) async {

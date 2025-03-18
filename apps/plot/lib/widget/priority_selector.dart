@@ -18,10 +18,9 @@ class PrioritySelector extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tapable(
       onTap: () async {
-        final priority = await PickPriority.show(
-          context: context,
-          defaultPriority: selected,
-        );
+        final priority = await PickPriority.recent(
+          context,
+        ).show(context);
         if (priority != null) {
           onSelect(priority);
         }
@@ -55,16 +54,11 @@ class PrioritySwitcherState extends State<PrioritySwitcher> {
       children: [
         Tapable(
           onTap: () {
-            context.run<void>(ChangePriority());
+            context.run<void>(PickCurrentActivity());
           },
           child: PriorityLabel(priority: widget.selected),
         ),
-        IconButton(
-          icon: PlotIcon.add,
-          onPressed: () {
-            context.run<void>(NewPriority());
-          },
-        )
+        Button.icon(NewPriority())
       ],
     );
   }

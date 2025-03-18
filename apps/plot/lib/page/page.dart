@@ -6,6 +6,5 @@ export 'new_priority.dart';
 export 'now.dart';
 export 'onboarding.dart';
 export 'priorities.dart';
-export 'priority.dart';
 export 'schedule.dart';
 export 'sign_in.dart';

@@ -234,6 +234,9 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     return !done && doAt?.isSameOrBefore(DateTime.now()) == true;
   }
 
+  // TODO generate title from body
+  String get title => body;
+
   bool get scheduled {
     return doAt?.isAfter(DateTime.now()) == true;
   }

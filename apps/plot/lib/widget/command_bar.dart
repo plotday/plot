@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 
 import 'package:plot/command/command.dart';
+import 'list_tile.dart';
 import 'text_field.dart';
 import 'dialog.dart';
 
@@ -22,7 +23,7 @@ class CommandBar extends StatefulWidget {
 
 class CommandBarState extends State<CommandBar> {
   final TextEditingController _controller = TextEditingController();
-  List<CommandGroup> _filteredCommandGroups = [];
+  List<StaticCommandGroup> _filteredCommandGroups = [];
   int _focusedCommandIndex = 0;
   late Commands commands = widget.commands;
   Widget? _child;
@@ -139,11 +140,7 @@ class CommandBarState extends State<CommandBar> {
                   itemCount: _allCommandsCount(),
                   itemBuilder: (context, index) {
                     final command = _getCommandAtIndex(index);
-                    return command.build(
-                      context,
-                      selected: index == _focusedCommandIndex,
-                      onTap: () => _executeCommand(command),
-                    );
+                    return ListTile.command(command);
                   },
                 ),
               ),

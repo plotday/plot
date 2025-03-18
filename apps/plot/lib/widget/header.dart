@@ -1,16 +1,19 @@
 import 'package:flutter/widgets.dart';
 import 'package:macos_ui/macos_ui.dart' as macos;
 
+import 'package:plot/widget/widget.dart';
+import 'package:plot/command/command.dart';
+
 class Header extends StatelessWidget {
   Header({
     Widget? main,
     String? title,
-    this.actions,
+    this.commands = const [],
     super.key,
   }) : main = main ?? (title != null ? Text(title) : null);
 
   final Widget? main;
-  final List<Widget>? actions;
+  final List<Command> commands;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +42,7 @@ class Header extends StatelessWidget {
           ),
         ),
         Row(
-          children: actions ?? [],
+          children: commands.map((command) => Button.icon(command)).toList(),
         ),
       ],
     );

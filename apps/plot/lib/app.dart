@@ -22,28 +22,24 @@ class App extends StatefulWidget {
 }
 
 class AppState extends State<App> with WidgetsBindingObserver {
-  late Future<PanelLayout> layout;
+  late Future<bool> layout;
 
   @override
   void initState() {
     super.initState();
 
-    final layoutCompleter = Completer<PanelLayout>();
+    final layoutCompleter = Completer<bool>();
     layout = layoutCompleter.future;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Window.init();
-      Layout.init(context).then((layout) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await Window.init();
         if (!mounted) {
           throw "Context is not mounted";
         }
-        return layoutCompleter.complete(layout);
-      }).catchError((dynamic error) {
-        if (error is Object) {
-          layoutCompleter.completeError(error);
-        } else {
-          layoutCompleter.completeError("Unknown error");
-        }
-      });
+        return layoutCompleter.complete(true);
+      } catch (error) {
+        layoutCompleter.completeError(error);
+      }
     });
   }
 
@@ -66,54 +62,47 @@ class AppState extends State<App> with WidgetsBindingObserver {
             if (!snapshot.hasData) {
               return const LoadingPage();
             }
-            return RootProvider(
-              child: RouterBuilder(
-                layout: snapshot.data!,
-                builder: (context, router) => FTheme(
-                  data: FThemeData(
-                    colorScheme: context.colour.toFColorScheme(),
-                  ),
-                  child: PlatformBuilder(
-                    builder: (context) => AdaptiveTheme(
-                      light: material.ThemeData(
-                        colorScheme: material.ColorScheme.fromSeed(
-                          seedColor: const Color(0x002BDD66),
-                          brightness: material.Brightness.light,
-                        ),
-                      ),
-                      dark: material.ThemeData(
-                        colorScheme: material.ColorScheme.fromSeed(
-                          seedColor: const Color(0x002BDD66),
-                          brightness: material.Brightness.dark,
-                        ),
-                      ),
-                      debugShowFloatingThemeButton: true,
-                      initial: AdaptiveThemeMode.system,
-                      builder: (theme, darkTheme) => snapshot.data == null
-                          ? material.MaterialApp(
-                              theme: theme,
-                              darkTheme: darkTheme,
-                            )
-                          : material.MaterialApp.router(
-                              title: 'Plot',
-                              theme: theme,
-                              darkTheme: darkTheme,
-                              routerConfig: router,
-                            ),
+            return Window(
+              child: RootProvider(
+                child: RouterBuilder(
+                  builder: (context, router) => FTheme(
+                    data: FThemeData(
+                      colorScheme: context.colour.toFColorScheme(),
                     ),
-                    macOSBuilder: (context) => snapshot.data == null
-                        ? macos.MacosApp(
-                            theme: (context.colour.brightness ==
-                                        Brightness.light
-                                    ? macos.MacosThemeData.light()
-                                    : macos.MacosThemeData.dark())
-                                .copyWith(primaryColor: context.colour.accent),
-                          )
-                        : macos.MacosApp.router(
-                            title: 'Plot',
-                            debugShowCheckedModeBanner: false,
-                            routerConfig: router,
+                    child: PlatformBuilder(
+                      builder: (context) => AdaptiveTheme(
+                        light: material.ThemeData(
+                          colorScheme: material.ColorScheme.fromSeed(
+                            seedColor: const Color(0x002BDD66),
+                            brightness: material.Brightness.light,
                           ),
+                        ),
+                        dark: material.ThemeData(
+                          colorScheme: material.ColorScheme.fromSeed(
+                            seedColor: const Color(0x002BDD66),
+                            brightness: material.Brightness.dark,
+                          ),
+                        ),
+                        debugShowFloatingThemeButton: true,
+                        initial: AdaptiveThemeMode.system,
+                        builder: (theme, darkTheme) =>
+                            material.MaterialApp.router(
+                          title: 'Plot',
+                          theme: theme,
+                          darkTheme: darkTheme,
+                          routerConfig: router,
+                        ),
+                      ),
+                      macOSBuilder: (context) => macos.MacosApp.router(
+                        title: 'Plot',
+                        theme: (context.colour.brightness == Brightness.light
+                                ? macos.MacosThemeData.light()
+                                : macos.MacosThemeData.dark())
+                            .copyWith(primaryColor: context.colour.accent),
+                        debugShowCheckedModeBanner: false,
+                        routerConfig: router,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -143,12 +132,7 @@ class ErrorApp extends StatelessWidget {
                 children: [
                   const Text('Failed to start Plot.'),
                   Text('Error: $error'),
-                  Button(
-                    onTap: () {
-                      SignOut().run(context);
-                    },
-                    child: const Text('Sign Out'),
-                  ),
+                  Button(SignOut()),
                 ],
               ),
             ),

@@ -6,6 +6,7 @@ import 'package:plot/router.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/note.dart';
+import 'package:plot/command/command.dart';
 
 class ActivityToolbar extends StatelessWidget {
   const ActivityToolbar({
@@ -17,45 +18,11 @@ class ActivityToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Header(
-        actions: [
-          if (!activity.doNow && !activity.done)
-            IconButton(
-              icon: PlotIcon.doNow,
-              onPressed: () => context.read<PriorityBloc>().updateActivity(
-                    activity.copyWith(
-                      doAt: activity.doNow
-                          ? const Value(null)
-                          : Value(DateTime.now()),
-                    ),
-                  ),
-            ),
-          if (activity.doNow)
-            IconButton(
-              icon: PlotIcon.done,
-              onPressed: () => context.read<PriorityBloc>().updateActivity(
-                    activity.copyWith(
-                      doneAt: Value(DateTime.now()),
-                    ),
-                  ),
-            ),
-          if (activity.done)
-            IconButton(
-              icon: PlotIcon.done,
-              onPressed: () => context.read<PriorityBloc>().updateActivity(
-                    activity.copyWith(
-                      doneAt: const Value(null),
-                    ),
-                  ),
-            ),
-          if (!activity.doNow)
-            IconButton(
-              icon: PlotIcon.pinned,
-              onPressed: () => context.read<PriorityBloc>().updateActivity(
-                    activity.copyWith(
-                      pinned: !activity.pinned,
-                    ),
-                  ),
-            ),
+        commands: [
+          if (!activity.doNow && !activity.done) StartActivity(activity),
+          if (activity.doNow) FinishActivity(activity),
+          if (activity.done) MarkActivityIncomplete(activity),
+          if (!activity.doNow) PinActivity(activity),
         ],
       );
 }
@@ -90,8 +57,7 @@ class ActivityPage extends StatelessWidget {
                     state.activity.copyWith(body: body, draft: false);
                 await context.read<PriorityBloc>().updateActivity(activity);
                 if (context.mounted) {
-                  ActivityRoute.byId(activity.priorityId, activity.id)
-                      .go(context);
+                  ActivityRoute.byActivity(activity).go(context);
                 }
                 return;
               }

@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/command/command.dart';
 
 class PriorityLabel extends StatelessWidget {
   const PriorityLabel({required this.priority, super.key});
@@ -97,28 +98,19 @@ class PriorityTile extends StatelessWidget {
     required this.priority,
     this.balances,
     this.maxTime,
-    this.onTap,
-    this.selected = false,
     super.key,
   });
 
   final Priority priority;
   final BalanceByType? balances;
-  final VoidCallback? onTap;
-  final bool selected;
   final Duration? maxTime;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      onTap: () {
-        onTap?.call();
-      },
-      selected: selected,
+    return ListTile.command(
+      ChangeCurrentPriority(priority),
       key: ValueKey(priority.id.toString()),
-      title: PriorityLabel(priority: priority),
-      subtitle: balances != null ? PriorityBalance(balances: balances!) : null,
-      trailing: FIcon.data(PlotIcon.right, size: 14),
+      // subtitle: balances != null ? PriorityBalance(balances: balances!) : null,
     );
   }
 }

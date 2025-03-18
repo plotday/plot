@@ -19,13 +19,14 @@ class MaterialLayout extends StatelessWidget {
               ? 2
               : 3;
 
-  const MaterialLayout(
-      {required this.primary,
-      this.secondary,
-      this.drawer,
-      this.navigationShell,
-      this.header,
-      super.key});
+  const MaterialLayout({
+    required this.primary,
+    this.secondary,
+    this.drawer,
+    this.navigationShell,
+    this.header,
+    super.key,
+  });
 
   // Displayed at all breakpoints
   final Widget primary;

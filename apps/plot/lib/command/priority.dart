@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:forui/forui.dart';
 
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
@@ -12,49 +11,20 @@ import 'package:plot/router.dart';
 
 class PriorityCommand extends ValueCommand<Priority?> {
   PriorityCommand(
-    this.priority,
+    Priority? priority,
   ) : super(
           title: priority?.name ?? 'All Priorities',
           icon: PlotIcon.priority,
           value: priority,
         );
-
-  final Priority? priority;
-
-  @override
-  Widget build(
-    BuildContext context, {
-    bool selected = false,
-    void Function()? onTap,
-  }) =>
-      ListTile(
-        leading: FIcon.data(icon!),
-        title: PriorityLabel(priority: priority),
-        subtitle: subtitle != null ? Text(subtitle!) : null,
-        selected: selected,
-        onTap: onTap,
-      );
 }
 
-class PickPriority extends StaticCommands {
-  static Future<Priority?> show({
-    required BuildContext context,
-    Priority? defaultPriority,
-  }) async {
-    return await CommandBar.show(
-      context,
-      PickPriority(
-        prompt: 'Pick a priority',
-        priorities: context.read<PrioritiesBloc>().state.recent,
-      ),
-    );
-  }
-
-  PickPriority({
-    required this.priorities,
-    required super.prompt,
-  }) : super(commands: [
-          CommandGroup(
+class PickPriority extends Commands<Priority> {
+  PickPriority(
+    List<Priority> priorities, {
+    super.prompt = 'Pick a priority',
+  }) : super(groups: [
+          StaticCommandGroup(
             title: 'Recent',
             commands: priorities
                 .map((priority) => PriorityCommand(priority))
@@ -62,34 +32,70 @@ class PickPriority extends StaticCommands {
           ),
         ]);
 
-  final List<Priority> priorities;
+  PickPriority.recent(
+    BuildContext context, {
+    super.prompt = 'Pick a priority',
+  }) : super(groups: [
+          StaticCommandGroup(
+            title: 'Recent',
+            commands: context
+                .read<PrioritiesBloc>()
+                .state
+                .recent
+                .map((priority) => PriorityCommand(priority))
+                .toList(),
+          ),
+        ]);
 }
 
-class ChangePriority extends ShowCommand<Priority> {
-  ChangePriority()
+class ChangeCurrentPriority extends Command {
+  ChangeCurrentPriority(Priority priority)
+      : priorityId = priority.id,
+        super(
+          title: priority.name,
+          icon: PlotIcon.priority,
+        );
+
+  ChangeCurrentPriority.byId({required this.priorityId})
       : super(
-          title: 'Switch priorities',
+          title: 'View Priority',
+          icon: PlotIcon.priority,
+        );
+
+  final PriorityId priorityId;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    PriorityRoute.byId(priorityId).go(context);
+    return null;
+  }
+}
+
+class PickCurrentActivity extends ShowCommand<Priority> {
+  PickCurrentActivity()
+      : super(
+          title: 'Change Current Priority',
           icon: PlotIcon.priority,
           shortcut: const SingleActivator(
             LogicalKeyboardKey.keyJ,
             meta: true,
           ),
-          commands: (context) => PickPriority(
-            prompt: 'Switch priorities',
-            priorities: context.read<PrioritiesBloc>().state.recent,
+          commands: (context) => PickPriority.recent(
+            context,
+            prompt: 'Change Current Priority',
           ),
         );
 
   @override
   void onSelect(BuildContext context, Priority value) async {
-    PriorityRoute.byId(value.id).go(context);
+    ChangeCurrentPriority(value).run(context);
   }
 }
 
 class NewPriority extends Command {
   NewPriority()
       : super(
-          title: 'New priority',
+          title: 'New Priority',
         );
 
   @override

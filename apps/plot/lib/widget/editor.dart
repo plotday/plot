@@ -191,18 +191,18 @@ class EditorState extends State<Editor> {
                   ...defaultComponentBuilders,
                 ],
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Button(
-                      onTap: _isEmpty ? null : submit,
-                      child: const Text('Add'),
-                    ),
-                  ],
-                ),
-              ),
+              // Padding(
+              //   padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+              //   child: Row(
+              //     mainAxisAlignment: MainAxisAlignment.end,
+              //     children: [
+              //       Button(
+              //         onTap: _isEmpty ? null : submit,
+              //         child: const Text('Add'),
+              //       ),
+              //     ],
+              //   ),
+              // ),
             ],
           ),
         ),

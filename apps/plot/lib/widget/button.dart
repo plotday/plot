@@ -1,42 +1,59 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:platform_builder/platform_builder.dart';
 
+import 'package:plot/command/command.dart';
 import 'spinner.dart';
 
-enum ButtonStyle { primary, secondary }
+enum ButtonStyle { primary, secondary, icon }
 
 class Button extends StatelessWidget {
-  const Button({
-    required this.child,
-    required this.onTap,
+  const Button(
+    this.command, {
     this.style = ButtonStyle.primary,
     this.loading = false,
+    this.enabled = true,
     super.key,
   });
 
-  final VoidCallback? onTap;
-  final Widget child;
+  const Button.secondary(
+    this.command, {
+    this.loading = false,
+    this.enabled = true,
+    super.key,
+  }) : style = ButtonStyle.secondary;
+  const Button.icon(
+    this.command, {
+    this.loading = false,
+    this.enabled = true,
+    super.key,
+  }) : style = ButtonStyle.icon;
+
   final ButtonStyle style;
   final bool loading;
+  final bool enabled;
+  final Command command;
 
   @override
   Widget build(BuildContext context) {
+    final onPress = enabled ? () => command.run(context) : null;
     final button = PlatformBuilder(
-      androidBuilder: (_) => style == ButtonStyle.primary
-          ? material.FilledButton(
-              onPressed: onTap,
-              child: child,
+      builder: (_) => style == ButtonStyle.icon && command.icon != null
+          ? FButton.icon(
+              style: FButtonStyle.ghost,
+              onPress: () => onPress,
+              child: FIcon.data(
+                command.icon!,
+                size: 12,
+              ),
             )
-          : material.FilledButton.tonal(
-              onPressed: onTap,
-              child: child,
+          : FButton(
+              style: style == ButtonStyle.primary
+                  ? FButtonStyle.primary
+                  : FButtonStyle.secondary,
+              onPress: () => onPress,
+              label: Text(command.title),
             ),
-      builder: (_) => FButton(
-        onPress: onTap,
-        label: child,
-      ),
     );
 
     return Stack(
@@ -48,32 +65,6 @@ class Button extends StatelessWidget {
         ),
         if (loading) Spinner(),
       ],
-    );
-  }
-}
-
-class IconButton extends StatelessWidget {
-  const IconButton({
-    required this.icon,
-    required this.onPressed,
-    super.key,
-  });
-
-  final VoidCallback onPressed;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return PlatformBuilder(
-      androidBuilder: (_) => material.IconButton(
-        onPressed: onPressed,
-        icon: material.Icon(icon),
-      ),
-      builder: (_) => FButton.icon(
-        style: FButtonStyle.ghost,
-        onPress: onPressed,
-        child: FIcon.data(icon, size: 14),
-      ),
     );
   }
 }
