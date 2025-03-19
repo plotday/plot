@@ -12,6 +12,9 @@ import 'state/now.dart';
 import 'state/onboarding.dart';
 import 'page/page.dart';
 import 'widget/widget.dart';
+import 'widget/window.dart';
+import 'widget/global_menu.dart';
+import 'command/global.dart';
 
 part 'router.g.dart';
 
@@ -420,7 +423,10 @@ class _Routes extends ShellRouteData {
 
   @override
   Widget builder(BuildContext context, GoRouterState state, Widget child) {
-    return child;
+    return Window(
+        child: GlobalShortcuts(
+      child: GlobalMenu(child: child),
+    ));
   }
 }
 
