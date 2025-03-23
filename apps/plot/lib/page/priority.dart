@@ -8,9 +8,9 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/command/command.dart';
 
-@RoutePage()
-class PrioritiesPage extends StatelessWidget implements AutoRouteWrapper {
-  PrioritiesPage({
+@RoutePage(name: "PriorityRoute")
+class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
+  PriorityWrapper({
     Priority? priority,
     PriorityId? priorityId,
     @PathParam("priorityId") String? priorityIdString,
@@ -28,6 +28,13 @@ class PrioritiesPage extends StatelessWidget implements AutoRouteWrapper {
     return BlocProvider(
         create: (_) => PriorityBloc(id: priorityId), child: this);
   }
+}
+
+@RoutePage(name: "PriorityMainRoute")
+class PriorityPage extends StatelessWidget {
+  const PriorityPage({
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {

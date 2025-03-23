@@ -97,8 +97,19 @@ class AppRouter extends RootStackRouter {
             AutoRoute(page: OnboardingRoute.page, path: 'start'),
             AutoRoute(page: NowRoute.page, path: ''),
             AutoRoute(
-              page: PrioritiesRoute.page,
+              page: PriorityRoute.page,
               path: 'priorities/:priorityId',
+              children: [
+                AutoRoute(
+                  page: PriorityMainRoute.page,
+                  path: '',
+                ),
+                AutoRoute(
+                  page: NewActivityRoute.page,
+                  path: 'new',
+                  fullscreenDialog: true,
+                ),
+              ],
             ),
           ],
         ),
@@ -175,7 +186,7 @@ class AppRouter extends RootStackRouter {
         }
 
         if (resolver.routeName == SignInRoute.name) {
-          resolver.redirectUntil(PrioritiesRoute());
+          resolver.redirectUntil(PriorityRoute());
           return;
         }
 

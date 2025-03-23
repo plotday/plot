@@ -41,7 +41,7 @@ class ChangeCurrentActivity extends Command {
   @override
   Future<CommandReturn?> run(BuildContext context) async {
     await context.router.replaceAll([
-      PrioritiesRoute(
+      PriorityRoute(
         priorityId: priorityId,
       ),
       ActivityRoute(
@@ -111,9 +111,7 @@ class NewActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    // TODO
-    // final state = context // as PrioritySelectedState
-    // NewActivityRoute.byId(context.state.current.id).go(context);
+    await context.router.push<void>(NewActivityRoute());
     return null;
   }
 }

@@ -20,7 +20,7 @@ class NowPage extends StatelessWidget {
         }
         nowState = nowState as NowLoadedState;
         final priorityId = nowState.priority.id;
-        context.router.replace(PrioritiesRoute(priorityId: priorityId));
+        context.router.replace(PriorityRoute(priorityId: priorityId));
       },
       child: const LoadingPage(),
     );

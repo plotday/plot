@@ -13,8 +13,6 @@ import 'widget/window.dart';
 import 'widget/widget.dart';
 import 'page/loading.dart';
 import 'command/settings.dart';
-import 'widget/global_menu.dart';
-import 'command/global.dart';
 
 class App extends StatefulWidget {
   const App({super.key});

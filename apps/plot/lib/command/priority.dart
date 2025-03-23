@@ -67,7 +67,7 @@ class ChangeCurrentPriority extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.router.push<void>(PrioritiesRoute(priorityId: priorityId));
+    await context.router.push<void>(PriorityRoute(priorityId: priorityId));
     return null;
   }
 }

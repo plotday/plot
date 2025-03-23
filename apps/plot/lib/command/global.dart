@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:auto_route/auto_route.dart';
 
 import 'command.dart';
 
@@ -13,14 +14,11 @@ class GlobalShortcuts extends StatelessWidget {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () {
-          var navigator = Navigator.of(context);
           var focusContext = FocusManager.instance.primaryFocus?.context;
           if (focusContext != null) {
-            navigator = Navigator.of(focusContext);
+            context = focusContext;
           }
-          if (navigator.canPop()) {
-            navigator.pop();
-          }
+          context.router.maybePop();
         },
       },
       child: CommandScope(
