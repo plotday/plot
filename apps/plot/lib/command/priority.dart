@@ -1,12 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:auto_route/auto_route.dart';
 
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priorities.dart';
-import 'package:plot/page/page.dart';
+import 'package:plot/state/priority.dart';
 import 'package:plot/router.dart';
 
 class PriorityCommand extends ValueCommand<Priority?> {
@@ -66,7 +67,7 @@ class ChangeCurrentPriority extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    PriorityRoute.byId(priorityId).go(context);
+    await context.router.push<void>(PrioritiesRoute(priorityId: priorityId));
     return null;
   }
 }
@@ -96,10 +97,13 @@ class NewPriority extends Command {
   NewPriority()
       : super(
           title: 'New Priority',
+          icon: PlotIcon.add,
         );
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandPage(const NewPriorityPage());
+  Future<CommandReturn?> run(BuildContext context) async {
+    await context.router.push<void>(
+        NewPriorityRoute(priorityId: context.read<PriorityBloc>().currentId));
+    return null;
   }
 }

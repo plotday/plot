@@ -90,7 +90,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
                           title: 'Plot',
                           theme: theme,
                           darkTheme: darkTheme,
-                          routerConfig: router,
+                          routerConfig: router.config(),
                         ),
                       ),
                       macOSBuilder: (context) => macos.MacosApp.router(
@@ -100,7 +100,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
                                 : macos.MacosThemeData.dark())
                             .copyWith(primaryColor: context.colour.accent),
                         debugShowCheckedModeBanner: false,
-                        routerConfig: router,
+                        routerConfig: router.config(),
                       ),
                     ),
                   ),

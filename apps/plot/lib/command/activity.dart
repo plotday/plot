@@ -1,14 +1,12 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:auto_route/auto_route.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/state/priority.dart';
-import 'package:plot/page/page.dart';
 import 'package:plot/router.dart';
 
 class ActivityCommand extends ValueCommand<Activity> {
@@ -42,8 +40,14 @@ class ChangeCurrentActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    ActivityRoute.byId(priorityId: priorityId, activityId: activityId)
-        .go(context);
+    await context.router.replaceAll([
+      PrioritiesRoute(
+        priorityId: priorityId,
+      ),
+      ActivityRoute(
+        activityId: activityId,
+      ),
+    ]);
     return null;
   }
 }
@@ -102,6 +106,7 @@ class NewActivity extends Command {
   NewActivity()
       : super(
           title: 'New Activity',
+          icon: PlotIcon.add,
         );
 
   @override

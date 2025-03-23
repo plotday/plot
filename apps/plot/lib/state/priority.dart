@@ -26,6 +26,13 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   PrioritySelectedState get selectedState => state as PrioritySelectedState;
 
+  PriorityId? get currentId {
+    return switch (state) {
+      PrioritySelectedState state => state.current.id,
+      NoPriorityState _ => null,
+    };
+  }
+
   void setCurrent(Priority? current) {
     if (switch (state) {
       PrioritySelectedState state => state.current.id == current?.id,

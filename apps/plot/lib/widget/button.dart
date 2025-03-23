@@ -41,7 +41,7 @@ class Button extends StatelessWidget {
       builder: (_) => style == ButtonStyle.icon && command.icon != null
           ? FButton.icon(
               style: FButtonStyle.ghost,
-              onPress: () => onPress,
+              onPress: onPress,
               child: FIcon.data(
                 command.icon!,
                 size: 12,
@@ -51,7 +51,7 @@ class Button extends StatelessWidget {
               style: style == ButtonStyle.primary
                   ? FButtonStyle.primary
                   : FButtonStyle.secondary,
-              onPress: () => onPress,
+              onPress: onPress,
               label: Text(command.title),
             ),
     );

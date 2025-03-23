@@ -16,7 +16,11 @@ class Window extends StatelessWidget {
       await const MacosWindowUtilsConfig(
         toolbarStyle: NSWindowToolbarStyle.unifiedCompact,
       ).apply();
+      await macos_win.WindowManipulator.hideZoomButton();
+      await macos_win.WindowManipulator.hideMiniaturizeButton();
+      await macos_win.WindowManipulator.hideCloseButton();
       toolbarHeight = await macos_win.WindowManipulator.getTitlebarHeight();
+
       final lastWindowButtonPos =
           await macos_win.WindowManipulator.getStandardWindowButtonPosition(
         buttonType: NSWindowButtonType.zoomButton,

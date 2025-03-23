@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
@@ -11,7 +12,7 @@ import 'package:plot/command/command.dart';
 class GetStarted extends Command {
   const GetStarted()
       : super(
-          title: 'Get Started',
+          title: 'Get Started, mofo',
         );
 
   @override
@@ -27,11 +28,12 @@ class GetStarted extends Command {
       return null;
     }
     context.read<OnboardingBloc>().complete();
-    NowRoute().go(context);
+    await context.router.replace(NowRoute());
     return null;
   }
 }
 
+@RoutePage()
 class OnboardingPage extends StatelessWidget {
   const OnboardingPage({super.key});
 
@@ -47,7 +49,7 @@ class OnboardingPage extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text("Welcome to Plot!"),
+                const Text("Welcome to Plot"),
                 Button(
                   GetStarted(),
                   loading: state.loading,

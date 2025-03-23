@@ -1,15 +1,27 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:auto_route/auto_route.dart';
 
-import 'package:plot/router.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/command/command.dart';
 
+@RoutePage()
 class PrioritiesPage extends StatelessWidget {
-  const PrioritiesPage({super.key});
+  PrioritiesPage({
+    Priority? priority,
+    PriorityId? priorityId,
+    @PathParam("priorityId") String? priorityIdString,
+    super.key,
+  }) : priorityId = priority?.id ??
+            priorityId ??
+            (priorityIdString != null
+                ? PriorityId.fromShortString(priorityIdString)
+                : null);
+
+  final PriorityId? priorityId;
 
   @override
   Widget build(BuildContext context) {
@@ -21,44 +33,46 @@ class PrioritiesPage extends StatelessWidget {
       final state = generalState as PrioritySelectedState;
       return BlocBuilder<PrioritiesBloc, PrioritiesState>(
         builder: (context, prioritiesState) {
-          return BidirectionalList(
-            scrollController: ScrollControllerContext.of(context),
-            count: state.inactiveActivities.length,
-            builder: (context, index) => ActivityWidget(
-              activity: state.inactiveActivities[index],
-            ),
-            header: Column(
-              children: [
-                PriorityTile(
-                  priority: state.current,
-                  balances: prioritiesState.balances?[state.current.id],
-                  maxTime: prioritiesState.maxTime,
-                ),
-                ListTile.header(
-                  title: "Priorities",
-                  commands: [
-                    NewPriority(),
-                  ],
-                ),
-                _PrioritiesSection(),
-                ListTile.header(
-                  title: "Now",
-                  commands: [
-                    // TODO mark started
-                    NewActivity(),
-                  ],
-                ),
-                _ReorderableActivitiesView(
-                  activities: state.activeActivities,
-                  selected: state.activity.id,
-                ),
-                ListTile.header(
-                  title: "Activity",
-                  commands: [
-                    NewActivity(),
-                  ],
-                ),
-              ],
+          return Scaffold(
+            body: BidirectionalList(
+              scrollController: ScrollControllerContext.of(context),
+              count: state.inactiveActivities.length,
+              builder: (context, index) => ActivityWidget(
+                activity: state.inactiveActivities[index],
+              ),
+              header: Column(
+                children: [
+                  PriorityTile(
+                    priority: state.current,
+                    balances: prioritiesState.balances?[state.current.id],
+                    maxTime: prioritiesState.maxTime,
+                  ),
+                  ListTile.header(
+                    title: "Priorities",
+                    commands: [
+                      NewPriority(),
+                    ],
+                  ),
+                  _PrioritiesSection(),
+                  ListTile.header(
+                    title: "Now",
+                    commands: [
+                      // TODO mark started
+                      NewActivity(),
+                    ],
+                  ),
+                  _ReorderableActivitiesView(
+                    activities: state.activeActivities,
+                    selected: state.activity.id,
+                  ),
+                  ListTile.header(
+                    title: "Activity",
+                    commands: [
+                      NewActivity(),
+                    ],
+                  ),
+                ],
+              ),
             ),
           );
         },

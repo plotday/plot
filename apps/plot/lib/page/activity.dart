@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
@@ -27,8 +28,20 @@ class ActivityToolbar extends StatelessWidget {
       );
 }
 
+@RoutePage()
 class ActivityPage extends StatelessWidget {
-  const ActivityPage({super.key});
+  ActivityPage({
+    Activity? activity,
+    ActivityId? activityId,
+    @PathParam("activityId") String? activityIdString,
+    super.key,
+  }) : activityId = activity?.id ??
+            activityId ??
+            (activityIdString != null
+                ? ActivityId.fromShortString(activityIdString)
+                : null);
+
+  final ActivityId? activityId;
 
   @override
   Widget build(BuildContext context) {
@@ -42,31 +55,32 @@ class ActivityPage extends StatelessWidget {
         return const Spinner();
       }
 
-      return Column(
-        children: [
-          ActivityToolbar(activity: state.activity),
-          Expanded(child: NotesView(notes: state.activityNotes)),
-          Editor(
-            hint: state.activityNotes.isNotEmpty
-                ? 'Start an activity'
-                : 'Add a note',
-            autofocus: true,
-            onSubmitted: (body) async {
-              if (state.activity.draft) {
-                final activity =
-                    state.activity.copyWith(body: body, draft: false);
-                await context.read<PriorityBloc>().updateActivity(activity);
-                if (context.mounted) {
-                  ActivityRoute.byActivity(activity).go(context);
+      return Scaffold(
+        body: Column(
+          children: [
+            ActivityToolbar(activity: state.activity),
+            Expanded(child: NotesView(notes: state.activityNotes)),
+            Editor(
+              hint: state.activityNotes.isNotEmpty
+                  ? 'Start an activity'
+                  : 'Add a note',
+              autofocus: true,
+              onSubmitted: (body) async {
+                if (state.activity.draft) {
+                  final activity =
+                      state.activity.copyWith(body: body, draft: false);
+                  await context.read<PriorityBloc>().updateActivity(activity);
+                  if (!context.mounted) return;
+                  await context.router.push(ActivityRoute(activity: activity));
+                  return;
                 }
-                return;
-              }
-              await context
-                  .read<PriorityBloc>()
-                  .updateNote(state.draft.copyWith(body: body, draft: false));
-            },
-          )
-        ],
+                await context
+                    .read<PriorityBloc>()
+                    .updateNote(state.draft.copyWith(body: body, draft: false));
+              },
+            )
+          ],
+        ),
       );
     });
   }

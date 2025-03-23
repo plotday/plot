@@ -1,5 +1,5 @@
 # build_runner output
-lib/router*.g.dart
+lib/router.gr.dart
 lib/store/store.g.dart
 
 # Miscellaneous

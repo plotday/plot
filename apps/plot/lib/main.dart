@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -14,7 +13,6 @@ Future<void> run() async {
     await dotenv.load(fileName: ".env");
     await Base.init();
     await Store.init();
-    GoRouter.optionURLReflectsImperativeAPIs = true;
     usePathUrlStrategy();
     return runApp(const App());
   } on Error catch (error) {

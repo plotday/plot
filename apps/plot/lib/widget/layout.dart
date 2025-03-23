@@ -1,13 +1,13 @@
 import 'package:flutter/widgets.dart';
-import 'package:go_router/go_router.dart';
 import 'package:platform_builder/platform_builder.dart';
+import 'package:auto_route/auto_route.dart';
 
 import "window.dart";
 import "layout_material.dart";
 import "layout_mac.dart";
 
 class Layout extends StatelessWidget {
-  const Layout(this.page, {required this.navigationShell, super.key});
+  const Layout(this.page, {required this.tabsRouter, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -17,11 +17,11 @@ class Layout extends StatelessWidget {
       ),
       builder: (_) => MaterialLayout(
         primary: page,
-        navigationShell: navigationShell,
+        tabsRouter: tabsRouter,
       ),
     );
   }
 
   final Widget page;
-  final StatefulNavigationShell navigationShell;
+  final TabsRouter tabsRouter;
 }

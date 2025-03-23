@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
@@ -17,7 +18,7 @@ class ListTile extends StatefulWidget {
     /// Commands revealed on hover or long press.
     this.hiddenCommands = const [],
     super.key,
-  })  : style = ListTileStyle.command,
+  })  : style = ListTileStyle.header,
         command = null,
         details = null,
         highlighted = false;
@@ -37,7 +38,7 @@ class ListTile extends StatefulWidget {
     /// Highlight the tile (often when unread).
     this.highlighted = false,
     super.key,
-  })  : style = ListTileStyle.header,
+  })  : style = ListTileStyle.command,
         command = command,
         title = command.title;
 
@@ -55,18 +56,50 @@ class ListTile extends StatefulWidget {
 
 class _ListTileState extends State<ListTile> {
   bool _focused = false;
+  final _focusNode = FocusNode();
+
+  Map<ShortcutActivator, Intent> get _shortcuts => {
+        const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
+        const SingleActivator(LogicalKeyboardKey.space): const ActivateIntent(),
+      };
+
+  Map<Type, Action<Intent>> get _actions => {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            if (widget.command != null) {
+              widget.command!.run(context);
+            }
+            return null;
+          },
+        ),
+      };
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.command != null ? () => widget.command!.run(context) : null,
+      onTap: widget.command != null
+          ? () {
+              try {
+                widget.command!.run(context);
+              } catch (e) {
+                print(e);
+              }
+            }
+          : null,
       child: FocusableActionDetector(
-        // actions: _actionMap,
-        // shortcuts: _shortcutMap,
+        focusNode: _focusNode,
+        actions: _actions,
+        shortcuts: _shortcuts,
         onShowFocusHighlight: (focused) => setState(() => _focused = focused),
         onShowHoverHighlight: (hovered) {
           if (hovered) {
-            FocusScope.of(context).requestFocus(FocusNode());
+            _focusNode.requestFocus();
           }
         },
         child: Container(
@@ -84,7 +117,9 @@ class _ListTileState extends State<ListTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.title,
+                      widget.style == ListTileStyle.header
+                          ? widget.title.toUpperCase()
+                          : widget.title,
                       overflow: TextOverflow.ellipsis,
                       style: context.theme.typography.xs.copyWith(
                         color: widget.highlighted
