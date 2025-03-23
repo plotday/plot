@@ -9,7 +9,11 @@ import 'package:plot/store/store.dart';
 part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
-  PriorityBloc() : super(const NoPriorityState());
+  PriorityBloc({PriorityId? id}) : super(const NoPriorityState()) {
+    if (id != null) {
+      setCurrentId(id);
+    }
+  }
 
   void _reset() {
     _prioritySubscription?.cancel();

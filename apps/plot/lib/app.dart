@@ -23,6 +23,7 @@ class App extends StatefulWidget {
 
 class AppState extends State<App> with WidgetsBindingObserver {
   late Future<bool> layout;
+  AppRouter router = AppRouter();
 
   @override
   void initState() {
@@ -64,44 +65,42 @@ class AppState extends State<App> with WidgetsBindingObserver {
             }
             return Window(
               child: RootProvider(
-                child: RouterBuilder(
-                  builder: (context, router) => FTheme(
-                    data: FThemeData(
-                      colorScheme: context.colour.toFColorScheme(),
-                    ),
-                    child: PlatformBuilder(
-                      builder: (context) => AdaptiveTheme(
-                        light: material.ThemeData(
-                          colorScheme: material.ColorScheme.fromSeed(
-                            seedColor: const Color(0x002BDD66),
-                            brightness: material.Brightness.light,
-                          ),
-                        ),
-                        dark: material.ThemeData(
-                          colorScheme: material.ColorScheme.fromSeed(
-                            seedColor: const Color(0x002BDD66),
-                            brightness: material.Brightness.dark,
-                          ),
-                        ),
-                        debugShowFloatingThemeButton: true,
-                        initial: AdaptiveThemeMode.system,
-                        builder: (theme, darkTheme) =>
-                            material.MaterialApp.router(
-                          title: 'Plot',
-                          theme: theme,
-                          darkTheme: darkTheme,
-                          routerConfig: router.config(),
+                child: FTheme(
+                  data: FThemeData(
+                    colorScheme: context.colour.toFColorScheme(),
+                  ),
+                  child: PlatformBuilder(
+                    builder: (context) => AdaptiveTheme(
+                      light: material.ThemeData(
+                        colorScheme: material.ColorScheme.fromSeed(
+                          seedColor: const Color(0x002BDD66),
+                          brightness: material.Brightness.light,
                         ),
                       ),
-                      macOSBuilder: (context) => macos.MacosApp.router(
+                      dark: material.ThemeData(
+                        colorScheme: material.ColorScheme.fromSeed(
+                          seedColor: const Color(0x002BDD66),
+                          brightness: material.Brightness.dark,
+                        ),
+                      ),
+                      debugShowFloatingThemeButton: true,
+                      initial: AdaptiveThemeMode.system,
+                      builder: (theme, darkTheme) =>
+                          material.MaterialApp.router(
                         title: 'Plot',
-                        theme: (context.colour.brightness == Brightness.light
-                                ? macos.MacosThemeData.light()
-                                : macos.MacosThemeData.dark())
-                            .copyWith(primaryColor: context.colour.accent),
-                        debugShowCheckedModeBanner: false,
+                        theme: theme,
+                        darkTheme: darkTheme,
                         routerConfig: router.config(),
                       ),
+                    ),
+                    macOSBuilder: (context) => macos.MacosApp.router(
+                      title: 'Plot',
+                      theme: (context.colour.brightness == Brightness.light
+                              ? macos.MacosThemeData.light()
+                              : macos.MacosThemeData.dark())
+                          .copyWith(primaryColor: context.colour.accent),
+                      debugShowCheckedModeBanner: false,
+                      routerConfig: router.config(),
                     ),
                   ),
                 ),

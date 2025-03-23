@@ -50,7 +50,6 @@ class RootProviderState extends State<RootProvider> {
                   BlocProvider(create: (_) => PrioritiesBloc()),
                   BlocProvider(create: (_) => NowBloc()),
                   BlocProvider(create: (_) => ScheduleBloc()),
-                  BlocProvider(create: (_) => PriorityBloc()),
                 ],
                 child: widget.child,
               ),

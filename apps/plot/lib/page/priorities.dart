@@ -9,7 +9,7 @@ import 'package:plot/state/priority.dart';
 import 'package:plot/command/command.dart';
 
 @RoutePage()
-class PrioritiesPage extends StatelessWidget {
+class PrioritiesPage extends StatelessWidget implements AutoRouteWrapper {
   PrioritiesPage({
     Priority? priority,
     PriorityId? priorityId,
@@ -22,6 +22,12 @@ class PrioritiesPage extends StatelessWidget {
                 : null);
 
   final PriorityId? priorityId;
+
+  @override
+  Widget wrappedRoute(BuildContext context) {
+    return BlocProvider(
+        create: (_) => PriorityBloc(id: priorityId), child: this);
+  }
 
   @override
   Widget build(BuildContext context) {

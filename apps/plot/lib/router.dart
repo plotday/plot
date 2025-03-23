@@ -150,44 +150,23 @@ class AppRouter extends RootStackRouter {
         // ],
         // ),
       ];
-}
-
-class RouterBuilder extends StatefulWidget {
-  final Widget Function(BuildContext, AppRouter) builder;
-
-  const RouterBuilder({required this.builder, super.key});
 
   @override
-  RouterBuilderState createState() => RouterBuilderState();
-}
-
-class RouterBuilderState extends State<RouterBuilder> {
-  late AppRouter _router;
-  Uri? redirectTo;
-
-  @override
-  void initState() {
-    super.initState();
-    _router = AppRouter();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return BlocConsumer<UserBloc, UserState>(
-      listener: (context, state) {
-        _router.navigatorKey.currentState?.setState(() {});
-      },
-      builder: (context, state) {
-        if (state is UserSignedIn) {
-          return BlocListener<OnboardingBloc, OnboardingState>(
-            listener: (context, state) {
-              _router.navigatorKey.currentState?.setState(() {});
-            },
-            child: widget.builder(context, _router),
-          );
+  late final List<AutoRouteGuard> guards = [
+    AutoRouteGuard.simple(
+      (resolver, router) {
+        if (resolver.context.read<UserBloc>().state is! UserSignedIn) {
+          resolver.redirectUntil(SignInRoute());
+          return;
         }
-        return widget.builder(context, _router);
+
+        if (resolver.routeName == SignInRoute.name) {
+          resolver.redirectUntil(PrioritiesRoute());
+          return;
+        }
+
+        resolver.next();
       },
-    );
-  }
+    ),
+  ];
 }
