@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
-import 'package:flutter/services.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -56,37 +55,52 @@ part 'router.gr.dart';
 //   List<Object?> get props => [at, name];
 // }
 
-class OnEnter extends AutoRouteGuard {
-  const OnEnter(this.onEnter);
+// class OnEnter extends AutoRouteGuard {
+//   const OnEnter(this.onEnter);
+//
+//   final Future<void> Function(BuildContext context, RouteMatch<dynamic> route)
+//       onEnter;
+//
+//   @override
+//   void onNavigation(NavigationResolver resolver, StackRouter router) async {
+//     await onEnter(resolver.context, resolver.route);
+//     resolver.next(true);
+//   }
+// }
 
-  final Future<void> Function(BuildContext context, RouteMatch<dynamic> route)
-      onEnter;
+@RoutePage(name: 'AppShellRoute')
+class AppShell extends StatelessWidget {
+  const AppShell({super.key});
 
   @override
-  void onNavigation(NavigationResolver resolver, StackRouter router) async {
-    await onEnter(resolver.context, resolver.route);
-    resolver.next(true);
+  Widget build(BuildContext context) {
+    return GlobalMenu(
+      child: GlobalShortcuts(
+        child: AutoRouter(),
+      ),
+    );
   }
 }
 
-@AutoRouterConfig(generateForDir: ['lib/page'])
+@AutoRouterConfig(generateForDir: ['lib', 'lib/page'])
 class AppRouter extends RootStackRouter {
   // @override
   // RouteType get defaultRouteType => RouteType.material();
 
   @override
   List<AutoRoute> get routes => <AutoRoute>[
-        AutoRoute(page: SignInRoute.page, path: '/login'),
-        AutoRoute(page: OnboardingRoute.page, path: '/start'),
-        AutoRoute(page: NowRoute.page, path: '/'),
         AutoRoute(
-          page: PrioritiesRoute.page,
-          path: '/priorities/:priorityId',
-          // guards: [
-          //   OnEnter((context, route) async {
-          //     context.read<PriorityBloc>().setActivityId(activityId);
-          //   }),
-          // ],
+          page: AppShellRoute.page,
+          path: '/',
+          children: [
+            AutoRoute(page: SignInRoute.page, path: 'login'),
+            AutoRoute(page: OnboardingRoute.page, path: 'start'),
+            AutoRoute(page: NowRoute.page, path: ''),
+            AutoRoute(
+              page: PrioritiesRoute.page,
+              path: 'priorities/:priorityId',
+            ),
+          ],
         ),
         // children: [
         //   AutoRoute(

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:plot/state/root_provider.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:forui/forui.dart';
@@ -13,6 +13,8 @@ import 'widget/window.dart';
 import 'widget/widget.dart';
 import 'page/loading.dart';
 import 'command/settings.dart';
+import 'widget/global_menu.dart';
+import 'command/global.dart';
 
 class App extends StatefulWidget {
   const App({super.key});
