@@ -4,7 +4,6 @@ export 'event.dart';
 export 'loading.dart';
 export 'new_activity.dart';
 export 'new_priority.dart';
-export 'now.dart';
 export 'onboarding.dart';
 export 'priority.dart';
 export 'schedule.dart';

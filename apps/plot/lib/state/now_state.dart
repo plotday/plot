@@ -68,7 +68,7 @@ final class NowLoadedState extends NowState {
   List<Object?> get props => [session, scheduled, next, previous];
 
   Priority get priority =>
-      session?.activity ?? scheduled.firstOrNull?.priority ?? defaultPriority;
+      session?.priority ?? scheduled.firstOrNull?.priority ?? defaultPriority;
   Event get current =>
       scheduled.firstOrNull ??
       Event(

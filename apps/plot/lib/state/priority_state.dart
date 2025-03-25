@@ -27,24 +27,16 @@ final class PrioritySelectedState extends PriorityState {
         .toList();
   }
 
-  PrioritySelectedState({
+  const PrioritySelectedState({
     required this.current,
   })  : _activities = null,
-        _activity = null,
-        moreActivities = true,
-        _activityNotes = [],
-        moreActivityNotes = false;
+        moreActivities = true;
 
   const PrioritySelectedState._({
     required this.current,
     required List<Activity>? activities,
-    required List<Note> activityNotes,
     required this.moreActivities,
-    required this.moreActivityNotes,
-    required Activity? activity,
-  })  : _activities = activities,
-        _activity = activity,
-        _activityNotes = activityNotes;
+  }) : _activities = activities;
 
   final Priority current;
   final List<Activity>? _activities;
@@ -64,52 +56,15 @@ final class PrioritySelectedState extends PriorityState {
       _filterActivites(_activities ?? const [], draft: true).firstOrNull ??
       Activity.draft(priorityId: current.id);
 
-  final Activity? _activity;
-  Activity get activity => _activity ?? draftActivity;
-  final List<Note> _activityNotes;
-  List<Note> get activityNotes =>
-      _activityNotes.whereNot((note) => note.draft).toList();
-  final bool moreActivityNotes;
-  Note get draft => _activityNotes.reversed.where((note) => note.draft).first;
-
   PrioritySelectedState copyWith({
     Priority? current,
     List<Activity>? activities,
     bool? moreActivities,
-    Value<Activity?> activity = const Value.absent(),
-    List<Note>? activityNotes,
-    bool? moreActivityNotes,
   }) {
-    if (activity.or(_activity) == null) {
-      activityNotes ??= const [];
-    }
-    activityNotes ??= _activityNotes;
-    // If the updated activities include the current activity, update it.
-    if (activities != null && !activity.present && _activity != null) {
-      final currentActivity =
-          activities.firstWhereOrNull((a) => a.id == _activity.id);
-      if (currentActivity != null) {
-        activity = Value(currentActivity);
-      }
-    }
-    // If there is no draft note, create one.
-    if (activity.or(_activity) != null &&
-        !activityNotes.any((note) => note.draft)) {
-      activityNotes.add(
-        Note.draft(
-          activityId: activity.or(_activity)!.id,
-          parent: activityNotes.firstOrNull,
-        ),
-      );
-    }
-
     return PrioritySelectedState._(
-      activity: activity.or(_activity),
       activities: activities ?? _activities,
       current: current ?? this.current,
       moreActivities: moreActivities ?? this.moreActivities,
-      activityNotes: activityNotes,
-      moreActivityNotes: moreActivityNotes ?? this.moreActivityNotes,
     );
   }
 
@@ -118,8 +73,5 @@ final class PrioritySelectedState extends PriorityState {
         current,
         _activities,
         moreActivities,
-        _activity,
-        _activityNotes,
-        moreActivityNotes,
       ];
 }

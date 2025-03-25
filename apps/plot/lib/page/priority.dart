@@ -6,6 +6,7 @@ import 'package:plot/state/priorities.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/activity.dart';
 import 'package:plot/command/command.dart';
 
 @RoutePage(name: "PriorityRoute")
@@ -76,7 +77,6 @@ class PriorityPage extends StatelessWidget {
                   ),
                   _ReorderableActivitiesView(
                     activities: state.activeActivities,
-                    selected: state.activity.id,
                   ),
                   ListTile.header(
                     title: "Activity",
@@ -137,10 +137,9 @@ class _PrioritiesSection extends StatelessWidget {
 }
 
 class _ReorderableActivitiesView extends StatelessWidget {
-  const _ReorderableActivitiesView({required this.activities, this.selected});
+  const _ReorderableActivitiesView({required this.activities});
 
   final List<Activity> activities;
-  final ActivityId? selected;
 
   @override
   Widget build(BuildContext context) => ReorderableListView(
@@ -161,7 +160,7 @@ class _ReorderableActivitiesView extends StatelessWidget {
           if (nextIndex < activities.length) {
             next = activities[nextIndex];
           }
-          context.read<PriorityBloc>().updateActivity(activity.copyWith(
+          context.read<ActivityBloc>().updateActivity(activity.copyWith(
                 order: Order.between(previous?.order, next?.order),
                 // Action activities are sorted first by doAt, so we need to set this
                 // to have the same doAt as one of its neighbours.

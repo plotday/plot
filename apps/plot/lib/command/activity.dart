@@ -6,6 +6,7 @@ import 'package:posthog_flutter/posthog_flutter.dart';
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/state/activity.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/router.dart';
 
@@ -52,56 +53,6 @@ class ChangeCurrentActivity extends Command {
   }
 }
 
-// class PickActivity extends Commands {
-//   PickActivity(
-//     List<Activity> priorities, {
-//     super.prompt = 'Pick an activity',
-//   }) : super(groups: [
-//           StaticCommandGroup(
-//             title: 'Recent',
-//             commands: priorities
-//                 .map((activity) => ActivityCommand(activity))
-//                 .toList(),
-//           ),
-//         ]);
-//
-//   PickActivity.recent(
-//     BuildContext context, {
-//     super.prompt = 'Pick an activity',
-//   }) : super(groups: [
-//           StaticCommandGroup(
-//             title: 'Recent',
-//             commands: context
-//                 .read<PriorityBloc>()
-//                 .state
-//                 .activities
-//                 .map((activity) => ActivityCommand(activity))
-//                 .toList(),
-//           ),
-//         ]);
-// }
-
-// class ChangeActivity extends ShowCommand<Activity> {
-//   ChangeActivity()
-//       : super(
-//           title: 'Switch priorities',
-//           icon: PlotIcon.activity,
-//           shortcut: const SingleActivator(
-//             LogicalKeyboardKey.keyJ,
-//             meta: true,
-//           ),
-//           commands: (context) => PickActivity.recent(
-//             context,
-//             prompt: 'Switch priorities',
-//           ),
-//         );
-//
-//   @override
-//   void onSelect(BuildContext context, Activity value) async {
-//     ActivityRoute.byId(value.id).go(context);
-//   }
-// }
-
 class NewActivity extends Command {
   NewActivity()
       : super(
@@ -125,7 +76,7 @@ class StartActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.read<PriorityBloc>().updateActivity(
+    await context.read<ActivityBloc>().updateActivity(
           activity.copyWith(
             doAt: activity.doNow ? const Value(null) : Value(DateTime.now()),
           ),
@@ -148,7 +99,7 @@ class FinishActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.read<PriorityBloc>().updateActivity(
+    await context.read<ActivityBloc>().updateActivity(
           activity.copyWith(
             doneAt: Value(DateTime.now()),
           ),
@@ -171,7 +122,7 @@ class MarkActivityIncomplete extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.read<PriorityBloc>().updateActivity(
+    await context.read<ActivityBloc>().updateActivity(
           activity.copyWith(
             doneAt: const Value(null),
           ),
@@ -194,7 +145,7 @@ class PinActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.read<PriorityBloc>().updateActivity(
+    await context.read<ActivityBloc>().updateActivity(
           activity.copyWith(
             pinned: !activity.pinned,
           ),

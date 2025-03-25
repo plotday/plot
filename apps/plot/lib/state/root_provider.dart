@@ -6,7 +6,6 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/schedule.dart';
 import 'package:plot/state/accounts.dart';
 import 'package:plot/state/priorities.dart';
-import 'package:plot/state/priority.dart';
 import 'package:plot/state/onboarding.dart';
 import 'package:plot/page/loading.dart';
 
@@ -51,7 +50,14 @@ class RootProviderState extends State<RootProvider> {
                   BlocProvider(create: (_) => NowBloc()),
                   BlocProvider(create: (_) => ScheduleBloc()),
                 ],
-                child: widget.child,
+                child: BlocBuilder<NowBloc, NowState>(
+                  builder: (context, state) {
+                    if (state is NowLoadingState) {
+                      return const LoadingPage();
+                    }
+                    return widget.child;
+                  },
+                ),
               ),
           };
         },

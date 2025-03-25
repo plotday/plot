@@ -4,10 +4,70 @@ import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
-import 'package:plot/state/priority.dart';
+import 'package:plot/state/draft_activity.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/widget/note.dart';
 import 'package:plot/command/command.dart';
+
+@RoutePage(name: "NewActivityRoute")
+class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
+  NewActivityWrapper({
+    Priority? priority,
+    PriorityId? priorityId,
+    @QueryParam("priorityId") String? priorityIdString,
+    super.key,
+  }) : priorityId = priority?.id ??
+            priorityId ??
+            (priorityIdString != null
+                ? PriorityId.fromShortString(priorityIdString)
+                : null);
+
+  final PriorityId? priorityId;
+
+  @override
+  Widget wrappedRoute(BuildContext context) {
+    return BlocProvider(
+      create: (_) => DraftActivityBloc(
+          priorityId: context.read<NowBloc>().loadedState.priority.id),
+      child: this,
+    );
+  }
+}
+
+@RoutePage(name: "NewActivityMainRoute")
+class NewActivityPage extends StatelessWidget {
+  const NewActivityPage({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<DraftActivityBloc, DraftActivityState>(
+        builder: (context, state) {
+      if (state.loading) {
+        return const Spinner();
+      }
+
+      return Scaffold(
+        body: Column(
+          children: [
+            _ActivityToolbar(activity: state.draft),
+            Editor(
+              hint: 'Start an activity',
+              autofocus: true,
+              onSubmitted: (body) async {
+                final activity = state.draft.copyWith(body: body, draft: false);
+                await context.read<DraftActivityBloc>().updateDraft(activity);
+                if (!context.mounted) return;
+                await context.router.replace(ActivityRoute(activity: activity));
+              },
+            )
+          ],
+        ),
+      );
+    });
+  }
+}
 
 class _ActivityToolbar extends StatelessWidget {
   const _ActivityToolbar({
@@ -25,54 +85,4 @@ class _ActivityToolbar extends StatelessWidget {
           if (!activity.doNow) PinActivity(activity),
         ],
       );
-}
-
-@RoutePage()
-class NewActivityPage extends StatelessWidget {
-  const NewActivityPage({
-    super.key,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    print("NewActivityPage build");
-    return BlocBuilder<PriorityBloc, PriorityState>(builder: (context, state) {
-      // Added a null check and some safety conditions
-      if (state is! PrioritySelectedState) {
-        return const Spinner();
-      }
-
-      if (state.loading || state.activityLoading) {
-        return const Spinner();
-      }
-
-      return Scaffold(
-        body: Column(
-          children: [
-            _ActivityToolbar(activity: state.activity),
-            Expanded(child: NotesView(notes: state.activityNotes)),
-            Editor(
-              hint: state.activityNotes.isNotEmpty
-                  ? 'Start an activity'
-                  : 'Add a note',
-              autofocus: true,
-              onSubmitted: (body) async {
-                if (state.activity.draft) {
-                  final activity =
-                      state.activity.copyWith(body: body, draft: false);
-                  await context.read<PriorityBloc>().updateActivity(activity);
-                  if (!context.mounted) return;
-                  await context.router.push(ActivityRoute(activity: activity));
-                  return;
-                }
-                await context
-                    .read<PriorityBloc>()
-                    .updateNote(state.draft.copyWith(body: body, draft: false));
-              },
-            )
-          ],
-        ),
-      );
-    });
-  }
 }

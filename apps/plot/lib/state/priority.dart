@@ -18,8 +18,6 @@ class PriorityBloc extends Cubit<PriorityState> {
   void _reset() {
     _prioritySubscription?.cancel();
     _prioritySubscription = null;
-    _noteSubscription?.cancel();
-    _noteSubscription = null;
     _activitiesSubscription?.cancel();
     _activitiesSubscription = null;
   }
@@ -79,85 +77,21 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
-  void setActivityId(ActivityId? activityId) {
-    if (activityId == selectedState.activity.id) return;
-    if (activityId == null) {
-      setActivity(null);
-    } else {
-      Activity.get(activityId).then(setActivity);
-    }
-  }
-
-  /// Change the current activity.
-  ///
-  /// If [activity] is null, the current draft activity (or a new one) is set.
-  void setActivity(Activity? activity) {
-    if (state is NoPriorityState) return;
-    activity ??= selectedState.draftActivity;
-    if (activity.id == selectedState.activity.id) {
-      return;
-    }
-    emit(selectedState.copyWith(activity: Value(activity), activityNotes: []));
-    _loadActivityNotes();
-  }
-
-  Future<void> save(Priority activity) async {
-    await activity.save();
+  Future<void> save(Priority priority) async {
+    await priority.save();
   }
 
   void _loadActivites() {
     _activitiesSubscription?.cancel();
     _activitiesSubscription =
-        Activity.watchPriority(selectedState.current).listen((activities) {
+        Activity.watchPriority(selectedState.current.id).listen((activities) {
       emit(selectedState.copyWith(
         activities: activities,
         moreActivities: Activity.hasMorePriority(selectedState.current.path),
       ));
     });
-    _loadActivityNotes();
-  }
-
-  void _loadActivityNotes() {
-    _noteSubscription?.cancel();
-    final activityId = selectedState.activity.id;
-    if (activityId != null) {
-      _noteSubscription = Note.watchActivity(activityId).listen((notes) {
-        emit(selectedState.copyWith(
-          activityNotes: notes,
-          moreActivityNotes: Note.hasMoreActivity(activityId),
-        ));
-      });
-    }
-  }
-
-  Future<void> updateActivity(Activity activity) async {
-    try {
-      // TODO debounce save
-      activity.save();
-    } catch (e) {
-      print(e);
-      rethrow;
-    }
-  }
-
-  Future<void> updateNote(Note note) async {
-    final activityUpdate =
-        !note.draft && note.activityId == selectedState.activity.id
-            ? selectedState.activity.copyWith(order: Order.first())
-            : null;
-    try {
-      // TODO debounce save
-      await Future.wait([
-        note.save(),
-        if (activityUpdate != null) activityUpdate.save(),
-      ]);
-    } catch (e) {
-      print(e);
-      rethrow;
-    }
   }
 
   StreamSubscription<Priority>? _prioritySubscription;
-  StreamSubscription<List<Note>>? _noteSubscription;
   StreamSubscription<List<Activity>>? _activitiesSubscription;
 }

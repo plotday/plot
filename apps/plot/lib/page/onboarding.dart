@@ -6,7 +6,6 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/onboarding.dart';
 import 'package:plot/page/loading.dart';
-import 'package:plot/router.dart';
 import 'package:plot/command/command.dart';
 
 class GetStarted extends Command {
@@ -28,7 +27,7 @@ class GetStarted extends Command {
       return null;
     }
     context.read<OnboardingBloc>().complete();
-    await context.router.replace(NowRoute());
+    await context.router.replacePath('/');
     return null;
   }
 }

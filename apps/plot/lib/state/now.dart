@@ -30,6 +30,8 @@ class NowBloc extends Cubit<NowState> {
     });
   }
 
+  NowLoadedState get loadedState => super.state as NowLoadedState;
+
   late StreamSubscription<void> _subscription;
 
   @override
@@ -38,13 +40,12 @@ class NowBloc extends Cubit<NowState> {
     return super.close();
   }
 
-  void setPriority(Priority? activity) async {
-    final state = this.state as NowLoadedState;
-    if (state.session?.activity == activity) return;
-    await state.session?.copyWith(end: DateTime.now()).save();
+  void setPriority(Priority? priority) async {
+    if (loadedState.session?.priority == priority) return;
+    await loadedState.session?.copyWith(end: DateTime.now()).save();
     await Session.resume(
-      activity,
-      end: state.endFor(activity) ?? DateTime.now().addMinutes(3),
+      priority,
+      end: loadedState.endFor(priority) ?? DateTime.now().addMinutes(3),
     );
     // _sessionTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
     //   print("Adding 30 seconds to session");

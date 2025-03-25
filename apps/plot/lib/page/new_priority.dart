@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/state/priority.dart';
+import 'package:plot/state/priorities.dart';
 import 'package:plot/widget/widget.dart';
 
 @RoutePage()
@@ -11,7 +11,7 @@ class NewPriorityPage extends StatelessWidget {
   NewPriorityPage({
     Priority? priority,
     PriorityId? priorityId,
-    @PathParam("priorityId") String? priorityIdString,
+    @QueryParam("priorityId") String? priorityIdString,
     super.key,
   }) : priorityId = priority?.id ??
             priorityId ??
@@ -23,31 +23,32 @@ class NewPriorityPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<PriorityBloc, PriorityState>(
-      builder: (context, state) => Dialog(
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                onSubmitted: (name) async {
-                  final priority = Priority(
-                    name: name,
-                    parent:
-                        state is PrioritySelectedState ? state.current : null,
-                    order: Order.first(),
-                  );
-                  await priority.save();
-                  if (context.mounted) {
-                    Navigator.of(context).pop(priority);
-                  }
-                },
-                label: "Add an priority",
-                maxLines: 1,
-                autofocus: true,
-              ),
-            ],
-          ),
+    return Dialog(
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              onSubmitted: (name) async {
+                Priority? parent;
+                if (priorityId != null) {
+                  parent = await Priority.get(priorityId!);
+                }
+                final priority = Priority(
+                  name: name,
+                  parent: parent,
+                  order: Order.first(),
+                );
+                await priority.save();
+                if (context.mounted) {
+                  Navigator.of(context).pop(priority);
+                }
+              },
+              label: "Add an priority",
+              maxLines: 1,
+              autofocus: true,
+            ),
+          ],
         ),
       ),
     );

@@ -42,18 +42,23 @@ class ActivitiesBase extends BaseTable {
 }
 
 class PriorityActivitiesBase extends ActivitiesBase {
-  PriorityActivitiesBase(this.priorityPath)
-      : super(
+  PriorityActivitiesBase({
+    this.priorityId,
+    this.priorityPath,
+  }) : super(
           filterName: priorityPath?.toString(),
           limit: 40,
         );
 
+  final PriorityId? priorityId;
   final Path? priorityPath;
 
   @override
   PostgrestFilterBuilder<T> filter<T>(PostgrestFilterBuilder<T> query) {
-    if (priorityPath == null) return query;
-    return query.filter('priority_path', 'cs', priorityPath);
+    if (priorityPath != null) {
+      query = query.filter('priority_path', 'cs', priorityPath);
+    }
+    return query;
   }
 }
 
@@ -74,14 +79,18 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   static Future<void> push() => Store.get.push(table, ActivitiesBase());
   static Future<bool> pull() async =>
       Store.get.pull(PullType.updates, table, ActivitiesBase());
-  static Future<bool> pullPriority(Path? priorityPath,
+  static Future<bool> pullPriority(PriorityId priorityId,
           {bool more = false}) async =>
       Store.get.pull(more ? PullType.more : PullType.initial, table,
-          PriorityActivitiesBase(priorityPath));
+          PriorityActivitiesBase(priorityId: priorityId));
+  static Future<bool> pullPriorityPath(Path? priorityPath,
+          {bool more = false}) async =>
+      Store.get.pull(more ? PullType.more : PullType.initial, table,
+          PriorityActivitiesBase(priorityPath: priorityPath));
   static Future<bool> pullActive(DateTime until) async =>
       Store.get.pull(PullType.all, table, ActiveActivitiesBase(until));
   static bool hasMorePriority(Path? priorityPath) =>
-      Store.get.hasMore(PriorityActivitiesBase(priorityPath));
+      Store.get.hasMore(PriorityActivitiesBase(priorityPath: priorityPath));
 
   static Future<Activity> get(ActivityId id) async {
     return await (Store.get.select(table)
@@ -90,14 +99,46 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         .then(Activity.fromStore);
   }
 
-  static Stream<List<Activity>> watchPriority(Priority priority,
-      {bool? deleted = false}) {
-    pullPriority(priority.path);
+  static Future<Activity?> getDraft({PriorityId? priorityId}) async {
+    if (priorityId != null) {
+      pullPriority(priorityId);
+    }
+    final query = Store.get.select(table)..where((t) => t.draft.equals(true));
+    if (priorityId != null) {
+      query.where((t) => t.priorityId.equals(priorityId.toBytes()));
+    }
+    query.orderBy([(t) => OrderingTerm.desc(t.createdAt)]);
+    query.limit(1);
+    final row = await query.getSingleOrNull();
+    if (row == null) return null;
+    return Activity.fromStore(row);
+  }
+
+  static Stream<Activity> watchOne(ActivityId id) {
     final query = Store.get.select(table);
-    query.where((t) => t.priorityId.equals(priority.id.toBytes()));
+    query.where((t) => t.id.equals(id.toBytes()));
+    return query.watchSingle().map(Activity.fromStore);
+  }
+
+  static Stream<List<Activity>> watchPriority(
+    PriorityId priorityId, {
+    Path? priorityPath,
+    bool? deleted = false,
+    bool? draft,
+  }) {
+    if (priorityPath != null) {
+      pullPriorityPath(priorityPath);
+    } else {
+      pullPriority(priorityId);
+    }
+    final query = Store.get.select(table);
+    query.where((t) => t.priorityId.equals(priorityId.toBytes()));
     if (deleted != null) {
       query.where(
           (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
+    }
+    if (draft != null) {
+      query.where((t) => t.draft.equals(draft));
     }
 
     query.orderBy([

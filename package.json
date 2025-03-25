@@ -2,7 +2,7 @@
   "name": "@plotday/plot",
   "private": true,
   "license": "UNLICENSED",
-  "packageManager": "pnpm@9.10.0",
+  "packageManager": "pnpm@10.6.5",
   "scripts": {
     "install": "[ \"$SKIP_PYTHON\" = \"1\" ] || npip install",
     "build": "nx run-many -t build --exclude @plotday/plot",
@@ -35,19 +35,19 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241230.0",
+    "@nx/vite": "20.3.0",
     "@plotday/eslint-config-custom": "workspace:*",
     "@sentry/cli": "^2.19.4",
     "@trivago/prettier-plugin-sort-imports": "^4.1.1",
     "eslint": "^8.38.0",
     "husky": "^8.0.0",
     "nopy": "^0.2.9",
+    "nx": "20.3.0",
     "prettier": "^2.5.1",
     "react-email": "^1.9.4",
     "typescript": "^5.1.6",
     "vitest": "^0.33.0",
-    "wrangler": "^3.99.0",
-    "nx": "20.3.0",
-    "@nx/vite": "20.3.0"
+    "wrangler": "^3.99.0"
   },
   "python": {
     "dependencies": {

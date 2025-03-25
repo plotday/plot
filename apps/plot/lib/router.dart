@@ -93,21 +93,45 @@ class AppRouter extends RootStackRouter {
           page: AppShellRoute.page,
           path: '/',
           children: [
+            AutoRoute(page: EmptyShellRoute("Now"), path: '', guards: [
+              AutoRouteGuardCallback(
+                (resolver, router) async {
+                  final priorityId =
+                      resolver.context.read<NowBloc>().loadedState.priority.id;
+                  resolver.redirectUntil(PriorityRoute(priorityId: priorityId));
+                },
+              )
+            ]),
             AutoRoute(page: SignInRoute.page, path: 'login'),
             AutoRoute(page: OnboardingRoute.page, path: 'start'),
-            AutoRoute(page: NowRoute.page, path: ''),
+            AutoRoute(
+              page: NewActivityRoute.page,
+              path: 'new',
+              children: [
+                AutoRoute(
+                  page: NewActivityMainRoute.page,
+                  path: '',
+                ),
+              ],
+            ),
+            AutoRoute(page: NewPriorityRoute.page, path: 'priority/new'),
             AutoRoute(
               page: PriorityRoute.page,
-              path: 'priorities/:priorityId',
+              path: ':priorityId',
               children: [
                 AutoRoute(
                   page: PriorityMainRoute.page,
                   path: '',
                 ),
                 AutoRoute(
-                  page: NewActivityRoute.page,
-                  path: 'new',
-                  fullscreenDialog: true,
+                  page: ActivityRoute.page,
+                  path: ':activityId',
+                  children: [
+                    AutoRoute(
+                      page: ActivityMainRoute.page,
+                      path: '',
+                    ),
+                  ],
                 ),
               ],
             ),
