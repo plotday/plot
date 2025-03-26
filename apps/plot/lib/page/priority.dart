@@ -6,7 +6,6 @@ import 'package:plot/state/priorities.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/state/activity.dart';
 import 'package:plot/command/command.dart';
 
 @RoutePage(name: "PriorityRoute")
@@ -180,14 +179,14 @@ class _ReorderableActivitiesView extends StatelessWidget {
           if (nextIndex < activities.length) {
             next = activities[nextIndex];
           }
-          context.read<ActivityBloc>().updateActivity(activity.copyWith(
-                order: Order.between(previous?.order, next?.order),
-                // Action activities are sorted first by doAt, so we need to set this
-                // to have the same doAt as one of its neighbours.
-                doAt: activity.doNow
-                    ? Value(previous?.doAt ?? next?.doAt ?? activity.doAt)
-                    : const Value.absent(),
-              ));
+          activity.copyWith(
+            order: Order.between(previous?.order, next?.order),
+            // Action activities are sorted first by doAt, so we need to set this
+            // to have the same doAt as one of its neighbours.
+            doAt: activity.doNow
+                ? Value(previous?.doAt ?? next?.doAt ?? activity.doAt)
+                : const Value.absent(),
+          );
         },
       );
 }
