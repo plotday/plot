@@ -22,8 +22,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activitiesSubscription = null;
   }
 
-  void dispose() {
+  @override
+  Future<void> close() {
     _reset();
+    return super.close();
   }
 
   PrioritySelectedState get selectedState => state as PrioritySelectedState;

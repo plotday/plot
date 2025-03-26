@@ -178,6 +178,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
   factory Activity.draft({
     required PriorityId priorityId,
+    bool pinned = false,
+    DateTime? doAt,
   }) {
     final id = Uuid.generate();
     final now = DateTime.now();
@@ -188,11 +190,12 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       createdAt: now,
       updatedAt: now,
       draft: true,
+      doAt: doAt,
       body: "",
       order: Order.first(),
       orderedAt: now,
       private: true,
-      pinned: false,
+      pinned: pinned,
     ));
   }
 
@@ -213,6 +216,16 @@ class Activity extends ActivityRow implements Comparable<Activity> {
           private: row.private,
           userId: row.userId,
         );
+
+  Activity merge(Activity other) {
+    return copyWith(
+      body: body.isEmpty ? other.body : body,
+      doAt: Value(doAt ?? other.doAt),
+      doneAt: Value(doneAt ?? other.doneAt),
+      pinned: pinned || other.pinned,
+      private: private || other.private,
+    );
+  }
 
   @override
   Activity copyWith({
@@ -240,13 +253,14 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       pinned = false;
     } else if (pinned == true) {
       doAt = const Value(null);
+      doneAt = const Value(null);
       order ??= Order.last();
     }
     if ((((doneAt.present && doneAt.value != null) ||
                 (doAt.present && doAt.value == null)) &&
             !(pinned ?? this.pinned)) ||
         pinned == false) {
-      order ??= Order.first();
+      order ??= (pinned ?? this.pinned) ? Order.last() : Order.first();
     }
     if (publish) {
       order ??= Order.first();

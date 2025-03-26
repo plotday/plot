@@ -68,13 +68,33 @@ class PriorityPage extends StatelessWidget {
                     ],
                   ),
                   _PrioritiesSection(),
-                  ListTile.header(
-                    title: "Now",
-                    commands: [
-                      // TODO mark started
-                      NewActivity(),
-                    ],
+                  if (state.pinnedActivities.isNotEmpty)
+                    ListTile.header(
+                      title: "Pinned",
+                      commands: [
+                        NewActivity(
+                          draft: Activity.draft(
+                            priorityId: state.current.id,
+                            pinned: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  _ReorderableActivitiesView(
+                    activities: state.pinnedActivities,
                   ),
+                  if (state.activeActivities.isNotEmpty)
+                    ListTile.header(
+                      title: "Now",
+                      commands: [
+                        NewActivity(
+                          draft: Activity.draft(
+                            priorityId: state.current.id,
+                            doAt: DateTime.now(),
+                          ),
+                        ),
+                      ],
+                    ),
                   _ReorderableActivitiesView(
                     activities: state.activeActivities,
                   ),

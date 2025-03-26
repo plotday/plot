@@ -1,13 +1,10 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/state/activity.dart';
-import 'package:plot/state/priority.dart';
 import 'package:plot/router.dart';
 
 class ActivityCommand extends ValueCommand<Activity> {
@@ -54,15 +51,17 @@ class ChangeCurrentActivity extends Command {
 }
 
 class NewActivity extends Command {
-  NewActivity()
+  NewActivity({this.draft})
       : super(
           title: 'New Activity',
           icon: PlotIcon.add,
         );
 
+  final Activity? draft;
+
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.router.push<void>(NewActivityRoute());
+    await context.router.push<void>(NewActivityRoute(draft: draft));
     return null;
   }
 }
@@ -76,11 +75,11 @@ class StartActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.read<ActivityBloc>().updateActivity(
-          activity.copyWith(
-            doAt: activity.doNow ? const Value(null) : Value(DateTime.now()),
-          ),
-        );
+    await activity
+        .copyWith(
+          doAt: activity.doNow ? const Value(null) : Value(DateTime.now()),
+        )
+        .save();
     Posthog().capture(
       eventName: 'Activity Started',
     );
@@ -99,11 +98,11 @@ class FinishActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.read<ActivityBloc>().updateActivity(
-          activity.copyWith(
-            doneAt: Value(DateTime.now()),
-          ),
-        );
+    await activity
+        .copyWith(
+          doneAt: Value(DateTime.now()),
+        )
+        .save();
     Posthog().capture(
       eventName: 'Activity Finished',
     );
@@ -122,11 +121,11 @@ class MarkActivityIncomplete extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.read<ActivityBloc>().updateActivity(
-          activity.copyWith(
-            doneAt: const Value(null),
-          ),
-        );
+    await activity
+        .copyWith(
+          doneAt: const Value(null),
+        )
+        .save();
     Posthog().capture(
       eventName: 'Activity Marked Not Finished',
     );
@@ -145,11 +144,11 @@ class PinActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.read<ActivityBloc>().updateActivity(
-          activity.copyWith(
-            pinned: !activity.pinned,
-          ),
-        );
+    await activity
+        .copyWith(
+          pinned: !activity.pinned,
+        )
+        .save();
     Posthog().capture(
       eventName: activity.pinned ? 'Activity Un-pinned' : 'Activity Pinned',
     );
@@ -160,7 +159,8 @@ class PinActivity extends Command {
 }
 
 List<Command> activityCommands(Activity activity) => [
-      if (!activity.doNow && !activity.done) StartActivity(activity),
+      if (!activity.doNow && !activity.done && !activity.pinned)
+        StartActivity(activity),
       if (activity.doNow) FinishActivity(activity),
       if (activity.done) MarkActivityIncomplete(activity),
       if (!activity.doNow) PinActivity(activity),

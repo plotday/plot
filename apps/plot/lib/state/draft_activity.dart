@@ -8,18 +8,21 @@ import 'package:plot/store/store.dart';
 part 'draft_activity_state.dart';
 
 class DraftActivityBloc extends Cubit<DraftActivityState> {
-  DraftActivityBloc({required PriorityId priorityId})
-      : super(DraftActivityState()) {
-    Activity.getDraft(priorityId: priorityId).then((draft) {
-      if (draft != null) {
-        emit(state.copyWith(
-          draft: draft,
-        ));
-      } else {
-        emit(state.copyWith(
-          draft: Activity.draft(priorityId: priorityId),
-        ));
+  DraftActivityBloc({
+    required PriorityId priorityId,
+    Activity? draft,
+  }) : super(DraftActivityState()) {
+    Activity.getDraft(priorityId: priorityId).then((previousDraft) {
+      if (previousDraft != null) {
+        if (draft != null) {
+          draft = previousDraft.merge(draft!);
+        } else {
+          draft = previousDraft;
+        }
       }
+      emit(state.copyWith(
+        draft: draft ?? Activity.draft(priorityId: priorityId),
+      ));
     });
   }
 

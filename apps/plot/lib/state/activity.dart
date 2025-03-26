@@ -17,8 +17,10 @@ class ActivityBloc extends Cubit<ActivityState> {
     _noteSubscription = null;
   }
 
-  void dispose() {
+  @override
+  Future<void> close() {
     _reset();
+    return super.close();
   }
 
   ActivitySelectedState get selectedState => state as ActivitySelectedState;
@@ -115,3 +117,4 @@ class ActivityBloc extends Cubit<ActivityState> {
   StreamSubscription<Activity>? _activitySubscription;
   StreamSubscription<List<Note>>? _noteSubscription;
 }
+

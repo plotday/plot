@@ -12,6 +12,7 @@ import 'package:plot/command/command.dart';
 @RoutePage(name: "NewActivityRoute")
 class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
   NewActivityWrapper({
+    this.draft,
     Priority? priority,
     PriorityId? priorityId,
     @QueryParam("priorityId") String? priorityIdString,
@@ -22,13 +23,16 @@ class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
                 ? PriorityId.fromShortString(priorityIdString)
                 : null);
 
+  final Activity? draft;
   final PriorityId? priorityId;
 
   @override
   Widget wrappedRoute(BuildContext context) {
     return BlocProvider(
       create: (_) => DraftActivityBloc(
-          priorityId: context.read<NowBloc>().loadedState.priority.id),
+        priorityId: context.read<NowBloc>().loadedState.priority.id,
+        draft: draft,
+      ),
       child: this,
     );
   }

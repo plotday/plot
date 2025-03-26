@@ -24,9 +24,11 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
     });
   }
 
-  void dispose() {
+  @override
+  Future<void> close() {
     _prioritySubscription.cancel();
     _balanceSubscription?.cancel();
+    return super.close();
   }
 
   Future<void> save(Priority priority) async {
