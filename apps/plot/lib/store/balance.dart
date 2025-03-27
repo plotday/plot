@@ -78,7 +78,8 @@ class Balance extends BalanceRow {
   static Stream<BalanceByDatePriorityType> watchDaily(DateRange range) {
     pullRange(range);
 
-    return Date.current().switchMap((today) {
+    return Rx.switchLatest(Rx.combineLatest2(
+        Date.current(), Priority.watchAll(), (today, priorities) {
       final query = Store.get.select(table)
         ..where((t) => t.count.isBiggerThanValue(0))
         ..where((t) => t.day.isBiggerOrEqualValue(range.start.toString()))
@@ -103,7 +104,16 @@ class Balance extends BalanceRow {
           result[day]!.putIfAbsent(priorityId, () => {});
           result[day]![priorityId]![type] = balanceStat;
         }
-        return result;
+
+        // For each day, aggregate the stats up the priority hierarchy
+        final aggregatedBalanceMap =
+            Map<Date, BalanceByPriorityType>.from(result);
+        for (final date in aggregatedBalanceMap.keys) {
+          final dayStats = aggregatedBalanceMap[date]!;
+          aggregatedBalanceMap[date] =
+              _aggregateChildBalances(dayStats, priorities, null);
+        }
+        return aggregatedBalanceMap;
       });
 
       final eventStats = !range.includes(today)
@@ -203,16 +213,15 @@ class Balance extends BalanceRow {
 
       return Rx.combineLatest2(
           balanceStats,
-          Rx.combineLatest4(
-            Priority.watchAll(),
+          Rx.combineLatest3(
             eventStats,
             activityStats,
             sessionStats,
-            (activities, events, notes, sessions) {
+            (events, notes, sessions) {
               return combineNestedMaps([
-                _aggregateChildBalances(events, activities, null),
-                _aggregateChildBalances(notes, activities, null),
-                _aggregateChildBalances(sessions, activities, null),
+                _aggregateChildBalances(events, priorities, null),
+                _aggregateChildBalances(notes, priorities, null),
+                _aggregateChildBalances(sessions, priorities, null),
               ]);
             },
           ), (
@@ -222,7 +231,7 @@ class Balance extends BalanceRow {
         balanceMap[today] = todayMap;
         return balanceMap;
       });
-    });
+    }));
   }
 
   static Stream<BalanceByPriorityType> watch(DateRange range) {
@@ -272,11 +281,22 @@ class Balance extends BalanceRow {
 }
 
 class BalanceStats {
-  const BalanceStats(
-      {this.pastCount = 0,
-      this.pastTime = Duration.zero,
-      this.futureCount = 0,
-      this.futureTime = Duration.zero});
+  const BalanceStats({
+    this.pastCount = 0,
+    this.pastTime = Duration.zero,
+    this.futureCount = 0,
+    this.futureTime = Duration.zero,
+  });
+
+  BalanceStats.aggregate(List<BalanceStats> stats)
+      : this(
+          pastCount: stats.fold<int>(0, (a, b) => a + b.pastCount),
+          pastTime:
+              stats.fold<Duration>(Duration.zero, (a, b) => a + b.pastTime),
+          futureCount: stats.fold<int>(0, (a, b) => a + b.futureCount),
+          futureTime:
+              stats.fold<Duration>(Duration.zero, (a, b) => a + b.futureTime),
+        );
 
   final int pastCount;
   final Duration pastTime;

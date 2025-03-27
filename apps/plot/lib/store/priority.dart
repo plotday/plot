@@ -89,7 +89,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     });
   }
 
-  static Stream<Priority> watchOne(PriorityId id, {int depth = 0}) {
+  static Stream<Priority> watchOne(PriorityId id, {int? depth = 0}) {
     final query = Store.get.select(table);
     query.where((t) => t.id.equals(id.toBytes()));
     return query.watchSingle().asyncExpand((row) {
@@ -241,5 +241,26 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   @override
   int compareTo(Priority other) {
     return order.compareTo(other.order);
+  }
+
+  T fold<T>(
+    T initialValue,
+    T Function(T previousValue, Priority priority, int depth) combine,
+  ) {
+    // Define a recursive function that applies the fold operation to this priority and its children
+    T foldRecursively(Priority priority, T acc, int depth) {
+      // Apply the combine function to the current priority
+      acc = combine(acc, priority, depth);
+
+      // Apply the fold function recursively to each child, incrementing the depth
+      for (var child in priority.children) {
+        acc = foldRecursively(child, acc, depth + 1);
+      }
+
+      return acc;
+    }
+
+    // Start the recursive fold process with the initial value and starting from depth 0
+    return foldRecursively(this, initialValue, 0);
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -9,10 +10,9 @@ import 'package:plot/store/store.dart';
 part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
-  PriorityBloc({PriorityId? id}) : super(const NoPriorityState()) {
-    if (id != null) {
-      setCurrentId(id);
-    }
+  PriorityBloc({required Priority priority})
+      : super(PriorityState(current: priority)) {
+    _loadPriority(priority);
   }
 
   void _reset() {
@@ -28,72 +28,46 @@ class PriorityBloc extends Cubit<PriorityState> {
     return super.close();
   }
 
-  PrioritySelectedState get selectedState => state as PrioritySelectedState;
+  PriorityId get currentId => state.current.id;
 
-  PriorityId? get currentId {
-    return switch (state) {
-      PrioritySelectedState state => state.current.id,
-      NoPriorityState _ => null,
-    };
-  }
-
-  void setCurrent(Priority? current) {
-    if (switch (state) {
-      PrioritySelectedState state => state.current.id == current?.id,
-      NoPriorityState _ => current == null,
-    }) {
-      return;
-    }
-
+  void _loadPriority(Priority priority) {
     _reset();
 
-    if (current == null) {
-      emit(const NoPriorityState());
-      return;
-    }
-
-    emit(PrioritySelectedState(
-      current: current,
-    ));
     _prioritySubscription = Priority.watchOne(
-      current.id,
+      priority.id,
     ).listen((priority) {
-      emit(selectedState.copyWith(current: priority));
+      emit(state.copyWith(current: priority));
     });
-    _loadActivites();
+
+    _loadActivities();
+    _loadBalances();
   }
 
-  Future<void> setCurrentId(PriorityId? id) async {
-    if (switch (state) {
-      PrioritySelectedState state => state.current.id == id,
-      NoPriorityState _ => id == null,
-    }) {
-      return;
-    }
-    _reset();
-    if (id == null) {
-      setCurrent(null);
-    } else {
-      final priority = await Priority.get(id);
-      setCurrent(priority);
-    }
+  void _loadBalances() async {
+    _balanceSubscription?.cancel();
+    _balanceSubscription = Balance.watch(Week.current()).listen(
+      (balances) {
+        emit(state.copyWith(balances: Value(balances)));
+      },
+    );
   }
 
   Future<void> save(Priority priority) async {
     await priority.save();
   }
 
-  void _loadActivites() {
+  void _loadActivities() {
     _activitiesSubscription?.cancel();
     _activitiesSubscription =
-        Activity.watchPriority(selectedState.current.id).listen((activities) {
-      emit(selectedState.copyWith(
+        Activity.watchPriority(state.current.id).listen((activities) {
+      emit(state.copyWith(
         activities: activities,
-        moreActivities: Activity.hasMorePriority(selectedState.current.path),
+        moreActivities: Activity.hasMorePriority(state.current.path),
       ));
     });
   }
 
   StreamSubscription<Priority>? _prioritySubscription;
   StreamSubscription<List<Activity>>? _activitiesSubscription;
+  StreamSubscription<BalanceByPriorityType>? _balanceSubscription;
 }

@@ -7,6 +7,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/command/command.dart';
+import 'loading.dart';
 
 @RoutePage(name: "PriorityRoute")
 class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
@@ -15,18 +16,34 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
     PriorityId? priorityId,
     @PathParam("priorityId") String? priorityIdString,
     super.key,
-  }) : priorityId = priority?.id ??
-            priorityId ??
-            (priorityIdString != null
-                ? PriorityId.fromShortString(priorityIdString)
-                : null);
+  }) {
+    priorityId = priority?.id ??
+        priorityId ??
+        (priorityIdString != null
+            ? PriorityId.fromShortString(priorityIdString)
+            : null);
+    assert(priorityId != null,
+        'A priority must be provided via one of the parameters: priority, priorityId, or priorityIdString.');
+    this.priorityId = priorityId!;
+  }
 
-  final PriorityId? priorityId;
+  late final PriorityId priorityId;
 
   @override
   Widget wrappedRoute(BuildContext context) {
-    return BlocProvider(
-        create: (_) => PriorityBloc(id: priorityId), child: this);
+    return FutureBuilder<Priority?>(
+      future: Priority.get(priorityId),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const LoadingPage();
+        }
+
+        return BlocProvider(
+          create: (_) => PriorityBloc(priority: snapshot.data!),
+          child: this,
+        );
+      },
+    );
   }
 }
 
@@ -38,13 +55,11 @@ class PriorityPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<PriorityBloc, PriorityState>(
-        builder: (context, generalState) {
-      if (generalState.loading) {
-        return _PrioritiesSection();
+    return BlocBuilder<PriorityBloc, PriorityState>(builder: (context, state) {
+      if (state.loading) {
+        return LoadingPage();
       }
-      final state = generalState as PrioritySelectedState;
-      return BlocBuilder<PrioritiesBloc, PrioritiesState>(
+      return BlocBuilder<PriorityBloc, PriorityState>(
         builder: (context, prioritiesState) {
           return Scaffold(
             body: BidirectionalList(
@@ -59,12 +74,6 @@ class PriorityPage extends StatelessWidget {
                     priority: state.current,
                     balances: prioritiesState.balances?[state.current.id],
                     maxTime: prioritiesState.maxTime,
-                  ),
-                  ListTile.header(
-                    title: "Priorities",
-                    commands: [
-                      NewPriority(),
-                    ],
                   ),
                   _PrioritiesSection(),
                   if (state.pinnedActivities.isNotEmpty)
@@ -118,12 +127,18 @@ class _PrioritiesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<PrioritiesBloc, PrioritiesState>(
+    return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
         return Column(
           children: [
+            ListTile.header(
+              title: "Priorities",
+              commands: [
+                NewPriority(),
+              ],
+            ),
             ReorderableListView(
-              list: state.filtered,
+              list: state.current.children,
               itemBuilder: (context, item) => PriorityTile(
                 priority: item,
                 balances: state.balances?[item.id],
@@ -135,13 +150,13 @@ class _PrioritiesSection extends StatelessWidget {
                 var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
                 Priority? previous;
                 if (previousIndex >= 0) {
-                  previous = state.filtered[previousIndex];
+                  previous = state.current.children[previousIndex];
                 }
                 Priority? next;
-                if (nextIndex < state.filtered.length) {
-                  next = state.filtered[nextIndex];
+                if (nextIndex < state.current.children.length) {
+                  next = state.current.children[nextIndex];
                 }
-                state.filtered[oldIndex]
+                state.current.children[oldIndex]
                     .copyWith(
                       order: Order.between(previous?.order, next?.order),
                     )
