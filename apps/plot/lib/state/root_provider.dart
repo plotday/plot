@@ -5,7 +5,6 @@ import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/schedule.dart';
 import 'package:plot/state/accounts.dart';
-import 'package:plot/state/priorities.dart';
 import 'package:plot/state/onboarding.dart';
 import 'package:plot/page/loading.dart';
 
@@ -46,7 +45,6 @@ class RootProviderState extends State<RootProvider> {
                 providers: [
                   BlocProvider(create: (_) => OnboardingBloc()),
                   BlocProvider(create: (_) => AccountsBloc()),
-                  BlocProvider(create: (_) => PrioritiesBloc()),
                   BlocProvider(create: (_) => NowBloc()),
                   BlocProvider(create: (_) => ScheduleBloc()),
                 ],
