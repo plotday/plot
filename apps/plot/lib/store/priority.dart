@@ -45,6 +45,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .then(Priority.fromStore);
   }
 
+  static Future<List<Priority>> getAll() async {
+    return await (Store.get.select(table)..where((t) => t.deletedAt.isNull()))
+        .get()
+        .then((rows) => rows.map((row) => Priority.fromStore(row)).toList());
+  }
+
   static SimpleSelectStatement<$PrioritiesTable, PriorityRow> _selectDefault() {
     return Store.get.select(table)
       ..where((t) => t.deletedAt.isNull())

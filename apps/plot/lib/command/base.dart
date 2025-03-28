@@ -36,6 +36,27 @@ abstract class Command {
   Future<CommandReturn?> run(BuildContext context);
 }
 
+class CommandWrapper extends Command {
+  final Command command;
+  final Future<CommandReturn?> Function(BuildContext context) _run;
+
+  CommandWrapper(
+    this.command, {
+    required Future<CommandReturn?> Function(BuildContext context) run,
+  })  : _run = run,
+        super(
+          title: command.title,
+          description: command.description,
+          icon: command.icon,
+          shortcut: command.shortcut,
+        );
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) {
+    return _run(context);
+  }
+}
+
 /// A command for returning a value
 class ValueCommand<T> extends Command {
   ValueCommand({

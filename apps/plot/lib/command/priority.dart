@@ -20,6 +20,24 @@ class PriorityCommand extends ValueCommand<Priority?> {
         );
 }
 
+class PriorityCommandGroup extends CommandGroup {
+  PriorityCommandGroup()
+      : super(
+          title: 'Priorities',
+        );
+
+  @override
+  Future<List<Command>> list({String? search}) async {
+    final all = await Priority.getAll();
+    return all
+        .where((priority) =>
+            search == null ||
+            priority.name.toLowerCase().contains(search.toLowerCase()))
+        .map((priority) => PriorityCommand(priority))
+        .toList();
+  }
+}
+
 class PickPriority extends Commands<Priority> {
   PickPriority(
     List<Priority> priorities, {
@@ -36,17 +54,7 @@ class PickPriority extends Commands<Priority> {
   PickPriority.recent(
     BuildContext context, {
     super.prompt = 'Pick a priority',
-  }) : super(groups: [
-          StaticCommandGroup(
-            title: 'Recent',
-            commands: context
-                .read<PrioritiesBloc>()
-                .state
-                .recent
-                .map((priority) => PriorityCommand(priority))
-                .toList(),
-          ),
-        ]);
+  }) : super(groups: [PriorityCommandGroup()]);
 }
 
 class ChangeCurrentPriority extends Command {
@@ -89,6 +97,7 @@ class PickCurrentActivity extends ShowCommand<Priority> {
 
   @override
   void onSelect(BuildContext context, Priority value) async {
+    print("Go priority ${value.name}");
     ChangeCurrentPriority(value).run(context);
   }
 }
