@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/state/priorities.dart';
 import 'package:plot/widget/widget.dart';
 
 @RoutePage()

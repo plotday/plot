@@ -20,6 +20,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     _prioritySubscription = null;
     _activitiesSubscription?.cancel();
     _activitiesSubscription = null;
+    _balanceSubscription?.cancel();
+    _balanceSubscription = null;
   }
 
   @override

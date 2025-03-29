@@ -38,14 +38,11 @@ class ChangeCurrentActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.router.replaceAll([
-      PriorityRoute(
-        priorityId: priorityId,
-      ),
+    await context.router.push(
       ActivityRoute(
         activityId: activityId,
       ),
-    ]);
+    );
     return null;
   }
 }

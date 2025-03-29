@@ -6,7 +6,6 @@ import 'package:auto_route/auto_route.dart';
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/router.dart';
 
