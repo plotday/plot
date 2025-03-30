@@ -63,9 +63,23 @@ class NewActivity extends Command {
   }
 }
 
-class StartActivity extends Command {
-  StartActivity(this.activity)
-      : super(
+abstract class _UpdateActivityCommand extends Command {
+  _UpdateActivityCommand(
+    this.activity, {
+    Future<void> Function(Activity)? onUpdate,
+    required super.title,
+    super.icon,
+  }) : onUpdate = onUpdate ?? ((activity) => activity.save());
+
+  final Activity activity;
+  final Future<void> Function(Activity) onUpdate;
+}
+
+class StartActivity extends _UpdateActivityCommand {
+  StartActivity(
+    super.activity, {
+    super.onUpdate,
+  }) : super(
           title: 'Do Now',
           icon: PlotIcon.doNow,
         );
@@ -73,87 +87,77 @@ class StartActivity extends Command {
   @override
   Future<CommandReturn?> run(BuildContext context) async {
     final start = !activity.doNow;
-    await activity
-        .copyWith(
-          doAt: start ? Value(DateTime.now()) : const Value(null),
-        )
-        .save();
+    await onUpdate(activity.copyWith(
+      doAt: start ? Value(DateTime.now()) : const Value(null),
+    ));
     Posthog().capture(
       eventName: start ? 'Activity Started' : 'Activity Stopped',
     );
     return null;
   }
-
-  final Activity activity;
 }
 
-class FinishActivity extends Command {
-  FinishActivity(this.activity)
-      : super(
+class FinishActivity extends _UpdateActivityCommand {
+  FinishActivity(
+    super.activity, {
+    super.onUpdate,
+  }) : super(
           title: 'Finish Activity',
           icon: PlotIcon.done,
         );
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await activity
-        .copyWith(
-          doneAt: Value(DateTime.now()),
-        )
-        .save();
+    await onUpdate(activity.copyWith(
+      doneAt: Value(DateTime.now()),
+    ));
     Posthog().capture(
       eventName: 'Activity Finished',
     );
     return null;
   }
-
-  final Activity activity;
 }
 
-class MarkActivityIncomplete extends Command {
-  MarkActivityIncomplete(this.activity)
-      : super(
+class MarkActivityIncomplete extends _UpdateActivityCommand {
+  MarkActivityIncomplete(
+    super.activity, {
+    super.onUpdate,
+  }) : super(
           title: 'Mark Activity Not Finished',
           icon: PlotIcon.done,
         );
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await activity
-        .copyWith(
-          doneAt: const Value(null),
-        )
-        .save();
+    await onUpdate(activity.copyWith(
+      doneAt: const Value(null),
+    ));
     Posthog().capture(
       eventName: 'Activity Marked Not Finished',
     );
     return null;
   }
-
-  final Activity activity;
 }
 
-class PinActivity extends Command {
-  PinActivity(this.activity)
-      : super(
+class PinActivity extends _UpdateActivityCommand {
+  PinActivity(
+    super.activity, {
+    super.onUpdate,
+  }) : super(
           title: activity.pinned ? 'Unpin' : 'Pin',
           icon: PlotIcon.pinned,
         );
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await activity
-        .copyWith(
-          pinned: !activity.pinned,
-        )
-        .save();
+    await onUpdate(activity.copyWith(
+      pinned: !activity.pinned,
+    ));
     Posthog().capture(
       eventName: activity.pinned ? 'Activity Un-pinned' : 'Activity Pinned',
     );
     return null;
   }
-
-  final Activity activity;
 }
 
 List<Command> activityCommands(Activity activity) => [

@@ -81,17 +81,28 @@ class NewActivityPage extends StatelessWidget {
                     spacing: 8,
                     children: [
                       Button(
-                        StartActivity(state.draft),
+                        StartActivity(
+                          state.draft,
+                          onUpdate:
+                              context.read<DraftActivityBloc>().updateDraft,
+                        ),
                         selected: state.draft.doNow,
                       ),
                       Button(
-                        PinActivity(state.draft),
+                        PinActivity(
+                          state.draft,
+                          onUpdate:
+                              context.read<DraftActivityBloc>().updateDraft,
+                        ),
                         selected: state.draft.pinned,
                       ),
                     ],
                   ),
                   Button.primary(
-                    StartActivity(state.draft),
+                    StartActivity(
+                      state.draft,
+                      onUpdate: context.read<DraftActivityBloc>().updateDraft,
+                    ),
                   ),
                 ],
               ),
