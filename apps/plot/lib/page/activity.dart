@@ -55,23 +55,34 @@ class ActivityPage extends StatelessWidget {
           children: [
             ActivityToolbar(activity: state.current),
             Expanded(child: NotesView(notes: state.notes)),
-            Editor(
-              hint: state.notes.isNotEmpty ? 'Start an activity' : 'Add a note',
-              autofocus: true,
-              onSubmitted: (body) async {
-                if (state.current.draft) {
-                  final activity =
-                      state.current.copyWith(body: body, draft: false);
-                  await context.read<ActivityBloc>().updateActivity(activity);
-                  if (!context.mounted) return;
-                  await context.router.push(ActivityRoute(activity: activity));
-                  return;
-                }
-                await context
-                    .read<ActivityBloc>()
-                    .updateNote(state.draft.copyWith(body: body, draft: false));
-              },
-            )
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    width: 1.0,
+                    color: context.colour.border,
+                  ),
+                ),
+              ),
+              child: Editor(
+                hint: 'Add a note',
+                autofocus: true,
+                onSubmitted: (body) async {
+                  if (state.current.draft) {
+                    final activity =
+                        state.current.copyWith(body: body, draft: false);
+                    await context.read<ActivityBloc>().updateActivity(activity);
+                    if (!context.mounted) return;
+                    await context.router
+                        .push(ActivityRoute(activity: activity));
+                    return;
+                  }
+                  await context.read<ActivityBloc>().updateNote(
+                      state.draft.copyWith(body: body, draft: false));
+                },
+              ),
+            ),
           ],
         ),
       );

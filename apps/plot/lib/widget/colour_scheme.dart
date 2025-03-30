@@ -26,10 +26,10 @@ class ColourSchemeData extends Equatable {
       ? base.withLightness(0.7).toColor()
       : base.withLightness(0.1).toColor();
   Color get border => brightness == Brightness.light
-      ? base.withLightness(0.5).toColor()
-      : base.withLightness(0.5).toColor();
+      ? foreground.withAlpha(64)
+      : foreground.withAlpha(32);
   Color get foreground =>
-      brightness == Brightness.light ? Color(0x00000000) : Color(0xFFFFFF00);
+      brightness == Brightness.light ? Color(0x0FF00000) : Color(0xFFFFFFFF);
   Color get muted => brightness == Brightness.light
       ? base.withLightness(0.4).toColor()
       : base.withLightness(0.8).toColor();
@@ -40,7 +40,7 @@ class ColourSchemeData extends Equatable {
       barrier: canvas.withAlpha(200), // Example derivation for barrier
       background: background,
       foreground: foreground,
-      primary: accent,
+      primary: highlight,
       primaryForeground: foreground,
       secondary: highlight,
       secondaryForeground: accent,

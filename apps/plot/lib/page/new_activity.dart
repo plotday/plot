@@ -53,40 +53,52 @@ class NewActivityPage extends StatelessWidget {
       }
 
       return Scaffold(
-        body: Column(
-          children: [
-            _ActivityToolbar(activity: state.draft),
-            Editor(
-              hint: 'Start an activity',
-              autofocus: true,
-              onSubmitted: (body) async {
-                final activity = state.draft.copyWith(body: body, draft: false);
-                await context.read<DraftActivityBloc>().updateDraft(activity);
-                if (!context.mounted) return;
-                await context.router.replace(ActivityRoute(activity: activity));
-              },
-            )
-          ],
+        header: Header(
+          title: 'New Activity',
+        ),
+        body: Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            spacing: 8,
+            children: [
+              Editor(
+                hint: 'Start an activity',
+                autofocus: true,
+                onSubmitted: (body) async {
+                  final activity =
+                      state.draft.copyWith(body: body, draft: false);
+                  await context.read<DraftActivityBloc>().updateDraft(activity);
+                  if (!context.mounted) return;
+                  await context.router
+                      .replace(ActivityRoute(activity: activity));
+                },
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                spacing: 8,
+                children: [
+                  Row(
+                    spacing: 8,
+                    children: [
+                      Button(
+                        StartActivity(state.draft),
+                        selected: state.draft.doNow,
+                      ),
+                      Button(
+                        PinActivity(state.draft),
+                        selected: state.draft.pinned,
+                      ),
+                    ],
+                  ),
+                  Button.primary(
+                    StartActivity(state.draft),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       );
     });
   }
-}
-
-class _ActivityToolbar extends StatelessWidget {
-  const _ActivityToolbar({
-    required this.activity,
-  });
-
-  final Activity activity;
-
-  @override
-  Widget build(BuildContext context) => Header(
-        commands: [
-          if (!activity.doNow && !activity.done) StartActivity(activity),
-          if (activity.doNow) FinishActivity(activity),
-          if (activity.done) MarkActivityIncomplete(activity),
-          if (!activity.doNow) PinActivity(activity),
-        ],
-      );
 }

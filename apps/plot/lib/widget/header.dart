@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:macos_ui/macos_ui.dart' as macos;
+import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
@@ -17,16 +18,16 @@ class Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget? backButton = ModalRoute.of(context)?.canPop != true
-        ? null
-        : Container(
+    Widget? backButton = context.router.canPop()
+        ? Container(
             width: 20.0,
             alignment: Alignment.centerLeft,
             child: macos.MacosBackButton(
               fillColor: macos.MacosColors.transparent,
-              onPressed: () => Navigator.maybePop(context),
+              onPressed: () => context.router.pop(),
             ),
-          );
+          )
+        : null;
 
     return Row(
       children: [

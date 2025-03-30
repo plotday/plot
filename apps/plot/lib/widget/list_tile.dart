@@ -68,6 +68,8 @@ class _ListTileState extends State<ListTile> {
           onInvoke: (ActivateIntent intent) {
             if (widget.command != null) {
               widget.command!.run(context);
+            } else if (widget.commands.isNotEmpty) {
+              widget.commands.first.run(context);
             }
             return null;
           },

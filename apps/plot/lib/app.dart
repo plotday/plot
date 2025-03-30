@@ -10,6 +10,7 @@ import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'router.dart';
 import 'widget/window.dart';
+import 'widget/theme.dart';
 import 'widget/widget.dart';
 import 'page/loading.dart';
 import 'command/settings.dart';
@@ -66,9 +67,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
             return Window(
               child: RootProvider(
                 child: FTheme(
-                  data: FThemeData(
-                    colorScheme: context.colour.toFColorScheme(),
-                  ),
+                  data: buildTheme(context.colour),
                   child: PlatformBuilder(
                     builder: (context) => AdaptiveTheme(
                       light: material.ThemeData(

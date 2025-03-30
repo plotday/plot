@@ -66,19 +66,20 @@ class NewActivity extends Command {
 class StartActivity extends Command {
   StartActivity(this.activity)
       : super(
-          title: 'Start Activity',
+          title: 'Do Now',
           icon: PlotIcon.doNow,
         );
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
+    final start = !activity.doNow;
     await activity
         .copyWith(
-          doAt: activity.doNow ? const Value(null) : Value(DateTime.now()),
+          doAt: start ? Value(DateTime.now()) : const Value(null),
         )
         .save();
     Posthog().capture(
-      eventName: 'Activity Started',
+      eventName: start ? 'Activity Started' : 'Activity Stopped',
     );
     return null;
   }
@@ -135,7 +136,7 @@ class MarkActivityIncomplete extends Command {
 class PinActivity extends Command {
   PinActivity(this.activity)
       : super(
-          title: '${activity.pinned ? 'Unpin' : 'Pin'} Activity',
+          title: activity.pinned ? 'Unpin' : 'Pin',
           icon: PlotIcon.pinned,
         );
 

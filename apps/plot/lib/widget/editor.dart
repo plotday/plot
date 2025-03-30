@@ -3,33 +3,19 @@ import 'package:flutter/services.dart';
 import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
 import 'package:super_editor_markdown/super_editor_markdown.dart';
-import 'package:macos_ui/macos_ui.dart' as macos;
 import 'package:flutter/material.dart' as material;
 
-import 'button.dart';
 import 'sliver.dart';
 
 final _styles = Stylesheet(
-  documentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
   inlineTextStyler: defaultInlineTextStyler,
   inlineWidgetBuilders: defaultInlineWidgetBuilderChain,
   rules: [
     StyleRule(
-      BlockSelector.all,
-      (doc, docNode) {
-        return {
-          Styles.padding: const CascadingPadding.symmetric(horizontal: 0),
-          // Styles.textStyle: const TextStyle(
-          //   color: Color(0x00000000),
-          // ),
-        };
-      },
-    ),
-    StyleRule(
       const BlockSelector("paragraph"),
       (doc, docNode) {
         return {
-          Styles.padding: const CascadingPadding.only(top: 16),
+          Styles.padding: const CascadingPadding.only(bottom: 16),
         };
       },
     ),
@@ -154,57 +140,25 @@ class EditorState extends State<Editor> {
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () => _editorFocusNode.requestFocus(),
-        child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                width: 1.0,
-                color: macos.MacosDynamicColor.resolve(
-                  macos.MacosColors.separatorColor,
-                  context,
-                ),
-              ),
+        child: SuperEditor(
+          autofocus: widget.autofocus,
+          editor: _editor,
+          focusNode: _editorFocusNode,
+          shrinkWrap: true,
+          scrollController: _scrollController,
+          documentLayoutKey: _docLayoutKey,
+          documentOverlayBuilders: [
+            DefaultCaretOverlayBuilder(
+              caretStyle: CaretStyle().copyWith(
+                  color:
+                      isDark ? material.Colors.white : material.Colors.black),
             ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SuperEditor(
-                autofocus: widget.autofocus,
-                editor: _editor,
-                focusNode: _editorFocusNode,
-                shrinkWrap: true,
-                scrollController: _scrollController,
-                documentLayoutKey: _docLayoutKey,
-                documentOverlayBuilders: [
-                  DefaultCaretOverlayBuilder(
-                    caretStyle: CaretStyle().copyWith(
-                        color: isDark
-                            ? material.Colors.white
-                            : material.Colors.black),
-                  ),
-                ],
-                stylesheet: isDark ? _darkStyles : _styles,
-                componentBuilders: [
-                  TaskComponentBuilder(_editor),
-                  ...defaultComponentBuilders,
-                ],
-              ),
-              // Padding(
-              //   padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-              //   child: Row(
-              //     mainAxisAlignment: MainAxisAlignment.end,
-              //     children: [
-              //       Button(
-              //         onTap: _isEmpty ? null : submit,
-              //         child: const Text('Add'),
-              //       ),
-              //     ],
-              //   ),
-              // ),
-            ],
-          ),
+          ],
+          stylesheet: isDark ? _darkStyles : _styles,
+          componentBuilders: [
+            TaskComponentBuilder(_editor),
+            ...defaultComponentBuilders,
+          ],
         ),
       ),
     );
