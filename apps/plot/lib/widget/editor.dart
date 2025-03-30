@@ -4,6 +4,7 @@ import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
 import 'package:super_editor_markdown/super_editor_markdown.dart';
 import 'package:flutter/material.dart' as material;
+import 'package:flutter_debouncer/flutter_debouncer.dart';
 
 import 'sliver.dart';
 
@@ -70,12 +71,14 @@ class Editor extends StatefulWidget {
     this.hint,
     this.autofocus = false,
     this.onSubmitted,
+    this.onChange,
     super.key,
   });
 
   final String? hint;
   final bool autofocus;
   final ValueChanged<String>? onSubmitted;
+  final ValueChanged<String>? onChange;
 
   @override
   State<Editor> createState() => EditorState();
@@ -88,17 +91,13 @@ class EditorState extends State<Editor> {
   late MutableDocument _document;
   late MutableDocumentComposer _composer;
   late super_editor.Editor _editor;
-  bool _isEmpty = true;
+  final Debouncer _debouncer = Debouncer();
 
   void clear() {
     setState(() {
       // Clear the document
       _document = MutableDocument.empty();
-      _document.addListener((_) {
-        setState(() {
-          _isEmpty = _document.hasEquivalentContent(MutableDocument.empty());
-        });
-      });
+      _document.addListener(_onDocumentChanged);
       _composer = MutableDocumentComposer();
       _editor = createDefaultDocumentEditor(
         document: _document,
@@ -108,16 +107,35 @@ class EditorState extends State<Editor> {
     });
   }
 
+  void _onDocumentChanged(DocumentChangeLog _) {
+    _debouncer.debounce(
+      duration: const Duration(milliseconds: 500),
+      onDebounce: notify,
+    );
+  }
+
+  void notify() {
+    _debouncer.cancel();
+    final md = serializeDocumentToMarkdown(_document);
+    widget.onChange?.call(md);
+  }
+
   @override
   void initState() {
     super.initState();
-    _editorFocusNode = FocusNode();
+    _editorFocusNode = FocusNode()
+      ..addListener(() {
+        if (!_editorFocusNode.hasFocus) {
+          notify();
+        }
+      });
     _scrollController = ScrollController();
     clear();
   }
 
   @override
   void dispose() {
+    _debouncer.cancel();
     _scrollController.dispose();
     _editorFocusNode.dispose();
     super.dispose();

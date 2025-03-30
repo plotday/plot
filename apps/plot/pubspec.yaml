@@ -79,6 +79,7 @@ dependencies:
   provider: ^6.1.2
   forui: ^0.10.0+1
   auto_route: ^10.0.1
+  flutter_debouncer: ^2.0.0
 
 dev_dependencies:
   flutter_test:

@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
+import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
@@ -64,13 +65,9 @@ class NewActivityPage extends StatelessWidget {
               Editor(
                 hint: 'Start an activity',
                 autofocus: true,
-                onSubmitted: (body) async {
-                  final activity =
-                      state.draft.copyWith(body: body, draft: false);
+                onChange: (body) async {
+                  final activity = state.draft.copyWith(body: body);
                   await context.read<DraftActivityBloc>().updateDraft(activity);
-                  if (!context.mounted) return;
-                  await context.router
-                      .replace(ActivityRoute(activity: activity));
                 },
               ),
               Row(
@@ -99,9 +96,8 @@ class NewActivityPage extends StatelessWidget {
                     ],
                   ),
                   Button.primary(
-                    StartActivity(
+                    AddActivity(
                       state.draft,
-                      onUpdate: context.read<DraftActivityBloc>().updateDraft,
                     ),
                   ),
                 ],
@@ -111,5 +107,28 @@ class NewActivityPage extends StatelessWidget {
         ),
       );
     });
+  }
+}
+
+class AddActivity extends Command {
+  AddActivity(this.activity)
+      : super(
+          title: 'Add',
+        );
+
+  final Activity activity;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    final activity = this.activity.copyWith(draft: false);
+    await context.read<DraftActivityBloc>().updateDraft(activity);
+    Posthog().capture(
+      eventName: 'Activity Added',
+    );
+    if (context.mounted) {
+      await context.router
+          .replace(PriorityRoute(priorityId: activity.priorityId));
+    }
+    return null;
   }
 }
