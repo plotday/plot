@@ -55,6 +55,11 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
       ),
       ghost: theme.buttonStyles.ghost.copyWith(
         contentStyle: theme.buttonStyles.ghost.contentStyle.copyWith(
+          enabledTextStyle:
+              theme.buttonStyles.outline.contentStyle.enabledTextStyle.copyWith(
+            color: theme.colorScheme.foreground,
+          ),
+          enabledIconColor: theme.colorScheme.foreground,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         ),
       ),

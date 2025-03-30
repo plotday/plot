@@ -24,7 +24,7 @@ class Header extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: macos.MacosBackButton(
               fillColor: macos.MacosColors.transparent,
-              onPressed: () => context.router.pop(),
+              onPressed: () => context.router.maybePop(),
             ),
           )
         : null;
@@ -35,6 +35,7 @@ class Header extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 if (backButton != null) backButton,
                 if (main != null) main!,

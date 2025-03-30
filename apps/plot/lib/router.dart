@@ -219,3 +219,11 @@ class AppRouter extends RootStackRouter {
     ),
   ];
 }
+
+extension FocusedRouterExtension on BuildContext {
+  StackRouter get focusedRouter {
+    var focusContext = FocusManager.instance.primaryFocus?.context;
+    print("Focused context: $focusContext");
+    return focusContext?.router ?? router;
+  }
+}
