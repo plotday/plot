@@ -1,16 +1,5 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/rendering.dart';
-//
-// class BoxToSliverAdapter extends StatelessWidget {
-//   final Widget child;
-//
-//   const BoxToSliverAdapter({super.key, required this.child});
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return _FakeViewport(child: child);
-//   }
-// }
 
 class BoxToSliverAdapter extends SingleChildRenderObjectWidget {
   const BoxToSliverAdapter({required super.child, super.key});

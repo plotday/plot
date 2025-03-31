@@ -51,36 +51,73 @@ class ActivityPage extends StatelessWidget {
       }
 
       return Scaffold(
+        header: Header(
+          title: state.current.title,
+          commands: activityCommands(state.current),
+        ),
         body: Column(
           children: [
-            ActivityToolbar(activity: state.current),
-            Expanded(child: NotesView(notes: state.notes)),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(
-                    width: 1.0,
-                    color: context.colour.border,
+            Flexible(
+              fit: FlexFit.tight,
+              child: Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      width: 1.0,
+                      color: context.colour.border,
+                    ),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  child: Viewer(
+                    markdown: state.current.body,
                   ),
                 ),
               ),
-              child: Editor(
-                hint: 'Add a note',
-                autofocus: true,
-                onSubmitted: (body) async {
-                  if (state.current.draft) {
-                    final activity =
-                        state.current.copyWith(body: body, draft: false);
-                    await context.read<ActivityBloc>().updateActivity(activity);
-                    if (!context.mounted) return;
-                    await context.router
-                        .push(ActivityRoute(activity: activity));
-                    return;
-                  }
-                  await context.read<ActivityBloc>().updateNote(
-                      state.draft.copyWith(body: body, draft: false));
-                },
+            ),
+            Flexible(
+              fit: FlexFit.tight,
+              child: Container(
+                padding: EdgeInsets.all(16),
+                child: NotesView(notes: state.notes),
+              ),
+            ),
+            Flexible(
+              flex: 0,
+              child: Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      width: 1.0,
+                      color: context.colour.border,
+                    ),
+                    bottom: BorderSide(
+                      width: 1.0,
+                      color: context.colour.border,
+                    ),
+                  ),
+                ),
+                child: Editor(
+                  hint: 'Add a note',
+                  autofocus: true,
+                  onSubmitted: (body) async {
+                    if (state.current.draft) {
+                      final activity =
+                          state.current.copyWith(body: body, draft: false);
+                      await context
+                          .read<ActivityBloc>()
+                          .updateActivity(activity);
+                      if (!context.mounted) return;
+                      await context.router
+                          .push(ActivityRoute(activity: activity));
+                      return;
+                    }
+                    await context.read<ActivityBloc>().updateNote(
+                        state.draft.copyWith(body: body, draft: false));
+                  },
+                ),
               ),
             ),
           ],
@@ -88,23 +125,4 @@ class ActivityPage extends StatelessWidget {
       );
     });
   }
-}
-
-class ActivityToolbar extends StatelessWidget {
-  const ActivityToolbar({
-    required this.activity,
-    super.key,
-  });
-
-  final Activity activity;
-
-  @override
-  Widget build(BuildContext context) => Header(
-        commands: [
-          if (!activity.doNow && !activity.done) StartActivity(activity),
-          if (activity.doNow) FinishActivity(activity),
-          if (activity.done) MarkActivityIncomplete(activity),
-          if (!activity.doNow) PinActivity(activity),
-        ],
-      );
 }
