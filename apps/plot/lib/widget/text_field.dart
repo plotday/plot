@@ -1,8 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart' as material;
-import 'package:macos_ui/macos_ui.dart';
 import 'package:platform_builder/platform_builder.dart';
+import 'package:forui/forui.dart';
 
 class TextField extends StatefulWidget {
   const TextField({
@@ -65,11 +65,13 @@ class TextFieldState extends State<TextField> {
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      macOSBuilder: (_) => MacosTextField(
+      androidBuilder: (_) => material.TextField(
         onChanged: widget.onChanged,
         onSubmitted: widget.onSubmitted,
         controller: _controller,
-        placeholder: widget.label,
+        decoration: material.InputDecoration(
+          hintText: widget.label,
+        ),
         autocorrect: widget.autocorrect,
         maxLines: widget.maxLines,
         textAlign: widget.textAlign,
@@ -77,13 +79,14 @@ class TextFieldState extends State<TextField> {
         inputFormatters: widget.inputFormatters,
         autofocus: widget.autofocus,
       ),
-      builder: (_) => material.TextField(
-        onChanged: widget.onChanged,
-        onSubmitted: widget.onSubmitted,
+      builder: (_) => FTextField(
+        // onChanged: widget.onChanged,
+        // onSubmitted: widget.onSubmitted,
         controller: _controller,
-        decoration: material.InputDecoration(
-          hintText: widget.label,
-        ),
+        hint: widget.label,
+        // decoration: material.InputDecoration(
+        //   hintText: widget.label,
+        // ),
         autocorrect: widget.autocorrect,
         maxLines: widget.maxLines,
         textAlign: widget.textAlign,

@@ -80,6 +80,7 @@ dependencies:
   forui: ^0.10.0+1
   auto_route: ^10.0.1
   flutter_debouncer: ^2.0.0
+  flutter_hooks: ^0.21.2
 
 dev_dependencies:
   flutter_test:

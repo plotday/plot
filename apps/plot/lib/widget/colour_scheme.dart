@@ -5,10 +5,14 @@ import 'package:forui/forui.dart';
 
 class ColourSchemeData extends Equatable {
   final HSLColor base;
+  final HSLColor pure;
   final Brightness brightness;
 
   ColourSchemeData(Color base, this.brightness)
-      : base = HSLColor.fromColor(base).withAlpha(1);
+      : base = HSLColor.fromColor(base).withAlpha(1),
+        pure = brightness == Brightness.light
+            ? HSLColor.fromColor(Color(0xFF000000))
+            : HSLColor.fromColor(Color(0xFFFFFFFF));
 
   Color get canvas => brightness == Brightness.light
       ? base.withLightness(0.9).withAlpha(0.9).toColor()
@@ -26,13 +30,13 @@ class ColourSchemeData extends Equatable {
       ? base.withLightness(0.7).toColor()
       : base.withLightness(0.1).toColor();
   Color get border => brightness == Brightness.light
-      ? foreground.withAlpha(64)
-      : foreground.withAlpha(32);
+      ? pure.withAlpha(0.2).toColor()
+      : pure.withAlpha(0.1).toColor();
   Color get foreground =>
       brightness == Brightness.light ? Color(0x0FF00000) : Color(0xFFFFFFFF);
   Color get muted => brightness == Brightness.light
-      ? base.withLightness(0.4).toColor()
-      : base.withLightness(0.8).toColor();
+      ? base.withSaturation(0.2).withLightness(0.2).toColor()
+      : base.withSaturation(0.2).withLightness(0.7).toColor();
 
   FColorScheme toFColorScheme() {
     return FColorScheme(

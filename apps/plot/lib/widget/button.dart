@@ -86,6 +86,7 @@ class Button extends StatelessWidget {
               child: FIcon.data(
                 command.icon!,
                 size: 12,
+                color: context.colour.muted,
               ),
             )
           : FButton(
@@ -95,6 +96,7 @@ class Button extends StatelessWidget {
                   ? FIcon.data(
                       command.icon!,
                       size: 12,
+                      color: context.colour.muted,
                     )
                   : null,
               label: Text(command.title),

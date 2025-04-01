@@ -112,7 +112,8 @@ class _ListTileState extends State<ListTile> {
               if (widget.command?.icon != null)
                 Padding(
                   padding: const EdgeInsets.only(right: 8.0),
-                  child: FIcon.data(widget.command!.icon!, size: 12),
+                  child: FIcon.data(widget.command!.icon!,
+                      size: 12, color: context.colour.muted),
                 ),
               Expanded(
                 child: Column(
@@ -124,9 +125,9 @@ class _ListTileState extends State<ListTile> {
                           : widget.title,
                       overflow: TextOverflow.ellipsis,
                       style: context.theme.typography.xs.copyWith(
-                        color: widget.highlighted
-                            ? null
-                            : context.theme.colorScheme.mutedForeground,
+                        color: widget.style == ListTileStyle.header
+                            ? context.colour.muted
+                            : context.colour.foreground,
                       ),
                     ),
                     if (widget.command?.description != null)
