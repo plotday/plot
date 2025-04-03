@@ -21,7 +21,7 @@ class GlobalShortcuts extends StatelessWidget {
         commands: Commands(
           prompt: 'Run a command',
           groups: [
-            StaticCommandGroup(title: 'Recent', commands: [
+            StaticCommandGroup(title: 'Commands', commands: [
               PickCurrentActivity(),
               ShowSettings(),
             ])

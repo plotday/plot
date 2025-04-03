@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
+import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
@@ -101,6 +102,56 @@ class PickCurrentActivity extends ShowCommand<Priority> {
   }
 }
 
+class AddPriority extends Command {
+  AddPriority(this._priority)
+      : super(
+          title: 'Add',
+        );
+
+  final Future<Priority> _priority;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    final priority = await _priority;
+    await priority.copyWith(draft: false).save();
+    Posthog().capture(
+      eventName: 'Priority Added',
+    );
+    if (context.mounted) {
+      await context.router.replace(PriorityRoute(priorityId: priority.id));
+    }
+    return null;
+  }
+}
+
+class ArchivePriority extends Command {
+  ArchivePriority(this._priority)
+      : super(
+          title: 'Archive',
+        );
+
+  final Future<Priority> _priority;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    final priority = await _priority;
+    final defaultPriority = await Priority.getDefault();
+    if (priority == defaultPriority) {
+      return CommandMessage('You cannot archive the default priority',
+          isError: true);
+    }
+    await priority.delete();
+    Posthog().capture(
+      eventName: 'Priority Archived',
+    );
+    if (context.mounted) {
+      await context.router.replace(PriorityRoute(
+          priorityId: priority.parent?.id ?? defaultPriority!.id));
+    }
+    return null;
+  }
+}
+
 class NewPriority extends Command {
   NewPriority()
       : super(
@@ -115,3 +166,8 @@ class NewPriority extends Command {
     return null;
   }
 }
+
+StaticCommandGroup priorityCommands(Priority priority) =>
+    StaticCommandGroup(title: 'Commands', commands: [
+      ArchivePriority(Future.value(priority)),
+    ]);

@@ -31,10 +31,7 @@ class Account extends AccountRow {
   static Future<Account> add(AccountProvider provider, String code) async {
     final response = await api.post(
       "/sync",
-      body: {
-        'provider': provider.name,
-        'code': code,
-      },
+      body: {'provider': provider.name, 'code': code},
     );
     final json = AccountsBase().fromBase(response);
     final row = await Store.get.add(table, json);
@@ -45,39 +42,45 @@ class Account extends AccountRow {
   static Future<bool> pull() =>
       Store.get.pull(PullType.all, table, AccountsBase());
 
-  static Stream<List<Account>> watch(
-      {bool withCalendars = false, bool? deleted = false}) {
-    final accountStream = (Store.get.select(table)
-          ..where((t) => deleted == null
+  static Stream<List<Account>> watch({
+    bool withCalendars = false,
+    bool? deleted = false,
+  }) {
+    final accountStream = (Store.get.select(table)..where(
+      (t) =>
+          deleted == null
               ? const Constant(true)
               : deleted
-                  ? t.deletedAt.isNotNull()
-                  : t.deletedAt.isNull()))
-        .watch()
-        .map((rows) => rows.map((row) => Account.fromStore(row)).toList());
+              ? t.deletedAt.isNotNull()
+              : t.deletedAt.isNull(),
+    )).watch().map(
+      (rows) => rows.map((row) => Account.fromStore(row)).toList(),
+    );
     if (withCalendars) {
       return Rx.combineLatest2(
-          accountStream,
-          Calendar.watch(),
-          (List<Account> accounts, List<Calendar> calendars) =>
-              accounts.map((account) {
-                final accountCalendars = calendars
-                    .where((calendar) => calendar.accountId == account.id)
-                    .toList();
-                return Account.fromStore(account, calendars: accountCalendars);
-              }).toList());
+        accountStream,
+        Calendar.watch(),
+        (List<Account> accounts, List<Calendar> calendars) =>
+            accounts.map((account) {
+              final accountCalendars =
+                  calendars
+                      .where((calendar) => calendar.accountId == account.id)
+                      .toList();
+              return Account.fromStore(account, calendars: accountCalendars);
+            }).toList(),
+      );
     }
     return accountStream;
   }
 
   Account.fromStore(AccountRow row, {this.calendars})
-      : super(
-          id: row.id,
-          updatedAt: row.updatedAt,
-          deletedAt: row.deletedAt,
-          email: row.email,
-          provider: row.provider,
-        );
+    : super(
+        id: row.id,
+        updatedAt: row.updatedAt,
+        deletedAt: row.deletedAt,
+        email: row.email,
+        provider: row.provider,
+      );
 
   @override
   Account copyWith({
@@ -86,17 +89,28 @@ class Account extends AccountRow {
     Value<DateTime?> deletedAt = const Value.absent(),
     String? email,
     AccountProvider? provider,
-  }) =>
-      Account.fromStore(super.copyWith(
-        id: id,
-        updatedAt: DateTime.now(),
-        deletedAt: deletedAt,
-        email: email,
-        provider: provider,
-      ));
+  }) => Account.fromStore(
+    super.copyWith(
+      id: id,
+      updatedAt: DateTime.now(),
+      deletedAt: deletedAt,
+      email: email,
+      provider: provider,
+    ),
+  );
 
   final List<Calendar>? calendars;
 
   Future<void> save() =>
       Store.get.save(table, toCompanion(false), AccountsBase());
+
+  @override
+  bool operator ==(Object other) {
+    return super == other && calendars == (other as Account).calendars;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(super.hashCode, calendars.hashCode);
+  }
 }

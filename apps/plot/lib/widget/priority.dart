@@ -98,19 +98,27 @@ class PriorityTile extends StatelessWidget {
     required this.priority,
     this.balances,
     this.maxTime,
+    this.isHeader = false,
     super.key,
   });
 
   final Priority priority;
   final BalanceByType? balances;
   final Duration? maxTime;
+  final bool isHeader;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile.command(
-      ChangeCurrentPriority(priority),
-      key: ValueKey(priority.id.toString()),
-      // subtitle: balances != null ? PriorityBalance(balances: balances!) : null,
-    );
+    return isHeader
+        ? ListTile.header(
+            title: priority.name, // TODO include hierarchy
+            commands: priorityCommands(priority).commands,
+            key: ValueKey(priority.id.toString()),
+          )
+        : ListTile.command(
+            ChangeCurrentPriority(priority),
+            key: ValueKey(priority.id.toString()),
+            // subtitle: balances != null ? PriorityBalance(balances: balances!) : null,
+          );
   }
 }

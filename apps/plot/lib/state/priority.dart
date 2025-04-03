@@ -37,6 +37,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     _prioritySubscription = Priority.watchOne(
       priority.id,
+      depth: 1,
     ).listen((priority) {
       emit(state.copyWith(current: priority));
     });

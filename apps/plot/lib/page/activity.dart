@@ -53,7 +53,7 @@ class ActivityPage extends StatelessWidget {
       return Scaffold(
         header: Header(
           title: state.current.title,
-          commands: activityCommands(state.current),
+          commands: activityCommands(state.current).commands,
         ),
         body: Column(
           children: [

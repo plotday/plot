@@ -1,8 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:auto_route/auto_route.dart';
-import 'package:posthog_flutter/posthog_flutter.dart';
 
-import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
@@ -67,27 +65,5 @@ class NewPriorityPage extends HookWidget {
         ),
       ),
     );
-  }
-}
-
-class AddPriority extends Command {
-  AddPriority(this._priority)
-      : super(
-          title: 'Add',
-        );
-
-  final Future<Priority> _priority;
-
-  @override
-  Future<CommandReturn?> run(BuildContext context) async {
-    final priority = await _priority;
-    await priority.copyWith(draft: false).save();
-    Posthog().capture(
-      eventName: 'Priority Added',
-    );
-    if (context.mounted) {
-      await context.router.replace(PriorityRoute(priorityId: priority.id));
-    }
-    return null;
   }
 }

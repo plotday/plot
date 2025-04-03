@@ -20,6 +20,12 @@ class CommandPage extends CommandReturn {
   final Widget child;
 }
 
+class CommandMessage extends CommandReturn {
+  CommandMessage(this.message, {this.isError = false});
+  final String message;
+  final bool isError;
+}
+
 abstract class Command {
   const Command({
     required this.title,

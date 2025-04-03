@@ -160,10 +160,11 @@ class PinActivity extends _UpdateActivityCommand {
   }
 }
 
-List<Command> activityCommands(Activity activity) => [
+StaticCommandGroup activityCommands(Activity activity) =>
+    StaticCommandGroup(title: 'Commands', commands: [
       if (!activity.doNow && !activity.done && !activity.pinned)
         StartActivity(activity),
       if (activity.doNow) FinishActivity(activity),
       if (activity.done) MarkActivityIncomplete(activity),
       if (!activity.doNow) PinActivity(activity),
-    ];
+    ]);

@@ -73,6 +73,7 @@ class PriorityPage extends StatelessWidget {
                     priority: state.current,
                     balances: prioritiesState.balances?[state.current.id],
                     maxTime: prioritiesState.maxTime,
+                    isHeader: true,
                   ),
                   _PrioritiesSection(),
                   if (state.pinnedActivities.isNotEmpty)
