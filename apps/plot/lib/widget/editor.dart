@@ -9,60 +9,30 @@ import 'package:flutter_debouncer/flutter_debouncer.dart';
 import 'sliver.dart';
 
 final _styles = Stylesheet(
+  rules: [
+    StyleRule(BlockSelector.all, (doc, docNode) {
+      return {
+        Styles.textStyle: const TextStyle(
+          color: Color(0xFF000000),
+          fontSize: 14,
+          height: 1.4,
+        ),
+        Styles.padding: const CascadingPadding.only(bottom: 14),
+      };
+    }),
+    StyleRule(BlockSelector.all.last(), (doc, docNode) {
+      return {Styles.padding: const CascadingPadding.only(bottom: 0)};
+    }),
+  ],
   inlineTextStyler: defaultInlineTextStyler,
   inlineWidgetBuilders: defaultInlineWidgetBuilderChain,
-  rules: [
-    StyleRule(
-      const BlockSelector("paragraph"),
-      (doc, docNode) {
-        return {
-          Styles.padding: const CascadingPadding.only(bottom: 16),
-        };
-      },
-    ),
-    StyleRule(
-      BlockSelector.all.last(),
-      (doc, docNode) {
-        return {
-          Styles.padding: const CascadingPadding.only(bottom: 0),
-        };
-      },
-    ),
-  ],
 );
 
 final _darkStyles = _styles.copyWith(
-  addRulesBefore: [
-    StyleRule(
-      BlockSelector.all,
-      (doc, docNode) {
-        return {
-          Styles.textStyle: const TextStyle(
-            color: Color(0xFFFFFFFF),
-          ),
-        };
-      },
-    ),
-    StyleRule(
-      const BlockSelector("header1"),
-      (doc, docNode) {
-        return {
-          Styles.textStyle: const TextStyle(
-            color: Color(0xFF888888),
-          ),
-        };
-      },
-    ),
-    StyleRule(
-      const BlockSelector("header2"),
-      (doc, docNode) {
-        return {
-          Styles.textStyle: const TextStyle(
-            color: Color(0xFF888888),
-          ),
-        };
-      },
-    ),
+  addRulesAfter: [
+    StyleRule(BlockSelector.all, (doc, docNode) {
+      return {Styles.textStyle: const TextStyle(color: Color(0xFFFFFFFF))};
+    }),
   ],
 );
 
@@ -123,12 +93,12 @@ class EditorState extends State<Editor> {
   @override
   void initState() {
     super.initState();
-    _editorFocusNode = FocusNode()
-      ..addListener(() {
-        if (!_editorFocusNode.hasFocus) {
-          notify();
-        }
-      });
+    _editorFocusNode =
+        FocusNode()..addListener(() {
+          if (!_editorFocusNode.hasFocus) {
+            notify();
+          }
+        });
     _scrollController = ScrollController();
     clear();
   }
@@ -147,13 +117,10 @@ class EditorState extends State<Editor> {
         MediaQuery.of(context).platformBrightness == material.Brightness.dark;
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(
-          LogicalKeyboardKey.enter,
-          meta: true,
-        ): () {
+        const SingleActivator(LogicalKeyboardKey.enter, meta: true): () {
           submit();
           _editorFocusNode.requestFocus();
-        }
+        },
       },
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
@@ -168,8 +135,8 @@ class EditorState extends State<Editor> {
           documentOverlayBuilders: [
             DefaultCaretOverlayBuilder(
               caretStyle: CaretStyle().copyWith(
-                  color:
-                      isDark ? material.Colors.white : material.Colors.black),
+                color: isDark ? material.Colors.white : material.Colors.black,
+              ),
             ),
           ],
           stylesheet: isDark ? _darkStyles : _styles,
@@ -190,10 +157,7 @@ class EditorState extends State<Editor> {
 }
 
 class Viewer extends StatefulWidget {
-  const Viewer({
-    required this.markdown,
-    super.key,
-  });
+  const Viewer({required this.markdown, super.key});
 
   final String markdown;
 
