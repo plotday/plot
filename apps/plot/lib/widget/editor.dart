@@ -23,6 +23,9 @@ final _styles = Stylesheet(
     StyleRule(BlockSelector.all.last(), (doc, docNode) {
       return {Styles.padding: const CascadingPadding.only(bottom: 0)};
     }),
+    StyleRule(const BlockSelector("listItem"), (doc, docNode) {
+      return {Styles.padding: const CascadingPadding.only(bottom: 0)};
+    }),
   ],
   inlineTextStyler: defaultInlineTextStyler,
   inlineWidgetBuilders: defaultInlineWidgetBuilderChain,
