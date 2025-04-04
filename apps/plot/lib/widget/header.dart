@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:macos_ui/macos_ui.dart' as macos;
+import 'package:forui/forui.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/widget/widget.dart';
@@ -10,43 +10,30 @@ class Header extends StatelessWidget {
     Widget? main,
     String? title,
     this.commands = const [],
+    this.modal = false,
     super.key,
   }) : main = main ?? (title != null ? Text(title) : null);
 
   final Widget? main;
   final List<Command> commands;
+  final bool modal;
 
   @override
   Widget build(BuildContext context) {
-    Widget? backButton = context.router.canPop()
-        ? Container(
-            width: 20.0,
-            alignment: Alignment.centerLeft,
-            child: macos.MacosBackButton(
-              fillColor: macos.MacosColors.transparent,
-              onPressed: () => context.router.maybePop(),
-            ),
-          )
-        : null;
+    Widget? backButton =
+        context.router.canPop()
+            ? modal
+                ? FHeaderAction.x(onPress: () => context.router.maybePop())
+                : FHeaderAction.back(onPress: () => context.router.maybePop())
+            : null;
 
-    return Row(
-      children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (backButton != null) backButton,
-                if (main != null) main!,
-              ],
-            ),
-          ),
-        ),
-        Row(
-          children: commands.map((command) => Button.icon(command)).toList(),
-        ),
+    return FHeader.nested(
+      prefixActions: [if (!modal && backButton != null) backButton],
+      suffixActions: [
+        ...commands.map((command) => Button.icon(command)),
+        if (modal && backButton != null) backButton,
       ],
+      title: main ?? const Text(''),
     );
   }
 }

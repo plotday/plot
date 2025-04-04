@@ -18,11 +18,12 @@ class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
     PriorityId? priorityId,
     @QueryParam("priorityId") String? priorityIdString,
     super.key,
-  }) : priorityId = priority?.id ??
-            priorityId ??
-            (priorityIdString != null
-                ? PriorityId.fromShortString(priorityIdString)
-                : null);
+  }) : priorityId =
+           priority?.id ??
+           priorityId ??
+           (priorityIdString != null
+               ? PriorityId.fromShortString(priorityIdString)
+               : null);
 
   final Activity? draft;
   final PriorityId? priorityId;
@@ -30,10 +31,11 @@ class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
   @override
   Widget wrappedRoute(BuildContext context) {
     return BlocProvider(
-      create: (_) => DraftActivityBloc(
-        priorityId: context.read<NowBloc>().loadedState.priority.id,
-        draft: draft,
-      ),
+      create:
+          (_) => DraftActivityBloc(
+            priorityId: context.read<NowBloc>().loadedState.priority.id,
+            draft: draft,
+          ),
       child: this,
     );
   }
@@ -41,80 +43,72 @@ class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
 
 @RoutePage(name: "NewActivityMainRoute")
 class NewActivityPage extends StatelessWidget {
-  const NewActivityPage({
-    super.key,
-  });
+  const NewActivityPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<DraftActivityBloc, DraftActivityState>(
-        builder: (context, state) {
-      if (state.loading) {
-        return const Spinner();
-      }
+      builder: (context, state) {
+        if (state.loading) {
+          return const Spinner();
+        }
 
-      return Scaffold(
-        header: Header(
-          title: 'New Activity',
-        ),
-        body: Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            spacing: 8,
-            children: [
-              Editor(
-                hint: 'Start an activity',
-                autofocus: true,
-                onChange: (body) async {
-                  final activity = state.draft.copyWith(body: body);
-                  await context.read<DraftActivityBloc>().updateDraft(activity);
-                },
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                spacing: 8,
-                children: [
-                  Row(
-                    spacing: 8,
-                    children: [
-                      Button(
-                        StartActivity(
-                          state.draft,
-                          onUpdate:
-                              context.read<DraftActivityBloc>().updateDraft,
+        return Scaffold(
+          header: Header(title: 'New Activity', modal: true),
+          body: Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              spacing: 8,
+              children: [
+                Editor(
+                  hint: 'Start an activity',
+                  autofocus: true,
+                  onChange: (body) async {
+                    final activity = state.draft.copyWith(body: body);
+                    await context.read<DraftActivityBloc>().updateDraft(
+                      activity,
+                    );
+                  },
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  spacing: 8,
+                  children: [
+                    Row(
+                      spacing: 8,
+                      children: [
+                        Button(
+                          StartActivity(
+                            state.draft,
+                            onUpdate:
+                                context.read<DraftActivityBloc>().updateDraft,
+                          ),
+                          selected: state.draft.doNow,
                         ),
-                        selected: state.draft.doNow,
-                      ),
-                      Button(
-                        PinActivity(
-                          state.draft,
-                          onUpdate:
-                              context.read<DraftActivityBloc>().updateDraft,
+                        Button(
+                          PinActivity(
+                            state.draft,
+                            onUpdate:
+                                context.read<DraftActivityBloc>().updateDraft,
+                          ),
+                          selected: state.draft.pinned,
                         ),
-                        selected: state.draft.pinned,
-                      ),
-                    ],
-                  ),
-                  Button.primary(
-                    AddActivity(
-                      state.draft,
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    Button.primary(AddActivity(state.draft)),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }
 
 class AddActivity extends Command {
-  AddActivity(this.activity)
-      : super(
-          title: 'Add',
-        );
+  AddActivity(this.activity) : super(title: 'Add');
 
   final Activity activity;
 
@@ -122,12 +116,11 @@ class AddActivity extends Command {
   Future<CommandReturn?> run(BuildContext context) async {
     final activity = this.activity.copyWith(draft: false);
     await context.read<DraftActivityBloc>().updateDraft(activity);
-    Posthog().capture(
-      eventName: 'Activity Added',
-    );
+    Posthog().capture(eventName: 'Activity Added');
     if (context.mounted) {
-      await context.router
-          .replace(PriorityRoute(priorityId: activity.priorityId));
+      await context.router.replace(
+        PriorityRoute(priorityId: activity.priorityId),
+      );
     }
     return null;
   }

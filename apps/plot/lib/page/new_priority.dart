@@ -13,11 +13,12 @@ class NewPriorityPage extends HookWidget {
     PriorityId? priorityId,
     @QueryParam("priorityId") String? priorityIdString,
     super.key,
-  }) : priorityId = priority?.id ??
-            priorityId ??
-            (priorityIdString != null
-                ? PriorityId.fromShortString(priorityIdString)
-                : null);
+  }) : priorityId =
+           priority?.id ??
+           priorityId ??
+           (priorityIdString != null
+               ? PriorityId.fromShortString(priorityIdString)
+               : null);
 
   final PriorityId? priorityId;
 
@@ -26,9 +27,7 @@ class NewPriorityPage extends HookWidget {
     final (nameController, name) = useTextEditingValue();
 
     return Scaffold(
-      header: Header(
-        title: 'New Priority',
-      ),
+      header: Header(title: 'New Priority', modal: true),
       body: Container(
         padding: const EdgeInsets.all(16),
         child: Center(
@@ -46,20 +45,22 @@ class NewPriorityPage extends HookWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Button.primary(
-                    AddPriority((priorityId == null
-                            ? Future<Priority?>.value(null)
-                            : Priority.get(priorityId!))
-                        .then(
-                      (priority) => Priority(
-                        name: name,
-                        parent: priority,
-                        order: Order.first(),
-                      ),
-                    )),
+                    AddPriority(
+                      (priorityId == null
+                              ? Future<Priority?>.value(null)
+                              : Priority.get(priorityId!))
+                          .then(
+                            (priority) => Priority(
+                              name: name,
+                              parent: priority,
+                              order: Order.first(),
+                            ),
+                          ),
+                    ),
                     enabled: name.isNotEmpty,
-                  )
+                  ),
                 ],
-              )
+              ),
             ],
           ),
         ),
