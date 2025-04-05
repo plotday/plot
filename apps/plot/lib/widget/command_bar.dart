@@ -60,7 +60,9 @@ class CommandBarState extends State<CommandBar> {
 
   int _allCommandsCount() {
     return _filteredCommandGroups.fold(
-        0, (total, group) => total + group.commands.length);
+      0,
+      (total, group) => total + group.commands.length,
+    );
   }
 
   Future<CommandReturn?> _executeCommand(Command command) async {
@@ -84,9 +86,7 @@ class CommandBarState extends State<CommandBar> {
   @override
   Widget build(BuildContext context) {
     if (_child != null) {
-      return Dialog(
-        child: _child!,
-      );
+      return Dialog(child: _child!);
     }
     return Dialog(
       child: Column(
@@ -95,10 +95,16 @@ class CommandBarState extends State<CommandBar> {
           if (_error != null) Text(_error!),
           if (_child != null) _child!,
           if (_child == null) ...[
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              label: widget.commands.prompt,
+            EditableArea(
+              position: EditableAreaPosition.top,
+              builder:
+                  (context, focusNode) => TextField(
+                    style: TextFieldStyle.ghost,
+                    controller: _controller,
+                    autofocus: true,
+                    label: widget.commands.prompt,
+                    focusNode: focusNode,
+                  ),
             ),
             const SizedBox(height: 16),
             Flexible(
@@ -122,10 +128,7 @@ class CommandBarState extends State<CommandBar> {
     for (final group in _filteredCommandGroups) {
       for (final command in group.commands) {
         if (currentIndex == index) {
-          return CommandWrapper(
-            command,
-            run: (_) => _executeCommand(command),
-          );
+          return CommandWrapper(command, run: (_) => _executeCommand(command));
         }
         currentIndex++;
       }

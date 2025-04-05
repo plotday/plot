@@ -18,13 +18,14 @@ class ListTile extends StatefulWidget {
     /// Commands revealed on hover or long press.
     this.hiddenCommands = const [],
     super.key,
-  })  : style = ListTileStyle.header,
-        command = null,
-        details = null,
-        highlighted = false;
+  }) : style = ListTileStyle.header,
+       command = null,
+       details = null,
+       highlighted = false;
 
   ListTile.command(
     Command command, {
+
     /// The primary command run when the tile is tapped.
     /// Secondary commands visible on the right.
     this.commands = const [],
@@ -38,9 +39,9 @@ class ListTile extends StatefulWidget {
     /// Highlight the tile (often when unread).
     this.highlighted = false,
     super.key,
-  })  : style = ListTileStyle.command,
-        command = command,
-        title = command.title;
+  }) : style = ListTileStyle.command,
+       command = command,
+       title = command.title;
 
   final ListTileStyle style;
   final bool highlighted;
@@ -59,22 +60,22 @@ class _ListTileState extends State<ListTile> {
   final _focusNode = FocusNode();
 
   Map<ShortcutActivator, Intent> get _shortcuts => {
-        const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
-        const SingleActivator(LogicalKeyboardKey.space): const ActivateIntent(),
-      };
+    const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
+    const SingleActivator(LogicalKeyboardKey.space): const ActivateIntent(),
+  };
 
   Map<Type, Action<Intent>> get _actions => {
-        ActivateIntent: CallbackAction<ActivateIntent>(
-          onInvoke: (ActivateIntent intent) {
-            if (widget.command != null) {
-              widget.command!.run(context);
-            } else if (widget.commands.isNotEmpty) {
-              widget.commands.first.run(context);
-            }
-            return null;
-          },
-        ),
-      };
+    ActivateIntent: CallbackAction<ActivateIntent>(
+      onInvoke: (ActivateIntent intent) {
+        if (widget.command != null) {
+          widget.command!.run(context);
+        } else if (widget.commands.isNotEmpty) {
+          widget.commands.first.run(context);
+        }
+        return null;
+      },
+    ),
+  };
 
   @override
   void dispose() {
@@ -85,15 +86,16 @@ class _ListTileState extends State<ListTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.command != null
-          ? () {
-              try {
-                widget.command!.run(context);
-              } catch (e) {
-                print(e);
+      onTap:
+          widget.command != null
+              ? () {
+                try {
+                  widget.command!.run(context);
+                } catch (e) {
+                  print(e);
+                }
               }
-            }
-          : null,
+              : null,
       child: FocusableActionDetector(
         focusNode: _focusNode,
         actions: _actions,
@@ -105,15 +107,18 @@ class _ListTileState extends State<ListTile> {
           }
         },
         child: Container(
-          color: _focused ? context.colour.background : null,
+          color: _focused ? context.colour.accentBackground : null,
           padding: const EdgeInsets.all(8.0),
           child: Row(
             children: [
               if (widget.command?.icon != null)
                 Padding(
                   padding: const EdgeInsets.only(right: 8.0),
-                  child: FIcon.data(widget.command!.icon!,
-                      size: 12, color: context.colour.muted),
+                  child: FIcon.data(
+                    widget.command!.icon!,
+                    size: 12,
+                    color: context.colour.muted,
+                  ),
                 ),
               Expanded(
                 child: Column(
@@ -125,9 +130,10 @@ class _ListTileState extends State<ListTile> {
                           : widget.title,
                       overflow: TextOverflow.ellipsis,
                       style: context.theme.typography.xs.copyWith(
-                        color: widget.style == ListTileStyle.header
-                            ? context.colour.muted
-                            : context.colour.foreground,
+                        color:
+                            widget.style == ListTileStyle.header
+                                ? context.colour.muted
+                                : context.colour.foreground,
                       ),
                     ),
                     if (widget.command?.description != null)

@@ -12,7 +12,7 @@ class Badge extends StatelessWidget {
   Widget build(BuildContext context) {
     return material.Badge.count(
       count: count,
-      backgroundColor: context.colour.background,
+      backgroundColor: context.colour.accentBackground,
     );
   }
 }

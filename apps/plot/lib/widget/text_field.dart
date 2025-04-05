@@ -1,14 +1,17 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:platform_builder/platform_builder.dart';
 import 'package:forui/forui.dart';
+
+import 'colour_scheme.dart';
+
+enum TextFieldStyle { outline, ghost }
 
 class TextField extends StatefulWidget {
   const TextField({
     required this.label,
+    this.style = TextFieldStyle.outline,
     this.onChanged,
-    this.onSubmitted,
     this.controller,
     this.value,
     this.autocorrect = true,
@@ -20,8 +23,8 @@ class TextField extends StatefulWidget {
     super.key,
   });
 
+  final TextFieldStyle style;
   final ValueChanged<String>? onChanged;
-  final ValueChanged<String>? onSubmitted;
   final TextEditingController? controller;
   final String label;
   final String? value;
@@ -37,13 +40,18 @@ class TextField extends StatefulWidget {
 }
 
 class TextFieldState extends State<TextField> {
-  late TextEditingController _controller;
+  late final TextEditingController _controller;
 
   @override
   void initState() {
     super.initState();
     _controller =
         widget.controller ?? TextEditingController(text: widget.value);
+    if (widget.onChanged != null) {
+      _controller.addListener(() {
+        widget.onChanged?.call(_controller.text);
+      });
+    }
   }
 
   @override
@@ -56,6 +64,11 @@ class TextFieldState extends State<TextField> {
 
   @override
   void dispose() {
+    if (widget.onChanged != null) {
+      _controller.removeListener(() {
+        widget.onChanged?.call(_controller.text);
+      });
+    }
     if (widget.controller == null) {
       _controller.dispose();
     }
@@ -64,35 +77,102 @@ class TextFieldState extends State<TextField> {
 
   @override
   Widget build(BuildContext context) {
+    final borderless = FTextFieldBorderStyle(
+      color: Color(0x00FFFFFF),
+      width: 0,
+      radius: BorderRadius.zero,
+    );
     return PlatformBuilder(
-      androidBuilder: (_) => material.TextField(
-        onChanged: widget.onChanged,
-        onSubmitted: widget.onSubmitted,
-        controller: _controller,
-        decoration: material.InputDecoration(
-          hintText: widget.label,
+      // androidBuilder: (_) => material.TextField(
+      //   onChanged: widget.onChanged,
+      //   controller: _controller,
+      //   decoration: material.InputDecoration(
+      //     hintText: widget.label,
+      //   ),
+      //   autocorrect: widget.autocorrect,
+      //   maxLines: widget.maxLines,
+      //   textAlign: widget.textAlign,
+      //   focusNode: widget.focusNode,
+      //   inputFormatters: widget.inputFormatters,
+      //   autofocus: widget.autofocus,
+      // ),
+      builder:
+          (_) => FTextField(
+            controller: _controller,
+            style:
+                widget.style == TextFieldStyle.outline
+                    ? null
+                    : context.theme.textFieldStyle.copyWith(
+                      contentPadding: EdgeInsets.all(0),
+                      enabledStyle: context.theme.textFieldStyle.enabledStyle
+                          .copyWith(
+                            unfocusedStyle: borderless,
+                            focusedStyle: borderless,
+                          ),
+                      disabledStyle: context.theme.textFieldStyle.disabledStyle
+                          .copyWith(
+                            unfocusedStyle: borderless,
+                            focusedStyle: borderless,
+                          ),
+                      errorStyle: context.theme.textFieldStyle.errorStyle
+                          .copyWith(
+                            unfocusedStyle: borderless,
+                            focusedStyle: borderless,
+                          ),
+                    ),
+            hint: widget.label,
+            autocorrect: widget.autocorrect,
+            maxLines: widget.maxLines,
+            textAlign: widget.textAlign,
+            focusNode: widget.focusNode,
+            inputFormatters: widget.inputFormatters,
+            autofocus: widget.autofocus,
+          ),
+    );
+  }
+}
+
+enum EditableAreaPosition { top, bottom, middle }
+
+class EditableArea extends StatefulWidget {
+  const EditableArea({
+    required this.builder,
+    required this.position,
+    super.key,
+  });
+
+  final Widget Function(BuildContext context, FocusNode focusNode) builder;
+  final EditableAreaPosition position;
+
+  @override
+  EditableAreaState createState() => EditableAreaState();
+}
+
+class EditableAreaState extends State<EditableArea> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        _focusNode.requestFocus();
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: context.colour.editableBackground,
+          border: Border(
+            top:
+                widget.position != EditableAreaPosition.top
+                    ? BorderSide(width: 1.0, color: context.colour.border)
+                    : BorderSide.none,
+            bottom:
+                widget.position != EditableAreaPosition.bottom
+                    ? BorderSide(width: 1.0, color: context.colour.border)
+                    : BorderSide.none,
+          ),
         ),
-        autocorrect: widget.autocorrect,
-        maxLines: widget.maxLines,
-        textAlign: widget.textAlign,
-        focusNode: widget.focusNode,
-        inputFormatters: widget.inputFormatters,
-        autofocus: widget.autofocus,
-      ),
-      builder: (_) => FTextField(
-        // onChanged: widget.onChanged,
-        // onSubmitted: widget.onSubmitted,
-        controller: _controller,
-        hint: widget.label,
-        // decoration: material.InputDecoration(
-        //   hintText: widget.label,
-        // ),
-        autocorrect: widget.autocorrect,
-        maxLines: widget.maxLines,
-        textAlign: widget.textAlign,
-        focusNode: widget.focusNode,
-        inputFormatters: widget.inputFormatters,
-        autofocus: widget.autofocus,
+        child: widget.builder(context, _focusNode),
       ),
     );
   }

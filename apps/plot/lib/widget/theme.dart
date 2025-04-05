@@ -13,6 +13,7 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
   );
   theme = theme.copyWith(
     textFieldStyle: theme.textFieldStyle.copyWith(
+      cursorColor: colourScheme.accent,
       enabledStyle: theme.textFieldStyle.enabledStyle.copyWith(
         contentTextStyle: theme.textFieldStyle.enabledStyle.contentTextStyle
             .copyWith(color: colourScheme.foreground),

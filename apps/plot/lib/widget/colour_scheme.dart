@@ -5,40 +5,46 @@ import 'package:forui/forui.dart';
 
 class ColourSchemeData extends Equatable {
   final HSLColor base;
-  final HSLColor pure;
+  final HSLColor pureBackground;
+  final HSLColor pureForeground;
   final Brightness brightness;
 
   ColourSchemeData(Color base, this.brightness)
     : base = HSLColor.fromColor(base).withAlpha(1),
-      pure =
+      pureBackground =
+          brightness == Brightness.light
+              ? HSLColor.fromColor(Color(0xFFFFFFFF))
+              : HSLColor.fromColor(Color(0xFF000000)),
+      pureForeground =
           brightness == Brightness.light
               ? HSLColor.fromColor(Color(0xFF000000))
               : HSLColor.fromColor(Color(0xFFFFFFFF));
 
+  Color get barrier => pureBackground.withAlpha(0.5).toColor();
   Color get canvas =>
       brightness == Brightness.light
           ? base.withLightness(0.9).withAlpha(0.9).toColor()
           : base.withLightness(0.1).withAlpha(0.25).toColor();
+  Color get background =>
+      brightness == Brightness.light
+          ? base.withLightness(0.9).withAlpha(0.9).toColor()
+          : base.withSaturation(0.2).withLightness(0.08).toColor();
+  Color get editableBackground =>
+      brightness == Brightness.light
+          ? base.withLightness(0.9).withAlpha(0.9).toColor()
+          : base.withSaturation(0.1).withLightness(0.15).toColor();
   Color get accent =>
       brightness == Brightness.light
           ? base.withLightness(0.6).toColor()
           : base.withLightness(0.4).toColor();
-  Color get background =>
+  Color get accentBackground =>
       brightness == Brightness.light
           ? base.withLightness(0.9).toColor()
-          : base.withLightness(0.1).toColor();
-  Color get highlight =>
-      brightness == Brightness.light
-          ? base.withLightness(0.8).toColor()
-          : base.withLightness(0.2).toColor();
-  Color get mutedHighlight =>
-      brightness == Brightness.light
-          ? base.withLightness(0.7).toColor()
-          : base.withLightness(0.1).toColor();
+          : base.withLightness(0.15).withAlpha(0.4).toColor();
   Color get border =>
       brightness == Brightness.light
-          ? pure.withAlpha(0.2).toColor()
-          : pure.withAlpha(0.1).toColor();
+          ? pureForeground.withAlpha(0.2).toColor()
+          : pureForeground.withAlpha(0.1).toColor();
   Color get foreground =>
       brightness == Brightness.light ? Color(0x0FF00000) : Color(0xFFFFFFFF);
   Color get muted =>
@@ -49,13 +55,13 @@ class ColourSchemeData extends Equatable {
   FColorScheme toFColorScheme() {
     return FColorScheme(
       brightness: brightness,
-      barrier: canvas.withAlpha(200), // Example derivation for barrier
+      barrier: barrier,
       background: background,
       foreground: foreground,
-      primary: highlight,
+      primary: accent,
       primaryForeground: foreground,
-      secondary: highlight,
-      secondaryForeground: accent,
+      secondary: accent,
+      secondaryForeground: accentBackground,
       muted: Color(0x00FFFFFF),
       mutedForeground: muted,
       destructive:

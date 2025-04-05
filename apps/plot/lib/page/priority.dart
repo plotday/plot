@@ -16,13 +16,16 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
     @PathParam("priorityId") String? priorityIdString,
     super.key,
   }) {
-    priorityId = priority?.id ??
+    priorityId =
+        priority?.id ??
         priorityId ??
         (priorityIdString != null
             ? PriorityId.fromShortString(priorityIdString)
             : null);
-    assert(priorityId != null,
-        'A priority must be provided via one of the parameters: priority, priorityId, or priorityIdString.');
+    assert(
+      priorityId != null,
+      'A priority must be provided via one of the parameters: priority, priorityId, or priorityIdString.',
+    );
     this.priorityId = priorityId!;
   }
 
@@ -48,77 +51,77 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
 
 @RoutePage(name: "PriorityMainRoute")
 class PriorityPage extends StatelessWidget {
-  const PriorityPage({
-    super.key,
-  });
+  const PriorityPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<PriorityBloc, PriorityState>(builder: (context, state) {
-      if (state.loading) {
-        return LoadingPage();
-      }
-      return BlocBuilder<PriorityBloc, PriorityState>(
-        builder: (context, prioritiesState) {
-          return Scaffold(
-            body: BidirectionalList(
-              scrollController: ScrollControllerContext.of(context),
-              count: state.inactiveActivities.length,
-              builder: (context, index) => ActivityWidget(
-                activity: state.inactiveActivities[index],
-              ),
-              header: Column(
-                children: [
-                  PriorityTile(
-                    priority: state.current,
-                    balances: prioritiesState.balances?[state.current.id],
-                    maxTime: prioritiesState.maxTime,
-                    isHeader: true,
-                  ),
-                  _PrioritiesSection(),
-                  if (state.pinnedActivities.isNotEmpty)
-                    ListTile.header(
-                      title: "Pinned",
-                      commands: [
-                        NewActivity(
-                          draft: Activity.draft(
-                            priorityId: state.current.id,
-                            pinned: true,
-                          ),
-                        ),
-                      ],
+    return BlocBuilder<PriorityBloc, PriorityState>(
+      builder: (context, state) {
+        if (state.loading) {
+          return LoadingPage();
+        }
+        return BlocBuilder<PriorityBloc, PriorityState>(
+          builder: (context, prioritiesState) {
+            return Scaffold(
+              translucent: true,
+              body: BidirectionalList(
+                scrollController: ScrollControllerContext.of(context),
+                count: state.inactiveActivities.length,
+                builder:
+                    (context, index) => ActivityWidget(
+                      activity: state.inactiveActivities[index],
                     ),
-                  _ReorderableActivitiesView(
-                    activities: state.pinnedActivities,
-                  ),
-                  if (state.activeActivities.isNotEmpty)
-                    ListTile.header(
-                      title: "Now",
-                      commands: [
-                        NewActivity(
-                          draft: Activity.draft(
-                            priorityId: state.current.id,
-                            doAt: DateTime.now(),
-                          ),
-                        ),
-                      ],
+                header: Column(
+                  children: [
+                    PriorityTile(
+                      priority: state.current,
+                      balances: prioritiesState.balances?[state.current.id],
+                      maxTime: prioritiesState.maxTime,
+                      isHeader: true,
                     ),
-                  _ReorderableActivitiesView(
-                    activities: state.activeActivities,
-                  ),
-                  ListTile.header(
-                    title: "Activity",
-                    commands: [
-                      NewActivity(),
-                    ],
-                  ),
-                ],
+                    _PrioritiesSection(),
+                    if (state.pinnedActivities.isNotEmpty)
+                      ListTile.header(
+                        title: "Pinned",
+                        commands: [
+                          NewActivity(
+                            draft: Activity.draft(
+                              priorityId: state.current.id,
+                              pinned: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                    _ReorderableActivitiesView(
+                      activities: state.pinnedActivities,
+                    ),
+                    if (state.activeActivities.isNotEmpty)
+                      ListTile.header(
+                        title: "Now",
+                        commands: [
+                          NewActivity(
+                            draft: Activity.draft(
+                              priorityId: state.current.id,
+                              doAt: DateTime.now(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    _ReorderableActivitiesView(
+                      activities: state.activeActivities,
+                    ),
+                    ListTile.header(
+                      title: "Activity",
+                      commands: [NewActivity()],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
-      );
-    });
+            );
+          },
+        );
+      },
+    );
   }
 }
 
@@ -131,19 +134,15 @@ class _PrioritiesSection extends StatelessWidget {
       builder: (context, state) {
         return Column(
           children: [
-            ListTile.header(
-              title: "Priorities",
-              commands: [
-                NewPriority(),
-              ],
-            ),
+            ListTile.header(title: "Priorities", commands: [NewPriority()]),
             ReorderableListView(
               list: state.current.children,
-              itemBuilder: (context, item) => PriorityTile(
-                priority: item,
-                balances: state.balances?[item.id],
-                maxTime: state.maxTime,
-              ),
+              itemBuilder:
+                  (context, item) => PriorityTile(
+                    priority: item,
+                    balances: state.balances?[item.id],
+                    maxTime: state.maxTime,
+                  ),
               shrinkWrap: true,
               onReorder: (int oldIndex, int newIndex) async {
                 var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
@@ -177,31 +176,30 @@ class _ReorderableActivitiesView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ReorderableListView(
-        list: activities,
-        itemBuilder: (buildContext, item) => ActivityWidget(
-          activity: item,
-        ),
-        shrinkWrap: true,
-        onReorder: (int oldIndex, int newIndex) async {
-          var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-          var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-          Activity activity = activities[oldIndex];
-          Activity? previous;
-          if (previousIndex >= 0) {
-            previous = activities[previousIndex];
-          }
-          Activity? next;
-          if (nextIndex < activities.length) {
-            next = activities[nextIndex];
-          }
-          activity.copyWith(
-            order: Order.between(previous?.order, next?.order),
-            // Action activities are sorted first by doAt, so we need to set this
-            // to have the same doAt as one of its neighbours.
-            doAt: activity.doNow
+    list: activities,
+    itemBuilder: (buildContext, item) => ActivityWidget(activity: item),
+    shrinkWrap: true,
+    onReorder: (int oldIndex, int newIndex) async {
+      var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+      var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+      Activity activity = activities[oldIndex];
+      Activity? previous;
+      if (previousIndex >= 0) {
+        previous = activities[previousIndex];
+      }
+      Activity? next;
+      if (nextIndex < activities.length) {
+        next = activities[nextIndex];
+      }
+      activity.copyWith(
+        order: Order.between(previous?.order, next?.order),
+        // Action activities are sorted first by doAt, so we need to set this
+        // to have the same doAt as one of its neighbours.
+        doAt:
+            activity.doNow
                 ? Value(previous?.doAt ?? next?.doAt ?? activity.doAt)
                 : const Value.absent(),
-          );
-        },
       );
+    },
+  );
 }

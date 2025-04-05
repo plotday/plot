@@ -16,11 +16,12 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
     ActivityId? activityId,
     @PathParam("activityId") String? activityIdString,
     super.key,
-  }) : activityId = activity?.id ??
-            activityId ??
-            (activityIdString != null
-                ? ActivityId.fromShortString(activityIdString)
-                : null);
+  }) : activityId =
+           activity?.id ??
+           activityId ??
+           (activityIdString != null
+               ? ActivityId.fromShortString(activityIdString)
+               : null);
 
   final ActivityId? activityId;
 
@@ -35,94 +36,86 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
 
 @RoutePage(name: "ActivityMainRoute")
 class ActivityPage extends StatelessWidget {
-  const ActivityPage({
-    super.key,
-  });
+  const ActivityPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ActivityBloc, ActivityState>(builder: (context, state) {
-      if (state is! ActivitySelectedState) {
-        return const Spinner();
-      }
+    return BlocBuilder<ActivityBloc, ActivityState>(
+      builder: (context, state) {
+        if (state is! ActivitySelectedState) {
+          return const Spinner();
+        }
 
-      if (state.loading) {
-        return const Spinner();
-      }
+        if (state.loading) {
+          return const Spinner();
+        }
 
-      return Scaffold(
-        header: Header(
-          title: state.current.title,
-          commands: activityCommands(state.current).commands,
-        ),
-        body: Column(
-          children: [
-            Flexible(
-              fit: FlexFit.tight,
-              child: Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      width: 1.0,
-                      color: context.colour.border,
+        return Scaffold(
+          header: Header(
+            title: state.current.title,
+            commands: activityCommands(state.current).commands,
+          ),
+          body: Column(
+            children: [
+              Flexible(
+                fit: FlexFit.tight,
+                child: Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        width: 1.0,
+                        color: context.colour.border,
+                      ),
                     ),
                   ),
-                ),
-                child: SingleChildScrollView(
-                  child: Viewer(
-                    markdown: state.current.body,
+                  child: SingleChildScrollView(
+                    child: Viewer(markdown: state.current.body),
                   ),
                 ),
               ),
-            ),
-            Flexible(
-              fit: FlexFit.tight,
-              child: Container(
-                padding: EdgeInsets.all(16),
-                child: NotesView(notes: state.notes),
-              ),
-            ),
-            Flexible(
-              flex: 0,
-              child: Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(
-                      width: 1.0,
-                      color: context.colour.border,
-                    ),
-                    bottom: BorderSide(
-                      width: 1.0,
-                      color: context.colour.border,
-                    ),
-                  ),
-                ),
-                child: Editor(
-                  hint: 'Add a note',
-                  autofocus: true,
-                  onSubmitted: (body) async {
-                    if (state.current.draft) {
-                      final activity =
-                          state.current.copyWith(body: body, draft: false);
-                      await context
-                          .read<ActivityBloc>()
-                          .updateActivity(activity);
-                      if (!context.mounted) return;
-                      await context.router
-                          .push(ActivityRoute(activity: activity));
-                      return;
-                    }
-                    await context.read<ActivityBloc>().updateNote(
-                        state.draft.copyWith(body: body, draft: false));
-                  },
+              Flexible(
+                fit: FlexFit.tight,
+                child: Container(
+                  padding: EdgeInsets.all(16),
+                  child: NotesView(notes: state.notes),
                 ),
               ),
-            ),
-          ],
-        ),
-      );
-    });
+              Flexible(
+                flex: 0,
+                child: EditableArea(
+                  position: EditableAreaPosition.bottom,
+                  builder:
+                      (context, focusNode) => Editor(
+                        hint: 'Add a note',
+                        autofocus: true,
+                        focusNode: focusNode,
+                        onSubmitted: (body) async {
+                          if (state.current.draft) {
+                            final activity = state.current.copyWith(
+                              body: body,
+                              draft: false,
+                            );
+                            await context.read<ActivityBloc>().updateActivity(
+                              activity,
+                            );
+                            if (!context.mounted) return;
+                            await context.router.push(
+                              ActivityRoute(activity: activity),
+                            );
+                            return;
+                          }
+                          await context.read<ActivityBloc>().updateNote(
+                            state.draft.copyWith(body: body, draft: false),
+                          );
+                        },
+                      ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

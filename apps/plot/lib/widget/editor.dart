@@ -7,6 +7,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:flutter_debouncer/flutter_debouncer.dart';
 
 import 'sliver.dart';
+import 'colour_scheme.dart';
 
 final _styles = Stylesheet(
   rules: [
@@ -45,6 +46,7 @@ class Editor extends StatefulWidget {
     this.autofocus = false,
     this.onSubmitted,
     this.onChange,
+    this.focusNode,
     super.key,
   });
 
@@ -52,6 +54,7 @@ class Editor extends StatefulWidget {
   final bool autofocus;
   final ValueChanged<String>? onSubmitted;
   final ValueChanged<String>? onChange;
+  final FocusNode? focusNode;
 
   @override
   State<Editor> createState() => EditorState();
@@ -93,21 +96,24 @@ class EditorState extends State<Editor> {
     widget.onChange?.call(md);
   }
 
+  void _onFocusChange() {
+    if (!_editorFocusNode.hasFocus) {
+      notify();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _editorFocusNode =
-        FocusNode()..addListener(() {
-          if (!_editorFocusNode.hasFocus) {
-            notify();
-          }
-        });
+    _editorFocusNode = widget.focusNode ?? FocusNode();
+    _editorFocusNode.addListener(_onFocusChange);
     _scrollController = ScrollController();
     clear();
   }
 
   @override
   void dispose() {
+    _editorFocusNode.removeListener(_onFocusChange);
     _debouncer.cancel();
     _scrollController.dispose();
     _editorFocusNode.dispose();
@@ -137,9 +143,7 @@ class EditorState extends State<Editor> {
           documentLayoutKey: _docLayoutKey,
           documentOverlayBuilders: [
             DefaultCaretOverlayBuilder(
-              caretStyle: CaretStyle().copyWith(
-                color: isDark ? material.Colors.white : material.Colors.black,
-              ),
+              caretStyle: CaretStyle().copyWith(color: context.colour.accent),
             ),
           ],
           stylesheet: isDark ? _darkStyles : _styles,
