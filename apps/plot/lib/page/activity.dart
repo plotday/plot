@@ -59,26 +59,24 @@ class ActivityPage extends StatelessWidget {
           body: Column(
             children: [
               Flexible(
-                fit: FlexFit.tight,
+                flex: 0,
                 child: Container(
                   padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        width: 1.0,
-                        color: context.colour.border,
-                      ),
-                    ),
-                  ),
                   child: SingleChildScrollView(
                     child: Viewer(markdown: state.current.body),
                   ),
                 ),
               ),
               Flexible(
-                fit: FlexFit.tight,
+                flex: 1,
+                fit: FlexFit.loose,
                 child: Container(
                   padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      top: BorderSide(width: 1.0, color: context.colour.border),
+                    ),
+                  ),
                   child: NotesView(notes: state.notes),
                 ),
               ),
