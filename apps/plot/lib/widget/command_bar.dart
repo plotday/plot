@@ -106,7 +106,6 @@ class CommandBarState extends State<CommandBar> {
                     focusNode: focusNode,
                   ),
             ),
-            const SizedBox(height: 16),
             Flexible(
               child: ListView.builder(
                 shrinkWrap: true,

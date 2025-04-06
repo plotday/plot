@@ -121,25 +121,28 @@ class _ListTileState extends State<ListTile> {
                   ),
                 ),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.style == ListTileStyle.header
-                          ? widget.title.toUpperCase()
-                          : widget.title,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.theme.typography.xs.copyWith(
-                        color:
-                            widget.style == ListTileStyle.header
-                                ? context.colour.muted
-                                : context.colour.foreground,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.style == ListTileStyle.header
+                            ? widget.title.toUpperCase()
+                            : widget.title,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.theme.typography.xs.copyWith(
+                          color:
+                              widget.style == ListTileStyle.header
+                                  ? context.colour.muted
+                                  : context.colour.foreground,
+                        ),
                       ),
-                    ),
-                    if (widget.command?.description != null)
-                      Text(widget.command!.description!),
-                    if (widget.details != null) widget.details!,
-                  ],
+                      if (widget.command?.description != null)
+                        Text(widget.command!.description!),
+                      if (widget.details != null) widget.details!,
+                    ],
+                  ),
                 ),
               ),
               ...widget.commands.map((c) => Button.icon(c)),
