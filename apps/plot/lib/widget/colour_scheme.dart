@@ -43,6 +43,10 @@ class ColourSchemeData extends Equatable {
           : base.withLightness(0.4).toColor();
   Color get accentBackground =>
       brightness == Brightness.light
+          ? base.withLightness(0.7).toColor()
+          : base.withLightness(0.35).toColor();
+  Color get highlight =>
+      brightness == Brightness.light
           ? base.withLightness(0.9).toColor()
           : base.withLightness(0.15).withAlpha(0.4).toColor();
   Color get border =>
@@ -62,10 +66,10 @@ class ColourSchemeData extends Equatable {
       barrier: barrier,
       background: background,
       foreground: foreground,
-      primary: accent,
+      primary: accentBackground,
       primaryForeground: foreground,
-      secondary: accent,
-      secondaryForeground: accentBackground,
+      secondary: highlight,
+      secondaryForeground: foreground,
       muted: Color(0x00FFFFFF),
       mutedForeground: muted,
       destructive:
@@ -95,7 +99,7 @@ class ColourSchemeData extends Equatable {
 }
 
 class ColourScheme extends StatelessWidget {
-  static const Color brand = Color(0x0000FFFF);
+  static const Color brand = Color.fromARGB(255, 35, 152, 112);
 
   final Widget child;
   final Color base;

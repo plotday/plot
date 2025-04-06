@@ -108,7 +108,7 @@ class _ListTileState extends State<ListTile> {
           }
         },
         child: Container(
-          color: _focused ? context.colour.accentBackground : null,
+          color: _focused ? context.colour.highlight : null,
           padding: EdgeInsets.symmetric(
             horizontal: widgetPadding.horizontal / 2,
           ),
