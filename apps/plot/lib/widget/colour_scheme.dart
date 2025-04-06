@@ -20,7 +20,7 @@ class ColourSchemeData extends Equatable {
               ? HSLColor.fromColor(Color(0xFF000000))
               : HSLColor.fromColor(Color(0xFFFFFFFF));
 
-  Color get barrier => pureBackground.withAlpha(0.5).toColor();
+  Color get barrier => pureBackground.withAlpha(0.6).toColor();
   Color get canvas =>
       brightness == Brightness.light
           ? base.withLightness(0.9).withAlpha(0.9).toColor()
@@ -29,10 +29,14 @@ class ColourSchemeData extends Equatable {
       brightness == Brightness.light
           ? base.withLightness(0.9).withAlpha(0.9).toColor()
           : base.withSaturation(0.2).withLightness(0.08).toColor();
+  Color get modalBackground =>
+      brightness == Brightness.light
+          ? base.withLightness(0.9).withAlpha(0.9).toColor()
+          : base.withSaturation(0.3).withLightness(0.12).toColor();
   Color get editableBackground =>
       brightness == Brightness.light
           ? base.withLightness(0.9).withAlpha(0.9).toColor()
-          : base.withSaturation(0.1).withLightness(0.15).toColor();
+          : base.withSaturation(0.1).withLightness(0.12).toColor();
   Color get accent =>
       brightness == Brightness.light
           ? base.withLightness(0.6).toColor()
@@ -111,5 +115,9 @@ class ColourScheme extends StatelessWidget {
 extension ColourSchemeExtension on BuildContext {
   ColourSchemeData get colour {
     return Provider.of<ColourSchemeData>(this, listen: true);
+  }
+
+  ColourSchemeData get colourOnce {
+    return Provider.of<ColourSchemeData>(this, listen: false);
   }
 }

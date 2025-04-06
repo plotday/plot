@@ -11,13 +11,11 @@ class Dialog extends StatelessWidget {
     required Widget Function(BuildContext) builder,
     bool barrierDismissible = true,
   }) {
-    return PlatformResolver.current(
-      defaultResolver:
-          () => material.showAdaptiveDialog<T>(
-            context: context,
-            builder: builder,
-            barrierDismissible: barrierDismissible,
-          ),
+    return material.showDialog<T>(
+      context: context,
+      builder: builder,
+      barrierColor: context.colourOnce.barrier,
+      barrierDismissible: barrierDismissible,
     );
   }
 
@@ -51,7 +49,7 @@ class Dialog extends StatelessWidget {
           (_) => FDialog.raw(
             style: context.theme.dialogStyle.copyWith(
               decoration: BoxDecoration(
-                color: context.colour.background,
+                color: context.colour.modalBackground,
                 border: Border.all(color: context.colour.border),
                 borderRadius: BorderRadius.circular(8),
               ),
