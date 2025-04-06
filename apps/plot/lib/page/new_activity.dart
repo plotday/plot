@@ -9,6 +9,7 @@ import 'package:plot/state/draft_activity.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/page/loading.dart';
 
 @RoutePage(name: "NewActivityRoute")
 class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
@@ -50,7 +51,7 @@ class NewActivityPage extends StatelessWidget {
     return BlocBuilder<DraftActivityBloc, DraftActivityState>(
       builder: (context, state) {
         if (state.loading) {
-          return const Spinner();
+          return const LoadingPage();
         }
 
         return Scaffold(

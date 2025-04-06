@@ -8,6 +8,7 @@ import 'package:plot/state/activity.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/note.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/page/loading.dart';
 
 @RoutePage(name: "ActivityRoute")
 class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
@@ -43,11 +44,11 @@ class ActivityPage extends StatelessWidget {
     return BlocBuilder<ActivityBloc, ActivityState>(
       builder: (context, state) {
         if (state is! ActivitySelectedState) {
-          return const Spinner();
+          return const LoadingPage();
         }
 
         if (state.loading) {
-          return const Spinner();
+          return const LoadingPage();
         }
 
         return Scaffold(
