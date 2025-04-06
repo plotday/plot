@@ -44,10 +44,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   static Future<List<Priority>> getAll() async {
-    return await (Store.get.select(table)
-      ..where((t) => t.deletedAt.isNull())).get().then(
-      (rows) => rows.map((row) => Priority.fromStore(row)).toList(),
-    );
+    return await (Store.get.select(table)..where(
+      (t) => t.deletedAt.isNull(),
+    )).get().then((rows) => _buildHierarchy(rows, flat: true).toList());
   }
 
   static SimpleSelectStatement<$PrioritiesTable, PriorityRow> _selectDefault() {
@@ -146,31 +145,41 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     query.orderBy([(t) => OrderingTerm(expression: t.path)]);
 
     return query.watch().map((rows) {
-      List<Priority> matches = [];
-      List<Priority> stack = [];
+      return _buildHierarchy(rows, path: path);
+    });
+  }
 
-      for (var row in rows) {
-        var priority = Priority.fromStore(row);
+  static List<Priority> _buildHierarchy(
+    List<PriorityRow> rows, {
+    Path? path,
+    bool flat = false,
+  }) {
+    List<Priority> matches = [];
+    List<Priority> stack = [];
 
-        if (stack.isNotEmpty && !stack.last.path.isParent(priority.path)) {
-          stack.removeWhere((c) => !c.path.isParent(priority.path));
-        }
+    for (var row in rows) {
+      var priority = Priority.fromStore(row);
 
-        if (stack.isNotEmpty) {
-          priority = priority.copyWith(parent: stack.last);
-        }
-
-        if ((path == null && priority.path.isRoot) || priority.path == path) {
-          matches.add(priority);
-          stack.clear();
-        }
-
-        stack.add(priority);
+      if (stack.isNotEmpty && !stack.last.path.isParent(priority.path)) {
+        stack.removeWhere((c) => !c.path.isParent(priority.path));
       }
 
-      matches.sort();
-      return matches;
-    });
+      if (stack.isNotEmpty) {
+        priority = priority.copyWith(parent: stack.last);
+      }
+
+      if ((path == null && priority.path.isRoot) || priority.path == path) {
+        matches.add(priority);
+        stack.clear();
+      } else if (flat) {
+        matches.add(priority);
+      }
+
+      stack.add(priority);
+    }
+
+    matches.sort();
+    return matches;
   }
 
   Priority({
@@ -257,6 +266,20 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       parent == null ? [] : parent!.ancestors + [parent!];
   List<Priority> get peers => parent?.children ?? [];
   Priority get root => parent?.root ?? this;
+
+  String get pathLabel {
+    if (parent == null) {
+      return name;
+    }
+    return "${parent!.pathLabel} > $name";
+  }
+
+  String get label {
+    if (parent == null) {
+      return name;
+    }
+    return "$name | ${parent!.pathLabel}";
+  }
 
   Future<void> save() => Store.get.save(table, this, PrioritiesBase());
 

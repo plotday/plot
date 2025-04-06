@@ -12,11 +12,7 @@ import 'package:plot/router.dart';
 
 class PriorityCommand extends ValueCommand<Priority?> {
   PriorityCommand(Priority? priority)
-    : super(
-        title: priority?.name ?? 'All Priorities',
-        icon: PlotIcon.priority,
-        value: priority,
-      );
+    : super(title: priority?.label ?? 'All Priorities', value: priority);
 }
 
 class PriorityCommandGroup extends CommandGroup {

@@ -49,13 +49,13 @@ class CommandWrapper extends Command {
   CommandWrapper(
     this.command, {
     required Future<CommandReturn?> Function(BuildContext context) run,
-  })  : _run = run,
-        super(
-          title: command.title,
-          description: command.description,
-          icon: command.icon,
-          shortcut: command.shortcut,
-        );
+  }) : _run = run,
+       super(
+         title: command.title,
+         description: command.description,
+         icon: command.icon,
+         shortcut: command.shortcut,
+       );
 
   @override
   Future<CommandReturn?> run(BuildContext context) {
@@ -68,7 +68,7 @@ class ValueCommand<T> extends Command {
   ValueCommand({
     required super.title,
     super.description,
-    required super.icon,
+    super.icon,
     required this.value,
   });
 
@@ -94,10 +94,7 @@ class ShowCommand<T> extends Command {
   @override
   Future<CommandValue<T?>> run(BuildContext context) async {
     try {
-      final value = await CommandBar.show<T>(
-        context,
-        commands(context),
-      );
+      final value = await CommandBar.show<T>(context, commands(context));
       if (context.mounted && value != null) {
         onSelect(context, value);
       }
@@ -127,10 +124,7 @@ extension BuildContextCommandExtension on BuildContext {
 }
 
 abstract class CommandGroup {
-  CommandGroup({
-    required this.title,
-    this.subtitle,
-  });
+  CommandGroup({required this.title, this.subtitle});
 
   final String title;
   final String? subtitle; // count
@@ -160,10 +154,7 @@ class StaticCommandGroup extends CommandGroup {
 }
 
 class Commands<T> {
-  const Commands({
-    required this.prompt,
-    required this.groups,
-  });
+  const Commands({required this.prompt, required this.groups});
 
   final String prompt;
   final List<CommandGroup> groups;
@@ -203,11 +194,7 @@ class Commands<T> {
 /// Activate new commands in the given widget scope. This adds a new scope for the CommandBar,
 /// along with activating shortcuts for the commands.
 class CommandScope extends StatelessWidget {
-  const CommandScope({
-    required this.commands,
-    required this.child,
-    super.key,
-  });
+  const CommandScope({required this.commands, required this.child, super.key});
 
   final Commands<void> commands;
   final Widget child;
@@ -219,26 +206,25 @@ class CommandScope extends StatelessWidget {
           .whereType<StaticCommandGroup>()
           .expand((group) => group.commands)
           .fold(
-        <ShortcutActivator, VoidCallback>{
-          const SingleActivator(
-            LogicalKeyboardKey.keyK,
-            meta: true,
-          ): () => commands.show(context),
-        },
-        (bindings, command) => command.shortcut == null
-            ? bindings
-            : {
-                ...bindings,
-                command.shortcut!: () {
-                  try {
-                    context.run<void>(command);
-                  } catch (e) {
-                    print('Error running command: $e');
-                    rethrow;
-                  }
-                },
-              },
-      ),
+            <ShortcutActivator, VoidCallback>{
+              const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+                  () => commands.show(context),
+            },
+            (bindings, command) =>
+                command.shortcut == null
+                    ? bindings
+                    : {
+                      ...bindings,
+                      command.shortcut!: () {
+                        try {
+                          context.run<void>(command);
+                        } catch (e) {
+                          print('Error running command: $e');
+                          rethrow;
+                        }
+                      },
+                    },
+          ),
       child: child,
     );
   }
