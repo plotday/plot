@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:auto_route/auto_route.dart';
 
-import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
 class Header extends StatelessWidget {
@@ -28,12 +27,20 @@ class Header extends StatelessWidget {
             : null;
 
     return FHeader.nested(
-      prefixActions: [if (!modal && backButton != null) backButton],
-      suffixActions: [
-        ...commands.map((command) => Button.icon(command)),
-        if (modal && backButton != null) backButton,
-      ],
-      title: main ?? const Text(''),
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          if (main != null || (!modal && backButton != null))
+            Row(
+              spacing: 8,
+              children: [
+                if (!modal && backButton != null) backButton,
+                if (main != null) main!,
+              ],
+            ),
+          if (modal && backButton != null) backButton,
+        ],
+      ),
     );
   }
 }

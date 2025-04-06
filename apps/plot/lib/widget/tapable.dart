@@ -11,14 +11,11 @@ class Tapable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PlatformBuilder(
-      androidBuilder: (_) => material.InkWell(
-        onTap: onTap,
-        child: child,
-      ),
-      builder: (_) => GestureDetector(
-        onTap: onTap,
-        child: child,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: PlatformBuilder(
+        androidBuilder: (_) => material.InkWell(onTap: onTap, child: child),
+        builder: (_) => GestureDetector(onTap: onTap, child: child),
       ),
     );
   }

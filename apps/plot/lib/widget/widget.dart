@@ -27,6 +27,7 @@ export 'squiggle.dart';
 export 'switch.dart';
 export 'tapable.dart';
 export 'text_field.dart';
+export 'theme.dart';
 export 'time.dart';
 export 'time_picker.dart';
 export 'toggle.dart';

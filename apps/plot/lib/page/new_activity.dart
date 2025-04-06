@@ -33,10 +33,16 @@ class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
   Widget wrappedRoute(BuildContext context) {
     return BlocProvider(
       create:
-          (_) => DraftActivityBloc(
-            priorityId: context.read<NowBloc>().loadedState.priority.id,
-            draft: draft,
-          ),
+          (context) =>
+              priorityId != null
+                  ? DraftActivityBloc.byId(
+                    priorityId: priorityId!,
+                    draft: draft,
+                  )
+                  : DraftActivityBloc(
+                    priority: context.read<NowBloc>().loadedState.priority,
+                    draft: draft,
+                  ),
       child: this,
     );
   }
@@ -55,7 +61,22 @@ class NewActivityPage extends StatelessWidget {
         }
 
         return Scaffold(
-          header: Header(title: 'New Activity', modal: true),
+          header: Header(
+            main: Row(
+              children: [
+                Text('New Activity in '),
+                PrioritySelector(
+                  selected: state.priority,
+                  onSelect: (priority) {
+                    context.read<DraftActivityBloc>().updateDraft(
+                      state.draft.copyWith(priorityId: priority.id),
+                    );
+                  },
+                ),
+              ],
+            ),
+            modal: true,
+          ),
           body: Container(
             padding: const EdgeInsets.all(16),
             child: Column(

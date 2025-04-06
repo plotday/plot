@@ -3,6 +3,8 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/widget/colour_scheme.dart';
 
+const widgetPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 12);
+
 FThemeData buildTheme(ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();
   var theme = FThemeData(
@@ -22,7 +24,7 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
     buttonStyles: theme.buttonStyles.copyWith(
       primary: theme.buttonStyles.primary.copyWith(
         contentStyle: theme.buttonStyles.primary.contentStyle.copyWith(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: widgetPadding,
           enabledTextStyle:
               theme.buttonStyles.primary.contentStyle.enabledTextStyle
                   .copyWith(),
@@ -46,7 +48,7 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
               .enabledTextStyle
               .copyWith(color: theme.colorScheme.foreground),
           enabledIconColor: theme.colorScheme.foreground,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: widgetPadding,
         ),
       ),
       ghost: theme.buttonStyles.ghost.copyWith(
@@ -58,7 +60,7 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
               .enabledTextStyle
               .copyWith(color: theme.colorScheme.foreground),
           enabledIconColor: theme.colorScheme.foreground,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: widgetPadding,
         ),
       ),
     ),

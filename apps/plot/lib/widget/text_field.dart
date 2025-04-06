@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:forui/forui.dart';
 
+import 'theme.dart';
 import 'colour_scheme.dart';
 
 enum TextFieldStyle { outline, ghost }
@@ -158,7 +159,7 @@ class EditableAreaState extends State<EditableArea> {
         _focusNode.requestFocus();
       },
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: widgetPadding,
         decoration: BoxDecoration(
           color: context.colour.editableBackground,
           border: Border(

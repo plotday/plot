@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/command/command.dart';
 import 'button.dart';
 import 'colour_scheme.dart';
+import 'theme.dart';
 
 enum ListTileStyle { command, header }
 
@@ -108,7 +109,9 @@ class _ListTileState extends State<ListTile> {
         },
         child: Container(
           color: _focused ? context.colour.accentBackground : null,
-          padding: const EdgeInsets.all(8.0),
+          padding: EdgeInsets.symmetric(
+            horizontal: widgetPadding.horizontal / 2,
+          ),
           child: Row(
             children: [
               if (widget.command?.icon != null)
@@ -122,7 +125,9 @@ class _ListTileState extends State<ListTile> {
                 ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  padding: EdgeInsets.symmetric(
+                    vertical: widgetPadding.vertical / 2,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
