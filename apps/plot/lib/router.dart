@@ -119,7 +119,7 @@ class AppRouter extends RootStackRouter {
           path: 'new',
           children: [AutoRoute(page: NewActivityMainRoute.page, path: '')],
         ),
-        AutoRoute(page: NewPriorityRoute.page, path: 'priority/new'),
+        // AutoRoute(page: NewPriorityRoute.page, path: 'priority/new'),
         AutoRoute(
           page: PriorityRoute.page,
           path: ':priorityId',

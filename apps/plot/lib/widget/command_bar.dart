@@ -1,21 +1,27 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/services.dart';
 
 import 'package:plot/command/command.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
 import 'dialog.dart';
+import 'button.dart';
+import 'theme.dart';
 
 class CommandBar extends StatefulWidget {
-  static Future<T?> show<T>(BuildContext context, Commands commands) =>
-      Dialog.show<T>(
-        context: context,
-        builder: (context) => CommandBar(commands),
-      );
+  static Future<T?> show<T>(
+    BuildContext context,
+    Commands commands, {
+    Command? Function(String promptValue)? secondaryCommand,
+  }) => Dialog.show<T>(
+    context: context,
+    builder:
+        (context) => CommandBar(commands, secondaryCommand: secondaryCommand),
+  );
 
   final Commands commands;
+  final Command? Function(String promptValue)? secondaryCommand;
 
-  const CommandBar(this.commands, {super.key});
+  const CommandBar(this.commands, {this.secondaryCommand, super.key});
 
   @override
   CommandBarState createState() => CommandBarState();
@@ -88,6 +94,7 @@ class CommandBarState extends State<CommandBar> {
     if (_child != null) {
       return Dialog(child: _child!);
     }
+    final secondaryCommand = widget.secondaryCommand?.call(_controller.text);
     return Dialog(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -97,13 +104,25 @@ class CommandBarState extends State<CommandBar> {
           if (_child == null) ...[
             EditableArea(
               position: EditableAreaPosition.top,
+              padding: false,
               builder:
-                  (context, focusNode) => TextField(
-                    style: TextFieldStyle.ghost,
-                    controller: _controller,
-                    autofocus: true,
-                    label: widget.commands.prompt,
-                    focusNode: focusNode,
+                  (context, focusNode) => Row(
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: widgetPadding,
+                          child: TextField(
+                            style: TextFieldStyle.ghost,
+                            controller: _controller,
+                            autofocus: true,
+                            label: widget.commands.prompt,
+                            focusNode: focusNode,
+                          ),
+                        ),
+                      ),
+                      if (secondaryCommand != null)
+                        Button.icon(secondaryCommand),
+                    ],
                   ),
             ),
             Flexible(

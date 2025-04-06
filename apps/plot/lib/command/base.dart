@@ -154,14 +154,23 @@ class StaticCommandGroup extends CommandGroup {
 }
 
 class Commands<T> {
-  const Commands({required this.prompt, required this.groups});
+  const Commands({
+    required this.prompt,
+    required this.groups,
+    this.secondaryCommand,
+  });
 
   final String prompt;
   final List<CommandGroup> groups;
+  final Command? Function(String promptValue)? secondaryCommand;
 
   Future<T?> show(BuildContext context) async {
     try {
-      return await CommandBar.show<T>(context, this);
+      return await CommandBar.show<T>(
+        context,
+        this,
+        secondaryCommand: secondaryCommand,
+      );
     } on Error catch (e) {
       print(e);
       print(e.stackTrace);

@@ -139,11 +139,13 @@ class EditableArea extends StatefulWidget {
   const EditableArea({
     required this.builder,
     required this.position,
+    this.padding = true,
     super.key,
   });
 
   final Widget Function(BuildContext context, FocusNode focusNode) builder;
   final EditableAreaPosition position;
+  final bool padding;
 
   @override
   EditableAreaState createState() => EditableAreaState();
@@ -159,7 +161,7 @@ class EditableAreaState extends State<EditableArea> {
         _focusNode.requestFocus();
       },
       child: Container(
-        padding: widgetPadding,
+        padding: widget.padding ? widgetPadding : EdgeInsets.zero,
         decoration: BoxDecoration(
           color: context.colour.editableBackground,
           border: Border(

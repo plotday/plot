@@ -15,17 +15,17 @@ class Button extends StatelessWidget {
     this.enabled = true,
     this.selected = false,
     super.key,
-  })  : iconOnly = false,
-        style = ButtonStyle.secondary;
+  }) : iconOnly = false,
+       style = ButtonStyle.secondary;
 
   const Button.primary(
     this.command, {
     this.loading = false,
     this.enabled = true,
     super.key,
-  })  : style = ButtonStyle.primary,
-        iconOnly = false,
-        selected = false;
+  }) : style = ButtonStyle.primary,
+       iconOnly = false,
+       selected = false;
 
   const Button.ghost(
     this.command, {
@@ -33,8 +33,8 @@ class Button extends StatelessWidget {
     this.enabled = true,
     this.selected = false,
     super.key,
-  })  : style = ButtonStyle.ghost,
-        iconOnly = false;
+  }) : style = ButtonStyle.ghost,
+       iconOnly = false;
 
   Button.icon(
     this.command, {
@@ -42,8 +42,8 @@ class Button extends StatelessWidget {
     this.enabled = true,
     this.selected = false,
     super.key,
-  })  : style = ButtonStyle.ghost,
-        iconOnly = command.icon != null;
+  }) : style = ButtonStyle.ghost,
+       iconOnly = command.icon != null;
 
   final ButtonStyle style;
   final bool loading;
@@ -77,39 +77,39 @@ class Button extends StatelessWidget {
       };
     }
 
-    final onPress = enabled ? () => command.run(context) : null;
+    final onPress = enabled ? () => context.run<void>(command) : null;
     final button = PlatformBuilder(
-      builder: (_) => iconOnly
-          ? FButton.icon(
-              style: fStyle,
-              onPress: onPress,
-              child: FIcon.data(
-                command.icon!,
-                size: 12,
-                color: context.colour.muted,
-              ),
-            )
-          : FButton(
-              style: fStyle,
-              onPress: onPress,
-              prefix: command.icon != null
-                  ? FIcon.data(
+      builder:
+          (_) =>
+              iconOnly
+                  ? FButton.icon(
+                    style: fStyle,
+                    onPress: onPress,
+                    child: FIcon.data(
                       command.icon!,
                       size: 12,
                       color: context.colour.muted,
-                    )
-                  : null,
-              label: Text(command.title),
-            ),
+                    ),
+                  )
+                  : FButton(
+                    style: fStyle,
+                    onPress: onPress,
+                    prefix:
+                        command.icon != null
+                            ? FIcon.data(
+                              command.icon!,
+                              size: 12,
+                              color: context.colour.muted,
+                            )
+                            : null,
+                    label: Text(command.title),
+                  ),
     );
 
     return Stack(
       alignment: Alignment.center,
       children: [
-        Opacity(
-          opacity: loading ? 0.0 : 1.0,
-          child: button,
-        ),
+        Opacity(opacity: loading ? 0.0 : 1.0, child: button),
         if (loading) Spinner(),
       ],
     );

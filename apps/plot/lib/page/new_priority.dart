@@ -1,24 +1,13 @@
 import 'package:flutter/widgets.dart';
-import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/hooks.dart';
 
-@RoutePage()
 class NewPriorityPage extends HookWidget {
-  NewPriorityPage({
-    Priority? priority,
-    PriorityId? priorityId,
-    @QueryParam("priorityId") String? priorityIdString,
-    super.key,
-  }) : priorityId =
-           priority?.id ??
-           priorityId ??
-           (priorityIdString != null
-               ? PriorityId.fromShortString(priorityIdString)
-               : null);
+  NewPriorityPage({Priority? parent, PriorityId? parentId, super.key})
+    : priorityId = parent?.id ?? parentId;
 
   final PriorityId? priorityId;
 
