@@ -107,7 +107,7 @@ class _PrioritiesSection extends StatelessWidget {
                         maxTime: state.maxTime,
                       ),
                       _ReorderableActivitiesView(
-                        activities: state.activeActivities,
+                        activities: state.getChildActiveActivities(item.id),
                       ),
                     ],
                   ),

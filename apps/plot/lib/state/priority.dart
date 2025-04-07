@@ -11,7 +11,7 @@ part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
   PriorityBloc({required Priority priority})
-      : super(PriorityState(current: priority)) {
+    : super(PriorityState(current: priority)) {
     _loadPriority(priority);
   }
 
@@ -22,6 +22,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activitiesSubscription = null;
     _balanceSubscription?.cancel();
     _balanceSubscription = null;
+
+    // Cancel all child activity subscriptions
+    for (var sub in _childActivitySubscriptions.values) {
+      sub.cancel();
+    }
+    _childActivitySubscriptions.clear();
   }
 
   @override
@@ -35,10 +41,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   void _loadPriority(Priority priority) {
     _reset();
 
-    _prioritySubscription = Priority.watchOne(
-      priority.id,
-      depth: 1,
-    ).listen((priority) {
+    _prioritySubscription = Priority.watchOne(priority.id, depth: 1).listen((
+      priority,
+    ) {
       emit(state.copyWith(current: priority));
     });
 
@@ -48,11 +53,9 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void _loadBalances() async {
     _balanceSubscription?.cancel();
-    _balanceSubscription = Balance.watch(Week.current()).listen(
-      (balances) {
-        emit(state.copyWith(balances: Value(balances)));
-      },
-    );
+    _balanceSubscription = Balance.watch(Week.current()).listen((balances) {
+      emit(state.copyWith(balances: Value(balances)));
+    });
   }
 
   Future<void> save(Priority priority) async {
@@ -61,16 +64,61 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void _loadActivities() {
     _activitiesSubscription?.cancel();
-    _activitiesSubscription =
-        Activity.watchPriority(state.current.id).listen((activities) {
-      emit(state.copyWith(
-        activities: activities,
-        moreActivities: Activity.hasMorePriority(state.current.path),
-      ));
+
+    // Load activities for the current priority
+    _activitiesSubscription = Activity.watchPriority(state.current.id).listen((
+      activities,
+    ) {
+      // Load active activities for each child priority
+      _loadChildActivities(activities);
+
+      emit(
+        state.copyWith(
+          activities: activities,
+          moreActivities: Activity.hasMorePriority(state.current.path),
+        ),
+      );
     });
+  }
+
+  void _loadChildActivities(List<Activity> parentActivities) {
+    // Clear existing child activity subscriptions
+    for (var sub in _childActivitySubscriptions.values) {
+      sub.cancel();
+    }
+    _childActivitySubscriptions.clear();
+
+    // Create a map to store activities for each child
+    final childActivities = <PriorityId, List<Activity>>{};
+
+    // For each child priority, load its active activities
+    for (var child in state.current.children) {
+      _childActivitySubscriptions[child.id] = _watchPriorityActiveActivities(
+        child,
+      ).listen((activities) {
+        childActivities[child.id] = activities;
+        emit(state.copyWith(childActivities: Map.from(childActivities)));
+      });
+    }
+  }
+
+  Stream<List<Activity>> _watchPriorityActiveActivities(Priority priority) {
+    // Use the path to get all activities from this priority and its descendants
+    return Activity.watchPriority(
+      priority.id,
+      priorityPath: priority.path,
+      draft: false,
+      active: true,
+    ).map(
+      (activities) =>
+          // Filter to only include active activities
+          activities.where((activity) => activity.doNow).toList(),
+    );
   }
 
   StreamSubscription<Priority>? _prioritySubscription;
   StreamSubscription<List<Activity>>? _activitiesSubscription;
   StreamSubscription<BalanceByPriorityType>? _balanceSubscription;
+  final Map<PriorityId, StreamSubscription<List<Activity>>>
+  _childActivitySubscriptions = {};
 }

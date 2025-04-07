@@ -20,6 +20,7 @@ class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
     @QueryParam("priorityId") String? priorityIdString,
     super.key,
   }) : priorityId =
+           draft?.priorityId ??
            priority?.id ??
            priorityId ??
            (priorityIdString != null

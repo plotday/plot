@@ -18,9 +18,11 @@ class PriorityState extends Equatable {
   PriorityState({
     required this.current,
     List<Activity>? activities,
+    Map<PriorityId, List<Activity>>? childActivities,
     this.balances,
     this.moreActivities = true,
   })  : _activities = activities,
+        _childActivities = childActivities ?? {},
         maxTime = Duration(
             minutes: balances?.values
                     .map((b) => b.values.fold(
@@ -32,6 +34,7 @@ class PriorityState extends Equatable {
 
   final Priority current;
   final List<Activity>? _activities;
+  final Map<PriorityId, List<Activity>> _childActivities;
   final BalanceByPriorityType? balances;
   final Duration maxTime;
   final bool moreActivities;
@@ -56,15 +59,25 @@ class PriorityState extends Equatable {
       _filterActivites(_activities ?? const [], draft: true).firstOrNull ??
       Activity.draft(priorityId: current.id);
 
+  /// Get active activities for a specific child priority, including those from its descendants
+  List<Activity> getChildActiveActivities(PriorityId childId) {
+    return _childActivities[childId] ?? const [];
+  }
+
+  /// Get all active activities from all children and their descendants
+  Map<PriorityId, List<Activity>> get childrenActiveActivities => _childActivities;
+
   PriorityState copyWith({
     Priority? current,
     List<Activity>? activities,
+    Map<PriorityId, List<Activity>>? childActivities,
     Value<BalanceByPriorityType?> balances = const Value.absent(),
     bool? moreActivities,
   }) {
     return PriorityState(
       current: current ?? this.current,
       activities: activities ?? _activities,
+      childActivities: childActivities ?? _childActivities,
       balances: balances.or(this.balances),
       moreActivities: moreActivities ?? this.moreActivities,
     );
@@ -74,6 +87,7 @@ class PriorityState extends Equatable {
   List<Object?> get props => [
         current,
         _activities,
+        _childActivities,
         balances,
         moreActivities,
       ];

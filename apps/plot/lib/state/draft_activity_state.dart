@@ -1,11 +1,9 @@
 part of 'draft_activity.dart';
 
 class DraftActivityState extends Equatable {
-  const DraftActivityState({
-    Priority? priority,
-    Activity? draft,
-  }) : _priority = priority,
-  _draft = draft;
+  const DraftActivityState({Priority? priority, Activity? draft})
+    : _priority = priority,
+      _draft = draft;
 
   final Activity? _draft;
   final Priority? _priority;
@@ -14,19 +12,13 @@ class DraftActivityState extends Equatable {
   Activity get draft => _draft!;
   Priority get priority => _priority!;
 
-  DraftActivityState copyWith({
-    Priority? priority,
-    Activity? draft,
-  }) {
+  DraftActivityState copyWith({Priority? priority, Activity? draft}) {
     return DraftActivityState(
-      priority: priority ?? this.priority,
-      draft: draft ?? this.draft,
+      priority: priority ?? _priority,
+      draft: draft ?? _draft,
     );
   }
 
   @override
-  List<Object?> get props => [
-        _priority,
-        _draft,
-      ];
+  List<Object?> get props => [_priority, _draft];
 }

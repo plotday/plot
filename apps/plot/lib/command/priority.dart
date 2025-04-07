@@ -4,6 +4,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'command.dart';
+import 'activity.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
@@ -105,7 +106,8 @@ class AddPriority extends Command {
 }
 
 class ArchivePriority extends Command {
-  ArchivePriority(this._priority) : super(title: 'Archive');
+  ArchivePriority(this._priority)
+    : super(title: 'Archive', icon: PlotIcon.delete);
 
   final Future<Priority> _priority;
 
@@ -143,5 +145,10 @@ class NewPriority extends Command {
 
 StaticCommandGroup priorityCommands(Priority priority) => StaticCommandGroup(
   title: 'Commands',
-  commands: [ArchivePriority(Future.value(priority))],
+  commands: [
+    ArchivePriority(Future.value(priority)),
+    NewActivity(
+      draft: Activity.draft(priorityId: priority.id, doAt: DateTime.now()),
+    ),
+  ],
 );
