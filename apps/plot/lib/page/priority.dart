@@ -5,6 +5,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/command/command.dart';
 import 'loading.dart';
 
 @RoutePage(name: "PriorityRoute")
@@ -63,6 +64,12 @@ class PriorityPage extends StatelessWidget {
           builder: (context, prioritiesState) {
             return Scaffold(
               translucent: true,
+              header: Header(
+                main: PrioritySelector(
+                  selected: state.current,
+                  onSelect: (p) => context.run<void>(ChangeCurrentPriority(p)),
+                ),
+              ),
               body: BidirectionalList(
                 scrollController: ScrollControllerContext.of(context),
                 count: state.inactiveActivities.length,
