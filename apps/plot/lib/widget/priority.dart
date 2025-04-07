@@ -99,6 +99,7 @@ class PriorityTile extends StatelessWidget {
     this.balances,
     this.maxTime,
     this.fullPath = false,
+    this.title,
     super.key,
   });
 
@@ -106,11 +107,13 @@ class PriorityTile extends StatelessWidget {
   final BalanceByType? balances;
   final Duration? maxTime;
   final bool fullPath;
+  final String? title;
 
   @override
   Widget build(BuildContext context) {
     return ListTile.command(
       ChangeCurrentPriority(priority, fullPath: fullPath),
+      title: title,
       commands: priorityCommands(priority).commands,
       key: ValueKey(priority.id.toString()),
       // subtitle: balances != null ? PriorityBalance(balances: balances!) : null,

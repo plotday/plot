@@ -39,10 +39,14 @@ class ListTile extends StatefulWidget {
 
     /// Highlight the tile (often when unread).
     this.highlighted = false,
+
+    /// Override the command title
+    String? title,
+
     super.key,
   }) : style = ListTileStyle.command,
        command = command,
-       title = command.title;
+       title = title ?? command.title;
 
   final ListTileStyle style;
   final bool highlighted;

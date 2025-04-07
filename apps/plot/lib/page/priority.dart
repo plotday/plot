@@ -96,13 +96,6 @@ class _PrioritiesSection extends StatelessWidget {
       builder: (context, state) {
         return Column(
           children: [
-            PriorityTile(
-              priority: state.current,
-              balances: state.balances?[state.current.id],
-              maxTime: state.maxTime,
-              fullPath: true,
-            ),
-            _ReorderableActivitiesView(activities: state.activeActivities),
             ReorderableListView(
               list: state.current.children,
               itemBuilder:
@@ -137,6 +130,14 @@ class _PrioritiesSection extends StatelessWidget {
                     .save();
               },
             ),
+            PriorityTile(
+              priority: state.current,
+              balances: state.balances?[state.current.id],
+              maxTime: state.maxTime,
+              title:
+                  state.current.children.isNotEmpty ? "Everything Else" : null,
+            ),
+            _ReorderableActivitiesView(activities: state.activeActivities),
           ],
         );
       },
