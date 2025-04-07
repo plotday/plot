@@ -5,7 +5,6 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/command/command.dart';
 import 'loading.dart';
 
 @RoutePage(name: "PriorityRoute")
@@ -71,51 +70,7 @@ class PriorityPage extends StatelessWidget {
                     (context, index) => ActivityWidget(
                       activity: state.inactiveActivities[index],
                     ),
-                header: Column(
-                  children: [
-                    PriorityTile(
-                      priority: state.current,
-                      balances: prioritiesState.balances?[state.current.id],
-                      maxTime: prioritiesState.maxTime,
-                      isHeader: true,
-                    ),
-                    _PrioritiesSection(),
-                    if (state.pinnedActivities.isNotEmpty)
-                      ListTile.header(
-                        title: "Pinned",
-                        commands: [
-                          NewActivity(
-                            draft: Activity.draft(
-                              priorityId: state.current.id,
-                              pinned: true,
-                            ),
-                          ),
-                        ],
-                      ),
-                    _ReorderableActivitiesView(
-                      activities: state.pinnedActivities,
-                    ),
-                    if (state.activeActivities.isNotEmpty)
-                      ListTile.header(
-                        title: "Now",
-                        commands: [
-                          NewActivity(
-                            draft: Activity.draft(
-                              priorityId: state.current.id,
-                              doAt: DateTime.now(),
-                            ),
-                          ),
-                        ],
-                      ),
-                    _ReorderableActivitiesView(
-                      activities: state.activeActivities,
-                    ),
-                    ListTile.header(
-                      title: "Activity",
-                      commands: [NewActivity()],
-                    ),
-                  ],
-                ),
+                header: _PrioritiesSection(),
               ),
             );
           },
@@ -134,14 +89,27 @@ class _PrioritiesSection extends StatelessWidget {
       builder: (context, state) {
         return Column(
           children: [
-            ListTile.header(title: "Priorities", commands: [NewPriority()]),
+            PriorityTile(
+              priority: state.current,
+              balances: state.balances?[state.current.id],
+              maxTime: state.maxTime,
+              fullPath: true,
+            ),
+            _ReorderableActivitiesView(activities: state.activeActivities),
             ReorderableListView(
               list: state.current.children,
               itemBuilder:
-                  (context, item) => PriorityTile(
-                    priority: item,
-                    balances: state.balances?[item.id],
-                    maxTime: state.maxTime,
+                  (context, item) => Column(
+                    children: [
+                      PriorityTile(
+                        priority: item,
+                        balances: state.balances?[item.id],
+                        maxTime: state.maxTime,
+                      ),
+                      _ReorderableActivitiesView(
+                        activities: state.activeActivities,
+                      ),
+                    ],
                   ),
               shrinkWrap: true,
               onReorder: (int oldIndex, int newIndex) async {

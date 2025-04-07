@@ -24,7 +24,7 @@ class ColourSchemeData extends Equatable {
   Color get canvas =>
       brightness == Brightness.light
           ? base.withLightness(0.9).withAlpha(0.9).toColor()
-          : base.withLightness(0.1).withAlpha(0.25).toColor();
+          : base.withLightness(0.15).withAlpha(0.25).toColor();
   Color get background =>
       brightness == Brightness.light
           ? base.withLightness(0.9).withAlpha(0.9).toColor()

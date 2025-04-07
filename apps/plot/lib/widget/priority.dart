@@ -22,31 +22,34 @@ class PriorityLabel extends StatelessWidget {
         Text(priority!.name),
         if (ancestors.isNotEmpty)
           ...(List<Widget>.of([
-                FIcon.data(PlotIcon.pipe,
-                    size: 14, color: context.theme.colorScheme.mutedForeground),
-              ]) +
-              ancestors
-                  .map((a) => Text(a.name))
-                  .toList()
-                  .expand((widget) => [
+                  FIcon.data(
+                    PlotIcon.pipe,
+                    size: 14,
+                    color: context.theme.colorScheme.mutedForeground,
+                  ),
+                ]) +
+                ancestors
+                    .map((a) => Text(a.name))
+                    .toList()
+                    .expand(
+                      (widget) => [
                         widget,
-                        FIcon.data(PlotIcon.right,
-                            size: 14,
-                            color: context.theme.colorScheme.mutedForeground),
-                      ])
-                  .toList()
-            ..removeLast())
+                        FIcon.data(
+                          PlotIcon.right,
+                          size: 14,
+                          color: context.theme.colorScheme.mutedForeground,
+                        ),
+                      ],
+                    )
+                    .toList()
+            ..removeLast()),
       ],
     );
   }
 }
 
 class PriorityBalance extends StatelessWidget {
-  const PriorityBalance({
-    required this.balances,
-    this.max,
-    super.key,
-  });
+  const PriorityBalance({required this.balances, this.max, super.key});
 
   final BalanceByType balances;
   final Duration? max;
@@ -78,10 +81,7 @@ class PriorityBalance extends StatelessWidget {
           ],
         ),
         SegmentedLine(
-          lengths: [
-            past.inMinutes.toDouble(),
-            future.inMinutes.toDouble(),
-          ],
+          lengths: [past.inMinutes.toDouble(), future.inMinutes.toDouble()],
           colors: [
             context.theme.colorScheme.primary,
             context.theme.colorScheme.mutedForeground,
@@ -98,27 +98,22 @@ class PriorityTile extends StatelessWidget {
     required this.priority,
     this.balances,
     this.maxTime,
-    this.isHeader = false,
+    this.fullPath = false,
     super.key,
   });
 
   final Priority priority;
   final BalanceByType? balances;
   final Duration? maxTime;
-  final bool isHeader;
+  final bool fullPath;
 
   @override
   Widget build(BuildContext context) {
-    return isHeader
-        ? ListTile.header(
-            title: priority.name, // TODO include hierarchy
-            commands: priorityCommands(priority).commands,
-            key: ValueKey(priority.id.toString()),
-          )
-        : ListTile.command(
-            ChangeCurrentPriority(priority),
-            key: ValueKey(priority.id.toString()),
-            // subtitle: balances != null ? PriorityBalance(balances: balances!) : null,
-          );
+    return ListTile.command(
+      ChangeCurrentPriority(priority, fullPath: fullPath),
+      commands: priorityCommands(priority).commands,
+      key: ValueKey(priority.id.toString()),
+      // subtitle: balances != null ? PriorityBalance(balances: balances!) : null,
+    );
   }
 }

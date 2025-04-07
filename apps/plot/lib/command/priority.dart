@@ -54,9 +54,9 @@ class PickPriority extends Commands<Priority> {
 }
 
 class ChangeCurrentPriority extends Command {
-  ChangeCurrentPriority(Priority priority)
+  ChangeCurrentPriority(Priority priority, {bool fullPath = false})
     : priorityId = priority.id,
-      super(title: priority.name);
+      super(title: fullPath ? priority.label : priority.name);
 
   ChangeCurrentPriority.byId({required this.priorityId})
     : super(title: 'View Priority');
