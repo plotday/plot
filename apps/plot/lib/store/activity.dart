@@ -162,12 +162,11 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       query.where(Store.get.activities.draft.equals(draft));
     }
     if (active != null) {
-      // TODO ignore future dates
-      query.where(
-        active
-            ? Store.get.activities.doAt.isNotNull()
-            : Store.get.activities.doAt.isNull(),
-      );
+      final exp =
+          Store.get.activities.doAt.isNotNull() &
+          Store.get.activities.doAt.isSmallerThanValue(DateTime.now()) &
+          Store.get.activities.doneAt.isNull();
+      query.where(active ? exp : exp.not());
     }
 
     query.orderBy([
@@ -289,21 +288,19 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     final publish = this.draft && draft == false;
     if (doAt.present && doAt.value != null) {
       doneAt = const Value(null);
-      order ??= Order.last();
       pinned = false;
     } else if (pinned == true) {
       doAt = const Value(null);
       doneAt = const Value(null);
-      order ??= Order.last();
     }
-    if ((((doneAt.present && doneAt.value != null) ||
-                (doAt.present && doAt.value == null)) &&
-            !(pinned ?? this.pinned)) ||
-        pinned == false) {
-      order ??= (pinned ?? this.pinned) ? Order.last() : Order.first();
-    }
-    if (publish) {
-      order ??= Order.first();
+    if (publish ||
+        (doAt.present && doAt.value != this.doAt) ||
+        (doneAt.present && doneAt.value != this.doneAt) ||
+        (pinned != null && pinned != this.pinned)) {
+      order ??=
+          (doAt.or(this.doAt) != null || (pinned ?? this.pinned) == true)
+              ? Order.last()
+              : Order.first();
     }
     return Activity.fromStore(
       super.copyWith(
