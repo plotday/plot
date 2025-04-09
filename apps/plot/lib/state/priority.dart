@@ -20,14 +20,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     _prioritySubscription = null;
     _activitiesSubscription?.cancel();
     _activitiesSubscription = null;
+    _childActivitiesSubscription?.cancel();
+    _childActivitiesSubscription = null;
     _balanceSubscription?.cancel();
     _balanceSubscription = null;
-
-    // Cancel all child activity subscriptions
-    for (var sub in _childActivitySubscriptions.values) {
-      sub.cancel();
-    }
-    _childActivitySubscriptions.clear();
   }
 
   @override
@@ -62,16 +58,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     await priority.save();
   }
 
+  /// Load activities for the current priority
   void _loadActivities() {
     _activitiesSubscription?.cancel();
-
-    // Load activities for the current priority
     _activitiesSubscription = Activity.watchPriority(state.current.id).listen((
       activities,
     ) {
-      // Load active activities for each child priority
-      _loadChildActivities(activities);
-
       emit(
         state.copyWith(
           activities: activities,
@@ -79,46 +71,18 @@ class PriorityBloc extends Cubit<PriorityState> {
         ),
       );
     });
-  }
 
-  void _loadChildActivities(List<Activity> parentActivities) {
-    // Clear existing child activity subscriptions
-    for (var sub in _childActivitySubscriptions.values) {
-      sub.cancel();
-    }
-    _childActivitySubscriptions.clear();
-
-    // Create a map to store activities for each child
-    final childActivities = <PriorityId, List<Activity>>{};
-
-    // For each child priority, load its active activities
-    for (var child in state.current.children) {
-      _childActivitySubscriptions[child.id] = _watchPriorityActiveActivities(
-        child,
-      ).listen((activities) {
-        childActivities[child.id] = activities;
-        emit(state.copyWith(childActivities: Map.from(childActivities)));
-      });
-    }
-  }
-
-  Stream<List<Activity>> _watchPriorityActiveActivities(Priority priority) {
-    // Use the path to get all activities from this priority and its descendants
-    return Activity.watchPriority(
-      priority.id,
-      priorityPath: priority.path,
-      draft: false,
-      active: true,
-    ).map(
-      (activities) =>
-          // Filter to only include active activities
-          activities.where((activity) => activity.doNow).toList(),
-    );
+    _childActivitiesSubscription?.cancel();
+    _childActivitiesSubscription = Activity.watchActivePriorityChildren(
+      state.current.path,
+    ).listen((childActivities) {
+      emit(state.copyWith(childActivities: childActivities));
+    });
   }
 
   StreamSubscription<Priority>? _prioritySubscription;
   StreamSubscription<List<Activity>>? _activitiesSubscription;
+  StreamSubscription<Map<PriorityId, List<Activity>>>?
+  _childActivitiesSubscription;
   StreamSubscription<BalanceByPriorityType>? _balanceSubscription;
-  final Map<PriorityId, StreamSubscription<List<Activity>>>
-  _childActivitySubscriptions = {};
 }

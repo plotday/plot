@@ -131,7 +131,7 @@ class CommandBarState extends State<CommandBar> {
                 itemCount: _allCommandsCount(),
                 itemBuilder: (context, index) {
                   final command = _getCommandAtIndex(index);
-                  return ListTile.command(command);
+                  return ListTile(command: command);
                 },
               ),
             ),

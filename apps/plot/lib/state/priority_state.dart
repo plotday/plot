@@ -8,10 +8,12 @@ class PriorityState extends Equatable {
     bool? doNow,
   }) {
     return activities
-        .where((activity) =>
-            (pinned == null || activity.pinned == pinned) &&
-            (draft == null || activity.draft == draft) &&
-            (doNow == null || activity.doNow == doNow))
+        .where(
+          (activity) =>
+              (pinned == null || activity.pinned == pinned) &&
+              (draft == null || activity.draft == draft) &&
+              (doNow == null || activity.doNow == doNow),
+        )
         .toList();
   }
 
@@ -21,16 +23,21 @@ class PriorityState extends Equatable {
     Map<PriorityId, List<Activity>>? childActivities,
     this.balances,
     this.moreActivities = true,
-  })  : _activities = activities,
-        _childActivities = childActivities ?? {},
-        maxTime = Duration(
-            minutes: balances?.values
-                    .map((b) => b.values.fold(
-                        0,
-                        (a, b) =>
-                            a + b.pastTime.inMinutes + b.futureTime.inMinutes))
-                    .fold<int>(0, (a, b) => max(a, b)) ??
-                0);
+  }) : _activities = activities,
+       _childActivities = childActivities ?? {},
+       maxTime = Duration(
+         minutes:
+             balances?.values
+                 .map(
+                   (b) => b.values.fold(
+                     0,
+                     (a, b) =>
+                         a + b.pastTime.inMinutes + b.futureTime.inMinutes,
+                   ),
+                 )
+                 .fold<int>(0, (a, b) => max(a, b)) ??
+             0,
+       );
 
   final Priority current;
   final List<Activity>? _activities;
@@ -42,18 +49,35 @@ class PriorityState extends Equatable {
   bool get loading => false;
   bool get activityLoading => _activities == null;
 
-  List<Activity> get pinnedActivities => _activities == null
-      ? const []
-      : _filterActivites(_activities, pinned: true, draft: false, doNow: false);
+  List<Activity> get pinnedActivities =>
+      _activities == null
+          ? const []
+          : _filterActivites(
+            _activities,
+            pinned: true,
+            draft: false,
+            doNow: false,
+          );
 
-  List<Activity> get activeActivities => _activities == null
-      ? const []
-      : _filterActivites(_activities, pinned: false, draft: false, doNow: true);
+  List<Activity> get activeActivities =>
+      _activities == null
+          ? const []
+          : _filterActivites(
+            _activities,
+            pinned: false,
+            draft: false,
+            doNow: true,
+          );
 
-  List<Activity> get inactiveActivities => _activities == null
-      ? const []
-      : _filterActivites(_activities,
-          pinned: false, draft: false, doNow: false);
+  List<Activity> get inactiveActivities =>
+      _activities == null
+          ? const []
+          : _filterActivites(
+            _activities,
+            pinned: false,
+            draft: false,
+            doNow: false,
+          );
 
   Activity get draftActivity =>
       _filterActivites(_activities ?? const [], draft: true).firstOrNull ??
@@ -65,7 +89,8 @@ class PriorityState extends Equatable {
   }
 
   /// Get all active activities from all children and their descendants
-  Map<PriorityId, List<Activity>> get childrenActiveActivities => _childActivities;
+  Map<PriorityId, List<Activity>> get childrenActiveActivities =>
+      _childActivities;
 
   PriorityState copyWith({
     Priority? current,
@@ -85,10 +110,10 @@ class PriorityState extends Equatable {
 
   @override
   List<Object?> get props => [
-        current,
-        _activities,
-        _childActivities,
-        balances,
-        moreActivities,
-      ];
+    current,
+    _activities,
+    _childActivities,
+    balances,
+    moreActivities,
+  ];
 }

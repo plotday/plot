@@ -112,9 +112,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     }
     query.orderBy([(t) => OrderingTerm.desc(t.createdAt)]);
     query.limit(1);
-    final row = await query.getSingleOrNull();
-    if (row == null) return null;
-    return Activity.fromStore(row);
+
+    return await query.map(Activity.fromStore).getSingleOrNull();
   }
 
   static Stream<Activity> watchOne(ActivityId id) {
@@ -123,71 +122,80 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     return query.watchSingle().map(Activity.fromStore);
   }
 
+  /// Pull active activities for a priority and its children, followed by inactive activities for just the priority.
   static Stream<List<Activity>> watchPriority(
     PriorityId priorityId, {
-    Path? priorityPath,
     bool? deleted = false,
-    bool? draft,
-    bool? active,
   }) {
-    if (priorityPath != null) {
-      pullPriorityPath(priorityPath);
-    } else {
-      pullPriority(priorityId);
-    }
-    final query = Store.get.select(table).join([
-      innerJoin(
-        Store.get.priorities,
-        Store.get.priorities.id.equalsExp(Store.get.activities.priorityId),
-        useColumns: false,
-      ),
-    ]);
+    pullPriority(priorityId);
 
-    // If priorityPath is provided, we want to get activities from this priority
-    // and all its descendants. Otherwise, just get activities for the specific priorityId.
-    if (priorityPath != null) {
-      query.where(Store.get.priorities.path.like("$priorityPath%"));
-    } else {
-      query.where(Store.get.activities.priorityId.equals(priorityId.toBytes()));
-    }
+    final query = Store.get.select(table)
+      ..where((t) => t.priorityId.equals(priorityId.toBytes()));
 
     if (deleted != null) {
       query.where(
-        deleted
-            ? Store.get.activities.deletedAt.isNotNull()
-            : Store.get.activities.deletedAt.isNull(),
+        (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
       );
-    }
-    if (draft != null) {
-      query.where(Store.get.activities.draft.equals(draft));
-    }
-    if (active != null) {
-      final exp =
-          Store.get.activities.doAt.isNotNull() &
-          Store.get.activities.doAt.isSmallerThanValue(DateTime.now()) &
-          Store.get.activities.doneAt.isNull();
-      query.where(active ? exp : exp.not());
     }
 
     query.orderBy([
-      OrderingTerm.desc(Store.get.activities.pinned),
-      OrderingTerm(
+      // Pinned
+      (t) => OrderingTerm.desc(t.pinned),
+      // Active
+      (t) => OrderingTerm(
         expression: const CustomExpression<DateTime>(
           'CASE WHEN do_at IS NOT NULL AND done_at IS NULL AND do_at <= CURRENT_TIMESTAMP THEN do_at ELSE NULL END',
         ),
         mode: OrderingMode.asc,
       ),
-      OrderingTerm.desc(Store.get.activities.order),
+      // Order
+      (t) => OrderingTerm.desc(t.order),
     ]);
 
     return query.watch().map(
-      (rows) =>
-          rows
-              .map(
-                (row) =>
-                    Activity.fromStore(row.readTable(Store.get.activities)),
-              )
-              .toList(),
+      (rows) => rows.map((row) => Activity.fromStore(row)).toList(),
+    );
+  }
+
+  static Stream<Map<PriorityId, List<Activity>>> watchActivePriorityChildren(
+    Path? priorityPath, {
+    bool? deleted = false,
+  }) {
+    pullPriorityPath(priorityPath);
+
+    final a = Store.get.alias(Store.get.activities, 'a');
+    final p = Store.get.alias(Store.get.priorities, 'p');
+
+    final query = Store.get.select(a).join([
+      innerJoin(p, p.id.equalsExp(a.priorityId), useColumns: false),
+    ]);
+
+    if (priorityPath != null) {
+      query.where(p.path.like("$priorityPath.%"));
+    }
+
+    if (deleted != null) {
+      query.where(deleted ? a.deletedAt.isNotNull() : a.deletedAt.isNull());
+    }
+
+    query.where(
+      a.doAt.isNotNull() &
+          a.doAt.isSmallerThanValue(DateTime.now()) &
+          a.doneAt.isNull(),
+    );
+
+    query.orderBy([
+      OrderingTerm.asc(p.order),
+      OrderingTerm.asc(a.doAt),
+      OrderingTerm.desc(a.order),
+    ]);
+
+    return query.watch().map(
+      (rows) => rows.fold(<PriorityId, List<Activity>>{}, (map, row) {
+        final activity = Activity.fromStore(row.readTable(a));
+        map.putIfAbsent(activity.priorityId, () => []).add(activity);
+        return map;
+      }),
     );
   }
 
@@ -298,7 +306,10 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         (doneAt.present && doneAt.value != this.doneAt) ||
         (pinned != null && pinned != this.pinned)) {
       order ??=
-          (doAt.or(this.doAt) != null || (pinned ?? this.pinned) == true)
+          ((doAt.or(this.doAt) != null &&
+                      doAt.or(this.doAt)!.isSameOrBefore(DateTime.now()) &&
+                      doneAt.or(this.doneAt) == null) ||
+                  (pinned ?? this.pinned) == true)
               ? Order.last()
               : Order.first();
     }

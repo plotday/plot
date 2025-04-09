@@ -7,27 +7,13 @@ import 'button.dart';
 import 'colour_scheme.dart';
 import 'theme.dart';
 
-enum ListTileStyle { command, header }
+enum ListTileStyle { item, header }
 
 class ListTile extends StatefulWidget {
-  const ListTile.header({
-    required this.title,
-
-    /// Secondary commands visible on the right.
-    this.commands = const [],
-
-    /// Commands revealed on hover or long press.
-    this.hiddenCommands = const [],
-    super.key,
-  }) : style = ListTileStyle.header,
-       command = null,
-       details = null,
-       highlighted = false;
-
-  ListTile.command(
-    Command command, {
-
+  ListTile({
     /// The primary command run when the tile is tapped.
+    this.command,
+
     /// Secondary commands visible on the right.
     this.commands = const [],
 
@@ -40,13 +26,13 @@ class ListTile extends StatefulWidget {
     /// Highlight the tile (often when unread).
     this.highlighted = false,
 
+    this.style = ListTileStyle.item,
+
     /// Override the command title
     String? title,
 
     super.key,
-  }) : style = ListTileStyle.command,
-       command = command,
-       title = title ?? command.title;
+  }) : title = title ?? command?.title ?? '';
 
   final ListTileStyle style;
   final bool highlighted;
