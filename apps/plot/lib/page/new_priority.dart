@@ -6,14 +6,15 @@ import 'package:plot/command/command.dart';
 import 'package:plot/util/hooks.dart';
 
 class NewPriorityPage extends HookWidget {
-  NewPriorityPage({Priority? parent, PriorityId? parentId, super.key})
-    : priorityId = parent?.id ?? parentId;
+  const NewPriorityPage({Priority? parent, super.key})
+    : _initialParent = parent;
 
-  final PriorityId? priorityId;
+  final Priority? _initialParent;
 
   @override
   Widget build(BuildContext context) {
     final (nameController, name) = useTextEditingValue();
+    final parent = useState<Priority?>(_initialParent);
 
     return Scaffold(
       header: Header(title: 'New Priority', modal: true),
@@ -24,6 +25,17 @@ class NewPriorityPage extends HookWidget {
             spacing: 16,
             mainAxisSize: MainAxisSize.min,
             children: [
+              Row(
+                children: [
+                  Text('New priority in '),
+                  PrioritySelector(
+                    selected: parent.value,
+                    onSelect: (priority) {
+                      parent.value = priority;
+                    },
+                  ),
+                ],
+              ),
               TextField(
                 controller: nameController,
                 label: "Add an priority",
@@ -35,16 +47,13 @@ class NewPriorityPage extends HookWidget {
                 children: [
                   Button.primary(
                     AddPriority(
-                      (priorityId == null
-                              ? Future<Priority?>.value(null)
-                              : Priority.get(priorityId!))
-                          .then(
-                            (priority) => Priority(
-                              name: name,
-                              parent: priority,
-                              order: Order.first(),
-                            ),
-                          ),
+                      Future.value(
+                        Priority(
+                          name: name,
+                          parent: parent.value,
+                          order: Order.first(),
+                        ),
+                      ),
                     ),
                     enabled: name.isNotEmpty,
                   ),
