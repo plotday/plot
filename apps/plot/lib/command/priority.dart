@@ -4,7 +4,6 @@ import 'package:auto_route/auto_route.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'command.dart';
-import 'activity.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
@@ -12,7 +11,11 @@ import 'package:plot/page/new_priority.dart';
 
 class PriorityCommand extends ValueCommand<Priority?> {
   PriorityCommand(Priority? priority)
-    : super(title: priority?.label ?? 'All Priorities', value: priority);
+    : super(
+        title: priority?.name ?? 'All Priorities',
+        subtitle: priority?.parent?.pathLabel,
+        value: priority,
+      );
 }
 
 class PriorityCommandGroup extends CommandGroup {
@@ -55,9 +58,9 @@ class PickPriority extends Commands<Priority> {
 }
 
 class ChangeCurrentPriority extends Command {
-  ChangeCurrentPriority(Priority priority, {bool fullPath = false})
+  ChangeCurrentPriority(Priority priority, {bool fullPath = true})
     : priorityId = priority.id,
-      super(title: fullPath ? priority.label : priority.name);
+      super(title: priority.name, subtitle: priority.parent?.pathLabel);
 
   ChangeCurrentPriority.byId({required this.priorityId})
     : super(title: 'View Priority');

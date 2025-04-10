@@ -29,12 +29,14 @@ class CommandMessage extends CommandReturn {
 abstract class Command {
   const Command({
     required this.title,
+    this.subtitle,
     this.description,
     this.icon,
     this.shortcut,
   });
 
   final String title;
+  final String? subtitle;
   final String? description;
   final IconData? icon;
   final ShortcutActivator? shortcut;
@@ -52,6 +54,7 @@ class CommandWrapper extends Command {
   }) : _run = run,
        super(
          title: command.title,
+         subtitle: command.subtitle,
          description: command.description,
          icon: command.icon,
          shortcut: command.shortcut,
@@ -67,6 +70,7 @@ class CommandWrapper extends Command {
 class ValueCommand<T> extends Command {
   ValueCommand({
     required super.title,
+    super.subtitle,
     super.description,
     super.icon,
     required this.value,

@@ -44,9 +44,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   static Future<List<Priority>> getAll() async {
-    return await (Store.get.select(table)..where(
-      (t) => t.deletedAt.isNull(),
-    )).get().then((rows) => _buildHierarchy(rows, flat: true).toList());
+    return await (Store.get.select(table)
+          ..where((t) => t.deletedAt.isNull())
+          ..orderBy([(t) => OrderingTerm(expression: t.path)]))
+        .get()
+        .then((rows) => _buildHierarchy(rows, flat: true).toList());
   }
 
   static SimpleSelectStatement<$PrioritiesTable, PriorityRow> _selectDefault() {
@@ -268,17 +270,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   Priority get root => parent?.root ?? this;
 
   String get pathLabel {
-    if (parent == null) {
-      return name;
-    }
-    return "${parent!.pathLabel} > $name";
-  }
-
-  String get label {
-    if (parent == null) {
-      return name;
-    }
-    return "$name | ${parent!.pathLabel}";
+    return (([this] + ancestors)
+            .map((a) => a.name)
+            .toList()
+            .expand((p) => [p, ' › '])
+            .toList()
+          ..removeLast())
+        .join();
   }
 
   Future<void> save() => Store.get.save(table, this, PrioritiesBase());

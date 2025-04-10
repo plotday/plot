@@ -121,7 +121,12 @@ class CommandBarState extends State<CommandBar> {
                         ),
                       ),
                       if (secondaryCommand != null)
-                        Button.icon(secondaryCommand),
+                        Button.icon(
+                          CommandWrapper(
+                            secondaryCommand,
+                            run: (_) => _executeCommand(secondaryCommand),
+                          ),
+                        ),
                     ],
                   ),
             ),

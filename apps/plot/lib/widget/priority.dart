@@ -16,33 +16,16 @@ class PriorityLabel extends StatelessWidget {
       return const Text('All Priorities');
     }
     final ancestors = priority!.ancestors;
-    return Wrap(
-      spacing: 8,
+    return Row(
       children: [
         Text(priority!.name),
         if (ancestors.isNotEmpty)
-          ...(List<Widget>.of([
-                  FIcon.data(
-                    PlotIcon.pipe,
-                    size: 14,
-                    color: context.theme.colorScheme.mutedForeground,
-                  ),
-                ]) +
-                ancestors
-                    .map((a) => Text(a.name))
-                    .toList()
-                    .expand(
-                      (widget) => [
-                        widget,
-                        FIcon.data(
-                          PlotIcon.right,
-                          size: 14,
-                          color: context.theme.colorScheme.mutedForeground,
-                        ),
-                      ],
-                    )
-                    .toList()
-            ..removeLast()),
+          DefaultTextStyle(
+            style: DefaultTextStyle.of(
+              context,
+            ).style.copyWith(color: context.theme.colorScheme.mutedForeground),
+            child: Text('  ${priority!.parent!.pathLabel}'),
+          ),
       ],
     );
   }
