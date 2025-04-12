@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/command/command.dart';
+import 'button.dart';
 
 class Header extends StatelessWidget {
   Header({
@@ -41,6 +42,18 @@ class Header extends StatelessWidget {
           if (modal && backButton != null) backButton,
         ],
       ),
+      suffixActions:
+          commands
+              .map(
+                (command) => FHeaderAction(
+                  icon:
+                      command.icon != null
+                          ? FIcon.data(command.icon!)
+                          : Button(command),
+                  onPress: () => context.run<void>(command),
+                ),
+              )
+              .toList(),
     );
   }
 }

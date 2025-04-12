@@ -69,6 +69,11 @@ class PriorityPage extends StatelessWidget {
                   selected: state.current,
                   onSelect: (p) => context.run<void>(ChangeCurrentPriority(p)),
                 ),
+                commands: [
+                  NewActivity(
+                    draft: Activity.draft(priorityId: state.current.id),
+                  ),
+                ],
               ),
               body: BidirectionalList(
                 scrollController: ScrollControllerContext.of(context),
