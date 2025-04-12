@@ -1,47 +1,59 @@
 import 'package:flutter/widgets.dart';
-import 'package:macos_ui/macos_ui.dart' as macos;
+import 'package:forui/forui.dart';
+import 'package:auto_route/auto_route.dart';
+
+import 'package:plot/command/command.dart';
+import 'button.dart';
 
 class Header extends StatelessWidget {
   Header({
     Widget? main,
     String? title,
-    this.actions,
+    this.commands = const [],
+    this.modal = false,
     super.key,
   }) : main = main ?? (title != null ? Text(title) : null);
 
   final Widget? main;
-  final List<Widget>? actions;
+  final List<Command> commands;
+  final bool modal;
 
   @override
   Widget build(BuildContext context) {
-    Widget? backButton = ModalRoute.of(context)?.canPop != true
-        ? null
-        : Container(
-            width: 20.0,
-            alignment: Alignment.centerLeft,
-            child: macos.MacosBackButton(
-              fillColor: macos.MacosColors.transparent,
-              onPressed: () => Navigator.maybePop(context),
-            ),
-          );
+    Widget? backButton =
+        context.router.canPop()
+            ? modal
+                ? FHeaderAction.x(onPress: () => context.router.maybePop())
+                : FHeaderAction.back(onPress: () => context.router.maybePop())
+            : null;
 
-    return Row(
-      children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
+    return FHeader.nested(
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          if (main != null || (!modal && backButton != null))
+            Row(
+              spacing: 8,
               children: [
-                if (backButton != null) backButton,
+                if (!modal && backButton != null) backButton,
                 if (main != null) main!,
               ],
             ),
-          ),
-        ),
-        Row(
-          children: actions ?? [],
-        ),
-      ],
+          if (modal && backButton != null) backButton,
+        ],
+      ),
+      suffixActions:
+          commands
+              .map(
+                (command) => FHeaderAction(
+                  icon:
+                      command.icon != null
+                          ? FIcon.data(command.icon!)
+                          : Button(command),
+                  onPress: () => context.run<void>(command),
+                ),
+              )
+              .toList(),
     );
   }
 }

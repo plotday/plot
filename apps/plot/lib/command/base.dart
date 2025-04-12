@@ -1,21 +1,18 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 
 import 'package:plot/widget/widget.dart';
 
 sealed class CommandReturn {}
-
-class CommandDone extends CommandReturn {
-  CommandDone();
-}
 
 class CommandValue<T> extends CommandReturn {
   CommandValue(this.value);
   final T value;
 }
 
-class CommandCommands extends CommandReturn {
+class CommandCommands<T> extends CommandReturn {
   CommandCommands(this.commands);
-  final Commands commands;
+  final Commands<T> commands;
 }
 
 class CommandPage extends CommandReturn {
@@ -23,33 +20,50 @@ class CommandPage extends CommandReturn {
   final Widget child;
 }
 
+class CommandMessage extends CommandReturn {
+  CommandMessage(this.message, {this.isError = false});
+  final String message;
+  final bool isError;
+}
+
 abstract class Command {
-  Command({
+  const Command({
     required this.title,
     this.subtitle,
+    this.description,
     this.icon,
     this.shortcut,
   });
 
   final String title;
-  final String? subtitle; // type
-  final PlotIcon? icon;
+  final String? subtitle;
+  final String? description;
+  final IconData? icon;
   final ShortcutActivator? shortcut;
 
-  Future<CommandReturn> run(BuildContext context);
+  Future<CommandReturn?> run(BuildContext context);
+}
 
-  Widget build(
-    BuildContext context, {
-    bool selected = false,
-    void Function()? onTap,
-  }) =>
-      ListTile(
-        leading: icon,
-        title: Text(title),
-        subtitle: subtitle != null ? Text(subtitle!) : null,
-        selected: selected,
-        onTap: onTap,
-      );
+class CommandWrapper extends Command {
+  final Command command;
+  final Future<CommandReturn?> Function(BuildContext context) _run;
+
+  CommandWrapper(
+    this.command, {
+    required Future<CommandReturn?> Function(BuildContext context) run,
+  }) : _run = run,
+       super(
+         title: command.title,
+         subtitle: command.subtitle,
+         description: command.description,
+         icon: command.icon,
+         shortcut: command.shortcut,
+       );
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) {
+    return _run(context);
+  }
 }
 
 /// A command for returning a value
@@ -57,14 +71,15 @@ class ValueCommand<T> extends Command {
   ValueCommand({
     required super.title,
     super.subtitle,
-    required super.icon,
+    super.description,
+    super.icon,
     required this.value,
   });
 
   final T value;
 
   @override
-  Future<CommandReturn> run(BuildContext context) =>
+  Future<CommandValue<T>> run(BuildContext context) =>
       Future.value(CommandValue(value));
 }
 
@@ -72,21 +87,18 @@ class ValueCommand<T> extends Command {
 class ShowCommand<T> extends Command {
   ShowCommand({
     required super.title,
-    super.subtitle,
+    super.description,
     super.icon,
     super.shortcut,
     required this.commands,
   });
 
-  final Commands Function(BuildContext context) commands;
+  final Commands<T> Function(BuildContext context) commands;
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<CommandValue<T?>> run(BuildContext context) async {
     try {
-      final value = await CommandBar.show<T>(
-        context,
-        commands(context),
-      );
+      final value = await CommandBar.show<T>(context, commands(context));
       if (context.mounted && value != null) {
         onSelect(context, value);
       }
@@ -115,55 +127,104 @@ extension BuildContextCommandExtension on BuildContext {
   }
 }
 
-class CommandGroup {
-  CommandGroup({
-    required this.title,
-    this.subtitle,
-    required this.commands,
-  });
+abstract class CommandGroup {
+  CommandGroup({required this.title, this.subtitle});
 
   final String title;
   final String? subtitle; // count
-  final List<Command> commands;
-}
 
-abstract class Commands {
-  Commands({
-    required this.prompt,
-  });
+  Future<List<Command>> list({String? search});
 
-  final String prompt;
-
-  Future<List<CommandGroup>> list({String? search});
-}
-
-class StaticCommands extends Commands {
-  StaticCommands({required this.commands, required super.prompt});
-
-  final List<CommandGroup> commands;
-
-  @override
-  Future<List<CommandGroup>> list({String? search}) async {
-    // If search is null or empty, return all commands
+  static List<Command> filter(List<Command> commands, String? search) {
     if (search == null || search.isEmpty) {
       return commands;
     }
 
     String searchLower = search.toLowerCase();
+    bool match(String? field) {
+      if (field == null) return false;
+      return RegExp(
+        '\\b${RegExp.escape(searchLower)}',
+      ).hasMatch(field.toLowerCase());
+    }
 
+    return commands
+        .where(
+          (command) =>
+              match(command.title) ||
+              match(command.subtitle) ||
+              match(command.description),
+        )
+        .toList()
+      ..sort((a, b) {
+        int aScore =
+            match(a.title)
+                ? 3
+                : match(a.subtitle)
+                ? 2
+                : 1;
+        int bScore =
+            match(b.title)
+                ? 3
+                : match(b.subtitle)
+                ? 2
+                : 1;
+        return bScore.compareTo(aScore);
+      });
+  }
+}
+
+class StaticCommandGroup extends CommandGroup {
+  StaticCommandGroup({
+    required super.title,
+    super.subtitle,
+    required this.commands,
+  });
+
+  final List<Command> commands;
+
+  @override
+  Future<List<Command>> list({String? search}) async {
+    return CommandGroup.filter(commands, search);
+  }
+}
+
+class Commands<T> {
+  const Commands({
+    required this.prompt,
+    required this.groups,
+    this.secondaryCommand,
+  });
+
+  final String prompt;
+  final List<CommandGroup> groups;
+  final Command? Function(String promptValue)? secondaryCommand;
+
+  Future<T?> show(BuildContext context) async {
+    try {
+      return await CommandBar.show<T>(
+        context,
+        this,
+        secondaryCommand: secondaryCommand,
+      );
+    } on Error catch (e) {
+      print(e);
+      print(e.stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<List<StaticCommandGroup>> list({String? search}) async {
     // Filter the commands based on the search query
-    List<CommandGroup> filteredCommandGroups = [];
-
-    for (var group in commands) {
+    List<StaticCommandGroup> filteredCommandGroups = [];
+    for (var group in groups) {
       // Filter commands within the group
-      List<Command> matchingCommands = group.commands.where((command) {
-        return command.title.toLowerCase().contains(searchLower);
-      }).toList();
+      List<Command> matchingCommands = await group.list(search: search);
 
       // If any commands match, include the group with matching commands
       if (matchingCommands.isNotEmpty) {
         filteredCommandGroups.add(
-          CommandGroup(
+          StaticCommandGroup(
             title: group.title,
             subtitle: group.subtitle,
             commands: matchingCommands,
@@ -171,7 +232,45 @@ class StaticCommands extends Commands {
         );
       }
     }
-
     return filteredCommandGroups;
+  }
+}
+
+/// Activate new commands in the given widget scope. This adds a new scope for the CommandBar,
+/// along with activating shortcuts for the commands.
+class CommandScope extends StatelessWidget {
+  const CommandScope({required this.commands, required this.child, super.key});
+
+  final Commands<void> commands;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return CallbackShortcuts(
+      bindings: commands.groups
+          .whereType<StaticCommandGroup>()
+          .expand((group) => group.commands)
+          .fold(
+            <ShortcutActivator, VoidCallback>{
+              const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+                  () => commands.show(context),
+            },
+            (bindings, command) =>
+                command.shortcut == null
+                    ? bindings
+                    : {
+                      ...bindings,
+                      command.shortcut!: () {
+                        try {
+                          context.run<void>(command);
+                        } catch (e) {
+                          print('Error running command: $e');
+                          rethrow;
+                        }
+                      },
+                    },
+          ),
+      child: child,
+    );
   }
 }

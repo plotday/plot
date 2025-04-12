@@ -4,27 +4,39 @@ import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
 import 'package:super_editor_markdown/super_editor_markdown.dart';
 import 'package:flutter/material.dart' as material;
-import 'package:macos_ui/macos_ui.dart' as macos;
+import 'package:flutter_debouncer/flutter_debouncer.dart';
 
-import 'button.dart';
 import 'sliver.dart';
+import 'colour_scheme.dart';
 
 final _styles = Stylesheet(
-  inlineTextStyler: defaultInlineTextStyler,
-  documentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
   rules: [
-    StyleRule(
-      BlockSelector.all,
-      (doc, docNode) {
-        return {
-          Styles.textStyle: const TextStyle(
-            color: material.Colors.white,
-            fontSize: 14,
-            height: 1.4,
-          ),
-        };
-      },
-    ),
+    StyleRule(BlockSelector.all, (doc, docNode) {
+      return {
+        Styles.textStyle: const TextStyle(
+          color: Color(0xFF000000),
+          fontSize: 14,
+          height: 1.4,
+        ),
+        Styles.padding: const CascadingPadding.only(bottom: 14),
+      };
+    }),
+    StyleRule(BlockSelector.all.last(), (doc, docNode) {
+      return {Styles.padding: const CascadingPadding.only(bottom: 0)};
+    }),
+    StyleRule(const BlockSelector("listItem"), (doc, docNode) {
+      return {Styles.padding: const CascadingPadding.only(bottom: 0)};
+    }),
+  ],
+  inlineTextStyler: defaultInlineTextStyler,
+  inlineWidgetBuilders: defaultInlineWidgetBuilderChain,
+);
+
+final _darkStyles = _styles.copyWith(
+  addRulesAfter: [
+    StyleRule(BlockSelector.all, (doc, docNode) {
+      return {Styles.textStyle: const TextStyle(color: Color(0xFFFFFFFF))};
+    }),
   ],
 );
 
@@ -33,12 +45,16 @@ class Editor extends StatefulWidget {
     this.hint,
     this.autofocus = false,
     this.onSubmitted,
+    this.onChange,
+    this.focusNode,
     super.key,
   });
 
   final String? hint;
   final bool autofocus;
   final ValueChanged<String>? onSubmitted;
+  final ValueChanged<String>? onChange;
+  final FocusNode? focusNode;
 
   @override
   State<Editor> createState() => EditorState();
@@ -51,17 +67,13 @@ class EditorState extends State<Editor> {
   late MutableDocument _document;
   late MutableDocumentComposer _composer;
   late super_editor.Editor _editor;
-  bool _isEmpty = true;
+  final Debouncer _debouncer = Debouncer();
 
   void clear() {
     setState(() {
       // Clear the document
       _document = MutableDocument.empty();
-      _document.addListener((_) {
-        setState(() {
-          _isEmpty = _document.hasEquivalentContent(MutableDocument.empty());
-        });
-      });
+      _document.addListener(_onDocumentChanged);
       _composer = MutableDocumentComposer();
       _editor = createDefaultDocumentEditor(
         document: _document,
@@ -71,16 +83,38 @@ class EditorState extends State<Editor> {
     });
   }
 
+  void _onDocumentChanged(DocumentChangeLog _) {
+    _debouncer.debounce(
+      duration: const Duration(milliseconds: 500),
+      onDebounce: notify,
+    );
+  }
+
+  void notify() {
+    _debouncer.cancel();
+    final md = serializeDocumentToMarkdown(_document);
+    widget.onChange?.call(md);
+  }
+
+  void _onFocusChange() {
+    if (!_editorFocusNode.hasFocus) {
+      notify();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _editorFocusNode = FocusNode();
+    _editorFocusNode = widget.focusNode ?? FocusNode();
+    _editorFocusNode.addListener(_onFocusChange);
     _scrollController = ScrollController();
     clear();
   }
 
   @override
   void dispose() {
+    _editorFocusNode.removeListener(_onFocusChange);
+    _debouncer.cancel();
     _scrollController.dispose();
     _editorFocusNode.dispose();
     super.dispose();
@@ -88,72 +122,35 @@ class EditorState extends State<Editor> {
 
   @override
   Widget build(BuildContext context) {
+    bool isDark =
+        MediaQuery.of(context).platformBrightness == material.Brightness.dark;
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(
-          LogicalKeyboardKey.enter,
-          meta: true,
-        ): () {
+        const SingleActivator(LogicalKeyboardKey.enter, meta: true): () {
           submit();
           _editorFocusNode.requestFocus();
-        }
+        },
       },
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () => _editorFocusNode.requestFocus(),
-        child: Container(
-          decoration: BoxDecoration(
-            color: macos.MacosDynamicColor.resolve(
-              macos.MacosColors.controlBackgroundColor,
-              context,
+        child: SuperEditor(
+          autofocus: widget.autofocus,
+          editor: _editor,
+          focusNode: _editorFocusNode,
+          shrinkWrap: true,
+          scrollController: _scrollController,
+          documentLayoutKey: _docLayoutKey,
+          documentOverlayBuilders: [
+            DefaultCaretOverlayBuilder(
+              caretStyle: CaretStyle().copyWith(color: context.colour.accent),
             ),
-            border: Border(
-              top: BorderSide(
-                width: 1.0,
-                color: macos.MacosDynamicColor.resolve(
-                  macos.MacosColors.separatorColor,
-                  context,
-                ),
-              ),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SuperEditor(
-                autofocus: widget.autofocus,
-                editor: _editor,
-                focusNode: _editorFocusNode,
-                shrinkWrap: true,
-                scrollController: _scrollController,
-                documentLayoutKey: _docLayoutKey,
-                stylesheet: _styles,
-                documentOverlayBuilders: [
-                  DefaultCaretOverlayBuilder(
-                    caretStyle: const CaretStyle()
-                        .copyWith(color: material.Colors.white),
-                  ),
-                ],
-                componentBuilders: [
-                  TaskComponentBuilder(_editor),
-                  ...defaultComponentBuilders,
-                ],
-              ),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Button(
-                      onTap: _isEmpty ? null : submit,
-                      child: const Text('Add'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          ],
+          stylesheet: isDark ? _darkStyles : _styles,
+          componentBuilders: [
+            TaskComponentBuilder(_editor),
+            ...defaultComponentBuilders,
+          ],
         ),
       ),
     );
@@ -167,10 +164,7 @@ class EditorState extends State<Editor> {
 }
 
 class Viewer extends StatefulWidget {
-  const Viewer({
-    required this.markdown,
-    super.key,
-  });
+  const Viewer({required this.markdown, super.key});
 
   final String markdown;
 
@@ -216,10 +210,12 @@ class ViewerState extends State<Viewer> {
 
   @override
   Widget build(BuildContext context) {
+    bool isDark =
+        MediaQuery.of(context).platformBrightness == material.Brightness.dark;
     return BoxToSliverAdapter(
       child: SuperReader(
         document: document,
-        stylesheet: _styles,
+        stylesheet: isDark ? _darkStyles : _styles,
         selection: _selection,
         selectionLayerLinks: _selectionLayerLinks,
       ),

@@ -6,11 +6,12 @@ import 'package:plot/base.dart';
 
 import 'command.dart';
 import 'package:plot/page/calendar_settings.dart';
+import 'package:plot/store/store.dart';
 
-class SettingsCommands extends StaticCommands {
+class SettingsCommands extends Commands {
   SettingsCommands()
-      : super(commands: [
-          CommandGroup(title: 'Settings', commands: [
+      : super(groups: [
+          StaticCommandGroup(title: 'Settings', commands: [
             CalendarSettings(),
             SignOut(),
           ]),
@@ -32,8 +33,8 @@ class ShowSettings extends ShowCommand<void> {
 class CalendarSettings extends Command {
   CalendarSettings()
       : super(
-          title: 'Calendar settings',
-          subtitle: 'Add calendars and change sync settings',
+          title: 'Calendar Settings',
+          description: 'Add calendars and change sync settings',
         );
 
   @override
@@ -45,11 +46,11 @@ class CalendarSettings extends Command {
 class SignOut extends Command {
   SignOut()
       : super(
-          title: 'Sign out',
+          title: 'Sign Out',
         );
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<CommandReturn?> run(BuildContext context) async {
     try {
       await Base.client.auth.signOut();
     } on supa.AuthException catch (e) {
@@ -61,6 +62,21 @@ class SignOut extends Command {
       // );
       // }
     }
-    return CommandDone();
+    return null;
+  }
+}
+
+class SyncCalendar extends Command {
+  SyncCalendar(this.calendar)
+      : super(
+          title: calendar.enabled ? 'Re-sync' : 'Sync',
+        );
+
+  final Calendar calendar;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    await calendar.sync();
+    return null;
   }
 }

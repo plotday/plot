@@ -17,7 +17,7 @@ CREATE TABLE "public"."session" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid REFERENCES priority ON DELETE SET NULL,
     "at" tstzrange NOT NULL CHECK (is_finite (at)),
-    "priority" smallint NOT NULL DEFAULT 0,
+    "precedence" smallint NOT NULL DEFAULT 0,
     "pomodoro" smallint CHECK (pomodoro IS NULL OR pomodoro > 0),
     "pomodoro_at" timestamp with time zone
 );

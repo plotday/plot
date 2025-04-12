@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart';
-// import 'package:drift/isolate.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:collection/collection.dart';
 import 'package:equatable/equatable.dart';
 import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+import 'package:stack_trace/stack_trace.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
@@ -387,13 +387,13 @@ class Store extends _$Store {
 
   Future<void> sync() async {
     await Future.wait([
-      Account.push().then((_) => Account.pull()),
-      Priority.push().then((_) => Priority.pull()),
-      Activity.push().then((_) => Activity.pull()),
-      Note.push().then((_) => Note.pull()),
-      Event.push().then((_) => Event.pull()),
-      Session.push().then((_) => Session.pull()),
-      Balance.pull(),
+      Chain.capture(() => Account.push().then((_) => Account.pull())),
+      Chain.capture(() => Priority.push().then((_) => Priority.pull())),
+      Chain.capture(() => Activity.push().then((_) => Activity.pull())),
+      Chain.capture(() => Note.push().then((_) => Note.pull())),
+      Chain.capture(() => Event.push().then((_) => Event.pull())),
+      Chain.capture(() => Session.push().then((_) => Session.pull())),
+      Chain.capture(() => Balance.pull()),
     ]);
   }
 
@@ -407,7 +407,7 @@ class Store extends _$Store {
         ));
 
   @override
-  int get schemaVersion => 31;
+  int get schemaVersion => 32;
 
   @override
   MigrationStrategy get migration {

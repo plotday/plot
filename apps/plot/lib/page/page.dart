@@ -1,8 +1,10 @@
 export 'activity.dart';
 export 'calendar_settings.dart';
 export 'event.dart';
+export 'loading.dart';
+export 'new_activity.dart';
 export 'new_priority.dart';
-export 'priorities.dart';
+export 'onboarding.dart';
 export 'priority.dart';
 export 'schedule.dart';
 export 'sign_in.dart';

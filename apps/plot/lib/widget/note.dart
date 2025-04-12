@@ -4,29 +4,24 @@ import 'package:plot/store/store.dart';
 import 'editor.dart';
 
 class NoteWidget extends StatelessWidget {
-  const NoteWidget({
-    required this.note,
-    super.key,
-  });
+  const NoteWidget({required this.note, super.key});
 
   final Note note;
 
   @override
   Widget build(BuildContext context) {
-    return Column(children: [
-      Viewer(
-        markdown: note.body,
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Text(note.createdAt.toTimeAgo()),
-          ],
+    return Column(
+      children: [
+        Viewer(markdown: note.body),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [Text(note.createdAt.toTimeAgo())],
+          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 }
 
@@ -39,13 +34,11 @@ class NotesView extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView.builder(
       reverse: true,
+      // shrinkWrap: true,
       itemCount: notes.length,
       itemBuilder: (context, index) {
         final note = notes[notes.length - index - 1];
-        return NoteWidget(
-          key: ValueKey(note.id),
-          note: note,
-        );
+        return NoteWidget(key: ValueKey(note.id), note: note);
       },
     );
   }

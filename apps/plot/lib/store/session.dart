@@ -13,14 +13,15 @@ enum SessionPriority implements Comparable<SessionPriority> {
 
 @DataClassName('SessionRow')
 class Sessions extends UuidStoreTable with DeletableTable {
-  BlobColumn get priorityId => blob()
-      .nullable()
-      .map(const UuidConverter())
-      .references(Priorities, #id)();
+  BlobColumn get priorityId =>
+      blob()
+          .nullable()
+          .map(const UuidConverter())
+          .references(Priorities, #id)();
 
   DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();
   DateTimeColumn get end => dateTime().map(const LocalDateTimeConverter())();
-  IntColumn get priority =>
+  IntColumn get precedence =>
       integer().withDefault(Constant(SessionPriority.user.value))();
 
   IntColumn get pomodoro =>
@@ -35,8 +36,10 @@ class SessionsBase extends BaseTable {
   @override
   Map<String, dynamic> toBase(DataClass row) {
     final json = super.toBase(row);
-    final range = DateTimeRange(DateTime.parse(json['start'] as String),
-        DateTime.parse(json['end'] as String));
+    final range = DateTimeRange(
+      DateTime.parse(json['start'] as String),
+      DateTime.parse(json['end'] as String),
+    );
     json['at'] = range.toDb();
     json['user_id'] = Base.userId.toString();
     json.remove('start');
@@ -60,13 +63,15 @@ class Session extends SessionRow {
   static Future<bool> pull() =>
       Store.get.pull(PullType.updates, table, SessionsBase());
 
-  static Future<Session> resume(Priority? activity,
-      {required DateTime end}) async {
+  static Future<Session> resume(
+    Priority? priority, {
+    required DateTime end,
+  }) async {
     var session = await _latest();
     Session? previous;
     if (session != null) {
       if (session.at.isNow()) {
-        if (session.activity == activity) {
+        if (session.priority == priority) {
           session = Session.fromStore(session.copyWith(end: end));
         } else {
           session = Session.fromStore(session.copyWith(end: DateTime.now()));
@@ -74,15 +79,15 @@ class Session extends SessionRow {
           session = null;
         }
       } else {
-        if (session.activity == activity) {
+        if (session.priority == priority) {
           previous = session;
         }
         session = null;
       }
     }
     if (session == null) {
-      previous ??= await _latest(context: activity);
-      session = Session(activity: activity, end: end);
+      previous ??= await _latest(context: priority);
+      session = Session(priority: priority, end: end);
     }
     await session.save();
     return session;
@@ -93,12 +98,14 @@ class Session extends SessionRow {
     if (context != null) {
       query.where((t) => t.priorityId.equals(context.id.toBytes()));
     }
-    final row = await (query
-          ..orderBy([
-            (t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc)
-          ])
-          ..limit(1))
-        .getSingleOrNull();
+    final row =
+        await (query
+              ..orderBy([
+                (t) =>
+                    OrderingTerm(expression: t.start, mode: OrderingMode.desc),
+              ])
+              ..limit(1))
+            .getSingleOrNull();
     if (row == null) return null;
     return Session.fromStore(row);
   }
@@ -117,46 +124,57 @@ class Session extends SessionRow {
     }
     if (deleted != null) {
       query.where(
-          (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull());
+        (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
+      );
     }
-    query.orderBy(
-        [(t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc)]);
+    query.orderBy([
+      (t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc),
+    ]);
     if (limit != null) {
       query.limit(limit);
     }
     var sessionStream = query.watch().map(
-          (rows) => rows.map((row) => Session.fromStore(row)).toList(),
-        );
+      (rows) => rows.map((row) => Session.fromStore(row)).toList(),
+    );
     if (withContext) {
       sessionStream = Rx.combineLatest2(
-          sessionStream,
-          Priority.watch(),
-          (List<Session> sessions, Map<Uuid, Priority> activities) => sessions
-              .map((session) => Session.fromStore(session,
-                  activity: session.priorityId == null
-                      ? null
-                      : activities[session.priorityId]))
-              .toList());
+        sessionStream,
+        Priority.watch(),
+        (List<Session> sessions, Map<Uuid, Priority> activities) =>
+            sessions
+                .map(
+                  (session) => Session.fromStore(
+                    session,
+                    priority:
+                        session.priorityId == null
+                            ? null
+                            : activities[session.priorityId],
+                  ),
+                )
+                .toList(),
+      );
     }
 
     if (expiring) {
-      return sessionStream.transform(ExpiringStreamTransformer((sessions) {
-        final now = DateTime.now();
-        final expiry = sessions.isEmpty || sessions.first.at.end.isBefore(now)
-            ? null
-            : (now +
-                    Duration(
-                        seconds: sessions.first.at.start.second +
-                            (now.second < sessions.first.at.start.second
-                                ? 0
-                                : 60) -
-                            now.second))
-                .max(sessions.first.at.end);
-        return ExpiringResult(
-          value: sessions,
-          expiry: expiry,
-        );
-      }));
+      return sessionStream.transform(
+        ExpiringStreamTransformer((sessions) {
+          final now = DateTime.now();
+          final expiry =
+              sessions.isEmpty || sessions.first.at.end.isBefore(now)
+                  ? null
+                  : (now +
+                          Duration(
+                            seconds:
+                                sessions.first.at.start.second +
+                                (now.second < sessions.first.at.start.second
+                                    ? 0
+                                    : 60) -
+                                now.second,
+                          ))
+                      .max(sessions.first.at.end);
+          return ExpiringResult(value: sessions, expiry: expiry);
+        }),
+      );
     }
 
     return sessionStream;
@@ -168,29 +186,29 @@ class Session extends SessionRow {
         return session?.at.isNow() == true ? session : null;
       });
 
-  Session({this.activity, required super.end})
-      : super(
-          id: Uuid.generate(),
-          updatedAt: DateTime.now(),
-          priorityId: activity?.id,
-          start: DateTime.now(),
-          pomodoro: null,
-          pomodoroAt: null,
-          priority: 0,
-        );
+  Session({this.priority, required super.end})
+    : super(
+        id: Uuid.generate(),
+        updatedAt: DateTime.now(),
+        priorityId: priority?.id,
+        start: DateTime.now(),
+        pomodoro: null,
+        pomodoroAt: null,
+        precedence: 0,
+      );
 
-  Session.fromStore(SessionRow row, {this.activity})
-      : super(
-          id: row.id,
-          updatedAt: row.updatedAt,
-          deletedAt: row.deletedAt,
-          priorityId: row.priorityId,
-          start: row.start,
-          end: row.end,
-          pomodoro: row.pomodoro,
-          pomodoroAt: row.pomodoroAt,
-          priority: row.priority,
-        );
+  Session.fromStore(SessionRow row, {this.priority})
+    : super(
+        id: row.id,
+        updatedAt: row.updatedAt,
+        deletedAt: row.deletedAt,
+        priorityId: row.priorityId,
+        start: row.start,
+        end: row.end,
+        pomodoro: row.pomodoro,
+        pomodoroAt: row.pomodoroAt,
+        precedence: row.precedence,
+      );
 
   @override
   Session copyWith({
@@ -200,26 +218,37 @@ class Session extends SessionRow {
     Value<Uuid?> priorityId = const Value.absent(),
     DateTime? start,
     DateTime? end,
-    int? priority,
+    int? precedence,
     Value<Duration?> pomodoro = const Value.absent(),
     Value<DateTime?> pomodoroAt = const Value.absent(),
-  }) =>
-      Session.fromStore(super.copyWith(
-        id: id,
-        updatedAt: DateTime.now(),
-        deletedAt: deletedAt,
-        priorityId: priorityId,
-        start: start,
-        end: end,
-        priority: priority,
-        pomodoro: pomodoro,
-        pomodoroAt: pomodoroAt,
-      ));
+  }) => Session.fromStore(
+    super.copyWith(
+      id: id,
+      updatedAt: DateTime.now(),
+      deletedAt: deletedAt,
+      priorityId: priorityId,
+      start: start,
+      end: end,
+      precedence: precedence,
+      pomodoro: pomodoro,
+      pomodoroAt: pomodoroAt,
+    ),
+  );
 
-  final Priority? activity;
+  final Priority? priority;
 
   Future<void> save() =>
       Store.get.save(table, toCompanion(false), SessionsBase());
 
   DateTimeRange get at => DateTimeRange(start, end);
+
+  @override
+  bool operator ==(Object other) {
+    return super == other && priority == (other as Session).priority;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(super.hashCode, priority.hashCode);
+  }
 }

@@ -1,107 +1,120 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
-import 'package:plot/state/priority.dart';
+import 'package:plot/state/activity.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/note.dart';
+import 'package:plot/command/command.dart';
+import 'package:plot/page/loading.dart';
 
-class ActivityToolbar extends StatelessWidget {
-  const ActivityToolbar({
-    required this.activity,
+@RoutePage(name: "ActivityRoute")
+class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
+  ActivityWrapper({
+    Activity? activity,
+    ActivityId? activityId,
+    @PathParam("activityId") String? activityIdString,
     super.key,
-  });
+  }) : activityId =
+           activity?.id ??
+           activityId ??
+           (activityIdString != null
+               ? ActivityId.fromShortString(activityIdString)
+               : null);
 
-  final Activity activity;
+  final ActivityId? activityId;
 
   @override
-  Widget build(BuildContext context) => Header(
-        actions: [
-          if (!activity.doNow && !activity.done)
-            IconButton(
-              icon: const PlotIcon.doNow(),
-              onPressed: () => context.read<PriorityBloc>().updateActivity(
-                    activity.copyWith(
-                      doAt: activity.doNow
-                          ? const Value(null)
-                          : Value(DateTime.now()),
-                    ),
-                  ),
-            ),
-          if (activity.doNow)
-            IconButton(
-              icon: const PlotIcon.done(),
-              onPressed: () => context.read<PriorityBloc>().updateActivity(
-                    activity.copyWith(
-                      doneAt: Value(DateTime.now()),
-                    ),
-                  ),
-            ),
-          if (activity.done)
-            IconButton(
-              icon: const PlotIcon.done(),
-              onPressed: () => context.read<PriorityBloc>().updateActivity(
-                    activity.copyWith(
-                      doneAt: const Value(null),
-                    ),
-                  ),
-            ),
-          if (!activity.doNow)
-            IconButton(
-              icon: const PlotIcon.pinned(),
-              onPressed: () => context.read<PriorityBloc>().updateActivity(
-                    activity.copyWith(
-                      pinned: !activity.pinned,
-                    ),
-                  ),
-            ),
-        ],
-      );
+  Widget wrappedRoute(BuildContext context) {
+    return BlocProvider(
+      create: (_) => ActivityBloc()..setCurrentId(activityId),
+      child: this,
+    );
+  }
 }
 
+@RoutePage(name: "ActivityMainRoute")
 class ActivityPage extends StatelessWidget {
   const ActivityPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<PriorityBloc, PriorityState>(builder: (context, state) {
-      // Added a null check and some safety conditions
-      if (state is! PrioritySelectedState) {
-        return const Spinner();
-      }
+    return BlocBuilder<ActivityBloc, ActivityState>(
+      builder: (context, state) {
+        if (state is! ActivitySelectedState) {
+          return const LoadingPage();
+        }
 
-      if (state.loading || state.activityLoading) {
-        return const Spinner();
-      }
+        if (state.loading) {
+          return const LoadingPage();
+        }
 
-      return Column(
-        children: [
-          ActivityToolbar(activity: state.activity),
-          Expanded(child: NotesView(notes: state.activityNotes)),
-          Editor(
-            hint: state.activityNotes.isNotEmpty
-                ? 'Start an activity'
-                : 'Add a note',
-            autofocus: true,
-            onSubmitted: (body) async {
-              if (state.activity.draft) {
-                final activity =
-                    state.activity.copyWith(body: body, draft: false);
-                await context.read<PriorityBloc>().updateActivity(activity);
-                if (context.mounted) {
-                  ActivityRoute.byId(activity.priorityId, activity.id)
-                      .go(context);
-                }
-                return;
-              }
-              await context
-                  .read<PriorityBloc>()
-                  .updateNote(state.draft.copyWith(body: body, draft: false));
-            },
-          )
-        ],
-      );
-    });
+        return Scaffold(
+          header: Header(
+            title: state.current.title,
+            commands: activityCommands(state.current).commands,
+          ),
+          body: Column(
+            children: [
+              Flexible(
+                flex: 0,
+                child: Container(
+                  padding: EdgeInsets.all(16),
+                  child: SingleChildScrollView(
+                    child: Viewer(markdown: state.current.body),
+                  ),
+                ),
+              ),
+              Flexible(
+                flex: 1,
+                fit: FlexFit.loose,
+                child: Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      top: BorderSide(width: 1.0, color: context.colour.border),
+                    ),
+                  ),
+                  child: NotesView(notes: state.notes),
+                ),
+              ),
+              Flexible(
+                flex: 0,
+                child: EditableArea(
+                  position: EditableAreaPosition.bottom,
+                  builder:
+                      (context, focusNode) => Editor(
+                        hint: 'Add a note',
+                        autofocus: true,
+                        focusNode: focusNode,
+                        onSubmitted: (body) async {
+                          if (state.current.draft) {
+                            final activity = state.current.copyWith(
+                              body: body,
+                              draft: false,
+                            );
+                            await context.read<ActivityBloc>().updateActivity(
+                              activity,
+                            );
+                            if (!context.mounted) return;
+                            await context.router.push(
+                              ActivityRoute(activity: activity),
+                            );
+                            return;
+                          }
+                          await context.read<ActivityBloc>().updateNote(
+                            state.draft.copyWith(body: body, draft: false),
+                          );
+                        },
+                      ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

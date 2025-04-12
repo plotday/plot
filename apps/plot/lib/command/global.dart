@@ -1,32 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/material.dart';
 
+import 'package:plot/router.dart';
 import 'command.dart';
-
-class GlobalCommands extends StaticCommands {
-  static final List<Command> all = [
-    ChangePriority(),
-    ShowSettings(),
-  ];
-
-  GlobalCommands()
-      : super(
-            prompt: 'Run a command',
-            commands: [CommandGroup(title: 'Recent', commands: all)]);
-}
-
-class ShowGlobalCommands extends ShowCommand<void> {
-  ShowGlobalCommands()
-      : super(
-          title: 'Run a command',
-          commands: (context) => GlobalCommands(),
-          shortcut: const SingleActivator(
-            LogicalKeyboardKey.keyK,
-            meta: true,
-          ),
-        );
-}
 
 class GlobalShortcuts extends StatelessWidget {
   const GlobalShortcuts({required this.child, super.key});
@@ -36,23 +12,23 @@ class GlobalShortcuts extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
-      bindings: (GlobalCommands.all + [ShowGlobalCommands()]).fold(
-        <ShortcutActivator, VoidCallback>{},
-        (bindings, command) => command.shortcut == null
-            ? bindings
-            : {
-                ...bindings,
-                command.shortcut!: () {
-                  try {
-                    context.run<void>(command);
-                  } catch (e) {
-                    print('Error running command: $e');
-                    rethrow;
-                  }
-                },
-              },
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          context.focusedRouter.maybePop();
+        },
+      },
+      child: CommandScope(
+        commands: Commands(
+          prompt: 'Run a command',
+          groups: [
+            StaticCommandGroup(title: 'Commands', commands: [
+              PickCurrentActivity(),
+              ShowSettings(),
+            ])
+          ],
+        ),
+        child: child,
       ),
-      child: child,
     );
   }
 }

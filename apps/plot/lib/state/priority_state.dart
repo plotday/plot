@@ -1,125 +1,121 @@
 part of 'priority.dart';
 
-sealed class PriorityState extends Equatable {
-  const PriorityState();
-
-  bool get loading => false;
-}
-
-final class NoPriorityState extends PriorityState {
-  const NoPriorityState();
-
-  @override
-  bool get loading => true;
-
-  @override
-  List<Object?> get props => [];
-}
-
-final class PrioritySelectedState extends PriorityState {
-  static List<Activity> _filterActivites(List<Activity> activities,
-      {bool? pinned, bool? draft, bool? doNow}) {
+class PriorityState extends Equatable {
+  static List<Activity> _filterActivites(
+    List<Activity> activities, {
+    bool? pinned,
+    bool? draft,
+    bool? doNow,
+  }) {
     return activities
-        .where((activity) =>
-            (pinned == null || activity.pinned == pinned) &&
-            (draft == null || activity.draft == draft) &&
-            (doNow == null || activity.doNow == doNow))
+        .where(
+          (activity) =>
+              (pinned == null || activity.pinned == pinned) &&
+              (draft == null || activity.draft == draft) &&
+              (doNow == null || activity.doNow == doNow),
+        )
         .toList();
   }
 
-  PrioritySelectedState({
+  PriorityState({
     required this.current,
-  })  : _activities = null,
-        _activity = null,
-        moreActivities = true,
-        _activityNotes = [],
-        moreActivityNotes = false;
-
-  const PrioritySelectedState._({
-    required this.current,
-    required List<Activity>? activities,
-    required List<Note> activityNotes,
-    required this.moreActivities,
-    required this.moreActivityNotes,
-    required Activity? activity,
-  })  : _activities = activities,
-        _activity = activity,
-        _activityNotes = activityNotes;
+    List<Activity>? activities,
+    Map<PriorityId, List<Activity>>? childActivities,
+    this.balances,
+    this.moreActivities = true,
+  }) : _activities = activities,
+       _childActivities = childActivities ?? {},
+       descendants = current.descendants(),
+       maxTime = Duration(
+         minutes:
+             balances?.values
+                 .map(
+                   (b) => b.values.fold(
+                     0,
+                     (a, b) =>
+                         a + b.pastTime.inMinutes + b.futureTime.inMinutes,
+                   ),
+                 )
+                 .fold<int>(0, (a, b) => max(a, b)) ??
+             0,
+       );
 
   final Priority current;
+  final List<Priority> descendants;
   final List<Activity>? _activities;
-  bool get activityLoading => _activities == null;
+  final Map<PriorityId, List<Activity>> _childActivities;
+  final BalanceByPriorityType? balances;
+  final Duration maxTime;
   final bool moreActivities;
-  List<Activity> get pinnedActivities => _activities == null
-      ? const []
-      : _filterActivites(_activities, pinned: true, draft: false, doNow: false);
-  List<Activity> get activeActivities => _activities == null
-      ? const []
-      : _filterActivites(_activities, pinned: false, draft: false, doNow: true);
-  List<Activity> get inactiveActivities => _activities == null
-      ? const []
-      : _filterActivites(_activities,
-          pinned: false, draft: false, doNow: false);
+
+  bool get loading => false;
+  bool get activityLoading => _activities == null;
+
+  List<Activity> get pinnedActivities =>
+      _activities == null
+          ? const []
+          : _filterActivites(
+            _activities,
+            pinned: true,
+            draft: false,
+            doNow: false,
+          );
+
+  List<Activity> get activeActivities =>
+      _activities == null
+          ? const []
+          : _filterActivites(
+            _activities,
+            pinned: false,
+            draft: false,
+            doNow: true,
+          );
+
+  List<Activity> get inactiveActivities =>
+      _activities == null
+          ? const []
+          : _filterActivites(
+            _activities,
+            pinned: false,
+            draft: false,
+            doNow: false,
+          );
+
   Activity get draftActivity =>
       _filterActivites(_activities ?? const [], draft: true).firstOrNull ??
       Activity.draft(priorityId: current.id);
 
-  final Activity? _activity;
-  Activity get activity => _activity ?? draftActivity;
-  final List<Note> _activityNotes;
-  List<Note> get activityNotes =>
-      _activityNotes.whereNot((note) => note.draft).toList();
-  final bool moreActivityNotes;
-  Note get draft => _activityNotes.reversed.where((note) => note.draft).first;
+  /// Get active activities for a specific child priority, including those from its descendants
+  List<Activity> getChildActiveActivities(PriorityId childId) {
+    return _childActivities[childId] ?? const [];
+  }
 
-  PrioritySelectedState copyWith({
+  /// Get all active activities from all children and their descendants
+  Map<PriorityId, List<Activity>> get childrenActiveActivities =>
+      _childActivities;
+
+  PriorityState copyWith({
     Priority? current,
     List<Activity>? activities,
+    Map<PriorityId, List<Activity>>? childActivities,
+    Value<BalanceByPriorityType?> balances = const Value.absent(),
     bool? moreActivities,
-    Value<Activity?> activity = const Value.absent(),
-    List<Note>? activityNotes,
-    bool? moreActivityNotes,
   }) {
-    if (activity.or(_activity) == null) {
-      activityNotes ??= const [];
-    }
-    activityNotes ??= _activityNotes;
-    // If the updated activities include the current activity, update it.
-    if (activities != null && !activity.present && _activity != null) {
-      final currentActivity =
-          activities.firstWhereOrNull((a) => a.id == _activity.id);
-      if (currentActivity != null) {
-        activity = Value(currentActivity);
-      }
-    }
-    // If there is no draft note, create one.
-    if (activity.or(_activity) != null &&
-        !activityNotes.any((note) => note.draft)) {
-      activityNotes.add(
-        Note.draft(
-          activityId: activity.or(_activity)!.id,
-          parent: activityNotes.firstOrNull,
-        ),
-      );
-    }
-
-    return PrioritySelectedState._(
-      activity: activity.or(_activity),
-      activities: activities ?? _activities,
+    return PriorityState(
       current: current ?? this.current,
+      activities: activities ?? _activities,
+      childActivities: childActivities ?? _childActivities,
+      balances: balances.or(this.balances),
       moreActivities: moreActivities ?? this.moreActivities,
-      activityNotes: activityNotes,
-      moreActivityNotes: moreActivityNotes ?? this.moreActivityNotes,
     );
   }
 
   @override
   List<Object?> get props => [
-        current,
-        _activities,
-        moreActivities,
-        _activity,
-        _activityNotes,
-        moreActivityNotes,
-      ];
+    current,
+    _activities,
+    _childActivities,
+    balances,
+    moreActivities,
+  ];
 }

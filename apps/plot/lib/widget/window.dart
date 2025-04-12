@@ -1,10 +1,11 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart';
 import 'package:macos_window_utils/macos_window_utils.dart' as macos_win;
 import 'package:macos_window_utils/macos/ns_window_button_type.dart';
 import 'package:macos_window_utils/widgets/visual_effect_subview_container/visual_effect_subview_container.dart';
 import 'package:platform_builder/platform_builder.dart';
+
+import 'package:plot/widget/colour_scheme.dart';
 
 class Window extends StatelessWidget {
   static late final double toolbarHeight;
@@ -15,7 +16,11 @@ class Window extends StatelessWidget {
       await const MacosWindowUtilsConfig(
         toolbarStyle: NSWindowToolbarStyle.unifiedCompact,
       ).apply();
+      await macos_win.WindowManipulator.hideZoomButton();
+      await macos_win.WindowManipulator.hideMiniaturizeButton();
+      await macos_win.WindowManipulator.hideCloseButton();
       toolbarHeight = await macos_win.WindowManipulator.getTitlebarHeight();
+
       final lastWindowButtonPos =
           await macos_win.WindowManipulator.getStandardWindowButtonPosition(
         buttonType: NSWindowButtonType.zoomButton,
@@ -35,8 +40,6 @@ class Window extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    bool isDark =
-        MediaQuery.of(context).platformBrightness == material.Brightness.dark;
     return PlatformBuilder(
       macOSBuilder: (_) => VisualEffectSubviewContainer(
         alphaValue: 1,
@@ -48,11 +51,7 @@ class Window extends StatelessWidget {
         // negative margin to the visual effect subview.
         padding: const EdgeInsets.all(-2000.0),
         child: Container(
-          color: (HSLColor.fromColor(MacosColors.appleBlue))
-              .withLightness(isDark ? 0.2 : 0.8)
-              .withSaturation(isDark ? 0.7 : 1.0)
-              .toColor()
-              .withValues(alpha: 0.35),
+          color: context.colour.canvas,
           child: child,
         ),
       ),

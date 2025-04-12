@@ -1,12 +1,14 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/widget/event_details.dart';
+import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/widget/schedule.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/schedule.dart';
 import 'package:plot/router.dart';
 
+@RoutePage()
 class SchedulePage extends StatelessWidget {
   const SchedulePage({super.key});
 
@@ -33,11 +35,7 @@ class SchedulePage extends StatelessWidget {
                 context.read<ScheduleBloc>().watch(range);
               },
               onSelect: (event) {
-                if (event.unsaved) {
-                  NewEventRoute.at(event.at).go(context);
-                } else {
-                  EventRoute.byId(event.id).go(context);
-                }
+                context.router.push(EventRoute(event: event));
               },
             ),
           ),
@@ -55,14 +53,6 @@ class ScheduleHeader extends StatelessWidget {
     return BlocBuilder<ScheduleBloc, ScheduleState>(
       builder: (context, state) => Header(
         title: 'Schedule',
-        actions: [
-          IconButton(
-            icon: const PlotIcon.today(),
-            onPressed: () {
-              ScheduleRoute.day(state.day).go(context);
-            },
-          ),
-        ],
       ),
     );
   }

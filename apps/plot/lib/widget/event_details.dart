@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/command/command.dart';
 
 class EventDetails extends StatelessWidget {
   const EventDetails({
@@ -70,12 +71,7 @@ class EventDetails extends StatelessWidget {
               );
             },
           ),
-          Button(
-            onTap: () {
-              onChanged(event.copyWith(deletedAt: Value(DateTime.now())));
-            },
-            child: const Text("Delete"),
-          )
+          Button(ArchiveEventCommand(event))
         ],
       ),
     );

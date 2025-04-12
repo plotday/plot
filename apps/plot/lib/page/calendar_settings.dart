@@ -5,6 +5,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/state/accounts.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/auth_button.dart';
+import 'package:plot/command/command.dart';
 
 class CalendarSettingsPage extends StatefulWidget {
   const CalendarSettingsPage({super.key});
@@ -37,14 +38,7 @@ class CalendarSettingsPageState extends State<CalendarSettingsPage> {
                                   children: [
                                     Text(calendar.name),
                                     const SizedBox(width: 8),
-                                    Button(
-                                      child: calendar.enabled
-                                          ? const Text('Re-sync')
-                                          : const Text('Sync'),
-                                      onTap: () {
-                                        calendar.sync();
-                                      },
-                                    ),
+                                    Button(SyncCalendar(calendar)),
                                   ],
                                 )
                               ],

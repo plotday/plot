@@ -25,6 +25,7 @@
     </activity>
   </application>
   <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
   <meta-data android:name="com.posthog.posthog.API_KEY" android:value="phc_zrNpA4aFNRSeCr5tLzKOPzQm5kDJs26ni1mHFE6Sf5u"/>
   <meta-data android:name="com.posthog.posthog.POSTHOG_HOST" android:value="https://us.i.posthog.com"/>
   <meta-data android:name="com.posthog.posthog.TRACK_APPLICATION_LIFECYCLE_EVENTS" android:value="true"/>

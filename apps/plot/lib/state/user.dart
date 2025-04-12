@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:plot/base.dart';
+import 'package:plot/store/store.dart';
 
 part 'user_state.dart';
 
@@ -13,6 +14,7 @@ class UserBloc extends Cubit<UserState> {
       if (user == null) {
         emit(const UserSignedOut());
       } else {
+        await Store.get.sync();
         emit(UserSignedIn(user));
       }
     });

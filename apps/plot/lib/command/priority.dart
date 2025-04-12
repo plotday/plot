@@ -1,98 +1,153 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:auto_route/auto_route.dart';
+import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/state/priorities.dart';
-import 'package:plot/page/page.dart';
 import 'package:plot/router.dart';
+import 'package:plot/page/new_priority.dart';
 
 class PriorityCommand extends ValueCommand<Priority?> {
-  PriorityCommand(
-    this.priority,
-  ) : super(
-          title: priority?.name ?? 'All Priorities',
-          icon: const PlotIcon.priority(),
-          value: priority,
-        );
-
-  final Priority? priority;
-
-  @override
-  Widget build(
-    BuildContext context, {
-    bool selected = false,
-    void Function()? onTap,
-  }) =>
-      ListTile(
-        leading: icon,
-        title: PriorityLabel(priority: priority),
-        subtitle: subtitle != null ? Text(subtitle!) : null,
-        selected: selected,
-        onTap: onTap,
+  PriorityCommand(Priority? priority)
+    : super(
+        title: priority?.name ?? 'All Priorities',
+        subtitle: priority?.parent?.pathLabel,
+        value: priority,
       );
 }
 
-class PickPriority extends StaticCommands {
-  static Future<Priority?> show({
-    required BuildContext context,
-    Priority? defaultPriority,
-  }) async {
-    return await CommandBar.show(
-      context,
-      PickPriority(
-        prompt: 'Pick a priority',
-        priorities: context.read<PrioritiesBloc>().state.recent,
-      ),
-    );
+class PriorityCommandGroup extends CommandGroup {
+  PriorityCommandGroup() : super(title: 'Priorities');
+
+  @override
+  Future<List<Command>> list({String? search}) async {
+    final all =
+        (await Priority.getAll())
+            .map((priority) => PriorityCommand(priority))
+            .toList();
+    return CommandGroup.filter(all, search);
   }
-
-  PickPriority({
-    required this.priorities,
-    required super.prompt,
-  }) : super(commands: [
-          CommandGroup(
-            title: 'Recent',
-            commands: priorities
-                .map((priority) => PriorityCommand(priority))
-                .toList(),
-          ),
-        ]);
-
-  final List<Priority> priorities;
 }
 
-class ChangePriority extends ShowCommand<Priority> {
-  ChangePriority()
-      : super(
-          title: 'Switch priorities',
-          icon: const PlotIcon.priority(),
-          shortcut: const SingleActivator(
-            LogicalKeyboardKey.keyJ,
-            meta: true,
+class PickPriority extends Commands<Priority> {
+  PickPriority(List<Priority> priorities, {super.prompt = 'Pick a priority'})
+    : super(
+        groups: [
+          StaticCommandGroup(
+            title: 'Recent',
+            commands:
+                priorities
+                    .map((priority) => PriorityCommand(priority))
+                    .toList(),
           ),
-          commands: (context) => PickPriority(
-            prompt: 'Switch priorities',
-            priorities: context.read<PrioritiesBloc>().state.recent,
-          ),
-        );
+        ],
+        secondaryCommand: (prompt) => NewPriority(),
+      );
+
+  PickPriority.recent(BuildContext context, {super.prompt = 'Pick a priority'})
+    : super(
+        groups: [PriorityCommandGroup()],
+        secondaryCommand: (prompt) => NewPriority(),
+      );
+}
+
+class ChangeCurrentPriority extends Command {
+  ChangeCurrentPriority(Priority priority, {bool fullPath = true})
+    : priorityId = priority.id,
+      super(title: priority.name, subtitle: priority.parent?.pathLabel);
+
+  ChangeCurrentPriority.byId({required this.priorityId})
+    : super(title: 'View Priority');
+
+  final PriorityId priorityId;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    await context.router.push<void>(PriorityRoute(priorityId: priorityId));
+    return null;
+  }
+}
+
+class PickCurrentActivity extends ShowCommand<Priority> {
+  PickCurrentActivity()
+    : super(
+        title: 'Change Current Priority',
+        icon: PlotIcon.priority,
+        shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
+        commands:
+            (context) =>
+                PickPriority.recent(context, prompt: 'Change Current Priority'),
+      );
 
   @override
   void onSelect(BuildContext context, Priority value) async {
-    PriorityRoute.byId(value.id).go(context);
+    ChangeCurrentPriority(value).run(context);
+  }
+}
+
+class AddPriority extends Command {
+  AddPriority(this._priority) : super(title: 'Add');
+
+  final Future<Priority> _priority;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    final priority = await _priority;
+    await priority.copyWith(draft: false).save();
+    Posthog().capture(eventName: 'Priority Added');
+    if (context.mounted) {
+      await context.router.replace(PriorityRoute(priorityId: priority.id));
+    }
+    return null;
+  }
+}
+
+class ArchivePriority extends Command {
+  ArchivePriority(this._priority)
+    : super(title: 'Archive', icon: PlotIcon.delete);
+
+  final Future<Priority> _priority;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    final priority = await _priority;
+    final defaultPriority = await Priority.getDefault();
+    if (priority == defaultPriority) {
+      return CommandMessage(
+        'You cannot archive the default priority',
+        isError: true,
+      );
+    }
+    await priority.delete();
+    Posthog().capture(eventName: 'Priority Archived');
+    if (context.mounted) {
+      await context.router.replace(
+        PriorityRoute(priorityId: priority.parent?.id ?? defaultPriority!.id),
+      );
+    }
+    return null;
   }
 }
 
 class NewPriority extends Command {
-  NewPriority()
-      : super(
-          title: 'New priority',
-        );
+  NewPriority({this.parent}) : super(title: 'New Priority', icon: PlotIcon.add);
+
+  final Priority? parent;
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandPage(const NewPriorityPage());
+  Future<CommandReturn?> run(BuildContext context) async {
+    return CommandPage(NewPriorityPage(parent: parent));
   }
 }
+
+StaticCommandGroup priorityCommands(Priority priority) => StaticCommandGroup(
+  title: 'Commands',
+  commands: [
+    ArchivePriority(Future.value(priority)),
+    NewActivity(
+      draft: Activity.draft(priorityId: priority.id, doAt: DateTime.now()),
+    ),
+  ],
+);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/util/time.dart';
 import 'package:plot/util/theme_color.dart';
@@ -88,7 +89,7 @@ class DurationWidget extends StatelessWidget {
             width: 4,
             height: 4,
             decoration: BoxDecoration(
-              color: const ThemeColor.defaultColor().getForeground(context),
+              color: context.colour.foreground,
               shape: BoxShape.circle,
             ),
           );
@@ -104,7 +105,7 @@ class DurationText extends StatelessWidget {
   const DurationText({required this.duration, this.icon, super.key});
 
   final Duration duration;
-  final PlotIcon? icon;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -112,7 +113,7 @@ class DurationText extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       spacing: 4,
       children: [
-        if (icon != null) icon!,
+        if (icon != null) FIcon.data(icon!),
         Text.rich(
           TextSpan(
             style: const TextStyle(

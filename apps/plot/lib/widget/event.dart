@@ -2,79 +2,71 @@ import 'package:flutter/material.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/util/theme_color.dart';
 
 class EventWidget extends StatelessWidget {
   const EventWidget({
     required this.event,
     required this.onSelect,
     this.selected = false,
-    ThemeColor? color,
     super.key,
-  }) : color = color ?? const ThemeColor.defaultColor();
+  });
 
   final Event event;
   final void Function() onSelect;
   final bool selected;
-  final ThemeColor color;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => onSelect(),
-      child: Container(
-        color: selected
-            ? const ThemeColor.defaultColor().getBackground(context)
-            : Colors.transparent,
-        child: Padding(
-          padding: const EdgeInsetsDirectional.all(4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 68,
-                alignment: Alignment.topRight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (!event.at.start.toTimeOfDay().isMidnight)
-                      TimeWidget(time: event.at.start),
-                    if (!event.at.start.toTimeOfDay().isMidnight &&
-                        !event.at.end.toTimeOfDay().isMidnight) ...[
-                      const SizedBox(height: 4),
-                      DurationText(
-                        duration: !(event.at.start.toTimeOfDay().isMidnight ||
-                                event.at.end.toTimeOfDay().isMidnight)
-                            ? event.at.duration
-                            : Duration.zero,
-                      ),
-                    ],
+      child: Padding(
+        padding: const EdgeInsetsDirectional.all(4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 68,
+              alignment: Alignment.topRight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (!event.at.start.toTimeOfDay().isMidnight)
+                    TimeWidget(time: event.at.start),
+                  if (!event.at.start.toTimeOfDay().isMidnight &&
+                      !event.at.end.toTimeOfDay().isMidnight) ...[
+                    const SizedBox(height: 4),
+                    DurationText(
+                      duration: !(event.at.start.toTimeOfDay().isMidnight ||
+                              event.at.end.toTimeOfDay().isMidnight)
+                          ? event.at.duration
+                          : Duration.zero,
+                    ),
                   ],
-                ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (event.name == null)
-                      const SizedBox(
-                        height: 16,
-                        child: Squiggle(),
-                      ),
-                    if (event.name != null)
-                      Text(
-                        event.name!,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w500, height: 1.0),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    if (event.name != null) const SizedBox(height: 4),
-                  ],
-                ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (event.name == null)
+                    const SizedBox(
+                      height: 16,
+                      child: Squiggle(),
+                    ),
+                  if (event.name != null)
+                    Text(
+                      event.name!,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w500, height: 1.0),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  if (event.name != null) const SizedBox(height: 4),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

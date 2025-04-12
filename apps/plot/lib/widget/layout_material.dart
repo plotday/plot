@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
-import 'package:go_router/go_router.dart';
+import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/command/command.dart';
 
@@ -19,13 +19,14 @@ class MaterialLayout extends StatelessWidget {
               ? 2
               : 3;
 
-  const MaterialLayout(
-      {required this.primary,
-      this.secondary,
-      this.drawer,
-      this.navigationShell,
-      this.header,
-      super.key});
+  const MaterialLayout({
+    required this.primary,
+    this.secondary,
+    this.drawer,
+    this.tabsRouter,
+    this.header,
+    super.key,
+  });
 
   // Displayed at all breakpoints
   final Widget primary;
@@ -35,7 +36,7 @@ class MaterialLayout extends StatelessWidget {
   final Widget? drawer;
   final Widget? header;
   // Displayed at single and double breakpoints
-  final StatefulNavigationShell? navigationShell;
+  final TabsRouter? tabsRouter;
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +84,7 @@ class MaterialLayout extends StatelessWidget {
               key: const Key('Bottom Navigation'),
               inAnimation: AdaptiveScaffold.bottomToTop,
               outAnimation: AdaptiveScaffold.topToBottom,
-              builder: navigationShell == null
+              builder: tabsRouter == null
                   ? null
                   : (_) => AdaptiveScaffold.standardBottomNavigationBar(
                         destinations: const [
@@ -100,14 +101,14 @@ class MaterialLayout extends StatelessWidget {
                             label: 'Settings',
                           ),
                         ],
-                        currentIndex: navigationShell!.currentIndex,
+                        currentIndex: tabsRouter!.activeIndex,
                         onDestinationSelected: (int index) {
-                          if (navigationShell == null) return;
+                          if (tabsRouter == null) return;
                           if (index == 2) {
                             context.run<void>(ShowSettings());
                             return;
                           }
-                          navigationShell!.goBranch(index);
+                          tabsRouter!.setActiveIndex(index);
                         },
                       ),
             )

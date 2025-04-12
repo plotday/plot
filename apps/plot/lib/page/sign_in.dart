@@ -1,10 +1,13 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+import 'package:auto_route/auto_route.dart';
 
+import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
 
+@RoutePage()
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key});
 
@@ -38,37 +41,28 @@ class _SignInPageState extends State<SignInPage> {
     if (_signedIn == null) {
       return const Scaffold(
         body: Center(
-          child: CircularProgressIndicator(),
+          child: Spinner(),
         ),
       );
     }
 
-    return Scaffold(
-        appBar: AppBar(
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-          title: const Text('Plot'),
-        ),
-        body: Center(
-          child: AuthButton(
-            onSignIn: (auth) async {
-              if (auth.idToken == null) throw Exception('No idToken');
-              try {
-                await Base.client.auth.signInWithIdToken(
-                  provider: OAuthProvider.google,
-                  idToken: auth.idToken!,
-                  accessToken: auth.accessToken,
-                );
-              } on AuthException catch (e) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(e.message),
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                  ),
-                );
-              }
-            },
-          ),
-        ));
+    return Scaffold(body: Center(
+      child: AuthButton(
+        onSignIn: (auth) async {
+          if (auth.idToken == null) throw Exception('No idToken');
+          try {
+            await Base.client.auth.signInWithIdToken(
+              provider: OAuthProvider.google,
+              idToken: auth.idToken!,
+              accessToken: auth.accessToken,
+            );
+          } on AuthException catch (e) {
+            print(e);
+            if (!context.mounted) return;
+            Alert.show(context, e.message);
+          }
+        },
+      ),
+    ));
   }
 }

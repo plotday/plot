@@ -1,68 +1,117 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' as material;
-import 'package:macos_ui/macos_ui.dart' as macos;
+import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
-enum ButtonStyle { primary, secondary }
+import 'package:plot/widget/colour_scheme.dart';
+import 'package:plot/command/command.dart';
+import 'spinner.dart';
+
+enum ButtonStyle { primary, secondary, ghost }
 
 class Button extends StatelessWidget {
-  const Button({
-    required this.child,
-    required this.onTap,
-    this.style = ButtonStyle.primary,
+  const Button(
+    this.command, {
+    this.loading = false,
+    this.enabled = true,
+    this.selected = false,
     super.key,
-  });
+  }) : iconOnly = false,
+       style = ButtonStyle.secondary;
 
-  final VoidCallback? onTap;
-  final Widget child;
+  const Button.primary(
+    this.command, {
+    this.loading = false,
+    this.enabled = true,
+    super.key,
+  }) : style = ButtonStyle.primary,
+       iconOnly = false,
+       selected = false;
+
+  const Button.ghost(
+    this.command, {
+    this.loading = false,
+    this.enabled = true,
+    this.selected = false,
+    super.key,
+  }) : style = ButtonStyle.ghost,
+       iconOnly = false;
+
+  Button.icon(
+    this.command, {
+    this.loading = false,
+    this.enabled = true,
+    this.selected = false,
+    super.key,
+  }) : style = ButtonStyle.ghost,
+       iconOnly = command.icon != null;
+
   final ButtonStyle style;
+  final bool loading;
+  final bool enabled;
+  final bool selected;
+  final bool iconOnly;
+  final Command command;
 
   @override
   Widget build(BuildContext context) {
-    return PlatformBuilder(
-      macOSBuilder: (_) => macos.PushButton(
-        onPressed: onTap,
-        controlSize: macos.ControlSize.regular,
-        secondary: style == ButtonStyle.secondary,
-        child: child,
-      ),
-      builder: (_) => style == ButtonStyle.primary
-          ? material.FilledButton(
-              onPressed: onTap,
-              child: child,
-            )
-          : material.FilledButton.tonal(
-              onPressed: onTap,
-              child: child,
-            ),
+    FBaseButtonStyle fStyle;
+    if (selected) {
+      final baseStyle = switch (style) {
+        ButtonStyle.primary => context.theme.buttonStyles.primary,
+        ButtonStyle.secondary => context.theme.buttonStyles.outline,
+        ButtonStyle.ghost => context.theme.buttonStyles.ghost,
+      };
+      fStyle = baseStyle.copyWith(
+        contentStyle: baseStyle.contentStyle.copyWith(
+          enabledTextStyle: baseStyle.contentStyle.enabledTextStyle.copyWith(
+            color: context.colour.accent,
+          ),
+          enabledIconColor: context.colour.accent,
+        ),
+      );
+    } else {
+      fStyle = switch (style) {
+        ButtonStyle.primary => FButtonStyle.primary,
+        ButtonStyle.secondary => FButtonStyle.outline,
+        ButtonStyle.ghost => FButtonStyle.ghost,
+      };
+    }
+
+    final onPress = enabled ? () => context.run<void>(command) : null;
+    final button = PlatformBuilder(
+      builder:
+          (_) =>
+              iconOnly
+                  ? FButton.icon(
+                    style: fStyle,
+                    onPress: onPress,
+                    child: FIcon.data(
+                      command.icon!,
+                      size: 12,
+                      color: context.colour.muted,
+                    ),
+                  )
+                  : FButton(
+                    style: fStyle,
+                    onPress: onPress,
+                    prefix:
+                        command.icon != null
+                            ? FIcon.data(
+                              command.icon!,
+                              size: 12,
+                              color: context.colour.muted,
+                            )
+                            : null,
+                    label: Text(command.title),
+                  ),
     );
-  }
-}
 
-class IconButton extends StatelessWidget {
-  const IconButton({
-    required this.icon,
-    required this.onPressed,
-    this.padding = const EdgeInsets.all(8),
-    super.key,
-  });
-
-  final VoidCallback onPressed;
-  final Widget icon;
-  final EdgeInsets padding;
-
-  @override
-  Widget build(BuildContext context) {
-    return PlatformBuilder(
-      macOSBuilder: (_) => macos.MacosIconButton(
-        padding: padding,
-        onPressed: onPressed,
-        icon: icon,
-      ),
-      builder: (_) => material.IconButton(
-        onPressed: onPressed,
-        icon: icon,
-      ),
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Opacity(opacity: loading ? 0.0 : 1.0, child: button),
+        if (loading) Spinner(),
+      ],
     );
   }
 }

@@ -3,7 +3,7 @@ import 'package:platform_builder/platform_builder.dart';
 import 'package:macos_ui/macos_ui.dart' as macos;
 
 class Spinner extends StatelessWidget {
-  const Spinner({super.key}) : message = null;
+  const Spinner({this.message, super.key});
   const Spinner.message(String message, {super.key}) : message = message;
 
   final String? message;
@@ -12,6 +12,7 @@ class Spinner extends StatelessWidget {
   Widget build(BuildContext context) {
     return PlatformBuilder(
         macOSBuilder: (_) => Row(
+              mainAxisSize: MainAxisSize.min,
               spacing: 8,
               children: [
                 if (message != null) Text(message!),

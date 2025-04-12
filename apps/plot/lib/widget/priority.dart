@@ -1,8 +1,9 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' as material;
+import 'package:forui/forui.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/command/command.dart';
 
 class PriorityLabel extends StatelessWidget {
   const PriorityLabel({required this.priority, super.key});
@@ -15,38 +16,26 @@ class PriorityLabel extends StatelessWidget {
       return const Text('All Priorities');
     }
     final ancestors = priority!.ancestors;
-    return Wrap(
-      spacing: 8,
+    return Row(
       children: [
         Text(priority!.name),
         if (ancestors.isNotEmpty)
-          ...(List<Widget>.of([
-                const PlotIcon.pipe(size: 14, color: material.Colors.grey)
-              ]) +
-              ancestors
-                  .map((a) => Text(a.name))
-                  .toList()
-                  .expand((widget) => [
-                        widget,
-                        const PlotIcon.right(
-                            size: 14, color: material.Colors.grey)
-                      ])
-                  .toList()
-            ..removeLast())
+          DefaultTextStyle(
+            style: DefaultTextStyle.of(
+              context,
+            ).style.copyWith(color: context.theme.colorScheme.mutedForeground),
+            child: Text('  ${priority!.parent!.pathLabel}'),
+          ),
       ],
     );
   }
 }
 
 class PriorityBalance extends StatelessWidget {
-  const PriorityBalance({
-    required this.balances,
-    this.isNow = false,
-    super.key,
-  });
+  const PriorityBalance({required this.balances, this.max, super.key});
 
   final BalanceByType balances;
-  final bool isNow;
+  final Duration? max;
 
   Duration get past =>
       (balances[BalanceType.accepted]?.pastTime ?? Duration.zero) +
@@ -58,16 +47,30 @@ class PriorityBalance extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      spacing: 8,
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.ideographic,
+    return Column(
       children: [
-        if (past >= const Duration(minutes: 1))
-          DurationText(duration: past, icon: const PlotIcon.up(size: 14)),
-        if (isNow && future >= const Duration(minutes: 1)) ...[
-          DurationText(duration: future, icon: const PlotIcon.down(size: 14)),
-        ],
+        Row(
+          spacing: 8,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.ideographic,
+          children: [
+            (past >= const Duration(minutes: 1))
+                ? DurationText(duration: past)
+                : Container(),
+            (future >= const Duration(minutes: 1))
+                ? DurationText(duration: future)
+                : Container(),
+          ],
+        ),
+        SegmentedLine(
+          lengths: [past.inMinutes.toDouble(), future.inMinutes.toDouble()],
+          colors: [
+            context.theme.colorScheme.primary,
+            context.theme.colorScheme.mutedForeground,
+          ],
+          total: max?.inMinutes.toDouble(),
+        ),
       ],
     );
   }
@@ -77,39 +80,30 @@ class PriorityTile extends StatelessWidget {
   const PriorityTile({
     required this.priority,
     this.balances,
-    this.onTap,
-    this.selected = false,
-    this.isNow = false,
+    this.maxTime,
+    this.fullPath = false,
+    this.everythingElse = false,
     super.key,
   });
 
   final Priority priority;
   final BalanceByType? balances;
-  final VoidCallback? onTap;
-  final bool selected;
-  final bool isNow;
+  final Duration? maxTime;
+  final bool fullPath;
+  final bool everythingElse;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      onTap: () {
-        onTap?.call();
-      },
-      selected: selected,
+      command:
+          everythingElse
+              ? null
+              : ChangeCurrentPriority(priority, fullPath: fullPath),
+      title: everythingElse ? "Everything Else" : null,
+      style: ListTileStyle.header,
+      commands: [NewActivity(draft: Activity.draft(priorityId: priority.id))],
       key: ValueKey(priority.id.toString()),
-      leading: (balances?[BalanceType.todo]?.count != null &&
-              balances![BalanceType.todo]!.count > 0)
-          ? Badge(count: balances![BalanceType.todo]!.count)
-          : null,
-      leadingSize: const Size(16, 16),
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          PriorityLabel(priority: priority),
-          if (balances != null)
-            PriorityBalance(balances: balances!, isNow: isNow),
-        ],
-      ),
+      // subtitle: balances != null ? PriorityBalance(balances: balances!) : null,
     );
   }
 }

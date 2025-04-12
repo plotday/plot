@@ -1,18 +1,19 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter/services.dart';
 import 'package:plot/state/root_provider.dart';
 import 'package:platform_builder/platform_builder.dart';
+import 'package:forui/forui.dart';
 import 'package:adaptive_theme/adaptive_theme.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
 
-import 'state/user.dart';
 import 'router.dart';
 import 'widget/window.dart';
-import 'widget/layout.dart';
-import 'widget/spinner.dart';
+import 'widget/theme.dart';
+import 'widget/widget.dart';
+import 'page/loading.dart';
+import 'command/settings.dart';
 
 class App extends StatefulWidget {
   const App({super.key});
@@ -22,25 +23,25 @@ class App extends StatefulWidget {
 }
 
 class AppState extends State<App> with WidgetsBindingObserver {
-  late Future<GoRouter> router;
+  late Future<bool> layout;
+  AppRouter router = AppRouter();
 
   @override
   void initState() {
     super.initState();
 
-    final routeCompleter = Completer<GoRouter>();
-    router = routeCompleter.future;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Window.init();
-      Layout.init(context)
-          .then((layout) => routeCompleter.complete(getRouter(layout)))
-          .catchError((dynamic error) {
-        if (error is Object) {
-          routeCompleter.completeError(error);
-        } else {
-          routeCompleter.completeError("Unknown error");
+    final layoutCompleter = Completer<bool>();
+    layout = layoutCompleter.future;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await Window.init();
+        if (!mounted) {
+          throw "Context is not mounted";
         }
-      });
+        return layoutCompleter.complete(true);
+      } catch (error) {
+        layoutCompleter.completeError(error);
+      }
     });
   }
 
@@ -48,65 +49,63 @@ class AppState extends State<App> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.ltr,
-      child: FutureBuilder(
-        future: router,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            print(snapshot.error);
-            print(snapshot.stackTrace);
-            return const Center(
-                child: Text(
-              "Something went wrong",
-              textDirection: TextDirection.ltr,
-            ));
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: Spinner());
-          }
-          return RootProvider(
-            child: BlocListener<UserBloc, UserState>(
-              listener: (context, state) {
-                snapshot.data?.refresh();
-              },
-              child: PlatformBuilder(
-                builder: (context) => AdaptiveTheme(
-                  light: material.ThemeData(
-                    colorScheme: material.ColorScheme.fromSeed(
-                      seedColor: const Color(0x002BDD66),
-                      brightness: material.Brightness.light,
-                    ),
-                  ),
-                  dark: material.ThemeData(
-                    colorScheme: material.ColorScheme.fromSeed(
-                      seedColor: const Color(0x002BDD66),
-                      brightness: material.Brightness.dark,
-                    ),
-                  ),
-                  debugShowFloatingThemeButton: true,
-                  initial: AdaptiveThemeMode.system,
-                  builder: (theme, darkTheme) => snapshot.data == null
-                      ? material.MaterialApp(
-                          theme: theme,
-                          darkTheme: darkTheme,
-                        )
-                      : material.MaterialApp.router(
-                          title: 'Plot',
-                          theme: theme,
-                          darkTheme: darkTheme,
-                          routerConfig: snapshot.data,
+      child: ColourScheme(
+        child: FutureBuilder(
+          future: layout,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              print(snapshot.error);
+              print(snapshot.stackTrace);
+              return const Center(child: Text("Something went wrong"));
+            }
+            if (!snapshot.hasData) {
+              return const LoadingPage();
+            }
+            return Window(
+              child: FTheme(
+                data: buildTheme(context.colour),
+                child: RootProvider(
+                  child: PlatformBuilder(
+                    builder:
+                        (context) => AdaptiveTheme(
+                          light: material.ThemeData(
+                            colorScheme: material.ColorScheme.fromSeed(
+                              seedColor: const Color(0x002BDD66),
+                              brightness: material.Brightness.light,
+                            ),
+                          ),
+                          dark: material.ThemeData(
+                            colorScheme: material.ColorScheme.fromSeed(
+                              seedColor: const Color(0x002BDD66),
+                              brightness: material.Brightness.dark,
+                            ),
+                          ),
+                          debugShowFloatingThemeButton: true,
+                          initial: AdaptiveThemeMode.system,
+                          builder:
+                              (theme, darkTheme) => material.MaterialApp.router(
+                                title: 'Plot',
+                                theme: theme,
+                                darkTheme: darkTheme,
+                                routerConfig: router.config(),
+                              ),
                         ),
+                    macOSBuilder:
+                        (context) => macos.MacosApp.router(
+                          title: 'Plot',
+                          theme: (context.colour.brightness == Brightness.light
+                                  ? macos.MacosThemeData.light()
+                                  : macos.MacosThemeData.dark())
+                              .copyWith(primaryColor: context.colour.accent),
+                          debugShowCheckedModeBanner: false,
+                          routerConfig: router.config(),
+                        ),
+                  ),
                 ),
-                macOSBuilder: (context) => snapshot.data == null
-                    ? const macos.MacosApp()
-                    : macos.MacosApp.router(
-                        title: 'Plot',
-                        debugShowCheckedModeBanner: false,
-                        routerConfig: snapshot.data,
-                      ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -120,22 +119,24 @@ class ErrorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      builder: (context) => material.MaterialApp(
-        home: material.Scaffold(
-          body: Directionality(
-            textDirection: TextDirection.ltr,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('Failed to start Plot.'),
-                  Text('Error: $error'),
-                ],
+      builder:
+          (context) => material.MaterialApp(
+            home: material.Scaffold(
+              body: Directionality(
+                textDirection: TextDirection.ltr,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Failed to start Plot.'),
+                      Text('Error: $error'),
+                      Button(SignOut()),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      ),
     );
   }
 }

@@ -1,20 +1,27 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/services.dart';
 
 import 'package:plot/command/command.dart';
+import 'list_tile.dart';
 import 'text_field.dart';
 import 'dialog.dart';
+import 'button.dart';
+import 'theme.dart';
 
 class CommandBar extends StatefulWidget {
-  static Future<T?> show<T>(BuildContext context, Commands commands) =>
-      Dialog.show<T>(
-        context: context,
-        builder: (context) => CommandBar(commands),
-      );
+  static Future<T?> show<T>(
+    BuildContext context,
+    Commands commands, {
+    Command? Function(String promptValue)? secondaryCommand,
+  }) => Dialog.show<T>(
+    context: context,
+    builder:
+        (context) => CommandBar(commands, secondaryCommand: secondaryCommand),
+  );
 
   final Commands commands;
+  final Command? Function(String promptValue)? secondaryCommand;
 
-  const CommandBar(this.commands, {super.key});
+  const CommandBar(this.commands, {this.secondaryCommand, super.key});
 
   @override
   CommandBarState createState() => CommandBarState();
@@ -22,7 +29,7 @@ class CommandBar extends StatefulWidget {
 
 class CommandBarState extends State<CommandBar> {
   final TextEditingController _controller = TextEditingController();
-  List<CommandGroup> _filteredCommandGroups = [];
+  List<StaticCommandGroup> _filteredCommandGroups = [];
   int _focusedCommandIndex = 0;
   late Commands commands = widget.commands;
   Widget? _child;
@@ -57,43 +64,14 @@ class CommandBarState extends State<CommandBar> {
     }
   }
 
-  void _onKeyAction(KeyEvent event) {
-    if (event is KeyDownEvent) {
-      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        setState(() {
-          _focusedCommandIndex =
-              (_focusedCommandIndex + 1) % _allCommandsCount();
-        });
-      } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        setState(() {
-          _focusedCommandIndex =
-              (_focusedCommandIndex - 1 + _allCommandsCount()) %
-                  _allCommandsCount();
-        });
-      } else if (event.logicalKey == LogicalKeyboardKey.enter) {
-        final focusedCommand = _getFocusedCommand();
-        _executeCommand(focusedCommand);
-      }
-    }
-  }
-
   int _allCommandsCount() {
     return _filteredCommandGroups.fold(
-        0, (total, group) => total + group.commands.length);
+      0,
+      (total, group) => total + group.commands.length,
+    );
   }
 
-  Command _getFocusedCommand() {
-    int index = 0;
-    for (var group in _filteredCommandGroups) {
-      if (_focusedCommandIndex < index + group.commands.length) {
-        return group.commands[_focusedCommandIndex - index];
-      }
-      index += group.commands.length;
-    }
-    throw Exception('Focused command index out of bounds');
-  }
-
-  void _executeCommand(Command command) async {
+  Future<CommandReturn?> _executeCommand(Command command) async {
     try {
       final result = await command.run(context);
 
@@ -108,48 +86,62 @@ class CommandBarState extends State<CommandBar> {
     } catch (e) {
       print('Error executing command: $e');
     }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     if (_child != null) {
-      return Dialog(
-        child: _child!,
-      );
+      return Dialog(child: _child!);
     }
-    return KeyboardListener(
-      focusNode: FocusNode(),
-      onKeyEvent: _onKeyAction,
-      child: Dialog(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_error != null) Text(_error!),
-            if (_child != null) _child!,
-            if (_child == null) ...[
-              TextField(
-                controller: _controller,
-                autofocus: true,
-                label: widget.commands.prompt,
+    final secondaryCommand = widget.secondaryCommand?.call(_controller.text);
+    return Dialog(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_error != null) Text(_error!),
+          if (_child != null) _child!,
+          if (_child == null) ...[
+            EditableArea(
+              position: EditableAreaPosition.top,
+              padding: false,
+              builder:
+                  (context, focusNode) => Row(
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: widgetPadding,
+                          child: TextField(
+                            style: TextFieldStyle.ghost,
+                            controller: _controller,
+                            autofocus: true,
+                            label: widget.commands.prompt,
+                            focusNode: focusNode,
+                          ),
+                        ),
+                      ),
+                      if (secondaryCommand != null)
+                        Button.icon(
+                          CommandWrapper(
+                            secondaryCommand,
+                            run: (_) => _executeCommand(secondaryCommand),
+                          ),
+                        ),
+                    ],
+                  ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _allCommandsCount(),
+                itemBuilder: (context, index) {
+                  final command = _getCommandAtIndex(index);
+                  return ListTile(command: command);
+                },
               ),
-              const SizedBox(height: 16),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _allCommandsCount(),
-                  itemBuilder: (context, index) {
-                    final command = _getCommandAtIndex(index);
-                    return command.build(
-                      context,
-                      selected: index == _focusedCommandIndex,
-                      onTap: () => _executeCommand(command),
-                    );
-                  },
-                ),
-              ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -158,7 +150,9 @@ class CommandBarState extends State<CommandBar> {
     int currentIndex = 0;
     for (final group in _filteredCommandGroups) {
       for (final command in group.commands) {
-        if (currentIndex == index) return command;
+        if (currentIndex == index) {
+          return CommandWrapper(command, run: (_) => _executeCommand(command));
+        }
         currentIndex++;
       }
     }

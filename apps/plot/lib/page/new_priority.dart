@@ -1,37 +1,63 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/command/command.dart';
+import 'package:plot/util/hooks.dart';
 
-class NewPriorityPage extends StatelessWidget {
-  const NewPriorityPage({super.key});
+class NewPriorityPage extends HookWidget {
+  const NewPriorityPage({Priority? parent, super.key})
+    : _initialParent = parent;
+
+  final Priority? _initialParent;
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<PriorityBloc, PriorityState>(
-      builder: (context, state) => Dialog(
+    final (nameController, name) = useTextEditingValue();
+    final parent = useState<Priority?>(_initialParent);
+
+    return Scaffold(
+      header: Header(title: 'New Priority', modal: true),
+      body: Container(
+        padding: const EdgeInsets.all(16),
         child: Center(
           child: Column(
+            spacing: 16,
             mainAxisSize: MainAxisSize.min,
             children: [
+              Row(
+                children: [
+                  Text('New priority in '),
+                  PrioritySelector(
+                    selected: parent.value,
+                    onSelect: (priority) {
+                      parent.value = priority;
+                    },
+                  ),
+                ],
+              ),
               TextField(
-                onSubmitted: (name) async {
-                  final priority = Priority(
-                    name: name,
-                    parent:
-                        state is PrioritySelectedState ? state.current : null,
-                    order: Order.first(),
-                  );
-                  await priority.save();
-                  if (context.mounted) {
-                    Navigator.of(context).pop(priority);
-                  }
-                },
+                controller: nameController,
                 label: "Add an priority",
                 maxLines: 1,
                 autofocus: true,
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Button.primary(
+                    AddPriority(
+                      Future.value(
+                        Priority(
+                          name: name,
+                          parent: parent.value,
+                          order: Order.first(),
+                        ),
+                      ),
+                    ),
+                    enabled: name.isNotEmpty,
+                  ),
+                ],
               ),
             ],
           ),
