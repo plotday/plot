@@ -223,6 +223,22 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   final Priority? parent;
   List<Priority> children;
 
+  List<Priority> descendants() {
+    List<Priority> result = [];
+
+    // Recursive helper to collect descendants
+    void collectDescendants(Priority priority) {
+      for (var child in priority.children) {
+        result.add(child);
+        collectDescendants(child);
+      }
+    }
+
+    collectDescendants(this);
+    result.sort();
+    return result;
+  }
+
   Future<void> delete() => copyWith(deletedAt: Value(DateTime.now())).save();
 
   @override

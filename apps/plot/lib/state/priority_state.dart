@@ -25,6 +25,7 @@ class PriorityState extends Equatable {
     this.moreActivities = true,
   }) : _activities = activities,
        _childActivities = childActivities ?? {},
+       descendants = current.descendants(),
        maxTime = Duration(
          minutes:
              balances?.values
@@ -40,6 +41,7 @@ class PriorityState extends Equatable {
        );
 
   final Priority current;
+  final List<Priority> descendants;
   final List<Activity>? _activities;
   final Map<PriorityId, List<Activity>> _childActivities;
   final BalanceByPriorityType? balances;

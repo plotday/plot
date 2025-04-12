@@ -104,7 +104,7 @@ class _PrioritiesSection extends StatelessWidget {
             _ReorderableActivitiesView(activities: state.pinnedActivities),
             _ReorderableActivitiesView(activities: state.activeActivities),
             ReorderableListView(
-              list: state.current.children,
+              list: state.descendants,
               itemBuilder:
                   (context, item) => Column(
                     children: [
@@ -124,20 +124,20 @@ class _PrioritiesSection extends StatelessWidget {
                 var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
                 Priority? previous;
                 if (previousIndex >= 0) {
-                  previous = state.current.children[previousIndex];
+                  previous = state.descendants[previousIndex];
                 }
                 Priority? next;
-                if (nextIndex < state.current.children.length) {
-                  next = state.current.children[nextIndex];
+                if (nextIndex < state.descendants.length) {
+                  next = state.descendants[nextIndex];
                 }
-                state.current.children[oldIndex]
+                state.descendants[oldIndex]
                     .copyWith(
                       order: Order.between(previous?.order, next?.order),
                     )
                     .save();
               },
             ),
-            if (state.current.children.isNotEmpty &&
+            if (state.descendants.isNotEmpty &&
                 state.inactiveActivities.isNotEmpty)
               PriorityTile(
                 priority: state.current,
