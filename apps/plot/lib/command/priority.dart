@@ -32,25 +32,13 @@ class PriorityCommandGroup extends CommandGroup {
 }
 
 class PickPriority extends Commands<Priority> {
-  PickPriority(List<Priority> priorities, {super.prompt = 'Pick a priority'})
-    : super(
-        groups: [
-          StaticCommandGroup(
-            title: 'Recent',
-            commands:
-                priorities
-                    .map((priority) => PriorityCommand(priority))
-                    .toList(),
-          ),
-        ],
-        secondaryCommand: (prompt) => NewPriority(),
-      );
-
-  PickPriority.recent(BuildContext context, {super.prompt = 'Pick a priority'})
+  PickPriority({super.prompt = 'Pick a priority', this.initialPriority})
     : super(
         groups: [PriorityCommandGroup()],
-        secondaryCommand: (prompt) => NewPriority(),
+        secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
       );
+
+  final Priority? initialPriority;
 }
 
 class ChangeCurrentPriority extends Command {
@@ -76,9 +64,7 @@ class PickCurrentActivity extends ShowCommand<Priority> {
         title: 'Change Current Priority',
         icon: PlotIcon.priority,
         shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
-        commands:
-            (context) =>
-                PickPriority.recent(context, prompt: 'Change Current Priority'),
+        commands: (context) => PickPriority(prompt: 'Change Current Priority'),
       );
 
   @override

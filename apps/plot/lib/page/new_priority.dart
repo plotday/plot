@@ -17,50 +17,50 @@ class NewPriorityPage extends HookWidget {
     final parent = useState<Priority?>(_initialParent);
 
     return Scaffold(
-      header: Header(title: 'New Priority', modal: true),
+      header: Header(
+        main: Row(
+          children: [
+            Text('New priority in '),
+            PrioritySelector(
+              selected: parent.value,
+              onSelect: (priority) {
+                parent.value = priority;
+              },
+            ),
+          ],
+        ),
+        modal: true,
+      ),
       body: Container(
         padding: const EdgeInsets.all(16),
-        child: Center(
-          child: Column(
-            spacing: 16,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Text('New priority in '),
-                  PrioritySelector(
-                    selected: parent.value,
-                    onSelect: (priority) {
-                      parent.value = priority;
-                    },
-                  ),
-                ],
-              ),
-              TextField(
-                controller: nameController,
-                label: "Add an priority",
-                maxLines: 1,
-                autofocus: true,
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Button.primary(
-                    AddPriority(
-                      Future.value(
-                        Priority(
-                          name: name,
-                          parent: parent.value,
-                          order: Order.first(),
-                        ),
+        child: Column(
+          spacing: 16,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              label: "Add an priority",
+              maxLines: 1,
+              autofocus: true,
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Button.primary(
+                  AddPriority(
+                    Future.value(
+                      Priority(
+                        name: name,
+                        parent: parent.value,
+                        order: Order.first(),
                       ),
                     ),
-                    enabled: name.isNotEmpty,
                   ),
-                ],
-              ),
-            ],
-          ),
+                  enabled: name.isNotEmpty,
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
