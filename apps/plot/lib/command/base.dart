@@ -134,6 +134,44 @@ abstract class CommandGroup {
   final String? subtitle; // count
 
   Future<List<Command>> list({String? search});
+
+  static List<Command> filter(List<Command> commands, String? search) {
+    if (search == null || search.isEmpty) {
+      return commands;
+    }
+
+    String searchLower = search.toLowerCase();
+    bool match(String? field) {
+      if (field == null) return false;
+      return RegExp(
+        '\\b${RegExp.escape(searchLower)}',
+      ).hasMatch(field.toLowerCase());
+    }
+
+    return commands
+        .where(
+          (command) =>
+              match(command.title) ||
+              match(command.subtitle) ||
+              match(command.description),
+        )
+        .toList()
+      ..sort((a, b) {
+        int aScore =
+            match(a.title)
+                ? 3
+                : match(a.subtitle)
+                ? 2
+                : 1;
+        int bScore =
+            match(b.title)
+                ? 3
+                : match(b.subtitle)
+                ? 2
+                : 1;
+        return bScore.compareTo(aScore);
+      });
+  }
 }
 
 class StaticCommandGroup extends CommandGroup {
@@ -147,13 +185,7 @@ class StaticCommandGroup extends CommandGroup {
 
   @override
   Future<List<Command>> list({String? search}) async {
-    if (search == null || search.isEmpty) {
-      return commands;
-    }
-    String searchLower = search.toLowerCase();
-    return commands
-        .where((command) => command.title.toLowerCase().contains(searchLower))
-        .toList();
+    return CommandGroup.filter(commands, search);
   }
 }
 

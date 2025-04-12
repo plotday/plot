@@ -23,15 +23,11 @@ class PriorityCommandGroup extends CommandGroup {
 
   @override
   Future<List<Command>> list({String? search}) async {
-    final all = await Priority.getAll();
-    return all
-        .where(
-          (priority) =>
-              search == null ||
-              priority.name.toLowerCase().contains(search.toLowerCase()),
-        )
-        .map((priority) => PriorityCommand(priority))
-        .toList();
+    final all =
+        (await Priority.getAll())
+            .map((priority) => PriorityCommand(priority))
+            .toList();
+    return CommandGroup.filter(all, search);
   }
 }
 
