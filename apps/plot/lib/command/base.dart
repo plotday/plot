@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:drift/drift.dart' show Value;
 
 import 'package:plot/widget/widget.dart';
 
@@ -96,13 +97,14 @@ class ShowCommand<T> extends Command {
   final Commands<T> Function(BuildContext context) commands;
 
   @override
-  Future<CommandValue<T?>> run(BuildContext context) async {
+  Future<CommandValue<T>?> run(BuildContext context) async {
     try {
       final value = await CommandBar.show<T>(context, commands(context));
-      if (context.mounted && value != null) {
-        onSelect(context, value);
+      if (context.mounted && value.present) {
+        onSelect(context, value.value);
+        return CommandValue(value.value);
       }
-      return CommandValue(value);
+      return null;
     } on Error catch (e) {
       print(e);
       print(e.stackTrace);
@@ -114,16 +116,16 @@ class ShowCommand<T> extends Command {
 }
 
 extension BuildContextCommandExtension on BuildContext {
-  Future<T?> run<T>(Command command) async {
+  Future<Value<T>> run<T>(Command command) async {
     final next = await command.run(this);
     if (next is CommandValue<T>) {
-      return next.value;
-    } else if (next is CommandCommands) {
+      return Value(next.value);
+    } else if (next is CommandCommands<T>) {
       return await CommandBar.show<T>(this, next.commands);
     } else if (next is CommandPage) {
       await Dialog.show<void>(context: this, builder: (context) => next.child);
     }
-    return null;
+    return Value.absent();
   }
 }
 
@@ -200,7 +202,7 @@ class Commands<T> {
   final List<CommandGroup> groups;
   final Command? Function(String promptValue)? secondaryCommand;
 
-  Future<T?> show(BuildContext context) async {
+  Future<Value<T>> show(BuildContext context) async {
     try {
       return await CommandBar.show<T>(
         context,

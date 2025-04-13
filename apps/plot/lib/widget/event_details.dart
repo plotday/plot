@@ -5,11 +5,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
 class EventDetails extends StatelessWidget {
-  const EventDetails({
-    super.key,
-    required this.event,
-    required this.onChanged,
-  });
+  const EventDetails({super.key, required this.event, required this.onChanged});
 
   final Event event;
   final void Function(Event) onChanged;
@@ -28,11 +24,7 @@ class EventDetails extends StatelessWidget {
               const SizedBox(width: 8),
               TimeRangePicker(
                 onChanged: (at) {
-                  onChanged(
-                    event.copyWith(
-                      at: at,
-                    ),
-                  );
+                  onChanged(event.copyWith(at: at));
                 },
                 value: event.at,
               ),
@@ -42,21 +34,13 @@ class EventDetails extends StatelessWidget {
             label: "Title",
             value: event.name,
             onChanged: (name) {
-              onChanged(
-                event.copyWith(
-                  name: Value(name),
-                ),
-              );
+              onChanged(event.copyWith(name: Value(name)));
             },
           ),
           PrioritySelector(
             selected: event.priority,
             onSelect: (priority) {
-              onChanged(
-                event.copyWith(
-                  priorityId: Value(priority.id),
-                ),
-              );
+              onChanged(event.copyWith(priorityId: Value(priority.id)));
             },
           ),
           Switch(
@@ -71,7 +55,7 @@ class EventDetails extends StatelessWidget {
               );
             },
           ),
-          Button(ArchiveEventCommand(event))
+          Button(ArchiveEventCommand(event)),
         ],
       ),
     );

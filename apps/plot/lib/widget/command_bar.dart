@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:drift/drift.dart' show Value;
 
 import 'package:plot/command/command.dart';
 import 'list_tile.dart';
@@ -7,31 +8,31 @@ import 'dialog.dart';
 import 'button.dart';
 import 'theme.dart';
 
-class CommandBar extends StatefulWidget {
-  static Future<T?> show<T>(
+class CommandBar<T> extends StatefulWidget {
+  static Future<Value<T>> show<T>(
     BuildContext context,
-    Commands commands, {
+    Commands<T> commands, {
     Command? Function(String promptValue)? secondaryCommand,
   }) => Dialog.show<T>(
     context: context,
     builder:
-        (context) => CommandBar(commands, secondaryCommand: secondaryCommand),
+        (context) =>
+            CommandBar<T>(commands, secondaryCommand: secondaryCommand),
   );
 
-  final Commands commands;
+  final Commands<T> commands;
   final Command? Function(String promptValue)? secondaryCommand;
 
   const CommandBar(this.commands, {this.secondaryCommand, super.key});
 
   @override
-  CommandBarState createState() => CommandBarState();
+  CommandBarState<T> createState() => CommandBarState();
 }
 
-class CommandBarState extends State<CommandBar> {
+class CommandBarState<T> extends State<CommandBar<T>> {
   final TextEditingController _controller = TextEditingController();
   List<StaticCommandGroup> _filteredCommandGroups = [];
-  int _focusedCommandIndex = 0;
-  late Commands commands = widget.commands;
+  late Commands<T> commands = widget.commands;
   Widget? _child;
   String? _error;
 
@@ -54,7 +55,6 @@ class CommandBarState extends State<CommandBar> {
       final commandsList = await commands.list(search: searchText);
       setState(() {
         _filteredCommandGroups = commandsList;
-        _focusedCommandIndex = 0;
       });
     } catch (e) {
       print('Error initializing commands: $e');
@@ -75,13 +75,13 @@ class CommandBarState extends State<CommandBar> {
     try {
       final result = await command.run(context);
 
-      if (result is CommandCommands) {
+      if (result is CommandCommands<T>) {
         commands = result.commands;
         _initCommands();
       } else if (result is CommandPage) {
         setState(() => _child = result.child);
-      } else if (result is CommandValue && mounted) {
-        Navigator.of(context).pop(result.value);
+      } else if (result is CommandValue<T> && mounted) {
+        Navigator.of(context).pop(Value(result.value));
       }
     } catch (e) {
       print('Error executing command: $e');

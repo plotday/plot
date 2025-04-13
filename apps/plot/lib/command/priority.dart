@@ -12,14 +12,16 @@ import 'package:plot/page/new_priority.dart';
 class PriorityCommand extends ValueCommand<Priority?> {
   PriorityCommand(Priority? priority)
     : super(
-        title: priority?.name ?? 'All Priorities',
-        subtitle: priority?.parent?.pathLabel,
+        title: priority?.name ?? 'None',
+        subtitle: priority != null ? priority.parent?.pathLabel : 'Top-level',
         value: priority,
       );
 }
 
 class PriorityCommandGroup extends CommandGroup {
-  PriorityCommandGroup() : super(title: 'Priorities');
+  PriorityCommandGroup({this.includeNone = false}) : super(title: 'Priorities');
+
+  final bool includeNone;
 
   @override
   Future<List<Command>> list({String? search}) async {
@@ -27,18 +29,25 @@ class PriorityCommandGroup extends CommandGroup {
         (await Priority.getAll())
             .map((priority) => PriorityCommand(priority))
             .toList();
+    if (includeNone) {
+      all.add(PriorityCommand(null));
+    }
     return CommandGroup.filter(all, search);
   }
 }
 
-class PickPriority extends Commands<Priority> {
-  PickPriority({super.prompt = 'Pick a priority', this.initialPriority})
-    : super(
-        groups: [PriorityCommandGroup()],
-        secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
-      );
+class PickPriority extends Commands<Priority?> {
+  PickPriority({
+    super.prompt = 'Pick a priority',
+    this.initialPriority,
+    this.includeNone = false,
+  }) : super(
+         groups: [PriorityCommandGroup(includeNone: includeNone)],
+         secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
+       );
 
   final Priority? initialPriority;
+  bool includeNone;
 }
 
 class ChangeCurrentPriority extends Command {
@@ -64,7 +73,10 @@ class PickCurrentActivity extends ShowCommand<Priority> {
         title: 'Change Current Priority',
         icon: PlotIcon.priority,
         shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
-        commands: (context) => PickPriority(prompt: 'Change Current Priority'),
+        commands:
+            (context) =>
+                PickPriority(prompt: 'Change Current Priority')
+                    as Commands<Priority>,
       );
 
   @override

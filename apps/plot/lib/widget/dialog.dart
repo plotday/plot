@@ -2,21 +2,26 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:platform_builder/platform_builder.dart';
+import 'package:drift/drift.dart' show Value;
 
 import 'colour_scheme.dart';
 
 class Dialog extends StatelessWidget {
-  static Future<T?> show<T>({
+  static Future<Value<T>> show<T>({
     required BuildContext context,
     required Widget Function(BuildContext) builder,
     bool barrierDismissible = true,
-  }) {
-    return material.showDialog<T>(
+  }) async {
+    final ret = await material.showDialog<Value<T>>(
       context: context,
       builder: builder,
       barrierColor: context.colourOnce.barrier,
       barrierDismissible: barrierDismissible,
     );
+    if (ret == null) {
+      return Value.absent();
+    }
+    return ret;
   }
 
   const Dialog({

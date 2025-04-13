@@ -7,12 +7,14 @@ import 'package:plot/command/command.dart';
 class PrioritySelector extends StatelessWidget {
   const PrioritySelector({
     required this.selected,
-    required this.onSelect,
+    this.onSelect,
+    this.onSelectIncludeNone,
     super.key,
   });
 
   final Priority? selected;
-  final void Function(Priority) onSelect;
+  final void Function(Priority)? onSelect;
+  final void Function(Priority?)? onSelectIncludeNone;
 
   @override
   Widget build(BuildContext context) {
@@ -20,9 +22,13 @@ class PrioritySelector extends StatelessWidget {
       onTap: () async {
         final priority = await PickPriority(
           initialPriority: selected,
+          includeNone: onSelectIncludeNone != null,
         ).show(context);
-        if (priority != null) {
-          onSelect(priority);
+        if (priority.present) {
+          if (priority.value != null) {
+            onSelect?.call(priority.value!);
+          }
+          onSelectIncludeNone?.call(priority.value);
         }
       },
       child: DefaultTextStyle(
