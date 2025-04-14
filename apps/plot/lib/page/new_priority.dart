@@ -48,14 +48,23 @@ class NewPriorityPage extends HookWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 Button.primary(
-                  AddPriority(
-                    Future.value(
-                      Priority(
-                        name: name,
-                        parent: parent.value,
-                        order: Order.first(),
+                  CommandWrapper(
+                    AddPriority(
+                      Future.value(
+                        Priority(
+                          name: name,
+                          parent: parent.value,
+                          order: Order.first(),
+                        ),
                       ),
                     ),
+                    run: (command, context) async {
+                      final ret = command.run(context);
+                      if (context.mounted) {
+                        Navigator.of(context).pop();
+                      }
+                      return ret;
+                    },
                   ),
                   enabled: name.isNotEmpty,
                 ),

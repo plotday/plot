@@ -124,7 +124,7 @@ class CommandBarState<T> extends State<CommandBar<T>> {
                         Button.icon(
                           CommandWrapper(
                             secondaryCommand,
-                            run: (_) => _executeCommand(secondaryCommand),
+                            run: (_, __) => _executeCommand(secondaryCommand),
                           ),
                         ),
                     ],
@@ -151,7 +151,10 @@ class CommandBarState<T> extends State<CommandBar<T>> {
     for (final group in _filteredCommandGroups) {
       for (final command in group.commands) {
         if (currentIndex == index) {
-          return CommandWrapper(command, run: (_) => _executeCommand(command));
+          return CommandWrapper(
+            command,
+            run: (_, __) => _executeCommand(command),
+          );
         }
         currentIndex++;
       }

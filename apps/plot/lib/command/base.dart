@@ -47,11 +47,16 @@ abstract class Command {
 
 class CommandWrapper extends Command {
   final Command command;
-  final Future<CommandReturn?> Function(BuildContext context) _run;
+  final Future<CommandReturn?> Function(Command command, BuildContext context)
+  _run;
 
   CommandWrapper(
     this.command, {
-    required Future<CommandReturn?> Function(BuildContext context) run,
+    required Future<CommandReturn?> Function(
+      Command command,
+      BuildContext context,
+    )
+    run,
   }) : _run = run,
        super(
          title: command.title,
@@ -63,7 +68,7 @@ class CommandWrapper extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) {
-    return _run(context);
+    return _run(command, context);
   }
 }
 
