@@ -13,7 +13,9 @@ class ActivityWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       command: ChangeCurrentActivity(activity),
-      trailingCommands: [PinActivity(activity)],
+      trailingCommands: [
+        if (!activity.pinned) PinActivity(activity),
+      ],
       leadingCommand: primaryActivityCommand(activity),
     );
   }
