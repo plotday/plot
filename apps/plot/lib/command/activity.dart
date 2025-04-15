@@ -124,8 +124,8 @@ Command primaryActivityCommand(Activity activity) => CommandWrapper(
     statusIcon: Value(
       switch (activity) {
         _ when activity.pinned => PlotIcon.pinned,
-        _ when activity.doNow => PlotIcon.doNow,
+        _ when activity.doNow => PlotIcon.todo,
         _ when activity.done => PlotIcon.done,
-        _ => null,
+        _ => PlotIcon.doNow,
       },
     ));
