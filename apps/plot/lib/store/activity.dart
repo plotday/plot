@@ -309,7 +309,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     }
     if (publish ||
         (doAt.present && doAt.value != this.doAt) ||
-        (doneAt.present && doneAt.value != this.doneAt) ||
+        (doneAt.present && doneAt.value != null) ||
         (pinned != null && pinned != this.pinned)) {
       order ??= ((doAt.or(this.doAt) != null &&
                   doAt.or(this.doAt)!.isSameOrBefore(DateTime.now()) &&
