@@ -20,10 +20,13 @@ class PrioritySelector extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tapable(
       onTap: () async {
-        final priority = await PickPriority(
-          initialPriority: selected,
-          includeNone: onSelectIncludeNone != null,
-        ).show(context);
+        final priority = await (onSelectIncludeNone != null
+            ? PickPriorityOrNone(
+                initialPriority: selected,
+              ).show(context)
+            : PickPriority(
+                initialPriority: selected,
+              ).show(context));
         if (priority.present) {
           if (priority.value != null) {
             onSelect?.call(priority.value!);
