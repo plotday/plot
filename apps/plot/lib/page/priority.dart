@@ -84,6 +84,22 @@ class PriorityPage extends StatelessWidget {
                     ),
                 header: _PrioritiesSection(),
               ),
+              footer: EditableArea(
+                position: EditableAreaPosition.bottom,
+                builder:
+                    (context, focusNode) => Editor(
+                      hint: 'Add an activity',
+                      autofocus: true,
+                      focusNode: focusNode,
+                      onSubmitted: (body) async {
+                        final activity = state.draftActivity.copyWith(
+                          body: body,
+                          draft: false,
+                        );
+                        await context.read<PriorityBloc>().add(activity);
+                      },
+                    ),
+              ),
             );
           },
         );

@@ -101,7 +101,9 @@ class PriorityTile extends StatelessWidget {
               : ChangeCurrentPriority(priority, fullPath: fullPath),
       title: everythingElse ? "Everything Else" : null,
       style: ListTileStyle.header,
-      commands: [NewActivity(draft: Activity.draft(priorityId: priority.id))],
+      trailingCommands: [
+        NewActivity(draft: Activity.draft(priorityId: priority.id)),
+      ],
       key: ValueKey(priority.id.toString()),
       // subtitle: balances != null ? PriorityBalance(balances: balances!) : null,
     );

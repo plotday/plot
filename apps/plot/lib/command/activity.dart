@@ -9,14 +9,14 @@ import 'package:plot/router.dart';
 
 class ActivityCommand extends ValueCommand<Activity> {
   ActivityCommand(Activity activity)
-    : super(title: activity.title, icon: PlotIcon.activity, value: activity);
+      : super(title: activity.title, icon: PlotIcon.activity, value: activity);
 }
 
 class ChangeCurrentActivity extends Command {
   ChangeCurrentActivity(Activity activity)
-    : priorityId = activity.priorityId,
-      activityId = activity.id,
-      super(title: activity.title);
+      : priorityId = activity.priorityId,
+        activityId = activity.id,
+        super(title: activity.title, icon: PlotIcon.activity);
 
   ChangeCurrentActivity.byId({
     required this.priorityId,
@@ -59,7 +59,7 @@ abstract class _UpdateActivityCommand extends Command {
 
 class StartActivity extends _UpdateActivityCommand {
   StartActivity(super.activity, {super.onUpdate})
-    : super(title: 'Do Now', icon: PlotIcon.doNow);
+      : super(title: 'Do Now', icon: PlotIcon.doNow);
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
@@ -78,7 +78,7 @@ class StartActivity extends _UpdateActivityCommand {
 
 class FinishActivity extends _UpdateActivityCommand {
   FinishActivity(super.activity, {super.onUpdate})
-    : super(title: 'Finish Activity', icon: PlotIcon.done);
+      : super(title: 'Finish Activity', icon: PlotIcon.done);
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
@@ -90,7 +90,7 @@ class FinishActivity extends _UpdateActivityCommand {
 
 class MarkActivityIncomplete extends _UpdateActivityCommand {
   MarkActivityIncomplete(super.activity, {super.onUpdate})
-    : super(title: 'Mark Activity Not Finished', icon: PlotIcon.done);
+      : super(title: 'Mark Activity Not Finished', icon: PlotIcon.done);
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
@@ -102,7 +102,7 @@ class MarkActivityIncomplete extends _UpdateActivityCommand {
 
 class PinActivity extends _UpdateActivityCommand {
   PinActivity(super.activity, {super.onUpdate})
-    : super(title: activity.pinned ? 'Unpin' : 'Pin', icon: PlotIcon.pinned);
+      : super(title: activity.pinned ? 'Unpin' : 'Pin', icon: PlotIcon.pinned);
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
@@ -114,13 +114,18 @@ class PinActivity extends _UpdateActivityCommand {
   }
 }
 
-StaticCommandGroup activityCommands(Activity activity) => StaticCommandGroup(
-  title: 'Commands',
-  commands: [
-    if (!activity.doNow && !activity.done && !activity.pinned)
-      StartActivity(activity),
-    if (activity.doNow) FinishActivity(activity),
-    if (activity.done) MarkActivityIncomplete(activity),
-    if (!activity.doNow) PinActivity(activity),
-  ],
-);
+Command primaryActivityCommand(Activity activity) => CommandWrapper(
+    switch (activity) {
+      _ when activity.pinned => PinActivity(activity),
+      _ when activity.doNow => FinishActivity(activity),
+      _ when activity.done => MarkActivityIncomplete(activity),
+      _ => StartActivity(activity),
+    },
+    statusIcon: Value(
+      switch (activity) {
+        _ when activity.pinned => PlotIcon.pinned,
+        _ when activity.doNow => PlotIcon.doNow,
+        _ when activity.done => PlotIcon.done,
+        _ => null,
+      },
+    ));

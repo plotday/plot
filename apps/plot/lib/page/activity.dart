@@ -1,13 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
+import 'package:plot/command/command.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/note.dart';
-import 'package:plot/command/command.dart';
 import 'package:plot/page/loading.dart';
 
 @RoutePage(name: "ActivityRoute")
@@ -17,12 +17,11 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
     ActivityId? activityId,
     @PathParam("activityId") String? activityIdString,
     super.key,
-  }) : activityId =
-           activity?.id ??
-           activityId ??
-           (activityIdString != null
-               ? ActivityId.fromShortString(activityIdString)
-               : null);
+  }) : activityId = activity?.id ??
+            activityId ??
+            (activityIdString != null
+                ? ActivityId.fromShortString(activityIdString)
+                : null);
 
   final ActivityId? activityId;
 
@@ -54,7 +53,7 @@ class ActivityPage extends StatelessWidget {
         return Scaffold(
           header: Header(
             title: state.current.title,
-            commands: activityCommands(state.current).commands,
+            commands: [primaryActivityCommand(state.current)],
           ),
           body: Column(
             children: [
@@ -80,38 +79,34 @@ class ActivityPage extends StatelessWidget {
                   child: NotesView(notes: state.notes),
                 ),
               ),
-              Flexible(
-                flex: 0,
-                child: EditableArea(
-                  position: EditableAreaPosition.bottom,
-                  builder:
-                      (context, focusNode) => Editor(
-                        hint: 'Add a note',
-                        autofocus: true,
-                        focusNode: focusNode,
-                        onSubmitted: (body) async {
-                          if (state.current.draft) {
-                            final activity = state.current.copyWith(
-                              body: body,
-                              draft: false,
-                            );
-                            await context.read<ActivityBloc>().updateActivity(
-                              activity,
-                            );
-                            if (!context.mounted) return;
-                            await context.router.push(
-                              ActivityRoute(activity: activity),
-                            );
-                            return;
-                          }
-                          await context.read<ActivityBloc>().updateNote(
-                            state.draft.copyWith(body: body, draft: false),
-                          );
-                        },
-                      ),
-                ),
-              ),
             ],
+          ),
+          footer: EditableArea(
+            position: EditableAreaPosition.bottom,
+            builder: (context, focusNode) => Editor(
+              hint: 'Add a note',
+              autofocus: true,
+              focusNode: focusNode,
+              onSubmitted: (body) async {
+                if (state.current.draft) {
+                  final activity = state.current.copyWith(
+                    body: body,
+                    draft: false,
+                  );
+                  await context.read<ActivityBloc>().updateActivity(
+                        activity,
+                      );
+                  if (!context.mounted) return;
+                  await context.router.push(
+                    ActivityRoute(activity: activity),
+                  );
+                  return;
+                }
+                await context.read<ActivityBloc>().updateNote(
+                      state.draft.copyWith(body: body, draft: false),
+                    );
+              },
+            ),
           ),
         );
       },

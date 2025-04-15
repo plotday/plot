@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:drift/drift.dart' show Value;
+
+import 'package:plot/util/value.dart';
 
 import 'package:plot/widget/widget.dart';
 
@@ -33,6 +34,9 @@ abstract class Command {
     this.subtitle,
     this.description,
     this.icon,
+
+    /// If specified, overrides icon until hovered.
+    this.statusIcon = const Value.absent(),
     this.shortcut,
   });
 
@@ -40,6 +44,7 @@ abstract class Command {
   final String? subtitle;
   final String? description;
   final IconData? icon;
+  final Value<IconData?> statusIcon;
   final ShortcutActivator? shortcut;
 
   Future<CommandReturn?> run(BuildContext context);
@@ -47,28 +52,32 @@ abstract class Command {
 
 class CommandWrapper extends Command {
   final Command command;
-  final Future<CommandReturn?> Function(Command command, BuildContext context)
-  _run;
+  final Future<CommandReturn?> Function(Command command, BuildContext context)?
+      _run;
 
   CommandWrapper(
     this.command, {
-    required Future<CommandReturn?> Function(
+    Future<CommandReturn?> Function(
       Command command,
       BuildContext context,
-    )
-    run,
-  }) : _run = run,
-       super(
-         title: command.title,
-         subtitle: command.subtitle,
-         description: command.description,
-         icon: command.icon,
-         shortcut: command.shortcut,
-       );
+    )? run,
+    Value<IconData?> statusIcon = const Value.absent(),
+  })  : _run = run,
+        super(
+          title: command.title,
+          subtitle: command.subtitle,
+          description: command.description,
+          icon: command.icon,
+          statusIcon: statusIcon | command.statusIcon,
+          shortcut: command.shortcut,
+        );
 
   @override
   Future<CommandReturn?> run(BuildContext context) {
-    return _run(command, context);
+    if (_run != null) {
+      return _run(command, context);
+    }
+    return command.run(context);
   }
 }
 
@@ -164,16 +173,14 @@ abstract class CommandGroup {
         )
         .toList()
       ..sort((a, b) {
-        int aScore =
-            match(a.title)
-                ? 3
-                : match(a.subtitle)
+        int aScore = match(a.title)
+            ? 3
+            : match(a.subtitle)
                 ? 2
                 : 1;
-        int bScore =
-            match(b.title)
-                ? 3
-                : match(b.subtitle)
+        int bScore = match(b.title)
+            ? 3
+            : match(b.subtitle)
                 ? 2
                 : 1;
         return bScore.compareTo(aScore);
@@ -258,25 +265,24 @@ class CommandScope extends StatelessWidget {
           .whereType<StaticCommandGroup>()
           .expand((group) => group.commands)
           .fold(
-            <ShortcutActivator, VoidCallback>{
-              const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
-                  () => commands.show(context),
-            },
-            (bindings, command) =>
-                command.shortcut == null
-                    ? bindings
-                    : {
-                      ...bindings,
-                      command.shortcut!: () {
-                        try {
-                          context.run<void>(command);
-                        } catch (e) {
-                          print('Error running command: $e');
-                          rethrow;
-                        }
-                      },
-                    },
-          ),
+        <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
+              commands.show(context),
+        },
+        (bindings, command) => command.shortcut == null
+            ? bindings
+            : {
+                ...bindings,
+                command.shortcut!: () {
+                  try {
+                    context.run<void>(command);
+                  } catch (e) {
+                    print('Error running command: $e');
+                    rethrow;
+                  }
+                },
+              },
+      ),
       child: child,
     );
   }

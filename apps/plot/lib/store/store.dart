@@ -9,6 +9,7 @@ import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:stack_trace/stack_trace.dart';
 
+import 'package:plot/util/value.dart';
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
 import 'package:plot/util/theme_color.dart';
@@ -21,7 +22,7 @@ import 'package:plot/util/async.dart';
 import 'package:plot/base.dart';
 import 'types.dart';
 
-export 'package:drift/drift.dart' show Value;
+export 'package:plot/util/value.dart';
 export 'package:plot/util/time.dart';
 export 'package:plot/util/uuid.dart';
 export 'package:plot/util/order.dart';
@@ -421,10 +422,4 @@ class Store extends _$Store {
       },
     );
   }
-}
-
-extension ValueExtension<T> on Value<T> {
-  bool get notNull => present && value != null;
-  T? or(T? fallback) => present ? value : fallback;
-  T? get orNull => present ? value : null;
 }

@@ -58,6 +58,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     await priority.save();
   }
 
+  Future<void> add(Activity activity) async {
+    await activity.save();
+  }
+
   /// Load activities for the current priority
   void _loadActivities() {
     _activitiesSubscription?.cancel();

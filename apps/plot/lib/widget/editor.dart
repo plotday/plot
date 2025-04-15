@@ -126,7 +126,7 @@ class EditorState extends State<Editor> {
         MediaQuery.of(context).platformBrightness == material.Brightness.dark;
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.enter, meta: true): () {
+        const SingleActivator(LogicalKeyboardKey.enter, shift: false): () {
           submit();
           _editorFocusNode.requestFocus();
         },

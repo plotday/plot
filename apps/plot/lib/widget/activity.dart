@@ -13,7 +13,8 @@ class ActivityWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       command: ChangeCurrentActivity(activity),
-      commands: activityCommands(activity).commands,
+      trailingCommands: [PinActivity(activity)],
+      leadingCommand: primaryActivityCommand(activity),
     );
   }
 }
