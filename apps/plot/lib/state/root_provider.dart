@@ -7,6 +7,7 @@ import 'package:plot/state/schedule.dart';
 import 'package:plot/state/accounts.dart';
 import 'package:plot/state/onboarding.dart';
 import 'package:plot/page/loading.dart';
+import 'package:plot/page/sign_in.dart';
 
 class BlocErrorLogger extends BlocObserver {
   @override
@@ -40,7 +41,7 @@ class RootProviderState extends State<RootProvider> {
         builder: (context, state) {
           return switch (state) {
             UserLoading _ => const LoadingPage(),
-            UserSignedOut _ => widget.child,
+            UserSignedOut _ => SignInPage(),
             UserSignedIn _ => MultiBlocProvider(
                 providers: [
                   BlocProvider(create: (_) => OnboardingBloc()),

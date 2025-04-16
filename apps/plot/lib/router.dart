@@ -83,136 +83,118 @@ class AppShell extends StatelessWidget {
 class AppRouter extends RootStackRouter {
   @override
   RouteType get defaultRouteType => PlatformResolver.current(
-    iOSResolver: () => RouteType.cupertino(),
-    androidResolver: () => RouteType.material(),
-    defaultResolver:
-        () => RouteType.custom(
+        iOSResolver: () => RouteType.cupertino(),
+        androidResolver: () => RouteType.material(),
+        defaultResolver: () => RouteType.custom(
           duration: const Duration(milliseconds: 100),
           reverseDuration: const Duration(milliseconds: 10),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },
         ),
-  );
+      );
 
   @override
   List<AutoRoute> get routes => <AutoRoute>[
-    AutoRoute(
-      page: AppShellRoute.page,
-      path: '/',
-      children: [
         AutoRoute(
-          page: EmptyShellRoute("Now"),
-          path: '',
-          guards: [
-            AutoRouteGuardCallback((resolver, router) async {
-              final priorityId =
-                  resolver.context.read<NowBloc>().loadedState.priority.id;
-              resolver.redirectUntil(PriorityRoute(priorityId: priorityId));
-            }),
-          ],
-        ),
-        AutoRoute(page: SignInRoute.page, path: 'login'),
-        AutoRoute(page: OnboardingRoute.page, path: 'start'),
-        AutoRoute(
-          page: NewActivityRoute.page,
-          path: 'new',
-          children: [AutoRoute(page: NewActivityMainRoute.page, path: '')],
-        ),
-        // AutoRoute(page: NewPriorityRoute.page, path: 'priority/new'),
-        AutoRoute(
-          page: PriorityRoute.page,
-          path: ':priorityId',
+          page: AppShellRoute.page,
+          path: '/',
           children: [
-            AutoRoute(page: PriorityMainRoute.page, path: ''),
             AutoRoute(
-              page: ActivityRoute.page,
-              path: ':activityId',
-              children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
+              page: EmptyShellRoute("Now"),
+              path: '',
+              guards: [
+                AutoRouteGuardCallback((resolver, router) async {
+                  final priorityId =
+                      resolver.context.read<NowBloc>().loadedState.priority.id;
+                  resolver.redirectUntil(PriorityRoute(priorityId: priorityId));
+                }),
+              ],
+            ),
+            AutoRoute(page: SignInRoute.page, path: 'login'),
+            AutoRoute(page: OnboardingRoute.page, path: 'start'),
+            AutoRoute(
+              page: NewActivityRoute.page,
+              path: 'new',
+              children: [AutoRoute(page: NewActivityMainRoute.page, path: '')],
+            ),
+            // AutoRoute(page: NewPriorityRoute.page, path: 'priority/new'),
+            AutoRoute(
+              page: PriorityRoute.page,
+              path: ':priorityId',
+              children: [
+                AutoRoute(page: PriorityMainRoute.page, path: ''),
+                AutoRoute(
+                  page: ActivityRoute.page,
+                  path: ':activityId',
+                  children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
+                ),
+              ],
             ),
           ],
         ),
-      ],
-    ),
-    // children: [
-    //   AutoRoute(
-    //     page: ActivityRoute.page,
-    //     path: ':activityId',
-    //     guards: [
-    //       OnEnter((context, route) async {
-    //         context.read<PriorityBloc>().setActivityId(
-    //             Uuid.fromShortString(
-    //                 route.params.getString('activityId')));
-    //       }),
-    //     ],
-    //   ),
-    // ],
-    // AutoRoute(
-    //   page: PrioritiesRoute.page,
-    //   path: '/priorities',
-    //   guards: [
-    //     OnEnter((context, route) async {
-    //       context.read<PriorityBloc>().setCurrent(null);
-    //       context.read<NowBloc>().setPriority(null);
-    //     })
-    //   ],
-    //   children: [
-    //     AutoRoute(page: NewPriorityRoute.page, path: '/priorities/new'),
-    //   ],
-    // ),
-    // AutoRoute(
-    //   page: ScheduleRoute.page,
-    //   path: '/schedule',
-    //   children: [
-    //     AutoRoute(
-    //       page: EventRoute.page,
-    //       path: '/schedule/new',
-    //       guards: [
-    //         OnEnter((context, route) async {
-    //           context.read<ScheduleBloc>().select(
-    //                 Event(
-    //                   name: name,
-    //                   at: route._at ?? Day.today().toDateTimeRange(),
-    //                   draft: true,
-    //                 ),
-    //               );
-    //         })
-    //       ],
-    //     ),
-    //     AutoRoute(
-    //       page: EventRoute.page,
-    //       path: '/schedule/:eventId',
-    //       guards: [
-    //         OnEnter((context, route) async {
-    //           final event = await context.read<ScheduleBloc>().selectById(
-    //               Uuid.fromShortString(route.params.getString('eventId')));
-    //           if (!context.mounted) return;
-    //           await context
-    //               .read<PriorityBloc>()
-    //               .setCurrentId(event.priorityId);
-    //         })
-    //       ],
-    //   ),
-    // ],
-    // ),
-  ];
-
-  @override
-  late final List<AutoRouteGuard> guards = [
-    AutoRouteGuard.simple((resolver, router) {
-      if (resolver.context.read<UserBloc>().state is! UserSignedIn) {
-        resolver.redirectUntil(SignInRoute());
-        return;
-      }
-
-      if (resolver.routeName == SignInRoute.name) {
-        resolver.redirectUntil(PriorityRoute());
-        return;
-      }
-
-      resolver.next();
-    }),
-  ];
+        // children: [
+        //   AutoRoute(
+        //     page: ActivityRoute.page,
+        //     path: ':activityId',
+        //     guards: [
+        //       OnEnter((context, route) async {
+        //         context.read<PriorityBloc>().setActivityId(
+        //             Uuid.fromShortString(
+        //                 route.params.getString('activityId')));
+        //       }),
+        //     ],
+        //   ),
+        // ],
+        // AutoRoute(
+        //   page: PrioritiesRoute.page,
+        //   path: '/priorities',
+        //   guards: [
+        //     OnEnter((context, route) async {
+        //       context.read<PriorityBloc>().setCurrent(null);
+        //       context.read<NowBloc>().setPriority(null);
+        //     })
+        //   ],
+        //   children: [
+        //     AutoRoute(page: NewPriorityRoute.page, path: '/priorities/new'),
+        //   ],
+        // ),
+        // AutoRoute(
+        //   page: ScheduleRoute.page,
+        //   path: '/schedule',
+        //   children: [
+        //     AutoRoute(
+        //       page: EventRoute.page,
+        //       path: '/schedule/new',
+        //       guards: [
+        //         OnEnter((context, route) async {
+        //           context.read<ScheduleBloc>().select(
+        //                 Event(
+        //                   name: name,
+        //                   at: route._at ?? Day.today().toDateTimeRange(),
+        //                   draft: true,
+        //                 ),
+        //               );
+        //         })
+        //       ],
+        //     ),
+        //     AutoRoute(
+        //       page: EventRoute.page,
+        //       path: '/schedule/:eventId',
+        //       guards: [
+        //         OnEnter((context, route) async {
+        //           final event = await context.read<ScheduleBloc>().selectById(
+        //               Uuid.fromShortString(route.params.getString('eventId')));
+        //           if (!context.mounted) return;
+        //           await context
+        //               .read<PriorityBloc>()
+        //               .setCurrentId(event.priorityId);
+        //         })
+        //       ],
+        //   ),
+        // ],
+        // ),
+      ];
 }
 
 extension FocusedRouterExtension on BuildContext {
