@@ -345,6 +345,14 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     return !done && doAt?.isSameOrBefore(DateTime.now()) == true;
   }
 
+  Future<String> summarize() async {
+    final response = await api.post(
+      "/summary",
+      body: {'body': body},
+    );
+    return response['title'] as String;
+  }
+
   // TODO generate title from body
   String get title => body;
 

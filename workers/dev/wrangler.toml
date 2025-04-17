@@ -37,7 +37,8 @@ compatibility_flags = ["nodejs_compat"]
   max_retries = 0
 
 [ai]
-  binding = "ai"
+  binding = "AI"
+
 
 [dev]
   port = 8780

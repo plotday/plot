@@ -1,4 +1,3 @@
-import { Ai } from "@cloudflare/ai";
 import * as Sentry from "@sentry/cloudflare";
 
 import type { Event } from "@plotday/cal";
@@ -16,7 +15,7 @@ export interface Env {
   readonly SUPABASE_SERVICE_KEY: string;
   readonly SENTRY_DSN: string;
 
-  ai: any;
+  readonly AI: Ai;
 }
 
 function eventType(event: Event): "event" | "working_location" {
@@ -81,30 +80,8 @@ async function insertContacts(
 }
 
 async function generateEmbeddings(env: Env, text: string[]) {
-  if (text.length === 0) return [];
   console.log(`Generating ${text.length} embeddings`);
-  let embeddings: never[];
-  if (ENV === "development") {
-    const response = await fetch(
-      "https://api.cloudflare.com/client/v4/accounts/34ceb662899230b63c7e8114eaf9277c/ai/run/@cf/baai/bge-small-en-v1.5",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer AJntmJRIMHS7LNxeVfGYXKletAmvzYibe9GvvVlP`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text,
-        }),
-      }
-    );
-    embeddings = ((await response.json()) as any).result.data;
-  } else {
-    const ai = new Ai(env.ai);
-    embeddings = await ai.run("@cf/baai/bge-small-en-v1.5", {
-      text,
-    });
-  }
+  const embeddings = await env.AI.run("@cf/baai/bge-small-en-v1.5", { text });
   return embeddings;
 }
 
@@ -264,8 +241,8 @@ export default Sentry.withSentry(
           series.map((i) => i.text!)
         );
         series = series.map((item, i) => {
-          const { text, ...rest } = item;
-          const embedding = embeddings[i];
+          const { text: _, ...rest } = item;
+          const embedding = embeddings.data[i].join(",");
           return {
             ...rest,
             embedding,

@@ -18,7 +18,6 @@
     "hono": "^4.6.15"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241230.0",
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/sync": "workspace:^",
     "@plotday/tsconfig": "workspace:*"

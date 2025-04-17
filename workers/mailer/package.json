@@ -3,10 +3,12 @@
   "version": "0.0.2",
   "sideEffects": false,
   "private": true,
-  "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN RESEND_API_KEY",
+  "config": {
+    "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN RESEND_API_KEY"
+  },
   "scripts": {
     "dev": "pnpm run dev:config && pnpm run dev:start",
-    "dev:config": "../../scripts/gen-env development $npm_package_deploy_vars > .dev.vars",
+    "dev:config": "../../scripts/gen-env development $npm_package_config_deploy_vars > .dev.vars",
     "dev:start": "wrangler dev --inspector-port 9230",
     "deploy": "../../scripts/deploy-worker",
     "deploy:vars": "../../scripts/deploy-worker-vars",

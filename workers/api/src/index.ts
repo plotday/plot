@@ -9,6 +9,7 @@ import { createClient } from "@plotday/db";
 import type { SyncRequest } from "@plotday/sync";
 
 import { create, respond, update } from "./event";
+import { summarize } from "./summary";
 import { addAccount, syncCalendar } from "./sync";
 
 export type Bindings = {
@@ -27,6 +28,7 @@ export type Bindings = {
   readonly CALENDAR_WEBHOOK_URL: string;
 
   readonly SYNC_QUEUE: Queue<SyncRequest>;
+  readonly AI: Ai;
 };
 
 declare module "hono" {
@@ -136,6 +138,18 @@ app.patch("/event/:id", async (c) => {
     await respond(c.env, c.var.supabase, eventId, response);
   }
   return c.json(dbEvent);
+});
+
+app.post("/summary", async (c) => {
+  try {
+    const { body } = await c.req.json();
+    if (typeof body !== "string") {
+      return c.json({ error: 'Missing "body" field.' }, 400);
+    }
+    return c.json(await summarize(c.env.AI, body));
+  } catch (error) {
+    return c.json({ error: "Error processing request." }, 500);
+  }
 });
 
 export default withSentry(

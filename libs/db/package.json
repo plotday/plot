@@ -4,11 +4,13 @@
   "types": "src/index.ts",
   "sideEffects": false,
   "version": "0.0.0",
-  "env_vars": "GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET",
+  "config": {
+    "env_vars": "GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET"
+  },
   "private": true,
   "scripts": {
-    "gen-env": "../../scripts/gen-env development $npm_package_env_vars",
-    "fake-env": "for name in $npm_package_env_vars; do echo $name=foo; done",
+    "gen-env": "../../scripts/gen-env development $npm_package_config_env_vars",
+    "fake-env": "for name in $npm_package_config_env_vars; do echo $name=foo; done",
     "start": "export $(pnpm --silent gen-env) && export OPENAI_API_KEY=$(cat ~/.config/openai.token) && supabase start",
     "start:db": "export $(pnpm --silent fake-env) && supabase start db",
     "stop": "export $(pnpm --silent gen-env) && supabase stop",

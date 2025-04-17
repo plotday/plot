@@ -12,6 +12,9 @@ routes = [
   RELEASE = '"dev"'
   PACKAGE = '"api"'
 
+[ai]
+  binding = "AI"
+
 [[queues.producers]]
   queue = "sync"
   binding = "SYNC_QUEUE"

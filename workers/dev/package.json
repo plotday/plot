@@ -3,10 +3,12 @@
   "version": "0.0.4",
   "sideEffects": false,
   "private": true,
-  "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY SENTRY_DSN:SENTRY_WORKERS_DSN SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT=workers GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET AUTH_CALLBACK_URL",
+  "config": {
+    "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY SENTRY_DSN:SENTRY_WORKERS_DSN SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT=workers GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET AUTH_CALLBACK_URL"
+  },
   "scripts": {
     "dev": "pnpm run dev:config && pnpm run dev:start",
-    "dev:config": "../../scripts/gen-env development $npm_package_env_vars > .dev.vars",
+    "dev:config": "../../scripts/gen-env development $npm_package_config_env_vars> .dev.vars",
     "dev:start": "wrangler dev --test-scheduled"
   },
   "dependencies": {

@@ -19,7 +19,7 @@ upload_source_maps = true
   mode = "smart"
 
 [ai]
-  binding = "ai"
+  binding = "AI"
 
 [observability.logs]
   enabled = true
