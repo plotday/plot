@@ -14,8 +14,15 @@ class UserBloc extends Cubit<UserState> {
       if (user == null) {
         emit(const UserSignedOut());
       } else {
-        await Store.get.sync();
-        emit(UserSignedIn(user));
+        try {
+          await Store.init(user);
+          await Store.get.sync();
+          emit(UserSignedIn(user));
+        } catch (e, stackTrace) {
+          print(e);
+          print(stackTrace);
+          emit(const UserSignedOut());
+        }
       }
     });
   }

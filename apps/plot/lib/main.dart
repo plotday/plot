@@ -6,13 +6,11 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'app.dart';
 import 'base.dart';
-import 'store/store.dart';
 
 Future<void> run() async {
   try {
     await dotenv.load(fileName: ".env");
     await Base.init();
-    await Store.init();
     usePathUrlStrategy();
     return runApp(const App());
   } on Error catch (error) {

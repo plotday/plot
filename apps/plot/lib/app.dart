@@ -10,7 +10,6 @@ import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'router.dart';
 import 'widget/window.dart';
-import 'widget/theme.dart';
 import 'widget/widget.dart';
 import 'page/loading.dart';
 import 'command/settings.dart';
@@ -51,63 +50,61 @@ class AppState extends State<App> with WidgetsBindingObserver {
       textDirection: TextDirection.ltr,
       child: ColourScheme(
         child: Builder(
-            builder: (context) => Window(
-                  child: FTheme(
-                    data: buildTheme(context.colour),
-                    child: FutureBuilder(
-                      future: layout,
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          print(snapshot.error);
-                          print(snapshot.stackTrace);
-                          return const Center(
-                              child: Text("Something went wrong"));
-                        }
-                        if (!snapshot.hasData) {
-                          return const LoadingPage();
-                        }
-                        return RootProvider(
-                          child: PlatformBuilder(
-                            builder: (context) => AdaptiveTheme(
-                              light: material.ThemeData(
-                                colorScheme: material.ColorScheme.fromSeed(
-                                  seedColor: const Color(0x002BDD66),
-                                  brightness: material.Brightness.light,
-                                ),
-                              ),
-                              dark: material.ThemeData(
-                                colorScheme: material.ColorScheme.fromSeed(
-                                  seedColor: const Color(0x002BDD66),
-                                  brightness: material.Brightness.dark,
-                                ),
-                              ),
-                              debugShowFloatingThemeButton: true,
-                              initial: AdaptiveThemeMode.system,
-                              builder: (theme, darkTheme) =>
-                                  material.MaterialApp.router(
-                                title: 'Plot',
-                                theme: theme,
-                                darkTheme: darkTheme,
-                                routerConfig: router.config(),
-                              ),
-                            ),
-                            macOSBuilder: (context) => macos.MacosApp.router(
-                              title: 'Plot',
-                              theme:
-                                  (context.colour.brightness == Brightness.light
-                                          ? macos.MacosThemeData.light()
-                                          : macos.MacosThemeData.dark())
-                                      .copyWith(
-                                          primaryColor: context.colour.accent),
-                              debugShowCheckedModeBanner: false,
-                              routerConfig: router.config(),
-                            ),
+          builder: (context) => Window(
+            child: FTheme(
+              data: buildTheme(context.colour),
+              child: FutureBuilder(
+                future: layout,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    print(snapshot.error);
+                    print(snapshot.stackTrace);
+                    return const Center(child: Text("Something went wrong"));
+                  }
+                  if (!snapshot.hasData) {
+                    return const LoadingPage();
+                  }
+                  return RootProvider(
+                    child: PlatformBuilder(
+                      builder: (context) => AdaptiveTheme(
+                        light: material.ThemeData(
+                          colorScheme: material.ColorScheme.fromSeed(
+                            seedColor: const Color(0x002BDD66),
+                            brightness: material.Brightness.light,
                           ),
-                        );
-                      },
+                        ),
+                        dark: material.ThemeData(
+                          colorScheme: material.ColorScheme.fromSeed(
+                            seedColor: const Color(0x002BDD66),
+                            brightness: material.Brightness.dark,
+                          ),
+                        ),
+                        debugShowFloatingThemeButton: true,
+                        initial: AdaptiveThemeMode.system,
+                        builder: (theme, darkTheme) =>
+                            material.MaterialApp.router(
+                          title: 'Plot',
+                          theme: theme,
+                          darkTheme: darkTheme,
+                          routerConfig: router.config(),
+                        ),
+                      ),
+                      macOSBuilder: (context) => macos.MacosApp.router(
+                        title: 'Plot',
+                        theme: (context.colour.brightness == Brightness.light
+                                ? macos.MacosThemeData.light()
+                                : macos.MacosThemeData.dark())
+                            .copyWith(primaryColor: context.colour.accent),
+                        debugShowCheckedModeBanner: false,
+                        routerConfig: router.config(),
+                      ),
                     ),
-                  ),
-                )),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -211,9 +211,9 @@ abstract class BaseTable {
 ])
 class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
-  static Future<void> init() async {
+  static Future<void> init(User user) async {
     driftRuntimeOptions.defaultSerializer = const CustomSerializer();
-    Injector.appInstance.registerSingleton<Store>(() => Store._());
+    Injector.appInstance.registerSingleton<Store>(() => Store._(user));
   }
 
   Future<DATA> add<TABLE extends StoreTable, DATA extends DataClass>(
@@ -398,9 +398,9 @@ class Store extends _$Store {
     ]);
   }
 
-  Store._()
+  Store._(User user)
       : super(driftDatabase(
-          name: 'plot',
+          name: 'plot-${user.id}',
           web: DriftWebOptions(
             sqlite3Wasm: Uri.parse('sqlite3.wasm'),
             driftWorker: Uri.parse('drift_worker.dart.js'),
@@ -408,7 +408,7 @@ class Store extends _$Store {
         ));
 
   @override
-  int get schemaVersion => 32;
+  int get schemaVersion => 33;
 
   @override
   MigrationStrategy get migration {
