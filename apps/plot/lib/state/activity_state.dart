@@ -30,7 +30,10 @@ final class ActivitySelectedState extends ActivityState {
 
   final Activity current;
   final List<Note> _notes;
-  List<Note> get notes => _notes.where((note) => !note.draft).toList();
+  List<Note> get pinnedNotes =>
+      _notes.where((note) => note.pinned && !note.draft).toList();
+  List<Note> get notes =>
+      _notes.where((note) => !note.pinned && !note.draft).toList();
   final bool moreNotes;
   Note get draft =>
       _notes.reversed.where((note) => note.draft).firstOrNull ??
@@ -67,4 +70,3 @@ final class ActivitySelectedState extends ActivityState {
         moreNotes,
       ];
 }
-

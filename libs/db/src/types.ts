@@ -86,7 +86,6 @@ export type Database = {
       }
       activity: {
         Row: {
-          body: string
           created_at: string
           deleted_at: string | null
           do_at: string | null
@@ -98,11 +97,11 @@ export type Database = {
           pinned: boolean
           priority_id: string
           private: boolean
+          title: string
           updated_at: string
           user_id: string
         }
         Insert: {
-          body: string
           created_at?: string
           deleted_at?: string | null
           do_at?: string | null
@@ -114,11 +113,11 @@ export type Database = {
           pinned?: boolean
           priority_id: string
           private?: boolean
+          title: string
           updated_at?: string
           user_id: string
         }
         Update: {
-          body?: string
           created_at?: string
           deleted_at?: string | null
           do_at?: string | null
@@ -130,6 +129,7 @@ export type Database = {
           pinned?: boolean
           priority_id?: string
           private?: boolean
+          title?: string
           updated_at?: string
           user_id?: string
         }
@@ -1052,7 +1052,6 @@ export type Database = {
     Views: {
       activity_x: {
         Row: {
-          body: string | null
           created_at: string | null
           deleted_at: string | null
           do_at: string | null
@@ -1067,6 +1066,7 @@ export type Database = {
           priority_path: unknown | null
           private: boolean | null
           tags: Json | null
+          title: string | null
           updated_at: string | null
           user_id: string | null
         }

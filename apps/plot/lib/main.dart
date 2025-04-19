@@ -3,12 +3,19 @@ import 'package:flutter/widgets.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:logging/logging.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'app.dart';
 import 'base.dart';
+import 'state/logging.dart';
 
 Future<void> run() async {
   try {
+    Logger.root.onRecord.listen((record) {
+      print('${record.level.name}: ${record.message}');
+    });
+    Bloc.observer = BlocLogger();
     await dotenv.load(fileName: ".env");
     await Base.init();
     usePathUrlStrategy();

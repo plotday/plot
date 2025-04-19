@@ -19,13 +19,12 @@ class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
     PriorityId? priorityId,
     @QueryParam("priorityId") String? priorityIdString,
     super.key,
-  }) : priorityId =
-           draft?.priorityId ??
-           priority?.id ??
-           priorityId ??
-           (priorityIdString != null
-               ? PriorityId.fromShortString(priorityIdString)
-               : null);
+  }) : priorityId = draft?.priorityId ??
+            priority?.id ??
+            priorityId ??
+            (priorityIdString != null
+                ? PriorityId.fromShortString(priorityIdString)
+                : null);
 
   final Activity? draft;
   final PriorityId? priorityId;
@@ -33,17 +32,15 @@ class NewActivityWrapper extends AutoRouter implements AutoRouteWrapper {
   @override
   Widget wrappedRoute(BuildContext context) {
     return BlocProvider(
-      create:
-          (context) =>
-              priorityId != null
-                  ? DraftActivityBloc.byId(
-                    priorityId: priorityId!,
-                    draft: draft,
-                  )
-                  : DraftActivityBloc(
-                    priority: context.read<NowBloc>().loadedState.priority,
-                    draft: draft,
-                  ),
+      create: (context) => priorityId != null
+          ? DraftActivityBloc.byId(
+              priorityId: priorityId!,
+              draft: draft,
+            )
+          : DraftActivityBloc(
+              priority: context.read<NowBloc>().loadedState.priority,
+              draft: draft,
+            ),
       child: this,
     );
   }
@@ -70,8 +67,8 @@ class NewActivityPage extends StatelessWidget {
                   selected: state.priority,
                   onSelect: (priority) {
                     context.read<DraftActivityBloc>().updateDraft(
-                      state.draft.copyWith(priorityId: priority.id),
-                    );
+                          state.draft.copyWith(priorityId: priority.id),
+                        );
                   },
                 ),
               ],
@@ -87,10 +84,10 @@ class NewActivityPage extends StatelessWidget {
                   hint: 'Start an activity',
                   autofocus: true,
                   onChange: (body) async {
-                    final activity = state.draft.copyWith(body: body);
+                    final activity = state.draft.copyWith(title: body);
                     await context.read<DraftActivityBloc>().updateDraft(
-                      activity,
-                    );
+                          activity,
+                        );
                   },
                 ),
                 Row(

@@ -11,7 +11,6 @@ import 'state/user.dart';
 import 'state/schedule.dart';
 import 'state/priority.dart';
 import 'state/now.dart';
-import 'state/onboarding.dart';
 import 'page/page.dart';
 import 'widget/widget.dart';
 import 'widget/window.dart';
@@ -112,7 +111,6 @@ class AppRouter extends RootStackRouter {
               ],
             ),
             AutoRoute(page: SignInRoute.page, path: 'login'),
-            AutoRoute(page: OnboardingRoute.page, path: 'start'),
             AutoRoute(
               page: NewActivityRoute.page,
               path: 'new',

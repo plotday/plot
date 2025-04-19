@@ -34,7 +34,10 @@ BEGIN
             VALUES (NEW.id, NEW.name, NEW.path, NEW.draft, auth.uid (), NEW.deleted_at)
         ON CONFLICT (id)
             DO UPDATE SET
-                name = NEW.name, path = NEW.path, draft = NEW.draft, deleted_at = NEW.deleted_at
+                name = NEW.name,
+                path = NEW.path,
+                draft = NEW.draft,
+                deleted_at = NEW.deleted_at
             RETURNING
                 id INTO _priority_id;
     END IF;
@@ -43,7 +46,10 @@ BEGIN
             VALUES (auth.uid (), _priority_id, NEW.order, COALESCE(NEW.pomodoro, 25 * 60), COALESCE(NEW.color, 0), COALESCE(NEW.is_default, FALSE))
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
-                "order" = COALESCE(NEW.order, priority_settings."order"), pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro), color = COALESCE(NEW.color, priority_settings.color), is_default = COALESCE(NEW.is_default, priority_settings.is_default);
+                "order" = COALESCE(NEW.order, priority_settings."order"),
+                pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro),
+                color = COALESCE(NEW.color, priority_settings.color),
+                is_default = COALESCE(NEW.is_default, priority_settings.is_default);
     END IF;
     RETURN NEW;
 END;

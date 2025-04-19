@@ -15,8 +15,8 @@ final class UserSignedOut extends UserState {
   const UserSignedOut();
 }
 
-final class UserSignedIn extends UserState {
-  const UserSignedIn(this.user);
+final class UserReady extends UserState {
+  const UserReady(this.user);
 
   final User user;
 }

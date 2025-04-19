@@ -47,3 +47,15 @@ END;
 $$
 LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION order_first ()
+    RETURNS double precision
+    AS $$
+DECLARE
+    millis_since_epoch double precision;
+BEGIN
+    millis_since_epoch := EXTRACT(epoch FROM CURRENT_TIMESTAMP) * 1000;
+    RETURN millis_since_epoch;
+END;
+$$
+LANGUAGE plpgsql;
+

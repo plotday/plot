@@ -17,7 +17,7 @@ class UserBloc extends Cubit<UserState> {
         try {
           await Store.init(user);
           await Store.get.sync();
-          emit(UserSignedIn(user));
+          emit(UserReady(user));
         } catch (e, stackTrace) {
           print(e);
           print(stackTrace);

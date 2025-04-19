@@ -168,6 +168,14 @@ class Note extends NoteRow implements Comparable<Note> {
 
   Future<void> save() => Store.get.save(table, toCompanion(false), NotesBase());
 
+  Future<String> generateTitle() async {
+    final response = await api.post(
+      "/summary",
+      body: {'body': body},
+    );
+    return response['title'] as String;
+  }
+
   @override
   int compareTo(Note other) {
     return order.compareTo(other.order);

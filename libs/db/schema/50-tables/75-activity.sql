@@ -6,7 +6,7 @@ CREATE TABLE "public"."activity" (
     "draft" boolean NOT NULL DEFAULT FALSE,
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES priority ON DELETE CASCADE,
-    "body" text NOT NULL,
+    "title" text NOT NULL,
     "pinned" boolean NOT NULL DEFAULT FALSE,
     "order" double precision NOT NULL,
     "ordered_at" timestamp with time zone NOT NULL DEFAULT now(),

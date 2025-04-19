@@ -42,7 +42,7 @@
   },
   "devDependencies": {
     "@plotday/tsconfig": "workspace:^",
-    "supabase": "^1.165.0"
+    "supabase": "^2.20.12"
   },
   "dependencies": {
     "@plotday/cal": "workspace:^",

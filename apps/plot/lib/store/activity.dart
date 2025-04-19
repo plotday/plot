@@ -7,7 +7,7 @@ class Activities extends UuidStoreTable with DraftTable, DeletableTable {
   BlobColumn get userId => blob()
       .clientDefault(() => Uuid.generate().toBytes())
       .map(const UuidConverter())();
-  TextColumn get body => text()();
+  TextColumn get title => text()();
   RealColumn get order => real()
       .clientDefault(() => Order.first().value)
       .map(const OrderConverter())();
@@ -240,7 +240,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         updatedAt: now,
         draft: true,
         doAt: doAt,
-        body: "",
+        title: "",
         order: Order.first(),
         orderedAt: now,
         private: true,
@@ -252,7 +252,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   Activity.fromStore(ActivityRow row)
       : super(
           priorityId: row.priorityId,
-          body: row.body,
+          title: row.title,
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
           deletedAt: row.deletedAt,
@@ -269,7 +269,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
   Activity merge(Activity other) {
     return copyWith(
-      body: body.isEmpty ? other.body : body,
+      title: title.isEmpty ? other.title : title,
       doAt: Value(doAt ?? other.doAt),
       doneAt: Value(doneAt ?? other.doneAt),
       pinned: pinned || other.pinned,
@@ -285,7 +285,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Value<DateTime?> deletedAt = const Value.absent(),
     bool? draft,
     Uuid? userId,
-    String? body,
+    String? title,
     Order? order,
     DateTime? orderedAt,
     bool? root,
@@ -328,7 +328,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         id: id,
         draft: draft,
         userId: userId,
-        body: body,
+        title: title,
         order: order,
         pinned: pinned,
         private: private,
@@ -344,17 +344,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   bool get doNow {
     return !done && doAt?.isSameOrBefore(DateTime.now()) == true;
   }
-
-  Future<String> summarize() async {
-    final response = await api.post(
-      "/summary",
-      body: {'body': body},
-    );
-    return response['title'] as String;
-  }
-
-  // TODO generate title from body
-  String get title => body;
 
   bool get scheduled {
     return doAt?.isAfter(DateTime.now()) == true;

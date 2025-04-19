@@ -12,7 +12,7 @@ CREATE OR REPLACE FUNCTION update_created_by ()
     RETURNS TRIGGER
     AS $$
 BEGIN
-    NEW.created_by = auth.uid ();
+    NEW.created_by = COALESCE(auth.uid (), NEW.created_by);
     RETURN NEW;
 END;
 $$

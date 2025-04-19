@@ -5,7 +5,6 @@ import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/schedule.dart';
 import 'package:plot/state/accounts.dart';
-import 'package:plot/state/onboarding.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/page/sign_in.dart';
 
@@ -42,9 +41,8 @@ class RootProviderState extends State<RootProvider> {
           return switch (state) {
             UserLoading _ => const LoadingPage(),
             UserSignedOut _ => SignInPage(),
-            UserSignedIn _ => MultiBlocProvider(
+            UserReady _ => MultiBlocProvider(
                 providers: [
-                  BlocProvider(create: (_) => OnboardingBloc()),
                   BlocProvider(create: (_) => AccountsBloc()),
                   BlocProvider(create: (_) => NowBloc()),
                   BlocProvider(create: (_) => ScheduleBloc()),

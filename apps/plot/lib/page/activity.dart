@@ -4,7 +4,6 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/command/command.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/router.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/note.dart';
@@ -61,9 +60,7 @@ class ActivityPage extends StatelessWidget {
                 flex: 0,
                 child: Container(
                   padding: EdgeInsets.all(16),
-                  child: SingleChildScrollView(
-                    child: Viewer(markdown: state.current.body),
-                  ),
+                  child: NotesView(notes: state.pinnedNotes),
                 ),
               ),
               Flexible(
@@ -88,20 +85,6 @@ class ActivityPage extends StatelessWidget {
               autofocus: true,
               focusNode: focusNode,
               onSubmitted: (body) async {
-                if (state.current.draft) {
-                  final activity = state.current.copyWith(
-                    body: body,
-                    draft: false,
-                  );
-                  await context.read<ActivityBloc>().updateActivity(
-                        activity,
-                      );
-                  if (!context.mounted) return;
-                  await context.router.push(
-                    ActivityRoute(activity: activity),
-                  );
-                  return;
-                }
                 await context.read<ActivityBloc>().updateNote(
                       state.draft.copyWith(body: body, draft: false),
                     );
