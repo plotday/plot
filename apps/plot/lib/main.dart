@@ -5,6 +5,7 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:super_editor/super_editor.dart' show LogNames;
 
 import 'app.dart';
 import 'base.dart';
@@ -12,8 +13,18 @@ import 'state/logging.dart';
 
 Future<void> run() async {
   try {
+    hierarchicalLoggingEnabled = true;
     Logger.root.onRecord.listen((record) {
-      print('${record.level.name}: ${record.message}');
+      if ([
+            LogNames.editor,
+            LogNames.infrastructure,
+            LogNames.textField,
+            'super_text'
+          ].any((prefix) => record.loggerName.startsWith(prefix)) &&
+          record.level < Level.WARNING) {
+        return;
+      }
+      print('${record.level.name}: ${record.loggerName}: ${record.message}');
     });
     Bloc.observer = BlocLogger();
     await dotenv.load(fileName: ".env");
