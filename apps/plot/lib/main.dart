@@ -8,6 +8,7 @@ import 'package:super_editor/super_editor.dart' show LogNames;
 
 import 'app.dart';
 import 'base.dart';
+import 'logging.dart';
 
 Future<void> run() async {
   try {
@@ -18,7 +19,7 @@ Future<void> run() async {
             LogNames.editor,
             LogNames.infrastructure,
             LogNames.textField,
-            'super_text'
+            'super_text',
           ].any((prefix) => record.loggerName.startsWith(prefix)) &&
           record.level < Level.WARNING) {
         return;
@@ -35,9 +36,8 @@ Future<void> run() async {
     await Base.init();
     usePathUrlStrategy();
     return runApp(const App());
-  } on Error catch (error) {
-    print(error);
-    print(error.stackTrace);
+  } catch (error, stackTrace) {
+    log.warning('Startup failed', error, stackTrace);
     return runApp(ErrorApp(error: error.toString()));
   }
 }
@@ -46,12 +46,9 @@ Future<void> main() async {
   if (kDebugMode) {
     await run();
   } else {
-    await SentryFlutter.init(
-      (options) {
-        options.dsn =
-            "https://08fa5e400fac463fb57de5e33405db0b@o338620.ingest.sentry.io/4505551857057792";
-      },
-      appRunner: run,
-    );
+    await SentryFlutter.init((options) {
+      options.dsn =
+          "https://08fa5e400fac463fb57de5e33405db0b@o338620.ingest.sentry.io/4505551857057792";
+    }, appRunner: run);
   }
 }

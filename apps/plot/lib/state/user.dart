@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 
 import 'package:plot/base.dart';
 import 'package:plot/store/store.dart';
+import 'logging.dart';
 
 part 'user_state.dart';
 
@@ -13,14 +14,13 @@ class UserBloc extends Cubit<UserState> {
     _userSubscription = Base.user.listen((user) async {
       if (user == null) {
         emit(const UserSignedOut());
-      } else {
+      } else if (state is! UserReady) {
         try {
           await Store.init(user);
           await Store.get.sync();
           emit(UserReady(user));
         } catch (e, stackTrace) {
-          print(e);
-          print(stackTrace);
+          log.warning('User init failed', e, stackTrace);
           emit(const UserSignedOut());
         }
       }
