@@ -4,12 +4,10 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:super_editor/super_editor.dart' show LogNames;
 
 import 'app.dart';
 import 'base.dart';
-import 'state/logging.dart';
 
 Future<void> run() async {
   try {
@@ -33,7 +31,6 @@ Future<void> run() async {
         print(record.stackTrace);
       }
     });
-    Bloc.observer = BlocLogger();
     await dotenv.load(fileName: ".env");
     await Base.init();
     usePathUrlStrategy();

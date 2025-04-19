@@ -7,14 +7,7 @@ import 'package:plot/state/schedule.dart';
 import 'package:plot/state/accounts.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/page/sign_in.dart';
-
-class BlocErrorLogger extends BlocObserver {
-  @override
-  void onError(BlocBase<dynamic> bloc, Object error, StackTrace stackTrace) {
-    print('onError -- ${bloc.runtimeType}, $error');
-    super.onError(bloc, error, stackTrace);
-  }
-}
+import 'logging.dart';
 
 class RootProvider extends StatefulWidget {
   const RootProvider({required this.child, super.key});
@@ -29,7 +22,7 @@ class RootProviderState extends State<RootProvider> {
   @override
   void initState() {
     super.initState();
-    Bloc.observer = BlocErrorLogger();
+    Bloc.observer = BlocLogger();
   }
 
   @override
