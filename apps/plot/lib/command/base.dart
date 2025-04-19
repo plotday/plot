@@ -2,8 +2,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 
 import 'package:plot/util/value.dart';
-
 import 'package:plot/widget/widget.dart';
+import 'logging.dart';
 
 sealed class CommandReturn {}
 
@@ -94,8 +94,10 @@ class ValueCommand<T> extends Command {
   final T value;
 
   @override
-  Future<CommandValue<T>> run(BuildContext context) =>
-      Future.value(CommandValue(value));
+  Future<CommandValue<T>> run(BuildContext context) {
+    log.info('ValueCommand returned $value');
+    return Future.value(CommandValue(value));
+  }
 }
 
 /// A command for showing a set of options and returning a value
@@ -114,14 +116,15 @@ class ShowCommand<T> extends Command {
   Future<CommandValue<T>?> run(BuildContext context) async {
     try {
       final value = await CommandBar.show<T>(context, commands(context));
+      log.info(
+          'CommandBar returned ${value.present ? value.value : 'no value'}');
       if (context.mounted && value.present) {
         onSelect(context, value.value);
         return CommandValue(value.value);
       }
       return null;
     } on Error catch (e) {
-      print(e);
-      print(e.stackTrace);
+      log.warning(e, e.stackTrace);
       rethrow;
     }
   }

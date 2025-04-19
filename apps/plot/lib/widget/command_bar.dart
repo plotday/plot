@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:drift/drift.dart' show Value;
 
 import 'package:plot/command/command.dart';
 import 'list_tile.dart';
@@ -7,18 +6,19 @@ import 'text_field.dart';
 import 'dialog.dart';
 import 'button.dart';
 import 'theme.dart';
+import 'logging.dart';
 
 class CommandBar<T> extends StatefulWidget {
   static Future<Value<T>> show<T>(
     BuildContext context,
     Commands<T> commands, {
     Command? Function(String promptValue)? secondaryCommand,
-  }) => Dialog.show<T>(
-    context: context,
-    builder:
-        (context) =>
+  }) =>
+      Dialog.show<T>(
+        context: context,
+        builder: (context) =>
             CommandBar<T>(commands, secondaryCommand: secondaryCommand),
-  );
+      );
 
   final Commands<T> commands;
   final Command? Function(String promptValue)? secondaryCommand;
@@ -82,9 +82,13 @@ class CommandBarState<T> extends State<CommandBar<T>> {
         setState(() => _child = result.child);
       } else if (result is CommandValue<T> && mounted) {
         Navigator.of(context).pop(Value(result.value));
+      } else if (result is CommandValue<T?> &&
+          result.value != null &&
+          mounted) {
+        Navigator.of(context).pop(Value(result.value!));
       }
-    } catch (e) {
-      print('Error executing command: $e');
+    } catch (e, stackTrace) {
+      log.warning('Error executing command', e, stackTrace);
     }
     return null;
   }
@@ -105,30 +109,29 @@ class CommandBarState<T> extends State<CommandBar<T>> {
             EditableArea(
               position: EditableAreaPosition.top,
               padding: false,
-              builder:
-                  (context, focusNode) => Row(
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: widgetPadding,
-                          child: TextField(
-                            style: TextFieldStyle.ghost,
-                            controller: _controller,
-                            autofocus: true,
-                            label: widget.commands.prompt,
-                            focusNode: focusNode,
-                          ),
-                        ),
+              builder: (context, focusNode) => Row(
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: widgetPadding,
+                      child: TextField(
+                        style: TextFieldStyle.ghost,
+                        controller: _controller,
+                        autofocus: true,
+                        label: widget.commands.prompt,
+                        focusNode: focusNode,
                       ),
-                      if (secondaryCommand != null)
-                        Button.icon(
-                          CommandWrapper(
-                            secondaryCommand,
-                            run: (_, __) => _executeCommand(secondaryCommand),
-                          ),
-                        ),
-                    ],
+                    ),
                   ),
+                  if (secondaryCommand != null)
+                    Button.icon(
+                      CommandWrapper(
+                        secondaryCommand,
+                        run: (_, __) => _executeCommand(secondaryCommand),
+                      ),
+                    ),
+                ],
+              ),
             ),
             Flexible(
               child: ListView.builder(

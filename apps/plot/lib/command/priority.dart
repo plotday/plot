@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
+import 'logging.dart';
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
@@ -88,6 +89,7 @@ class PickCurrentActivity extends ShowCommand<Priority> {
 
   @override
   void onSelect(BuildContext context, Priority value) async {
+    log.info('Change current priority to ${value.name}');
     ChangeCurrentPriority(value).run(context);
   }
 }

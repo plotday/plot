@@ -14,6 +14,7 @@ import 'state/logging.dart';
 Future<void> run() async {
   try {
     hierarchicalLoggingEnabled = true;
+    recordStackTraceAtLevel = Level.SEVERE;
     Logger.root.onRecord.listen((record) {
       if ([
             LogNames.editor,
@@ -25,6 +26,12 @@ Future<void> run() async {
         return;
       }
       print('${record.level.name}: ${record.loggerName}: ${record.message}');
+      if (record.error != null) {
+        print(record.error);
+      }
+      if (record.stackTrace != null) {
+        print(record.stackTrace);
+      }
     });
     Bloc.observer = BlocLogger();
     await dotenv.load(fileName: ".env");
