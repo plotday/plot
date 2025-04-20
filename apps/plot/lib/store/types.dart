@@ -10,12 +10,16 @@ import 'package:uuid/uuid.dart' as uuid;
 bool __isType<T, Y>() => T == Y;
 bool _isType<T, Y>() => __isType<T, Y>() || __isType<T, Y?>();
 
+/// This class overrides JSON serialization for particular types.
+/// Use it to change the conversion from local to remote DB.
 class CustomSerializer extends ValueSerializer {
   final ValueSerializer _inner;
 
-  const CustomSerializer(
-      [this._inner = const ValueSerializer.defaults(
-          serializeDateTimeValuesAsString: true)]);
+  const CustomSerializer([
+    this._inner = const ValueSerializer.defaults(
+      serializeDateTimeValuesAsString: true,
+    ),
+  ]);
 
   @override
   T fromJson<T>(dynamic json) {
@@ -42,6 +46,9 @@ class CustomSerializer extends ValueSerializer {
     }
     if (value is Duration) {
       return (value as Duration).inSeconds;
+    }
+    if (value is DateTime) {
+      return (value as DateTime).toUtc().toIso8601String();
     }
 
     return _inner.toJson(value);
