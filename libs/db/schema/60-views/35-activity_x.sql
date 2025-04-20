@@ -7,12 +7,12 @@ SELECT
     (
         CASE WHEN activity.pinned = TRUE THEN
             -- Pinned notes first
-            2E14 + "activity"."order"
+            4E14 - "activity"."order"
         WHEN do_at <= NOW() THEN
             -- Current actions ordered first by when they were added.
             -- do_at epoch (seconds) shifted left by 1E3 and order (milliseconds)
             -- shifted right by 1E7 for a total of 1E10 between to avoid overlaps.
-            1E14 + EXTRACT(EPOCH FROM do_at) * 1E3 + "activity"."order" / 1E7
+            2E14 - EXTRACT(EPOCH FROM do_at) * 1E3 - "activity"."order" / 1E7
         ELSE
             -- Everything else
             "activity"."order"

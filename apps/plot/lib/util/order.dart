@@ -6,15 +6,14 @@ extension type Order._(double value) {
     var a = after?.value;
     var b = before?.value;
     if (a == null) {
-      return b == null ? _last() : _first();
+      return b == null ? _first() : _last();
     } else if (b == null) {
-      return _last();
+      return _first();
     }
     return (a + b) / 2;
   }
 
   const Order(this.value);
-  Order.last() : this(_last());
   Order.first() : this(_first());
   Order.between(Order? after, Order? before) : this(_between(after, before));
   Order.fromNumber(dynamic number)
@@ -26,5 +25,5 @@ extension type Order._(double value) {
             : throw ArgumentError('Order must be a number'),
       );
 
-  int compareTo(Order other) => -value.compareTo(other.value);
+  int compareTo(Order other) => value.compareTo(other.value);
 }

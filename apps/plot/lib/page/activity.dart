@@ -16,11 +16,12 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
     ActivityId? activityId,
     @PathParam("activityId") String? activityIdString,
     super.key,
-  }) : activityId = activity?.id ??
-            activityId ??
-            (activityIdString != null
-                ? ActivityId.fromShortString(activityIdString)
-                : null);
+  }) : activityId =
+           activity?.id ??
+           activityId ??
+           (activityIdString != null
+               ? ActivityId.fromShortString(activityIdString)
+               : null);
 
   final ActivityId? activityId;
 
@@ -56,23 +57,31 @@ class ActivityPage extends StatelessWidget {
           ),
           body: Column(
             children: [
-              Flexible(
-                flex: 0,
-                child: Container(
-                  padding: EdgeInsets.all(16),
-                  child: NotesView(notes: state.pinnedNotes),
-                ),
-              ),
-              Flexible(
-                flex: 1,
-                fit: FlexFit.loose,
-                child: Container(
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(width: 1.0, color: context.colour.border),
+              if (state.pinnedNotes.isNotEmpty)
+                Flexible(
+                  flex: 0,
+                  fit: FlexFit.loose,
+                  child: Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          width: 1.0,
+                          color: context.colour.border,
+                        ),
+                      ),
+                    ),
+                    child: NotesView(
+                      notes: state.pinnedNotes,
+                      shrinkWrap: true,
                     ),
                   ),
+                ),
+              Flexible(
+                flex: 1,
+                fit: FlexFit.tight,
+                child: Container(
+                  padding: EdgeInsets.all(16),
                   child: NotesView(notes: state.notes),
                 ),
               ),
@@ -80,16 +89,17 @@ class ActivityPage extends StatelessWidget {
           ),
           footer: EditableArea(
             position: EditableAreaPosition.bottom,
-            builder: (context, focusNode) => Editor(
-              hint: 'Add a note',
-              autofocus: true,
-              focusNode: focusNode,
-              onSubmitted: (body) async {
-                await context.read<ActivityBloc>().updateNote(
+            builder:
+                (context, focusNode) => Editor(
+                  hint: 'Add a note',
+                  autofocus: true,
+                  focusNode: focusNode,
+                  onSubmitted: (body) async {
+                    await context.read<ActivityBloc>().updateNote(
                       state.draft.copyWith(body: body, draft: false),
                     );
-              },
-            ),
+                  },
+                ),
           ),
         );
       },

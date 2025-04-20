@@ -4,16 +4,19 @@ typedef ActivityId = Uuid;
 
 @DataClassName('ActivityRow')
 class Activities extends UuidStoreTable with DraftTable, DeletableTable {
-  BlobColumn get userId => blob()
-      .clientDefault(() => Uuid.generate().toBytes())
-      .map(const UuidConverter())();
+  BlobColumn get userId =>
+      blob()
+          .clientDefault(() => Uuid.generate().toBytes())
+          .map(const UuidConverter())();
   TextColumn get title => text()();
-  RealColumn get order => real()
-      .clientDefault(() => Order.first().value)
-      .map(const OrderConverter())();
-  DateTimeColumn get orderedAt => dateTime()
-      .withDefault(currentDateAndTime)
-      .map(const LocalDateTimeConverter())();
+  RealColumn get order =>
+      real()
+          .clientDefault(() => Order.first().value)
+          .map(const OrderConverter())();
+  DateTimeColumn get orderedAt =>
+      dateTime()
+          .withDefault(currentDateAndTime)
+          .map(const LocalDateTimeConverter())();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
   BlobColumn get priorityId =>
@@ -26,13 +29,12 @@ class Activities extends UuidStoreTable with DraftTable, DeletableTable {
 
 class ActivitiesBase extends BaseTable {
   ActivitiesBase({super.limit, super.filterName})
-      : super(
-          table: 'activity_x',
-          writeTable: 'activity',
-          name: 'activities',
-          order: 'order_x',
-          ascending: false,
-        );
+    : super(
+        table: 'activity_x',
+        writeTable: 'activity',
+        name: 'activities',
+        order: 'order_x',
+      );
 
   @override
   Insertable<DataClass> fromBase(Map<String, dynamic> json) =>
@@ -41,7 +43,7 @@ class ActivitiesBase extends BaseTable {
 
 class PriorityActivitiesBase extends ActivitiesBase {
   PriorityActivitiesBase({this.priorityId, this.priorityPath})
-      : super(filterName: priorityPath?.toString(), limit: 40);
+    : super(filterName: priorityPath?.toString(), limit: 40);
 
   final PriorityId? priorityId;
   final Path? priorityPath;
@@ -75,33 +77,28 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   static Future<bool> pullPriority(
     PriorityId priorityId, {
     bool more = false,
-  }) async =>
-      Store.get.pull(
-        more ? PullType.more : PullType.initial,
-        table,
-        PriorityActivitiesBase(priorityId: priorityId),
-      );
+  }) async => Store.get.pull(
+    more ? PullType.more : PullType.initial,
+    table,
+    PriorityActivitiesBase(priorityId: priorityId),
+  );
   static Future<bool> pullPriorityPath(
     Path? priorityPath, {
     bool more = false,
-  }) async =>
-      Store.get.pull(
-        more ? PullType.more : PullType.initial,
-        table,
-        PriorityActivitiesBase(priorityPath: priorityPath),
-      );
+  }) async => Store.get.pull(
+    more ? PullType.more : PullType.initial,
+    table,
+    PriorityActivitiesBase(priorityPath: priorityPath),
+  );
   static Future<bool> pullActive(DateTime until) async =>
       Store.get.pull(PullType.all, table, ActiveActivitiesBase(until));
   static bool hasMorePriority(Path? priorityPath) =>
       Store.get.hasMore(PriorityActivitiesBase(priorityPath: priorityPath));
 
   static Future<Activity> get(ActivityId id) async {
-    return await (Store.get.select(table)
-          ..where(
-            (t) => t.id.equals(id.toBytes()),
-          ))
-        .getSingle()
-        .then(Activity.fromStore);
+    return await (Store.get.select(table)..where(
+      (t) => t.id.equals(id.toBytes()),
+    )).getSingle().then(Activity.fromStore);
   }
 
   static Future<Activity?> getDraft({PriorityId? priorityId}) async {
@@ -144,19 +141,39 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       // Pinned
       (t) => OrderingTerm.desc(t.pinned),
       // Active
-      (t) => OrderingTerm(
-            expression: const CustomExpression<DateTime>(
-              'CASE WHEN do_at IS NOT NULL AND done_at IS NULL AND do_at <= CURRENT_TIMESTAMP THEN do_at ELSE NULL END',
+      (t) => OrderingTerm.asc(
+        CaseWhenExpression(
+          cases: [
+            CaseWhen(
+              t.doAt.isNotNull() &
+                  t.doAt.isSmallerOrEqual(currentDateAndTime) &
+                  t.doneAt.isNull(),
+              then: t.doAt,
             ),
-            mode: OrderingMode.asc,
-          ),
-      // Order
+          ],
+          orElse: const Constant(null),
+        ),
+      ),
+      (t) => OrderingTerm.asc(
+        CaseWhenExpression(
+          cases: [
+            CaseWhen(
+              t.pinned |
+                  (t.doAt.isNotNull() &
+                      t.doAt.isSmallerOrEqual(currentDateAndTime) &
+                      t.doneAt.isNull()),
+              then: t.order,
+            ),
+          ],
+          orElse: const Constant(null),
+        ),
+      ),
       (t) => OrderingTerm.desc(t.order),
     ]);
 
     return query.watch().map(
-          (rows) => rows.map((row) => Activity.fromStore(row)).toList(),
-        );
+      (rows) => rows.map((row) => Activity.fromStore(row)).toList(),
+    );
   }
 
   static Stream<Map<PriorityId, List<Activity>>> watchActivePriorityChildren(
@@ -193,12 +210,12 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     ]);
 
     return query.watch().map(
-          (rows) => rows.fold(<PriorityId, List<Activity>>{}, (map, row) {
-            final activity = Activity.fromStore(row.readTable(a));
-            map.putIfAbsent(activity.priorityId, () => []).add(activity);
-            return map;
-          }),
-        );
+      (rows) => rows.fold(<PriorityId, List<Activity>>{}, (map, row) {
+        final activity = Activity.fromStore(row.readTable(a));
+        map.putIfAbsent(activity.priorityId, () => []).add(activity);
+        return map;
+      }),
+    );
   }
 
   // Stream of items that are currently active, and will become active before
@@ -206,21 +223,20 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   static Stream<List<Activity>> watchActive({bool? deleted = false}) {
     return Date.current().switchMap((date) {
       pullActive(date.toEnd());
-      final query = Store.get.select(table)
-        ..where(
-          (t) =>
-              t.draft.equals(false) &
-              t.doAt.isSmallerThanValue(date.toEnd()) &
-              t.doneAt.isNull(),
-        );
+      final query = Store.get.select(table)..where(
+        (t) =>
+            t.draft.equals(false) &
+            t.doAt.isSmallerThanValue(date.toEnd()) &
+            t.doneAt.isNull(),
+      );
       if (deleted != null) {
         query.where(
           (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
         );
       }
       return query.watch().map(
-            (rows) => rows.map((row) => Activity.fromStore(row)).toList(),
-          );
+        (rows) => rows.map((row) => Activity.fromStore(row)).toList(),
+      );
     });
   }
 
@@ -250,22 +266,22 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   }
 
   Activity.fromStore(ActivityRow row)
-      : super(
-          priorityId: row.priorityId,
-          title: row.title,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          deletedAt: row.deletedAt,
-          doAt: row.doAt,
-          doneAt: row.doneAt,
-          draft: row.draft,
-          id: row.id,
-          order: row.order,
-          orderedAt: row.orderedAt,
-          pinned: row.pinned,
-          private: row.private,
-          userId: row.userId,
-        );
+    : super(
+        priorityId: row.priorityId,
+        title: row.title,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        deletedAt: row.deletedAt,
+        doAt: row.doAt,
+        doneAt: row.doneAt,
+        draft: row.draft,
+        id: row.id,
+        order: row.order,
+        orderedAt: row.orderedAt,
+        pinned: row.pinned,
+        private: row.private,
+        userId: row.userId,
+      );
 
   Activity merge(Activity other) {
     return copyWith(
@@ -311,12 +327,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         (doAt.present && doAt.value != this.doAt) ||
         (doneAt.present && doneAt.value != null) ||
         (pinned != null && pinned != this.pinned)) {
-      order ??= ((doAt.or(this.doAt) != null &&
-                  doAt.or(this.doAt)!.isSameOrBefore(DateTime.now()) &&
-                  doneAt.or(this.doneAt) == null) ||
-              (pinned ?? this.pinned) == true)
-          ? Order.last()
-          : Order.first();
+      order ??= Order.first();
     }
     return Activity.fromStore(
       super.copyWith(
@@ -353,6 +364,22 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
   @override
   int compareTo(Activity other) {
+    if (pinned && other.pinned) {
+      return -order.compareTo(other.order);
+    }
+    if (pinned || other.pinned) {
+      return pinned ? -1 : 1;
+    }
+    if (doNow && other.doNow) {
+      final doAtComp = doAt!.compareTo(other.doAt!);
+      if (doAtComp != 0) {
+        return doAtComp;
+      }
+      return -order.compareTo(other.order);
+    }
+    if (doNow || other.doNow) {
+      return doNow ? -1 : 1;
+    }
     return order.compareTo(other.order);
   }
 }

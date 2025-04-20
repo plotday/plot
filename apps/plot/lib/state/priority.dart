@@ -11,7 +11,7 @@ part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
   PriorityBloc({required Priority priority})
-      : super(PriorityState(current: priority)) {
+    : super(PriorityState(current: priority)) {
     _loadPriority(priority);
   }
 
@@ -59,9 +59,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   Future<void> add(Activity activity) async {
-    activity = activity.copyWith(
-      draft: false,
-    );
+    activity = activity.copyWith(draft: false);
     await activity.save();
   }
 
@@ -90,6 +88,6 @@ class PriorityBloc extends Cubit<PriorityState> {
   StreamSubscription<Priority>? _prioritySubscription;
   StreamSubscription<List<Activity>>? _activitiesSubscription;
   StreamSubscription<Map<PriorityId, List<Activity>>>?
-      _childActivitiesSubscription;
+  _childActivitiesSubscription;
   StreamSubscription<BalanceByPriorityType>? _balanceSubscription;
 }

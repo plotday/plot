@@ -27,14 +27,15 @@ class NoteWidget extends StatelessWidget {
 
 class NotesView extends StatelessWidget {
   final List<Note> notes;
+  final bool shrinkWrap;
 
-  const NotesView({super.key, required this.notes});
+  const NotesView({required this.notes, this.shrinkWrap = false, super.key});
 
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
       reverse: true,
-      // shrinkWrap: true,
+      shrinkWrap: shrinkWrap,
       itemCount: notes.length,
       itemBuilder: (context, index) {
         final note = notes[notes.length - index - 1];

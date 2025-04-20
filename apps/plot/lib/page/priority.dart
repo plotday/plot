@@ -16,7 +16,8 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
     @PathParam("priorityId") String? priorityIdString,
     super.key,
   }) {
-    priorityId = priority?.id ??
+    priorityId =
+        priority?.id ??
         priorityId ??
         (priorityIdString != null
             ? PriorityId.fromShortString(priorityIdString)
@@ -74,28 +75,53 @@ class PriorityPage extends StatelessWidget {
                   ),
                 ],
               ),
-              body: BidirectionalList(
-                scrollController: ScrollControllerContext.of(context),
-                count: state.inactiveActivities.length,
-                builder: (context, index) => ActivityWidget(
-                  activity: state.inactiveActivities[index],
-                ),
-                header: _PrioritiesSection(),
+              body: Column(
+                children: [
+                  Flexible(
+                    flex: 0,
+                    fit: FlexFit.loose,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            width: 1.0,
+                            color: context.colour.border,
+                          ),
+                        ),
+                      ),
+                      child: _PrioritiesSection(),
+                    ),
+                  ),
+                  Flexible(
+                    flex: 1,
+                    fit: FlexFit.tight,
+                    child: BidirectionalList(
+                      scrollController: ScrollControllerContext.of(context),
+                      count: state.inactiveActivities.length,
+                      reverse: true,
+                      builder:
+                          (context, index) => ActivityWidget(
+                            activity: state.inactiveActivities[index],
+                          ),
+                    ),
+                  ),
+                ],
               ),
               footer: EditableArea(
                 position: EditableAreaPosition.bottom,
-                builder: (context, focusNode) => Editor(
-                  hint: 'Add an activity',
-                  autofocus: true,
-                  focusNode: focusNode,
-                  onSubmitted: (body) async {
-                    final activity = state.draftActivity.copyWith(
-                      title: body,
-                      draft: false,
-                    );
-                    await context.read<PriorityBloc>().add(activity);
-                  },
-                ),
+                builder:
+                    (context, focusNode) => Editor(
+                      hint: 'Add an activity',
+                      autofocus: true,
+                      focusNode: focusNode,
+                      onSubmitted: (body) async {
+                        final activity = state.draftActivity.copyWith(
+                          title: body,
+                          draft: false,
+                        );
+                        await context.read<PriorityBloc>().add(activity);
+                      },
+                    ),
               ),
             );
           },
@@ -118,18 +144,19 @@ class _PrioritiesSection extends StatelessWidget {
             _ReorderableActivitiesView(activities: state.activeActivities),
             ReorderableListView(
               list: state.descendants,
-              itemBuilder: (context, item) => Column(
-                children: [
-                  PriorityTile(
-                    priority: item,
-                    balances: state.balances?[item.id],
-                    maxTime: state.maxTime,
+              itemBuilder:
+                  (context, item) => Column(
+                    children: [
+                      PriorityTile(
+                        priority: item,
+                        balances: state.balances?[item.id],
+                        maxTime: state.maxTime,
+                      ),
+                      _ReorderableActivitiesView(
+                        activities: state.getChildActiveActivities(item.id),
+                      ),
+                    ],
                   ),
-                  _ReorderableActivitiesView(
-                    activities: state.getChildActiveActivities(item.id),
-                  ),
-                ],
-              ),
               shrinkWrap: true,
               onReorder: (int oldIndex, int newIndex) async {
                 var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
@@ -171,29 +198,30 @@ class _ReorderableActivitiesView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ReorderableListView(
-        list: activities,
-        itemBuilder: (buildContext, item) => ActivityWidget(activity: item),
-        shrinkWrap: true,
-        onReorder: (int oldIndex, int newIndex) async {
-          var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-          var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-          Activity activity = activities[oldIndex];
-          Activity? previous;
-          if (previousIndex >= 0) {
-            previous = activities[previousIndex];
-          }
-          Activity? next;
-          if (nextIndex < activities.length) {
-            next = activities[nextIndex];
-          }
-          activity.copyWith(
-            order: Order.between(previous?.order, next?.order),
-            // Action activities are sorted first by doAt, so we need to set this
-            // to have the same doAt as one of its neighbours.
-            doAt: activity.doNow
+    list: activities,
+    itemBuilder: (buildContext, item) => ActivityWidget(activity: item),
+    shrinkWrap: true,
+    onReorder: (int oldIndex, int newIndex) async {
+      var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+      var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+      Activity activity = activities[oldIndex];
+      Activity? previous;
+      if (previousIndex >= 0) {
+        previous = activities[previousIndex];
+      }
+      Activity? next;
+      if (nextIndex < activities.length) {
+        next = activities[nextIndex];
+      }
+      activity.copyWith(
+        order: Order.between(previous?.order, next?.order),
+        // Action activities are sorted first by doAt, so we need to set this
+        // to have the same doAt as one of its neighbours.
+        doAt:
+            activity.doNow
                 ? Value(previous?.doAt ?? next?.doAt ?? activity.doAt)
                 : const Value.absent(),
-          );
-        },
       );
+    },
+  );
 }

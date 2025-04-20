@@ -9,7 +9,6 @@ import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:stack_trace/stack_trace.dart';
 
-import 'package:plot/util/value.dart';
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
 import 'package:plot/util/theme_color.dart';
@@ -21,6 +20,7 @@ import 'package:plot/util/api.dart' as api;
 import 'package:plot/util/async.dart';
 import 'package:plot/base.dart';
 import 'types.dart';
+import 'logging.dart';
 
 export 'package:plot/util/value.dart';
 export 'package:plot/util/time.dart';
@@ -40,15 +40,17 @@ part 'balance.dart';
 part 'store.g.dart';
 
 class StoreTable extends Table {
-  DateTimeColumn get updatedAt => dateTime()
-      .withDefault(currentDateAndTime)
-      .map(const LocalDateTimeConverter())();
+  DateTimeColumn get updatedAt =>
+      dateTime()
+          .withDefault(currentDateAndTime)
+          .map(const LocalDateTimeConverter())();
 }
 
 mixin DraftTable on Table {
-  DateTimeColumn get createdAt => dateTime()
-      .withDefault(currentDateAndTime)
-      .map(const LocalDateTimeConverter())();
+  DateTimeColumn get createdAt =>
+      dateTime()
+          .withDefault(currentDateAndTime)
+          .map(const LocalDateTimeConverter())();
   BoolColumn get draft => boolean().withDefault(const Constant(false))();
 }
 
@@ -65,9 +67,10 @@ class IdStoreTable extends StoreTable {
 }
 
 class UuidStoreTable extends StoreTable {
-  BlobColumn get id => blob()
-      .clientDefault(() => Uuid.generate().toBytes())
-      .map(const UuidConverter())();
+  BlobColumn get id =>
+      blob()
+          .clientDefault(() => Uuid.generate().toBytes())
+          .map(const UuidConverter())();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -108,18 +111,22 @@ abstract class BaseTable {
   Map<String, dynamic> toBase(DataClass row) => row.toJson();
 
   Future<
-      (
-        Iterable<Map<String, dynamic>> rows,
-        DateTime? lastUpdated,
-        (String?, String?)? range,
-        bool more,
-      )> get({
+    (
+      Iterable<Map<String, dynamic>> rows,
+      DateTime? lastUpdated,
+      (String?, String?)? range,
+      bool more,
+    )
+  >
+  get({
     (String?, String?)? include,
     (String?, String?)? exclude,
     DateTime? updatedSince,
   }) async {
-    var query =
-        Base.client.from(table).select().eq("user_id", Base.userId.toString());
+    var query = Base.client
+        .from(table)
+        .select()
+        .eq("user_id", Base.userId.toString());
     if (exclude != null) {
       final (from, to) = exclude;
       if (from != null) {
@@ -160,14 +167,18 @@ abstract class BaseTable {
     DateTime lastUpdated;
     if (rows.isEmpty) {
       final localTimestamp = DateTime.now();
-      final serverTimestamp =
-          DateTime.parse(await Base.client.rpc<String>('server_timestamp'));
-      lastUpdated =
-          preQueryTimestamp.add(serverTimestamp.difference(localTimestamp));
+      final serverTimestamp = DateTime.parse(
+        await Base.client.rpc<String>('server_timestamp'),
+      );
+      lastUpdated = preQueryTimestamp.add(
+        serverTimestamp.difference(localTimestamp),
+      );
     } else {
-      lastUpdated = rows.map((row) {
-        return DateTime.parse(row['updated_at'] as String);
-      }).reduce((value, last) => value.isAfter(last) ? value : last);
+      lastUpdated = rows
+          .map((row) {
+            return DateTime.parse(row['updated_at'] as String);
+          })
+          .reduce((value, last) => value.isAfter(last) ? value : last);
     }
     final more = include != null || (limit != null && rows.length < limit!);
     return (rows, lastUpdated, range, more);
@@ -198,17 +209,19 @@ abstract class BaseTable {
   }
 }
 
-@DriftDatabase(tables: [
-  SyncStates,
-  Accounts,
-  Calendars,
-  Priorities,
-  Notes,
-  Activities,
-  Events,
-  Sessions,
-  Balances,
-])
+@DriftDatabase(
+  tables: [
+    SyncStates,
+    Accounts,
+    Calendars,
+    Priorities,
+    Notes,
+    Activities,
+    Events,
+    Sessions,
+    Balances,
+  ],
+)
 class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
   static Future<void> init(User user) async {
@@ -217,7 +230,9 @@ class Store extends _$Store {
   }
 
   Future<DATA> add<TABLE extends StoreTable, DATA extends DataClass>(
-      TableInfo<TABLE, DATA> table, Insertable<DATA> data) async {
+    TableInfo<TABLE, DATA> table,
+    Insertable<DATA> data,
+  ) async {
     try {
       return await Store.get
           .into(table)
@@ -230,7 +245,9 @@ class Store extends _$Store {
   }
 
   Future<void> addBatch<TABLE extends StoreTable, DATA extends DataClass>(
-      TableInfo<TABLE, DATA> table, Iterable<Insertable<DATA>> data) async {
+    TableInfo<TABLE, DATA> table,
+    Iterable<Insertable<DATA>> data,
+  ) async {
     try {
       await batch((batch) {
         batch.insertAllOnConflictUpdate(table, data);
@@ -243,9 +260,10 @@ class Store extends _$Store {
   }
 
   Future<void> save<TABLE extends StoreTable, DATA extends DataClass>(
-      TableInfo<TABLE, DATA> table,
-      Insertable<DATA> data,
-      BaseTable baseTable) async {
+    TableInfo<TABLE, DATA> table,
+    Insertable<DATA> data,
+    BaseTable baseTable,
+  ) async {
     try {
       await add(table, data);
     } catch (e) {
@@ -261,9 +279,9 @@ class Store extends _$Store {
     BaseTable baseTable,
   ) async {
     final entity = baseTable.fullName;
-    final syncState = await (select(syncStates)
-          ..where((row) => row.entity.equals(entity)))
-        .getSingleOrNull();
+    final syncState =
+        await (select(syncStates)
+          ..where((row) => row.entity.equals(entity))).getSingleOrNull();
 
     final storeQuery = select(table);
     if (syncState?.pushedAt != null) {
@@ -274,24 +292,26 @@ class Store extends _$Store {
     storeQuery.orderBy([(t) => OrderingTerm(expression: t.updatedAt)]);
     final storeRows = await storeQuery.get();
     if (storeRows.isNotEmpty) {
+      log.info("Pushing ${storeRows.length} rows to ${baseTable.table}");
       try {
         await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
       } catch (e) {
+        log.warning("Batch push failed", e);
         for (final row in storeRows) {
           try {
             await baseTable.put([baseTable.toBase(row)]);
-          } catch (e) {
-            print("Error pushing ${row.toJsonString()} to ${baseTable.table}");
-            print(e);
+          } catch (e, stackTrace) {
+            log.warning(
+              "Error pushing ${row.toJsonString()} to ${baseTable.table}",
+              e,
+              stackTrace,
+            );
           }
         }
       }
       final now = DateTime.now();
       await into(syncStates).insert(
-        SyncStatesCompanion.insert(
-          entity: entity,
-          pushedAt: Value(now),
-        ),
+        SyncStatesCompanion.insert(entity: entity, pushedAt: Value(now)),
         onConflict: DoUpdate(
           (old) =>
               SyncStatesCompanion(entity: Value(entity), pushedAt: Value(now)),
@@ -311,9 +331,9 @@ class Store extends _$Store {
       return false;
     }
     final entity = baseTable.fullName;
-    final syncState = await (select(syncStates)
-          ..where((row) => row.entity.equals(entity)))
-        .getSingleOrNull();
+    final syncState =
+        await (select(syncStates)
+          ..where((row) => row.entity.equals(entity))).getSingleOrNull();
     if (paged && syncState?.more == false) {
       _noMore.add(entity);
       return false;
@@ -326,7 +346,8 @@ class Store extends _$Store {
     }
 
     var (baseRows, lastUpdated, newRange, more) = (await baseTable.get(
-      include: range ??
+      include:
+          range ??
           ([PullType.updates, PullType.more].contains(type)
               ? (syncState?.from, syncState?.to)
               : null),
@@ -358,9 +379,10 @@ class Store extends _$Store {
           pulledAt: Value(lastUpdated),
           from: paged ? Value(from) : const Value.absent(),
           to: paged ? Value(to) : const Value.absent(),
-          more: paged
-              ? Value(more)
-              : type == PullType.all
+          more:
+              paged
+                  ? Value(more)
+                  : type == PullType.all
                   ? const Value(false)
                   : const Value.absent(),
         ),
@@ -399,13 +421,15 @@ class Store extends _$Store {
   }
 
   Store._(User user)
-      : super(driftDatabase(
+    : super(
+        driftDatabase(
           name: 'plot-${user.id}',
           web: DriftWebOptions(
             sqlite3Wasm: Uri.parse('sqlite3.wasm'),
             driftWorker: Uri.parse('drift_worker.dart.js'),
           ),
-        ));
+        ),
+      );
 
   @override
   int get schemaVersion => 33;

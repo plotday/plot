@@ -6,21 +6,24 @@ typedef PriorityId = Uuid;
 class Priorities extends UuidStoreTable with DraftTable, DeletableTable {
   TextColumn get name => text()();
   TextColumn get path => text().map(const PathConverter())();
-  RealColumn get order => real()
-      .clientDefault(() => Order.last().value)
-      .map(const OrderConverter())();
-  IntColumn get pomodoro => integer()
-      .withDefault(const Constant(25 * 60))
-      .map(const DurationConverter())();
-  IntColumn get color => integer()
-      .withDefault(const Constant(0))
-      .map(const ThemeColorConverter())();
+  RealColumn get order =>
+      real()
+          .clientDefault(() => Order.first().value)
+          .map(const OrderConverter())();
+  IntColumn get pomodoro =>
+      integer()
+          .withDefault(const Constant(25 * 60))
+          .map(const DurationConverter())();
+  IntColumn get color =>
+      integer()
+          .withDefault(const Constant(0))
+          .map(const ThemeColorConverter())();
   BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
 }
 
 class PrioritiesBase extends BaseTable {
   PrioritiesBase()
-      : super(table: 'priority_x', name: "priorities", upsertAsUpdate: true);
+    : super(table: 'priority_x', name: "priorities", upsertAsUpdate: true);
 
   @override
   Insertable<PriorityRow> fromBase(Map<String, dynamic> json) =>
@@ -36,12 +39,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   static Future<Priority> get(PriorityId id) async {
-    return await (Store.get.select(table)
-          ..where(
-            (t) => t.id.equals(id.toBytes()),
-          ))
-        .getSingle()
-        .then(Priority.fromStore);
+    return await (Store.get.select(table)..where(
+      (t) => t.id.equals(id.toBytes()),
+    )).getSingle().then(Priority.fromStore);
   }
 
   static Future<List<Priority>> getAll() async {
@@ -65,8 +65,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   static Future<Priority?> getDefault() async {
     return await _selectDefault().getSingleOrNull().then(
-          (p) => p == null ? null : Priority.fromStore(p),
-        );
+      (p) => p == null ? null : Priority.fromStore(p),
+    );
   }
 
   static Stream<Priority?> watchDefault({int depth = 0}) {
@@ -115,8 +115,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   static Stream<List<Priority>> watchRoot({
     int? depth,
     bool? deleted = false,
-  }) =>
-      watchPath(null, depth: depth);
+  }) => watchPath(null, depth: depth);
 
   static Stream<List<Priority>> watchPath(
     Path? path, {
@@ -193,32 +192,32 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.isDefault = false,
     super.pomodoro = const Duration(minutes: 25),
     super.color = const ThemeColor.defaultColor(),
-  })  : children = [],
-        super(
-          id: Uuid.generate(),
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-          draft: false,
-          path: Path.generate(parent: parent?.path),
-        ) {
+  }) : children = [],
+       super(
+         id: Uuid.generate(),
+         createdAt: DateTime.now(),
+         updatedAt: DateTime.now(),
+         draft: false,
+         path: Path.generate(parent: parent?.path),
+       ) {
     parent?._addChild(this);
   }
 
   Priority.fromStore(PriorityRow row, {this.parent, List<Priority>? children})
-      : children = children ?? [],
-        super(
-          id: row.id,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          deletedAt: row.deletedAt,
-          draft: row.draft,
-          name: row.name,
-          pomodoro: row.pomodoro,
-          color: row.color,
-          isDefault: row.isDefault,
-          order: row.order,
-          path: row.path,
-        ) {
+    : children = children ?? [],
+      super(
+        id: row.id,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        deletedAt: row.deletedAt,
+        draft: row.draft,
+        name: row.name,
+        pomodoro: row.pomodoro,
+        color: row.color,
+        isDefault: row.isDefault,
+        order: row.order,
+        path: row.path,
+      ) {
     parent?._addChild(this);
   }
 
@@ -257,25 +256,23 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     ThemeColor? color,
     bool? isDefault,
     Priority? parent,
-  }) =>
-      Priority.fromStore(
-        super.copyWith(
-          id: id,
-          createdAt:
-              this.draft && draft == false ? DateTime.now() : this.createdAt,
-          updatedAt: DateTime.now(),
-          deletedAt: deletedAt,
-          draft: draft,
-          name: name,
-          path: path,
-          order: order,
-          pomodoro: pomodoro,
-          color: color,
-          isDefault: isDefault,
-        ),
-        parent: parent ?? this.parent,
-        children: children,
-      );
+  }) => Priority.fromStore(
+    super.copyWith(
+      id: id,
+      createdAt: this.draft && draft == false ? DateTime.now() : this.createdAt,
+      updatedAt: DateTime.now(),
+      deletedAt: deletedAt,
+      draft: draft,
+      name: name,
+      path: path,
+      order: order,
+      pomodoro: pomodoro,
+      color: color,
+      isDefault: isDefault,
+    ),
+    parent: parent ?? this.parent,
+    children: children,
+  );
 
   void _addChild(Priority child) {
     children = List<Priority>.from(

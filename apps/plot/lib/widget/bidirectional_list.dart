@@ -8,8 +8,6 @@ import 'package:plot/widget/widget.dart';
 typedef ItemBuilder = Widget? Function(BuildContext context, int index);
 typedef ItemFetcher = Future<void> Function(int move, int count);
 
-// BidirectionalList must fill a fixed size, so any other items that scroll with
-// the list must be added to header.
 class BidirectionalList extends StatefulWidget {
   final ItemBuilder builder;
   final ItemFetcher? fetcher;
@@ -22,7 +20,7 @@ class BidirectionalList extends StatefulWidget {
   final int estimatedItemExtent;
   final double overflow;
   final ScrollController? scrollController;
-  final Widget? header;
+  final bool reverse;
 
   const BidirectionalList({
     required this.builder,
@@ -34,10 +32,10 @@ class BidirectionalList extends StatefulWidget {
     this.scrollController,
     this.estimatedItemExtent = 75,
     this.overflow = 2,
-    this.header,
+    this.reverse = false,
     super.key,
-  })  : doneStart = doneStart ?? fetcher == null,
-        doneEnd = doneEnd ?? fetcher == null;
+  }) : doneStart = doneStart ?? fetcher == null,
+       doneEnd = doneEnd ?? fetcher == null;
 
   @override
   BidirectionalListState createState() => BidirectionalListState();
@@ -46,7 +44,6 @@ class BidirectionalList extends StatefulWidget {
 class BidirectionalListState extends State<BidirectionalList> {
   final GlobalKey _upListKey = GlobalKey();
   final GlobalKey _downListKey = GlobalKey();
-  final GlobalKey _headerKey = GlobalKey();
 
   late final ScrollController _scrollController;
 
@@ -61,13 +58,13 @@ class BidirectionalListState extends State<BidirectionalList> {
   (double?, double?) _lastListExtents = (null, null);
 
   (double?, double?) get _listExtents => (
-        (_upListKey.currentContext?.findRenderObject() as RenderSliverList?)
-            ?.geometry
-            ?.scrollExtent,
-        (_downListKey.currentContext?.findRenderObject() as RenderSliverList?)
-            ?.geometry
-            ?.scrollExtent
-      );
+    (_upListKey.currentContext?.findRenderObject() as RenderSliverList?)
+        ?.geometry
+        ?.scrollExtent,
+    (_downListKey.currentContext?.findRenderObject() as RenderSliverList?)
+        ?.geometry
+        ?.scrollExtent,
+  );
 
   // Only call in a post-frame callback when the lists are rendered for the
   // given counts.
@@ -130,9 +127,11 @@ class BidirectionalListState extends State<BidirectionalList> {
     if (pagesBefore() >= widget.overflow && pagesAfter() >= widget.overflow) {
       return;
     }
-    bool scrollingUp = _scrollController.position.userScrollDirection ==
+    bool scrollingUp =
+        _scrollController.position.userScrollDirection ==
         ScrollDirection.forward;
-    bool scrollingDown = _scrollController.position.userScrollDirection ==
+    bool scrollingDown =
+        _scrollController.position.userScrollDirection ==
         ScrollDirection.reverse;
     final moveUp =
         ((widget.overflow * (scrollingUp ? 1.5 : 1) - pagesBefore()) *
@@ -200,9 +199,7 @@ class BidirectionalListState extends State<BidirectionalList> {
     const spinner = SliverToBoxAdapter(
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: 8.0),
-        child: Center(
-          child: Spinner(),
-        ),
+        child: Center(child: Spinner()),
       ),
     );
 
@@ -216,24 +213,22 @@ class BidirectionalListState extends State<BidirectionalList> {
         physics: BidirectionalListScrollPhysics(
           getScrollAdjustment: _getScrollAdjustment,
         ),
-        center: widget.doneStart && widget.header != null
-            ? _headerKey
-            : _downListKey,
+        center: _downListKey,
+        reverse: widget.reverse,
         slivers: [
-          if (widget.header != null)
-            SliverToBoxAdapter(key: _headerKey, child: widget.header),
           if (widget.count > 0 && !widget.doneStart) spinner,
           SliverList.builder(
             key: _upListKey,
             itemCount: _upCount - _shrinkUp,
-            itemBuilder: (context, index) =>
-                widget.builder(context, _upCount - index - 1),
+            itemBuilder:
+                (context, index) =>
+                    widget.builder(context, _upCount - index - 1),
           ),
           SliverList.builder(
             key: _downListKey,
             itemCount: _downCount - _shrinkDown,
-            itemBuilder: (context, index) =>
-                widget.builder(context, _upCount + index),
+            itemBuilder:
+                (context, index) => widget.builder(context, _upCount + index),
           ),
           if (!widget.doneEnd) spinner,
         ],
