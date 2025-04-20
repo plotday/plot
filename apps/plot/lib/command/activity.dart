@@ -16,10 +16,7 @@ class ChangeCurrentActivity extends Command {
   ChangeCurrentActivity(Activity activity)
     : priorityId = activity.priorityId,
       activityId = activity.id,
-      super(
-        title: "${activity.title}: ${activity.doAt}",
-        icon: PlotIcon.activity,
-      );
+      super(title: activity.title, icon: PlotIcon.activity);
 
   ChangeCurrentActivity.byId({
     required this.priorityId,
