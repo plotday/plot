@@ -82,7 +82,7 @@ class ActivityPage extends StatelessWidget {
                 fit: FlexFit.tight,
                 child: Container(
                   padding: EdgeInsets.all(16),
-                  child: NotesView(notes: state.notes),
+                  child: NotesView(notes: state.notes, reverse: true),
                 ),
               ),
             ],

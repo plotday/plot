@@ -47,12 +47,8 @@ class ActivityBloc extends Cubit<ActivityState> {
       return;
     }
 
-    emit(ActivitySelectedState(
-      current: activity,
-    ));
-    _activitySubscription = Activity.watchOne(
-      activity.id,
-    ).listen((activity) {
+    emit(ActivitySelectedState(current: activity));
+    _activitySubscription = Activity.watchOne(activity.id).listen((activity) {
       emit(selectedState.copyWith(current: activity));
     });
     _loadActivityNotes();
@@ -106,10 +102,13 @@ class ActivityBloc extends Cubit<ActivityState> {
     final activityId = selectedState.current.id;
     if (activityId != null) {
       _noteSubscription = Note.watchActivity(activityId).listen((notes) {
-        emit(selectedState.copyWith(
-          notes: notes,
-          moreNotes: Note.hasMoreActivity(activityId),
-        ));
+        print('Notes: ${notes.map((n) => n.body)}');
+        emit(
+          selectedState.copyWith(
+            notes: notes,
+            moreNotes: Note.hasMoreActivity(activityId),
+          ),
+        );
       });
     }
   }
@@ -117,4 +116,3 @@ class ActivityBloc extends Cubit<ActivityState> {
   StreamSubscription<Activity>? _activitySubscription;
   StreamSubscription<List<Note>>? _noteSubscription;
 }
-
