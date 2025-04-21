@@ -66,7 +66,10 @@ class StartActivity extends _UpdateActivityCommand {
     final start = !activity.doNow;
     await onUpdate(
       activity.copyWith(
-        doAt: start ? Value(DateTime.now()) : const Value(null),
+        doAt:
+            start
+                ? Value(DateTime.now().subtract(Duration(seconds: 10)))
+                : const Value(null),
       ),
     );
     Posthog().capture(

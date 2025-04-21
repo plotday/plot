@@ -213,15 +213,22 @@ class _ReorderableActivitiesView extends StatelessWidget {
       if (nextIndex < activities.length) {
         next = activities[nextIndex];
       }
-      activity.copyWith(
-        order: Order.between(previous?.order, next?.order),
-        // Action activities are sorted first by doAt, so we need to set this
-        // to have the same doAt as one of its neighbours.
-        doAt:
-            activity.doNow
-                ? Value(previous?.doAt ?? next?.doAt ?? activity.doAt)
-                : const Value.absent(),
-      );
+      activity
+          .copyWith(
+            order: Order.between(
+              previous?.order,
+              previous?.doAt == null || next?.doAt == previous?.doAt
+                  ? next?.order
+                  : null,
+            ),
+            // Action activities are sorted first by doAt, so we need to set this
+            // to have the same doAt as one of its neighbours.
+            doAt:
+                activity.doNow
+                    ? Value(previous?.doAt ?? next?.doAt ?? activity.doAt)
+                    : const Value.absent(),
+          )
+          .save();
     },
   );
 }

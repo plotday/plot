@@ -128,51 +128,62 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   }) {
     pullPriority(priorityId);
 
-    final query = Store.get.select(table)
-      ..where((t) => t.priorityId.equals(priorityId.toBytes()));
+    return streamWithExpiryRevaluation(
+      query: () {
+        final query = Store.get.select(table)
+          ..where((t) => t.priorityId.equals(priorityId.toBytes()));
 
-    if (deleted != null) {
-      query.where(
-        (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
-      );
-    }
+        if (deleted != null) {
+          query.where(
+            (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
+          );
+        }
 
-    query.orderBy([
-      // Pinned
-      (t) => OrderingTerm.desc(t.pinned),
-      // Active
-      (t) => OrderingTerm.asc(
-        CaseWhenExpression(
-          cases: [
-            CaseWhen(
-              t.doAt.isNotNull() &
+        query.orderBy([
+          // Pinned
+          (t) => OrderingTerm.desc(t.pinned),
+          // Active
+          (t) => OrderingTerm.asc(
+            CaseWhenExpression(
+              cases: [
+                CaseWhen(
                   t.doAt.isSmallerOrEqual(currentDateAndTime) &
-                  t.doneAt.isNull(),
-              then: t.doAt,
+                      t.doneAt.isNull(),
+                  then: t.doAt,
+                ),
+              ],
+              orElse: const Constant(null),
             ),
-          ],
-          orElse: const Constant(null),
-        ),
-      ),
-      (t) => OrderingTerm.asc(
-        CaseWhenExpression(
-          cases: [
-            CaseWhen(
-              t.pinned |
-                  (t.doAt.isNotNull() &
-                      t.doAt.isSmallerOrEqual(currentDateAndTime) &
-                      t.doneAt.isNull()),
-              then: t.order,
+          ),
+          (t) => OrderingTerm.asc(
+            CaseWhenExpression(
+              cases: [
+                CaseWhen(
+                  t.pinned |
+                      (t.doAt.isSmallerOrEqual(currentDateAndTime) &
+                          t.doneAt.isNull()),
+                  then: t.order,
+                ),
+              ],
+              orElse: const Constant(null),
             ),
-          ],
-          orElse: const Constant(null),
-        ),
-      ),
-      (t) => OrderingTerm.desc(t.order),
-    ]);
+          ),
+          (t) => OrderingTerm.desc(t.title),
+        ]);
 
-    return query.watch().map(
-      (rows) => rows.map((row) => Activity.fromStore(row)).toList(),
+        return query.map((row) => Activity.fromStore(row)).watch();
+      },
+      nextExpiryQuery:
+          () =>
+              (Store.get.select(table)
+                    ..where(
+                      (t) =>
+                          t.priorityId.equals(priorityId.toBytes()) &
+                          t.doAt.isBiggerThan(currentDateAndTime),
+                    )
+                    ..limit(1))
+                  .map((a) => a.doAt)
+                  .watchSingleOrNull(),
     );
   }
 
@@ -206,7 +217,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     query.orderBy([
       OrderingTerm.asc(p.order),
       OrderingTerm.asc(a.doAt),
-      OrderingTerm.desc(a.order),
+      OrderingTerm.asc(a.order),
     ]);
 
     return query.watch().map(

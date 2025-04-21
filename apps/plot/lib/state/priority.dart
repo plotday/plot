@@ -6,6 +6,7 @@ import 'package:equatable/equatable.dart';
 import 'package:collection/collection.dart';
 
 import 'package:plot/store/store.dart';
+import 'logging.dart';
 
 part 'priority_state.dart';
 

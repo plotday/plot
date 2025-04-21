@@ -12,11 +12,11 @@ import 'package:plot/page/new_priority.dart';
 
 class PriorityCommand extends ValueCommand<Priority?> {
   PriorityCommand(Priority? priority)
-      : super(
-          title: priority?.name ?? 'None',
-          subtitle: priority != null ? priority.parent?.pathLabel : 'Top-level',
-          value: priority,
-        );
+    : super(
+        title: priority?.name ?? 'None',
+        subtitle: priority != null ? priority.parent?.pathLabel : 'Top-level',
+        value: priority,
+      );
 }
 
 class PriorityCommandGroup extends CommandGroup {
@@ -26,9 +26,10 @@ class PriorityCommandGroup extends CommandGroup {
 
   @override
   Future<List<Command>> list({String? search}) async {
-    final all = (await Priority.getAll())
-        .map((priority) => PriorityCommand(priority))
-        .toList();
+    final all =
+        (await Priority.getAll())
+            .map((priority) => PriorityCommand(priority))
+            .toList();
     if (includeNone) {
       all.add(PriorityCommand(null));
     }
@@ -37,36 +38,32 @@ class PriorityCommandGroup extends CommandGroup {
 }
 
 class PickPriority extends Commands<Priority> {
-  PickPriority({
-    super.prompt = 'Pick a priority',
-    this.initialPriority,
-  }) : super(
-          groups: [PriorityCommandGroup()],
-          secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
-        );
+  PickPriority({super.prompt = 'Pick a priority', this.initialPriority})
+    : super(
+        groups: [PriorityCommandGroup()],
+        secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
+      );
 
   final Priority? initialPriority;
 }
 
 class PickPriorityOrNone extends Commands<Priority?> {
-  PickPriorityOrNone({
-    super.prompt = 'Pick a priority',
-    this.initialPriority,
-  }) : super(
-          groups: [PriorityCommandGroup(includeNone: true)],
-          secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
-        );
+  PickPriorityOrNone({super.prompt = 'Pick a priority', this.initialPriority})
+    : super(
+        groups: [PriorityCommandGroup(includeNone: true)],
+        secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
+      );
 
   final Priority? initialPriority;
 }
 
 class ChangeCurrentPriority extends Command {
   ChangeCurrentPriority(Priority priority, {bool fullPath = true})
-      : priorityId = priority.id,
-        super(title: priority.name, subtitle: priority.parent?.pathLabel);
+    : priorityId = priority.id,
+      super(title: priority.name, subtitle: priority.parent?.pathLabel);
 
   ChangeCurrentPriority.byId({required this.priorityId})
-      : super(title: 'View Priority');
+    : super(title: 'View Priority');
 
   final PriorityId priorityId;
 
@@ -79,13 +76,12 @@ class ChangeCurrentPriority extends Command {
 
 class PickCurrentActivity extends ShowCommand<Priority> {
   PickCurrentActivity()
-      : super(
-          title: 'Change Current Priority',
-          icon: PlotIcon.priority,
-          shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
-          commands: (context) =>
-              PickPriority(prompt: 'Change Current Priority'),
-        );
+    : super(
+        title: 'Change Current Priority',
+        icon: PlotIcon.priority,
+        shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
+        commands: (context) => PickPriority(prompt: 'Change Current Priority'),
+      );
 
   @override
   void onSelect(BuildContext context, Priority value) async {
@@ -113,7 +109,7 @@ class AddPriority extends Command {
 
 class ArchivePriority extends Command {
   ArchivePriority(this._priority)
-      : super(title: 'Archive', icon: PlotIcon.delete);
+    : super(title: 'Archive', icon: PlotIcon.delete);
 
   final Future<Priority> _priority;
 
@@ -150,11 +146,14 @@ class NewPriority extends Command {
 }
 
 StaticCommandGroup priorityCommands(Priority priority) => StaticCommandGroup(
-      title: 'Commands',
-      commands: [
-        ArchivePriority(Future.value(priority)),
-        NewActivity(
-          draft: Activity.draft(priorityId: priority.id, doAt: DateTime.now()),
-        ),
-      ],
-    );
+  title: 'Commands',
+  commands: [
+    ArchivePriority(Future.value(priority)),
+    NewActivity(
+      draft: Activity.draft(
+        priorityId: priority.id,
+        doAt: DateTime.now().subtract(const Duration(seconds: 10)),
+      ),
+    ),
+  ],
+);
