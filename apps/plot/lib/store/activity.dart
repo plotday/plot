@@ -168,7 +168,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
               orElse: const Constant(null),
             ),
           ),
-          (t) => OrderingTerm.desc(t.title),
+          (t) => OrderingTerm.desc(t.order),
         ]);
 
         return query.map((row) => Activity.fromStore(row)).watch();
