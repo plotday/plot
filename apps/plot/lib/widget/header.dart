@@ -3,7 +3,6 @@ import 'package:forui/forui.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/command/command.dart';
-import 'button.dart';
 
 class Header extends StatelessWidget {
   Header({
@@ -20,40 +19,35 @@ class Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget? backButton =
-        context.router.canPop()
-            ? modal
-                ? FHeaderAction.x(onPress: () => context.router.maybePop())
-                : FHeaderAction.back(onPress: () => context.router.maybePop())
-            : null;
-
-    return FHeader.nested(
+    return FHeader(
       title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisSize: MainAxisSize.min,
+        spacing: 8,
         children: [
-          if (main != null || (!modal && backButton != null))
-            Row(
-              spacing: 8,
-              children: [
-                if (!modal && backButton != null) backButton,
-                if (main != null) main!,
-              ],
+          if (!modal && context.router.canPop())
+            FTappable(
+              onPress: () => context.router.maybePop(),
+              child: FIcon(FAssets.icons.arrowLeft, size: 14),
             ),
-          if (modal && backButton != null) backButton,
+          if (main != null) main!,
         ],
       ),
-      suffixActions:
-          commands
-              .map(
-                (command) => FHeaderAction(
-                  icon:
-                      command.icon != null
-                          ? FIcon.data(command.icon!)
-                          : Button(command),
-                  onPress: () => context.run<void>(command),
-                ),
-              )
-              .toList(),
+      actions: [
+        ...commands.map(
+          (command) => FHeaderAction(
+            icon:
+                command.icon != null
+                    ? FIcon.data(command.icon!, size: 14)
+                    : Text(command.title),
+            onPress: () => context.run<void>(command),
+          ),
+        ),
+        if (modal && context.router.canPop())
+          FTappable(
+            onPress: () => context.router.maybePop(),
+            child: FIcon(FAssets.icons.x, size: 14),
+          ),
+      ],
     );
   }
 }

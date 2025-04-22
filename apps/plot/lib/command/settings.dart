@@ -8,34 +8,34 @@ import 'command.dart';
 import 'package:plot/page/calendar_settings.dart';
 import 'package:plot/store/store.dart';
 
-class SettingsCommands extends Commands {
+class SettingsCommands extends Commands<void> {
   SettingsCommands()
-      : super(groups: [
-          StaticCommandGroup(title: 'Settings', commands: [
-            CalendarSettings(),
-            SignOut(),
-          ]),
-        ], prompt: 'Settings');
+    : super(
+        groups: [
+          StaticCommandGroup(
+            title: 'Settings',
+            commands: [CalendarSettings(), SignOut()],
+          ),
+        ],
+        prompt: 'Settings',
+      );
 }
 
 class ShowSettings extends ShowCommand<void> {
   ShowSettings()
-      : super(
-          title: 'Settings',
-          commands: (context) => SettingsCommands(),
-          shortcut: const SingleActivator(
-            LogicalKeyboardKey.period,
-            meta: true,
-          ),
-        );
+    : super(
+        title: 'Settings',
+        commands: (context) => SettingsCommands(),
+        shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
+      );
 }
 
 class CalendarSettings extends Command {
   CalendarSettings()
-      : super(
-          title: 'Calendar Settings',
-          description: 'Add calendars and change sync settings',
-        );
+    : super(
+        title: 'Calendar Settings',
+        description: 'Add calendars and change sync settings',
+      );
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -44,10 +44,7 @@ class CalendarSettings extends Command {
 }
 
 class SignOut extends Command {
-  SignOut()
-      : super(
-          title: 'Sign Out',
-        );
+  SignOut() : super(title: 'Sign Out');
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
@@ -68,9 +65,7 @@ class SignOut extends Command {
 
 class SyncCalendar extends Command {
   SyncCalendar(this.calendar)
-      : super(
-          title: calendar.enabled ? 'Re-sync' : 'Sync',
-        );
+    : super(title: calendar.enabled ? 'Re-sync' : 'Sync');
 
   final Calendar calendar;
 

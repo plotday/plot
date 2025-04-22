@@ -147,13 +147,5 @@ class NewPriority extends Command {
 
 StaticCommandGroup priorityCommands(Priority priority) => StaticCommandGroup(
   title: 'Commands',
-  commands: [
-    ArchivePriority(Future.value(priority)),
-    NewActivity(
-      draft: Activity.draft(
-        priorityId: priority.id,
-        doAt: DateTime.now().subtract(const Duration(seconds: 10)),
-      ),
-    ),
-  ],
+  commands: [ArchivePriority(Future.value(priority))],
 );

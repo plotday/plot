@@ -69,11 +69,7 @@ class PriorityPage extends StatelessWidget {
                   selected: state.current,
                   onSelect: (p) => context.run<void>(ChangeCurrentPriority(p)),
                 ),
-                commands: [
-                  NewActivity(
-                    draft: Activity.draft(priorityId: state.current.id),
-                  ),
-                ],
+                commands: [NewPriority(parent: state.current), ShowSchedule()],
               ),
               body: Column(
                 children: [
@@ -138,53 +134,65 @@ class _PrioritiesSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
-        return Column(
-          children: [
-            _ReorderableActivitiesView(activities: state.pinnedActivities),
-            _ReorderableActivitiesView(activities: state.activeActivities),
-            ReorderableListView(
-              list: state.descendants,
-              itemBuilder:
-                  (context, item) => Column(
-                    children: [
-                      PriorityTile(
-                        priority: item,
-                        balances: state.balances?[item.id],
-                        maxTime: state.maxTime,
-                      ),
-                      _ReorderableActivitiesView(
-                        activities: state.getChildActiveActivities(item.id),
-                      ),
-                    ],
-                  ),
-              shrinkWrap: true,
-              onReorder: (int oldIndex, int newIndex) async {
-                var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-                var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-                Priority? previous;
-                if (previousIndex >= 0) {
-                  previous = state.descendants[previousIndex];
-                }
-                Priority? next;
-                if (nextIndex < state.descendants.length) {
-                  next = state.descendants[nextIndex];
-                }
-                state.descendants[oldIndex]
-                    .copyWith(
-                      order: Order.between(previous?.order, next?.order),
-                    )
-                    .save();
-              },
+        if (state.pinnedActivities.isEmpty &&
+            state.activeActivities.isEmpty &&
+            state.descendants.isEmpty) {
+          return const SizedBox();
+        }
+        return Container(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(width: 1.0, color: context.colour.border),
             ),
-            if (state.descendants.isNotEmpty &&
-                state.inactiveActivities.isNotEmpty)
-              PriorityTile(
-                priority: state.current,
-                balances: state.balances?[state.current.id],
-                maxTime: state.maxTime,
-                everythingElse: true,
+          ),
+          child: Column(
+            children: [
+              _ReorderableActivitiesView(activities: state.pinnedActivities),
+              _ReorderableActivitiesView(activities: state.activeActivities),
+              ReorderableListView(
+                list: state.descendants,
+                itemBuilder:
+                    (context, item) => Column(
+                      children: [
+                        PriorityTile(
+                          priority: item,
+                          balances: state.balances?[item.id],
+                          maxTime: state.maxTime,
+                        ),
+                        _ReorderableActivitiesView(
+                          activities: state.getChildActiveActivities(item.id),
+                        ),
+                      ],
+                    ),
+                shrinkWrap: true,
+                onReorder: (int oldIndex, int newIndex) async {
+                  var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+                  var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+                  Priority? previous;
+                  if (previousIndex >= 0) {
+                    previous = state.descendants[previousIndex];
+                  }
+                  Priority? next;
+                  if (nextIndex < state.descendants.length) {
+                    next = state.descendants[nextIndex];
+                  }
+                  state.descendants[oldIndex]
+                      .copyWith(
+                        order: Order.between(previous?.order, next?.order),
+                      )
+                      .save();
+                },
               ),
-          ],
+              if (state.descendants.isNotEmpty &&
+                  state.inactiveActivities.isNotEmpty)
+                PriorityTile(
+                  priority: state.current,
+                  balances: state.balances?[state.current.id],
+                  maxTime: state.maxTime,
+                  everythingElse: true,
+                ),
+            ],
+          ),
         );
       },
     );

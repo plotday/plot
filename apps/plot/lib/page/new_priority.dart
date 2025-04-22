@@ -16,7 +16,7 @@ class NewPriorityPage extends HookWidget {
     final (nameController, name) = useTextEditingValue();
     final parent = useState<Priority?>(_initialParent);
 
-    return Scaffold(
+    return Dialog(
       header: Header(
         main: Row(
           children: [
@@ -32,47 +32,45 @@ class NewPriorityPage extends HookWidget {
         ),
         modal: true,
       ),
-      body: Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          spacing: 16,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              label: "Add an priority",
-              maxLines: 1,
-              autofocus: true,
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Button.primary(
-                  CommandWrapper(
-                    AddPriority(
-                      Future.value(
-                        Priority(
-                          name: name,
-                          parent: parent.value,
-                          order: Order.first(),
-                        ),
+      body: Column(
+        spacing: 16,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: nameController,
+            label: "Add an priority",
+            maxLines: 1,
+            autofocus: true,
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Button.primary(
+                CommandWrapper(
+                  AddPriority(
+                    Future.value(
+                      Priority(
+                        name: name,
+                        parent: parent.value,
+                        order: Order.first(),
                       ),
                     ),
-                    run: (command, context) async {
-                      final ret = command.run(context);
-                      if (context.mounted) {
-                        Navigator.of(context).pop();
-                      }
-                      return ret;
-                    },
                   ),
-                  enabled: name.isNotEmpty,
+                  run: (command, context) async {
+                    final ret = command.run(context);
+                    if (context.mounted) {
+                      Navigator.of(context).pop();
+                    }
+                    return ret;
+                  },
                 ),
-              ],
-            ),
-          ],
-        ),
+                enabled: name.isNotEmpty,
+              ),
+            ],
+          ),
+        ],
       ),
+      // ),
     );
   }
 }

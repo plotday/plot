@@ -13,12 +13,12 @@ class CommandBar<T> extends StatefulWidget {
     BuildContext context,
     Commands<T> commands, {
     Command? Function(String promptValue)? secondaryCommand,
-  }) =>
-      Dialog.show<T>(
-        context: context,
-        builder: (context) =>
+  }) => Dialog.show<T>(
+    context: context,
+    builder:
+        (context) =>
             CommandBar<T>(commands, secondaryCommand: secondaryCommand),
-      );
+  );
 
   final Commands<T> commands;
   final Command? Function(String promptValue)? secondaryCommand;
@@ -96,11 +96,12 @@ class CommandBarState<T> extends State<CommandBar<T>> {
   @override
   Widget build(BuildContext context) {
     if (_child != null) {
-      return Dialog(child: _child!);
+      return _child!;
     }
     final secondaryCommand = widget.secondaryCommand?.call(_controller.text);
     return Dialog(
-      child: Column(
+      padding: const EdgeInsets.all(0),
+      body: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_error != null) Text(_error!),
@@ -109,29 +110,30 @@ class CommandBarState<T> extends State<CommandBar<T>> {
             EditableArea(
               position: EditableAreaPosition.top,
               padding: false,
-              builder: (context, focusNode) => Row(
-                children: [
-                  Expanded(
-                    child: Padding(
-                      padding: widgetPadding,
-                      child: TextField(
-                        style: TextFieldStyle.ghost,
-                        controller: _controller,
-                        autofocus: true,
-                        label: widget.commands.prompt,
-                        focusNode: focusNode,
+              builder:
+                  (context, focusNode) => Row(
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: widgetPadding,
+                          child: TextField(
+                            style: TextFieldStyle.ghost,
+                            controller: _controller,
+                            autofocus: true,
+                            label: widget.commands.prompt,
+                            focusNode: focusNode,
+                          ),
+                        ),
                       ),
-                    ),
+                      if (secondaryCommand != null)
+                        Button.icon(
+                          CommandWrapper(
+                            secondaryCommand,
+                            run: (_, __) => _executeCommand(secondaryCommand),
+                          ),
+                        ),
+                    ],
                   ),
-                  if (secondaryCommand != null)
-                    Button.icon(
-                      CommandWrapper(
-                        secondaryCommand,
-                        run: (_, __) => _executeCommand(secondaryCommand),
-                      ),
-                    ),
-                ],
-              ),
             ),
             Flexible(
               child: ListView.builder(

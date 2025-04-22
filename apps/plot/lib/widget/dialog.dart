@@ -25,17 +25,21 @@ class Dialog extends StatelessWidget {
   }
 
   const Dialog({
-    required this.child,
+    required this.body,
+    this.header,
     this.constraints = const BoxConstraints(maxHeight: 500, maxWidth: 750),
     this.maxWidthPercentage = 0.8,
     this.maxHeightPercentage = 0.8,
+    this.padding = const EdgeInsets.all(16),
     super.key,
   });
 
-  final Widget child;
+  final Widget body;
+  final Widget? header;
   final BoxConstraints constraints;
   final double maxWidthPercentage;
   final double maxHeightPercentage;
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +66,13 @@ class Dialog extends StatelessWidget {
                   padding: EdgeInsets.all(1),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: child,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (header != null) header!,
+                        Container(padding: padding, child: body),
+                      ],
+                    ),
                   ),
                 ),
           ),

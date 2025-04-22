@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:auto_route/auto_route.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'command.dart';
@@ -29,18 +28,6 @@ class ChangeCurrentActivity extends Command {
   @override
   Future<CommandReturn?> run(BuildContext context) async {
     await context.router.push(ActivityRoute(activityId: activityId));
-    return null;
-  }
-}
-
-class NewActivity extends Command {
-  NewActivity({this.draft}) : super(title: 'New Activity', icon: PlotIcon.add);
-
-  final Activity? draft;
-
-  @override
-  Future<CommandReturn?> run(BuildContext context) async {
-    await context.router.push<void>(NewActivityRoute(draft: draft));
     return null;
   }
 }

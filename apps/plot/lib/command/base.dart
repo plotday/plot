@@ -53,24 +53,21 @@ abstract class Command {
 class CommandWrapper extends Command {
   final Command command;
   final Future<CommandReturn?> Function(Command command, BuildContext context)?
-      _run;
+  _run;
 
   CommandWrapper(
     this.command, {
-    Future<CommandReturn?> Function(
-      Command command,
-      BuildContext context,
-    )? run,
+    Future<CommandReturn?> Function(Command command, BuildContext context)? run,
     Value<IconData?> statusIcon = const Value.absent(),
-  })  : _run = run,
-        super(
-          title: command.title,
-          subtitle: command.subtitle,
-          description: command.description,
-          icon: command.icon,
-          statusIcon: statusIcon | command.statusIcon,
-          shortcut: command.shortcut,
-        );
+  }) : _run = run,
+       super(
+         title: command.title,
+         subtitle: command.subtitle,
+         description: command.description,
+         icon: command.icon,
+         statusIcon: statusIcon | command.statusIcon,
+         shortcut: command.shortcut,
+       );
 
   @override
   Future<CommandReturn?> run(BuildContext context) {
@@ -117,7 +114,8 @@ class ShowCommand<T> extends Command {
     try {
       final value = await CommandBar.show<T>(context, commands(context));
       log.info(
-          'CommandBar returned ${value.present ? value.value : 'no value'}');
+        'CommandBar returned ${value.present ? value.value : 'no value'}',
+      );
       if (context.mounted && value.present) {
         onSelect(context, value.value);
         return CommandValue(value.value);
@@ -176,14 +174,16 @@ abstract class CommandGroup {
         )
         .toList()
       ..sort((a, b) {
-        int aScore = match(a.title)
-            ? 3
-            : match(a.subtitle)
+        int aScore =
+            match(a.title)
+                ? 3
+                : match(a.subtitle)
                 ? 2
                 : 1;
-        int bScore = match(b.title)
-            ? 3
-            : match(b.subtitle)
+        int bScore =
+            match(b.title)
+                ? 3
+                : match(b.subtitle)
                 ? 2
                 : 1;
         return bScore.compareTo(aScore);
@@ -268,24 +268,25 @@ class CommandScope extends StatelessWidget {
           .whereType<StaticCommandGroup>()
           .expand((group) => group.commands)
           .fold(
-        <ShortcutActivator, VoidCallback>{
-          const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
-              commands.show(context),
-        },
-        (bindings, command) => command.shortcut == null
-            ? bindings
-            : {
-                ...bindings,
-                command.shortcut!: () {
-                  try {
-                    context.run<void>(command);
-                  } catch (e) {
-                    print('Error running command: $e');
-                    rethrow;
-                  }
-                },
-              },
-      ),
+            <ShortcutActivator, VoidCallback>{
+              const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+                  () => commands.show(context),
+            },
+            (bindings, command) =>
+                command.shortcut == null
+                    ? bindings
+                    : {
+                      ...bindings,
+                      command.shortcut!: () {
+                        try {
+                          context.run<void>(command);
+                        } catch (e) {
+                          print('Error running command: $e');
+                          rethrow;
+                        }
+                      },
+                    },
+          ),
       child: child,
     );
   }
