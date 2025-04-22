@@ -242,7 +242,7 @@ export default Sentry.withSentry(
         );
         series = series.map((item, i) => {
           const { text: _, ...rest } = item;
-          const embedding = embeddings.data[i].join(",");
+          const embedding = `[${embeddings.data[i].join(",")}]`;
           return {
             ...rest,
             embedding,

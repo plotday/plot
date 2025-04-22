@@ -18,6 +18,7 @@
     "allowJs": true,
     "checkJs": false,
     "noEmit": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "sourceMap": true,
   }
 }
