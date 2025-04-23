@@ -26,9 +26,9 @@ BEGIN
     RETURNING
         id INTO _priority_id;
     RAISE LOG 'Inserted priority_id: %', _priority_id;
-    INSERT INTO public.priority_settings (user_id, priority_id, "order", is_default)
+    INSERT INTO public.priority_user (user_id, priority_id, "order", is_default)
         VALUES (NEW.id, _priority_id, public.order_first (), TRUE);
-    RAISE LOG 'Inserted priority_settings for priority_id: %', _priority_id;
+    RAISE LOG 'Inserted priority_user for priority_id: %', _priority_id;
     RETURN NEW;
 END;
 $function$;
@@ -173,14 +173,14 @@ BEGIN
                 id INTO _priority_id;
     END IF;
     IF (OLD IS NULL AND (NEW.order IS NOT NULL OR NEW.pomodoro IS NOT NULL OR NEW.color IS NOT NULL OR NEW.is_default IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."order" IS DISTINCT FROM OLD."order" OR NEW.pomodoro IS DISTINCT FROM OLD.pomodoro OR NEW.color IS DISTINCT FROM OLD.color OR NEW.is_default IS DISTINCT FROM OLD.is_default)) THEN
-        INSERT INTO priority_settings (user_id, priority_id, "order", pomodoro, color, is_default)
+        INSERT INTO priority_user (user_id, priority_id, "order", pomodoro, color, is_default)
             VALUES (auth.uid (), _priority_id, NEW.order, COALESCE(NEW.pomodoro, 25 * 60), COALESCE(NEW.color, 0), COALESCE(NEW.is_default, FALSE))
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
-                "order" = COALESCE(NEW.order, priority_settings."order"),
-                pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro),
-                color = COALESCE(NEW.color, priority_settings.color),
-                is_default = COALESCE(NEW.is_default, priority_settings.is_default);
+                "order" = COALESCE(NEW.order, priority_user."order"),
+                pomodoro = COALESCE(NEW.pomodoro, priority_user.pomodoro),
+                color = COALESCE(NEW.color, priority_user.color),
+                is_default = COALESCE(NEW.is_default, priority_user.is_default);
     END IF;
     RETURN NEW;
 END;

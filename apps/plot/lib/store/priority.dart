@@ -6,10 +6,15 @@ typedef PriorityId = Uuid;
 class Priorities extends UuidStoreTable with DraftTable, DeletableTable {
   TextColumn get name => text()();
   TextColumn get path => text().map(const PathConverter())();
+  BlobColumn get createdBy => blob().map(const UuidConverter())();
   RealColumn get order =>
       real()
           .clientDefault(() => Order.first().value)
           .map(const OrderConverter())();
+  DateTimeColumn get orderedAt =>
+      dateTime()
+          .withDefault(currentDateAndTime)
+          .map(const LocalDateTimeConverter())();
   IntColumn get pomodoro =>
       integer()
           .withDefault(const Constant(25 * 60))
@@ -19,6 +24,13 @@ class Priorities extends UuidStoreTable with DraftTable, DeletableTable {
           .withDefault(const Constant(0))
           .map(const ThemeColorConverter())();
   BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
+  BoolColumn get pinned => boolean().withDefault(const Constant(false))();
+  BoolColumn get private => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get doAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+  DateTimeColumn get doneAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+  TextColumn get body => text().nullable()();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -152,6 +164,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     });
   }
 
+  Future<String> generateTitle() async {
+    final response = await api.post("/summary", body: {'body': body});
+    return response['title'] as String;
+  }
+
   static List<Priority> _buildHierarchy(
     List<PriorityRow> rows, {
     Path? path,
@@ -192,11 +209,15 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.isDefault = false,
     super.pomodoro = const Duration(minutes: 25),
     super.color = const ThemeColor.defaultColor(),
+    super.private = false,
+    super.pinned = false,
   }) : children = [],
        super(
          id: Uuid.generate(),
+         createdBy: Base.userId,
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
+         orderedAt: DateTime.now(),
          draft: false,
          path: Path.generate(parent: parent?.path),
        ) {
@@ -217,6 +238,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         isDefault: row.isDefault,
         order: row.order,
         path: row.path,
+        private: row.private,
+        pinned: row.pinned,
+        orderedAt: row.orderedAt,
+        createdBy: row.createdBy,
+        doAt: row.doAt,
+        doneAt: row.doneAt,
       ) {
     parent?._addChild(this);
   }
@@ -242,37 +269,80 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   Future<void> delete() => copyWith(deletedAt: Value(DateTime.now())).save();
 
+  Priority merge(Priority other) {
+    return copyWith(
+      name: name.isEmpty ? other.name : name,
+      doAt: Value(doAt ?? other.doAt),
+      doneAt: Value(doneAt ?? other.doneAt),
+      pinned: pinned || other.pinned,
+      private: private || other.private,
+    );
+  }
+
   @override
   Priority copyWith({
     Uuid? id,
     DateTime? updatedAt,
     DateTime? createdAt,
-    Value<DateTime?> deletedAt = const Value.absent(),
     bool? draft,
+    Value<DateTime?> deletedAt = const Value.absent(),
     String? name,
     Path? path,
+    Uuid? createdBy,
     Order? order,
+    DateTime? orderedAt,
     Duration? pomodoro,
     ThemeColor? color,
     bool? isDefault,
+    bool? pinned,
+    bool? private,
+    Value<DateTime?> doAt = const Value.absent(),
+    Value<DateTime?> doneAt = const Value.absent(),
+    Value<String?> body = const Value.absent(),
     Priority? parent,
-  }) => Priority.fromStore(
-    super.copyWith(
-      id: id,
-      createdAt: this.draft && draft == false ? DateTime.now() : this.createdAt,
-      updatedAt: DateTime.now(),
-      deletedAt: deletedAt,
-      draft: draft,
-      name: name,
-      path: path,
-      order: order,
-      pomodoro: pomodoro,
-      color: color,
-      isDefault: isDefault,
-    ),
-    parent: parent ?? this.parent,
-    children: children,
-  );
+  }) {
+    final publish = this.draft && draft == false;
+    if (doAt.present && doAt.value != null) {
+      doneAt = const Value(null);
+      pinned = false;
+    } else if (pinned == true) {
+      doAt = const Value(null);
+      doneAt = const Value(null);
+    } else if (doneAt.present) {
+      doAt = const Value(null);
+      pinned = false;
+    }
+    if (publish ||
+        (doAt.present && doAt.value != this.doAt) ||
+        (doneAt.present && doneAt.value != null) ||
+        (pinned != null && pinned != this.pinned)) {
+      order ??= Order.first();
+    }
+    return Priority.fromStore(
+      super.copyWith(
+        id: id,
+        createdBy: createdBy,
+        createdAt: publish ? DateTime.now() : this.createdAt,
+        updatedAt: DateTime.now(),
+        deletedAt: deletedAt,
+        draft: draft,
+        name: name,
+        path: path,
+        order: order,
+        orderedAt:
+            orderedAt ?? (order != null ? DateTime.now() : this.orderedAt),
+        pomodoro: pomodoro,
+        color: color,
+        isDefault: isDefault,
+        pinned: pinned,
+        private: private,
+        doAt: doAt,
+        doneAt: doneAt,
+      ),
+      parent: parent ?? this.parent,
+      children: children,
+    );
+  }
 
   void _addChild(Priority child) {
     children = List<Priority>.from(
@@ -296,10 +366,36 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .join();
   }
 
+  bool get doNow {
+    return !done && doAt?.isSameOrBefore(DateTime.now()) == true;
+  }
+
+  bool get scheduled {
+    return doAt?.isAfter(DateTime.now()) == true;
+  }
+
+  bool get done => doneAt != null;
+
   Future<void> save() => Store.get.save(table, this, PrioritiesBase());
 
   @override
   int compareTo(Priority other) {
+    if (pinned && other.pinned) {
+      return -order.compareTo(other.order);
+    }
+    if (pinned || other.pinned) {
+      return pinned ? -1 : 1;
+    }
+    if (doNow && other.doNow) {
+      final doAtComp = doAt!.compareTo(other.doAt!);
+      if (doAtComp != 0) {
+        return doAtComp;
+      }
+      return -order.compareTo(other.order);
+    }
+    if (doNow || other.doNow) {
+      return doNow ? -1 : 1;
+    }
     return order.compareTo(other.order);
   }
 

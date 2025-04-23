@@ -50,9 +50,10 @@ SELECT
     END AS type,
     COUNT(*) AS "count",
     0 AS "seconds",
-    MAX(updated_at) AS updated_at
+    MAX(priority.updated_at) AS updated_at
 FROM
-    "public"."activity"
+    "public"."priority"
+    INNER JOIN "public"."priority_user" ON priority_user.priority_id = priority.id
 WHERE
     draft = FALSE
     AND do_at IS NOT NULL

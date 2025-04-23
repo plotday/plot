@@ -307,7 +307,7 @@ CREATE TABLE "public"."priority" (
 
 ALTER TABLE "public"."priority" ENABLE ROW LEVEL SECURITY;
 
-CREATE TABLE "public"."priority_settings" (
+CREATE TABLE "public"."priority_user" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL,
     "priority_id" uuid NOT NULL,
@@ -316,7 +316,7 @@ CREATE TABLE "public"."priority_settings" (
     "color" integer NOT NULL DEFAULT 0
 );
 
-ALTER TABLE "public"."priority_settings" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."priority_user" ENABLE ROW LEVEL SECURITY;
 
 CREATE TABLE "public"."priority_user" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
@@ -446,7 +446,7 @@ CREATE UNIQUE INDEX tag_pkey ON public.tag USING btree (id);
 
 CREATE UNIQUE INDEX tag_user_id_item_type_item_id_emoji_key ON public.tag USING btree (user_id, item_type, item_id, emoji);
 
-CREATE UNIQUE INDEX user_priority_unique ON public.priority_settings USING btree (user_id, priority_id);
+CREATE UNIQUE INDEX user_priority_unique ON public.priority_user USING btree (user_id, priority_id);
 
 ALTER TABLE "public"."account"
     ADD CONSTRAINT "account_pkey" PRIMARY KEY USING INDEX "account_pkey";
@@ -604,17 +604,17 @@ ALTER TABLE "public"."priority" validate CONSTRAINT "priority_created_by_fkey";
 ALTER TABLE "public"."priority"
     ADD CONSTRAINT "priority_path_key" UNIQUE USING INDEX "priority_path_key";
 
-ALTER TABLE "public"."priority_settings"
-    ADD CONSTRAINT "priority_settings_priority_id_fkey" FOREIGN KEY (priority_id) REFERENCES priority (id) ON DELETE CASCADE NOT valid;
+ALTER TABLE "public"."priority_user"
+    ADD CONSTRAINT "priority_user_priority_id_fkey" FOREIGN KEY (priority_id) REFERENCES priority (id) ON DELETE CASCADE NOT valid;
 
-ALTER TABLE "public"."priority_settings" validate CONSTRAINT "priority_settings_priority_id_fkey";
+ALTER TABLE "public"."priority_user" validate CONSTRAINT "priority_user_priority_id_fkey";
 
-ALTER TABLE "public"."priority_settings"
-    ADD CONSTRAINT "priority_settings_user_id_fkey" FOREIGN KEY (user_id) REFERENCES auth.users (id) ON DELETE CASCADE NOT valid;
+ALTER TABLE "public"."priority_user"
+    ADD CONSTRAINT "priority_user_user_id_fkey" FOREIGN KEY (user_id) REFERENCES auth.users (id) ON DELETE CASCADE NOT valid;
 
-ALTER TABLE "public"."priority_settings" validate CONSTRAINT "priority_settings_user_id_fkey";
+ALTER TABLE "public"."priority_user" validate CONSTRAINT "priority_user_user_id_fkey";
 
-ALTER TABLE "public"."priority_settings"
+ALTER TABLE "public"."priority_user"
     ADD CONSTRAINT "user_priority_unique" UNIQUE USING INDEX "user_priority_unique";
 
 ALTER TABLE "public"."priority_user"
@@ -1691,11 +1691,11 @@ BEGIN
                 id INTO _priority_id;
     END IF;
     IF (OLD IS NULL AND (NEW.order IS NOT NULL OR NEW.pomodoro IS NOT NULL OR NEW.color IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."order" IS DISTINCT FROM OLD."order" OR NEW.pomodoro IS DISTINCT FROM OLD.pomodoro OR NEW.color IS DISTINCT FROM OLD.color)) THEN
-        INSERT INTO priority_settings (user_id, priority_id, "order", pomodoro, color)
+        INSERT INTO priority_user (user_id, priority_id, "order", pomodoro, color)
             VALUES (auth.uid (), _priority_id, NEW.order, COALESCE(NEW.pomodoro, 25 * 60), COALESCE(NEW.color, 0))
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
-                "order" = COALESCE(NEW.order, priority_settings."order"), pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro), color = COALESCE(NEW.color, priority_settings.color);
+                "order" = COALESCE(NEW.order, priority_user."order"), pomodoro = COALESCE(NEW.pomodoro, priority_user.pomodoro), color = COALESCE(NEW.color, priority_user.color);
     END IF;
     RETURN NEW;
 END;
@@ -1792,7 +1792,7 @@ SELECT
 FROM (((priority_user cu
             JOIN priority c1 ON (cu.priority_id = c1.id))
         JOIN priority c2 ON (c1.path @> c2.path))
-    LEFT JOIN priority_settings cs ON (((cs.user_id = cu.user_id)
+    LEFT JOIN priority_user cs ON (((cs.user_id = cu.user_id)
                 AND (c2.id = cs.priority_id))));
 
 CREATE OR REPLACE VIEW "public"."balance_without_children" AS
@@ -1966,7 +1966,7 @@ CREATE POLICY "Users can update their activities" ON "public"."priority" AS perm
         USING (can_access_priority (id))
         WITH CHECK (((nlevel (path) = 1) OR can_access_priority (parent_path (path))));
 
-CREATE POLICY "Users can read/write their priority settings" ON "public"."priority_settings" AS permissive
+CREATE POLICY "Users can read/write their priority settings" ON "public"."priority_user" AS permissive
     FOR ALL TO authenticated
         USING ((user_id = auth.uid ()));
 
@@ -2052,8 +2052,8 @@ CREATE TRIGGER set_priority_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
-CREATE TRIGGER set_priority_settings_updated_at
-    BEFORE UPDATE ON public.priority_settings
+CREATE TRIGGER set_priority_user_updated_at
+    BEFORE UPDATE ON public.priority_user
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 

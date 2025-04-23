@@ -44,8 +44,10 @@ export type Database = {
           id: number
           updated_at: string
           user_id: string
-          calendars: unknown | null
-          organization: unknown | null
+          calendars: Database["public"]["Tables"]["calendar"]["Row"] | null
+          organization:
+            | Database["public"]["Tables"]["organization"]["Row"]
+            | null
         }
         Insert: {
           contact_sync_state?: Json | null
@@ -67,123 +69,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "account_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "account_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      activity: {
-        Row: {
-          created_at: string
-          deleted_at: string | null
-          do_at: string | null
-          done_at: string | null
-          draft: boolean
-          id: string
-          order: number
-          ordered_at: string
-          pinned: boolean
-          priority_id: string
-          private: boolean
-          title: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          deleted_at?: string | null
-          do_at?: string | null
-          done_at?: string | null
-          draft?: boolean
-          id?: string
-          order: number
-          ordered_at?: string
-          pinned?: boolean
-          priority_id: string
-          private?: boolean
-          title: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          deleted_at?: string | null
-          do_at?: string | null
-          done_at?: string | null
-          draft?: boolean
-          id?: string
-          order?: number
-          ordered_at?: string
-          pinned?: boolean
-          priority_id?: string
-          private?: boolean
-          title?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_children"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_children"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       calendar: {
         Row: {
@@ -206,7 +92,7 @@ export type Database = {
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
-          account: unknown | null
+          account: Database["public"]["Tables"]["account"]["Row"] | null
         }
         Insert: {
           account_id: number
@@ -270,7 +156,9 @@ export type Database = {
           name: string | null
           updated_at: string
           user_id: string
-          organization: unknown | null
+          organization:
+            | Database["public"]["Tables"]["organization"]["Row"]
+            | null
         }
         Insert: {
           avatar_url?: string | null
@@ -292,22 +180,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "contact_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "contact_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       domain: {
         Row: {
@@ -422,20 +295,6 @@ export type Database = {
             referencedRelation: "calendar"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "event_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "event_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
         ]
       }
       invitation: {
@@ -468,7 +327,7 @@ export type Database = {
           is_optional: boolean
           response: Database["public"]["Enums"]["event_response"] | null
           updated_at: string
-          contact: unknown | null
+          contact: Database["public"]["Tables"]["contact"]["Row"] | null
         }
         Insert: {
           created_at?: string
@@ -505,80 +364,6 @@ export type Database = {
           },
         ]
       }
-      note: {
-        Row: {
-          activity_id: string
-          body: string
-          created_at: string
-          deleted_at: string | null
-          draft: boolean
-          id: string
-          order: number
-          ordered_at: string
-          pinned: boolean
-          private: boolean
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          activity_id: string
-          body: string
-          created_at?: string
-          deleted_at?: string | null
-          draft?: boolean
-          id?: string
-          order: number
-          ordered_at?: string
-          pinned?: boolean
-          private?: boolean
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          activity_id?: string
-          body?: string
-          created_at?: string
-          deleted_at?: string | null
-          draft?: boolean
-          id?: string
-          order?: number
-          ordered_at?: string
-          pinned?: boolean
-          private?: boolean
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       organization: {
         Row: {
           created_at: string
@@ -600,152 +385,90 @@ export type Database = {
       priority: {
         Row: {
           created_at: string
-          created_by: string | null
+          created_by: string
           deleted_at: string | null
+          do_at: string | null
+          done_at: string | null
           draft: boolean
           id: string
           name: string
+          note: string | null
+          order: number
+          ordered_at: string
           path: unknown
+          pinned: boolean
+          private: boolean
           updated_at: string
         }
         Insert: {
           created_at?: string
-          created_by?: string | null
+          created_by: string
           deleted_at?: string | null
+          do_at?: string | null
+          done_at?: string | null
           draft?: boolean
           id?: string
           name: string
+          note?: string | null
+          order?: number
+          ordered_at?: string
           path: unknown
+          pinned?: boolean
+          private?: boolean
           updated_at?: string
         }
         Update: {
           created_at?: string
-          created_by?: string | null
+          created_by?: string
           deleted_at?: string | null
+          do_at?: string | null
+          done_at?: string | null
           draft?: boolean
           id?: string
           name?: string
-          path?: unknown
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "priority_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      priority_settings: {
-        Row: {
-          color: number
-          is_default: boolean
-          order: number
-          path: unknown | null
-          pomodoro: number
-          priority_id: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          color?: number
-          is_default?: boolean
-          order: number
-          path?: unknown | null
-          pomodoro?: number
-          priority_id: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          color?: number
-          is_default?: boolean
+          note?: string | null
           order?: number
-          path?: unknown | null
-          pomodoro?: number
-          priority_id?: string
+          ordered_at?: string
+          path?: unknown
+          pinned?: boolean
+          private?: boolean
           updated_at?: string
-          user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "priority_settings_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_settings_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_settings_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_children"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "priority_settings_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_children"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_settings_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_settings_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_settings_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       priority_user: {
         Row: {
+          color: number | null
           created_at: string
           deleted_at: string | null
+          is_default: boolean | null
+          order: number
+          path: unknown | null
+          pomodoro: number | null
           priority_id: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          color?: number | null
           created_at?: string
           deleted_at?: string | null
+          is_default?: boolean | null
+          order?: number
+          path?: unknown | null
+          pomodoro?: number | null
           priority_id: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          color?: number | null
           created_at?: string
           deleted_at?: string | null
+          is_default?: boolean | null
+          order?: number
+          path?: unknown | null
+          pomodoro?: number | null
           priority_id?: string
           updated_at?: string
           user_id?: string
@@ -784,20 +507,6 @@ export type Database = {
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_user_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_user_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -901,20 +610,6 @@ export type Database = {
             referencedRelation: "priority_x"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "series_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "series_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
         ]
       }
       session: {
@@ -990,20 +685,6 @@ export type Database = {
             referencedRelation: "priority_x"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "session_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "session_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
         ]
       }
       tag: {
@@ -1011,117 +692,63 @@ export type Database = {
           created_at: string
           emoji: string
           id: number
-          item_id: string
-          item_type: Database["public"]["Enums"]["item_type"]
+          priority_id: string | null
           user_id: string
         }
         Insert: {
           created_at?: string
           emoji: string
           id?: never
-          item_id: string
-          item_type: Database["public"]["Enums"]["item_type"]
+          priority_id?: string | null
           user_id: string
         }
         Update: {
           created_at?: string
           emoji?: string
           id?: never
-          item_id?: string
-          item_type?: Database["public"]["Enums"]["item_type"]
+          priority_id?: string | null
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "tag_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "tag_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-    }
-    Views: {
-      activity_x: {
-        Row: {
-          created_at: string | null
-          deleted_at: string | null
-          do_at: string | null
-          done_at: string | null
-          draft: boolean | null
-          id: string | null
-          order: number | null
-          order_x: number | null
-          ordered_at: string | null
-          pinned: boolean | null
-          priority_id: string | null
-          priority_path: unknown | null
-          private: boolean | null
-          tags: Json | null
-          title: string | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "activity_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_priority_id_fkey"
+            foreignKeyName: "tag_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["priority_id"]
           },
           {
-            foreignKeyName: "activity_priority_id_fkey"
+            foreignKeyName: "tag_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tag_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_children"
             referencedColumns: ["child_id"]
           },
           {
-            foreignKeyName: "activity_priority_id_fkey"
+            foreignKeyName: "tag_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_children"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "activity_priority_id_fkey"
+            foreignKeyName: "tag_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_x"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "activity_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
         ]
       }
+    }
+    Views: {
       balance: {
         Row: {
           count: number | null
@@ -1235,20 +862,6 @@ export type Database = {
             referencedRelation: "calendar"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "event_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "event_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
         ]
       }
       gap: {
@@ -1290,70 +903,7 @@ export type Database = {
           user_id: string | null
           value: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "event_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "event_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      note_x: {
-        Row: {
-          activity_id: string | null
-          body: string | null
-          created_at: string | null
-          deleted_at: string | null
-          draft: boolean | null
-          id: string | null
-          order: number | null
-          order_x: number | null
-          ordered_at: string | null
-          pinned: boolean | null
-          private: boolean | null
-          tags: Json | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activity_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       priority_children: {
         Row: {
@@ -1361,6 +911,49 @@ export type Database = {
           id: string | null
         }
         Relationships: []
+      }
+      priority_tags: {
+        Row: {
+          priority_id: string | null
+          tags: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tag_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "tag_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tag_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "tag_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tag_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_x"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       priority_x: {
         Row: {
@@ -1374,32 +967,16 @@ export type Database = {
           order: number | null
           path: unknown | null
           pomodoro: number | null
+          tags: Json | null
           updated_at: string | null
           user_id: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "priority_user_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_user_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
     }
     Functions: {
       account: {
-        Args: {
-          "": unknown
-        }
+        Args: { "": Database["public"]["Tables"]["calendar"]["Row"] }
         Returns: {
           contact_sync_state: Json | null
           created_at: string
@@ -1416,9 +993,7 @@ export type Database = {
         Returns: boolean
       }
       calc_all_day: {
-        Args: {
-          at: unknown
-        }
+        Args: { at: unknown }
         Returns: boolean
       }
       calc_event_type: {
@@ -1431,48 +1006,31 @@ export type Database = {
         Returns: Database["public"]["Enums"]["event_type"]
       }
       calc_internal: {
-        Args: {
-          invitee_count: number
-          user_domain: number
-          domains: number[]
-        }
+        Args: { invitee_count: number; user_domain: number; domains: number[] }
         Returns: Database["public"]["Enums"]["event_internal"]
       }
       calc_meeting_size: {
-        Args: {
-          invitee_count: number
-        }
+        Args: { invitee_count: number }
         Returns: string
       }
       calc_notice: {
-        Args: {
-          created_at: string
-          at: unknown
-        }
+        Args: { created_at: string; at: unknown }
         Returns: number
       }
       calc_rounded_length: {
-        Args: {
-          at: unknown
-        }
+        Args: { at: unknown }
         Returns: number
       }
       calc_seconds: {
-        Args: {
-          r: unknown
-        }
+        Args: { r: unknown }
         Returns: number
       }
       calc_speedy: {
-        Args: {
-          at: unknown
-        }
+        Args: { at: unknown }
         Returns: boolean
       }
       calendar: {
-        Args: {
-          "": unknown
-        }
+        Args: { "": unknown }
         Returns: {
           account_id: number
           created_at: string
@@ -1496,9 +1054,7 @@ export type Database = {
         }[]
       }
       calendars: {
-        Args: {
-          "": unknown
-        }
+        Args: { "": Database["public"]["Tables"]["account"]["Row"] }
         Returns: {
           account_id: number
           created_at: string
@@ -1521,29 +1077,16 @@ export type Database = {
           watch_secret: string | null
         }[]
       }
-      can_access_priority:
-        | {
-            Args: {
-              _priority_id: string
-            }
-            Returns: boolean
-          }
-        | {
-            Args: {
-              _priority_path: unknown
-            }
-            Returns: boolean
-          }
+      can_access_priority: {
+        Args: { _priority_id: string } | { _priority_path: unknown }
+        Returns: boolean
+      }
       cancel_events: {
-        Args: {
-          _events: Database["public"]["CompositeTypes"]["event_ids"][]
-        }
+        Args: { _events: Database["public"]["CompositeTypes"]["event_ids"][] }
         Returns: undefined
       }
       contact: {
-        Args: {
-          "": unknown
-        }
+        Args: { "": Database["public"]["Tables"]["invitee"]["Row"] }
         Returns: {
           avatar_url: string | null
           created_at: string
@@ -1556,27 +1099,19 @@ export type Database = {
         }[]
       }
       generate_path: {
-        Args: {
-          parent?: unknown
-        }
+        Args: { parent?: unknown }
         Returns: unknown
       }
       get_domain: {
-        Args: {
-          email: string
-        }
+        Args: { email: string }
         Returns: string
       }
       insert_domain: {
-        Args: {
-          email: string
-        }
+        Args: { email: string }
         Returns: number
       }
       invitee: {
-        Args: {
-          "": unknown
-        }
+        Args: { "": unknown }
         Returns: {
           created_at: string
           deleted_at: string | null
@@ -1588,55 +1123,37 @@ export type Database = {
         }[]
       }
       is_finite: {
-        Args: {
-          test: unknown
-        }
+        Args: { test: unknown }
         Returns: boolean
       }
       is_lower: {
-        Args: {
-          "": string
-        }
+        Args: { "": string }
         Returns: boolean
       }
       is_week: {
-        Args: {
-          p_week: unknown
-        }
+        Args: { p_week: unknown }
         Returns: boolean
       }
-      organization:
-        | {
-            Args: {
-              "": unknown
-            }
-            Returns: {
-              created_at: string
-              id: number
-              name: string
-            }[]
-          }
-        | {
-            Args: {
-              "": unknown
-            }
-            Returns: {
-              created_at: string
-              id: number
-              name: string
-            }[]
-          }
+      order_first: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      organization: {
+        Args:
+          | { "": Database["public"]["Tables"]["account"]["Row"] }
+          | { "": Database["public"]["Tables"]["contact"]["Row"] }
+        Returns: {
+          created_at: string
+          id: number
+          name: string
+        }[]
+      }
       parent_path: {
-        Args: {
-          p: unknown
-        }
+        Args: { p: unknown }
         Returns: unknown
       }
       redeem_invitation: {
-        Args: {
-          _user_id: number
-          _invitation: string
-        }
+        Args: { _user_id: number; _invitation: string }
         Returns: undefined
       }
       replace_parent_path: {
@@ -1669,9 +1186,7 @@ export type Database = {
         Returns: string
       }
       week_from_date: {
-        Args: {
-          d: string
-        }
+        Args: { d: string }
         Returns: unknown
       }
       work_day_end: {
@@ -1695,7 +1210,6 @@ export type Database = {
         | "confidential"
         | "public"
         | "personal"
-      item_type: "note" | "activity"
       location_type: "room" | "address" | "other"
       meeting_size: "1:1" | "Small" | "Medium" | "Large" | "XL" | "XXL"
       provider: "google" | "outlook"
@@ -1938,30 +1452,19 @@ export type Database = {
     }
     Functions: {
       can_insert_object: {
-        Args: {
-          bucketid: string
-          name: string
-          owner: string
-          metadata: Json
-        }
+        Args: { bucketid: string; name: string; owner: string; metadata: Json }
         Returns: undefined
       }
       extension: {
-        Args: {
-          name: string
-        }
+        Args: { name: string }
         Returns: string
       }
       filename: {
-        Args: {
-          name: string
-        }
+        Args: { name: string }
         Returns: string
       }
       foldername: {
-        Args: {
-          name: string
-        }
+        Args: { name: string }
         Returns: string[]
       }
       get_size_by_bucket: {
@@ -2036,27 +1539,29 @@ export type Database = {
   }
 }
 
-type PublicSchema = Database[Extract<keyof Database, "public">]
+type DefaultSchema = Database[Extract<keyof Database, "public">]
 
 export type Tables<
-  PublicTableNameOrOptions extends
-    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-        Database[PublicTableNameOrOptions["schema"]]["Views"])
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof Database
+  }
+    ? keyof (Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        Database[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      Database[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
-        PublicSchema["Views"])
-    ? (PublicSchema["Tables"] &
-        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -2064,20 +1569,22 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  PublicTableNameOrOptions extends
-    | keyof PublicSchema["Tables"]
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
     | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof Database
+  }
+    ? keyof Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
+  ? Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
-    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -2085,20 +1592,22 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  PublicTableNameOrOptions extends
-    | keyof PublicSchema["Tables"]
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
     | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof Database
+  }
+    ? keyof Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
+  ? Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
-    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -2106,15 +1615,60 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  PublicEnumNameOrOptions extends
-    | keyof PublicSchema["Enums"]
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
     | { schema: keyof Database },
-  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof Database
+  }
+    ? keyof Database[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = PublicEnumNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
-    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
+> = DefaultSchemaEnumNameOrOptions extends { schema: keyof Database }
+  ? Database[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof Database },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof Database
+  }
+    ? keyof Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
+  public: {
+    Enums: {
+      event_availability: ["busy", "away", "focus", "free", "location"],
+      event_internal: ["internal", "external"],
+      event_response: ["accepted", "declined", "tentative"],
+      event_status: ["confirmed", "cancelled", "tentative"],
+      event_type: ["meeting", "task", "note"],
+      event_visibility: [
+        "normal",
+        "private",
+        "confidential",
+        "public",
+        "personal",
+      ],
+      location_type: ["room", "address", "other"],
+      meeting_size: ["1:1", "Small", "Medium", "Large", "XL", "XXL"],
+      provider: ["google", "outlook"],
+    },
+  },
+  storage: {
+    Enums: {},
+  },
+} as const
 

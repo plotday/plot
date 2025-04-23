@@ -6,15 +6,17 @@ CREATE OR REPLACE FUNCTION public.add_default_priority ()
 DECLARE
     _priority_id uuid;
 BEGIN
-    RAISE LOG 'Inserting into priority table for user_id: %', NEW.id;
     INSERT INTO public.priority (created_by, name, path)
         VALUES (NEW.id, 'Personal', public.generate_path (NULL))
     RETURNING
         id INTO _priority_id;
-    RAISE LOG 'Inserted priority_id: %', _priority_id;
-    INSERT INTO public.priority_settings (user_id, priority_id, "order", is_default)
-        VALUES (NEW.id, _priority_id, public.order_first (), TRUE);
-    RAISE LOG 'Inserted priority_settings for priority_id: %', _priority_id;
+    UPDATE
+        public.priority_user
+    SET
+        is_default = TRUE
+    WHERE
+        user_id = NEW.id
+        AND priority_id = _priority_id;
     RETURN NEW;
 END;
 $$

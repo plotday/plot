@@ -1,3 +1,22 @@
+CREATE OR REPLACE VIEW "public"."priority_tags" WITH ( security_invoker = TRUE)
+-- for formatting
+AS
+SELECT
+    priority_id,
+    jsonb_object_agg(emoji, user_ids) AS tags
+FROM (
+    SELECT
+        priority_id,
+        emoji,
+        jsonb_agg(user_id) AS user_ids
+    FROM
+        "public"."tag"
+    GROUP BY
+        priority_id,
+        emoji) subquery
+GROUP BY
+    priority_id;
+
 CREATE OR REPLACE VIEW "public"."priority_x" WITH ( security_invoker = TRUE)
 -- for formatting
 AS
@@ -10,17 +29,18 @@ SELECT
     c2.draft,
     c2.name,
     replace_parent_path (c1.path, c2.path, COALESCE(cs.path, c1.path)) AS path,
-    COALESCE(cs.order, (extract(epoch FROM CURRENT_TIMESTAMP) * 1000)::double PRECISION * 10) AS
-ORDER,
-cs.pomodoro AS pomodoro,
-cs.color AS color,
-cs.is_default AS is_default
+    COALESCE(cs.order, c2.order) AS "order",
+    cs.pomodoro AS pomodoro,
+    cs.color AS color,
+    COALESCE(cs.is_default, FALSE) AS is_default,
+    pt.tags AS tags
 FROM
     priority_user cu
     JOIN priority c1 ON cu.priority_id = c1.id
     JOIN priority c2 ON c1.path @> c2.path
-    LEFT JOIN priority_settings cs ON cs.user_id = cu.user_id
-        AND c2.id = cs.priority_id;
+    LEFT JOIN priority_user cs ON cs.user_id = cu.user_id
+        AND c2.id = cs.priority_id
+    LEFT JOIN priority_tags pt ON pt.priority_id = cu.priority_id;
 
 CREATE OR REPLACE FUNCTION handle_priority_x_upsert ()
     RETURNS TRIGGER
@@ -42,14 +62,14 @@ BEGIN
                 id INTO _priority_id;
     END IF;
     IF (OLD IS NULL AND (NEW.order IS NOT NULL OR NEW.pomodoro IS NOT NULL OR NEW.color IS NOT NULL OR NEW.is_default IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."order" IS DISTINCT FROM OLD."order" OR NEW.pomodoro IS DISTINCT FROM OLD.pomodoro OR NEW.color IS DISTINCT FROM OLD.color OR NEW.is_default IS DISTINCT FROM OLD.is_default)) THEN
-        INSERT INTO priority_settings (user_id, priority_id, "order", pomodoro, color, is_default)
+        INSERT INTO priority_user (user_id, priority_id, "order", pomodoro, color, is_default)
             VALUES (auth.uid (), _priority_id, NEW.order, COALESCE(NEW.pomodoro, 25 * 60), COALESCE(NEW.color, 0), COALESCE(NEW.is_default, FALSE))
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
-                "order" = COALESCE(NEW.order, priority_settings."order"),
-                pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro),
-                color = COALESCE(NEW.color, priority_settings.color),
-                is_default = COALESCE(NEW.is_default, priority_settings.is_default);
+                "order" = COALESCE(NEW.order, priority_user."order"),
+                pomodoro = COALESCE(NEW.pomodoro, priority_user.pomodoro),
+                color = COALESCE(NEW.color, priority_user.color),
+                is_default = COALESCE(NEW.is_default, priority_user.is_default);
     END IF;
     RETURN NEW;
 END;

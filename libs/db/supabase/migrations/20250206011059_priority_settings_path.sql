@@ -11,16 +11,16 @@ DROP VIEW IF EXISTS "public"."priority_x";
 
 DROP INDEX IF EXISTS "public"."priority_user_user_path_unique";
 
-ALTER TABLE "public"."priority_settings"
+ALTER TABLE "public"."priority_user"
     ADD COLUMN "is_default" boolean NOT NULL DEFAULT FALSE;
 
-ALTER TABLE "public"."priority_settings"
+ALTER TABLE "public"."priority_user"
     ADD COLUMN "path" ltree;
 
 ALTER TABLE "public"."priority_user"
     DROP COLUMN "path";
 
-CREATE UNIQUE INDEX priority_settings_user_id_idx ON public.priority_settings USING btree (user_id)
+CREATE UNIQUE INDEX priority_user_user_id_idx ON public.priority_user USING btree (user_id)
 WHERE (is_default = TRUE);
 
 CREATE UNIQUE INDEX priority_user_unique ON public.priority_user USING btree (user_id, priority_id);
@@ -48,11 +48,11 @@ BEGIN
                 id INTO _priority_id;
     END IF;
     IF (OLD IS NULL AND (NEW.order IS NOT NULL OR NEW.pomodoro IS NOT NULL OR NEW.color IS NOT NULL OR NEW.is_default IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."order" IS DISTINCT FROM OLD."order" OR NEW.pomodoro IS DISTINCT FROM OLD.pomodoro OR NEW.color IS DISTINCT FROM OLD.color OR NEW.is_default IS DISTINCT FROM OLD.is_default)) THEN
-        INSERT INTO priority_settings (user_id, priority_id, "order", pomodoro, color, is_default)
+        INSERT INTO priority_user (user_id, priority_id, "order", pomodoro, color, is_default)
             VALUES (auth.uid (), _priority_id, NEW.order, COALESCE(NEW.pomodoro, 25 * 60), COALESCE(NEW.color, 0), COALESCE(NEW.is_default, FALSE))
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
-                "order" = COALESCE(NEW.order, priority_settings."order"), pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro), color = COALESCE(NEW.color, priority_settings.color), is_default = COALESCE(NEW.is_default, priority_settings.is_default);
+                "order" = COALESCE(NEW.order, priority_user."order"), pomodoro = COALESCE(NEW.pomodoro, priority_user.pomodoro), color = COALESCE(NEW.color, priority_user.color), is_default = COALESCE(NEW.is_default, priority_user.is_default);
     END IF;
     RETURN NEW;
 END;
@@ -75,7 +75,7 @@ SELECT
 FROM (((priority_user cu
             JOIN priority c1 ON (cu.priority_id = c1.id))
         JOIN priority c2 ON (c1.path @> c2.path))
-    LEFT JOIN priority_settings cs ON (((cs.user_id = cu.user_id)
+    LEFT JOIN priority_user cs ON (((cs.user_id = cu.user_id)
                 AND (c2.id = cs.priority_id))));
 
 CREATE OR REPLACE VIEW "public"."priority_children" AS
@@ -160,7 +160,7 @@ BEGIN
         id INTO priority_id;
     INSERT INTO "public"."priority_user" ("user_id", "priority_id")
         VALUES (NEW.id, priority_id);
-    INSERT INTO "public"."priority_settings" ("user_id", "priority_id", "order", "is_default")
+    INSERT INTO "public"."priority_user" ("user_id", "priority_id", "order", "is_default")
         VALUES (NEW.id, priority_id, 0, TRUE);
     RETURN new;
 END;
