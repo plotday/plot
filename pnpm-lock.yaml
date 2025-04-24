@@ -183,8 +183,8 @@ importers:
         specifier: workspace:^
         version: link:../tsconfig
       supabase:
-        specifier: ^2.20.12
-        version: 2.20.12
+        specifier: ^2.22.6
+        version: 2.22.6
 
   libs/email:
     dependencies:
@@ -6610,8 +6610,8 @@ packages:
     peerDependencies:
       postcss: ^8.3.3
 
-  supabase@2.20.12:
-    resolution: {integrity: sha512-8UTRRvQdMsfs7jcHPDfv6cFYwrar5OyqidtB8GSdPCaKfEP+0n4TwCVwu7H0tDCbCYs28HDZDzQAZ8Ox+aVIiA==}
+  supabase@2.22.6:
+    resolution: {integrity: sha512-W/A5JlKqrp0pxSaFRYwlWpk+aCql9xUp1ZeLVarRVtqsT6QPLqLsLPIwES0005lQKS3QBbdWDgYThEStPM1kxQ==}
     engines: {npm: '>=8'}
     hasBin: true
 
@@ -10682,7 +10682,7 @@ snapshots:
 
   capnp-ts@0.7.0:
     dependencies:
-      debug: 4.3.5
+      debug: 4.4.0
       tslib: 2.6.3
     transitivePeerDependencies:
       - supports-color
@@ -12151,7 +12151,7 @@ snapshots:
       foreground-child: 3.1.1
       jackspeak: 2.3.6
       minimatch: 9.0.4
-      minipass: 7.1.0
+      minipass: 7.1.2
       path-scurry: 1.10.2
 
   glob@7.2.3:
@@ -13341,7 +13341,7 @@ snapshots:
   path-scurry@1.10.2:
     dependencies:
       lru-cache: 10.2.2
-      minipass: 7.1.0
+      minipass: 7.1.2
 
   path-to-regexp@0.1.12: {}
 
@@ -14252,7 +14252,7 @@ snapshots:
       postcss: 8.5.3
     optional: true
 
-  supabase@2.20.12:
+  supabase@2.22.6:
     dependencies:
       bin-links: 5.0.0
       https-proxy-agent: 7.0.4
