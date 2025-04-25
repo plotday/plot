@@ -68,7 +68,7 @@ DROP VIEW IF EXISTS "public"."priority_x";
 
 DROP VIEW IF EXISTS "public"."gap";
 
-DROP VIEW IF EXISTS "public"."event_x";
+DROP VIEW IF EXISTS "public"."event_x" CASCADE;
 
 ALTER TABLE "public"."activity"
     DROP CONSTRAINT "activity_pkey";
@@ -96,11 +96,25 @@ DROP TABLE "public"."note";
 
 DROP TABLE "public"."priority_settings";
 
+CREATE TABLE "public"."priority_settings" (
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "user_id" uuid NOT NULL,
+    "priority_id" uuid NOT NULL,
+    "pomodoro" integer,
+    "color" integer,
+    "is_default" boolean
+);
+
+ALTER TABLE "public"."priority_settings" ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE "public"."priority"
     ADD COLUMN "do_at" timestamp with time zone;
 
 ALTER TABLE "public"."priority"
     ADD COLUMN "done_at" timestamp with time zone;
+
+ALTER TABLE "public"."priority"
+    ADD COLUMN "expanded" boolean NOT NULL DEFAULT FALSE;
 
 ALTER TABLE "public"."priority"
     ADD COLUMN "note" text;
@@ -118,19 +132,10 @@ ALTER TABLE "public"."priority"
     ADD COLUMN "private" boolean NOT NULL DEFAULT FALSE;
 
 ALTER TABLE "public"."priority_user"
-    ADD COLUMN "color" integer;
-
-ALTER TABLE "public"."priority_user"
-    ADD COLUMN "is_default" boolean;
-
-ALTER TABLE "public"."priority_user"
     ADD COLUMN "order" double precision NOT NULL DEFAULT order_first ();
 
 ALTER TABLE "public"."priority_user"
     ADD COLUMN "path" ltree;
-
-ALTER TABLE "public"."priority_user"
-    ADD COLUMN "pomodoro" integer;
 
 ALTER TABLE "public"."tag"
     DROP COLUMN "item_id";
@@ -143,10 +148,25 @@ ALTER TABLE "public"."tag"
 
 DROP TYPE "public"."item_type";
 
-CREATE UNIQUE INDEX priority_user_user_id_idx ON public.priority_user USING btree (user_id)
+CREATE UNIQUE INDEX priority_settings_unique ON public.priority_settings USING btree (user_id, priority_id);
+
+CREATE UNIQUE INDEX priority_settings_user_id_idx ON public.priority_settings USING btree (user_id)
 WHERE (is_default = TRUE);
 
 CREATE UNIQUE INDEX tag_user_id_priority_id_emoji_key ON public.tag USING btree (user_id, priority_id, emoji);
+
+ALTER TABLE "public"."priority_settings"
+    ADD CONSTRAINT "priority_settings_priority_id_fkey" FOREIGN KEY (priority_id) REFERENCES priority (id) ON DELETE CASCADE NOT valid;
+
+ALTER TABLE "public"."priority_settings" validate CONSTRAINT "priority_settings_priority_id_fkey";
+
+ALTER TABLE "public"."priority_settings"
+    ADD CONSTRAINT "priority_settings_unique" UNIQUE USING INDEX "priority_settings_unique";
+
+ALTER TABLE "public"."priority_settings"
+    ADD CONSTRAINT "priority_settings_user_id_fkey" FOREIGN KEY (user_id) REFERENCES auth.users (id) ON DELETE CASCADE NOT valid;
+
+ALTER TABLE "public"."priority_settings" validate CONSTRAINT "priority_settings_user_id_fkey";
 
 ALTER TABLE "public"."tag"
     ADD CONSTRAINT "tag_priority_id_fkey" FOREIGN KEY (priority_id) REFERENCES priority (id) ON DELETE SET NULL NOT valid;
@@ -158,45 +178,17 @@ ALTER TABLE "public"."tag"
 
 SET check_function_bodies = OFF;
 
-CREATE OR REPLACE VIEW "public"."priority_tags" AS
-SELECT
-    subquery.priority_id,
-    jsonb_object_agg(subquery.emoji, subquery.user_ids) AS tags
-FROM (
-    SELECT
-        tag.priority_id,
-        tag.emoji,
-        jsonb_agg(tag.user_id) AS user_ids
-    FROM
-        tag
-    GROUP BY
-        tag.priority_id,
-        tag.emoji) subquery
-GROUP BY
-    subquery.priority_id;
-
-CREATE OR REPLACE FUNCTION public.add_default_priority ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    SET search_path TO 'public', 'auth'
+CREATE OR REPLACE FUNCTION public.calendar (event_x)
+    RETURNS SETOF calendar
+    LANGUAGE sql
+    STABLE ROWS 1
     AS $function$
-DECLARE
-    _priority_id uuid;
-BEGIN
-    INSERT INTO public.priority (created_by, name, path)
-        VALUES (NEW.id, 'Personal', public.generate_path (NULL))
-    RETURNING
-        id INTO _priority_id;
-    UPDATE
-        public.priority_user
-    SET
-        is_default = TRUE
+    SELECT
+        calendar.*
+    FROM
+        calendar
     WHERE
-        user_id = NEW.id
-        AND priority_id = _priority_id;
-    RETURN NEW;
-END;
+        calendar.id = $1.calendar_id
 $function$;
 
 CREATE OR REPLACE VIEW "public"."event_x" AS
@@ -381,6 +373,138 @@ GROUP BY
     gap.user_id,
     ((date_trunc('month'::text, (gap.day)::timestamp with time zone))::date);
 
+CREATE OR REPLACE VIEW "public"."insight" AS
+SELECT
+    e.user_id,
+    e.day,
+    text2ltree (min(ltree2text (e.priority_path))) AS priority_path,
+    e.type,
+    e.response,
+    nv.name,
+    nv.value,
+    (count(*))::integer AS count,
+    (sum(e.seconds))::integer AS seconds
+FROM (event_x e
+    CROSS JOIN LATERAL (
+        VALUES ('Total'::text, NULL::text),
+            ('Length'::text, (e.rounded_length)::text),
+            ('Size'::text, e.size),
+            ('Organizer'::text, CASE WHEN e.initiated THEN
+                    'You'::text
+                ELSE
+                    e.organizer_email
+                END),
+            ('External'::text, CASE WHEN (e.external = TRUE) THEN
+                    'External'::text
+                ELSE
+                    'Internal'::text
+                END),
+            ('Recurring'::text, CASE WHEN e.recurring THEN
+                    'Recurring'::text
+                ELSE
+                    'Ad hoc'::text
+                END),
+            ('Notice'::text, CASE WHEN (e.notice < 12) THEN
+                    '< 12 hours'::text
+                WHEN (e.notice < 24) THEN
+                    '< 24 hours'::text
+                WHEN (e.notice < (24 * 7)) THEN
+                    '< week'::text
+                ELSE
+                    '> week'::text
+                END)) nv (name, value))
+WHERE (e.status <> 'cancelled'::event_status)
+GROUP BY
+    e.user_id,
+    e.day,
+    e.priority_path,
+    e.type,
+    e.response,
+    nv.name,
+    nv.value;
+
+CREATE OR REPLACE FUNCTION public.invitee (event_x)
+    RETURNS SETOF invitee
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT
+        *
+    FROM
+        invitee
+    WHERE
+        event_id = $1.id
+$function$;
+
+CREATE OR REPLACE VIEW "public"."priority_tags" AS
+SELECT
+    subquery.priority_id,
+    jsonb_object_agg(subquery.emoji, subquery.user_ids) AS tags
+FROM (
+    SELECT
+        tag.priority_id,
+        tag.emoji,
+        jsonb_agg(tag.user_id) AS user_ids
+    FROM
+        tag
+    GROUP BY
+        tag.priority_id,
+        tag.emoji) subquery
+GROUP BY
+    subquery.priority_id;
+
+CREATE OR REPLACE VIEW "public"."priority_x" AS
+SELECT
+    p.id,
+    pu.user_id,
+    p.created_at,
+    GREATEST (settings.updated_at, pu.updated_at, p.updated_at) AS updated_at,
+    GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
+    p.draft,
+    p.name,
+    CASE WHEN (pu.path IS NULL) THEN
+        p.path
+    ELSE
+        replace_parent_path (p.path, pu.path, COALESCE(pu.path, p.path))
+    END AS path,
+    COALESCE(pu."order", p."order") AS "order",
+    CASE WHEN (p.pinned = TRUE) THEN
+        (('400000000000000'::numeric)::double precision - COALESCE(pu."order", p."order"))
+    WHEN (p.do_at <= now()) THEN
+        ((('200000000000000'::numeric - (EXTRACT(epoch FROM p.do_at) * '1000'::numeric)))::double precision - (COALESCE(pu."order", p."order") / ('10000000'::numeric)::double precision))
+    ELSE
+        COALESCE(pu."order", p."order")
+    END AS order_x,
+    settings.pomodoro,
+    settings.color,
+    COALESCE(settings.is_default, FALSE) AS is_default,
+    tags.tags
+FROM ((((priority_user pu
+                JOIN priority root ON (pu.priority_id = root.id))
+            JOIN priority p ON (root.path @> p.path))
+        LEFT JOIN priority_settings settings ON (((settings.user_id = pu.user_id)
+                    AND (p.id = settings.priority_id))))
+    LEFT JOIN priority_tags tags ON (tags.priority_id = pu.priority_id));
+
+CREATE OR REPLACE FUNCTION public.add_default_priority ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path TO 'public', 'auth'
+    AS $function$
+DECLARE
+    _priority_id uuid;
+BEGIN
+    INSERT INTO public.priority (created_by, name, path)
+        VALUES (NEW.id, 'Personal', public.generate_path (NULL))
+    RETURNING
+        id INTO _priority_id;
+    INSERT INTO public.priority_settings (user_id, priority_id, is_default)
+        VALUES (NEW.id, _priority_id, TRUE);
+    RETURN NEW;
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.handle_event_x_upsert ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -439,27 +563,54 @@ DECLARE
     _priority_id uuid;
 BEGIN
     _priority_id := NEW.id;
-    IF (OLD IS NULL OR (NEW.name IS DISTINCT FROM OLD.name OR NEW.path IS DISTINCT FROM OLD.path OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at)) THEN
-        INSERT INTO priority (id, name, path, draft, created_by, deleted_at)
-            VALUES (NEW.id, NEW.name, NEW.path, NEW.draft, auth.uid (), NEW.deleted_at)
+    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.name IS DISTINCT FROM OLD.name OR NEW.path IS DISTINCT FROM OLD.path OR NEW.draft IS DISTINCT FROM OLD.draft OR NEW.private IS DISTINCT FROM OLD.private OR NEW.pinned IS DISTINCT FROM OLD.pinned OR NEW.expanded IS DISTINCT FROM OLD.expanded OR NEW.do_at IS DISTINCT FROM OLD.do_at OR NEW.done_at IS DISTINCT FROM OLD.done_at OR NEW.order IS DISTINCT FROM OLD.order OR NEW.ordered_at IS DISTINCT FROM OLD.ordered_at OR NEW.note IS DISTINCT FROM OLD.note) THEN
+        INSERT INTO priority (id, deleted_at, name, path, draft, private, pinned, expanded, do_at, done_at, "order", ordered_at, note)
+            VALUES (NEW.id, NEW.deleted_at, NEW.name, NEW.path, NEW.draft, NEW.private, NEW.pinned, NEW.expanded, NEW.do_at, NEW.done_at, NEW.order, NEW.ordered_at, NEW.note)
         ON CONFLICT (id)
             DO UPDATE SET
+                deleted_at = NEW.deleted_at,
                 name = NEW.name,
                 path = NEW.path,
                 draft = NEW.draft,
-                deleted_at = NEW.deleted_at
+                private = NEW.private,
+                pinned = NEW.pinned,
+                expanded = NEW.expanded,
+                do_at = NEW.do_at,
+                done_at = NEW.done_at,
+                "order" = NEW.order,
+                ordered_at = NEW.ordered_at,
+                note = NEW.note
             RETURNING
                 id INTO _priority_id;
     END IF;
-    IF (OLD IS NULL AND (NEW.order IS NOT NULL OR NEW.pomodoro IS NOT NULL OR NEW.color IS NOT NULL OR NEW.is_default IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."order" IS DISTINCT FROM OLD."order" OR NEW.pomodoro IS DISTINCT FROM OLD.pomodoro OR NEW.color IS DISTINCT FROM OLD.color OR NEW.is_default IS DISTINCT FROM OLD.is_default)) THEN
-        INSERT INTO priority_user (user_id, priority_id, "order", pomodoro, color, is_default)
-            VALUES (auth.uid (), _priority_id, NEW.order, COALESCE(NEW.pomodoro, 25 * 60), COALESCE(NEW.color, 0), COALESCE(NEW.is_default, FALSE))
+    IF ((OLD IS NULL AND NEW."order" IS NOT NULL) OR (OLD IS NOT NULL AND NEW."order" IS DISTINCT FROM OLD."order")) THEN
+        UPDATE
+            priority_user
+        SET
+            "order" = NEW.order
+        WHERE
+            user_id = COALESCE(auth.uid (), NEW.user_id)
+            AND priority_id = _priority_id;
+    END IF;
+    -- TODO handle path update
+    -- Remove previous default
+    IF (NEW.is_default AND OLD IS NOT NULL AND NOT OLD.is_default) THEN
+        UPDATE
+            priority_settings
+        SET
+            is_default = FALSE
+        WHERE
+            is_default = TRUE
+            AND user_id = COALESCE(auth.uid (), NEW.user_id);
+    END IF;
+    IF ((OLD IS NULL AND (NEW."pomodoro" IS NOT NULL OR NEW."color" IS NOT NULL OR NEW."is_default" IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."pomodoro" IS DISTINCT FROM OLD."pomodoro" OR NEW."color" IS DISTINCT FROM OLD."color" OR NEW."is_default" IS DISTINCT FROM OLD."is_default"))) THEN
+        INSERT INTO priority_settings (user_id, priority_id, pomodoro, color, is_default)
+            VALUES (COALESCE(auth.uid (), NEW.user_id), _priority_id, NEW.pomodoro, NEW.color, COALESCE(NEW.is_default, FALSE))
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
-                "order" = COALESCE(NEW.order, priority_user."order"),
-                pomodoro = COALESCE(NEW.pomodoro, priority_user.pomodoro),
-                color = COALESCE(NEW.color, priority_user.color),
-                is_default = COALESCE(NEW.is_default, priority_user.is_default);
+                pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro),
+                color = COALESCE(NEW.color, priority_settings.color),
+                is_default = COALESCE(NEW.is_default, priority_settings.is_default);
     END IF;
     RETURN NEW;
 END;
@@ -479,78 +630,6 @@ BEGIN
     RETURN NEW;
 END;
 $function$;
-
-CREATE OR REPLACE VIEW "public"."insight" AS
-SELECT
-    e.user_id,
-    e.day,
-    text2ltree (min(ltree2text (e.priority_path))) AS priority_path,
-    e.type,
-    e.response,
-    nv.name,
-    nv.value,
-    (count(*))::integer AS count,
-    (sum(e.seconds))::integer AS seconds
-FROM (event_x e
-    CROSS JOIN LATERAL (
-        VALUES ('Total'::text, NULL::text),
-            ('Length'::text, (e.rounded_length)::text),
-            ('Size'::text, e.size),
-            ('Organizer'::text, CASE WHEN e.initiated THEN
-                    'You'::text
-                ELSE
-                    e.organizer_email
-                END),
-            ('External'::text, CASE WHEN (e.external = TRUE) THEN
-                    'External'::text
-                ELSE
-                    'Internal'::text
-                END),
-            ('Recurring'::text, CASE WHEN e.recurring THEN
-                    'Recurring'::text
-                ELSE
-                    'Ad hoc'::text
-                END),
-            ('Notice'::text, CASE WHEN (e.notice < 12) THEN
-                    '< 12 hours'::text
-                WHEN (e.notice < 24) THEN
-                    '< 24 hours'::text
-                WHEN (e.notice < (24 * 7)) THEN
-                    '< week'::text
-                ELSE
-                    '> week'::text
-                END)) nv (name, value))
-WHERE (e.status <> 'cancelled'::event_status)
-GROUP BY
-    e.user_id,
-    e.day,
-    e.priority_path,
-    e.type,
-    e.response,
-    nv.name,
-    nv.value;
-
-CREATE OR REPLACE VIEW "public"."priority_x" AS
-SELECT
-    c2.id,
-    cu.user_id,
-    c2.created_at,
-    GREATEST (cs.updated_at, cu.updated_at, c2.updated_at) AS updated_at,
-    GREATEST (cu.deleted_at, c2.deleted_at) AS deleted_at,
-    c2.draft,
-    c2.name,
-    replace_parent_path (c1.path, c2.path, COALESCE(cs.path, c1.path)) AS path,
-    COALESCE(cs."order", c2."order") AS "order",
-    cs.pomodoro,
-    cs.color,
-    COALESCE(cs.is_default, FALSE) AS is_default,
-    pt.tags
-FROM ((((priority_user cu
-                JOIN priority c1 ON (cu.priority_id = c1.id))
-            JOIN priority c2 ON (c1.path @> c2.path))
-        LEFT JOIN priority_user cs ON (((cs.user_id = cu.user_id)
-                    AND (c2.id = cs.priority_id))))
-    LEFT JOIN priority_tags pt ON (pt.priority_id = cu.priority_id));
 
 CREATE OR REPLACE FUNCTION public.redeem_invitation (_user_id bigint, _invitation text)
     RETURNS void
@@ -715,35 +794,54 @@ CREATE POLICY "Users can update their priorities" ON "public"."priority" AS perm
         USING (can_access_priority (id))
         WITH CHECK (((nlevel (path) = 1) OR can_access_priority (parent_path (path))));
 
-CREATE POLICY "Users can read/write their priority settings" ON "public"."priority_user" AS permissive
+CREATE POLICY "Users can read/write their priority settings" ON "public"."priority_settings" AS permissive
     FOR ALL TO authenticated
         USING ((user_id = auth.uid ()));
 
-CREATE POLICY "Users can see who shares their priorities" ON "public"."priority_user" AS permissive
-    FOR SELECT TO authenticated
-        USING (((user_id = auth.uid ()) OR can_access_priority (priority_id)));
+CREATE POLICY "Users change sharing for their priorities" ON "public"."priority_user" AS permissive
+    FOR ALL TO authenticated
+        USING (can_access_priority (priority_id));
 
 CREATE TRIGGER upsert_event_x
     INSTEAD OF INSERT OR UPDATE ON public.event_x
     FOR EACH ROW
     EXECUTE FUNCTION handle_event_x_upsert ();
 
+CREATE TRIGGER set_priority_user_updated_at
+    BEFORE UPDATE ON public.priority_settings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at ();
+
 CREATE TRIGGER upsert_priority_x
     INSTEAD OF INSERT OR UPDATE ON public.priority_x
     FOR EACH ROW
     EXECUTE FUNCTION handle_priority_x_upsert ();
 
-ALTER VIEW gap SET ( security_invoker = TRUE);
-ALTER VIEW gap_monthly SET ( security_invoker = TRUE);
-ALTER VIEW gap_daily SET ( security_invoker = TRUE);
-ALTER VIEW insight SET ( security_invoker = TRUE);
-ALTER VIEW "admin"."sync" SET ( security_invoker = FALSE);
-ALTER VIEW "admin"."invitation" SET ( security_invoker = FALSE);
-ALTER VIEW "public"."event_invitees" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."event_x" SET ( security_invoker = TRUE);
-ALTER VIEW "admin"."user" SET ( security_invoker = FALSE);
-ALTER VIEW balance_without_children SET ( security_invoker = TRUE);
-ALTER VIEW balance SET ( security_invoker = TRUE);
-ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."priority_x" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."priority_children" SET ( security_invoker = TRUE);
+ALTER VIEW gap SET (security_invoker = TRUE);
+
+ALTER VIEW gap_monthly SET (security_invoker = TRUE);
+
+ALTER VIEW gap_daily SET (security_invoker = TRUE);
+
+ALTER VIEW insight SET (security_invoker = TRUE);
+
+ALTER VIEW "admin"."sync" SET (security_invoker = FALSE);
+
+ALTER VIEW "admin"."invitation" SET (security_invoker = FALSE);
+
+ALTER VIEW "public"."event_invitees" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."event_x" SET (security_invoker = TRUE);
+
+ALTER VIEW "admin"."user" SET (security_invoker = FALSE);
+
+ALTER VIEW balance_without_children SET (security_invoker = TRUE);
+
+ALTER VIEW balance SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_x" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_children" SET (security_invoker = TRUE);
+

@@ -35,7 +35,12 @@ class Priorities extends UuidStoreTable with DraftTable, DeletableTable {
 
 class PrioritiesBase extends BaseTable {
   PrioritiesBase()
-    : super(table: 'priority_x', name: "priorities", upsertAsUpdate: true);
+    : super(
+        table: 'priority_x',
+        name: "priorities",
+        order: 'order_x',
+        upsertAsUpdate: true,
+      );
 
   @override
   Insertable<PriorityRow> fromBase(Map<String, dynamic> json) =>

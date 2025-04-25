@@ -10,13 +10,8 @@ BEGIN
         VALUES (NEW.id, 'Personal', public.generate_path (NULL))
     RETURNING
         id INTO _priority_id;
-    UPDATE
-        public.priority_user
-    SET
-        is_default = TRUE
-    WHERE
-        user_id = NEW.id
-        AND priority_id = _priority_id;
+    INSERT INTO public.priority_settings (user_id, priority_id, is_default)
+        VALUES (NEW.id, _priority_id, TRUE);
     RETURN NEW;
 END;
 $$

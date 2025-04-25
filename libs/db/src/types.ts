@@ -390,6 +390,7 @@ export type Database = {
           do_at: string | null
           done_at: string | null
           draft: boolean
+          expanded: boolean
           id: string
           name: string
           note: string | null
@@ -407,6 +408,7 @@ export type Database = {
           do_at?: string | null
           done_at?: string | null
           draft?: boolean
+          expanded?: boolean
           id?: string
           name: string
           note?: string | null
@@ -424,6 +426,7 @@ export type Database = {
           do_at?: string | null
           done_at?: string | null
           draft?: boolean
+          expanded?: boolean
           id?: string
           name?: string
           note?: string | null
@@ -436,14 +439,10 @@ export type Database = {
         }
         Relationships: []
       }
-      priority_user: {
+      priority_settings: {
         Row: {
           color: number | null
-          created_at: string
-          deleted_at: string | null
           is_default: boolean | null
-          order: number
-          path: unknown | null
           pomodoro: number | null
           priority_id: string
           updated_at: string
@@ -451,11 +450,7 @@ export type Database = {
         }
         Insert: {
           color?: number | null
-          created_at?: string
-          deleted_at?: string | null
           is_default?: boolean | null
-          order?: number
-          path?: unknown | null
           pomodoro?: number | null
           priority_id: string
           updated_at?: string
@@ -463,12 +458,74 @@ export type Database = {
         }
         Update: {
           color?: number | null
+          is_default?: boolean | null
+          pomodoro?: number | null
+          priority_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_settings_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_settings_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_settings_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "priority_settings_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_settings_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      priority_user: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          order: number
+          path: unknown | null
+          priority_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
           created_at?: string
           deleted_at?: string | null
-          is_default?: boolean | null
           order?: number
           path?: unknown | null
-          pomodoro?: number | null
+          priority_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          order?: number
+          path?: unknown | null
           priority_id?: string
           updated_at?: string
           user_id?: string
@@ -965,6 +1022,7 @@ export type Database = {
           is_default: boolean | null
           name: string | null
           order: number | null
+          order_x: number | null
           path: unknown | null
           pomodoro: number | null
           tags: Json | null
@@ -1301,6 +1359,7 @@ export type Database = {
           created_at: string | null
           id: string
           last_accessed_at: string | null
+          level: number | null
           metadata: Json | null
           name: string | null
           owner: string | null
@@ -1315,6 +1374,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           last_accessed_at?: string | null
+          level?: number | null
           metadata?: Json | null
           name?: string | null
           owner?: string | null
@@ -1329,6 +1389,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           last_accessed_at?: string | null
+          level?: number | null
           metadata?: Json | null
           name?: string | null
           owner?: string | null
@@ -1341,6 +1402,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "objects_bucketId_fkey"
+            columns: ["bucket_id"]
+            isOneToOne: false
+            referencedRelation: "buckets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      prefixes: {
+        Row: {
+          bucket_id: string
+          created_at: string | null
+          level: number
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          bucket_id: string
+          created_at?: string | null
+          level?: number
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          bucket_id?: string
+          created_at?: string | null
+          level?: number
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prefixes_bucketId_fkey"
             columns: ["bucket_id"]
             isOneToOne: false
             referencedRelation: "buckets"
@@ -1451,9 +1544,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_prefixes: {
+        Args: { _bucket_id: string; _name: string }
+        Returns: undefined
+      }
       can_insert_object: {
         Args: { bucketid: string; name: string; owner: string; metadata: Json }
         Returns: undefined
+      }
+      delete_prefix: {
+        Args: { _bucket_id: string; _name: string }
+        Returns: boolean
       }
       extension: {
         Args: { name: string }
@@ -1464,6 +1565,18 @@ export type Database = {
         Returns: string
       }
       foldername: {
+        Args: { name: string }
+        Returns: string[]
+      }
+      get_level: {
+        Args: { name: string }
+        Returns: number
+      }
+      get_prefix: {
+        Args: { name: string }
+        Returns: string
+      }
+      get_prefixes: {
         Args: { name: string }
         Returns: string[]
       }
@@ -1526,6 +1639,63 @@ export type Database = {
           updated_at: string
           created_at: string
           last_accessed_at: string
+          metadata: Json
+        }[]
+      }
+      search_legacy_v1: {
+        Args: {
+          prefix: string
+          bucketname: string
+          limits?: number
+          levels?: number
+          offsets?: number
+          search?: string
+          sortcolumn?: string
+          sortorder?: string
+        }
+        Returns: {
+          name: string
+          id: string
+          updated_at: string
+          created_at: string
+          last_accessed_at: string
+          metadata: Json
+        }[]
+      }
+      search_v1_optimised: {
+        Args: {
+          prefix: string
+          bucketname: string
+          limits?: number
+          levels?: number
+          offsets?: number
+          search?: string
+          sortcolumn?: string
+          sortorder?: string
+        }
+        Returns: {
+          name: string
+          id: string
+          updated_at: string
+          created_at: string
+          last_accessed_at: string
+          metadata: Json
+        }[]
+      }
+      search_v2: {
+        Args: {
+          prefix: string
+          bucket_name: string
+          limits?: number
+          levels?: number
+          start_after?: string
+        }
+        Returns: {
+          key: string
+          name: string
+          id: string
+          updated_at: string
+          created_at: string
           metadata: Json
         }[]
       }

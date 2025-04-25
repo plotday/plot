@@ -56,10 +56,9 @@ CREATE POLICY "Users can access their priorities" ON public.priority
     FOR SELECT TO authenticated
         USING (can_access_priority (id));
 
-CREATE POLICY "Users can see who shares their priorities" ON public.priority_user
-    FOR SELECT TO authenticated
-        USING ((user_id = auth.uid ())
-            OR can_access_priority (priority_id));
+CREATE POLICY "Users change sharing for their priorities" ON public.priority_user
+    FOR ALL TO authenticated
+        USING (can_access_priority (priority_id));
 
 CREATE POLICY "Users can create new root priorities" ON public.priority
     FOR INSERT TO authenticated
@@ -75,7 +74,7 @@ CREATE POLICY "Users can update their priorities" ON public.priority
         WITH CHECK (extensions.nlevel (priority.path) = 1
             OR can_access_priority (parent_path (priority.path)));
 
-CREATE POLICY "Users can read/write their priority settings" ON "public"."priority_user"
+CREATE POLICY "Users can read/write their priority settings" ON "public"."priority_settings"
     FOR ALL TO authenticated
         USING (user_id = auth.uid ());
 
