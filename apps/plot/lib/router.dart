@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:platform_builder/platform_builder.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:logging/logging.dart';
 
 import 'store/store.dart';
 import 'state/now.dart';
@@ -12,6 +14,8 @@ import 'command/global.dart';
 export 'package:auto_route/auto_route.dart';
 
 part 'router.gr.dart';
+
+final Logger _logger = Logger('plot.route');
 
 @RoutePage(name: 'AppShellRoute')
 class AppShell extends StatelessWidget {
@@ -101,11 +105,65 @@ class AppRouter extends RootStackRouter {
       ],
     ),
   ];
+
+  @override
+  RouterConfig<UrlState> config({
+    DeepLinkTransformer? deepLinkTransformer,
+    DeepLinkBuilder? deepLinkBuilder,
+    String? navRestorationScopeId,
+    WidgetBuilder? placeholder,
+    NavigatorObserversBuilder navigatorObservers =
+        AutoRouterDelegate.defaultNavigatorObserversBuilder,
+    bool includePrefixMatches = !kIsWeb,
+    bool Function(String? location)? neglectWhen,
+    bool rebuildStackOnDeepLink = false,
+    Listenable? reevaluateListenable,
+    Clip clipBehavior = Clip.hardEdge,
+  }) {
+    return super.config(
+      deepLinkTransformer: deepLinkTransformer,
+      deepLinkBuilder: deepLinkBuilder,
+      navRestorationScopeId: navRestorationScopeId,
+      placeholder: placeholder,
+      navigatorObservers: () => [RouteLogger(), ...navigatorObservers()],
+      includePrefixMatches: includePrefixMatches,
+      neglectWhen: neglectWhen,
+      rebuildStackOnDeepLink: rebuildStackOnDeepLink,
+      reevaluateListenable: reevaluateListenable,
+      clipBehavior: clipBehavior,
+    );
+  }
 }
 
 extension FocusedRouterExtension on BuildContext {
   StackRouter get focusedRouter {
     var focusContext = FocusManager.instance.primaryFocus?.context;
     return focusContext?.router ?? router;
+  }
+}
+
+class RouteLogger extends AutoRouterObserver {
+  void _log(Route route) {
+    if (route.settings.name != null) {
+      _logger.info(
+        'Navigated to ${route.settings.name}${route.settings.arguments == null ? '' : ' (${route.settings.arguments})'}',
+      );
+    }
+  }
+
+  @override
+  void didPush(Route route, Route? previousRoute) {
+    _log(route);
+  }
+
+  @override
+  void didPop(Route route, Route? previousRoute) {
+    _log(route);
+  }
+
+  @override
+  void didReplace({Route? newRoute, Route? oldRoute}) {
+    if (newRoute == null) return;
+    _log(newRoute);
   }
 }

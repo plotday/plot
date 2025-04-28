@@ -214,9 +214,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                     (p2.path.likeExp(p.path + Constant('%')))) &
                 (depth == null
                     ? Constant(true)
-                    : CustomExpression<int>(
-                      "LENGTH(p2.path) - LENGTH(REPLACE(p2.path, '.', '')) - (CASE p IS NULL THEN 0 ELSE LENGTH(p.path) - LENGTH(REPLACE(p.path, '.', '')))",
-                    ).isSmallerOrEqualValue(depth)),
+                    : CustomExpression<int>("""
+  LENGTH(p2.path) - LENGTH(REPLACE(p2.path, '.', '')) -
+  (CASE WHEN p.path IS NULL THEN 0 ELSE LENGTH(p.path) - LENGTH(REPLACE(p.path, '.', '')) END)
+  """).isSmallerOrEqualValue(depth)),
       ),
     ]);
 

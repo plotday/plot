@@ -7,6 +7,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/command/command.dart';
 import 'loading.dart';
+import 'logging.dart';
 
 @RoutePage(name: "PriorityRoute")
 class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
@@ -36,6 +37,13 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
     return FutureBuilder<Priority?>(
       future: Priority.getOne(priorityId),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          log.warning(
+            "Failed to load Priority",
+            snapshot.error,
+            snapshot.stackTrace,
+          );
+        }
         if (!snapshot.hasData) {
           return const LoadingPage();
         }
