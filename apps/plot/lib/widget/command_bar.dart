@@ -135,7 +135,8 @@ class CommandBarState<T> extends State<CommandBar<T>> {
                     ],
                   ),
             ),
-            Flexible(
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: 400),
               child: ListView.builder(
                 shrinkWrap: true,
                 itemCount: _allCommandsCount(),
