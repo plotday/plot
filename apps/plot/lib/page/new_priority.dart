@@ -38,7 +38,7 @@ class NewPriorityPage extends HookWidget {
         children: [
           TextField(
             controller: nameController,
-            label: "Add an priority",
+            label: "Add a priority",
             maxLines: 1,
             autofocus: true,
           ),

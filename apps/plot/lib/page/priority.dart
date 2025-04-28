@@ -111,7 +111,7 @@ class PriorityPage extends StatelessWidget {
                 position: EditableAreaPosition.bottom,
                 builder:
                     (context, focusNode) => Editor(
-                      hint: 'Add an priority',
+                      hint: 'Add a priority',
                       autofocus: true,
                       focusNode: focusNode,
                       onSubmitted: (body) async {
