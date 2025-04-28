@@ -3,7 +3,7 @@ part of 'store.dart';
 typedef PriorityId = Uuid;
 
 @DataClassName('PriorityRow')
-class Priorities extends StoreTable
+class Priorities extends Table
     with SyncableTable, UuidTable, DraftTable, DeletableTable {
   TextColumn get name => text()();
   TextColumn get path => text().map(const PathConverter())();

@@ -43,8 +43,6 @@ mixin SyncableTable on Table {
           .map(const LocalDateTimeConverter())();
 }
 
-abstract class StoreTable extends Table with SyncableTable {}
-
 mixin DraftTable on Table {
   DateTimeColumn get createdAt =>
       dateTime()
@@ -228,7 +226,7 @@ class Store extends _$Store {
     Injector.appInstance.registerSingleton<Store>(() => Store._(user));
   }
 
-  Future<DATA> add<TABLE extends StoreTable, DATA extends DataClass>(
+  Future<DATA> add<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     Insertable<DATA> data,
   ) async {
@@ -243,7 +241,7 @@ class Store extends _$Store {
     }
   }
 
-  Future<void> addBatch<TABLE extends StoreTable, DATA extends DataClass>(
+  Future<void> addBatch<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     Iterable<Insertable<DATA>> data,
   ) async {
@@ -258,7 +256,7 @@ class Store extends _$Store {
     }
   }
 
-  Future<void> save<TABLE extends StoreTable, DATA extends DataClass>(
+  Future<void> save<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     Insertable<DATA> data,
     BaseTable baseTable,
@@ -273,7 +271,7 @@ class Store extends _$Store {
     push(table, baseTable);
   }
 
-  Future<void> push<TABLE extends StoreTable, DATA extends DataClass>(
+  Future<void> push<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable,
   ) async {
@@ -319,7 +317,7 @@ class Store extends _$Store {
     }
   }
 
-  Future<bool> pull<TABLE extends StoreTable, DATA extends DataClass>(
+  Future<bool> pull<TABLE extends SyncableTable, DATA extends DataClass>(
     PullType type,
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable, {

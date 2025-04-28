@@ -3,7 +3,7 @@ part of 'store.dart';
 enum AccountProvider { google, outlook }
 
 @DataClassName('AccountRow')
-class Accounts extends StoreTable with SyncableTable, IdTable, DeletableTable {
+class Accounts extends Table with SyncableTable, IdTable, DeletableTable {
   TextColumn get email => text()();
   TextColumn get provider => textEnum<AccountProvider>()();
 }

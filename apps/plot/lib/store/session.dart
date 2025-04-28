@@ -12,8 +12,7 @@ enum SessionPriority implements Comparable<SessionPriority> {
 }
 
 @DataClassName('SessionRow')
-class Sessions extends StoreTable
-    with SyncableTable, UuidTable, DeletableTable {
+class Sessions extends Table with SyncableTable, UuidTable, DeletableTable {
   BlobColumn get priorityId =>
       blob()
           .nullable()

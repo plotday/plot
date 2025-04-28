@@ -11,7 +11,7 @@ enum EventAvailability { busy, away, focus, free, location }
 typedef EventId = Uuid;
 
 @DataClassName('EventRow')
-class Events extends StoreTable
+class Events extends Table
     with SyncableTable, UuidTable, DraftTable, DeletableTable {
   TextColumn get name => text().nullable()();
   DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();

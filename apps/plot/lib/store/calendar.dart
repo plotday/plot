@@ -1,7 +1,7 @@
 part of 'store.dart';
 
 @DataClassName('CalendarRow')
-class Calendars extends StoreTable with SyncableTable, IdTable, DeletableTable {
+class Calendars extends Table with SyncableTable, IdTable, DeletableTable {
   TextColumn get name => text()();
   BoolColumn get enabled => boolean()();
   IntColumn get accountId => integer().references(Accounts, #id)();

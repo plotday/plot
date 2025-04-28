@@ -7,7 +7,7 @@ typedef BalanceByPriorityType = Map<PriorityId?, BalanceByType>;
 typedef BalanceByDatePriorityType = Map<Date, BalanceByPriorityType>;
 
 @DataClassName('BalanceRow')
-class Balances extends StoreTable with SyncableTable {
+class Balances extends Table with SyncableTable {
   BlobColumn get priorityId =>
       blob()
           .nullable()
