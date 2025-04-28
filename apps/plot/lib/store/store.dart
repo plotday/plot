@@ -43,7 +43,7 @@ mixin SyncableTable on Table {
           .map(const LocalDateTimeConverter())();
 }
 
-abstract class StoreTable extends Table implements SyncableTable {}
+abstract class StoreTable extends Table with SyncableTable {}
 
 mixin DraftTable on Table {
   DateTimeColumn get createdAt =>
