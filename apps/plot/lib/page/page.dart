@@ -1,4 +1,4 @@
-export 'activity.dart';
+export 'priority.dart';
 export 'calendar_settings.dart';
 export 'event.dart';
 export 'loading.dart';

@@ -9,6 +9,7 @@ import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'env.dart';
+import 'logging.dart';
 
 class User extends Equatable {
   const User(this._baseUser);
@@ -35,16 +36,20 @@ class Base {
   static Uuid get userId => Injector.appInstance.get<Base>()._userId!;
 
   static Future<void> init() async {
-    await supa.Supabase.initialize(
-      url: Env.supabaseUrl,
-      anonKey: Env.supabaseAnonKey,
-    );
-    Injector.appInstance.registerSingleton<Base>(() => Base());
+    try {
+      log.info("Initializing Supabase (${Env.supabaseUrl})");
+      await supa.Supabase.initialize(
+        url: Env.supabaseUrl,
+        anonKey: Env.supabaseAnonKey,
+      );
+      Injector.appInstance.registerSingleton<Base>(() => Base());
+      log.info("Supabase ready");
+    } catch (e, stack) {
+      log.warning("Supabase errore", e, stack);
+    }
   }
 
-  Base()
-      : _client = supa.Supabase.instance.client,
-        _userId = null {
+  Base() : _client = supa.Supabase.instance.client, _userId = null {
     _client!.auth.onAuthStateChange.listen((data) async {
       User? user;
       if (data.session?.user == null) {
@@ -54,26 +59,26 @@ class Base {
       } else {
         user = User(data.session!.user);
         await Sentry.configureScope(
-          (scope) => scope.setUser(SentryUser(
-            id: user!.id,
-            email: user.primaryEmail,
-          )),
+          (scope) =>
+              scope.setUser(SentryUser(id: user!.id, email: user.primaryEmail)),
         );
-        await Posthog().identify(userId: user.id, userProperties: {
-          ...(user.primaryEmail == null ? {} : {"email": user.primaryEmail!}),
-          ...(user.name == null ? {} : {"name": user.name!}),
-        }, userPropertiesSetOnce: {
-          "signed_up_time": DateTime.now().toUtc().toIso8601String(),
-        });
+        await Posthog().identify(
+          userId: user.id,
+          userProperties: {
+            ...(user.primaryEmail == null ? {} : {"email": user.primaryEmail!}),
+            ...(user.name == null ? {} : {"name": user.name!}),
+          },
+          userPropertiesSetOnce: {
+            "signed_up_time": DateTime.now().toUtc().toIso8601String(),
+          },
+        );
       }
       _userId = user == null ? null : Uuid.fromString(user.id);
       _currentUserController.add(user);
     });
   }
 
-  Base.disconnected()
-      : _client = null,
-        _userId = Uuid.generate() {
+  Base.disconnected() : _client = null, _userId = Uuid.generate() {
     _currentUserController.add(null);
   }
 

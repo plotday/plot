@@ -21,8 +21,8 @@ class RootProvider extends StatefulWidget {
 class RootProviderState extends State<RootProvider> {
   @override
   void initState() {
-    super.initState();
     Bloc.observer = BlocLogger();
+    super.initState();
   }
 
   @override
@@ -35,20 +35,20 @@ class RootProviderState extends State<RootProvider> {
             UserLoading _ => const LoadingPage(),
             UserSignedOut _ => SignInPage(),
             UserReady _ => MultiBlocProvider(
-                providers: [
-                  BlocProvider(create: (_) => AccountsBloc()),
-                  BlocProvider(create: (_) => NowBloc()),
-                  BlocProvider(create: (_) => ScheduleBloc()),
-                ],
-                child: BlocBuilder<NowBloc, NowState>(
-                  builder: (context, state) {
-                    if (state is NowLoadingState) {
-                      return const LoadingPage();
-                    }
-                    return widget.child;
-                  },
-                ),
+              providers: [
+                BlocProvider(create: (_) => AccountsBloc()),
+                BlocProvider(create: (_) => NowBloc()),
+                BlocProvider(create: (_) => ScheduleBloc()),
+              ],
+              child: BlocBuilder<NowBloc, NowState>(
+                builder: (context, state) {
+                  if (state is NowLoadingState) {
+                    return const LoadingPage();
+                  }
+                  return widget.child;
+                },
               ),
+            ),
           };
         },
       ),

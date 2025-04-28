@@ -10,7 +10,6 @@ CREATE TABLE "public"."priority" (
     "draft" boolean NOT NULL DEFAULT FALSE,
     "private" boolean NOT NULL DEFAULT FALSE,
     "pinned" boolean NOT NULL DEFAULT FALSE,
-    "expanded" boolean NOT NULL DEFAULT FALSE,
     "do_at" timestamp with time zone,
     "done_at" timestamp with time zone,
     "order" double precision NOT NULL DEFAULT public.order_first (),

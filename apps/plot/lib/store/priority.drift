@@ -1,0 +1,55 @@
+import 'store.dart';
+
+CREATE VIEW priority_children AS
+SELECT
+    p.id,
+    c.id AS child_id
+FROM
+    priorities p
+    JOIN priorities c ON c.path LIKE p.path || '%';
+
+-- CREATE VIEW priority_ancestry AS
+-- WITH RECURSIVE path_parts AS (
+--     SELECT
+--         p.id AS priority_id,
+--         1 AS part_index,
+--         SUBSTR(p.path, 1, INSTR (p.path || '.', '.') - 1) AS part,
+--         SUBSTR(p.path, INSTR (p.path || '.', '.') + 1) AS remaining_path
+--     FROM
+--         priorities p
+--     UNION ALL
+--     SELECT
+--         priority_id,
+--         part_index + 1,
+--         SUBSTR(remaining_path, 1, INSTR (remaining_path || '.', '.') - 1),
+--         SUBSTR(remaining_path, INSTR (remaining_path || '.', '.') + 1)
+--     FROM
+--         path_parts
+--     WHERE
+--         remaining_path != ''
+-- ),
+-- ancestor_info AS (
+--     SELECT
+--         pp.priority_id,
+--         pp.part_index,
+--         pr.id AS ancestor_id,
+--         pr.name AS ancestor_name
+--     FROM
+--         path_parts pp
+--         JOIN priorities pr ON pr.name = pp.part
+-- ),
+-- ancestry_json AS (
+--     SELECT
+--         priority_id,
+--         json_group_array (json_object('id', ancestor_id, 'name', ancestor_name)) AS ancestry
+-- FROM
+--     ancestor_info
+-- GROUP BY
+--     priority_id
+-- )
+-- SELECT
+--     priority_id,
+--     ancestry
+-- FROM
+--     ancestry_json;
+--

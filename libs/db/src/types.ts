@@ -390,7 +390,6 @@ export type Database = {
           do_at: string | null
           done_at: string | null
           draft: boolean
-          expanded: boolean
           id: string
           name: string
           note: string | null
@@ -408,7 +407,6 @@ export type Database = {
           do_at?: string | null
           done_at?: string | null
           draft?: boolean
-          expanded?: boolean
           id?: string
           name: string
           note?: string | null
@@ -426,7 +424,6 @@ export type Database = {
           do_at?: string | null
           done_at?: string | null
           draft?: boolean
-          expanded?: boolean
           id?: string
           name?: string
           note?: string | null
@@ -1016,15 +1013,22 @@ export type Database = {
         Row: {
           color: number | null
           created_at: string | null
+          created_by: string | null
           deleted_at: string | null
+          do_at: string | null
+          done_at: string | null
           draft: boolean | null
           id: string | null
           is_default: boolean | null
           name: string | null
+          note: string | null
           order: number | null
           order_x: number | null
+          ordered_at: string | null
           path: unknown | null
+          pinned: boolean | null
           pomodoro: number | null
+          private: boolean | null
           tags: Json | null
           updated_at: string | null
           user_id: string | null

@@ -149,6 +149,9 @@ scripts:
     prod: ../../scripts/gen-env production SENTRY_PROJECT=app SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_DSN:SENTRY_APP_DSN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID AUTH_CALLBACK_URL > .env
   build:
     watch: flutter pub run build_runner watch
+    macos:
+      - $env:prod
+      - flutter pub run build_runner build && flutter build macos
     web:
       - $env:prod
       - flutter pub run build_runner build && flutter build web --release --source-maps --base-href=/ && flutter packages pub run sentry_dart_plugin

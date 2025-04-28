@@ -15,7 +15,6 @@ import 'package:plot/util/theme_color.dart';
 import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
 import 'package:plot/util/list.dart';
-import 'package:plot/util/map.dart';
 import 'package:plot/util/api.dart' as api;
 import 'package:plot/util/async.dart';
 import 'package:plot/base.dart';
@@ -31,20 +30,20 @@ part 'sync.dart';
 part 'account.dart';
 part 'calendar.dart';
 part 'priority.dart';
-part 'note.dart';
-part 'activity.dart';
 part 'event.dart';
 part 'session.dart';
 part 'balance.dart';
 
 part 'store.g.dart';
 
-class StoreTable extends Table {
+mixin SyncableTable on Table {
   DateTimeColumn get updatedAt =>
       dateTime()
           .withDefault(currentDateAndTime)
           .map(const LocalDateTimeConverter())();
 }
+
+abstract class StoreTable extends Table implements SyncableTable {}
 
 mixin DraftTable on Table {
   DateTimeColumn get createdAt =>
@@ -59,14 +58,14 @@ mixin DeletableTable on Table {
       dateTime().nullable().map(const LocalDateTimeConverter())();
 }
 
-class IdStoreTable extends StoreTable {
+mixin IdTable on Table {
   IntColumn get id => integer()();
 
   @override
   Set<Column> get primaryKey => {id};
 }
 
-class UuidStoreTable extends StoreTable {
+mixin UuidTable on Table {
   BlobColumn get id =>
       blob()
           .clientDefault(() => Uuid.generate().toBytes())
@@ -83,6 +82,7 @@ enum PullType {
   all, // pull all
 }
 
+/// A table in the remote database that can be synced with the local database.
 abstract class BaseTable {
   BaseTable({
     required this.table,
@@ -215,12 +215,11 @@ abstract class BaseTable {
     Accounts,
     Calendars,
     Priorities,
-    Notes,
-    Activities,
     Events,
     Sessions,
     Balances,
   ],
+  include: {'priority.drift', 'balance.drift'},
 )
 class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
@@ -412,8 +411,6 @@ class Store extends _$Store {
     await Future.wait([
       Chain.capture(() => Account.push().then((_) => Account.pull())),
       Chain.capture(() => Priority.push().then((_) => Priority.pull())),
-      Chain.capture(() => Activity.push().then((_) => Activity.pull())),
-      Chain.capture(() => Note.push().then((_) => Note.pull())),
       Chain.capture(() => Event.push().then((_) => Event.pull())),
       Chain.capture(() => Session.push().then((_) => Session.pull())),
       Chain.capture(() => Balance.pull()),
@@ -432,7 +429,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 33;
+  int get schemaVersion => 35;
 
   @override
   MigrationStrategy get migration {

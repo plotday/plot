@@ -4,45 +4,45 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/command/command.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/state/activity.dart';
+import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/note.dart';
 import 'package:plot/page/loading.dart';
 
-@RoutePage(name: "ActivityRoute")
-class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
-  ActivityWrapper({
-    Activity? activity,
-    ActivityId? activityId,
-    @PathParam("activityId") String? activityIdString,
+@RoutePage(name: "PriorityRoute")
+class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
+  PriorityWrapper({
+    Priority? priority,
+    PriorityId? priorityId,
+    @PathParam("priorityId") String? priorityIdString,
     super.key,
-  }) : activityId =
-           activity?.id ??
-           activityId ??
-           (activityIdString != null
-               ? ActivityId.fromShortString(activityIdString)
+  }) : priorityId =
+           priority?.id ??
+           priorityId ??
+           (priorityIdString != null
+               ? PriorityId.fromShortString(priorityIdString)
                : null);
 
-  final ActivityId? activityId;
+  final PriorityId? priorityId;
 
   @override
   Widget wrappedRoute(BuildContext context) {
     return BlocProvider(
-      create: (_) => ActivityBloc()..setCurrentId(activityId),
+      create: (_) => PriorityBloc()..setCurrentId(priorityId),
       child: this,
     );
   }
 }
 
-@RoutePage(name: "ActivityMainRoute")
-class ActivityPage extends StatelessWidget {
-  const ActivityPage({super.key});
+@RoutePage(name: "PriorityMainRoute")
+class PriorityPage extends StatelessWidget {
+  const PriorityPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ActivityBloc, ActivityState>(
+    return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
-        if (state is! ActivitySelectedState) {
+        if (state is! PrioritySelectedState) {
           return const LoadingPage();
         }
 
@@ -53,7 +53,7 @@ class ActivityPage extends StatelessWidget {
         return Scaffold(
           header: Header(
             title: state.current.title,
-            commands: [primaryActivityCommand(state.current)],
+            commands: [primaryPriorityCommand(state.current)],
           ),
           body: Column(
             children: [
@@ -95,7 +95,7 @@ class ActivityPage extends StatelessWidget {
                   autofocus: true,
                   focusNode: focusNode,
                   onSubmitted: (body) async {
-                    await context.read<ActivityBloc>().updateNote(
+                    await context.read<PriorityBloc>().updateNote(
                       state.draft.copyWith(body: body, draft: false),
                     );
                   },

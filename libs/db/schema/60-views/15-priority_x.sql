@@ -25,7 +25,13 @@ SELECT
     pu.user_id,
     p.created_at,
     GREATEST (settings.updated_at, pu.updated_at, p.updated_at) AS updated_at,
+    CASE WHEN pu.order IS NULL THEN
+        p.ordered_at
+    ELSE
+        pu.updated_at
+    END AS ordered_at,
     GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
+    p.created_by,
     p.draft,
     p.name,
     CASE WHEN pu.path IS NULL THEN
@@ -35,6 +41,11 @@ SELECT
         -- Otherwise, replace the parent path with the user's path
         replace_parent_path (p.path, pu.path, COALESCE(pu.path, p.path))
     END AS path,
+    p.private,
+    p.pinned,
+    p.do_at,
+    p.done_at,
+    p.note,
     COALESCE(pu.order, p.order) AS "order",
     (
         CASE WHEN p.pinned = TRUE THEN

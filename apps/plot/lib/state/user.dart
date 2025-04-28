@@ -13,8 +13,12 @@ class UserBloc extends Cubit<UserState> {
   UserBloc() : super(const UserLoading()) {
     _userSubscription = Base.user.listen((user) async {
       if (user == null) {
+        if (state is UserSignedOut) return;
+        log.info('User signed out');
         emit(const UserSignedOut());
-      } else if (state is! UserReady) {
+      } else {
+        if (state is UserReady) return;
+        log.info('User signed in: ${user.primaryEmail}');
         try {
           await Store.init(user);
           await Store.get.sync();

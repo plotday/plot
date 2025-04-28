@@ -21,10 +21,10 @@ class GlobalShortcuts extends StatelessWidget {
         commands: Commands(
           prompt: 'Run a command',
           groups: [
-            StaticCommandGroup(title: 'Commands', commands: [
-              PickCurrentActivity(),
-              ShowSettings(),
-            ])
+            StaticCommandGroup(
+              title: 'Commands',
+              commands: [PickCurrentPriority(), ShowSettings()],
+            ),
           ],
         ),
         child: child,

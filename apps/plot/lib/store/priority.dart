@@ -3,7 +3,8 @@ part of 'store.dart';
 typedef PriorityId = Uuid;
 
 @DataClassName('PriorityRow')
-class Priorities extends UuidStoreTable with DraftTable, DeletableTable {
+class Priorities extends StoreTable
+    with SyncableTable, UuidTable, DraftTable, DeletableTable {
   TextColumn get name => text()();
   TextColumn get path => text().map(const PathConverter())();
   BlobColumn get createdBy => blob().map(const UuidConverter())();
@@ -17,10 +18,12 @@ class Priorities extends UuidStoreTable with DraftTable, DeletableTable {
           .map(const LocalDateTimeConverter())();
   IntColumn get pomodoro =>
       integer()
+          .nullable()
           .withDefault(const Constant(25 * 60))
           .map(const DurationConverter())();
   IntColumn get color =>
       integer()
+          .nullable()
           .withDefault(const Constant(0))
           .map(const ThemeColorConverter())();
   BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
@@ -30,7 +33,7 @@ class Priorities extends UuidStoreTable with DraftTable, DeletableTable {
       dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get doneAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
-  TextColumn get body => text().nullable()();
+  TextColumn get note => text().nullable()();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -55,136 +58,256 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return await Store.get.pull(PullType.all, table, PrioritiesBase());
   }
 
-  static Future<Priority> get(PriorityId id) async {
-    return await (Store.get.select(table)..where(
-      (t) => t.id.equals(id.toBytes()),
-    )).getSingle().then(Priority.fromStore);
+  static Future<List<Priority>> get({
+    PriorityId? id,
+    Path? path,
+    int? depth,
+    bool? pinned,
+    bool? active,
+    bool? deleted = false,
+    bool recent = false,
+    String? search,
+    bool self = true,
+  }) async {
+    return _get(
+      id: id,
+      path: path,
+      depth: depth,
+      pinned: pinned,
+      active: active,
+      deleted: deleted,
+      recent: recent,
+      search: search,
+      self: self,
+    ).get();
   }
 
-  static Future<List<Priority>> getAll() async {
-    return await (Store.get.select(table)
-          ..where((t) => t.deletedAt.isNull())
-          ..orderBy([(t) => OrderingTerm(expression: t.path)]))
-        .get()
-        .then((rows) => _buildHierarchy(rows, flat: true).toList());
+  static Stream<List<Priority>> watch({
+    PriorityId? id,
+    Path? path,
+    int? depth,
+    bool? pinned,
+    bool? active,
+    bool? deleted = false,
+    bool recent = false,
+    String? search,
+    bool self = true,
+  }) {
+    return _get(
+      id: id,
+      path: path,
+      depth: depth,
+      pinned: pinned,
+      active: active,
+      deleted: deleted,
+      recent: recent,
+      search: search,
+      self: self,
+    ).watch();
   }
 
-  static SimpleSelectStatement<$PrioritiesTable, PriorityRow> _selectDefault() {
-    return Store.get.select(table)
-      ..where((t) => t.deletedAt.isNull())
-      ..orderBy([
-        (t) => OrderingTerm(expression: t.isDefault, mode: OrderingMode.desc),
-        // If no priority is marked default, fall back to the first one created
-        (t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.asc),
-      ])
-      ..limit(1);
+  static Future<Priority> getOne(
+    PriorityId id, {
+    int? depth = 0,
+    bool? pinned,
+    bool? active,
+    bool? deleted = false,
+    bool ancestors = true,
+  }) {
+    return _get(
+      id: id,
+      depth: depth,
+      pinned: pinned,
+      active: active,
+      deleted: deleted,
+      ancestors: ancestors,
+    ).get().then((priorities) => asNested(priorities, id: id).first);
   }
 
-  static Future<Priority?> getDefault() async {
-    return await _selectDefault().getSingleOrNull().then(
-      (p) => p == null ? null : Priority.fromStore(p),
-    );
+  static Stream<Priority> watchOne(
+    PriorityId id, {
+    int? depth = 0,
+    bool? pinned,
+    bool? active,
+    bool? deleted = false,
+    bool ancestors = true,
+  }) {
+    return _get(
+      id: id,
+      depth: depth,
+      pinned: pinned,
+      active: active,
+      deleted: deleted,
+      ancestors: ancestors,
+    ).watch().map((priorities) => asNested(priorities, id: id).first);
   }
 
-  static Stream<Priority?> watchDefault({int depth = 0}) {
-    return _selectDefault().watchSingleOrNull().asyncExpand((row) {
-      if (row == null) {
-        return Stream.value(null);
-      }
-      return watchPath(
-        row.path,
-        depth: depth,
-      ).map((priorities) => priorities.first);
-    });
+  static Future<Priority> getDefault() {
+    return _default().getSingle();
   }
 
-  static Stream<Map<Uuid, Priority>> watch({bool deleted = false}) {
-    return watchAll(deleted: deleted).map((rows) {
-      final priorities = <Uuid, Priority>{};
-      void add(Priority priority) {
-        priorities[priority.id] = priority;
-        for (var child in priority.children) {
-          add(child);
-        }
-      }
-
-      for (var row in rows) {
-        add(row);
-      }
-      return priorities;
-    });
+  static Stream<Priority> watchDefault() {
+    return _default().watchSingle();
   }
 
-  static Stream<Priority> watchOne(PriorityId id, {int? depth = 0}) {
-    final query = Store.get.select(table);
-    query.where((t) => t.id.equals(id.toBytes()));
-    return query.watchSingle().asyncExpand((row) {
-      return watchPath(
-        row.path,
-        depth: depth,
-      ).map((priorities) => priorities.firstOrNull ?? Priority.fromStore(row));
-    });
-  }
-
-  static Stream<List<Priority>> watchAll({bool? deleted = false}) =>
-      watchPath(null, depth: null, deleted: deleted);
+  static Future<List<Priority>> getRoot({
+    int? depth,
+    bool? pinned,
+    bool? active,
+    bool? deleted = false,
+  }) => get(
+    depth: depth,
+    pinned: pinned,
+    active: active,
+    deleted: deleted,
+  ).then((priorities) => asNested(priorities));
 
   static Stream<List<Priority>> watchRoot({
     int? depth,
+    bool? pinned,
+    bool? active,
     bool? deleted = false,
-  }) => watchPath(null, depth: depth);
+  }) => watch(
+    depth: depth,
+    pinned: pinned,
+    active: active,
+    deleted: deleted,
+  ).map((priorities) => asNested(priorities));
 
-  static Stream<List<Priority>> watchPath(
-    Path? path, {
-    int? depth = 1,
+  static MultiSelectable<Priority> _get({
+    /* Selectors */
+    PriorityId? id,
+    Path? path,
+
+    /* Filters */
+    int? depth,
+    bool ancestors = false,
+    bool self = true,
+    bool? pinned,
+    bool? active,
     bool? deleted = false,
+    String? search,
+
+    /* Sorting */
+    bool recent = false,
   }) {
-    final query = Store.get.select(table);
-    if (path != null) {
-      query.where(
-        (t) =>
-            Variable<String>(
-              path.toString(),
-            ).likeExp(t.path + const Constant('%')) |
-            t.path.like("$path.%"),
-      );
+    // pullPriorityPath(priorityPath);
+    final p = Store.get.alias(Store.get.priorities, 'p');
+    final query = Store.get.select(p);
+    if (id != null) {
+      query.where((t) => t.id.equalsValue(id));
     }
-    if (depth != null) {
-      query.where(
-        (t) => CustomExpression<int>(
-          "LENGTH(path) - LENGTH(REPLACE(path, '.', ''))",
-        ).isSmallerOrEqual(Variable<int>(((path?.depth ?? 0) + depth))),
-      );
+    if (path != null) {
+      query.where((t) => t.path.equalsValue(path));
+    }
+
+    final p2 = Store.get.alias(Store.get.priorities, 'p2');
+    final join = query.join([
+      innerJoin(
+        p2,
+        id == null && path == null
+            ? Constant(true)
+            : p2.path.likeExp(p.path + Constant('%')) &
+                ((ancestors
+                        ? p.path.likeExp(p2.path + Constant('%'))
+                        : Constant(true)) |
+                    (p2.path.likeExp(p.path + Constant('%')))) &
+                (depth == null
+                    ? Constant(true)
+                    : CustomExpression<int>(
+                      "LENGTH(p2.path) - LENGTH(REPLACE(p2.path, '.', '')) - (CASE p IS NULL THEN 0 ELSE LENGTH(p.path) - LENGTH(REPLACE(p.path, '.', '')))",
+                    ).isSmallerOrEqualValue(depth)),
+      ),
+    ]);
+
+    if (active == true) {
+      join.where(p2.doAt.isNotNull() & p2.doneAt.isNull());
+    } else if (active == false) {
+      join.where(p2.doAt.isNull() | p2.doneAt.isNotNull());
+    }
+    if (pinned != null) {
+      join.where(p2.pinned.equals(pinned));
     }
     if (deleted != null) {
-      query.where(
-        (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
-      );
+      join.where(deleted ? p2.deletedAt.isNotNull() : p2.deletedAt.isNull());
     }
+    if (search != null) {
+      join.where(p2.name.like('%$search%'));
+    }
+    if (self == false) {
+      if (id != null) {
+        join.where(p2.id.equalsValue(id).not());
+      }
+      if (path != null) {
+        join.where(p2.path.equalsValue(path).not());
+      }
+    }
+
+    if (recent) {
+      final join2 = join.join([
+        leftOuterJoin(
+          Store.get.sessions,
+          Store.get.sessions.priorityId.equalsExp(p2.id),
+        ),
+      ]);
+      join2.orderBy([
+        OrderingTerm(
+          expression: Store.get.sessions.end,
+          mode: OrderingMode.desc,
+        ),
+      ]);
+      return join2.map((row) => Priority.fromStore(row.readTable(p2)));
+    }
+
     // order by path so parents always precede children
-    query.orderBy([(t) => OrderingTerm(expression: t.path)]);
+    join.orderBy([OrderingTerm(expression: p2.path)]);
 
-    return query.watch().map((rows) {
-      return _buildHierarchy(rows, path: path);
-    });
+    return join.map((row) => Priority.fromStore(row.readTable(p2)));
   }
 
-  Future<String> generateTitle() async {
-    final response = await api.post("/summary", body: {'body': body});
-    return response['title'] as String;
+  static SingleSelectable<Priority> _default() {
+    return (Store.get.select(table)
+          ..where((t) => t.deletedAt.isNull())
+          ..orderBy([
+            (t) =>
+                OrderingTerm(expression: t.isDefault, mode: OrderingMode.desc),
+            // If no priority is marked default, fall back to the first one created
+            (t) =>
+                OrderingTerm(expression: t.createdAt, mode: OrderingMode.asc),
+          ])
+          ..limit(1))
+        .map(Priority.fromStore);
   }
 
-  static List<Priority> _buildHierarchy(
-    List<PriorityRow> rows, {
+  static Map<Uuid, Priority> asMap(List<Priority> list) {
+    final priorities = <Uuid, Priority>{};
+    void add(Priority priority) {
+      priorities[priority.id] = priority;
+      for (var child in priority.children) {
+        add(child);
+      }
+    }
+
+    for (var p in list) {
+      add(p);
+    }
+    return priorities;
+  }
+
+  static Map<Uuid, Priority> asNestedMap(List<Priority> list) {
+    return asMap(asNested(list, flat: true));
+  }
+
+  static List<Priority> asNested(
+    List<Priority> priorities, {
+    PriorityId? id,
     Path? path,
     bool flat = false,
   }) {
     List<Priority> matches = [];
     List<Priority> stack = [];
 
-    for (var row in rows) {
-      var priority = Priority.fromStore(row);
-
+    for (var priority in priorities) {
       if (stack.isNotEmpty && !stack.last.path.isParent(priority.path)) {
         stack.removeWhere((c) => !c.path.isParent(priority.path));
       }
@@ -193,7 +316,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         priority = priority.copyWith(parent: stack.last);
       }
 
-      if ((path == null && priority.path.isRoot) || priority.path == path) {
+      if ((id == null && path == null && priority.path.isRoot) ||
+          priority.path == path ||
+          priority.id == id) {
         matches.add(priority);
         stack.clear();
       } else if (flat) {
@@ -207,13 +332,20 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return matches;
   }
 
+  Future<String> generateTitle() async {
+    final response = await api.post("/summary", body: {'body': note});
+    return response['title'] as String;
+  }
+
   Priority({
-    required super.name,
-    required super.order,
+    super.name = '',
+    Order? order,
     this.parent,
+    this.balance,
     super.isDefault = false,
     super.pomodoro = const Duration(minutes: 25),
     super.color = const ThemeColor.defaultColor(),
+    super.draft = false,
     super.private = false,
     super.pinned = false,
   }) : children = [],
@@ -222,39 +354,44 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdBy: Base.userId,
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
+         order: order ?? Order.first(),
          orderedAt: DateTime.now(),
-         draft: false,
          path: Path.generate(parent: parent?.path),
        ) {
     parent?._addChild(this);
   }
 
-  Priority.fromStore(PriorityRow row, {this.parent, List<Priority>? children})
-    : children = children ?? [],
-      super(
-        id: row.id,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
-        draft: row.draft,
-        name: row.name,
-        pomodoro: row.pomodoro,
-        color: row.color,
-        isDefault: row.isDefault,
-        order: row.order,
-        path: row.path,
-        private: row.private,
-        pinned: row.pinned,
-        orderedAt: row.orderedAt,
-        createdBy: row.createdBy,
-        doAt: row.doAt,
-        doneAt: row.doneAt,
-      ) {
+  Priority.fromStore(
+    PriorityRow row, {
+    this.parent,
+    List<Priority>? children,
+    this.balance,
+  }) : children = children ?? [],
+       super(
+         id: row.id,
+         createdAt: row.createdAt,
+         updatedAt: row.updatedAt,
+         deletedAt: row.deletedAt,
+         draft: row.draft,
+         name: row.name,
+         pomodoro: row.pomodoro,
+         color: row.color,
+         isDefault: row.isDefault,
+         order: row.order,
+         path: row.path,
+         private: row.private,
+         pinned: row.pinned,
+         orderedAt: row.orderedAt,
+         createdBy: row.createdBy,
+         doAt: row.doAt,
+         doneAt: row.doneAt,
+       ) {
     parent?._addChild(this);
   }
 
   final Priority? parent;
   List<Priority> children;
+  final Balance? balance;
 
   List<Priority> descendants() {
     List<Priority> result = [];
@@ -296,15 +433,16 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Uuid? createdBy,
     Order? order,
     DateTime? orderedAt,
-    Duration? pomodoro,
-    ThemeColor? color,
+    Value<Duration?> pomodoro = const Value.absent(),
+    Value<ThemeColor?> color = const Value.absent(),
     bool? isDefault,
     bool? pinned,
     bool? private,
     Value<DateTime?> doAt = const Value.absent(),
     Value<DateTime?> doneAt = const Value.absent(),
-    Value<String?> body = const Value.absent(),
+    Value<String?> note = const Value.absent(),
     Priority? parent,
+    Balance? balance,
   }) {
     final publish = this.draft && draft == false;
     if (doAt.present && doAt.value != null) {
@@ -343,9 +481,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         private: private,
         doAt: doAt,
         doneAt: doneAt,
+        note: note,
       ),
       parent: parent ?? this.parent,
       children: children,
+      balance: balance ?? this.balance,
     );
   }
 

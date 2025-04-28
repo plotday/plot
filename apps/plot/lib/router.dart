@@ -58,18 +58,6 @@ class AppRouter extends RootStackRouter {
         ),
         AutoRoute(page: SignInRoute.page, path: 'login'),
         AutoRoute(
-          page: PriorityRoute.page,
-          path: ':priorityId',
-          children: [
-            AutoRoute(page: PriorityMainRoute.page, path: ''),
-            AutoRoute(
-              page: ActivityRoute.page,
-              path: ':activityId',
-              children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
-            ),
-          ],
-        ),
-        AutoRoute(
           page: ScheduleRoute.page,
           path: 'schedule',
           // children: [
@@ -104,6 +92,11 @@ class AppRouter extends RootStackRouter {
           //     ],
           //   ),
           // ],
+        ),
+        AutoRoute(
+          page: PriorityRoute.page,
+          path: ':priorityId',
+          children: [AutoRoute(page: PriorityMainRoute.page, path: '')],
         ),
       ],
     ),

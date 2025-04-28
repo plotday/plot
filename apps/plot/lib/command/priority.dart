@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:auto_route/auto_route.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'logging.dart';
@@ -10,8 +9,8 @@ import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/page/new_priority.dart';
 
-class PriorityCommand extends ValueCommand<Priority?> {
-  PriorityCommand(Priority? priority)
+class _PriorityValue extends ValueCommand<Priority?> {
+  _PriorityValue(Priority? priority)
     : super(
         title: priority?.name ?? 'None',
         subtitle: priority != null ? priority.parent?.pathLabel : 'Top-level',
@@ -27,11 +26,12 @@ class PriorityCommandGroup extends CommandGroup {
   @override
   Future<List<Command>> list({String? search}) async {
     final all =
-        (await Priority.getAll())
-            .map((priority) => PriorityCommand(priority))
-            .toList();
+        (await Priority.get(
+          recent: true,
+          search: search,
+        )).map((priority) => _PriorityValue(priority)).toList();
     if (includeNone) {
-      all.add(PriorityCommand(null));
+      all.add(_PriorityValue(null));
     }
     return CommandGroup.filter(all, search);
   }
@@ -74,8 +74,8 @@ class ChangeCurrentPriority extends Command {
   }
 }
 
-class PickCurrentActivity extends ShowCommand<Priority> {
-  PickCurrentActivity()
+class PickCurrentPriority extends ShowCommand<Priority> {
+  PickCurrentPriority()
     : super(
         title: 'Change Current Priority',
         icon: PlotIcon.priority,
@@ -145,7 +145,94 @@ class NewPriority extends Command {
   }
 }
 
+abstract class _UpdatePriorityCommand extends Command {
+  _UpdatePriorityCommand(
+    this.priority, {
+    Future<void> Function(Priority)? onUpdate,
+    required super.title,
+    super.icon,
+  }) : onUpdate = onUpdate ?? ((priority) => priority.save());
+
+  final Priority priority;
+  final Future<void> Function(Priority) onUpdate;
+}
+
+class StartPriority extends _UpdatePriorityCommand {
+  StartPriority(super.priority, {super.onUpdate})
+    : super(title: 'Do Now', icon: PlotIcon.doNow);
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    final start = !priority.doNow;
+    await onUpdate(
+      priority.copyWith(
+        doAt:
+            start
+                ? Value(DateTime.now().subtract(Duration(seconds: 10)))
+                : const Value(null),
+      ),
+    );
+    Posthog().capture(
+      eventName: start ? 'Priority Started' : 'Priority Stopped',
+    );
+    return null;
+  }
+}
+
+class FinishPriority extends _UpdatePriorityCommand {
+  FinishPriority(super.priority, {super.onUpdate})
+    : super(title: 'Finish Priority', icon: PlotIcon.done);
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    await onUpdate(priority.copyWith(doneAt: Value(DateTime.now())));
+    Posthog().capture(eventName: 'Priority Finished');
+    return null;
+  }
+}
+
+class MarkPriorityIncomplete extends _UpdatePriorityCommand {
+  MarkPriorityIncomplete(super.priority, {super.onUpdate})
+    : super(title: 'Mark Priority Not Finished', icon: PlotIcon.done);
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    await onUpdate(priority.copyWith(doneAt: const Value(null)));
+    Posthog().capture(eventName: 'Priority Marked Not Finished');
+    return null;
+  }
+}
+
+class PinPriority extends _UpdatePriorityCommand {
+  PinPriority(super.priority, {super.onUpdate})
+    : super(title: priority.pinned ? 'Unpin' : 'Pin', icon: PlotIcon.pinned);
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    await onUpdate(priority.copyWith(pinned: !priority.pinned));
+    Posthog().capture(
+      eventName: priority.pinned ? 'Priority Un-pinned' : 'Priority Pinned',
+    );
+    return null;
+  }
+}
+
 StaticCommandGroup priorityCommands(Priority priority) => StaticCommandGroup(
   title: 'Commands',
   commands: [ArchivePriority(Future.value(priority))],
+);
+
+Command priorityCommand(Priority priority) => CommandWrapper(
+  switch (priority) {
+    _ when priority.pinned => PinPriority(priority),
+    _ when priority.doNow => FinishPriority(priority),
+    _ when priority.done => MarkPriorityIncomplete(priority),
+    _ => StartPriority(priority),
+  },
+  statusIcon: Value(switch (priority) {
+    _ when priority.pinned => PlotIcon.pinned,
+    _ when priority.doNow => PlotIcon.todo,
+    _ when priority.done => PlotIcon.done,
+    _ => PlotIcon.doNow,
+  }),
 );
