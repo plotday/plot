@@ -206,7 +206,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       innerJoin(
         p2,
         id == null && path == null
-            ? Constant(true)
+            ? p.id.equalsExp(p2.id)
             : p2.path.likeExp(p.path + Constant('%')) &
                 ((ancestors
                         ? p.path.likeExp(p2.path + Constant('%'))
