@@ -33,7 +33,7 @@ SELECT
     GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
     p.created_by,
     p.draft,
-    p.name,
+    p.title,
     CASE WHEN pu.path IS NULL THEN
         -- If the user has no path, use the priority path
         p.path
@@ -79,18 +79,17 @@ DECLARE
     _priority_id uuid;
 BEGIN
     _priority_id := NEW.id;
-    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.name IS DISTINCT FROM OLD.name OR NEW.path IS DISTINCT FROM OLD.path OR NEW.draft IS DISTINCT FROM OLD.draft OR NEW.private IS DISTINCT FROM OLD.private OR NEW.pinned IS DISTINCT FROM OLD.pinned OR NEW.expanded IS DISTINCT FROM OLD.expanded OR NEW.do_at IS DISTINCT FROM OLD.do_at OR NEW.done_at IS DISTINCT FROM OLD.done_at OR NEW.order IS DISTINCT FROM OLD.order OR NEW.ordered_at IS DISTINCT FROM OLD.ordered_at OR NEW.note IS DISTINCT FROM OLD.note) THEN
-        INSERT INTO priority (id, deleted_at, name, path, draft, private, pinned, expanded, do_at, done_at, "order", ordered_at, note)
-            VALUES (NEW.id, NEW.deleted_at, NEW.name, NEW.path, NEW.draft, NEW.private, NEW.pinned, NEW.expanded, NEW.do_at, NEW.done_at, NEW.order, NEW.ordered_at, NEW.note)
+    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.draft IS DISTINCT FROM OLD.draft OR NEW.private IS DISTINCT FROM OLD.private OR NEW.pinned IS DISTINCT FROM OLD.pinned OR NEW.do_at IS DISTINCT FROM OLD.do_at OR NEW.done_at IS DISTINCT FROM OLD.done_at OR NEW.order IS DISTINCT FROM OLD.order OR NEW.ordered_at IS DISTINCT FROM OLD.ordered_at OR NEW.note IS DISTINCT FROM OLD.note) THEN
+        INSERT INTO priority (id, deleted_at, title, path, draft, private, pinned, do_at, done_at, "order", ordered_at, note)
+            VALUES (NEW.id, NEW.deleted_at, NEW.title, NEW.path, NEW.draft, NEW.private, NEW.pinned, NEW.do_at, NEW.done_at, NEW.order, NEW.ordered_at, NEW.note)
         ON CONFLICT (id)
             DO UPDATE SET
                 deleted_at = NEW.deleted_at,
-                name = NEW.name,
+                title = NEW.title,
                 path = NEW.path,
                 draft = NEW.draft,
                 private = NEW.private,
                 pinned = NEW.pinned,
-                expanded = NEW.expanded,
                 do_at = NEW.do_at,
                 done_at = NEW.done_at,
                 "order" = NEW.order,

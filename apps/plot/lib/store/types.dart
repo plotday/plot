@@ -29,10 +29,10 @@ class CustomSerializer extends ValueSerializer {
     if (_isType<T, uuid.UuidValue>()) {
       return uuid.UuidValue.fromString(json as String) as T;
     }
-    if (T == Duration) {
+    if (_isType<T, Duration>()) {
       return Duration(seconds: json as int) as T;
     }
-    if (T == Date) {
+    if (_isType<T, Date>()) {
       return Date.fromString(json as String) as T;
     }
 

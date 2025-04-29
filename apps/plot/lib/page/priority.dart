@@ -120,7 +120,7 @@ class PriorityPage extends StatelessWidget {
                       focusNode: focusNode,
                       onSubmitted: (body) async {
                         final priority = state.draft.copyWith(
-                          name: body,
+                          note: Value(body),
                           draft: false,
                         );
                         await context.read<PriorityBloc>().add(priority);

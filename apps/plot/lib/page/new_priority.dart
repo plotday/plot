@@ -13,7 +13,7 @@ class NewPriorityPage extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (nameController, name) = useTextEditingValue();
+    final (nameController, title) = useTextEditingValue();
     final parent = useState<Priority?>(_initialParent);
 
     return Dialog(
@@ -50,7 +50,7 @@ class NewPriorityPage extends HookWidget {
                   AddPriority(
                     Future.value(
                       Priority(
-                        name: name,
+                        title: title,
                         parent: parent.value,
                         order: Order.first(),
                       ),
@@ -64,7 +64,7 @@ class NewPriorityPage extends HookWidget {
                     return ret;
                   },
                 ),
-                enabled: name.isNotEmpty,
+                enabled: title.isNotEmpty,
               ),
             ],
           ),

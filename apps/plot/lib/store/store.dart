@@ -8,6 +8,7 @@ import 'package:equatable/equatable.dart';
 import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:stack_trace/stack_trace.dart';
+import 'package:remove_markdown/remove_markdown.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
@@ -427,7 +428,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 35;
+  int get schemaVersion => 36;
 
   @override
   MigrationStrategy get migration {

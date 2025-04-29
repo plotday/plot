@@ -5,7 +5,7 @@ typedef PriorityId = Uuid;
 @DataClassName('PriorityRow')
 class Priorities extends Table
     with SyncableTable, UuidTable, DraftTable, DeletableTable {
-  TextColumn get name => text()();
+  TextColumn get title => text().nullable()();
   TextColumn get path => text().map(const PathConverter())();
   BlobColumn get createdBy => blob().map(const UuidConverter())();
   RealColumn get order =>
@@ -233,7 +233,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       join.where(deleted ? p2.deletedAt.isNotNull() : p2.deletedAt.isNull());
     }
     if (search != null) {
-      join.where(p2.name.like('%$search%'));
+      join.where(p2.title.like('%$search%'));
     }
     if (self == false) {
       if (id != null) {
@@ -339,10 +339,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   Priority({
-    super.name = '',
     Order? order,
     this.parent,
     this.balance,
+    super.title,
+    super.note,
     super.isDefault = false,
     super.pomodoro = const Duration(minutes: 25),
     super.color = const ThemeColor.defaultColor(),
@@ -374,7 +375,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          updatedAt: row.updatedAt,
          deletedAt: row.deletedAt,
          draft: row.draft,
-         name: row.name,
+         title: row.title,
+         note: row.note,
          pomodoro: row.pomodoro,
          color: row.color,
          isDefault: row.isDefault,
@@ -388,6 +390,20 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          doneAt: row.doneAt,
        ) {
     parent?._addChild(this);
+  }
+
+  String get label {
+    return title ?? note?.removeMarkdown().trim() ?? 'Untitled';
+  }
+
+  String get pathLabel {
+    return (([this] + ancestors)
+            .map((a) => a.title)
+            .toList()
+            .expand((p) => [p, ' › '])
+            .toList()
+          ..removeLast())
+        .join();
   }
 
   final Priority? parent;
@@ -414,7 +430,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   Priority merge(Priority other) {
     return copyWith(
-      name: name.isEmpty ? other.name : name,
+      title: title?.isEmpty == true ? Value(other.title) : Value.absent(),
       doAt: Value(doAt ?? other.doAt),
       doneAt: Value(doneAt ?? other.doneAt),
       pinned: pinned || other.pinned,
@@ -429,7 +445,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     DateTime? createdAt,
     bool? draft,
     Value<DateTime?> deletedAt = const Value.absent(),
-    String? name,
+    Value<String?> title = const Value.absent(),
     Path? path,
     Uuid? createdBy,
     Order? order,
@@ -470,7 +486,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         updatedAt: DateTime.now(),
         deletedAt: deletedAt,
         draft: draft,
-        name: name,
+        title: title,
         path: path,
         order: order,
         orderedAt:
@@ -501,16 +517,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       parent == null ? [] : parent!.ancestors + [parent!];
   List<Priority> get peers => parent?.children ?? [];
   Priority get root => parent?.root ?? this;
-
-  String get pathLabel {
-    return (([this] + ancestors)
-            .map((a) => a.name)
-            .toList()
-            .expand((p) => [p, ' › '])
-            .toList()
-          ..removeLast())
-        .join();
-  }
 
   bool get doNow {
     return !done && doAt?.isSameOrBefore(DateTime.now()) == true;

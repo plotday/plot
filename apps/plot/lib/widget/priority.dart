@@ -18,7 +18,7 @@ class PriorityLabel extends StatelessWidget {
     final ancestors = priority!.ancestors;
     return Row(
       children: [
-        Text(priority!.name),
+        Text(priority!.label),
         if (ancestors.isNotEmpty)
           DefaultTextStyle(
             style: DefaultTextStyle.of(

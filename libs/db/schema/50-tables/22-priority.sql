@@ -5,7 +5,7 @@ CREATE TABLE "public"."priority" (
     "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     -- All fields added below must be handled in handle_priority_x_upsert
     "deleted_at" timestamp with time zone,
-    "name" text NOT NULL,
+    "title" text,
     "path" ltree NOT NULL UNIQUE,
     "draft" boolean NOT NULL DEFAULT FALSE,
     "private" boolean NOT NULL DEFAULT FALSE,

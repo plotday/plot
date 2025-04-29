@@ -12,7 +12,7 @@ import 'package:plot/page/new_priority.dart';
 class _PriorityValue extends ValueCommand<Priority?> {
   _PriorityValue(Priority? priority)
     : super(
-        title: priority?.name ?? 'None',
+        title: priority?.label ?? 'None',
         subtitle: priority != null ? priority.parent?.pathLabel : 'Top-level',
         value: priority,
       );
@@ -60,7 +60,7 @@ class PickPriorityOrNone extends Commands<Priority?> {
 class ChangeCurrentPriority extends Command {
   ChangeCurrentPriority(Priority priority, {bool fullPath = true})
     : priorityId = priority.id,
-      super(title: priority.name, subtitle: priority.parent?.pathLabel);
+      super(title: priority.label, subtitle: priority.parent?.pathLabel);
 
   ChangeCurrentPriority.byId({required this.priorityId})
     : super(title: 'View Priority');
@@ -85,7 +85,7 @@ class PickCurrentPriority extends ShowCommand<Priority> {
 
   @override
   void onSelect(BuildContext context, Priority value) async {
-    log.info('Change current priority to ${value.name}');
+    log.info('Change current priority to ${value.title}');
     ChangeCurrentPriority(value).run(context);
   }
 }
@@ -127,7 +127,7 @@ class ArchivePriority extends Command {
     Posthog().capture(eventName: 'Priority Archived');
     if (context.mounted) {
       await context.router.replace(
-        PriorityRoute(priorityId: priority.parent?.id ?? defaultPriority!.id),
+        PriorityRoute(priorityId: priority.parent?.id ?? defaultPriority.id),
       );
     }
     return null;
