@@ -232,7 +232,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     if (deleted != null) {
       join.where(deleted ? p2.deletedAt.isNotNull() : p2.deletedAt.isNull());
     }
-    if (search != null) {
+    if (search?.isNotEmpty == true) {
       join.where(p2.title.like('%$search%'));
     }
     if (self == false) {
