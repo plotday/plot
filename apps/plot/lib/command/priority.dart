@@ -19,9 +19,7 @@ class _PriorityValue extends ValueCommand<Priority?> {
 }
 
 class PriorityCommandGroup extends CommandGroup {
-  PriorityCommandGroup({this.includeNone = false}) : super(title: 'Priorities');
-
-  final bool includeNone;
+  PriorityCommandGroup() : super(title: 'Priorities');
 
   @override
   Future<List<Command>> list({String? search}) async {
@@ -30,9 +28,6 @@ class PriorityCommandGroup extends CommandGroup {
           recent: true,
           search: search,
         )).map((priority) => _PriorityValue(priority)).toList();
-    if (includeNone) {
-      all.add(_PriorityValue(null));
-    }
     return CommandGroup.filter(all, search);
   }
 }
@@ -41,16 +36,6 @@ class PickPriority extends Commands<Priority> {
   PickPriority({super.prompt = 'Pick a priority', this.initialPriority})
     : super(
         groups: [PriorityCommandGroup()],
-        secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
-      );
-
-  final Priority? initialPriority;
-}
-
-class PickPriorityOrNone extends Commands<Priority?> {
-  PickPriorityOrNone({super.prompt = 'Pick a priority', this.initialPriority})
-    : super(
-        groups: [PriorityCommandGroup(includeNone: true)],
         secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
       );
 

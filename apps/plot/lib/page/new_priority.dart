@@ -23,8 +23,7 @@ class NewPriorityPage extends HookWidget {
             Text('New priority in '),
             PrioritySelector(
               selected: parent.value,
-              onSelectIncludeNone: (priority) {
-                print("Selected priority: $priority");
+              onSelect: (priority) {
                 parent.value = priority;
               },
             ),
