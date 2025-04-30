@@ -32,14 +32,16 @@ SELECT
     END AS ordered_at,
     GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
     p.created_by,
+    root.root
+    AND p.id = root.id AS root,
     p.draft,
     p.title,
-    CASE WHEN pu.path IS NULL THEN
-        -- If the user has no path, use the priority path
+    CASE WHEN root.root THEN
+        -- If it's in a user's root, keep the path
         p.path
     ELSE
-        -- Otherwise, replace the parent path with the user's path
-        replace_parent_path (p.path, pu.path, COALESCE(pu.path, p.path))
+        -- Otherwise, replace the parent path with either the specified path, or the user's root
+        COALESCE(pu.path, user_root.path) || subpath (p.path, extensions.nlevel (root.path))
     END AS path,
     p.private,
     p.pinned,
@@ -62,10 +64,11 @@ SELECT
         END) AS order_x,
     settings.pomodoro AS pomodoro,
     settings.color AS color,
-    COALESCE(settings.is_default, FALSE) AS is_default,
     tags.tags AS tags
 FROM
     priority_user pu
+    JOIN priority user_root ON pu.user_id = user_root.created_by
+        AND user_root.root
     JOIN priority root ON pu.priority_id = root.id
     JOIN priority p ON root.path @> p.path
     LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id
@@ -108,24 +111,13 @@ BEGIN
             AND priority_id = _priority_id;
     END IF;
     -- TODO handle path update
-    -- Remove previous default
-    IF (NEW.is_default AND OLD IS NOT NULL AND NOT OLD.is_default) THEN
-        UPDATE
-            priority_settings
-        SET
-            is_default = FALSE
-        WHERE
-            is_default = TRUE
-            AND user_id = COALESCE(auth.uid (), NEW.user_id);
-    END IF;
-    IF ((OLD IS NULL AND (NEW."pomodoro" IS NOT NULL OR NEW."color" IS NOT NULL OR NEW."is_default" IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."pomodoro" IS DISTINCT FROM OLD."pomodoro" OR NEW."color" IS DISTINCT FROM OLD."color" OR NEW."is_default" IS DISTINCT FROM OLD."is_default"))) THEN
-        INSERT INTO priority_settings (user_id, priority_id, pomodoro, color, is_default)
-            VALUES (COALESCE(auth.uid (), NEW.user_id), _priority_id, NEW.pomodoro, NEW.color, COALESCE(NEW.is_default, FALSE))
+    IF ((OLD IS NULL AND (NEW."pomodoro" IS NOT NULL OR NEW."color" IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."pomodoro" IS DISTINCT FROM OLD."pomodoro" OR NEW."color" IS DISTINCT FROM OLD."color"))) THEN
+        INSERT INTO priority_settings (user_id, priority_id, pomodoro, color)
+            VALUES (COALESCE(auth.uid (), NEW.user_id), _priority_id, NEW.pomodoro, NEW.color)
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
                 pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro),
-                color = COALESCE(NEW.color, priority_settings.color),
-                is_default = COALESCE(NEW.is_default, priority_settings.is_default);
+                color = COALESCE(NEW.color, priority_settings.color);
     END IF;
     RETURN NEW;
 END;

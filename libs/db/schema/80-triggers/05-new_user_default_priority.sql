@@ -6,12 +6,12 @@ CREATE OR REPLACE FUNCTION public.add_default_priority ()
 DECLARE
     _priority_id uuid;
 BEGIN
-    INSERT INTO public.priority (created_by, name, path)
-        VALUES (NEW.id, 'Personal', public.generate_path (NULL))
+    INSERT INTO public.priority (created_by, title, path, root)
+        VALUES (NEW.id, 'Everything', public.generate_path (NULL), TRUE)
     RETURNING
         id INTO _priority_id;
-    INSERT INTO public.priority_settings (user_id, priority_id, is_default)
-        VALUES (NEW.id, _priority_id, TRUE);
+    INSERT INTO public.priority_settings (user_id, priority_id)
+        VALUES (NEW.id, _priority_id);
     RETURN NEW;
 END;
 $$

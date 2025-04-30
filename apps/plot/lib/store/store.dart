@@ -224,7 +224,10 @@ class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
   static Future<void> init(User user) async {
     driftRuntimeOptions.defaultSerializer = const CustomSerializer();
-    Injector.appInstance.registerSingleton<Store>(() => Store._(user));
+    Injector.appInstance.registerSingleton<Store>(
+      () => Store._(user),
+      override: true,
+    );
   }
 
   Future<DATA> add<TABLE extends SyncableTable, DATA extends DataClass>(
@@ -428,7 +431,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 36;
+  int get schemaVersion => 39;
 
   @override
   MigrationStrategy get migration {

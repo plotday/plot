@@ -26,7 +26,7 @@ class Priorities extends Table
           .nullable()
           .withDefault(const Constant(0))
           .map(const ThemeColorConverter())();
-  BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
+  BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
   DateTimeColumn get doAt =>
@@ -270,8 +270,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return (Store.get.select(table)
           ..where((t) => t.deletedAt.isNull())
           ..orderBy([
-            (t) =>
-                OrderingTerm(expression: t.isDefault, mode: OrderingMode.desc),
+            (t) => OrderingTerm(expression: t.root, mode: OrderingMode.desc),
             // If no priority is marked default, fall back to the first one created
             (t) =>
                 OrderingTerm(expression: t.createdAt, mode: OrderingMode.asc),
@@ -344,7 +343,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     this.balance,
     super.title,
     super.note,
-    super.isDefault = false,
     super.pomodoro = const Duration(minutes: 25),
     super.color = const ThemeColor.defaultColor(),
     super.draft = false,
@@ -359,6 +357,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          order: order ?? Order.first(),
          orderedAt: DateTime.now(),
          path: Path.generate(parent: parent?.path),
+         root: false,
        ) {
     parent?._addChild(this);
   }
@@ -379,7 +378,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          note: row.note,
          pomodoro: row.pomodoro,
          color: row.color,
-         isDefault: row.isDefault,
+         root: row.root,
          order: row.order,
          path: row.path,
          private: row.private,
@@ -452,7 +451,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     DateTime? orderedAt,
     Value<Duration?> pomodoro = const Value.absent(),
     Value<ThemeColor?> color = const Value.absent(),
-    bool? isDefault,
+    bool? root,
     bool? pinned,
     bool? private,
     Value<DateTime?> doAt = const Value.absent(),
@@ -493,7 +492,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
             orderedAt ?? (order != null ? DateTime.now() : this.orderedAt),
         pomodoro: pomodoro,
         color: color,
-        isDefault: isDefault,
+        root: root,
         pinned: pinned,
         private: private,
         doAt: doAt,
@@ -516,7 +515,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   List<Priority> get ancestors =>
       parent == null ? [] : parent!.ancestors + [parent!];
   List<Priority> get peers => parent?.children ?? [];
-  Priority get root => parent?.root ?? this;
 
   bool get doNow {
     return !done && doAt?.isSameOrBefore(DateTime.now()) == true;
