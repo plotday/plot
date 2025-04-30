@@ -11,7 +11,6 @@ part 'user_state.dart';
 
 class UserBloc extends Cubit<UserState> {
   UserBloc() : super(const UserLoading()) {
-    Base.client.auth.refreshSession();
     _userSubscription = Base.user.listen((user) async {
       if (user == null) {
         if (state is UserSignedOut) return;
@@ -24,6 +23,7 @@ class UserBloc extends Cubit<UserState> {
           await Store.init(user);
           await Store.get.sync();
           emit(UserReady(user));
+          Base.client.auth.refreshSession();
         } catch (e, stackTrace) {
           log.warning('User init failed', e, stackTrace);
           emit(const UserSignedOut());

@@ -224,6 +224,9 @@ class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
   static Future<void> init(User user) async {
     driftRuntimeOptions.defaultSerializer = const CustomSerializer();
+    if (Injector.appInstance.exists<Store>()) {
+      await get.close();
+    }
     Injector.appInstance.registerSingleton<Store>(
       () => Store._(user),
       override: true,
