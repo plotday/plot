@@ -12,10 +12,6 @@ class Priorities extends Table
       real()
           .clientDefault(() => Order.first().value)
           .map(const OrderConverter())();
-  DateTimeColumn get orderedAt =>
-      dateTime()
-          .withDefault(currentDateAndTime)
-          .map(const LocalDateTimeConverter())();
   IntColumn get pomodoro =>
       integer()
           .nullable()
@@ -50,6 +46,8 @@ class PrioritiesBase extends BaseTable {
       PriorityRow.fromJson(json);
 }
 
+enum PriorityOrder { sorted, nested, recent }
+
 class Priority extends PriorityRow implements Comparable<Priority> {
   static $PrioritiesTable get table => Store.get.priorities;
 
@@ -65,9 +63,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? pinned,
     bool? active,
     bool? deleted = false,
-    bool recent = false,
     String? search,
     bool self = true,
+    PriorityOrder order = PriorityOrder.sorted,
   }) async {
     return _get(
       id: id,
@@ -76,7 +74,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       pinned: pinned,
       active: active,
       deleted: deleted,
-      recent: recent,
+      order: order,
       search: search,
       self: self,
     ).get();
@@ -89,9 +87,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? pinned,
     bool? active,
     bool? deleted = false,
-    bool recent = false,
     String? search,
     bool self = true,
+    PriorityOrder order = PriorityOrder.sorted,
   }) {
     return _get(
       id: id,
@@ -100,7 +98,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       pinned: pinned,
       active: active,
       deleted: deleted,
-      recent: recent,
+      order: order,
       search: search,
       self: self,
     ).watch();
@@ -121,7 +119,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       active: active,
       deleted: deleted,
       ancestors: ancestors,
-    ).get().then((priorities) => asNested(priorities, id: id).first);
+      order: PriorityOrder.nested,
+    ).get().then((priorities) => _asNested(priorities, id: id).first);
   }
 
   static Stream<Priority> watchOne(
@@ -139,7 +138,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       active: active,
       deleted: deleted,
       ancestors: ancestors,
-    ).watch().map((priorities) => asNested(priorities, id: id).first);
+      order: PriorityOrder.nested,
+    ).watch().map((priorities) => _asNested(priorities, id: id).first);
   }
 
   static Future<Priority> getDefault() {
@@ -160,7 +160,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     pinned: pinned,
     active: active,
     deleted: deleted,
-  ).then((priorities) => asNested(priorities));
+    order: PriorityOrder.nested,
+  ).then((priorities) => _asNested(priorities));
 
   static Stream<List<Priority>> watchRoot({
     int? depth,
@@ -172,7 +173,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     pinned: pinned,
     active: active,
     deleted: deleted,
-  ).map((priorities) => asNested(priorities));
+    order: PriorityOrder.nested,
+  ).map((priorities) => _asNested(priorities));
 
   static MultiSelectable<Priority> _get({
     /* Selectors */
@@ -189,20 +191,20 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     String? search,
 
     /* Sorting */
-    bool recent = false,
+    PriorityOrder order = PriorityOrder.sorted,
   }) {
     // pullPriorityPath(priorityPath);
     final p = Store.get.alias(Store.get.priorities, 'p');
-    final query = Store.get.select(p);
+    final startingQuery = Store.get.select(p);
     if (id != null) {
-      query.where((t) => t.id.equalsValue(id));
+      startingQuery.where((t) => t.id.equalsValue(id));
     }
     if (path != null) {
-      query.where((t) => t.path.equalsValue(path));
+      startingQuery.where((t) => t.path.equalsValue(path));
     }
 
     final p2 = Store.get.alias(Store.get.priorities, 'p2');
-    final join = query.join([
+    var query = startingQuery.join([
       innerJoin(
         p2,
         id == null && path == null
@@ -222,48 +224,83 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     ]);
 
     if (active == true) {
-      join.where(p2.doAt.isNotNull() & p2.doneAt.isNull());
+      query.where(p2.doAt.isNotNull() & p2.doneAt.isNull());
     } else if (active == false) {
-      join.where(p2.doAt.isNull() | p2.doneAt.isNotNull());
+      query.where(p2.doAt.isNull() | p2.doneAt.isNotNull());
     }
     if (pinned != null) {
-      join.where(p2.pinned.equals(pinned));
+      query.where(p2.pinned.equals(pinned));
     }
     if (deleted != null) {
-      join.where(deleted ? p2.deletedAt.isNotNull() : p2.deletedAt.isNull());
+      query.where(deleted ? p2.deletedAt.isNotNull() : p2.deletedAt.isNull());
     }
     if (search?.isNotEmpty == true) {
-      join.where(p2.title.like('%$search%'));
+      query.where(p2.title.like('%$search%'));
     }
     if (self == false) {
       if (id != null) {
-        join.where(p2.id.equalsValue(id).not());
+        query.where(p2.id.equalsValue(id).not());
       }
       if (path != null) {
-        join.where(p2.path.equalsValue(path).not());
+        query.where(p2.path.equalsValue(path).not());
       }
     }
 
-    if (recent) {
-      final join2 = join.join([
-        leftOuterJoin(
-          Store.get.sessions,
-          Store.get.sessions.priorityId.equalsExp(p2.id),
-        ),
-      ]);
-      join2.orderBy([
-        OrderingTerm(
-          expression: Store.get.sessions.end,
-          mode: OrderingMode.desc,
-        ),
-      ]);
-      return join2.map((row) => Priority.fromStore(row.readTable(p2)));
+    switch (order) {
+      case PriorityOrder.sorted:
+        query.orderBy([
+          // Pinned
+          OrderingTerm(expression: p2.pinned, mode: OrderingMode.desc),
+          // Active
+          OrderingTerm.asc(
+            CaseWhenExpression(
+              cases: [
+                CaseWhen(
+                  p2.doAt.isSmallerOrEqual(currentDateAndTime) &
+                      p2.doneAt.isNull(),
+                  then: p2.doAt,
+                ),
+              ],
+              orElse: const Constant(null),
+            ),
+          ),
+          OrderingTerm.asc(
+            CaseWhenExpression(
+              cases: [
+                CaseWhen(
+                  p2.pinned |
+                      (p2.doAt.isSmallerOrEqual(currentDateAndTime) &
+                          p2.doneAt.isNull()),
+                  then: p2.order,
+                ),
+              ],
+              orElse: const Constant(null),
+            ),
+          ),
+          OrderingTerm.desc(p2.order),
+        ]);
+        break;
+      case PriorityOrder.nested:
+        // order by path so parents always precede children
+        query.orderBy([OrderingTerm(expression: p2.path)]);
+        break;
+      case PriorityOrder.recent:
+        query = query.join([
+          leftOuterJoin(
+            Store.get.sessions,
+            Store.get.sessions.priorityId.equalsExp(p2.id),
+          ),
+        ]);
+        query.orderBy([
+          OrderingTerm(
+            expression: Store.get.sessions.end,
+            mode: OrderingMode.desc,
+          ),
+        ]);
+        break;
     }
 
-    // order by path so parents always precede children
-    join.orderBy([OrderingTerm(expression: p2.path)]);
-
-    return join.map((row) => Priority.fromStore(row.readTable(p2)));
+    return query.map((row) => Priority.fromStore(row.readTable(p2)));
   }
 
   static SingleSelectable<Priority> _default() {
@@ -294,11 +331,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return priorities;
   }
 
-  static Map<Uuid, Priority> asNestedMap(List<Priority> list) {
-    return asMap(asNested(list, flat: true));
-  }
-
-  static List<Priority> asNested(
+  /// Transform a flat list in PriorityOrder.nested order to a list of the top-level items with descendants.
+  static List<Priority> _asNested(
     List<Priority> priorities, {
     PriorityId? id,
     Path? path,
@@ -355,7 +389,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
          order: order ?? Order.first(),
-         orderedAt: DateTime.now(),
          path: Path.generate(parent: parent?.path),
          root: false,
        ) {
@@ -383,7 +416,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          path: row.path,
          private: row.private,
          pinned: row.pinned,
-         orderedAt: row.orderedAt,
          createdBy: row.createdBy,
          doAt: row.doAt,
          doneAt: row.doneAt,
@@ -448,7 +480,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Path? path,
     Uuid? createdBy,
     Order? order,
-    DateTime? orderedAt,
     Value<Duration?> pomodoro = const Value.absent(),
     Value<ThemeColor?> color = const Value.absent(),
     bool? root,
@@ -484,6 +515,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         (doAt.present && doAt.value != this.doAt) ||
         (doneAt.present && doneAt.value != null) ||
         (pinned != null && pinned != this.pinned)) {
+      print("Updating order: ${order != null}, ${Order.first()}");
       order ??= Order.first();
     }
     return Priority.fromStore(
@@ -497,8 +529,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         title: title,
         path: path,
         order: order,
-        orderedAt:
-            orderedAt ?? (order != null ? DateTime.now() : this.orderedAt),
         pomodoro: pomodoro,
         color: color,
         root: root,

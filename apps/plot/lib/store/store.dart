@@ -268,6 +268,7 @@ class Store extends _$Store {
     Insertable<DATA> data,
     BaseTable baseTable,
   ) async {
+    log.info("Saving", data);
     try {
       await add(table, data);
     } catch (e) {

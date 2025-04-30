@@ -25,7 +25,7 @@ class PriorityCommandGroup extends CommandGroup {
   Future<List<Command>> list({String? search}) async {
     final all =
         (await Priority.get(
-          recent: true,
+          order: PriorityOrder.recent,
           search: search,
         )).map((priority) => _PriorityValue(priority)).toList();
     return CommandGroup.filter(all, search);

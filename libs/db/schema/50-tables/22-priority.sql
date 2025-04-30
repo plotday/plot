@@ -14,7 +14,6 @@ CREATE TABLE "public"."priority" (
     "do_at" timestamp with time zone,
     "done_at" timestamp with time zone,
     "order" double precision NOT NULL DEFAULT public.order_first (),
-    "ordered_at" timestamp with time zone NOT NULL DEFAULT now(),
     "note" text
 );
 
