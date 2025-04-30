@@ -75,7 +75,8 @@ class PriorityPage extends StatelessWidget {
                   onSelect: (p) => context.run<void>(ChangeCurrentPriority(p)),
                 ),
                 commands: [
-                  ArchivePriority(Future.value(state.current)),
+                  if (!state.current.root)
+                    ArchivePriority(Future.value(state.current)),
                   ShowSchedule(),
                 ],
               ),

@@ -102,7 +102,7 @@ class ArchivePriority extends Command {
   Future<CommandReturn?> run(BuildContext context) async {
     final priority = await _priority;
     final defaultPriority = await Priority.getDefault();
-    if (priority == defaultPriority) {
+    if (priority.root) {
       return CommandMessage(
         'You cannot archive the default priority',
         isError: true,

@@ -70,8 +70,9 @@ CREATE POLICY "Users can create new priorities in their priorities" ON public.pr
 
 CREATE POLICY "Users can update their priorities" ON public.priority
     FOR UPDATE TO authenticated
-        USING (can_access_priority (id))
-        WITH CHECK (extensions.nlevel (priority.path) = 1
+        USING (can_access_priority (id)
+            AND (priority.deleted_at IS NULL OR priority.root = FALSE))
+            WITH CHECK (extensions.nlevel (priority.path) = 1
             OR can_access_priority (parent_path (priority.path)));
 
 CREATE POLICY "Users can read/write their priority settings" ON "public"."priority_settings"
