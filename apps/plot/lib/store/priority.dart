@@ -535,7 +535,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   bool get done => doneAt != null;
 
-  Future<void> save() => Store.get.save(table, this, PrioritiesBase());
+  Future<void> save() =>
+      Store.get.save(table, toCompanion(false), PrioritiesBase());
 
   @override
   int compareTo(Priority other) {
