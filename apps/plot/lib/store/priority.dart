@@ -471,6 +471,15 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       doAt = const Value(null);
       pinned = false;
     }
+    if (note.present &&
+        note.value != null &&
+        !title.present &&
+        this.title == null &&
+        note.value!.length < 40 &&
+        !note.value!.contains(RegExp(r'[\n]'))) {
+      title = note;
+      note = Value.absent();
+    }
     if (publish ||
         (doAt.present && doAt.value != this.doAt) ||
         (doneAt.present && doneAt.value != null) ||
