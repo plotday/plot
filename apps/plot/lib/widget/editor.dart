@@ -11,7 +11,7 @@ import 'colour_scheme.dart';
 
 const baseTextStyle = TextStyle(
   color: Color(0xFF000000),
-  fontSize: 14,
+  fontSize: 12,
   height: 1.4,
 );
 
@@ -156,9 +156,7 @@ class EditorState extends State<Editor> {
                 textStyle: baseTextStyle.copyWith(
                   color: context.colour.foreground,
                 ),
-                hintStyle: baseTextStyle.copyWith(
-                  color: context.colour.muted,
-                ),
+                hintStyle: baseTextStyle.copyWith(color: context.colour.muted),
               ),
             TaskComponentBuilder(_editor),
             ...defaultComponentBuilders,
@@ -248,15 +246,19 @@ class HintComponentBuilder implements ComponentBuilder {
 
   @override
   SingleColumnLayoutComponentViewModel? createViewModel(
-      Document document, DocumentNode node) {
+    Document document,
+    DocumentNode node,
+  ) {
     // This component builder can work with the standard paragraph view model.
     // We'll defer to the standard paragraph component builder to create it.
     return null;
   }
 
   @override
-  Widget? createComponent(SingleColumnDocumentComponentContext componentContext,
-      SingleColumnLayoutComponentViewModel componentViewModel) {
+  Widget? createComponent(
+    SingleColumnDocumentComponentContext componentContext,
+    SingleColumnLayoutComponentViewModel componentViewModel,
+  ) {
     if (componentViewModel is! ParagraphComponentViewModel) {
       return null;
     }
@@ -267,9 +269,7 @@ class HintComponentBuilder implements ComponentBuilder {
       key: componentContext.componentKey,
       text: componentViewModel.text,
       textStyleBuilder: (_) => textStyle,
-      hintText: AttributedText(
-        hint,
-      ),
+      hintText: AttributedText(hint),
       // This is the function that selects styles for the hint text.
       hintStyleBuilder: (Set<Attribution> attributions) => hintStyle,
       textSelection: textSelection,
