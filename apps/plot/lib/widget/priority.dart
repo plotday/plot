@@ -98,8 +98,10 @@ class PriorityWidget extends StatelessWidget {
     }
     return ListTile(
       command: ChangeCurrentPriority(priority),
-      trailingCommands: [if (!priority.pinned) PinPriority(priority)],
-      leadingCommand: priorityCommand(priority),
+      trailingCommands: [
+        if (!priority.pinned) PinPriority(priority),
+        priorityCommand(priority),
+      ],
       body:
           priority.note?.isNotEmpty == true &&
                   !priority.doNow &&
