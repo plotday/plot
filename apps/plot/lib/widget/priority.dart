@@ -76,42 +76,37 @@ class PriorityBalance extends StatelessWidget {
   }
 }
 
-class PriorityTile extends StatelessWidget {
-  const PriorityTile({
+class PriorityWidget extends StatelessWidget {
+  const PriorityWidget({
     required this.priority,
-    this.balances,
-    this.maxTime,
-    this.fullPath = false,
+    this.isParent = false,
     super.key,
   });
 
+  /// If true, show as a parent note with some functionality (such as navigating to it) disabled.
   final Priority priority;
-  final BalanceByType? balances;
-  final Duration? maxTime;
-  final bool fullPath;
+  final bool isParent;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      command: ChangeCurrentPriority(priority, fullPath: fullPath),
-      style: ListTileStyle.header,
-      key: ValueKey(priority.id.toString()),
-      // subtitle: balances != null ? PriorityBalance(balances: balances!) : null,
-    );
-  }
-}
-
-class PriorityWidget extends StatelessWidget {
-  const PriorityWidget({required this.priority, super.key});
-
-  final Priority priority;
-
-  @override
-  Widget build(BuildContext context) {
+    if (isParent) {
+      return ListTile(
+        body: Viewer(markdown: priority.note!),
+        // TODO: support pinning and reordering
+        // trailingCommands: [if (!priority.pinned) PinPriority(priority)],
+      );
+    }
     return ListTile(
       command: ChangeCurrentPriority(priority),
       trailingCommands: [if (!priority.pinned) PinPriority(priority)],
       leadingCommand: priorityCommand(priority),
+      body:
+          priority.note?.isNotEmpty == true &&
+                  !priority.doNow &&
+                  !priority.done &&
+                  !priority.pinned
+              ? Viewer(markdown: priority.note!)
+              : null,
     );
   }
 }

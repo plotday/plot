@@ -105,8 +105,10 @@ class PriorityPage extends StatelessWidget {
                       count: state.inactive.length,
                       reverse: true,
                       builder:
-                          (context, index) =>
-                              PriorityWidget(priority: state.inactive[index]),
+                          (context, index) => PriorityWidget(
+                            priority: state.inactive[index],
+                            isParent: state.inactive[index] == state.current,
+                          ),
                     ),
                   ),
                 ],

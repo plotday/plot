@@ -424,7 +424,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   String get label {
-    return title ?? note?.removeMarkdown().trim() ?? 'Untitled';
+    return title ??
+        note?.split("\n").first.removeMarkdown().trim() ??
+        'Untitled';
   }
 
   String get pathLabel {

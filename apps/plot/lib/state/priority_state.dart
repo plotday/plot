@@ -7,9 +7,13 @@ class PriorityState extends Equatable {
     this.pinned = const [],
     this.active = const [],
     this.moreActive = true,
-    this.inactive = const [],
+    List<Priority> inactive = const [],
     this.moreInactive = true,
-  }) : draft = draft ?? Priority(parent: current, draft: true);
+  }) : draft = draft ?? Priority(parent: current, draft: true),
+       inactive = [
+         ...inactive,
+         if (current.note != null && !moreInactive) current,
+       ];
 
   final Priority current;
   final Priority draft;

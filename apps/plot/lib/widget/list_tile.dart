@@ -32,6 +32,10 @@ class ListTile extends StatefulWidget {
 
     /// Override the command title
     String? title,
+
+    /// Override the body
+    this.body,
+
     super.key,
   }) : title = title ?? command?.title ?? '';
 
@@ -43,6 +47,7 @@ class ListTile extends StatefulWidget {
   final List<Command> trailingCommands;
   final List<Command> hiddenCommands;
   final String title;
+  final Widget? body;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -53,22 +58,22 @@ class _ListTileState extends State<ListTile> {
   final _focusNode = FocusNode();
 
   Map<ShortcutActivator, Intent> get _shortcuts => {
-        const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
-        const SingleActivator(LogicalKeyboardKey.space): const ActivateIntent(),
-      };
+    const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
+    const SingleActivator(LogicalKeyboardKey.space): const ActivateIntent(),
+  };
 
   Map<Type, Action<Intent>> get _actions => {
-        ActivateIntent: CallbackAction<ActivateIntent>(
-          onInvoke: (ActivateIntent intent) {
-            if (widget.command != null) {
-              widget.command!.run(context);
-            } else if (widget.trailingCommands.isNotEmpty) {
-              widget.trailingCommands.first.run(context);
-            }
-            return null;
-          },
-        ),
-      };
+    ActivateIntent: CallbackAction<ActivateIntent>(
+      onInvoke: (ActivateIntent intent) {
+        if (widget.command != null) {
+          widget.command!.run(context);
+        } else if (widget.trailingCommands.isNotEmpty) {
+          widget.trailingCommands.first.run(context);
+        }
+        return null;
+      },
+    ),
+  };
 
   @override
   void dispose() {
@@ -79,15 +84,16 @@ class _ListTileState extends State<ListTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.command != null
-          ? () {
-              try {
-                widget.command!.run(context);
-              } catch (e) {
-                print(e);
+      onTap:
+          widget.command != null
+              ? () {
+                try {
+                  widget.command!.run(context);
+                } catch (e) {
+                  print(e);
+                }
               }
-            }
-          : null,
+              : null,
       child: FocusableActionDetector(
         focusNode: _focusNode,
         actions: _actions,
@@ -104,11 +110,10 @@ class _ListTileState extends State<ListTile> {
             horizontal: widgetPadding.horizontal / 2,
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (widget.leadingCommand != null)
-                Button.icon(
-                  widget.leadingCommand!,
-                ),
+                Button.icon(widget.leadingCommand!),
               if (widget.leadingCommand == null &&
                   (widget.command?.statusIcon.or(widget.command?.icon)) != null)
                 Padding(
@@ -127,29 +132,31 @@ class _ListTileState extends State<ListTile> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            widget.style == ListTileStyle.header
-                                ? widget.title.toUpperCase()
-                                : widget.title,
-                            overflow: TextOverflow.ellipsis,
-                            style: context.theme.typography.xs.copyWith(
-                              color: widget.style == ListTileStyle.header
-                                  ? context.colour.muted
-                                  : context.colour.foreground,
-                            ),
-                          ),
-                          if (widget.command?.subtitle != null)
-                            Text(
-                              '  ${widget.command!.subtitle!}',
-                              overflow: TextOverflow.ellipsis,
-                              style: context.theme.typography.xs.copyWith(
-                                color: context.colour.muted,
+                      widget.body ??
+                          Row(
+                            children: [
+                              Text(
+                                widget.style == ListTileStyle.header
+                                    ? widget.title.toUpperCase()
+                                    : widget.title,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.theme.typography.xs.copyWith(
+                                  color:
+                                      widget.style == ListTileStyle.header
+                                          ? context.colour.muted
+                                          : context.colour.foreground,
+                                ),
                               ),
-                            ),
-                        ],
-                      ),
+                              if (widget.command?.subtitle != null)
+                                Text(
+                                  '  ${widget.command!.subtitle!}',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.theme.typography.xs.copyWith(
+                                    color: context.colour.muted,
+                                  ),
+                                ),
+                            ],
+                          ),
                       if (widget.command?.description != null)
                         Text(widget.command!.description!),
                       if (widget.details != null) widget.details!,

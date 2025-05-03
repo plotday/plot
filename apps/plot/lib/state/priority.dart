@@ -73,6 +73,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> add(Priority priority) async {
     priority = priority.copyWith(draft: false);
     await priority.save();
+    // Create a new draft
     emit(state.copyWith(draft: Priority(parent: state.current, draft: true)));
   }
 
