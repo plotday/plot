@@ -113,7 +113,7 @@ class PriorityWidget extends StatelessWidget {
           PriorityLabel(priority: priority, onlyAncestors: true),
           if ((isParent || (!priority.doNow && !priority.pinned)))
             Text(
-              priority.createdAt.toTimeAgo(),
+              (isParent ? priority.createdAt : priority.updatedAt).toTimeAgo(),
               style: TextStyle(
                 color: context.theme.colorScheme.mutedForeground,
                 fontSize: context.theme.typography.xs.fontSize,
