@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:rxdart/rxdart.dart';
@@ -435,7 +436,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 39;
+  int get schemaVersion => 53;
 
   @override
   MigrationStrategy get migration {

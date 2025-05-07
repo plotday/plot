@@ -30,6 +30,11 @@ class Priorities extends Table
   DateTimeColumn get doneAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get note => text().nullable()();
+
+  @override
+  List<String> get customConstraints => [
+    'CHECK (draft = 1 OR title IS NOT NULL)',
+  ];
 }
 
 class PrioritiesBase extends BaseTable {
@@ -47,6 +52,26 @@ class PrioritiesBase extends BaseTable {
 }
 
 enum PriorityOrder { sorted, nested, recent }
+
+class PriorityAncestor {
+  static List<PriorityAncestor> fromStore(PriorityAncestryData row) {
+    final ids =
+        (jsonDecode(row.ancestors) as List)
+            .map((e) => Uuid.fromString(e as String))
+            .toList();
+    final titles =
+        (jsonDecode(row.titles) as List).map((e) => e as String).toList();
+    return List.generate(
+      ids.length,
+      (index) => PriorityAncestor(id: ids[index], title: titles[index]),
+    );
+  }
+
+  const PriorityAncestor({required this.id, required this.title});
+
+  final PriorityId id;
+  final String title;
+}
 
 class Priority extends PriorityRow implements Comparable<Priority> {
   static $PrioritiesTable get table => Store.get.priorities;
@@ -192,10 +217,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     /* Sorting */
     PriorityOrder order = PriorityOrder.sorted,
+
+    /* Augmentation */
+    bool ancestry = true,
   }) {
     // pullPriorityPath(priorityPath);
-    final p = Store.get.alias(Store.get.priorities, 'p');
-    final startingQuery = Store.get.select(p);
+    final base = Store.get.alias(Store.get.priorities, 'base');
+    final startingQuery = Store.get.select(base);
     if (id != null) {
       startingQuery.where((t) => t.id.equalsValue(id));
     }
@@ -203,46 +231,46 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       startingQuery.where((t) => t.path.equalsValue(path));
     }
 
-    final p2 = Store.get.alias(Store.get.priorities, 'p2');
+    final p = Store.get.alias(Store.get.priorities, 'p');
     var query = startingQuery.join([
       innerJoin(
-        p2,
+        p,
         id == null && path == null
-            ? p.id.equalsExp(p2.id)
-            : p2.path.likeExp(p.path + Constant('%')) &
+            ? base.id.equalsExp(p.id)
+            : p.path.likeExp(base.path + Constant('%')) &
                 ((ancestors
-                        ? p.path.likeExp(p2.path + Constant('%'))
+                        ? base.path.likeExp(p.path + Constant('%'))
                         : Constant(true)) |
-                    (p2.path.likeExp(p.path + Constant('%')))) &
+                    (p.path.likeExp(base.path + Constant('%')))) &
                 (depth == null
                     ? Constant(true)
                     : CustomExpression<int>("""
-  LENGTH(p2.path) - LENGTH(REPLACE(p2.path, '.', '')) -
-  (CASE WHEN p.path IS NULL THEN 0 ELSE LENGTH(p.path) - LENGTH(REPLACE(p.path, '.', '')) END)
+  LENGTH(p.path) - LENGTH(REPLACE(p.path, '.', '')) -
+  (CASE WHEN base.path IS NULL THEN 0 ELSE LENGTH(base.path) - LENGTH(REPLACE(base.path, '.', '')) END)
   """).isSmallerOrEqualValue(depth)),
       ),
     ]);
 
     if (active == true) {
-      query.where(p2.doAt.isNotNull() & p2.doneAt.isNull());
+      query.where(p.doAt.isNotNull() & p.doneAt.isNull());
     } else if (active == false) {
-      query.where(p2.doAt.isNull() | p2.doneAt.isNotNull());
+      query.where(p.doAt.isNull() | p.doneAt.isNotNull());
     }
     if (pinned != null) {
-      query.where(p2.pinned.equals(pinned));
+      query.where(p.pinned.equals(pinned));
     }
     if (deleted != null) {
-      query.where(deleted ? p2.deletedAt.isNotNull() : p2.deletedAt.isNull());
+      query.where(deleted ? p.deletedAt.isNotNull() : p.deletedAt.isNull());
     }
     if (search?.isNotEmpty == true) {
-      query.where(p2.title.like('%$search%'));
+      query.where(p.title.like('%$search%'));
     }
     if (self == false) {
       if (id != null) {
-        query.where(p2.id.equalsValue(id).not());
+        query.where(p.id.equalsValue(id).not());
       }
       if (path != null) {
-        query.where(p2.path.equalsValue(path).not());
+        query.where(p.path.equalsValue(path).not());
       }
     }
 
@@ -250,15 +278,15 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       case PriorityOrder.sorted:
         query.orderBy([
           // Pinned
-          OrderingTerm(expression: p2.pinned, mode: OrderingMode.desc),
+          OrderingTerm(expression: p.pinned, mode: OrderingMode.desc),
           // Active
           OrderingTerm.asc(
             CaseWhenExpression(
               cases: [
                 CaseWhen(
-                  p2.doAt.isSmallerOrEqual(currentDateAndTime) &
-                      p2.doneAt.isNull(),
-                  then: p2.doAt,
+                  p.doAt.isSmallerOrEqual(currentDateAndTime) &
+                      p.doneAt.isNull(),
+                  then: p.doAt,
                 ),
               ],
               orElse: const Constant(null),
@@ -268,27 +296,27 @@ class Priority extends PriorityRow implements Comparable<Priority> {
             CaseWhenExpression(
               cases: [
                 CaseWhen(
-                  p2.pinned |
-                      (p2.doAt.isSmallerOrEqual(currentDateAndTime) &
-                          p2.doneAt.isNull()),
-                  then: p2.order,
+                  p.pinned |
+                      (p.doAt.isSmallerOrEqual(currentDateAndTime) &
+                          p.doneAt.isNull()),
+                  then: p.order,
                 ),
               ],
               orElse: const Constant(null),
             ),
           ),
-          OrderingTerm.desc(p2.order),
+          OrderingTerm.desc(p.order),
         ]);
         break;
       case PriorityOrder.nested:
         // order by path so parents always precede children
-        query.orderBy([OrderingTerm(expression: p2.path)]);
+        query.orderBy([OrderingTerm(expression: p.path)]);
         break;
       case PriorityOrder.recent:
         query = query.join([
           leftOuterJoin(
             Store.get.sessions,
-            Store.get.sessions.priorityId.equalsExp(p2.id),
+            Store.get.sessions.priorityId.equalsExp(p.id),
           ),
         ]);
         query.orderBy([
@@ -300,7 +328,19 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         break;
     }
 
-    return query.map((row) => Priority.fromStore(row.readTable(p2)));
+    if (ancestry) {
+      final pa = Store.get.alias(Store.get.priorityAncestry, 'pa');
+      return query
+          .join([leftOuterJoin(pa, pa.priorityId.equalsExp(p.id))])
+          .map(
+            (row) => Priority.fromStore(
+              row.readTable(p),
+              ancestry: row.readTableOrNull(pa),
+            ),
+          );
+    }
+
+    return query.map((row) => Priority.fromStore(row.readTable(p)));
   }
 
   static SingleSelectable<Priority> _default() {
@@ -383,6 +423,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.private = false,
     super.pinned = false,
   }) : children = [],
+       ancestors =
+           parent == null
+               ? const []
+               : parent.ancestors +
+                   [PriorityAncestor(id: parent.id, title: parent.title)],
        super(
          id: Uuid.generate(),
          createdBy: Base.userId,
@@ -400,7 +445,15 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     this.parent,
     List<Priority>? children,
     this.balance,
+    PriorityAncestryData? ancestry,
   }) : children = children ?? [],
+       ancestors =
+           ancestry == null
+               ? parent == null
+                   ? const []
+                   : parent.ancestors +
+                       [PriorityAncestor(id: parent.id, title: parent.title)]
+               : PriorityAncestor.fromStore(ancestry),
        super(
          id: row.id,
          createdAt: row.createdAt,
@@ -423,14 +476,29 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     parent?._addChild(this);
   }
 
-  String get label {
-    return title ??
-        note?.split("\n").first.removeMarkdown().trim() ??
-        'Untitled';
+  /// Title is always set when draft = false
+  @override
+  String get title => super.title ?? 'Untitled';
+
+  bool get hasTitle => super.title != null;
+
+  static String noteToTitle(String markdown) {
+    final firstLine = markdown.split("\n").first.removeMarkdown().trim();
+    if (firstLine.length > 40) {
+      return "${firstLine.substring(0, 40)}…";
+    }
+    return firstLine;
   }
 
   String get pathLabel {
-    return (([this] + ancestors)
+    if (ancestors.isEmpty) {
+      return title;
+    }
+    return "$title | $ancestorsLabel";
+  }
+
+  String get ancestorsLabel {
+    return (ancestors
             .map((a) => a.title)
             .toList()
             .expand((p) => [p, ' › '])
@@ -442,6 +510,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   final Priority? parent;
   List<Priority> children;
   final Balance? balance;
+  final List<PriorityAncestor> ancestors;
 
   List<Priority> descendants() {
     List<Priority> result = [];
@@ -463,7 +532,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   Priority merge(Priority other) {
     return copyWith(
-      title: title?.isEmpty == true ? Value(other.title) : Value.absent(),
+      title:
+          !hasTitle
+              ? other.hasTitle
+                  ? Value(other.title)
+                  : Value.absent()
+              : Value(title),
       doAt: Value(doAt ?? other.doAt),
       doneAt: Value(doneAt ?? other.doneAt),
       pinned: pinned || other.pinned,
@@ -504,20 +578,20 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       doAt = const Value(null);
       pinned = false;
     }
-    if (note.present &&
+    if (publish &&
+        note.present &&
         note.value != null &&
         !title.present &&
-        this.title == null &&
-        note.value!.length < 40 &&
-        !note.value!.contains(RegExp(r'[\n]'))) {
-      title = note;
-      note = Value.absent();
+        !hasTitle) {
+      title = Value(noteToTitle(note.value!));
+      if (note.value!.length < 40 && !note.value!.contains(RegExp(r'[\n]'))) {
+        note = Value.absent();
+      }
     }
     if (publish ||
         (doAt.present && doAt.value != this.doAt) ||
         (doneAt.present && doneAt.value != null) ||
         (pinned != null && pinned != this.pinned)) {
-      print("Updating order: ${order != null}, ${Order.first()}");
       order ??= Order.first();
     }
     return Priority.fromStore(
@@ -553,8 +627,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   bool isParent(Priority other) => path.isParent(other.path);
-  List<Priority> get ancestors =>
-      parent == null ? [] : parent!.ancestors + [parent!];
   List<Priority> get peers => parent?.children ?? [];
 
   bool get doNow {

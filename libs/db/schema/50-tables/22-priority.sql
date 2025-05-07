@@ -14,7 +14,8 @@ CREATE TABLE "public"."priority" (
     "do_at" timestamp with time zone,
     "done_at" timestamp with time zone,
     "order" double precision NOT NULL DEFAULT public.order_first (),
-    "note" text
+    "note" text,
+    CHECK (draft = FALSE OR title IS NOT NULL)
 );
 
 CREATE UNIQUE INDEX idx_priority_created_by_root_true ON "public"."priority" ("created_by")

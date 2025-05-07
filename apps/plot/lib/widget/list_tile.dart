@@ -35,6 +35,7 @@ class ListTile extends StatefulWidget {
 
     /// Override the body
     this.body,
+    this.header,
 
     super.key,
   }) : title = title ?? command?.title ?? '';
@@ -48,6 +49,7 @@ class ListTile extends StatefulWidget {
   final List<Command> hiddenCommands;
   final String title;
   final Widget? body;
+  final Widget? header;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -131,7 +133,9 @@ class _ListTileState extends State<ListTile> {
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 4,
                     children: [
+                      if (widget.header != null) widget.header!,
                       widget.body ??
                           Row(
                             children: [

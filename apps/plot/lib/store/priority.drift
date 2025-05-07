@@ -8,48 +8,45 @@ FROM
     priorities p
     JOIN priorities c ON c.path LIKE p.path || '%';
 
--- CREATE VIEW priority_ancestry AS
--- WITH RECURSIVE path_parts AS (
---     SELECT
---         p.id AS priority_id,
---         1 AS part_index,
---         SUBSTR(p.path, 1, INSTR (p.path || '.', '.') - 1) AS part,
---         SUBSTR(p.path, INSTR (p.path || '.', '.') + 1) AS remaining_path
---     FROM
---         priorities p
---     UNION ALL
---     SELECT
---         priority_id,
---         part_index + 1,
---         SUBSTR(remaining_path, 1, INSTR (remaining_path || '.', '.') - 1),
---         SUBSTR(remaining_path, INSTR (remaining_path || '.', '.') + 1)
---     FROM
---         path_parts
---     WHERE
---         remaining_path != ''
--- ),
--- ancestor_info AS (
---     SELECT
---         pp.priority_id,
---         pp.part_index,
---         pr.id AS ancestor_id,
---         pr.name AS ancestor_name
---     FROM
---         path_parts pp
---         JOIN priorities pr ON pr.name = pp.part
--- ),
--- ancestry_json AS (
---     SELECT
---         priority_id,
---         json_group_array (json_object('id', ancestor_id, 'name', ancestor_name)) AS ancestry
--- FROM
---     ancestor_info
--- GROUP BY
---     priority_id
--- )
--- SELECT
---     priority_id,
---     ancestry
--- FROM
---     ancestry_json;
---
+CREATE VIEW priority_ancestry AS
+WITH RECURSIVE ancestors (
+    priority_id,
+    path,
+    ancestor_path,
+    depth
+) AS (
+    -- Base case: Get the first-level ancestor path for each priority
+    SELECT
+        id AS priority_id,
+        path,
+        substr(path, 1, instr (path, '.') - 1) AS ancestor_path,
+        1 AS depth
+    FROM
+        priorities
+    WHERE
+        instr (path, '.') > 0
+    UNION ALL
+    -- Recursive case: Get the next level ancestor path using a different approach
+    SELECT
+        priority_id,
+        path,
+        substr(path, 1, instr (substr(path, length(ancestor_path) + 2), '.') + length(ancestor_path)) ancestor_path,
+        depth + 1
+    FROM
+        ancestors
+    WHERE
+        -- Continue only if there's another dot after the current ancestor_path
+        instr (substr(path, length(ancestor_path) + 2), '.') > 0
+)
+SELECT
+    priority_id,
+    json_group_array (a.title) AS titles,
+    json_group_array (lower(substr(hex (a.id), 1, 8) || '-' || substr(hex (a.id), 9, 4) || '-' || substr(hex (a.id), 13, 4) || '-' || substr(hex (a.id), 17, 4) || '-' || substr(hex (a.id), 21, 12))) AS ancestors
+FROM
+    ancestors an
+    LEFT JOIN priorities a ON a.path = an.ancestor_path
+GROUP BY
+    priority_id
+ORDER BY
+    priority_id;
+

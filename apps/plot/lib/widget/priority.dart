@@ -6,9 +6,14 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
 class PriorityLabel extends StatelessWidget {
-  const PriorityLabel({required this.priority, super.key});
+  const PriorityLabel({
+    required this.priority,
+    this.onlyAncestors = false,
+    super.key,
+  });
 
   final Priority? priority;
+  final bool onlyAncestors;
 
   @override
   Widget build(BuildContext context) {
@@ -18,13 +23,14 @@ class PriorityLabel extends StatelessWidget {
     final ancestors = priority!.ancestors;
     return Row(
       children: [
-        Text(priority!.label),
+        if (!onlyAncestors) Text("${priority!.title} "),
         if (ancestors.isNotEmpty)
           DefaultTextStyle(
-            style: DefaultTextStyle.of(
-              context,
-            ).style.copyWith(color: context.theme.colorScheme.mutedForeground),
-            child: Text('  ${priority!.parent!.pathLabel}'),
+            style: DefaultTextStyle.of(context).style.copyWith(
+              color: context.theme.colorScheme.mutedForeground,
+              fontSize: context.theme.typography.xs.fontSize,
+            ),
+            child: Text(priority!.ancestorsLabel),
           ),
       ],
     );
@@ -89,26 +95,17 @@ class PriorityWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isParent) {
-      return ListTile(
-        body: Viewer(markdown: priority.note!),
-        // TODO: support pinning and reordering
-        // trailingCommands: [if (!priority.pinned) PinPriority(priority)],
-      );
-    }
     return ListTile(
-      command: ChangeCurrentPriority(priority),
+      command: !isParent ? ChangeCurrentPriority(priority) : null,
       trailingCommands: [
         if (!priority.pinned) PinPriority(priority),
-        priorityCommand(priority),
+        if (priority.pinned || !isParent) priorityCommand(priority),
       ],
       body:
-          priority.note?.isNotEmpty == true &&
-                  !priority.doNow &&
-                  !priority.done &&
-                  !priority.pinned
-              ? Viewer(markdown: priority.note!)
+          ((!priority.doNow && !priority.done && !priority.pinned) || isParent)
+              ? Viewer(markdown: priority.note ?? priority.title)
               : null,
+      header: PriorityLabel(priority: priority, onlyAncestors: true),
     );
   }
 }

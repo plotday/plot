@@ -12,7 +12,7 @@ import 'package:plot/page/new_priority.dart';
 class _PriorityValue extends ValueCommand<Priority?> {
   _PriorityValue(Priority? priority)
     : super(
-        title: priority?.label ?? 'None',
+        title: priority?.title ?? 'None',
         subtitle: priority != null ? priority.parent?.pathLabel : 'Top-level',
         value: priority,
       );
@@ -45,7 +45,7 @@ class PickPriority extends Commands<Priority> {
 class ChangeCurrentPriority extends Command {
   ChangeCurrentPriority(Priority priority, {bool fullPath = true})
     : priorityId = priority.id,
-      super(title: priority.label, subtitle: priority.parent?.pathLabel);
+      super(title: priority.title, subtitle: priority.parent?.pathLabel);
 
   ChangeCurrentPriority.byId({required this.priorityId})
     : super(title: 'View Priority');
