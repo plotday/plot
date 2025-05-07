@@ -91,6 +91,8 @@ class PriorityWidget extends StatelessWidget {
 
   /// If true, show as a parent note with some functionality (such as navigating to it) disabled.
   final Priority priority;
+
+  /// When a parent priority is displayed alongside it's children, it's always expanded and not clickable.
   final bool isParent;
 
   @override
@@ -99,13 +101,26 @@ class PriorityWidget extends StatelessWidget {
       command: !isParent ? ChangeCurrentPriority(priority) : null,
       trailingCommands: [
         if (!priority.pinned) PinPriority(priority),
-        if (priority.pinned || !isParent) priorityCommand(priority),
+        priorityCommand(priority),
       ],
       body:
-          ((!priority.doNow && !priority.done && !priority.pinned) || isParent)
+          (isParent || (!priority.doNow && !priority.done && !priority.pinned))
               ? Viewer(markdown: priority.note ?? priority.title)
               : null,
-      header: PriorityLabel(priority: priority, onlyAncestors: true),
+      header: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          PriorityLabel(priority: priority, onlyAncestors: true),
+          if ((isParent || (!priority.doNow && !priority.pinned)))
+            Text(
+              priority.createdAt.toTimeAgo(),
+              style: TextStyle(
+                color: context.theme.colorScheme.mutedForeground,
+                fontSize: context.theme.typography.xs.fontSize,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
