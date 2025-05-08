@@ -48,12 +48,14 @@ class CommandBarState<T> extends State<CommandBar<T>> {
   void _initCommands() async {
     try {
       setState(() {
-        _filteredCommandGroups = [];
         _error = null;
       });
       final searchText = _controller.text;
       final commandsList = await commands.list(search: searchText);
       setState(() {
+        if (commandsList.isEmpty) {
+          _error = 'No matches';
+        }
         _filteredCommandGroups = commandsList;
       });
     } catch (e) {
@@ -98,13 +100,19 @@ class CommandBarState<T> extends State<CommandBar<T>> {
     if (_child != null) {
       return _child!;
     }
+    Widget? errorBox;
+    if (_error != null) {
+      errorBox = Container(
+        padding: const EdgeInsets.all(8),
+        child: Text(_error!),
+      );
+    }
     final secondaryCommand = widget.secondaryCommand?.call(_controller.text);
     return Dialog(
       padding: const EdgeInsets.all(0),
       body: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_error != null) Text(_error!),
           if (_child != null) _child!,
           if (_child == null) ...[
             EditableArea(
@@ -146,6 +154,7 @@ class CommandBarState<T> extends State<CommandBar<T>> {
                 },
               ),
             ),
+            if (errorBox != null) errorBox,
           ],
         ],
       ),
