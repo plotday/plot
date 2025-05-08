@@ -112,7 +112,6 @@ class _ListTileState extends State<ListTile> {
             horizontal: widgetPadding.horizontal / 2,
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (widget.leadingCommand != null)
                 Button.icon(widget.leadingCommand!),
