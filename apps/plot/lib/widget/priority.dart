@@ -8,11 +8,13 @@ import 'package:plot/command/command.dart';
 class PriorityLabel extends StatelessWidget {
   const PriorityLabel({
     required this.priority,
+    this.context,
     this.onlyAncestors = false,
     super.key,
   });
 
   final Priority? priority;
+  final Priority? context;
   final bool onlyAncestors;
 
   @override
@@ -30,7 +32,7 @@ class PriorityLabel extends StatelessWidget {
               color: context.theme.colorScheme.mutedForeground,
               fontSize: context.theme.typography.xs.fontSize,
             ),
-            child: Text(priority!.ancestorsLabel),
+            child: Text(priority!.ancestorsLabel(context: this.context)),
           ),
       ],
     );
@@ -83,37 +85,43 @@ class PriorityBalance extends StatelessWidget {
 }
 
 class PriorityWidget extends StatelessWidget {
-  const PriorityWidget({
-    required this.priority,
-    this.isParent = false,
-    super.key,
-  });
+  const PriorityWidget({required this.priority, this.context, super.key});
 
   /// If true, show as a parent note with some functionality (such as navigating to it) disabled.
   final Priority priority;
 
-  /// When a parent priority is displayed alongside it's children, it's always expanded and not clickable.
-  final bool isParent;
+  /// Display priority relative to this priority.
+  final Priority? context;
 
   @override
   Widget build(BuildContext context) {
+    bool isContext = priority == this.context;
+    bool contextChild = priority.ancestors.last.id == this.context?.id;
     return ListTile(
-      command: !isParent ? ChangeCurrentPriority(priority) : null,
+      command: !isContext ? ChangeCurrentPriority(priority) : null,
       trailingCommands: [
         if (!priority.pinned) PinPriority(priority),
         priorityCommand(priority),
       ],
       body:
-          (isParent || (!priority.doNow && !priority.done && !priority.pinned))
+          (isContext || (!priority.doNow && !priority.done && !priority.pinned))
               ? Viewer(markdown: priority.note ?? priority.title)
               : null,
       header: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment:
+            contextChild
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.spaceBetween,
         children: [
-          PriorityLabel(priority: priority, onlyAncestors: true),
-          if ((isParent || (!priority.doNow && !priority.pinned)))
+          if (!contextChild)
+            PriorityLabel(
+              priority: priority,
+              context: this.context,
+              onlyAncestors: true,
+            ),
+          if (isContext || (!priority.doNow && !priority.pinned))
             Text(
-              (isParent ? priority.createdAt : priority.updatedAt).toTimeAgo(),
+              (isContext ? priority.createdAt : priority.updatedAt).toTimeAgo(),
               style: TextStyle(
                 color: context.theme.colorScheme.mutedForeground,
                 fontSize: context.theme.typography.xs.fontSize,

@@ -107,7 +107,7 @@ class PriorityPage extends StatelessWidget {
                       builder:
                           (context, index) => PriorityWidget(
                             priority: state.inactive[index],
-                            isParent: state.inactive[index] == state.current,
+                            context: state.current,
                             key: ValueKey(state.inactive[index].id),
                           ),
                     ),
@@ -156,8 +156,14 @@ class _PrioritiesSection extends StatelessWidget {
           ),
           child: Column(
             children: [
-              _ReorderableView(priorities: state.pinned),
-              _ReorderableView(priorities: state.active),
+              _ReorderableView(
+                priorities: state.pinned,
+                context: state.current,
+              ),
+              _ReorderableView(
+                priorities: state.active,
+                context: state.current,
+              ),
             ],
           ),
         );
@@ -167,14 +173,17 @@ class _PrioritiesSection extends StatelessWidget {
 }
 
 class _ReorderableView extends StatelessWidget {
-  const _ReorderableView({required this.priorities});
+  const _ReorderableView({required this.priorities, required this.context});
 
   final List<Priority> priorities;
+  final Priority context;
 
   @override
   Widget build(BuildContext context) => ReorderableListView(
     list: priorities,
-    itemBuilder: (buildContext, item) => PriorityWidget(priority: item),
+    itemBuilder:
+        (buildContext, item) =>
+            PriorityWidget(priority: item, context: this.context),
     shrinkWrap: true,
     onReorder: (int oldIndex, int newIndex) async {
       var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);

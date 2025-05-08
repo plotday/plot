@@ -494,15 +494,18 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     if (ancestors.isEmpty) {
       return title;
     }
-    return "$title | $ancestorsLabel";
+    return "$title | ${ancestorsLabel()}";
   }
 
-  String get ancestorsLabel {
-    return (ancestors
-            .map((a) => a.title)
-            .toList()
-            .expand((p) => [p, ' › '])
-            .toList()
+  String ancestorsLabel({Priority? context}) {
+    var list = ancestors;
+    if (context != null) {
+      int startIndex = ancestors.indexWhere((a) => a.id == context.id);
+      if (startIndex != -1) {
+        list = ancestors.sublist(startIndex + 1);
+      }
+    }
+    return (list.map((a) => a.title).toList().expand((p) => [p, ' › ']).toList()
           ..removeLast())
         .join();
   }
