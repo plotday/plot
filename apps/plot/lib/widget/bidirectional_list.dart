@@ -21,6 +21,7 @@ class BidirectionalList extends StatefulWidget {
   final double overflow;
   final ScrollController? scrollController;
   final bool reverse;
+  final ReorderCallback? onReorder;
 
   const BidirectionalList({
     required this.builder,
@@ -33,6 +34,7 @@ class BidirectionalList extends StatefulWidget {
     this.estimatedItemExtent = 75,
     this.overflow = 2,
     this.reverse = false,
+    this.onReorder,
     super.key,
   }) : doneStart = doneStart ?? fetcher == null,
        doneEnd = doneEnd ?? fetcher == null;
@@ -217,18 +219,29 @@ class BidirectionalListState extends State<BidirectionalList> {
         reverse: widget.reverse,
         slivers: [
           if (widget.count > 0 && !widget.doneStart) spinner,
-          SliverList.builder(
+          SliverReorderableList(
             key: _upListKey,
             itemCount: _upCount - _shrinkUp,
             itemBuilder:
                 (context, index) =>
-                    widget.builder(context, _upCount - index - 1),
+                    widget.builder(context, _upCount - index - 1) ??
+                    Container(),
+            onReorder: (oldIndex, newIndex) {
+              widget.onReorder?.call(
+                _upCount - oldIndex - 1,
+                _upCount - newIndex - 1,
+              );
+            },
           ),
-          SliverList.builder(
+          SliverReorderableList(
             key: _downListKey,
             itemCount: _downCount - _shrinkDown,
             itemBuilder:
-                (context, index) => widget.builder(context, _upCount + index),
+                (context, index) =>
+                    widget.builder(context, _upCount + index) ?? Container(),
+            onReorder: (oldIndex, newIndex) {
+              widget.onReorder?.call(_upCount + oldIndex, _upCount + newIndex);
+            },
           ),
           if (!widget.doneEnd) spinner,
         ],

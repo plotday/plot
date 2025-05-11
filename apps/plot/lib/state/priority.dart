@@ -10,7 +10,7 @@ part 'priority_state.dart';
 class PriorityBloc extends Cubit<PriorityState> {
   PriorityBloc({required Priority priority})
     : _subscriptions = [],
-      super(PriorityState(current: priority)) {
+      super(PriorityState(context: priority)) {
     _loadPriority(priority);
   }
 
@@ -27,14 +27,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     return super.close();
   }
 
-  PriorityId get currentId => state.current.id;
+  PriorityId get currentId => state.context.id;
 
   void _loadPriority(Priority priority) {
     _reset();
 
     _subscriptions.add(
       Priority.watchOne(priority.id).listen((priority) {
-        emit(state.copyWith(current: priority));
+        emit(state.copyWith(context: priority));
       }),
     );
     _subscriptions.add(
@@ -51,7 +51,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       Priority.watch(path: priority.path, self: false, active: true).listen((
         priorities,
       ) {
-        emit(state.copyWith(active: priorities, moreActive: false));
+        emit(state.copyWith(upcoming: priorities, moreAfter: false));
       }),
     );
     _subscriptions.add(
@@ -61,7 +61,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         active: false,
         pinned: false,
       ).listen((priorities) {
-        emit(state.copyWith(inactive: priorities, moreInactive: false));
+        emit(state.copyWith(past: priorities, moreBefore: false));
       }),
     );
   }
@@ -74,7 +74,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     priority = priority.copyWith(draft: false);
     await priority.save();
     // Create a new draft
-    emit(state.copyWith(draft: Priority(parent: state.current, draft: true)));
+    emit(state.copyWith(draft: Priority(parent: state.context, draft: true)));
   }
 
   List<StreamSubscription<void>> _subscriptions;

@@ -71,12 +71,12 @@ class PriorityPage extends StatelessWidget {
               translucent: true,
               header: Header(
                 main: PrioritySelector(
-                  selected: state.current,
+                  selected: state.context,
                   onSelect: (p) => context.run<void>(ChangeCurrentPriority(p)),
                 ),
                 commands: [
-                  if (!state.current.root)
-                    ArchivePriority(Future.value(state.current)),
+                  if (!state.context.root)
+                    ArchivePriority(Future.value(state.context)),
                   ShowSchedule(),
                 ],
               ),
@@ -94,7 +94,7 @@ class PriorityPage extends StatelessWidget {
                           ),
                         ),
                       ),
-                      child: _PrioritiesSection(),
+                      child: _PinnedSection(),
                     ),
                   ),
                   Flexible(
@@ -102,14 +102,17 @@ class PriorityPage extends StatelessWidget {
                     fit: FlexFit.tight,
                     child: BidirectionalList(
                       scrollController: ScrollControllerContext.of(context),
-                      count: state.inactive.length,
+                      count: state.priorities.length,
                       reverse: true,
                       builder:
                           (context, index) => PriorityWidget(
-                            priority: state.inactive[index],
-                            context: state.current,
-                            key: ValueKey(state.inactive[index].id),
+                            priority: state.priorities[index],
+                            context: state.context,
+                            key: ValueKey(state.priorities[index].id),
                           ),
+                      onReorder:
+                          (oldIndex, newIndex) =>
+                              onReorder(state.priorities, oldIndex, newIndex),
                     ),
                   ),
                 ],
@@ -136,16 +139,48 @@ class PriorityPage extends StatelessWidget {
       },
     );
   }
+
+  static void onReorder(
+    List<Priority> priorities,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+    var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+    Priority priority = priorities[oldIndex];
+    Priority? previous;
+    if (previousIndex >= 0) {
+      previous = priorities[previousIndex];
+    }
+    Priority? next;
+    if (nextIndex < priorities.length) {
+      next = priorities[nextIndex];
+    }
+    priority
+        .copyWith(
+          order: Order.between(
+            previous?.order,
+            previous?.doAt == null || next?.doAt == previous?.doAt
+                ? next?.order
+                : null,
+          ),
+          // Action priorities are sorted first by doAt, so we need to set this
+          // to have the same doAt as one of its neighbours.
+          doAt:
+              priority.doNow
+                  ? Value(previous?.doAt ?? next?.doAt ?? priority.doAt)
+                  : const Value.absent(),
+        )
+        .save();
+  }
 }
 
-class _PrioritiesSection extends StatelessWidget {
-  const _PrioritiesSection();
-
+class _PinnedSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
-        if (state.pinned.isEmpty && state.active.isEmpty) {
+        if (state.pinned.isEmpty) {
           return const SizedBox();
         }
         return Container(
@@ -156,13 +191,43 @@ class _PrioritiesSection extends StatelessWidget {
           ),
           child: Column(
             children: [
-              _ReorderableView(
-                priorities: state.pinned,
-                context: state.current,
-              ),
-              _ReorderableView(
-                priorities: state.active,
-                context: state.current,
+              ReorderableListView(
+                list: state.pinned,
+                itemBuilder:
+                    (buildContext, item) =>
+                        PriorityWidget(priority: item, context: state.context),
+                shrinkWrap: true,
+                onReorder: (int oldIndex, int newIndex) async {
+                  var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+                  var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+                  Priority priority = state.pinned[oldIndex];
+                  Priority? previous;
+                  if (previousIndex >= 0) {
+                    previous = state.pinned[previousIndex];
+                  }
+                  Priority? next;
+                  if (nextIndex < state.pinned.length) {
+                    next = state.pinned[nextIndex];
+                  }
+                  priority
+                      .copyWith(
+                        order: Order.between(
+                          previous?.order,
+                          previous?.doAt == null || next?.doAt == previous?.doAt
+                              ? next?.order
+                              : null,
+                        ),
+                        // Action state.pinned are sorted first by doAt, so we need to set this
+                        // to have the same doAt as one of its neighbours.
+                        doAt:
+                            priority.doNow
+                                ? Value(
+                                  previous?.doAt ?? next?.doAt ?? priority.doAt,
+                                )
+                                : const Value.absent(),
+                      )
+                      .save();
+                },
               ),
             ],
           ),
@@ -170,49 +235,4 @@ class _PrioritiesSection extends StatelessWidget {
       },
     );
   }
-}
-
-class _ReorderableView extends StatelessWidget {
-  const _ReorderableView({required this.priorities, required this.context});
-
-  final List<Priority> priorities;
-  final Priority context;
-
-  @override
-  Widget build(BuildContext context) => ReorderableListView(
-    list: priorities,
-    itemBuilder:
-        (buildContext, item) =>
-            PriorityWidget(priority: item, context: this.context),
-    shrinkWrap: true,
-    onReorder: (int oldIndex, int newIndex) async {
-      var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-      var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-      Priority priority = priorities[oldIndex];
-      Priority? previous;
-      if (previousIndex >= 0) {
-        previous = priorities[previousIndex];
-      }
-      Priority? next;
-      if (nextIndex < priorities.length) {
-        next = priorities[nextIndex];
-      }
-      priority
-          .copyWith(
-            order: Order.between(
-              previous?.order,
-              previous?.doAt == null || next?.doAt == previous?.doAt
-                  ? next?.order
-                  : null,
-            ),
-            // Action priorities are sorted first by doAt, so we need to set this
-            // to have the same doAt as one of its neighbours.
-            doAt:
-                priority.doNow
-                    ? Value(previous?.doAt ?? next?.doAt ?? priority.doAt)
-                    : const Value.absent(),
-          )
-          .save();
-    },
-  );
 }

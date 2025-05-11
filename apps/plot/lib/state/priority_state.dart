@@ -2,55 +2,56 @@ part of 'priority.dart';
 
 class PriorityState extends Equatable {
   PriorityState({
-    required this.current,
+    required this.context,
     Priority? draft,
     this.pinned = const [],
-    this.active = const [],
-    this.moreActive = true,
-    List<Priority> inactive = const [],
-    this.moreInactive = true,
-  }) : draft = draft ?? Priority(parent: current, draft: true),
-       inactive = [
-         ...inactive,
-         if (current.note != null && !moreInactive) current,
-       ];
+    this.upcoming = const [],
+    this.moreAfter = true,
+    List<Priority> past = const [],
+    this.moreBefore = true,
+  }) : draft = draft ?? Priority(parent: context, draft: true),
+       past = [...past, if (context.note != null && !moreBefore) context];
 
-  final Priority current;
+  final Priority context;
   final Priority draft;
   final List<Priority> pinned;
-  final List<Priority> active;
-  final bool moreActive;
-  final List<Priority> inactive;
-  final bool moreInactive;
+  final List<Priority> upcoming;
+  final bool moreAfter;
+  final List<Priority> past;
+  final bool moreBefore;
 
   PriorityState copyWith({
-    Priority? current,
+    Priority? context,
     Priority? draft,
     List<Priority>? pinned,
-    List<Priority>? active,
-    bool? moreActive,
-    List<Priority>? inactive,
-    bool? moreInactive,
+    List<Priority>? upcoming,
+    bool? moreAfter,
+    List<Priority>? past,
+    bool? moreBefore,
   }) {
     return PriorityState(
-      current: current ?? this.current,
+      context: context ?? this.context,
       draft: draft ?? this.draft,
       pinned: pinned ?? this.pinned,
-      active: active ?? this.active,
-      moreActive: moreActive ?? this.moreActive,
-      inactive: inactive ?? this.inactive,
-      moreInactive: moreInactive ?? this.moreInactive,
+      upcoming: upcoming ?? this.upcoming,
+      moreAfter: moreAfter ?? this.moreAfter,
+      past: past ?? this.past,
+      moreBefore: moreBefore ?? this.moreBefore,
     );
+  }
+
+  List<Priority> get priorities {
+    return [...upcoming, ...past];
   }
 
   @override
   List<Object?> get props => [
-    current,
+    context,
     draft,
     pinned,
-    active,
-    moreActive,
-    inactive,
-    moreInactive,
+    upcoming,
+    moreAfter,
+    past,
+    moreBefore,
   ];
 }
