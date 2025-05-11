@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
@@ -105,10 +106,28 @@ class PriorityPage extends StatelessWidget {
                       count: state.priorities.length,
                       reverse: true,
                       builder:
-                          (context, index) => PriorityWidget(
-                            priority: state.priorities[index],
-                            context: state.context,
+                          (context, index) => Column(
+                            mainAxisSize: MainAxisSize.min,
                             key: ValueKey(state.priorities[index].id),
+                            children: [
+                              Text(
+                                (state.priorities[index] == state.context
+                                        ? state.priorities[index].createdAt
+                                        : state.priorities[index].updatedAt)
+                                    .toTimeAgo(),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color:
+                                      context.theme.colorScheme.mutedForeground,
+                                  fontSize:
+                                      context.theme.typography.xs.fontSize,
+                                ),
+                              ),
+                              PriorityWidget(
+                                priority: state.priorities[index],
+                                context: state.context,
+                              ),
+                            ],
                           ),
                       onReorder:
                           (oldIndex, newIndex) =>

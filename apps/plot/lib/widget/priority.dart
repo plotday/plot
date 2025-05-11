@@ -107,28 +107,14 @@ class PriorityWidget extends StatelessWidget {
           (isContext || (!priority.doNow && !priority.done && !priority.pinned))
               ? Viewer(markdown: priority.note ?? priority.title)
               : null,
-      header: Row(
-        mainAxisAlignment:
-            contextChild
-                ? MainAxisAlignment.end
-                : MainAxisAlignment.spaceBetween,
-        children: [
-          if (!contextChild)
-            PriorityLabel(
-              priority: priority,
-              context: this.context,
-              onlyAncestors: true,
-            ),
-          if (isContext || (!priority.doNow && !priority.pinned))
-            Text(
-              (isContext ? priority.createdAt : priority.updatedAt).toTimeAgo(),
-              style: TextStyle(
-                color: context.theme.colorScheme.mutedForeground,
-                fontSize: context.theme.typography.xs.fontSize,
+      header:
+          contextChild
+              ? null
+              : PriorityLabel(
+                priority: priority,
+                context: this.context,
+                onlyAncestors: true,
               ),
-            ),
-        ],
-      ),
     );
   }
 }
