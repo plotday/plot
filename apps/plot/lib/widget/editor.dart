@@ -73,15 +73,7 @@ class EditorState extends State<Editor> {
 
   void clear() {
     setState(() {
-      // Clear the document
-      _document = MutableDocument.empty();
-      _document.addListener(_onDocumentChanged);
-      _composer = MutableDocumentComposer();
-      _editor = createDefaultDocumentEditor(
-        document: _document,
-        composer: _composer,
-        isHistoryEnabled: true,
-      );
+      _editor.execute([ClearDocumentRequest()]);
     });
   }
 
@@ -107,8 +99,16 @@ class EditorState extends State<Editor> {
   @override
   void initState() {
     super.initState();
+    _document = MutableDocument.empty();
+    _document.addListener(_onDocumentChanged);
+    _composer = MutableDocumentComposer();
     _editorFocusNode = widget.focusNode ?? FocusNode();
     _editorFocusNode.addListener(_onFocusChange);
+    _editor = createDefaultDocumentEditor(
+      document: _document,
+      composer: _composer,
+      isHistoryEnabled: true,
+    );
     _scrollController = ScrollController();
     clear();
   }
@@ -130,7 +130,6 @@ class EditorState extends State<Editor> {
       bindings: {
         const SingleActivator(LogicalKeyboardKey.enter, shift: false): () {
           submit();
-          _editorFocusNode.requestFocus();
         },
       },
       child: GestureDetector(
