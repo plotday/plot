@@ -87,7 +87,7 @@ class CommandBarState<T> extends State<CommandBar<T>> {
       } else if (result is CommandValue<T?> &&
           result.value != null &&
           mounted) {
-        Navigator.of(context).pop(Value(result.value!));
+        Navigator.of(context).pop(Value(result.value));
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);

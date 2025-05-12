@@ -138,24 +138,28 @@ class _ListTileState extends State<ListTile> {
                       widget.body ??
                           Row(
                             children: [
-                              Text(
-                                widget.style == ListTileStyle.header
-                                    ? widget.title.toUpperCase()
-                                    : widget.title,
-                                overflow: TextOverflow.ellipsis,
-                                style: context.theme.typography.xs.copyWith(
-                                  color:
-                                      widget.style == ListTileStyle.header
-                                          ? context.colour.muted
-                                          : context.colour.foreground,
+                              Flexible(
+                                child: Text(
+                                  widget.style == ListTileStyle.header
+                                      ? widget.title.toUpperCase()
+                                      : widget.title,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.theme.typography.xs.copyWith(
+                                    color:
+                                        widget.style == ListTileStyle.header
+                                            ? context.colour.muted
+                                            : context.colour.foreground,
+                                  ),
                                 ),
                               ),
                               if (widget.command?.subtitle != null)
-                                Text(
-                                  '  ${widget.command!.subtitle!}',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: context.theme.typography.xs.copyWith(
-                                    color: context.colour.muted,
+                                Flexible(
+                                  child: Text(
+                                    '  ${widget.command!.subtitle!}',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: context.theme.typography.xs.copyWith(
+                                      color: context.colour.muted,
+                                    ),
                                   ),
                                 ),
                             ],
