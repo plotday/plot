@@ -105,16 +105,20 @@ class PriorityPage extends StatelessWidget {
                       scrollController: ScrollControllerContext.of(context),
                       count: state.priorities.length,
                       reverse: true,
-                      builder:
-                          (context, index) => Column(
-                            mainAxisSize: MainAxisSize.min,
-                            key: ValueKey(state.priorities[index].id),
-                            children: [
+                      builder: (context, index) {
+                        final previous =
+                            index > 0 ? state.priorities[index - 1] : null;
+                        final current = state.priorities[index];
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          key: ValueKey(state.priorities[index].id),
+                          children: [
+                            if (previous?.createdAt.toDate() !=
+                                current.createdAt.toDate())
                               Text(
-                                (state.priorities[index] == state.context
-                                        ? state.priorities[index].createdAt
-                                        : state.priorities[index].updatedAt)
-                                    .toTimeAgo(),
+                                state.priorities[index].createdAt
+                                    .toDate()
+                                    .format(),
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color:
@@ -123,12 +127,13 @@ class PriorityPage extends StatelessWidget {
                                       context.theme.typography.xs.fontSize,
                                 ),
                               ),
-                              PriorityWidget(
-                                priority: state.priorities[index],
-                                context: state.context,
-                              ),
-                            ],
-                          ),
+                            PriorityWidget(
+                              priority: state.priorities[index],
+                              context: state.context,
+                            ),
+                          ],
+                        );
+                      },
                       onReorder:
                           (oldIndex, newIndex) =>
                               onReorder(state.priorities, oldIndex, newIndex),
