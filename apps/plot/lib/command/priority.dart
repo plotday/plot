@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:forui/forui.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'logging.dart';
@@ -13,9 +14,44 @@ class _PriorityValue extends ValueCommand<Priority?> {
   _PriorityValue(Priority? priority)
     : super(
         title: priority?.title ?? 'None',
-        subtitle: priority?.ancestorsLabel() ?? 'Top-level',
+        subtitle: priority?.ancestorsLabel(),
         value: priority,
       );
+
+  @override
+  Widget buildBody(BuildContext context) {
+    print("Build body");
+    return Row(
+      children: [
+        if (value?.ancestorsLabel().isNotEmpty == true) ...[
+          Flexible(
+            child: Text(
+              value!.ancestorsLabel(),
+              overflow: TextOverflow.ellipsis,
+              style: context.theme.typography.xs.copyWith(
+                color: context.colour.muted,
+              ),
+            ),
+          ),
+          Text(
+            Priority.separator,
+            style: context.theme.typography.xs.copyWith(
+              color: context.colour.muted,
+            ),
+          ),
+        ],
+        Flexible(
+          child: Text(
+            value?.title ?? 'None',
+            overflow: TextOverflow.ellipsis,
+            style: context.theme.typography.xs.copyWith(
+              color: context.colour.foreground,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class PriorityCommandGroup extends CommandGroup {

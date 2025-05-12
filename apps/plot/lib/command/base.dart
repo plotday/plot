@@ -48,6 +48,8 @@ abstract class Command {
   final ShortcutActivator? shortcut;
 
   Future<CommandReturn?> run(BuildContext context);
+
+  Widget? buildBody(BuildContext context) => null;
 }
 
 class CommandWrapper extends Command {
@@ -76,6 +78,9 @@ class CommandWrapper extends Command {
     }
     return command.run(context);
   }
+
+  @override
+  Widget? buildBody(BuildContext context) => command.buildBody(context);
 }
 
 /// A command for returning a value

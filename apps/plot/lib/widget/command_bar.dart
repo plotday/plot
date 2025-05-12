@@ -150,7 +150,9 @@ class CommandBarState<T> extends State<CommandBar<T>> {
                 itemCount: _allCommandsCount(),
                 itemBuilder: (context, index) {
                   final command = _getCommandAtIndex(index);
-                  return ListTile(command: command);
+                  final body = command.buildBody(context);
+                  print("Body: ${body != null}");
+                  return ListTile(command: command, body: body);
                 },
               ),
             ),

@@ -490,6 +490,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return firstLine;
   }
 
+  static const separator = ' › ';
+
   String ancestorsLabel({Priority? context}) {
     var list = ancestors;
     if (list.length < 2) {
@@ -503,7 +505,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         list = ancestors.sublist(startIndex + 1);
       }
     }
-    return (list.map((a) => a.title).toList().expand((p) => [p, ' › ']).toList()
+    return (list
+            .map((a) => a.title)
+            .toList()
+            .expand((p) => [p, separator])
+            .toList()
           ..removeLast())
         .join();
   }
