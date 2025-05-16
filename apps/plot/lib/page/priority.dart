@@ -51,6 +51,7 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
 
         return BlocProvider(
           create: (_) => PriorityBloc(priority: snapshot.data!),
+          key: ValueKey(snapshot.data!.id),
           child: this,
         );
       },
@@ -66,99 +67,119 @@ class PriorityPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
-        return BlocBuilder<PriorityBloc, PriorityState>(
-          builder: (context, prioritiesState) {
-            return Scaffold(
-              translucent: true,
-              header: Header(
-                main: PrioritySelector(
-                  selected: state.context,
-                  onSelect: (p) => context.run<void>(ChangeCurrentPriority(p)),
-                ),
+        return BidirectionalListSelector(
+          builder:
+              (context, listController) => CommandScope(
                 commands: [
-                  if (!state.context.root)
-                    ArchivePriority(Future.value(state.context)),
-                  ShowSchedule(),
+                  StaticCommandGroup(
+                    title: state.context.title,
+                    commands: [
+                      if (state.context.root)
+                        ChangeCurrentPriority(state.context),
+                      if (!state.context.root) PinPriority(state.context),
+                      ArchivePriority(Future.value(state.context)),
+                    ],
+                  ),
                 ],
-              ),
-              body: Column(
-                children: [
-                  Flexible(
-                    flex: 0,
-                    fit: FlexFit.loose,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            width: 1.0,
-                            color: context.colour.border,
+                child: Scaffold(
+                  translucent: true,
+                  header: Header(
+                    main: PrioritySelector(
+                      selected: state.context,
+                      onSelect:
+                          (p) => context.run<void>(ChangeCurrentPriority(p)),
+                    ),
+                    commands: [
+                      if (!state.context.root)
+                        ArchivePriority(Future.value(state.context)),
+                    ],
+                  ),
+                  body: Column(
+                    children: [
+                      Flexible(
+                        flex: 0,
+                        fit: FlexFit.loose,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                width: 1.0,
+                                color: context.colour.border,
+                              ),
+                            ),
                           ),
+                          child: _PinnedSection(),
                         ),
                       ),
-                      child: _PinnedSection(),
-                    ),
-                  ),
-                  Flexible(
-                    flex: 1,
-                    fit: FlexFit.tight,
-                    child: BidirectionalList(
-                      scrollController: ScrollControllerContext.of(context),
-                      count: state.priorities.length,
-                      reverse: true,
-                      builder: (context, index) {
-                        final previous =
-                            index > 0 ? state.priorities[index - 1] : null;
-                        final current = state.priorities[index];
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          key: ValueKey(state.priorities[index].id),
-                          children: [
-                            if (previous?.createdAt.toDate() !=
-                                current.createdAt.toDate())
-                              Text(
-                                state.priorities[index].createdAt
-                                    .toDate()
-                                    .format(),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color:
-                                      context.theme.colorScheme.mutedForeground,
-                                  fontSize:
-                                      context.theme.typography.xs.fontSize,
+                      Flexible(
+                        flex: 1,
+                        fit: FlexFit.tight,
+                        child: BidirectionalList(
+                          controller: listController,
+                          scrollController: ScrollControllerContext.of(context),
+                          count: state.priorities.length,
+                          reverse: true,
+                          builder: (context, index, selected) {
+                            final previous =
+                                index > 0 ? state.priorities[index - 1] : null;
+                            final current = state.priorities[index];
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              key: ValueKey(state.priorities[index].id),
+                              children: [
+                                if (previous?.createdAt.toDate() !=
+                                    current.createdAt.toDate())
+                                  Text(
+                                    state.priorities[index].createdAt
+                                        .toDate()
+                                        .format(),
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color:
+                                          context
+                                              .theme
+                                              .colorScheme
+                                              .mutedForeground,
+                                      fontSize:
+                                          context.theme.typography.xs.fontSize,
+                                    ),
+                                  ),
+                                PriorityWidget(
+                                  priority: state.priorities[index],
+                                  context: state.context,
+                                  selected: selected,
                                 ),
+                              ],
+                            );
+                          },
+                          onReorder:
+                              (oldIndex, newIndex) => onReorder(
+                                state.priorities,
+                                oldIndex,
+                                newIndex,
                               ),
-                            PriorityWidget(
-                              priority: state.priorities[index],
-                              context: state.context,
-                            ),
-                          ],
-                        );
-                      },
-                      onReorder:
-                          (oldIndex, newIndex) =>
-                              onReorder(state.priorities, oldIndex, newIndex),
-                    ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                  footer: EditableArea(
+                    position: EditableAreaPosition.bottom,
+                    builder:
+                        (context, focusNode) => Editor(
+                          hint: 'Add a priority',
+                          autofocus: true,
+                          focusNode: focusNode,
+                          onSubmitted: (body) async {
+                            final priority = state.draft.copyWith(
+                              note: Value(body),
+                              draft: false,
+                            );
+                            await context.read<PriorityBloc>().add(priority);
+                          },
+                        ),
+                  ),
+                ),
               ),
-              footer: EditableArea(
-                position: EditableAreaPosition.bottom,
-                builder:
-                    (context, focusNode) => Editor(
-                      hint: 'Add a priority',
-                      autofocus: true,
-                      focusNode: focusNode,
-                      onSubmitted: (body) async {
-                        final priority = state.draft.copyWith(
-                          note: Value(body),
-                          draft: false,
-                        );
-                        await context.read<PriorityBloc>().add(priority);
-                      },
-                    ),
-              ),
-            );
-          },
         );
       },
     );

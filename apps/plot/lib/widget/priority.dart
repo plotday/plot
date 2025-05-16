@@ -85,13 +85,20 @@ class PriorityBalance extends StatelessWidget {
 }
 
 class PriorityWidget extends StatelessWidget {
-  const PriorityWidget({required this.priority, this.context, super.key});
+  const PriorityWidget({
+    required this.priority,
+    this.context,
+    this.selected = false,
+    super.key,
+  });
 
   /// If true, show as a parent note with some functionality (such as navigating to it) disabled.
   final Priority priority;
 
   /// Display priority relative to this priority.
   final Priority? context;
+
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -115,6 +122,7 @@ class PriorityWidget extends StatelessWidget {
                 context: this.context,
                 onlyAncestors: true,
               ),
+      selected: selected,
     );
   }
 }

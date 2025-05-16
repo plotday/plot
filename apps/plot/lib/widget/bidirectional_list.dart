@@ -2,10 +2,127 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:plot/widget/widget.dart';
 
-typedef ItemBuilder = Widget? Function(BuildContext context, int index);
+class BidirectionalListController extends ChangeNotifier {
+  BidirectionalListController({
+    int? initialSelected,
+    int initialMin = 0,
+    int initialMax = 0,
+  }) : _min = initialMin,
+       _max = initialMax,
+       _selected = initialSelected;
+
+  int? _selected;
+  int _min;
+  int _max;
+
+  int? get selected => _selected;
+
+  set selected(int? value) {
+    if (value != null && value < _min) {
+      value = _min;
+    }
+    if (value != null && value > _max) {
+      value = _max;
+    }
+    if (_selected != value) {
+      _selected = value;
+      notifyListeners();
+    }
+  }
+
+  void clamp(int min, int max) {
+    _min = min;
+    _max = max;
+    if (_selected != null && _selected! < _min) {
+      selected = _min;
+    }
+    if (_selected != null && _selected! > _max) {
+      selected = _max;
+    }
+  }
+
+  void move(int offset) {
+    if (selected == null) return;
+    selected = selected! + offset;
+  }
+
+  void clear() {
+    selected = null;
+  }
+}
+
+class BidirectionalListSelector extends StatefulWidget {
+  final Widget Function(
+    BuildContext context,
+    BidirectionalListController controller,
+  )
+  builder;
+
+  final ValueChanged<int?>? onSelectionChanged;
+
+  const BidirectionalListSelector({
+    super.key,
+    required this.builder,
+    this.onSelectionChanged,
+  });
+
+  @override
+  BidirectionalListSelectorState createState() =>
+      BidirectionalListSelectorState();
+}
+
+class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
+  late final FocusNode _focusNode = FocusNode();
+  late final BidirectionalListController controller =
+      BidirectionalListController(initialSelected: 0);
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(_handleSelectionChange);
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(_handleSelectionChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: _handleKeyEvent,
+      child: widget.builder(context, controller),
+    );
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        controller.move(1);
+        return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        controller.move(-1);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _handleSelectionChange() {
+    widget.onSelectionChanged?.call(controller.selected);
+  }
+}
+
+typedef ItemBuilder =
+    Widget? Function(BuildContext context, int index, bool selected);
 typedef ItemFetcher = Future<void> Function(int move, int count);
 
 class BidirectionalList extends StatefulWidget {
@@ -20,10 +137,11 @@ class BidirectionalList extends StatefulWidget {
   final int estimatedItemExtent;
   final double overflow;
   final ScrollController? scrollController;
+  final BidirectionalListController controller;
   final bool reverse;
   final ReorderCallback? onReorder;
 
-  const BidirectionalList({
+  BidirectionalList({
     required this.builder,
     required this.count,
     this.fetcher,
@@ -35,9 +153,11 @@ class BidirectionalList extends StatefulWidget {
     this.overflow = 2,
     this.reverse = false,
     this.onReorder,
+    BidirectionalListController? controller,
     super.key,
   }) : doneStart = doneStart ?? fetcher == null,
-       doneEnd = doneEnd ?? fetcher == null;
+       doneEnd = doneEnd ?? fetcher == null,
+       controller = controller ?? BidirectionalListController();
 
   @override
   BidirectionalListState createState() => BidirectionalListState();
@@ -184,6 +304,13 @@ class BidirectionalListState extends State<BidirectionalList> {
       // TODO handle the ends of lists
       _upCount = min(max(_upCount + moveUp, 0), widget.count);
       _downCount = min(max(_downCount + moveDown, 0), widget.count);
+      widget.controller.clamp(
+        -(widget.count - _downCount),
+        widget.count - _upCount,
+      );
+      if (widget.controller.selected != null) {
+        widget.controller.move(widget.offset - oldWidget.offset);
+      }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       setState(() {
@@ -210,41 +337,57 @@ class BidirectionalListState extends State<BidirectionalList> {
         _loadIfNecessary();
         return false; // Return false to allow the notification to continue to be dispatched
       },
-      child: CustomScrollView(
-        controller: _scrollController,
-        physics: BidirectionalListScrollPhysics(
-          getScrollAdjustment: _getScrollAdjustment,
-        ),
-        center: _downListKey,
-        reverse: widget.reverse,
-        slivers: [
-          if (widget.count > 0 && !widget.doneStart) spinner,
-          SliverReorderableList(
-            key: _upListKey,
-            itemCount: _upCount - _shrinkUp,
-            itemBuilder:
-                (context, index) =>
-                    widget.builder(context, _upCount - index - 1) ??
-                    Container(),
-            onReorder: (oldIndex, newIndex) {
-              widget.onReorder?.call(
-                _upCount - oldIndex - 1,
-                _upCount - newIndex - 1,
-              );
-            },
-          ),
-          SliverReorderableList(
-            key: _downListKey,
-            itemCount: _downCount - _shrinkDown,
-            itemBuilder:
-                (context, index) =>
-                    widget.builder(context, _upCount + index) ?? Container(),
-            onReorder: (oldIndex, newIndex) {
-              widget.onReorder?.call(_upCount + oldIndex, _upCount + newIndex);
-            },
-          ),
-          if (!widget.doneEnd) spinner,
-        ],
+      child: ListenableBuilder(
+        listenable: widget.controller,
+        builder:
+            (context, child) => CustomScrollView(
+              controller: _scrollController,
+              physics: BidirectionalListScrollPhysics(
+                getScrollAdjustment: _getScrollAdjustment,
+              ),
+              center: _downListKey,
+              reverse: widget.reverse,
+              slivers: [
+                if (widget.count > 0 && !widget.doneStart) spinner,
+                SliverReorderableList(
+                  key: _upListKey,
+                  itemCount: _upCount - _shrinkUp,
+                  itemBuilder:
+                      (context, index) =>
+                          widget.builder(
+                            context,
+                            _upCount - index - 1,
+                            index == widget.controller.selected,
+                          ) ??
+                          Container(),
+                  onReorder: (oldIndex, newIndex) {
+                    widget.onReorder?.call(
+                      _upCount - oldIndex - 1,
+                      _upCount - newIndex - 1,
+                    );
+                  },
+                ),
+                SliverReorderableList(
+                  key: _downListKey,
+                  itemCount: _downCount - _shrinkDown,
+                  itemBuilder:
+                      (context, index) =>
+                          widget.builder(
+                            context,
+                            _upCount + index,
+                            index == widget.controller.selected,
+                          ) ??
+                          Container(),
+                  onReorder: (oldIndex, newIndex) {
+                    widget.onReorder?.call(
+                      _upCount + oldIndex,
+                      _upCount + newIndex,
+                    );
+                  },
+                ),
+                if (!widget.doneEnd) spinner,
+              ],
+            ),
       ),
     );
   }

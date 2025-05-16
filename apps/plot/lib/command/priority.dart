@@ -20,7 +20,6 @@ class _PriorityValue extends ValueCommand<Priority?> {
 
   @override
   Widget buildBody(BuildContext context) {
-    print("Build body");
     return Row(
       children: [
         if (value?.ancestorsLabel().isNotEmpty == true) ...[
@@ -90,7 +89,7 @@ class ChangeCurrentPriority extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.router.push<void>(PriorityRoute(priorityId: priorityId));
+    await context.router.navigate(PriorityRoute(priorityId: priorityId));
     return null;
   }
 }

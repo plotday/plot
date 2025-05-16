@@ -62,42 +62,6 @@ class AppRouter extends RootStackRouter {
         ),
         AutoRoute(page: SignInRoute.page, path: 'login'),
         AutoRoute(
-          page: ScheduleRoute.page,
-          path: 'schedule',
-          // children: [
-          //   AutoRoute(
-          //     page: EventRoute.page,
-          //     path: '/schedule/new',
-          //     guards: [
-          //       OnEnter((context, route) async {
-          //         context.read<ScheduleBloc>().select(
-          //           Event(
-          //             name: name,
-          //             at: route._at ?? Day.today().toDateTimeRange(),
-          //             draft: true,
-          //           ),
-          //         );
-          //       }),
-          //     ],
-          //   ),
-          //   AutoRoute(
-          //     page: EventRoute.page,
-          //     path: '/schedule/:eventId',
-          //     guards: [
-          //       OnEnter((context, route) async {
-          //         final event = await context.read<ScheduleBloc>().selectById(
-          //           Uuid.fromShortString(route.params.getString('eventId')),
-          //         );
-          //         if (!context.mounted) return;
-          //         await context.read<PriorityBloc>().setCurrentId(
-          //           event.priorityId,
-          //         );
-          //       }),
-          //     ],
-          //   ),
-          // ],
-        ),
-        AutoRoute(
           page: PriorityRoute.page,
           path: ':priorityId',
           children: [AutoRoute(page: PriorityMainRoute.page, path: '')],

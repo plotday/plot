@@ -6,6 +6,7 @@ import 'package:plot/command/command.dart';
 import 'button.dart';
 import 'colour_scheme.dart';
 import 'theme.dart';
+import 'logging.dart';
 
 enum ListTileStyle { item, header }
 
@@ -30,6 +31,8 @@ class ListTile extends StatefulWidget {
     this.highlighted = false,
     this.style = ListTileStyle.item,
 
+    this.selected = false,
+
     /// Override the command title
     String? title,
 
@@ -42,6 +45,7 @@ class ListTile extends StatefulWidget {
 
   final ListTileStyle style;
   final bool highlighted;
+  final bool selected;
   final Widget? details;
   final Command? command;
   final Command? leadingCommand;
@@ -58,6 +62,7 @@ class ListTile extends StatefulWidget {
 class _ListTileState extends State<ListTile> {
   bool _focused = false;
   final _focusNode = FocusNode();
+  Offset? lastMousePosition;
 
   Map<ShortcutActivator, Intent> get _shortcuts => {
     const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
@@ -91,88 +96,95 @@ class _ListTileState extends State<ListTile> {
               ? () {
                 try {
                   widget.command!.run(context);
-                } catch (e) {
-                  print(e);
+                } catch (e, t) {
+                  log.warning("Command ${widget.command?.title} failed", e, t);
                 }
               }
               : null,
-      child: FocusableActionDetector(
-        focusNode: _focusNode,
-        actions: _actions,
-        shortcuts: _shortcuts,
-        onShowFocusHighlight: (focused) => setState(() => _focused = focused),
-        onShowHoverHighlight: (hovered) {
-          if (hovered) {
-            _focusNode.requestFocus();
-          }
+      child: MouseRegion(
+        onHover: (PointerHoverEvent event) {
+          setState(() {
+            if (event.position != lastMousePosition) {
+              setState(() => _focused = true);
+              lastMousePosition = event.position;
+            }
+          });
         },
-        child: Container(
-          color: _focused ? context.colour.highlight : null,
-          padding: EdgeInsets.symmetric(
-            horizontal: widgetPadding.horizontal / 2,
-          ),
-          child: Row(
-            children: [
-              if (widget.leadingCommand != null)
-                Button.icon(widget.leadingCommand!),
-              if (widget.leadingCommand == null &&
-                  (widget.command?.statusIcon.or(widget.command?.icon)) != null)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: FIcon.data(
-                    (widget.command!.statusIcon.or(widget.command!.icon))!,
-                    size: 12,
-                    color: context.colour.muted,
+        child: FocusableActionDetector(
+          focusNode: _focusNode,
+          onShowFocusHighlight: (focused) => setState(() => _focused = focused),
+          onShowHoverHighlight: (hovered) {
+            if (!hovered) setState(() => _focused = false);
+          },
+          child: Container(
+            color:
+                widget.selected || _focused ? context.colour.highlight : null,
+            padding: EdgeInsets.symmetric(
+              horizontal: widgetPadding.horizontal / 2,
+            ),
+            child: Row(
+              children: [
+                if (widget.leadingCommand != null)
+                  Button.icon(widget.leadingCommand!),
+                if (widget.leadingCommand == null &&
+                    (widget.command?.statusIcon.or(widget.command?.icon)) !=
+                        null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: FIcon.data(
+                      (widget.command!.statusIcon.or(widget.command!.icon))!,
+                      size: 12,
+                      color: context.colour.muted,
+                    ),
                   ),
-                ),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    vertical: widgetPadding.vertical / 2,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    spacing: 4,
-                    children: [
-                      if (widget.header != null) widget.header!,
-                      widget.body ??
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  widget.style == ListTileStyle.header
-                                      ? widget.title.toUpperCase()
-                                      : widget.title,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: context.theme.typography.xs.copyWith(
-                                    color:
-                                        widget.style == ListTileStyle.header
-                                            ? context.colour.muted
-                                            : context.colour.foreground,
-                                  ),
-                                ),
-                              ),
-                              if (widget.command?.subtitle != null)
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 4,
+                      children: [
+                        if (widget.header != null) widget.header!,
+                        widget.body ??
+                            Row(
+                              children: [
                                 Flexible(
                                   child: Text(
-                                    '  ${widget.command!.subtitle!}',
+                                    widget.style == ListTileStyle.header
+                                        ? widget.title.toUpperCase()
+                                        : widget.title,
                                     overflow: TextOverflow.ellipsis,
                                     style: context.theme.typography.xs.copyWith(
-                                      color: context.colour.muted,
+                                      color:
+                                          widget.style == ListTileStyle.header
+                                              ? context.colour.muted
+                                              : context.colour.foreground,
                                     ),
                                   ),
                                 ),
-                            ],
-                          ),
-                      if (widget.command?.description != null)
-                        Text(widget.command!.description!),
-                      if (widget.details != null) widget.details!,
-                    ],
+                                if (widget.command?.subtitle != null)
+                                  Flexible(
+                                    child: Text(
+                                      '  ${widget.command!.subtitle!}',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: context.theme.typography.xs
+                                          .copyWith(
+                                            color: context.colour.muted,
+                                          ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                        if (widget.command?.description != null)
+                          Text(widget.command!.description!),
+                        if (widget.details != null) widget.details!,
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              ...widget.trailingCommands.map((c) => Button.icon(c)),
-            ],
+                ...widget.trailingCommands.map((c) => Button.icon(c)),
+              ],
+            ),
           ),
         ),
       ),
