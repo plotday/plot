@@ -78,6 +78,11 @@ class PriorityPage extends StatelessWidget {
             ),
           ],
           child: BidirectionalListSelector(
+            reverse: true,
+            onActivate:
+                (index) => context.run<void>(
+                  ChangeCurrentPriority(state.priorities[index]),
+                ),
             builder:
                 (context, listController) => CommandScope(
                   commands: [

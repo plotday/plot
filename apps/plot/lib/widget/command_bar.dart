@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/widget/bidirectional_list.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
 import 'dialog.dart';
@@ -8,67 +9,22 @@ import 'button.dart';
 import 'theme.dart';
 import 'logging.dart';
 
-/// Controller for managing command selection state
-class CommandSelectionController extends ChangeNotifier {
-  int _selectedIndex = 0;
-
-  /// Current selected index
-  int get selectedIndex => _selectedIndex;
-
-  /// Set the selected index and notify listeners
-  set selectedIndex(int value) {
-    if (_selectedIndex != value) {
-      _selectedIndex = value;
-      notifyListeners();
-    }
-  }
-
-  /// Select the next command
-  void selectNext(int itemCount) {
-    if (itemCount > 0) {
-      selectedIndex = (selectedIndex + 1) % itemCount;
-    }
-  }
-
-  /// Select the previous command
-  void selectPrevious(int itemCount) {
-    if (itemCount > 0) {
-      selectedIndex = (selectedIndex - 1 + itemCount) % itemCount;
-    }
-  }
-
-  /// Reset selection to the first item
-  void reset() {
-    selectedIndex = 0;
-  }
-}
-
 class CommandBar<T> extends StatefulWidget {
   static Future<Value<T>> show<T>(
     BuildContext context,
     Commands<T> commands, {
     Command? Function(String promptValue)? secondaryCommand,
-    CommandSelectionController? controller,
   }) => Dialog.show<T>(
     context: context,
     builder:
-        (context) => CommandBar<T>(
-          commands,
-          secondaryCommand: secondaryCommand,
-          controller: controller,
-        ),
+        (context) =>
+            CommandBar<T>(commands, secondaryCommand: secondaryCommand),
   );
 
   final Commands<T> commands;
   final Command? Function(String promptValue)? secondaryCommand;
-  final CommandSelectionController? controller;
 
-  const CommandBar(
-    this.commands, {
-    this.secondaryCommand,
-    this.controller,
-    super.key,
-  });
+  const CommandBar(this.commands, {this.secondaryCommand, super.key});
 
   @override
   CommandBarState<T> createState() => CommandBarState();
@@ -76,7 +32,6 @@ class CommandBar<T> extends StatefulWidget {
 
 class CommandBarState<T> extends State<CommandBar<T>> {
   final TextEditingController _controller = TextEditingController();
-  late final CommandSelectionController _selectionController;
   List<StaticCommandGroup> _filteredCommandGroups = [];
   late Commands<T> commands = widget.commands;
   Widget? _child;
@@ -87,28 +42,14 @@ class CommandBarState<T> extends State<CommandBar<T>> {
   void initState() {
     super.initState();
 
-    // Initialize selection controller (use provided or create default)
-    _selectionController = widget.controller ?? CommandSelectionController();
-
     _initCommands();
     _controller.addListener(_initCommands);
-
-    // Listen for selection changes to update UI
-    _selectionController.addListener(() {
-      if (!_isDisposed) {
-        setState(() {});
-      }
-    });
   }
 
   @override
   void dispose() {
     _isDisposed = true;
     _controller.removeListener(_initCommands);
-    // Only dispose the selection controller if we created it
-    if (widget.controller == null) {
-      _selectionController.dispose();
-    }
     super.dispose();
   }
 
@@ -128,7 +69,7 @@ class CommandBarState<T> extends State<CommandBar<T>> {
         }
         _filteredCommandGroups = commandsList;
         // Reset selection when commands change
-        _selectionController.reset();
+        // _selectionController.reset();
       });
     } catch (e) {
       print('Error initializing commands: $e');
@@ -169,15 +110,6 @@ class CommandBarState<T> extends State<CommandBar<T>> {
     return null;
   }
 
-  /// Execute the currently selected command
-  void _executeSelectedCommand() {
-    final selectedIndex = _selectionController.selectedIndex;
-    if (selectedIndex >= 0 && selectedIndex < _allCommandsCount()) {
-      final command = _getCommandAtIndex(selectedIndex);
-      _executeCommand(command);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_child != null) {
@@ -197,92 +129,77 @@ class CommandBarState<T> extends State<CommandBar<T>> {
 
     return Dialog(
       padding: const EdgeInsets.all(0),
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_child != null) _child!,
-          if (_child == null) ...[
-            EditableArea(
-              position: EditableAreaPosition.top,
-              padding: false,
-              builder:
-                  (context, focusNode) => Row(
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: widgetPadding,
-                          child: TextField(
-                            style: TextFieldStyle.ghost,
-                            controller: _controller,
-                            autofocus: true,
-                            label: widget.commands.prompt,
-                            focusNode: focusNode,
-                            // onKeyDown: (event) {
-                            //   // Handle keyboard navigation
-                            //   if (event.isKeyPressed(
-                            //     LogicalKeyboardKey.arrowDown,
-                            //   )) {
-                            //     _selectionController.selectNext(
-                            //       totalCommandCount,
-                            //     );
-                            //     return true;
-                            //   } else if (event.isKeyPressed(
-                            //     LogicalKeyboardKey.arrowUp,
-                            //   )) {
-                            //     _selectionController.selectPrevious(
-                            //       totalCommandCount,
-                            //     );
-                            //     return true;
-                            //   } else if (event.isKeyPressed(
-                            //     LogicalKeyboardKey.enter,
-                            //   )) {
-                            //     _executeSelectedCommand();
-                            //     return true;
-                            //   }
-                            //   return false;
-                            // },
-                          ),
+      body: BidirectionalListSelector(
+        onActivate: (index) => _executeCommand(_getCommandAtIndex(index)),
+        builder:
+            (context, listController) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_child != null) _child!,
+                if (_child == null) ...[
+                  EditableArea(
+                    position: EditableAreaPosition.top,
+                    padding: false,
+                    builder:
+                        (context, focusNode) => Row(
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: widgetPadding,
+                                child: TextField(
+                                  style: TextFieldStyle.ghost,
+                                  controller: _controller,
+                                  autofocus: true,
+                                  label: widget.commands.prompt,
+                                  focusNode: focusNode,
+                                ),
+                              ),
+                            ),
+                            if (secondaryCommand != null)
+                              Button.icon(
+                                CommandWrapper(
+                                  secondaryCommand,
+                                  run:
+                                      (_, __) =>
+                                          _executeCommand(secondaryCommand),
+                                ),
+                              ),
+                          ],
                         ),
-                      ),
-                      if (secondaryCommand != null)
-                        Button.icon(
-                          CommandWrapper(
-                            secondaryCommand,
-                            run: (_, __) => _executeCommand(secondaryCommand),
-                          ),
-                        ),
-                    ],
                   ),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: 400),
+                    child: BidirectionalList(
+                      // shrinkWrap: true,
+                      controller: listController,
+                      count: totalCommandCount,
+                      builder: (context, index, selected) {
+                        final group = _getGroupAtIndex(index);
+                        final command = _getCommandAtIndex(index);
+                        final body = command.buildBody(context);
+                        Widget? header;
+                        if (index == 0 ||
+                            group != _getGroupAtIndex(index - 1)) {
+                          header = Text(group.title);
+                        }
+                        return Column(
+                          key: ValueKey(index),
+                          children: [
+                            if (header != null) header,
+                            ListTile(
+                              command: command,
+                              body: body,
+                              selected: listController.selected == index,
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  if (errorBox != null) errorBox,
+                ],
+              ],
             ),
-            ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: 400),
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: totalCommandCount,
-                itemBuilder: (context, index) {
-                  final group = _getGroupAtIndex(index);
-                  final command = _getCommandAtIndex(index);
-                  final body = command.buildBody(context);
-                  Widget? header;
-                  if (index == 0 || group != _getGroupAtIndex(index - 1)) {
-                    header = Text(group.title);
-                  }
-                  return Column(
-                    children: [
-                      if (header != null) header,
-                      ListTile(
-                        command: command,
-                        body: body,
-                        selected: _selectionController.selectedIndex == index,
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-            if (errorBox != null) errorBox,
-          ],
-        ],
       ),
     );
   }

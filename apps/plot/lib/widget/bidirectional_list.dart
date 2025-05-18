@@ -63,11 +63,15 @@ class BidirectionalListSelector extends StatefulWidget {
   builder;
 
   final ValueChanged<int?>? onSelectionChanged;
+  final void Function(int)? onActivate;
+  final bool reverse;
 
   const BidirectionalListSelector({
     super.key,
     required this.builder,
     this.onSelectionChanged,
+    this.onActivate,
+    this.reverse = false,
   });
 
   @override
@@ -106,11 +110,16 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent) {
       if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        controller.move(1);
+        controller.move(widget.reverse ? 1 : -1);
         return KeyEventResult.handled;
       } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        controller.move(-1);
+        controller.move(widget.reverse ? -1 : 1);
         return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.enter) {
+        if (controller.selected != null) {
+          widget.onActivate?.call(controller.selected!);
+          return KeyEventResult.handled;
+        }
       }
     }
     return KeyEventResult.ignored;
