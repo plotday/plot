@@ -59,6 +59,84 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
   }
 }
 
+class _SelectionCommandScope extends StatefulWidget {
+  const _SelectionCommandScope({
+    required this.state,
+    required this.listController,
+    required this.child,
+  });
+
+  final PriorityState state;
+  final BidirectionalListController listController;
+  final Widget child;
+
+  @override
+  _SelectionCommandScopeState createState() => _SelectionCommandScopeState();
+}
+
+class _SelectionCommandScopeState extends State<_SelectionCommandScope> {
+  @override
+  void initState() {
+    super.initState();
+    widget.listController.addListener(_updateCommands);
+  }
+
+  @override
+  void didUpdateWidget(_SelectionCommandScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.listController != widget.listController) {
+      oldWidget.listController.removeListener(_updateCommands);
+      widget.listController.addListener(_updateCommands);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.listController.removeListener(_updateCommands);
+    super.dispose();
+  }
+
+  void _updateCommands() {
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CommandScope(
+      commands: [
+        if (widget.listController.selected != null &&
+            widget.listController.selected! < widget.state.priorities.length)
+          StaticCommandGroup(
+            title:
+                widget.state.priorities[widget.listController.selected!].title,
+            subtitle:
+                widget.state.priorities[widget.listController.selected!]
+                    .ancestorsLabel(),
+            commands: [
+              if (widget.state.priorities[widget.listController.selected!] !=
+                  widget.state.context)
+                ChangeCurrentPriority(
+                  widget.state.priorities[widget.listController.selected!],
+                ),
+              priorityCommand(
+                widget.state.priorities[widget.listController.selected!],
+              ),
+              PinPriority(
+                widget.state.priorities[widget.listController.selected!],
+              ),
+              ArchivePriority(
+                Future.value(
+                  widget.state.priorities[widget.listController.selected!],
+                ),
+              ),
+            ],
+          ),
+      ],
+      child: widget.child,
+    );
+  }
+}
+
 @RoutePage(name: "PriorityMainRoute")
 class PriorityPage extends StatelessWidget {
   const PriorityPage({super.key});
@@ -84,35 +162,9 @@ class PriorityPage extends StatelessWidget {
                   ChangeCurrentPriority(state.priorities[index]),
                 ),
             builder:
-                (context, listController) => CommandScope(
-                  commands: [
-                    if (listController.selected != null &&
-                        listController.selected! < state.priorities.length)
-                      StaticCommandGroup(
-                        title: state.priorities[listController.selected!].title,
-                        subtitle:
-                            state.priorities[listController.selected!]
-                                .ancestorsLabel(),
-                        commands: [
-                          if (state.priorities[listController.selected!] !=
-                              state.context)
-                            ChangeCurrentPriority(
-                              state.priorities[listController.selected!],
-                            ),
-                          priorityCommand(
-                            state.priorities[listController.selected!],
-                          ),
-                          PinPriority(
-                            state.priorities[listController.selected!],
-                          ),
-                          ArchivePriority(
-                            Future.value(
-                              state.priorities[listController.selected!],
-                            ),
-                          ),
-                        ],
-                      ),
-                  ],
+                (context, listController) => _SelectionCommandScope(
+                  state: state,
+                  listController: listController,
                   child: Scaffold(
                     translucent: true,
                     header: Header(
