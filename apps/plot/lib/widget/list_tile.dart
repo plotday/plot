@@ -127,6 +127,7 @@ class _ListTileState extends State<ListTile> {
                 if (widget.leadingCommand != null)
                   Button.icon(widget.leadingCommand!),
                 if (widget.leadingCommand == null &&
+                    widget.body == null &&
                     (widget.command?.statusIcon.or(widget.command?.icon)) !=
                         null)
                   Padding(

@@ -104,16 +104,17 @@ class PriorityWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     bool isContext = priority == this.context;
     bool contextChild = priority.ancestors.last.id == this.context?.id;
+    bool expanded =
+        isContext || (!priority.doNow && !priority.done && !priority.pinned);
     return ListTile(
       command: !isContext ? ChangeCurrentPriority(priority) : null,
       trailingCommands: [
         if (!priority.pinned) PinPriority(priority),
         priorityCommand(priority),
       ],
-      body:
-          (isContext || (!priority.doNow && !priority.done && !priority.pinned))
-              ? Viewer(markdown: priority.note ?? priority.title)
-              : null,
+      body: Viewer(
+        markdown: (expanded ? priority.note : null) ?? priority.title,
+      ),
       header:
           contextChild
               ? null

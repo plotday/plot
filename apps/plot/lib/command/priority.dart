@@ -80,10 +80,7 @@ class PickPriority extends Commands<Priority> {
 class ChangeCurrentPriority extends Command {
   ChangeCurrentPriority(Priority priority, {bool fullPath = true})
     : priorityId = priority.id,
-      super(title: priority.title, subtitle: priority.ancestorsLabel());
-
-  ChangeCurrentPriority.byId({required this.priorityId})
-    : super(title: 'View Priority');
+      super(title: "Focus Priority", icon: PlotIcon.priority);
 
   final PriorityId priorityId;
 
@@ -97,7 +94,7 @@ class ChangeCurrentPriority extends Command {
 class PickCurrentPriority extends ShowCommand<Priority> {
   PickCurrentPriority()
     : super(
-        title: 'Change Current Priority',
+        title: 'Pick Current Priority',
         icon: PlotIcon.priority,
         shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
         commands: (context) => PickPriority(prompt: 'Change Current Priority'),
