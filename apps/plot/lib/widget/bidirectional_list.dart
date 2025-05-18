@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/widgets.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+
 import 'package:plot/widget/widget.dart';
 
 class BidirectionalListController extends ChangeNotifier {
@@ -55,6 +56,15 @@ class BidirectionalListController extends ChangeNotifier {
   }
 }
 
+class ActivateListSelectionIntent extends Intent {
+  const ActivateListSelectionIntent();
+}
+
+class MoveListSelectionIntent extends Intent {
+  const MoveListSelectionIntent(this.offset);
+  final int offset;
+}
+
 class BidirectionalListSelector extends StatefulWidget {
   final Widget Function(
     BuildContext context,
@@ -80,7 +90,6 @@ class BidirectionalListSelector extends StatefulWidget {
 }
 
 class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
-  late final FocusNode _focusNode = FocusNode();
   late final BidirectionalListController controller =
       BidirectionalListController(initialSelected: 0);
 
@@ -93,35 +102,32 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
   @override
   void dispose() {
     controller.removeListener(_handleSelectionChange);
-    _focusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _focusNode,
-      onKeyEvent: _handleKeyEvent,
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateListSelectionIntent:
+            CallbackAction<ActivateListSelectionIntent>(
+              onInvoke: (intent) {
+                if (controller.selected == null) {
+                  KeyEventResult.ignored;
+                }
+                widget.onActivate?.call(controller.selected!);
+                return KeyEventResult.handled;
+              },
+            ),
+        MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
+          onInvoke: (intent) {
+            controller.move((widget.reverse ? 1 : -1) * intent.offset);
+            return KeyEventResult.handled;
+          },
+        ),
+      },
       child: widget.builder(context, controller),
     );
-  }
-
-  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is KeyDownEvent) {
-      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        controller.move(widget.reverse ? 1 : -1);
-        return KeyEventResult.handled;
-      } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        controller.move(widget.reverse ? -1 : 1);
-        return KeyEventResult.handled;
-      } else if (event.logicalKey == LogicalKeyboardKey.enter) {
-        if (controller.selected != null) {
-          widget.onActivate?.call(controller.selected!);
-          return KeyEventResult.handled;
-        }
-      }
-    }
-    return KeyEventResult.ignored;
   }
 
   void _handleSelectionChange() {
@@ -134,6 +140,13 @@ typedef ItemBuilder =
 typedef ItemFetcher = Future<void> Function(int move, int count);
 
 class BidirectionalList extends StatefulWidget {
+  static const Map<ShortcutActivator, Intent> shortcuts = {
+    SingleActivator(LogicalKeyboardKey.enter, shift: false):
+        ActivateListSelectionIntent(),
+    SingleActivator(LogicalKeyboardKey.arrowUp): MoveListSelectionIntent(1),
+    SingleActivator(LogicalKeyboardKey.arrowDown): MoveListSelectionIntent(-1),
+  };
+
   final ItemBuilder builder;
   final ItemFetcher? fetcher;
   final int count;

@@ -8,6 +8,7 @@ import 'package:flutter_debouncer/flutter_debouncer.dart';
 
 import 'sliver.dart';
 import 'colour_scheme.dart';
+import 'bidirectional_list.dart';
 
 const baseTextStyle = TextStyle(
   color: Color(0xFF000000),
@@ -70,6 +71,7 @@ class EditorState extends State<Editor> {
   late MutableDocumentComposer _composer;
   late super_editor.Editor _editor;
   final Debouncer _debouncer = Debouncer();
+  bool _isEmpty = true;
 
   void clear() {
     setState(() {
@@ -96,6 +98,16 @@ class EditorState extends State<Editor> {
     }
   }
 
+  void _onDocumentChange(List<EditEvent> changeList) {
+    setState(() {
+      _isEmpty = serializeDocumentToMarkdown(_document).isEmpty;
+    });
+  }
+
+  late final _documentChangeListener = FunctionalEditListener(
+    _onDocumentChange,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -109,12 +121,14 @@ class EditorState extends State<Editor> {
       composer: _composer,
       isHistoryEnabled: true,
     );
+    _editor.addListener(_documentChangeListener);
     _scrollController = ScrollController();
     clear();
   }
 
   @override
   void dispose() {
+    _editor.removeListener(_documentChangeListener);
     _editorFocusNode.removeListener(_onFocusChange);
     _debouncer.cancel();
     _scrollController.dispose();
@@ -126,40 +140,55 @@ class EditorState extends State<Editor> {
   Widget build(BuildContext context) {
     bool isDark =
         MediaQuery.of(context).platformBrightness == material.Brightness.dark;
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.enter, shift: false): () {
-          submit();
+    return Shortcuts(
+      shortcuts:
+          _isEmpty
+              ? BidirectionalList.shortcuts
+              : {
+                const SingleActivator(LogicalKeyboardKey.enter, shift: false):
+                    SubmitIntent(),
+              },
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          SubmitIntent: CallbackAction<SubmitIntent>(
+            onInvoke: (SubmitIntent intent) {
+              submit();
+              return KeyEventResult.handled;
+            },
+          ),
         },
-      },
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: () => _editorFocusNode.requestFocus(),
-        child: SuperEditor(
-          autofocus: widget.autofocus,
-          editor: _editor,
-          focusNode: _editorFocusNode,
-          shrinkWrap: true,
-          scrollController: _scrollController,
-          documentLayoutKey: _docLayoutKey,
-          documentOverlayBuilders: [
-            DefaultCaretOverlayBuilder(
-              caretStyle: CaretStyle().copyWith(color: context.colour.accent),
-            ),
-          ],
-          stylesheet: isDark ? _darkStyles : _styles,
-          componentBuilders: [
-            if (widget.hint != null)
-              HintComponentBuilder(
-                hint: widget.hint!,
-                textStyle: baseTextStyle.copyWith(
-                  color: context.colour.foreground,
-                ),
-                hintStyle: baseTextStyle.copyWith(color: context.colour.muted),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => _editorFocusNode.requestFocus(),
+          child: SuperEditor(
+            autofocus: widget.autofocus,
+            editor: _editor,
+            focusNode: _editorFocusNode,
+            shrinkWrap: true,
+            scrollController: _scrollController,
+            documentLayoutKey: _docLayoutKey,
+            documentOverlayBuilders: [
+              DefaultCaretOverlayBuilder(
+                caretStyle: CaretStyle().copyWith(color: context.colour.accent),
               ),
-            TaskComponentBuilder(_editor),
-            ...defaultComponentBuilders,
-          ],
+            ],
+            stylesheet: isDark ? _darkStyles : _styles,
+            componentBuilders: [
+              if (widget.hint != null)
+                HintComponentBuilder(
+                  hint: widget.hint!,
+                  textStyle: baseTextStyle.copyWith(
+                    color: context.colour.foreground,
+                  ),
+                  hintStyle: baseTextStyle.copyWith(
+                    color: context.colour.muted,
+                  ),
+                ),
+              TaskComponentBuilder(_editor),
+              ...defaultComponentBuilders,
+            ],
+            // ),
+          ),
         ),
       ),
     );
@@ -167,6 +196,7 @@ class EditorState extends State<Editor> {
 
   void submit() {
     final md = serializeDocumentToMarkdown(_document);
+    if (md.trim().isEmpty) return;
     widget.onSubmitted?.call(md);
     clear();
   }
@@ -276,4 +306,8 @@ class HintComponentBuilder implements ComponentBuilder {
       underlines: componentViewModel.createUnderlines(),
     );
   }
+}
+
+class SubmitIntent extends Intent {
+  const SubmitIntent();
 }

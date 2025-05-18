@@ -132,73 +132,77 @@ class CommandBarState<T> extends State<CommandBar<T>> {
       body: BidirectionalListSelector(
         onActivate: (index) => _getCommandAtIndex(index).run(context),
         builder:
-            (context, listController) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_child != null) _child!,
-                if (_child == null) ...[
-                  EditableArea(
-                    position: EditableAreaPosition.top,
-                    padding: false,
-                    builder:
-                        (context, focusNode) => Row(
-                          children: [
-                            Expanded(
-                              child: Padding(
-                                padding: widgetPadding,
-                                child: TextField(
-                                  style: TextFieldStyle.ghost,
-                                  controller: _controller,
-                                  autofocus: true,
-                                  label: widget.commands.prompt,
-                                  focusNode: focusNode,
+            (context, listController) => Shortcuts(
+              shortcuts: BidirectionalList.shortcuts,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_child != null) _child!,
+                  if (_child == null) ...[
+                    EditableArea(
+                      position: EditableAreaPosition.top,
+                      padding: false,
+                      builder:
+                          (context, focusNode) => Row(
+                            children: [
+                              Expanded(
+                                child: Padding(
+                                  padding: widgetPadding,
+                                  child: TextField(
+                                    maxLines: 1,
+                                    style: TextFieldStyle.ghost,
+                                    controller: _controller,
+                                    autofocus: true,
+                                    label: widget.commands.prompt,
+                                    focusNode: focusNode,
+                                  ),
                                 ),
                               ),
-                            ),
-                            if (secondaryCommand != null)
-                              Button.icon(
-                                CommandWrapper(
-                                  secondaryCommand,
-                                  run:
-                                      (_, __) =>
-                                          _executeCommand(secondaryCommand),
+                              if (secondaryCommand != null)
+                                Button.icon(
+                                  CommandWrapper(
+                                    secondaryCommand,
+                                    run:
+                                        (_, __) =>
+                                            _executeCommand(secondaryCommand),
+                                  ),
                                 ),
-                              ),
-                          ],
-                        ),
-                  ),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: 400),
-                    child: BidirectionalList(
-                      // shrinkWrap: true,
-                      controller: listController,
-                      count: totalCommandCount,
-                      builder: (context, index, selected) {
-                        final group = _getGroupAtIndex(index);
-                        final command = _getCommandAtIndex(index);
-                        final body = command.buildBody(context);
-                        Widget? header;
-                        if (index == 0 ||
-                            group != _getGroupAtIndex(index - 1)) {
-                          header = Text(group.title);
-                        }
-                        return Column(
-                          key: ValueKey(index),
-                          children: [
-                            if (header != null) header,
-                            ListTile(
-                              command: command,
-                              body: body,
-                              selected: listController.selected == index,
-                            ),
-                          ],
-                        );
-                      },
+                            ],
+                          ),
                     ),
-                  ),
-                  if (errorBox != null) errorBox,
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: 400),
+                      child: BidirectionalList(
+                        // shrinkWrap: true,
+                        controller: listController,
+                        count: totalCommandCount,
+                        builder: (context, index, selected) {
+                          final group = _getGroupAtIndex(index);
+                          final command = _getCommandAtIndex(index);
+                          final body = command.buildBody(context);
+                          Widget? header;
+                          if (index == 0 ||
+                              group != _getGroupAtIndex(index - 1)) {
+                            header = Text(group.title);
+                          }
+                          return Column(
+                            key: ValueKey(index),
+                            children: [
+                              if (header != null) header,
+                              ListTile(
+                                command: command,
+                                body: body,
+                                selected: listController.selected == index,
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                    if (errorBox != null) errorBox,
+                  ],
                 ],
-              ],
+              ),
             ),
       ),
     );
