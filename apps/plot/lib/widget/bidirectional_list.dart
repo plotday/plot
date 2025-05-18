@@ -101,7 +101,6 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
   Widget build(BuildContext context) {
     return Focus(
       focusNode: _focusNode,
-      autofocus: true,
       onKeyEvent: _handleKeyEvent,
       child: widget.builder(context, controller),
     );

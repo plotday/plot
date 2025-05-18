@@ -80,7 +80,7 @@ class PickPriority extends Commands<Priority> {
 class ChangeCurrentPriority extends Command {
   ChangeCurrentPriority(Priority priority, {bool fullPath = true})
     : priorityId = priority.id,
-      super(title: "Focus Priority", icon: PlotIcon.priority);
+      super(title: "Open", icon: PlotIcon.open);
 
   final PriorityId priorityId;
 
@@ -198,7 +198,7 @@ class StartPriority extends _UpdatePriorityCommand {
 
 class FinishPriority extends _UpdatePriorityCommand {
   FinishPriority(super.priority, {super.onUpdate})
-    : super(title: 'Finish Priority', icon: PlotIcon.done);
+    : super(title: 'Finish', icon: PlotIcon.done);
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
