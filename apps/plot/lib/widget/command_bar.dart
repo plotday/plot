@@ -99,10 +99,10 @@ class CommandBarState<T> extends State<CommandBar<T>> {
         setState(() => _child = result.child);
       } else if (result is CommandValue<T> && mounted) {
         Navigator.of(context).pop(Value(result.value));
-      } else if (result is CommandValue<T?> &&
-          result.value != null &&
-          mounted) {
-        Navigator.of(context).pop(Value(result.value!));
+      } else if (result is CommandValue<T?> && mounted) {
+        Navigator.of(context).pop(Value.absentIfNull(result.value));
+      } else if (result == null && mounted) {
+        Navigator.of(context).maybePop();
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
@@ -130,7 +130,7 @@ class CommandBarState<T> extends State<CommandBar<T>> {
     return Dialog(
       padding: const EdgeInsets.all(0),
       body: BidirectionalListSelector(
-        onActivate: (index) => _executeCommand(_getCommandAtIndex(index)),
+        onActivate: (index) => _getCommandAtIndex(index).run(context),
         builder:
             (context, listController) => Column(
               mainAxisSize: MainAxisSize.min,

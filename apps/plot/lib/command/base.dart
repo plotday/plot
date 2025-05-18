@@ -316,12 +316,13 @@ class CommandScopeState extends State<CommandScope> {
       CommandRegistry registry = CommandRegistry.of(context);
       register = registry.register();
     }
+    print("New commands");
     register!(widget.commands);
   }
 
   @override
   void dispose() {
-    register!(null);
+    register?.call(null);
     super.dispose();
   }
 }

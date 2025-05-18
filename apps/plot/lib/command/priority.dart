@@ -133,7 +133,6 @@ class ArchivePriority extends Command {
   @override
   Future<CommandReturn?> run(BuildContext context) async {
     final priority = await _priority;
-    final defaultPriority = await Priority.getDefault();
     if (priority.root) {
       return CommandMessage(
         'You cannot archive the default priority',
@@ -142,11 +141,6 @@ class ArchivePriority extends Command {
     }
     await priority.delete();
     Posthog().capture(eventName: 'Priority Archived');
-    if (context.mounted) {
-      await context.router.replace(
-        PriorityRoute(priorityId: priority.parent?.id ?? defaultPriority.id),
-      );
-    }
     return null;
   }
 }
