@@ -78,9 +78,12 @@ class PickPriority extends Commands<Priority> {
 }
 
 class ChangeCurrentPriority extends Command {
-  ChangeCurrentPriority(Priority priority, {bool fullPath = true})
+  ChangeCurrentPriority(Priority priority)
     : priorityId = priority.id,
       super(title: "Open", icon: PlotIcon.open);
+
+  ChangeCurrentPriority.byId(this.priorityId)
+    : super(title: "Open", icon: PlotIcon.open);
 
   final PriorityId priorityId;
 

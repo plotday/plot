@@ -427,10 +427,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.private = false,
     super.pinned = false,
   }) : children = [],
-       ancestors =
+       _ancestors =
            parent == null
                ? const []
-               : parent.ancestors +
+               : parent._ancestors +
                    [PriorityAncestor(id: parent.id, title: parent.title)],
        super(
          id: Uuid.generate(),
@@ -451,11 +451,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     this.balance,
     PriorityAncestryData? ancestry,
   }) : children = children ?? [],
-       ancestors =
+       _ancestors =
            ancestry == null
                ? parent == null
                    ? const []
-                   : parent.ancestors +
+                   : parent._ancestors +
                        [PriorityAncestor(id: parent.id, title: parent.title)]
                : PriorityAncestor.fromStore(ancestry),
        super(
@@ -496,20 +496,25 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   static const separator = ' › ';
 
-  String ancestorsLabel({Priority? context}) {
-    var list = ancestors;
-    if (list.length < 2) {
-      return "";
-    } else if (context == null) {
-      // Skip "Everything" root priority
-      list = ancestors.sublist(1);
-    } else {
-      int startIndex = ancestors.indexWhere((a) => a.id == context.id);
+  List<PriorityAncestor> ancestors({Priority? context}) {
+    if (_ancestors.length < 2) {
+      return const [];
+    } else if (context != null) {
+      int startIndex = _ancestors.indexWhere((a) => a.id == context.id);
       if (startIndex != -1) {
-        list = ancestors.sublist(startIndex + 1);
+        return _ancestors.sublist(startIndex + 1);
       }
     }
-    return (list
+    // Skip "Everything" root priority
+    return _ancestors.sublist(1);
+  }
+
+  String ancestorsLabel({Priority? context}) {
+    final ancestors = this.ancestors(context: context);
+    if (ancestors.isEmpty) {
+      return '';
+    }
+    return (ancestors
             .map((a) => a.title)
             .toList()
             .expand((p) => [p, separator])
@@ -519,9 +524,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   final Priority? parent;
+  PriorityId? get parentId => parent?.id ?? _ancestors.lastOrNull?.id;
   List<Priority> children;
   final Balance? balance;
-  final List<PriorityAncestor> ancestors;
+  final List<PriorityAncestor> _ancestors;
 
   List<Priority> descendants() {
     List<Priority> result = [];

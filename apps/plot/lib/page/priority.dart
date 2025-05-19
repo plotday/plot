@@ -176,6 +176,7 @@ class PriorityPage extends StatelessWidget {
                       commands: [
                         if (!state.context.root)
                           ArchivePriority(Future.value(state.context)),
+                        priorityCommand(state.context),
                       ],
                     ),
                     body: Column(

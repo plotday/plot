@@ -10,23 +10,26 @@ class PrioritySelector extends StatelessWidget {
   final Priority? selected;
   final void Function(Priority)? onSelect;
 
+  void _onSelect(PriorityId id) async {
+    if (onSelect == null) return;
+    final priority = await Priority.getOne(id);
+    onSelect!(priority);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Tapable(
-      onTap: () async {
-        final priority = await (PickPriority(
-          initialPriority: selected,
-        ).show(context));
-        if (priority.present) {
-          onSelect?.call(priority.value);
-        }
-      },
-      child: DefaultTextStyle(
-        style: DefaultTextStyle.of(
-          context,
-        ).style.copyWith(color: context.colour.accent),
-        child: PriorityLabel(priority: selected),
-      ),
+    return Row(
+      children: [
+        PriorityLabel(priority: selected, onSelect: _onSelect),
+        // TODO: Implement a dialog to select a priority
+        // Button(ChangeCurrentPriority()),
+        //     final priority = await (PickPriority(
+        //       initialPriority: selected,
+        //     ).show(context));
+        //     if (priority.present) {
+        //       onSelect?.call(priority.value);
+        //     }
+      ],
     );
   }
 }

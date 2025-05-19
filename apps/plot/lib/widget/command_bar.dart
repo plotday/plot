@@ -71,8 +71,8 @@ class CommandBarState<T> extends State<CommandBar<T>> {
         // Reset selection when commands change
         // _selectionController.reset();
       });
-    } catch (e) {
-      print('Error initializing commands: $e');
+    } catch (e, t) {
+      log.warning('Error initializing commands', e, t);
       if (!_isDisposed) {
         setState(() {
           _error = 'Search failed.';
@@ -153,7 +153,7 @@ class CommandBarState<T> extends State<CommandBar<T>> {
                                     style: TextFieldStyle.ghost,
                                     controller: _controller,
                                     autofocus: true,
-                                    label: widget.commands.prompt,
+                                    label: "${widget.commands.prompt}…",
                                     focusNode: focusNode,
                                   ),
                                 ),

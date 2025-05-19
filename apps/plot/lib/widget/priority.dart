@@ -10,29 +10,46 @@ class PriorityLabel extends StatelessWidget {
     required this.priority,
     this.context,
     this.onlyAncestors = false,
+    this.onSelect,
     super.key,
   });
 
   final Priority? priority;
   final Priority? context;
   final bool onlyAncestors;
+  final void Function(PriorityId)? onSelect;
 
   @override
   Widget build(BuildContext context) {
-    if (priority == null) {
-      return const Text('All Priorities');
-    }
-    final ancestors = priority!.ancestors;
+    final ancestors = priority?.ancestors(context: this.context) ?? [];
     return Row(
       children: [
-        if (!onlyAncestors) Text("${priority!.title} "),
-        if (ancestors.isNotEmpty)
-          DefaultTextStyle(
+        ...ancestors.indexed.map((entry) {
+          final i = entry.$1;
+          final ancestor = entry.$2;
+          final isLast = i == ancestors.length - 1;
+          return DefaultTextStyle(
             style: DefaultTextStyle.of(context).style.copyWith(
               color: context.theme.colorScheme.mutedForeground,
               fontSize: context.theme.typography.xs.fontSize,
             ),
-            child: Text(priority!.ancestorsLabel(context: this.context)),
+            child: Row(
+              children: [
+                Tapable(
+                  onTap: () => onSelect?.call(ancestor.id),
+                  child: Text(ancestor.title),
+                ),
+                if (!isLast || !onlyAncestors) Text(Priority.separator),
+              ],
+            ),
+          );
+        }),
+        if (!onlyAncestors)
+          DefaultTextStyle(
+            style: DefaultTextStyle.of(
+              context,
+            ).style.copyWith(fontSize: context.theme.typography.xs.fontSize),
+            child: Text(priority?.title ?? 'Everything'),
           ),
       ],
     );
@@ -103,7 +120,7 @@ class PriorityWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     bool isContext = priority == this.context;
-    bool contextChild = priority.ancestors.last.id == this.context?.id;
+    bool contextChild = priority.parentId == this.context?.id;
     bool expanded =
         isContext || (!priority.doNow && !priority.done && !priority.pinned);
     return ListTile(
