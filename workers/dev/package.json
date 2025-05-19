@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",
-    "@plotday/tsconfig": "workspace:*"
+    "@plotday/tsconfig": "workspace:*",
+    "@types/node": "^22.15.19"
   }
 }

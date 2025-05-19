@@ -1,0 +1,163 @@
+import 'store.dart';
+
+import 'priority.drift';
+
+-- Calculate balance from events, priorities and sessions.
+-- While we can use the precomputed values for other days, we need to use
+-- these calculation for the current day, since items are changing
+-- (and we might be offline) and because we need to calculate which
+-- items are past and upcoming.
+CREATE VIEW calculated_balances AS
+SELECT
+    e.priority_id AS priority_id,
+    DATE(e.start) AS day,
+    e.response AS type,
+    COUNT(
+        CASE WHEN e.start <= CURRENT_TIMESTAMP THEN
+            1
+        ELSE
+            0
+        END) AS past_count,
+    COUNT(
+        CASE WHEN e.start > CURRENT_TIMESTAMP THEN
+            1
+        ELSE
+            0
+        END) AS future_count,
+    SUM(
+        CASE WHEN e.start <= CURRENT_TIMESTAMP THEN
+            (julianday (e.end) - julianday (e.start)) * 86400
+        ELSE
+            0
+        END) AS past_time,
+    SUM(
+        CASE WHEN e.start > CURRENT_TIMESTAMP THEN
+            (julianday (e.end) - julianday (e.start)) * 86400
+        ELSE
+            0
+        END) AS future_time,
+    MIN(
+        CASE WHEN e.start > CURRENT_TIMESTAMP THEN
+            e.start
+        ELSE
+            NULL
+        END) AS next_at
+FROM
+    events e
+WHERE
+    e.deleted_at IS NULL
+GROUP BY
+    e.priority_id,
+    DATE(e.start),
+    e.response
+UNION
+SELECT
+    p.id AS priority_id,
+    DATE(p.do_at) AS day,
+    CASE WHEN p.done_at IS NULL THEN
+        'todo'
+    ELSE
+        'done'
+    END AS type,
+    COUNT(
+        CASE WHEN p.do_at <= CURRENT_TIMESTAMP
+            AND p.done_at IS NULL THEN
+            1
+        END) AS past_count,
+    COUNT(
+        CASE WHEN p.do_at > CURRENT_TIMESTAMP
+            AND p.done_at IS NULL THEN
+            1
+        END) AS future_count,
+    0 AS past_time,
+    0 AS future_time,
+    MIN(
+        CASE WHEN p.do_at > CURRENT_TIMESTAMP THEN
+            p.do_at
+        ELSE
+            NULL
+        END) AS next_at
+FROM
+    priorities p
+WHERE
+    p.deleted_at IS NULL
+    AND (p.do_at IS NOT NULL
+        OR p.done_at IS NOT NULL)
+GROUP BY
+    p.id,
+    DATE(p.do_at),
+    (p.done_at IS NULL)
+UNION
+SELECT
+    s.priority_id AS priority_id,
+    DATE(s.start) AS day,
+    'session' AS type,
+    COUNT(*) AS past_count,
+    0 AS future_count,
+    SUM((julianday (s.end) - julianday (s.start)) * 86400) AS past_time,
+    0 AS future_time,
+    NULL AS next_at
+FROM
+    sessions s
+WHERE
+    s.deleted_at IS NULL
+GROUP BY
+    s.priority_id,
+    DATE(s.start);
+
+CREATE VIEW aggregated_balances AS
+-- All days except today
+SELECT
+    day,
+    priority_id,
+    type,
+    CASE WHEN day < DATE(CURRENT_TIMESTAMP) THEN
+        SUM(b.count)
+    ELSE
+        0
+    END AS past_count,
+    CASE WHEN day > DATE(CURRENT_TIMESTAMP) THEN
+        SUM(b.count)
+    ELSE
+        0
+    END AS future_count,
+    CASE WHEN day < DATE(CURRENT_TIMESTAMP) THEN
+        SUM(b.time)
+    ELSE
+        0
+    END AS past_time,
+    CASE WHEN day > DATE(CURRENT_TIMESTAMP) THEN
+        SUM(b.time)
+    ELSE
+        0
+    END AS future_time,
+    NULL AS next_at
+FROM
+    balances b
+WHERE
+    day != DATE(CURRENT_TIMESTAMP)
+GROUP BY
+    day,
+    priority_id,
+    type
+UNION ALL
+-- Today
+SELECT
+    day,
+    priority_children.child_id AS priority_id,
+    type,
+    SUM(b.past_count) AS past_count,
+    SUM(b.future_count) AS future_count,
+    SUM(b.past_time) AS past_time,
+    SUM(b.future_time) AS future_time,
+    MIN(b.next_at) AS next_at
+FROM
+    calculated_balances b
+    LEFT JOIN priority_children ON b.priority_id = priority_children.child_id
+WHERE
+    day = DATE(CURRENT_TIMESTAMP)
+GROUP BY
+    day,
+    priority_children.child_id,
+    type;
+

@@ -20,7 +20,8 @@
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/sync": "workspace:^",
-    "@plotday/tsconfig": "workspace:*"
+    "@plotday/tsconfig": "workspace:*",
+    "@types/node": "^20.14.2"
   },
   "nx": {
     "tags": [

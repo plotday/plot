@@ -3,20 +3,24 @@ CREATE TABLE "public"."priority" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+    "root" boolean NOT NULL DEFAULT FALSE,
     -- All fields added below must be handled in handle_priority_x_upsert
     "deleted_at" timestamp with time zone,
-    "name" text NOT NULL,
+    "title" text,
     "path" ltree NOT NULL UNIQUE,
     "draft" boolean NOT NULL DEFAULT FALSE,
     "private" boolean NOT NULL DEFAULT FALSE,
     "pinned" boolean NOT NULL DEFAULT FALSE,
-    "expanded" boolean NOT NULL DEFAULT FALSE,
     "do_at" timestamp with time zone,
     "done_at" timestamp with time zone,
     "order" double precision NOT NULL DEFAULT public.order_first (),
-    "ordered_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "note" text
+    "note" text,
+    CHECK (draft = FALSE OR title IS NOT NULL)
 );
+
+CREATE UNIQUE INDEX idx_priority_created_by_root_true ON "public"."priority" ("created_by")
+WHERE
+    "root" = TRUE;
 
 ALTER TABLE "public"."priority" ENABLE ROW LEVEL SECURITY;
 
@@ -83,13 +87,8 @@ CREATE TABLE "public"."priority_settings" (
     -- All fields added below must be handled in handle_priority_x_upsert
     "pomodoro" integer,
     "color" integer,
-    "is_default" boolean,
     CONSTRAINT priority_settings_unique UNIQUE (user_id, priority_id)
 );
-
-CREATE UNIQUE INDEX ON public.priority_settings (user_id)
-WHERE
-    is_default = TRUE;
 
 ALTER TABLE "public"."priority_settings" ENABLE ROW LEVEL SECURITY;
 

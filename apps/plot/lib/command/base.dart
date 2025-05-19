@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:plot/util/value.dart';
 import 'package:plot/widget/widget.dart';
+import 'provider.dart';
 import 'logging.dart';
 
 sealed class CommandReturn {}
@@ -48,6 +49,8 @@ abstract class Command {
   final ShortcutActivator? shortcut;
 
   Future<CommandReturn?> run(BuildContext context);
+
+  Widget? buildBody(BuildContext context) => null;
 }
 
 class CommandWrapper extends Command {
@@ -76,6 +79,9 @@ class CommandWrapper extends Command {
     }
     return command.run(context);
   }
+
+  @override
+  Widget? buildBody(BuildContext context) => command.buildBody(context);
 }
 
 /// A command for returning a value
@@ -255,39 +261,67 @@ class Commands<T> {
 
 /// Activate new commands in the given widget scope. This adds a new scope for the CommandBar,
 /// along with activating shortcuts for the commands.
-class CommandScope extends StatelessWidget {
+class CommandScope extends StatefulWidget {
   const CommandScope({required this.commands, required this.child, super.key});
 
-  final Commands<void> commands;
+  final List<StaticCommandGroup> commands;
   final Widget child;
+
+  @override
+  CommandScopeState createState() => CommandScopeState();
+}
+
+class CommandScopeState extends State<CommandScope> {
+  RegisterCommandGroups? register;
 
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
-      bindings: commands.groups
-          .whereType<StaticCommandGroup>()
-          .expand((group) => group.commands)
-          .fold(
-            <ShortcutActivator, VoidCallback>{
-              const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
-                  () => commands.show(context),
-            },
-            (bindings, command) =>
-                command.shortcut == null
-                    ? bindings
-                    : {
-                      ...bindings,
-                      command.shortcut!: () {
-                        try {
-                          context.run<void>(command);
-                        } catch (e) {
-                          print('Error running command: $e');
-                          rethrow;
-                        }
-                      },
-                    },
-          ),
-      child: child,
+      bindings: widget.commands.expand((group) => group.commands).fold(
+        <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+              () => Commands<void>(
+                prompt: 'Run a command',
+                groups: CommandRegistry.of(context).commands,
+              ).show(context),
+        },
+        (bindings, command) =>
+            command.shortcut == null
+                ? bindings
+                : {
+                  ...bindings,
+                  command.shortcut!: () {
+                    try {
+                      context.run<void>(command);
+                    } catch (e) {
+                      print('Error running command: $e');
+                      rethrow;
+                    }
+                  },
+                },
+      ),
+      child: widget.child,
     );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void didUpdateWidget(covariant CommandScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (register == null) {
+      CommandRegistry registry = CommandRegistry.of(context);
+      register = registry.register();
+    }
+    register!(widget.commands);
+  }
+
+  @override
+  void dispose() {
+    register?.call(null);
+    super.dispose();
   }
 }

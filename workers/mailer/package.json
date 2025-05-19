@@ -16,11 +16,12 @@
   },
   "dependencies": {
     "@plotday/email": "workspace:^",
-    "@sentry/cloudflare": "^8.47.0"
+    "@sentry/cloudflare": "^9.19.0"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",
-    "@plotday/tsconfig": "workspace:*"
+    "@plotday/tsconfig": "workspace:*",
+    "@types/node": "^20.14.2"
   },
   "nx": {
     "tags": [

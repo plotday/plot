@@ -1,4 +1,3 @@
-import { Response } from "@cloudflare/workers-types";
 import * as Sentry from "@sentry/cloudflare";
 
 import { type EmailType, render } from "@plotday/email";
@@ -95,5 +94,5 @@ export default Sentry.withSentry(
         Sentry.captureException(e);
       }
     },
-  }
+  } satisfies ExportedHandler<Env>
 );

@@ -1,0 +1,52 @@
+import 'store.dart';
+
+CREATE VIEW priority_children AS
+SELECT
+    p.id,
+    c.id AS child_id
+FROM
+    priorities p
+    JOIN priorities c ON c.path LIKE p.path || '%';
+
+CREATE VIEW priority_ancestry AS
+WITH RECURSIVE ancestors (
+    priority_id,
+    path,
+    ancestor_path,
+    depth
+) AS (
+    -- Base case: Get the first-level ancestor path for each priority
+    SELECT
+        id AS priority_id,
+        path,
+        substr(path, 1, instr (path, '.') - 1) AS ancestor_path,
+        1 AS depth
+    FROM
+        priorities
+    WHERE
+        instr (path, '.') > 0
+    UNION ALL
+    -- Recursive case: Get the next level ancestor path using a different approach
+    SELECT
+        priority_id,
+        path,
+        substr(path, 1, instr (substr(path, length(ancestor_path) + 2), '.') + length(ancestor_path)) ancestor_path,
+        depth + 1
+    FROM
+        ancestors
+    WHERE
+        -- Continue only if there's another dot after the current ancestor_path
+        instr (substr(path, length(ancestor_path) + 2), '.') > 0
+)
+SELECT
+    priority_id,
+    json_group_array (a.title) AS titles,
+    json_group_array (lower(substr(hex (a.id), 1, 8) || '-' || substr(hex (a.id), 9, 4) || '-' || substr(hex (a.id), 13, 4) || '-' || substr(hex (a.id), 17, 4) || '-' || substr(hex (a.id), 21, 12))) AS ancestors
+FROM
+    ancestors an
+    LEFT JOIN priorities a ON a.path = an.ancestor_path
+GROUP BY
+    priority_id
+ORDER BY
+    priority_id;
+

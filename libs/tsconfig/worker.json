@@ -11,7 +11,7 @@
     ],
     "module": "ESNext",
     "types": [
-      "@cloudflare/workers-types",
+      "./worker-configuration.d.ts",
       "../../libs/tsconfig/workers.d.ts"
     ],
     "resolveJsonModule": true,

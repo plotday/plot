@@ -70,7 +70,13 @@ class Dialog extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (header != null) header!,
-                        Container(padding: padding, child: body),
+                        Container(
+                          padding: padding,
+                          child: ConstrainedBox(
+                            constraints: constraints,
+                            child: body,
+                          ),
+                        ),
                       ],
                     ),
                   ),

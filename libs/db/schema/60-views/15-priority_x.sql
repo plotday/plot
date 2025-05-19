@@ -26,16 +26,29 @@ SELECT
     p.created_at,
     GREATEST (settings.updated_at, pu.updated_at, p.updated_at) AS updated_at,
     GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
+    p.created_by,
+    root.root
+    AND p.id = root.id AS root,
     p.draft,
-    p.name,
-    CASE WHEN pu.path IS NULL THEN
-        -- If the user has no path, use the priority path
+    p.title,
+    CASE WHEN root.root THEN
+        -- If it's in a user's root, keep the path
         p.path
     ELSE
-        -- Otherwise, replace the parent path with the user's path
-        replace_parent_path (p.path, pu.path, COALESCE(pu.path, p.path))
+        -- Otherwise, replace the parent path with either the specified path, or the user's root
+        COALESCE(pu.path, user_root.path) || subpath (p.path, extensions.nlevel (root.path))
     END AS path,
-    COALESCE(pu.order, p.order) AS "order",
+    p.private,
+    p.pinned,
+    p.do_at,
+    p.done_at,
+    p.note,
+    CASE WHEN pu.priority_id = p.id
+        AND pu.order IS NOT NULL THEN
+        pu.order
+    ELSE
+        p.order
+    END AS "order",
     (
         CASE WHEN p.pinned = TRUE THEN
             -- Pinned notes first
@@ -51,12 +64,18 @@ SELECT
         END) AS order_x,
     settings.pomodoro AS pomodoro,
     settings.color AS color,
-    COALESCE(settings.is_default, FALSE) AS is_default,
     tags.tags AS tags
 FROM
+    -- User config for the root of p
     priority_user pu
+    -- Priority root of p
     JOIN priority root ON pu.priority_id = root.id
+    -- "Everything" priority for the user
+    JOIN priority user_root ON pu.user_id = user_root.created_by
+        AND user_root.root
+        -- Every priority the user can access
     JOIN priority p ON root.path @> p.path
+    -- Optional settings for the priority
     LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id
         AND p.id = settings.priority_id
     LEFT JOIN priority_tags tags ON tags.priority_id = pu.priority_id;
@@ -68,22 +87,20 @@ DECLARE
     _priority_id uuid;
 BEGIN
     _priority_id := NEW.id;
-    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.name IS DISTINCT FROM OLD.name OR NEW.path IS DISTINCT FROM OLD.path OR NEW.draft IS DISTINCT FROM OLD.draft OR NEW.private IS DISTINCT FROM OLD.private OR NEW.pinned IS DISTINCT FROM OLD.pinned OR NEW.expanded IS DISTINCT FROM OLD.expanded OR NEW.do_at IS DISTINCT FROM OLD.do_at OR NEW.done_at IS DISTINCT FROM OLD.done_at OR NEW.order IS DISTINCT FROM OLD.order OR NEW.ordered_at IS DISTINCT FROM OLD.ordered_at OR NEW.note IS DISTINCT FROM OLD.note) THEN
-        INSERT INTO priority (id, deleted_at, name, path, draft, private, pinned, expanded, do_at, done_at, "order", ordered_at, note)
-            VALUES (NEW.id, NEW.deleted_at, NEW.name, NEW.path, NEW.draft, NEW.private, NEW.pinned, NEW.expanded, NEW.do_at, NEW.done_at, NEW.order, NEW.ordered_at, NEW.note)
+    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.draft IS DISTINCT FROM OLD.draft OR NEW.private IS DISTINCT FROM OLD.private OR NEW.pinned IS DISTINCT FROM OLD.pinned OR NEW.do_at IS DISTINCT FROM OLD.do_at OR NEW.done_at IS DISTINCT FROM OLD.done_at OR NEW.order IS DISTINCT FROM OLD.order OR NEW.note IS DISTINCT FROM OLD.note) THEN
+        INSERT INTO priority (id, deleted_at, title, path, draft, private, pinned, do_at, done_at, "order", note)
+            VALUES (NEW.id, NEW.deleted_at, NEW.title, NEW.path, NEW.draft, NEW.private, NEW.pinned, NEW.do_at, NEW.done_at, NEW.order, NEW.note)
         ON CONFLICT (id)
             DO UPDATE SET
                 deleted_at = NEW.deleted_at,
-                name = NEW.name,
+                title = NEW.title,
                 path = NEW.path,
                 draft = NEW.draft,
                 private = NEW.private,
                 pinned = NEW.pinned,
-                expanded = NEW.expanded,
                 do_at = NEW.do_at,
                 done_at = NEW.done_at,
                 "order" = NEW.order,
-                ordered_at = NEW.ordered_at,
                 note = NEW.note
             RETURNING
                 id INTO _priority_id;
@@ -98,24 +115,13 @@ BEGIN
             AND priority_id = _priority_id;
     END IF;
     -- TODO handle path update
-    -- Remove previous default
-    IF (NEW.is_default AND OLD IS NOT NULL AND NOT OLD.is_default) THEN
-        UPDATE
-            priority_settings
-        SET
-            is_default = FALSE
-        WHERE
-            is_default = TRUE
-            AND user_id = COALESCE(auth.uid (), NEW.user_id);
-    END IF;
-    IF ((OLD IS NULL AND (NEW."pomodoro" IS NOT NULL OR NEW."color" IS NOT NULL OR NEW."is_default" IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."pomodoro" IS DISTINCT FROM OLD."pomodoro" OR NEW."color" IS DISTINCT FROM OLD."color" OR NEW."is_default" IS DISTINCT FROM OLD."is_default"))) THEN
-        INSERT INTO priority_settings (user_id, priority_id, pomodoro, color, is_default)
-            VALUES (COALESCE(auth.uid (), NEW.user_id), _priority_id, NEW.pomodoro, NEW.color, COALESCE(NEW.is_default, FALSE))
+    IF ((OLD IS NULL AND (NEW."pomodoro" IS NOT NULL OR NEW."color" IS NOT NULL)) OR (OLD IS NOT NULL AND (NEW."pomodoro" IS DISTINCT FROM OLD."pomodoro" OR NEW."color" IS DISTINCT FROM OLD."color"))) THEN
+        INSERT INTO priority_settings (user_id, priority_id, pomodoro, color)
+            VALUES (COALESCE(auth.uid (), NEW.user_id), _priority_id, NEW.pomodoro, NEW.color)
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
                 pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro),
-                color = COALESCE(NEW.color, priority_settings.color),
-                is_default = COALESCE(NEW.is_default, priority_settings.is_default);
+                color = COALESCE(NEW.color, priority_settings.color);
     END IF;
     RETURN NEW;
 END;

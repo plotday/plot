@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:drift/drift.dart';
 
 class StreamListenable<T> {
   final Stream<T> _stream;
@@ -78,16 +77,16 @@ class ExpiringStreamTransformer<T, S> extends StreamTransformerBase<T, S> {
 
 /// Creates a stream that re-evaluates a query whenever the next expiry time passes.
 ///
-/// [query] - The main query that returns your actual data of type T
-/// [nextExpiryQuery] - A query that returns the next nullable DateTime when a new row will become valid
+/// [createStream] - The main query that returns your actual data of type T
+/// [createExpiryStream] - A query that returns the next nullable DateTime when a new row will become valid
 ///
 /// Returns a Stream*lt;T&gt; that updates whenever:
 /// 1. The initial query runs
 /// 2. A previously future expiry time is reached
 /// 3. A new future expiry time is detected
 Stream<T> streamWithExpiryRevaluation<T>({
-  required Stream<T> Function() query,
-  required Stream<DateTime?> Function() nextExpiryQuery,
+  required Stream<T> Function() createStream,
+  required Stream<DateTime?> Function() createExpiryStream,
 }) {
   final controller = StreamController<T>.broadcast();
   Timer? expiryTimer;
@@ -105,7 +104,7 @@ Stream<T> streamWithExpiryRevaluation<T>({
   void subscribeToData() {
     if (!isActive) return;
     dataSubscription?.cancel();
-    dataSubscription = query().listen(
+    dataSubscription = createStream().listen(
       (data) {
         if (!isActive) return;
         controller.add(data);
@@ -122,7 +121,7 @@ Stream<T> streamWithExpiryRevaluation<T>({
     if (!isActive) return;
     subscribeToData();
     expirySubscription?.cancel();
-    expirySubscription = nextExpiryQuery().listen(
+    expirySubscription = createExpiryStream().listen(
       (nextExpiry) {
         if (!isActive) return;
         // Schedule the next evaluation based on the new expiry time received from the stream.
@@ -157,6 +156,70 @@ Stream<T> streamWithExpiryRevaluation<T>({
     cancelTimer();
     dataSubscription?.cancel();
     expirySubscription?.cancel();
+  };
+
+  return controller.stream;
+}
+
+/// Creates a stream that re-evaluates a query whenever the next expiry time passes.
+///
+/// [stream] - A stream that emits ExpiringResult&lt;T> containing both data and expiry time
+///
+/// Returns a Stream&lt;T> that updates whenever:
+/// 1. The source stream emits a new value
+/// 2. A previously future expiry time is reached
+Stream<T> streamWithExpiry<T>(
+  Stream<ExpiringResult<T>> Function() createStream,
+) {
+  final controller = StreamController<T>.broadcast();
+  Timer? expiryTimer;
+  StreamSubscription<ExpiringResult<T>>? subscription;
+  bool isActive = true;
+
+  // Function to cancel any pending timer
+  void cancelTimer() {
+    expiryTimer?.cancel();
+    expiryTimer = null;
+  }
+
+  // Subscribe to the stream
+  void subscribe() {
+    if (!isActive) return;
+    subscription?.cancel();
+    subscription = createStream().listen(
+      (result) {
+        if (!isActive) return;
+
+        // Add the value to the output stream
+        controller.add(result.value);
+
+        // Schedule next evaluation based on expiry time
+        cancelTimer();
+        final now = DateTime.now();
+        final nextExpiry = result.expiry;
+
+        if (nextExpiry != null && nextExpiry.isAfter(now)) {
+          final delay = nextExpiry.difference(now);
+          expiryTimer = Timer(delay, () {
+            subscribe();
+          });
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!isActive) return;
+        controller.addError(error, stackTrace);
+      },
+    );
+  }
+
+  // Initial subscription
+  subscribe();
+
+  // Handle cleanup when the stream is closed
+  controller.onCancel = () {
+    isActive = false;
+    cancelTimer();
+    subscription?.cancel();
   };
 
   return controller.stream;

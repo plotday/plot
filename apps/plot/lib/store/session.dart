@@ -12,7 +12,7 @@ enum SessionPriority implements Comparable<SessionPriority> {
 }
 
 @DataClassName('SessionRow')
-class Sessions extends UuidStoreTable with DeletableTable {
+class Sessions extends Table with SyncableTable, UuidTable, DeletableTable {
   BlobColumn get priorityId =>
       blob()
           .nullable()
@@ -113,7 +113,7 @@ class Session extends SessionRow {
   static Stream<List<Session>> watch({
     DateRange? range,
     int? limit,
-    bool withContext = false,
+    bool withPriority = false,
     bool? deleted = false,
     bool expiring = false, // emit every minute
   }) {
@@ -133,25 +133,30 @@ class Session extends SessionRow {
     if (limit != null) {
       query.limit(limit);
     }
-    var sessionStream = query.watch().map(
-      (rows) => rows.map((row) => Session.fromStore(row)).toList(),
-    );
-    if (withContext) {
-      sessionStream = Rx.combineLatest2(
-        sessionStream,
-        Priority.watch(),
-        (List<Session> sessions, Map<Uuid, Priority> activities) =>
-            sessions
+    Stream<List<Session>> sessionStream;
+    if (withPriority) {
+      final joinedQuery = query.join([
+        innerJoin(
+          Store.get.priorities,
+          Store.get.priorities.id.equalsExp(Store.get.sessions.priorityId),
+        ),
+      ]);
+      sessionStream = joinedQuery.watch().map(
+        (rows) =>
+            rows
                 .map(
-                  (session) => Session.fromStore(
-                    session,
-                    priority:
-                        session.priorityId == null
-                            ? null
-                            : activities[session.priorityId],
+                  (row) => Session.fromStore(
+                    row.readTable(Store.get.sessions),
+                    priority: Priority.fromStore(
+                      row.readTable(Store.get.priorities),
+                    ),
                   ),
                 )
                 .toList(),
+      );
+    } else {
+      sessionStream = query.watch().map(
+        (rows) => rows.map((row) => Session.fromStore(row)).toList(),
       );
     }
 
@@ -181,7 +186,7 @@ class Session extends SessionRow {
   }
 
   static Stream<Session?> watchCurrent() =>
-      watch(withContext: true, limit: 1, expiring: true).map((sessions) {
+      watch(withPriority: true, limit: 1, expiring: true).map((sessions) {
         final session = sessions.firstOrNull;
         return session?.at.isNow() == true ? session : null;
       });

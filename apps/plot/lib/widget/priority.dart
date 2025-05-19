@@ -6,9 +6,16 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
 class PriorityLabel extends StatelessWidget {
-  const PriorityLabel({required this.priority, super.key});
+  const PriorityLabel({
+    required this.priority,
+    this.context,
+    this.onlyAncestors = false,
+    super.key,
+  });
 
   final Priority? priority;
+  final Priority? context;
+  final bool onlyAncestors;
 
   @override
   Widget build(BuildContext context) {
@@ -18,13 +25,14 @@ class PriorityLabel extends StatelessWidget {
     final ancestors = priority!.ancestors;
     return Row(
       children: [
-        Text(priority!.name),
+        if (!onlyAncestors) Text("${priority!.title} "),
         if (ancestors.isNotEmpty)
           DefaultTextStyle(
-            style: DefaultTextStyle.of(
-              context,
-            ).style.copyWith(color: context.theme.colorScheme.mutedForeground),
-            child: Text('  ${priority!.parent!.pathLabel}'),
+            style: DefaultTextStyle.of(context).style.copyWith(
+              color: context.theme.colorScheme.mutedForeground,
+              fontSize: context.theme.typography.xs.fontSize,
+            ),
+            child: Text(priority!.ancestorsLabel(context: this.context)),
           ),
       ],
     );
@@ -76,33 +84,46 @@ class PriorityBalance extends StatelessWidget {
   }
 }
 
-class PriorityTile extends StatelessWidget {
-  const PriorityTile({
+class PriorityWidget extends StatelessWidget {
+  const PriorityWidget({
     required this.priority,
-    this.balances,
-    this.maxTime,
-    this.fullPath = false,
-    this.everythingElse = false,
+    this.context,
+    this.selected = false,
     super.key,
   });
 
+  /// If true, show as a parent note with some functionality (such as navigating to it) disabled.
   final Priority priority;
-  final BalanceByType? balances;
-  final Duration? maxTime;
-  final bool fullPath;
-  final bool everythingElse;
+
+  /// Display priority relative to this priority.
+  final Priority? context;
+
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
+    bool isContext = priority == this.context;
+    bool contextChild = priority.ancestors.last.id == this.context?.id;
+    bool expanded =
+        isContext || (!priority.doNow && !priority.done && !priority.pinned);
     return ListTile(
-      command:
-          everythingElse
+      command: !isContext ? ChangeCurrentPriority(priority) : null,
+      trailingCommands: [
+        if (!priority.pinned) PinPriority(priority),
+        priorityCommand(priority),
+      ],
+      body: Viewer(
+        markdown: (expanded ? priority.note : null) ?? priority.title,
+      ),
+      header:
+          contextChild
               ? null
-              : ChangeCurrentPriority(priority, fullPath: fullPath),
-      title: everythingElse ? "Everything Else" : null,
-      style: ListTileStyle.header,
-      key: ValueKey(priority.id.toString()),
-      // subtitle: balances != null ? PriorityBalance(balances: balances!) : null,
+              : PriorityLabel(
+                priority: priority,
+                context: this.context,
+                onlyAncestors: true,
+              ),
+      selected: selected,
     );
   }
 }

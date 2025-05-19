@@ -178,19 +178,6 @@ ALTER TABLE "public"."tag"
 
 SET check_function_bodies = OFF;
 
-CREATE OR REPLACE FUNCTION public.calendar (event_x)
-    RETURNS SETOF calendar
-    LANGUAGE sql
-    STABLE ROWS 1
-    AS $function$
-    SELECT
-        calendar.*
-    FROM
-        calendar
-    WHERE
-        calendar.id = $1.calendar_id
-$function$;
-
 CREATE OR REPLACE VIEW "public"."event_x" AS
 WITH event_x1 AS (
     SELECT
@@ -434,6 +421,19 @@ CREATE OR REPLACE FUNCTION public.invitee (event_x)
         invitee
     WHERE
         event_id = $1.id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.calendar (event_x)
+    RETURNS SETOF calendar
+    LANGUAGE sql
+    STABLE ROWS 1
+    AS $function$
+    SELECT
+        calendar.*
+    FROM
+        calendar
+    WHERE
+        calendar.id = $1.calendar_id
 $function$;
 
 CREATE OR REPLACE VIEW "public"."priority_tags" AS

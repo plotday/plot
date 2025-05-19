@@ -13,7 +13,7 @@ class NewPriorityPage extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (nameController, name) = useTextEditingValue();
+    final (nameController, title) = useTextEditingValue();
     final parent = useState<Priority?>(_initialParent);
 
     return Dialog(
@@ -23,8 +23,7 @@ class NewPriorityPage extends HookWidget {
             Text('New priority in '),
             PrioritySelector(
               selected: parent.value,
-              onSelectIncludeNone: (priority) {
-                print("Selected priority: $priority");
+              onSelect: (priority) {
                 parent.value = priority;
               },
             ),
@@ -38,7 +37,7 @@ class NewPriorityPage extends HookWidget {
         children: [
           TextField(
             controller: nameController,
-            label: "Add an priority",
+            label: "Add a priority",
             maxLines: 1,
             autofocus: true,
           ),
@@ -50,7 +49,7 @@ class NewPriorityPage extends HookWidget {
                   AddPriority(
                     Future.value(
                       Priority(
-                        name: name,
+                        title: title,
                         parent: parent.value,
                         order: Order.first(),
                       ),
@@ -64,7 +63,7 @@ class NewPriorityPage extends HookWidget {
                     return ret;
                   },
                 ),
-                enabled: name.isNotEmpty,
+                enabled: title.isNotEmpty,
               ),
             ],
           ),

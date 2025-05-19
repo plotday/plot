@@ -3,34 +3,38 @@ part of 'store.dart';
 typedef PriorityId = Uuid;
 
 @DataClassName('PriorityRow')
-class Priorities extends UuidStoreTable with DraftTable, DeletableTable {
-  TextColumn get name => text()();
+class Priorities extends Table
+    with SyncableTable, UuidTable, DraftTable, DeletableTable {
+  TextColumn get title => text().nullable()();
   TextColumn get path => text().map(const PathConverter())();
   BlobColumn get createdBy => blob().map(const UuidConverter())();
   RealColumn get order =>
       real()
           .clientDefault(() => Order.first().value)
           .map(const OrderConverter())();
-  DateTimeColumn get orderedAt =>
-      dateTime()
-          .withDefault(currentDateAndTime)
-          .map(const LocalDateTimeConverter())();
   IntColumn get pomodoro =>
       integer()
+          .nullable()
           .withDefault(const Constant(25 * 60))
           .map(const DurationConverter())();
   IntColumn get color =>
       integer()
+          .nullable()
           .withDefault(const Constant(0))
           .map(const ThemeColorConverter())();
-  BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
+  BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
   DateTimeColumn get doAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get doneAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
-  TextColumn get body => text().nullable()();
+  TextColumn get note => text().nullable()();
+
+  @override
+  List<String> get customConstraints => [
+    'CHECK (draft = 1 OR title IS NOT NULL)',
+  ];
 }
 
 class PrioritiesBase extends BaseTable {
@@ -47,6 +51,28 @@ class PrioritiesBase extends BaseTable {
       PriorityRow.fromJson(json);
 }
 
+enum PriorityOrder { sorted, nested, recent }
+
+class PriorityAncestor {
+  static List<PriorityAncestor> fromStore(PriorityAncestryData row) {
+    final ids =
+        (jsonDecode(row.ancestors) as List)
+            .map((e) => Uuid.fromString(e as String))
+            .toList();
+    final titles =
+        (jsonDecode(row.titles) as List).map((e) => e as String).toList();
+    return List.generate(
+      ids.length,
+      (index) => PriorityAncestor(id: ids[index], title: titles[index]),
+    );
+  }
+
+  const PriorityAncestor({required this.id, required this.title});
+
+  final PriorityId id;
+  final String title;
+}
+
 class Priority extends PriorityRow implements Comparable<Priority> {
   static $PrioritiesTable get table => Store.get.priorities;
 
@@ -55,136 +81,307 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return await Store.get.pull(PullType.all, table, PrioritiesBase());
   }
 
-  static Future<Priority> get(PriorityId id) async {
-    return await (Store.get.select(table)..where(
-      (t) => t.id.equals(id.toBytes()),
-    )).getSingle().then(Priority.fromStore);
+  static Future<List<Priority>> get({
+    PriorityId? id,
+    Path? path,
+    int? depth,
+    bool? pinned,
+    bool? active,
+    bool? deleted = false,
+    String? search,
+    bool self = true,
+    PriorityOrder order = PriorityOrder.sorted,
+  }) async {
+    return _get(
+      id: id,
+      path: path,
+      depth: depth,
+      pinned: pinned,
+      active: active,
+      deleted: deleted,
+      order: order,
+      search: search,
+      self: self,
+    ).get();
   }
 
-  static Future<List<Priority>> getAll() async {
-    return await (Store.get.select(table)
-          ..where((t) => t.deletedAt.isNull())
-          ..orderBy([(t) => OrderingTerm(expression: t.path)]))
-        .get()
-        .then((rows) => _buildHierarchy(rows, flat: true).toList());
+  static Stream<List<Priority>> watch({
+    PriorityId? id,
+    Path? path,
+    int? depth,
+    bool? pinned,
+    bool? active,
+    bool? deleted = false,
+    String? search,
+    bool self = true,
+    PriorityOrder order = PriorityOrder.sorted,
+  }) {
+    return _get(
+      id: id,
+      path: path,
+      depth: depth,
+      pinned: pinned,
+      active: active,
+      deleted: deleted,
+      order: order,
+      search: search,
+      self: self,
+    ).watch();
   }
 
-  static SimpleSelectStatement<$PrioritiesTable, PriorityRow> _selectDefault() {
-    return Store.get.select(table)
-      ..where((t) => t.deletedAt.isNull())
-      ..orderBy([
-        (t) => OrderingTerm(expression: t.isDefault, mode: OrderingMode.desc),
-        // If no priority is marked default, fall back to the first one created
-        (t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.asc),
-      ])
-      ..limit(1);
+  static Future<Priority> getOne(
+    PriorityId id, {
+    int? depth = 0,
+    bool? pinned,
+    bool? active,
+    bool? deleted = false,
+    bool ancestors = true,
+  }) {
+    return _get(
+      id: id,
+      depth: depth,
+      pinned: pinned,
+      active: active,
+      deleted: deleted,
+      ancestors: ancestors,
+      order: PriorityOrder.nested,
+    ).get().then((priorities) => _asNested(priorities, id: id).first);
   }
 
-  static Future<Priority?> getDefault() async {
-    return await _selectDefault().getSingleOrNull().then(
-      (p) => p == null ? null : Priority.fromStore(p),
-    );
+  static Stream<Priority> watchOne(
+    PriorityId id, {
+    int? depth = 0,
+    bool? pinned,
+    bool? active,
+    bool? deleted = false,
+    bool ancestors = true,
+  }) {
+    return _get(
+      id: id,
+      depth: depth,
+      pinned: pinned,
+      active: active,
+      deleted: deleted,
+      ancestors: ancestors,
+      order: PriorityOrder.nested,
+    ).watch().map((priorities) => _asNested(priorities, id: id).first);
   }
 
-  static Stream<Priority?> watchDefault({int depth = 0}) {
-    return _selectDefault().watchSingleOrNull().asyncExpand((row) {
-      if (row == null) {
-        return Stream.value(null);
-      }
-      return watchPath(
-        row.path,
-        depth: depth,
-      ).map((priorities) => priorities.first);
-    });
+  static Future<Priority> getDefault() {
+    return _default().getSingle();
   }
 
-  static Stream<Map<Uuid, Priority>> watch({bool deleted = false}) {
-    return watchAll(deleted: deleted).map((rows) {
-      final priorities = <Uuid, Priority>{};
-      void add(Priority priority) {
-        priorities[priority.id] = priority;
-        for (var child in priority.children) {
-          add(child);
-        }
-      }
-
-      for (var row in rows) {
-        add(row);
-      }
-      return priorities;
-    });
+  static Stream<Priority> watchDefault() {
+    return _default().watchSingle();
   }
 
-  static Stream<Priority> watchOne(PriorityId id, {int? depth = 0}) {
-    final query = Store.get.select(table);
-    query.where((t) => t.id.equals(id.toBytes()));
-    return query.watchSingle().asyncExpand((row) {
-      return watchPath(
-        row.path,
-        depth: depth,
-      ).map((priorities) => priorities.firstOrNull ?? Priority.fromStore(row));
-    });
-  }
-
-  static Stream<List<Priority>> watchAll({bool? deleted = false}) =>
-      watchPath(null, depth: null, deleted: deleted);
+  static Future<List<Priority>> getRoot({
+    int? depth,
+    bool? pinned,
+    bool? active,
+    bool? deleted = false,
+  }) => get(
+    depth: depth,
+    pinned: pinned,
+    active: active,
+    deleted: deleted,
+    order: PriorityOrder.nested,
+  ).then((priorities) => _asNested(priorities));
 
   static Stream<List<Priority>> watchRoot({
     int? depth,
+    bool? pinned,
+    bool? active,
     bool? deleted = false,
-  }) => watchPath(null, depth: depth);
+  }) => watch(
+    depth: depth,
+    pinned: pinned,
+    active: active,
+    deleted: deleted,
+    order: PriorityOrder.nested,
+  ).map((priorities) => _asNested(priorities));
 
-  static Stream<List<Priority>> watchPath(
-    Path? path, {
-    int? depth = 1,
+  static MultiSelectable<Priority> _get({
+    /* Selectors */
+    PriorityId? id,
+    Path? path,
+
+    /* Filters */
+    int? depth,
+    bool ancestors = false,
+    bool self = true,
+    bool? pinned,
+    bool? active,
     bool? deleted = false,
+    String? search,
+
+    /* Sorting */
+    PriorityOrder order = PriorityOrder.sorted,
+
+    /* Augmentation */
+    bool ancestry = true,
   }) {
-    final query = Store.get.select(table);
-    if (path != null) {
-      query.where(
-        (t) =>
-            Variable<String>(
-              path.toString(),
-            ).likeExp(t.path + const Constant('%')) |
-            t.path.like("$path.%"),
-      );
+    // pullPriorityPath(priorityPath);
+    final base = Store.get.alias(Store.get.priorities, 'base');
+    final startingQuery = Store.get.select(base);
+    if (id != null) {
+      startingQuery.where((t) => t.id.equalsValue(id));
     }
-    if (depth != null) {
-      query.where(
-        (t) => CustomExpression<int>(
-          "LENGTH(path) - LENGTH(REPLACE(path, '.', ''))",
-        ).isSmallerOrEqual(Variable<int>(((path?.depth ?? 0) + depth))),
-      );
+    if (path != null) {
+      startingQuery.where((t) => t.path.equalsValue(path));
+    }
+
+    final p = Store.get.alias(Store.get.priorities, 'p');
+    var query = startingQuery.join([
+      innerJoin(
+        p,
+        id == null && path == null
+            ? base.id.equalsExp(p.id)
+            : p.path.likeExp(base.path + Constant('%')) &
+                ((ancestors
+                        ? base.path.likeExp(p.path + Constant('%'))
+                        : Constant(true)) |
+                    (p.path.likeExp(base.path + Constant('%')))) &
+                (depth == null
+                    ? Constant(true)
+                    : CustomExpression<int>("""
+  LENGTH(p.path) - LENGTH(REPLACE(p.path, '.', '')) -
+  (CASE WHEN base.path IS NULL THEN 0 ELSE LENGTH(base.path) - LENGTH(REPLACE(base.path, '.', '')) END)
+  """).isSmallerOrEqualValue(depth)),
+      ),
+    ]);
+
+    if (active == true) {
+      query.where(p.doAt.isNotNull() & p.doneAt.isNull());
+    } else if (active == false) {
+      query.where(p.doAt.isNull() | p.doneAt.isNotNull());
+    }
+    if (pinned != null) {
+      query.where(p.pinned.equals(pinned));
     }
     if (deleted != null) {
-      query.where(
-        (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
-      );
+      query.where(deleted ? p.deletedAt.isNotNull() : p.deletedAt.isNull());
     }
-    // order by path so parents always precede children
-    query.orderBy([(t) => OrderingTerm(expression: t.path)]);
+    if (search?.isNotEmpty == true) {
+      query.where(p.title.like('%$search%'));
+    }
+    if (self == false) {
+      if (id != null) {
+        query.where(p.id.equalsValue(id).not());
+      }
+      if (path != null) {
+        query.where(p.path.equalsValue(path).not());
+      }
+    }
 
-    return query.watch().map((rows) {
-      return _buildHierarchy(rows, path: path);
-    });
+    switch (order) {
+      case PriorityOrder.sorted:
+        query.orderBy([
+          // Pinned
+          OrderingTerm(expression: p.pinned, mode: OrderingMode.desc),
+          // Active
+          OrderingTerm.asc(
+            CaseWhenExpression(
+              cases: [
+                CaseWhen(
+                  p.doAt.isSmallerOrEqual(currentDateAndTime) &
+                      p.doneAt.isNull(),
+                  then: p.doAt,
+                ),
+              ],
+              orElse: const Constant(null),
+            ),
+          ),
+          OrderingTerm.asc(
+            CaseWhenExpression(
+              cases: [
+                CaseWhen(
+                  p.pinned |
+                      (p.doAt.isSmallerOrEqual(currentDateAndTime) &
+                          p.doneAt.isNull()),
+                  then: p.order,
+                ),
+              ],
+              orElse: const Constant(null),
+            ),
+          ),
+          OrderingTerm.desc(p.order),
+        ]);
+        break;
+      case PriorityOrder.nested:
+        // order by path so parents always precede children
+        query.orderBy([OrderingTerm(expression: p.path)]);
+        break;
+      case PriorityOrder.recent:
+        query = query.join([
+          leftOuterJoin(
+            Store.get.sessions,
+            Store.get.sessions.priorityId.equalsExp(p.id),
+          ),
+        ]);
+        query.orderBy([
+          OrderingTerm(
+            expression: Store.get.sessions.end,
+            mode: OrderingMode.desc,
+          ),
+        ]);
+        break;
+    }
+
+    if (ancestry) {
+      final pa = Store.get.alias(Store.get.priorityAncestry, 'pa');
+      return query
+          .join([leftOuterJoin(pa, pa.priorityId.equalsExp(p.id))])
+          .map(
+            (row) => Priority.fromStore(
+              row.readTable(p),
+              ancestry: row.readTableOrNull(pa),
+            ),
+          );
+    }
+
+    return query.map((row) => Priority.fromStore(row.readTable(p)));
   }
 
-  Future<String> generateTitle() async {
-    final response = await api.post("/summary", body: {'body': body});
-    return response['title'] as String;
+  static SingleSelectable<Priority> _default() {
+    return (Store.get.select(table)
+          ..where((t) => t.deletedAt.isNull())
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.root, mode: OrderingMode.desc),
+            // If no priority is marked default, fall back to the first one created
+            (t) =>
+                OrderingTerm(expression: t.createdAt, mode: OrderingMode.asc),
+          ])
+          ..limit(1))
+        .map(Priority.fromStore);
   }
 
-  static List<Priority> _buildHierarchy(
-    List<PriorityRow> rows, {
+  static Map<Uuid, Priority> asMap(List<Priority> list) {
+    final priorities = <Uuid, Priority>{};
+    void add(Priority priority) {
+      priorities[priority.id] = priority;
+      for (var child in priority.children) {
+        add(child);
+      }
+    }
+
+    for (var p in list) {
+      add(p);
+    }
+    return priorities;
+  }
+
+  /// Transform a flat list in PriorityOrder.nested order to a list of the top-level items with descendants.
+  static List<Priority> _asNested(
+    List<Priority> priorities, {
+    PriorityId? id,
     Path? path,
     bool flat = false,
   }) {
     List<Priority> matches = [];
     List<Priority> stack = [];
 
-    for (var row in rows) {
-      var priority = Priority.fromStore(row);
-
+    for (var priority in priorities) {
       if (stack.isNotEmpty && !stack.last.path.isParent(priority.path)) {
         stack.removeWhere((c) => !c.path.isParent(priority.path));
       }
@@ -193,7 +390,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         priority = priority.copyWith(parent: stack.last);
       }
 
-      if ((path == null && priority.path.isRoot) || priority.path == path) {
+      if ((id == null && path == null && priority.path.isRoot) ||
+          priority.path == path ||
+          priority.id == id) {
         matches.add(priority);
         stack.clear();
       } else if (flat) {
@@ -207,54 +406,118 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return matches;
   }
 
+  Future<String> generateTitle() async {
+    final response = await api.post("/summary", body: {'body': note});
+    return response['title'] as String;
+  }
+
   Priority({
-    required super.name,
-    required super.order,
+    Order? order,
     this.parent,
-    super.isDefault = false,
+    this.balance,
+    super.title,
+    super.note,
     super.pomodoro = const Duration(minutes: 25),
     super.color = const ThemeColor.defaultColor(),
+    super.draft = false,
     super.private = false,
     super.pinned = false,
   }) : children = [],
+       ancestors =
+           parent == null
+               ? const []
+               : parent.ancestors +
+                   [PriorityAncestor(id: parent.id, title: parent.title)],
        super(
          id: Uuid.generate(),
          createdBy: Base.userId,
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
-         orderedAt: DateTime.now(),
-         draft: false,
+         order: order ?? Order.first(),
          path: Path.generate(parent: parent?.path),
+         root: false,
        ) {
     parent?._addChild(this);
   }
 
-  Priority.fromStore(PriorityRow row, {this.parent, List<Priority>? children})
-    : children = children ?? [],
-      super(
-        id: row.id,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
-        draft: row.draft,
-        name: row.name,
-        pomodoro: row.pomodoro,
-        color: row.color,
-        isDefault: row.isDefault,
-        order: row.order,
-        path: row.path,
-        private: row.private,
-        pinned: row.pinned,
-        orderedAt: row.orderedAt,
-        createdBy: row.createdBy,
-        doAt: row.doAt,
-        doneAt: row.doneAt,
-      ) {
+  Priority.fromStore(
+    PriorityRow row, {
+    this.parent,
+    List<Priority>? children,
+    this.balance,
+    PriorityAncestryData? ancestry,
+  }) : children = children ?? [],
+       ancestors =
+           ancestry == null
+               ? parent == null
+                   ? const []
+                   : parent.ancestors +
+                       [PriorityAncestor(id: parent.id, title: parent.title)]
+               : PriorityAncestor.fromStore(ancestry),
+       super(
+         id: row.id,
+         createdAt: row.createdAt,
+         updatedAt: row.updatedAt,
+         deletedAt: row.deletedAt,
+         draft: row.draft,
+         title: row.title,
+         note: row.note,
+         pomodoro: row.pomodoro,
+         color: row.color,
+         root: row.root,
+         order: row.order,
+         path: row.path,
+         private: row.private,
+         pinned: row.pinned,
+         createdBy: row.createdBy,
+         doAt: row.doAt,
+         doneAt: row.doneAt,
+       ) {
     parent?._addChild(this);
+  }
+
+  /// Title is always set when draft = false
+  @override
+  String get title => super.title ?? 'Untitled';
+
+  bool get hasTitle => super.title != null;
+
+  static String noteToTitle(String markdown) {
+    final firstLine = markdown.split("\n").first.removeMarkdown().trim();
+    if (firstLine.length > 40) {
+      return "${firstLine.substring(0, 40)}…";
+    }
+    return firstLine;
+  }
+
+  static const separator = ' › ';
+
+  String ancestorsLabel({Priority? context}) {
+    var list = ancestors;
+    if (list.length < 2) {
+      return "";
+    } else if (context == null) {
+      // Skip "Everything" root priority
+      list = ancestors.sublist(1);
+    } else {
+      int startIndex = ancestors.indexWhere((a) => a.id == context.id);
+      if (startIndex != -1) {
+        list = ancestors.sublist(startIndex + 1);
+      }
+    }
+    return (list
+            .map((a) => a.title)
+            .toList()
+            .expand((p) => [p, separator])
+            .toList()
+          ..removeLast())
+        .join();
   }
 
   final Priority? parent;
   List<Priority> children;
+  final Balance? balance;
+  final List<PriorityAncestor> ancestors;
 
   List<Priority> descendants() {
     List<Priority> result = [];
@@ -276,7 +539,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   Priority merge(Priority other) {
     return copyWith(
-      name: name.isEmpty ? other.name : name,
+      title:
+          !hasTitle
+              ? other.hasTitle
+                  ? Value(other.title)
+                  : Value.absent()
+              : Value(title),
       doAt: Value(doAt ?? other.doAt),
       doneAt: Value(doneAt ?? other.doneAt),
       pinned: pinned || other.pinned,
@@ -291,20 +559,20 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     DateTime? createdAt,
     bool? draft,
     Value<DateTime?> deletedAt = const Value.absent(),
-    String? name,
+    Value<String?> title = const Value.absent(),
     Path? path,
     Uuid? createdBy,
     Order? order,
-    DateTime? orderedAt,
-    Duration? pomodoro,
-    ThemeColor? color,
-    bool? isDefault,
+    Value<Duration?> pomodoro = const Value.absent(),
+    Value<ThemeColor?> color = const Value.absent(),
+    bool? root,
     bool? pinned,
     bool? private,
     Value<DateTime?> doAt = const Value.absent(),
     Value<DateTime?> doneAt = const Value.absent(),
-    Value<String?> body = const Value.absent(),
+    Value<String?> note = const Value.absent(),
     Priority? parent,
+    Balance? balance,
   }) {
     final publish = this.draft && draft == false;
     if (doAt.present && doAt.value != null) {
@@ -316,6 +584,16 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     } else if (doneAt.present) {
       doAt = const Value(null);
       pinned = false;
+    }
+    if (publish &&
+        note.present &&
+        note.value != null &&
+        !title.present &&
+        !hasTitle) {
+      title = Value(noteToTitle(note.value!));
+      if (note.value!.length < 40 && !note.value!.contains(RegExp(r'[\n]'))) {
+        note = Value.absent();
+      }
     }
     if (publish ||
         (doAt.present && doAt.value != this.doAt) ||
@@ -331,21 +609,21 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         updatedAt: DateTime.now(),
         deletedAt: deletedAt,
         draft: draft,
-        name: name,
+        title: title,
         path: path,
         order: order,
-        orderedAt:
-            orderedAt ?? (order != null ? DateTime.now() : this.orderedAt),
         pomodoro: pomodoro,
         color: color,
-        isDefault: isDefault,
+        root: root,
         pinned: pinned,
         private: private,
         doAt: doAt,
         doneAt: doneAt,
+        note: note,
       ),
       parent: parent ?? this.parent,
       children: children,
+      balance: balance ?? this.balance,
     );
   }
 
@@ -356,20 +634,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   bool isParent(Priority other) => path.isParent(other.path);
-  List<Priority> get ancestors =>
-      parent == null ? [] : parent!.ancestors + [parent!];
   List<Priority> get peers => parent?.children ?? [];
-  Priority get root => parent?.root ?? this;
-
-  String get pathLabel {
-    return (([this] + ancestors)
-            .map((a) => a.name)
-            .toList()
-            .expand((p) => [p, ' › '])
-            .toList()
-          ..removeLast())
-        .join();
-  }
 
   bool get doNow {
     return !done && doAt?.isSameOrBefore(DateTime.now()) == true;
@@ -381,7 +646,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   bool get done => doneAt != null;
 
-  Future<void> save() => Store.get.save(table, this, PrioritiesBase());
+  Future<void> save() =>
+      Store.get.save(table, toCompanion(false), PrioritiesBase());
 
   @override
   int compareTo(Priority other) {

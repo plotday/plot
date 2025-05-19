@@ -1,4 +1,3 @@
-import { Request, Response } from "@cloudflare/workers-types";
 import * as Sentry from "@sentry/cloudflare";
 
 import type { CalendarConfig, OutlookChangeNotification } from "@plotday/cal";
@@ -69,7 +68,7 @@ export default Sentry.withSentry(
     dist: PACKAGE,
   }),
   {
-    async fetch(request: Request, env: Env) {
+    async fetch(request, env) {
       try {
         const url = new URL(request.url);
         switch (url.pathname) {
@@ -90,7 +89,7 @@ export default Sentry.withSentry(
     async scheduled(_event, env) {
       await renewWatches(env);
     },
-  }
+  } satisfies ExportedHandler<Env>
 );
 
 async function queueSync(

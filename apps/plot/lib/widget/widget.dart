@@ -1,4 +1,4 @@
-export 'activity.dart';
+export 'priority.dart';
 export 'alert.dart';
 export 'badge.dart';
 export 'bidirectional_list.dart';
@@ -13,7 +13,6 @@ export 'icon.dart';
 export 'layout.dart';
 export 'link.dart';
 export 'list_tile.dart';
-export 'priority.dart';
 export 'priority_selector.dart';
 export 'reorderable_list_view.dart';
 export 'scaffold.dart';

@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/widget/bidirectional_list.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
 import 'dialog.dart';
@@ -35,32 +36,48 @@ class CommandBarState<T> extends State<CommandBar<T>> {
   late Commands<T> commands = widget.commands;
   Widget? _child;
   String? _error;
+  bool _isDisposed = false;
 
   @override
   void initState() {
     super.initState();
 
     _initCommands();
-
     _controller.addListener(_initCommands);
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    _controller.removeListener(_initCommands);
+    super.dispose();
   }
 
   void _initCommands() async {
     try {
       setState(() {
-        _filteredCommandGroups = [];
         _error = null;
       });
       final searchText = _controller.text;
       final commandsList = await commands.list(search: searchText);
+
+      if (_isDisposed) return;
+
       setState(() {
+        if (commandsList.isEmpty) {
+          _error = 'No matches';
+        }
         _filteredCommandGroups = commandsList;
+        // Reset selection when commands change
+        // _selectionController.reset();
       });
     } catch (e) {
       print('Error initializing commands: $e');
-      setState(() {
-        _error = 'Search failed.';
-      });
+      if (!_isDisposed) {
+        setState(() {
+          _error = 'Search failed.';
+        });
+      }
     }
   }
 
@@ -82,10 +99,10 @@ class CommandBarState<T> extends State<CommandBar<T>> {
         setState(() => _child = result.child);
       } else if (result is CommandValue<T> && mounted) {
         Navigator.of(context).pop(Value(result.value));
-      } else if (result is CommandValue<T?> &&
-          result.value != null &&
-          mounted) {
-        Navigator.of(context).pop(Value(result.value!));
+      } else if (result is CommandValue<T?> && mounted) {
+        Navigator.of(context).pop(Value.absentIfNull(result.value));
+      } else if (result == null && mounted) {
+        Navigator.of(context).maybePop();
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
@@ -98,57 +115,108 @@ class CommandBarState<T> extends State<CommandBar<T>> {
     if (_child != null) {
       return _child!;
     }
+
+    Widget? errorBox;
+    if (_error != null) {
+      errorBox = Container(
+        padding: const EdgeInsets.all(8),
+        child: Text(_error!),
+      );
+    }
+
     final secondaryCommand = widget.secondaryCommand?.call(_controller.text);
+    final totalCommandCount = _allCommandsCount();
+
     return Dialog(
       padding: const EdgeInsets.all(0),
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_error != null) Text(_error!),
-          if (_child != null) _child!,
-          if (_child == null) ...[
-            EditableArea(
-              position: EditableAreaPosition.top,
-              padding: false,
-              builder:
-                  (context, focusNode) => Row(
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: widgetPadding,
-                          child: TextField(
-                            style: TextFieldStyle.ghost,
-                            controller: _controller,
-                            autofocus: true,
-                            label: widget.commands.prompt,
-                            focusNode: focusNode,
+      body: BidirectionalListSelector(
+        onActivate: (index) => _getCommandAtIndex(index).run(context),
+        builder:
+            (context, listController) => Shortcuts(
+              shortcuts: BidirectionalList.shortcuts,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_child != null) _child!,
+                  if (_child == null) ...[
+                    EditableArea(
+                      position: EditableAreaPosition.top,
+                      padding: false,
+                      builder:
+                          (context, focusNode) => Row(
+                            children: [
+                              Expanded(
+                                child: Padding(
+                                  padding: widgetPadding,
+                                  child: TextField(
+                                    maxLines: 1,
+                                    style: TextFieldStyle.ghost,
+                                    controller: _controller,
+                                    autofocus: true,
+                                    label: widget.commands.prompt,
+                                    focusNode: focusNode,
+                                  ),
+                                ),
+                              ),
+                              if (secondaryCommand != null)
+                                Button.icon(
+                                  CommandWrapper(
+                                    secondaryCommand,
+                                    run:
+                                        (_, __) =>
+                                            _executeCommand(secondaryCommand),
+                                  ),
+                                ),
+                            ],
                           ),
-                        ),
+                    ),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: 400),
+                      child: BidirectionalList(
+                        // shrinkWrap: true,
+                        controller: listController,
+                        count: totalCommandCount,
+                        builder: (context, index, selected) {
+                          final group = _getGroupAtIndex(index);
+                          final command = _getCommandAtIndex(index);
+                          final body = command.buildBody(context);
+                          Widget? header;
+                          if (index == 0 ||
+                              group != _getGroupAtIndex(index - 1)) {
+                            header = Text(group.title);
+                          }
+                          return Column(
+                            key: ValueKey(index),
+                            children: [
+                              if (header != null) header,
+                              ListTile(
+                                command: command,
+                                body: body,
+                                selected: listController.selected == index,
+                              ),
+                            ],
+                          );
+                        },
                       ),
-                      if (secondaryCommand != null)
-                        Button.icon(
-                          CommandWrapper(
-                            secondaryCommand,
-                            run: (_, __) => _executeCommand(secondaryCommand),
-                          ),
-                        ),
-                    ],
-                  ),
-            ),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _allCommandsCount(),
-                itemBuilder: (context, index) {
-                  final command = _getCommandAtIndex(index);
-                  return ListTile(command: command);
-                },
+                    ),
+                    if (errorBox != null) errorBox,
+                  ],
+                ],
               ),
             ),
-          ],
-        ],
       ),
     );
+  }
+
+  StaticCommandGroup _getGroupAtIndex(int index) {
+    int currentIndex = 0;
+    for (final group in _filteredCommandGroups) {
+      if (index < currentIndex + group.commands.length) {
+        return group;
+      }
+      currentIndex += group.commands.length;
+    }
+    throw Exception('Command index out of range');
   }
 
   Command _getCommandAtIndex(int index) {

@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/store/store.dart';
+import 'logging.dart';
 
 part 'now_state.dart';
 
@@ -15,15 +16,12 @@ class NowBloc extends Cubit<NowState> {
       ScheduledDay.watchToday(),
       Session.watchCurrent(),
       (priority, day, session) {
-        if (priority == null) {
-          return const NowLoadingState();
-        } else {
-          return NowLoadedState(
-            defaultPriority: priority,
-            day: day,
-            session: session,
-          );
-        }
+        log.info('Default priority: ${priority.id}');
+        return NowLoadedState(
+          defaultPriority: priority,
+          day: day,
+          session: session,
+        );
       },
     ).listen((state) {
       emit(state);

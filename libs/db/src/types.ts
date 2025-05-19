@@ -390,15 +390,14 @@ export type Database = {
           do_at: string | null
           done_at: string | null
           draft: boolean
-          expanded: boolean
           id: string
-          name: string
           note: string | null
           order: number
-          ordered_at: string
           path: unknown
           pinned: boolean
           private: boolean
+          root: boolean
+          title: string | null
           updated_at: string
         }
         Insert: {
@@ -408,15 +407,14 @@ export type Database = {
           do_at?: string | null
           done_at?: string | null
           draft?: boolean
-          expanded?: boolean
           id?: string
-          name: string
           note?: string | null
           order?: number
-          ordered_at?: string
           path: unknown
           pinned?: boolean
           private?: boolean
+          root?: boolean
+          title?: string | null
           updated_at?: string
         }
         Update: {
@@ -426,15 +424,14 @@ export type Database = {
           do_at?: string | null
           done_at?: string | null
           draft?: boolean
-          expanded?: boolean
           id?: string
-          name?: string
           note?: string | null
           order?: number
-          ordered_at?: string
           path?: unknown
           pinned?: boolean
           private?: boolean
+          root?: boolean
+          title?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -442,7 +439,6 @@ export type Database = {
       priority_settings: {
         Row: {
           color: number | null
-          is_default: boolean | null
           pomodoro: number | null
           priority_id: string
           updated_at: string
@@ -450,7 +446,6 @@ export type Database = {
         }
         Insert: {
           color?: number | null
-          is_default?: boolean | null
           pomodoro?: number | null
           priority_id: string
           updated_at?: string
@@ -458,7 +453,6 @@ export type Database = {
         }
         Update: {
           color?: number | null
-          is_default?: boolean | null
           pomodoro?: number | null
           priority_id?: string
           updated_at?: string
@@ -1016,16 +1010,22 @@ export type Database = {
         Row: {
           color: number | null
           created_at: string | null
+          created_by: string | null
           deleted_at: string | null
+          do_at: string | null
+          done_at: string | null
           draft: boolean | null
           id: string | null
-          is_default: boolean | null
-          name: string | null
+          note: string | null
           order: number | null
           order_x: number | null
           path: unknown | null
+          pinned: boolean | null
           pomodoro: number | null
+          private: boolean | null
+          root: boolean | null
           tags: Json | null
+          title: string | null
           updated_at: string | null
           user_id: string | null
         }
@@ -1213,14 +1213,6 @@ export type Database = {
       redeem_invitation: {
         Args: { _user_id: number; _invitation: string }
         Returns: undefined
-      }
-      replace_parent_path: {
-        Args: {
-          parent_path: unknown
-          child_path: unknown
-          new_parent_path: unknown
-        }
-        Returns: unknown
       }
       server_timestamp: {
         Args: Record<PropertyKey, never>

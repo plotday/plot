@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:rxdart/rxdart.dart';
@@ -8,6 +9,7 @@ import 'package:equatable/equatable.dart';
 import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:stack_trace/stack_trace.dart';
+import 'package:remove_markdown/remove_markdown.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
@@ -15,7 +17,6 @@ import 'package:plot/util/theme_color.dart';
 import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
 import 'package:plot/util/list.dart';
-import 'package:plot/util/map.dart';
 import 'package:plot/util/api.dart' as api;
 import 'package:plot/util/async.dart';
 import 'package:plot/base.dart';
@@ -31,15 +32,13 @@ part 'sync.dart';
 part 'account.dart';
 part 'calendar.dart';
 part 'priority.dart';
-part 'note.dart';
-part 'activity.dart';
 part 'event.dart';
 part 'session.dart';
 part 'balance.dart';
 
 part 'store.g.dart';
 
-class StoreTable extends Table {
+mixin SyncableTable on Table {
   DateTimeColumn get updatedAt =>
       dateTime()
           .withDefault(currentDateAndTime)
@@ -59,14 +58,14 @@ mixin DeletableTable on Table {
       dateTime().nullable().map(const LocalDateTimeConverter())();
 }
 
-class IdStoreTable extends StoreTable {
+mixin IdTable on Table {
   IntColumn get id => integer()();
 
   @override
   Set<Column> get primaryKey => {id};
 }
 
-class UuidStoreTable extends StoreTable {
+mixin UuidTable on Table {
   BlobColumn get id =>
       blob()
           .clientDefault(() => Uuid.generate().toBytes())
@@ -83,6 +82,7 @@ enum PullType {
   all, // pull all
 }
 
+/// A table in the remote database that can be synced with the local database.
 abstract class BaseTable {
   BaseTable({
     required this.table,
@@ -215,21 +215,26 @@ abstract class BaseTable {
     Accounts,
     Calendars,
     Priorities,
-    Notes,
-    Activities,
     Events,
     Sessions,
     Balances,
   ],
+  include: {'priority.drift', 'balance.drift'},
 )
 class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
   static Future<void> init(User user) async {
     driftRuntimeOptions.defaultSerializer = const CustomSerializer();
-    Injector.appInstance.registerSingleton<Store>(() => Store._(user));
+    if (Injector.appInstance.exists<Store>()) {
+      await get.close();
+    }
+    Injector.appInstance.registerSingleton<Store>(
+      () => Store._(user),
+      override: true,
+    );
   }
 
-  Future<DATA> add<TABLE extends StoreTable, DATA extends DataClass>(
+  Future<DATA> add<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     Insertable<DATA> data,
   ) async {
@@ -244,7 +249,7 @@ class Store extends _$Store {
     }
   }
 
-  Future<void> addBatch<TABLE extends StoreTable, DATA extends DataClass>(
+  Future<void> addBatch<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     Iterable<Insertable<DATA>> data,
   ) async {
@@ -259,11 +264,12 @@ class Store extends _$Store {
     }
   }
 
-  Future<void> save<TABLE extends StoreTable, DATA extends DataClass>(
+  Future<void> save<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     Insertable<DATA> data,
     BaseTable baseTable,
   ) async {
+    log.info("Saving", data);
     try {
       await add(table, data);
     } catch (e) {
@@ -274,7 +280,7 @@ class Store extends _$Store {
     push(table, baseTable);
   }
 
-  Future<void> push<TABLE extends StoreTable, DATA extends DataClass>(
+  Future<void> push<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable,
   ) async {
@@ -320,7 +326,7 @@ class Store extends _$Store {
     }
   }
 
-  Future<bool> pull<TABLE extends StoreTable, DATA extends DataClass>(
+  Future<bool> pull<TABLE extends SyncableTable, DATA extends DataClass>(
     PullType type,
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable, {
@@ -412,8 +418,6 @@ class Store extends _$Store {
     await Future.wait([
       Chain.capture(() => Account.push().then((_) => Account.pull())),
       Chain.capture(() => Priority.push().then((_) => Priority.pull())),
-      Chain.capture(() => Activity.push().then((_) => Activity.pull())),
-      Chain.capture(() => Note.push().then((_) => Note.pull())),
       Chain.capture(() => Event.push().then((_) => Event.pull())),
       Chain.capture(() => Session.push().then((_) => Session.pull())),
       Chain.capture(() => Balance.pull()),
@@ -432,7 +436,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 33;
+  int get schemaVersion => 53;
 
   @override
   MigrationStrategy get migration {

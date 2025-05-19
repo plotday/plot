@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:auto_route/auto_route.dart';
+import 'package:forui/forui.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'logging.dart';
@@ -10,29 +10,59 @@ import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/page/new_priority.dart';
 
-class PriorityCommand extends ValueCommand<Priority?> {
-  PriorityCommand(Priority? priority)
+class _PriorityValue extends ValueCommand<Priority?> {
+  _PriorityValue(Priority? priority)
     : super(
-        title: priority?.name ?? 'None',
-        subtitle: priority != null ? priority.parent?.pathLabel : 'Top-level',
+        title: priority?.title ?? 'None',
+        subtitle: priority?.ancestorsLabel(),
         value: priority,
       );
+
+  @override
+  Widget buildBody(BuildContext context) {
+    return Row(
+      children: [
+        if (value?.ancestorsLabel().isNotEmpty == true) ...[
+          Flexible(
+            child: Text(
+              value!.ancestorsLabel(),
+              overflow: TextOverflow.ellipsis,
+              style: context.theme.typography.xs.copyWith(
+                color: context.colour.muted,
+              ),
+            ),
+          ),
+          Text(
+            Priority.separator,
+            style: context.theme.typography.xs.copyWith(
+              color: context.colour.muted,
+            ),
+          ),
+        ],
+        Flexible(
+          child: Text(
+            value?.title ?? 'None',
+            overflow: TextOverflow.ellipsis,
+            style: context.theme.typography.xs.copyWith(
+              color: context.colour.foreground,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class PriorityCommandGroup extends CommandGroup {
-  PriorityCommandGroup({this.includeNone = false}) : super(title: 'Priorities');
-
-  final bool includeNone;
+  PriorityCommandGroup() : super(title: 'Priorities');
 
   @override
   Future<List<Command>> list({String? search}) async {
     final all =
-        (await Priority.getAll())
-            .map((priority) => PriorityCommand(priority))
-            .toList();
-    if (includeNone) {
-      all.add(PriorityCommand(null));
-    }
+        (await Priority.get(
+          order: PriorityOrder.recent,
+          search: search,
+        )).map((priority) => _PriorityValue(priority)).toList();
     return CommandGroup.filter(all, search);
   }
 }
@@ -47,37 +77,24 @@ class PickPriority extends Commands<Priority> {
   final Priority? initialPriority;
 }
 
-class PickPriorityOrNone extends Commands<Priority?> {
-  PickPriorityOrNone({super.prompt = 'Pick a priority', this.initialPriority})
-    : super(
-        groups: [PriorityCommandGroup(includeNone: true)],
-        secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
-      );
-
-  final Priority? initialPriority;
-}
-
 class ChangeCurrentPriority extends Command {
   ChangeCurrentPriority(Priority priority, {bool fullPath = true})
     : priorityId = priority.id,
-      super(title: priority.name, subtitle: priority.parent?.pathLabel);
-
-  ChangeCurrentPriority.byId({required this.priorityId})
-    : super(title: 'View Priority');
+      super(title: "Open", icon: PlotIcon.open);
 
   final PriorityId priorityId;
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.router.push<void>(PriorityRoute(priorityId: priorityId));
+    await context.router.navigate(PriorityRoute(priorityId: priorityId));
     return null;
   }
 }
 
-class PickCurrentActivity extends ShowCommand<Priority> {
-  PickCurrentActivity()
+class PickCurrentPriority extends ShowCommand<Priority> {
+  PickCurrentPriority()
     : super(
-        title: 'Change Current Priority',
+        title: 'Pick Current Priority',
         icon: PlotIcon.priority,
         shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
         commands: (context) => PickPriority(prompt: 'Change Current Priority'),
@@ -85,7 +102,7 @@ class PickCurrentActivity extends ShowCommand<Priority> {
 
   @override
   void onSelect(BuildContext context, Priority value) async {
-    log.info('Change current priority to ${value.name}');
+    log.info('Change current priority to ${value.title}');
     ChangeCurrentPriority(value).run(context);
   }
 }
@@ -116,8 +133,7 @@ class ArchivePriority extends Command {
   @override
   Future<CommandReturn?> run(BuildContext context) async {
     final priority = await _priority;
-    final defaultPriority = await Priority.getDefault();
-    if (priority == defaultPriority) {
+    if (priority.root) {
       return CommandMessage(
         'You cannot archive the default priority',
         isError: true,
@@ -125,11 +141,6 @@ class ArchivePriority extends Command {
     }
     await priority.delete();
     Posthog().capture(eventName: 'Priority Archived');
-    if (context.mounted) {
-      await context.router.replace(
-        PriorityRoute(priorityId: priority.parent?.id ?? defaultPriority!.id),
-      );
-    }
     return null;
   }
 }
@@ -145,7 +156,94 @@ class NewPriority extends Command {
   }
 }
 
+abstract class _UpdatePriorityCommand extends Command {
+  _UpdatePriorityCommand(
+    this.priority, {
+    Future<void> Function(Priority)? onUpdate,
+    required super.title,
+    super.icon,
+  }) : onUpdate = onUpdate ?? ((priority) => priority.save());
+
+  final Priority priority;
+  final Future<void> Function(Priority) onUpdate;
+}
+
+class StartPriority extends _UpdatePriorityCommand {
+  StartPriority(super.priority, {super.onUpdate})
+    : super(title: 'Do Now', icon: PlotIcon.doNow);
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    final start = !priority.doNow;
+    await onUpdate(
+      priority.copyWith(
+        doAt:
+            start
+                ? Value(DateTime.now().subtract(Duration(seconds: 10)))
+                : const Value(null),
+      ),
+    );
+    Posthog().capture(
+      eventName: start ? 'Priority Started' : 'Priority Stopped',
+    );
+    return null;
+  }
+}
+
+class FinishPriority extends _UpdatePriorityCommand {
+  FinishPriority(super.priority, {super.onUpdate})
+    : super(title: 'Finish', icon: PlotIcon.done);
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    await onUpdate(priority.copyWith(doneAt: Value(DateTime.now())));
+    Posthog().capture(eventName: 'Priority Finished');
+    return null;
+  }
+}
+
+class MarkPriorityIncomplete extends _UpdatePriorityCommand {
+  MarkPriorityIncomplete(super.priority, {super.onUpdate})
+    : super(title: 'Mark Priority Not Finished', icon: PlotIcon.done);
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    await onUpdate(priority.copyWith(doneAt: const Value(null)));
+    Posthog().capture(eventName: 'Priority Marked Not Finished');
+    return null;
+  }
+}
+
+class PinPriority extends _UpdatePriorityCommand {
+  PinPriority(super.priority, {super.onUpdate})
+    : super(title: priority.pinned ? 'Unpin' : 'Pin', icon: PlotIcon.pinned);
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    await onUpdate(priority.copyWith(pinned: !priority.pinned));
+    Posthog().capture(
+      eventName: priority.pinned ? 'Priority Un-pinned' : 'Priority Pinned',
+    );
+    return null;
+  }
+}
+
 StaticCommandGroup priorityCommands(Priority priority) => StaticCommandGroup(
   title: 'Commands',
   commands: [ArchivePriority(Future.value(priority))],
+);
+
+Command priorityCommand(Priority priority) => CommandWrapper(
+  switch (priority) {
+    _ when priority.pinned => PinPriority(priority),
+    _ when priority.doNow => FinishPriority(priority),
+    _ when priority.done => MarkPriorityIncomplete(priority),
+    _ => StartPriority(priority),
+  },
+  statusIcon: Value(switch (priority) {
+    _ when priority.pinned => PlotIcon.pinned,
+    _ when priority.doNow => PlotIcon.todo,
+    _ when priority.done => PlotIcon.done,
+    _ => PlotIcon.doNow,
+  }),
 );

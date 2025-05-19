@@ -24,7 +24,9 @@ Future<void> run() async {
           record.level < Level.WARNING) {
         return;
       }
-      print('${record.level.name}: ${record.loggerName}: ${record.message}');
+      print(
+        '${record.level.name}: ${record.loggerName.isEmpty ? 'plot' : record.loggerName}: ${record.message}',
+      );
       if (record.error != null) {
         print(record.error);
       }

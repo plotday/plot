@@ -18,15 +18,12 @@ class GlobalShortcuts extends StatelessWidget {
         },
       },
       child: CommandScope(
-        commands: Commands(
-          prompt: 'Run a command',
-          groups: [
-            StaticCommandGroup(title: 'Commands', commands: [
-              PickCurrentActivity(),
-              ShowSettings(),
-            ])
-          ],
-        ),
+        commands: [
+          StaticCommandGroup(
+            title: 'Commands',
+            commands: [PickCurrentPriority(), ShowSettings()],
+          ),
+        ],
         child: child,
       ),
     );

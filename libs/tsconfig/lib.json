@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./base.json",
+  "display": "Cloudflare Worker Library",
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": [
+      "ES2021",
+      "ES2022.error",
+      "WebWorker"
+    ],
+    "module": "ESNext",
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "allowSyntheticDefaultImports": true,
+    "sourceMap": true,
+  }
+}

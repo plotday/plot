@@ -1,3 +1,3 @@
 import 'package:logging/logging.dart';
 
-final Logger log = Logger('plot.widget');
+final Logger log = Logger('plot.ui');

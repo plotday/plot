@@ -11,7 +11,8 @@ enum EventAvailability { busy, away, focus, free, location }
 typedef EventId = Uuid;
 
 @DataClassName('EventRow')
-class Events extends UuidStoreTable with DraftTable, DeletableTable {
+class Events extends Table
+    with SyncableTable, UuidTable, DraftTable, DeletableTable {
   TextColumn get name => text().nullable()();
   DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();
   DateTimeColumn get end => dateTime().map(const LocalDateTimeConverter())();
@@ -110,35 +111,43 @@ class Event extends EventRow {
         (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
       );
     }
-    final eventStream = (query..orderBy([
+
+    if (withPriority) {
+      final joinedQuery = query.join([
+        innerJoin(
+          Store.get.priorities,
+          Store.get.priorities.id.equalsExp(Store.get.events.priorityId),
+        ),
+      ]);
+
+      return Rx.combineLatest2(
+        (joinedQuery..orderBy([
+              OrderingTerm(expression: Store.get.events.start, mode: order),
+              OrderingTerm(expression: Store.get.events.end, mode: order),
+            ]))
+            .watch(),
+        Priority.watchDefault(),
+        (events, defaultPriority) =>
+            events
+                .map(
+                  (row) => Event.fromStore(
+                    row.readTable(Store.get.events),
+                    priority: Priority.fromStore(
+                      row.readTableOrNull(Store.get.priorities) ??
+                          defaultPriority,
+                    ),
+                  ),
+                )
+                .toList(),
+      );
+    }
+
+    return (query..orderBy([
           (t) => OrderingTerm(expression: t.start, mode: order),
           (t) => OrderingTerm(expression: t.end, mode: order),
         ]))
         .watch()
         .map((rows) => rows.map((row) => Event.fromStore(row)).toList());
-    if (withPriority) {
-      return Rx.combineLatest3(
-        eventStream,
-        Priority.watch(),
-        Priority.watchDefault(),
-        (events, priorities, defaultPriority) {
-          final ret =
-              events
-                  .map(
-                    (event) => Event.fromStore(
-                      event,
-                      priority:
-                          event.priorityId == null
-                              ? defaultPriority
-                              : priorities[event.priorityId] ?? defaultPriority,
-                    ),
-                  )
-                  .toList();
-          return ret;
-        },
-      );
-    }
-    return eventStream;
   }
 
   static Stream<Event> watchOne(EventId id, {bool withPriority = false}) {
