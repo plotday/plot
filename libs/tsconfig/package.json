@@ -5,8 +5,5 @@
   "license": "MIT",
   "publishConfig": {
     "access": "public"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250415.0"
   }
 }

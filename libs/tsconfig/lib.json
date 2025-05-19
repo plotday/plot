@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "./base.json",
-  "display": "Cloudflare Worker",
+  "display": "Cloudflare Worker Library",
   "compilerOptions": {
     "target": "ESNext",
     "lib": [
@@ -10,10 +10,6 @@
       "WebWorker"
     ],
     "module": "ESNext",
-    "types": [
-      "./worker-configuration.d.ts",
-      "../../libs/tsconfig/workers.d.ts"
-    ],
     "resolveJsonModule": true,
     "allowJs": true,
     "checkJs": false,

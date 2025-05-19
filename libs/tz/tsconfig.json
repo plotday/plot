@@ -1,4 +1,4 @@
 {
-  "extends": "@plotday/tsconfig/worker.json",
+  "extends": "@plotday/tsconfig/lib.json",
   "include": ["src/*.ts"]
 }

@@ -128,5 +128,5 @@ export default Sentry.withSentry(
         }
       }
     },
-  }
+  } satisfies ExportedHandler<Env>
 );
