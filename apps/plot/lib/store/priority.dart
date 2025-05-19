@@ -55,12 +55,16 @@ enum PriorityOrder { sorted, nested, recent }
 
 class PriorityAncestor {
   static List<PriorityAncestor> fromStore(PriorityAncestryData row) {
+    if (row.ancestors == null || row.titles == null) {
+      log.warning('PriorityAncestor.fromStore called with null ancestor data');
+      return [];
+    }
     final ids =
-        (jsonDecode(row.ancestors) as List)
+        (jsonDecode(row.ancestors!) as List)
             .map((e) => Uuid.fromString(e as String))
             .toList();
     final titles =
-        (jsonDecode(row.titles) as List).map((e) => e as String).toList();
+        (jsonDecode(row.titles!) as List).map((e) => e as String).toList();
     return List.generate(
       ids.length,
       (index) => PriorityAncestor(id: ids[index], title: titles[index]),
