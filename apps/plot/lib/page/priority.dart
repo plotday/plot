@@ -227,7 +227,7 @@ class PriorityPage extends StatelessWidget {
                                         color:
                                             context
                                                 .theme
-                                                .colorScheme
+                                                .colors
                                                 .mutedForeground,
                                         fontSize:
                                             context

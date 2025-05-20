@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:auto_route/auto_route.dart';
+import 'package:flutter/material.dart' show Icons;
 
 import 'package:plot/command/command.dart';
 
@@ -27,17 +28,17 @@ class Header extends StatelessWidget {
           if (!modal && context.router.canPop())
             FTappable(
               onPress: () => context.router.maybePop(),
-              child: FIcon(FAssets.icons.arrowLeft, size: 14),
+              child: Icon(Icons.arrow_back, size: 14),
             ),
           if (main != null) main!,
         ],
       ),
-      actions: [
+      suffixes: [
         ...commands.map(
           (command) => FHeaderAction(
             icon:
                 command.icon != null
-                    ? FIcon.data(command.icon!, size: 14)
+                    ? Icon(command.icon!, size: 14)
                     : Text(command.title),
             onPress: () => context.run<void>(command),
           ),
@@ -45,7 +46,7 @@ class Header extends StatelessWidget {
         if (modal && context.router.canPop())
           FTappable(
             onPress: () => context.router.maybePop(),
-            child: FIcon(FAssets.icons.x, size: 14),
+            child: Icon(Icons.close, size: 14),
           ),
       ],
     );

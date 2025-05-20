@@ -60,8 +60,8 @@ class ColourSchemeData extends Equatable {
           ? base.withSaturation(0.2).withLightness(0.2).toColor()
           : base.withSaturation(0.2).withLightness(0.7).toColor();
 
-  FColorScheme toFColorScheme() {
-    return FColorScheme(
+  FColors toFColorScheme() {
+    return FColors(
       brightness: brightness,
       barrier: barrier,
       background: background,

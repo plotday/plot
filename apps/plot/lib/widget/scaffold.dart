@@ -22,10 +22,10 @@ class Scaffold extends StatelessWidget {
     return Container(
       color: translucent ? null : context.colour.background,
       child: FScaffold(
-        content: body,
         header: header,
         footer: footer,
-        contentPad: false,
+        childPad: false,
+        child: body,
       ),
     );
   }

@@ -30,7 +30,7 @@ class PriorityLabel extends StatelessWidget {
           final isLast = i == ancestors.length - 1;
           return DefaultTextStyle(
             style: DefaultTextStyle.of(context).style.copyWith(
-              color: context.theme.colorScheme.mutedForeground,
+              color: context.theme.colors.mutedForeground,
               fontSize: context.theme.typography.xs.fontSize,
             ),
             child: Row(
@@ -91,8 +91,8 @@ class PriorityBalance extends StatelessWidget {
         SegmentedLine(
           lengths: [past.inMinutes.toDouble(), future.inMinutes.toDouble()],
           colors: [
-            context.theme.colorScheme.primary,
-            context.theme.colorScheme.mutedForeground,
+            context.theme.colors.primary,
+            context.theme.colors.mutedForeground,
           ],
           total: max?.inMinutes.toDouble(),
         ),

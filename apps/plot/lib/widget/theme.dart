@@ -8,9 +8,9 @@ const widgetPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 12);
 FThemeData buildTheme(ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();
   var theme = FThemeData(
-    colorScheme: colorScheme,
+    colors: colorScheme,
     typography: FTypography.inherit(
-      colorScheme: colorScheme,
+      colors: colorScheme,
     ).transform((t) => t.copyWith(base: t.base.copyWith(fontSize: 12))),
   );
   theme = theme.copyWith(
@@ -25,50 +25,49 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
     ),
     textFieldStyle: theme.textFieldStyle.copyWith(
       cursorColor: colourScheme.accent,
-      enabledStyle: theme.textFieldStyle.enabledStyle.copyWith(
-        contentTextStyle: theme.textFieldStyle.enabledStyle.contentTextStyle
-            .copyWith(color: colourScheme.foreground),
-      ),
+      // contentTextStyle: theme.textFieldStyle.contentTextStyle.map(
+      //   (style) => style.copyWith(color: colourScheme.foreground),
+      // ),
     ),
     buttonStyles: theme.buttonStyles.copyWith(
       primary: theme.buttonStyles.primary.copyWith(
         contentStyle: theme.buttonStyles.primary.contentStyle.copyWith(
           padding: widgetPadding,
-          enabledTextStyle:
-              theme.buttonStyles.primary.contentStyle.enabledTextStyle
-                  .copyWith(),
+          // textStyle: theme.buttonStyles.primary.contentStyle.textStyle.map(
+          //   (style) => style.copyWith(color: colourScheme.foreground),
+          // ),
         ),
       ),
       outline: theme.buttonStyles.outline.copyWith(
-        enabledBoxDecoration: theme.buttonStyles.outline.enabledBoxDecoration
-            .copyWith(border: Border.all(color: theme.colorScheme.border)),
-        disabledBoxDecoration: theme.buttonStyles.outline.disabledBoxDecoration
-            .copyWith(border: Border.all(color: theme.colorScheme.border)),
-        enabledHoverBoxDecoration: theme
-            .buttonStyles
-            .outline
-            .enabledHoverBoxDecoration
-            .copyWith(border: Border.all(color: theme.colorScheme.border)),
+        // enabledBoxDecoration: theme.buttonStyles.outline.enabledBoxDecoration
+        //     .copyWith(border: Border.all(color: theme.colorScheme.border)),
+        // disabledBoxDecoration: theme.buttonStyles.outline.disabledBoxDecoration
+        //     .copyWith(border: Border.all(color: theme.colorScheme.border)),
+        // enabledHoverBoxDecoration: theme
+        //     .buttonStyles
+        //     .outline
+        //     .enabledHoverBoxDecoration
+        //     .copyWith(border: Border.all(color: theme.colorScheme.border)),
         contentStyle: theme.buttonStyles.outline.contentStyle.copyWith(
-          enabledTextStyle: theme
-              .buttonStyles
-              .outline
-              .contentStyle
-              .enabledTextStyle
-              .copyWith(color: theme.colorScheme.foreground),
-          enabledIconColor: theme.colorScheme.foreground,
+          // enabledTextStyle: theme
+          //     .buttonStyles
+          //     .outline
+          //     .contentStyle
+          //     .enabledTextStyle
+          //     .copyWith(color: theme.colorScheme.foreground),
+          // enabledIconColor: theme.colorScheme.foreground,
           padding: widgetPadding,
         ),
       ),
       ghost: theme.buttonStyles.ghost.copyWith(
         contentStyle: theme.buttonStyles.ghost.contentStyle.copyWith(
-          enabledTextStyle: theme
-              .buttonStyles
-              .outline
-              .contentStyle
-              .enabledTextStyle
-              .copyWith(color: theme.colorScheme.foreground),
-          enabledIconColor: theme.colorScheme.foreground,
+          // enabledTextStyle: theme
+          //     .buttonStyles
+          //     .outline
+          //     .contentStyle
+          //     .enabledTextStyle
+          //     .copyWith(color: theme.colorScheme.foreground),
+          // enabledIconColor: theme.colorScheme.foreground,
           padding: widgetPadding,
         ),
       ),

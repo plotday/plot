@@ -16,17 +16,17 @@ class Button extends StatelessWidget {
     this.enabled = true,
     this.selected = false,
     super.key,
-  })  : iconOnly = false,
-        style = ButtonStyle.secondary;
+  }) : iconOnly = false,
+       style = ButtonStyle.secondary;
 
   const Button.primary(
     this.command, {
     this.loading = false,
     this.enabled = true,
     super.key,
-  })  : style = ButtonStyle.primary,
-        iconOnly = false,
-        selected = false;
+  }) : style = ButtonStyle.primary,
+       iconOnly = false,
+       selected = false;
 
   const Button.ghost(
     this.command, {
@@ -34,8 +34,8 @@ class Button extends StatelessWidget {
     this.enabled = true,
     this.selected = false,
     super.key,
-  })  : style = ButtonStyle.ghost,
-        iconOnly = false;
+  }) : style = ButtonStyle.ghost,
+       iconOnly = false;
 
   Button.icon(
     this.command, {
@@ -43,8 +43,8 @@ class Button extends StatelessWidget {
     this.enabled = true,
     this.selected = false,
     super.key,
-  })  : style = ButtonStyle.ghost,
-        iconOnly = command.icon != null;
+  }) : style = ButtonStyle.ghost,
+       iconOnly = command.icon != null;
 
   final ButtonStyle style;
   final bool loading;
@@ -64,10 +64,12 @@ class Button extends StatelessWidget {
       };
       fStyle = baseStyle.copyWith(
         contentStyle: baseStyle.contentStyle.copyWith(
-          enabledTextStyle: baseStyle.contentStyle.enabledTextStyle.copyWith(
-            color: context.colour.accent,
+          textStyle: baseStyle.contentStyle.textStyle.map(
+            (style) => style.copyWith(color: context.colour.accent),
           ),
-          enabledIconColor: context.colour.accent,
+          iconStyle: baseStyle.iconContentStyle.iconStyle.map(
+            (style) => style.copyWith(color: context.colour.accent),
+          ),
         ),
       );
     } else {
@@ -80,30 +82,34 @@ class Button extends StatelessWidget {
 
     final onPress = enabled ? () => context.run<void>(command) : null;
     final button = PlatformBuilder(
-      builder: (_) => iconOnly
-          ? FButton.icon(
-              style: fStyle,
-              onPress: onPress,
-              child: FIcon.data(
-                command.statusIcon.or(command.icon) ?? PlotIcon.right,
-                size: 12,
-                color: command.statusIcon.or(command.icon) != null
-                    ? context.colour.muted
-                    : Color(0x00000000),
-              ),
-            )
-          : FButton(
-              style: fStyle,
-              onPress: onPress,
-              prefix: command.icon != null
-                  ? FIcon.data(
-                      command.icon!,
+      builder:
+          (_) =>
+              iconOnly
+                  ? FButton.icon(
+                    style: fStyle,
+                    onPress: onPress,
+                    child: Icon(
+                      command.statusIcon.or(command.icon) ?? PlotIcon.right,
                       size: 12,
-                      color: context.colour.muted,
-                    )
-                  : null,
-              label: Text(command.title),
-            ),
+                      color:
+                          command.statusIcon.or(command.icon) != null
+                              ? context.colour.muted
+                              : Color(0x00000000),
+                    ),
+                  )
+                  : FButton(
+                    style: fStyle,
+                    onPress: onPress,
+                    prefix:
+                        command.icon != null
+                            ? Icon(
+                              command.icon!,
+                              size: 12,
+                              color: context.colour.muted,
+                            )
+                            : null,
+                    child: Text(command.title),
+                  ),
     );
 
     return Stack(

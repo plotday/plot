@@ -132,7 +132,7 @@ class _ListTileState extends State<ListTile> {
                         null)
                   Padding(
                     padding: const EdgeInsets.only(right: 8.0),
-                    child: FIcon.data(
+                    child: Icon(
                       (widget.command!.statusIcon.or(widget.command!.icon))!,
                       size: 12,
                       color: context.colour.muted,

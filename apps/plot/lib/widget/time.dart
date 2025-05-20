@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:forui/forui.dart';
 
 import 'package:plot/util/time.dart';
-import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/widget.dart';
 
 class SmallCapsWidget extends StatelessWidget {
@@ -113,7 +111,7 @@ class DurationText extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       spacing: 4,
       children: [
-        if (icon != null) FIcon.data(icon!),
+        if (icon != null) Icon(icon!),
         Text.rich(
           TextSpan(
             style: const TextStyle(

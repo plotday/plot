@@ -78,11 +78,6 @@ class TextFieldState extends State<TextField> {
 
   @override
   Widget build(BuildContext context) {
-    final borderless = FTextFieldBorderStyle(
-      color: Color(0x00FFFFFF),
-      width: 0,
-      radius: BorderRadius.zero,
-    );
     return PlatformBuilder(
       // androidBuilder: (_) => material.TextField(
       //   onChanged: widget.onChanged,
@@ -105,21 +100,14 @@ class TextFieldState extends State<TextField> {
                     ? null
                     : context.theme.textFieldStyle.copyWith(
                       contentPadding: EdgeInsets.all(0),
-                      enabledStyle: context.theme.textFieldStyle.enabledStyle
-                          .copyWith(
-                            unfocusedStyle: borderless,
-                            focusedStyle: borderless,
+                      border: context.theme.textFieldStyle.border.map(
+                        (style) => style.copyWith(
+                          borderSide: BorderSide(
+                            width: 0,
+                            style: BorderStyle.none,
                           ),
-                      disabledStyle: context.theme.textFieldStyle.disabledStyle
-                          .copyWith(
-                            unfocusedStyle: borderless,
-                            focusedStyle: borderless,
-                          ),
-                      errorStyle: context.theme.textFieldStyle.errorStyle
-                          .copyWith(
-                            unfocusedStyle: borderless,
-                            focusedStyle: borderless,
-                          ),
+                        ),
+                      ),
                     ),
             hint: widget.label,
             autocorrect: widget.autocorrect,
