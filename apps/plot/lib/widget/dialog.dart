@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:platform_builder/platform_builder.dart';
@@ -7,23 +9,6 @@ import 'package:drift/drift.dart' show Value;
 import 'colour_scheme.dart';
 
 class Dialog extends StatelessWidget {
-  static Future<Value<T>> show<T>({
-    required BuildContext context,
-    required Widget Function(BuildContext) builder,
-    bool barrierDismissible = true,
-  }) async {
-    final ret = await material.showDialog<Value<T>>(
-      context: context,
-      builder: builder,
-      barrierColor: context.colourOnce.barrier,
-      barrierDismissible: barrierDismissible,
-    );
-    if (ret == null) {
-      return Value.absent();
-    }
-    return ret;
-  }
-
   const Dialog({
     required this.body,
     this.header,
@@ -40,6 +25,10 @@ class Dialog extends StatelessWidget {
   final double maxWidthPercentage;
   final double maxHeightPercentage;
   final EdgeInsets padding;
+
+  Future<Value<T>> show<T>(BuildContext context) {
+    return DialogProvider.of(context).push<T>(context, this);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,4 +73,79 @@ class Dialog extends StatelessWidget {
           ),
     );
   }
+}
+
+class DialogProvider extends InheritedWidget {
+  DialogProvider({required super.child, super.key});
+
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+  Future<Value<T>> push<T>(BuildContext context, Widget dialog) async {
+    if (_navigatorKey.currentState == null) {
+      final result = await material.showDialog<Value<T>>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return Navigator(
+            key: _navigatorKey,
+            onGenerateRoute:
+                (settings) => material.MaterialPageRoute<Value<T>>(
+                  builder:
+                      (context) => _InnerDialogProvider(
+                        this,
+                        child: CallbackShortcuts(
+                          bindings: {
+                            const SingleActivator(
+                              LogicalKeyboardKey.escape,
+                            ): () {
+                              pop(context, Value<T>.absent());
+                            },
+                          },
+                          child: dialog,
+                        ),
+                      ),
+                  settings: settings,
+                ),
+          );
+        },
+      );
+      return result ?? Value.absent();
+    } else {
+      final result = await _navigatorKey.currentState!.push(
+        material.MaterialPageRoute<Value<T>>(
+          builder: (context) => _InnerDialogProvider(this, child: dialog),
+        ),
+      );
+      return result ?? Value.absent();
+    }
+  }
+
+  void pop<T>(BuildContext context, Value<T> result) {
+    Navigator.of(
+      context,
+      rootNavigator: !Navigator.of(context).canPop(),
+    ).pop(result);
+  }
+
+  static DialogProvider of(BuildContext context) {
+    final DialogProvider? provider =
+        context
+            .dependOnInheritedWidgetOfExactType<_InnerDialogProvider>()
+            ?.provider ??
+        context.dependOnInheritedWidgetOfExactType<DialogProvider>();
+    assert(provider != null, 'No DialogProvider found in context');
+    return provider!;
+  }
+
+  @override
+  bool updateShouldNotify(DialogProvider oldWidget) => false;
+}
+
+class _InnerDialogProvider extends InheritedWidget {
+  const _InnerDialogProvider(this.provider, {required super.child});
+
+  final DialogProvider provider;
+
+  @override
+  bool updateShouldNotify(_InnerDialogProvider oldWidget) => false;
 }

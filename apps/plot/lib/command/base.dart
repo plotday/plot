@@ -103,9 +103,42 @@ class ValueCommand<T> extends Command {
   }
 }
 
-/// A command for showing a set of options and returning a value
+/// A command for showing a widget and returning a value
 class ShowCommand<T> extends Command {
   ShowCommand({
+    required super.title,
+    super.description,
+    super.icon,
+    super.shortcut,
+    required this.dialog,
+  });
+
+  final Dialog dialog;
+
+  @override
+  Future<CommandValue<T>?> run(BuildContext context) async {
+    try {
+      final value = await dialog.show<T>(context);
+      log.info(
+        'CommandBar returned ${value.present ? value.value : 'no value'}',
+      );
+      if (context.mounted && value.present) {
+        onSelect(context, value.value);
+        return CommandValue(value.value);
+      }
+      return null;
+    } on Error catch (e) {
+      log.warning(e, e.stackTrace);
+      rethrow;
+    }
+  }
+
+  void onSelect(BuildContext context, T value) {}
+}
+
+/// A command for showing a set of options and returning a value
+class ShowCommands<T> extends Command {
+  ShowCommands({
     required super.title,
     super.description,
     super.icon,
@@ -118,7 +151,7 @@ class ShowCommand<T> extends Command {
   @override
   Future<CommandValue<T>?> run(BuildContext context) async {
     try {
-      final value = await CommandBar.show<T>(context, commands(context));
+      final value = await CommandBar(commands(context)).show<T>(context);
       log.info(
         'CommandBar returned ${value.present ? value.value : 'no value'}',
       );
@@ -142,9 +175,9 @@ extension BuildContextCommandExtension on BuildContext {
     if (next is CommandValue<T>) {
       return Value(next.value);
     } else if (next is CommandCommands<T>) {
-      return await CommandBar.show<T>(this, next.commands);
+      return await CommandBar(next.commands).show<T>(this);
     } else if (next is CommandPage) {
-      await Dialog.show<void>(context: this, builder: (context) => next.child);
+      await Dialog(body: next.child).show<void>(this);
     }
     return Value.absent();
   }
@@ -225,11 +258,10 @@ class Commands<T> {
 
   Future<Value<T>> show(BuildContext context) async {
     try {
-      return await CommandBar.show<T>(
-        context,
+      return await CommandBar(
         this,
         secondaryCommand: secondaryCommand,
-      );
+      ).show<T>(context);
     } on Error catch (e) {
       print(e);
       print(e.stackTrace);

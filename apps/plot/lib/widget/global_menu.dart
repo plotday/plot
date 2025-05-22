@@ -2,9 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/command/command.dart';
 
-enum MenuSelection {
-  settings,
-}
+enum MenuSelection { settings }
 
 class GlobalMenu extends StatelessWidget {
   const GlobalMenu({required this.child, super.key});
@@ -29,9 +27,11 @@ class GlobalMenu extends StatelessWidget {
               ],
             ),
             if (PlatformProvidedMenuItem.hasMenu(
-                PlatformProvidedMenuItemType.quit))
+              PlatformProvidedMenuItemType.quit,
+            ))
               const PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.quit),
+                type: PlatformProvidedMenuItemType.quit,
+              ),
           ],
         ),
       ],

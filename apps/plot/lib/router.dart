@@ -9,6 +9,7 @@ import 'store/store.dart';
 import 'state/now.dart';
 import 'page/page.dart';
 import 'widget/global_menu.dart';
+import 'widget/dialog.dart';
 import 'command/global.dart';
 
 export 'package:auto_route/auto_route.dart';
@@ -23,7 +24,9 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlobalMenu(child: GlobalShortcuts(child: AutoRouter()));
+    return DialogProvider(
+      child: GlobalMenu(child: GlobalShortcuts(child: AutoRouter())),
+    );
   }
 }
 

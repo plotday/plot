@@ -21,7 +21,7 @@ class SettingsCommands extends Commands<void> {
       );
 }
 
-class ShowSettings extends ShowCommand<void> {
+class ShowSettings extends ShowCommands<void> {
   ShowSettings()
     : super(
         title: 'Settings',

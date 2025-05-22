@@ -104,6 +104,10 @@ class _SelectionCommandScopeState extends State<_SelectionCommandScope> {
   Widget build(BuildContext context) {
     return CommandScope(
       commands: [
+        StaticCommandGroup(
+          title: 'Commands',
+          commands: [PickCurrentPriority(), ShowSettings()],
+        ),
         if (widget.listController.selected != null &&
             widget.listController.selected! < widget.state.priorities.length)
           StaticCommandGroup(
@@ -118,16 +122,8 @@ class _SelectionCommandScopeState extends State<_SelectionCommandScope> {
                 ChangeCurrentPriority(
                   widget.state.priorities[widget.listController.selected!],
                 ),
-              priorityCommand(
+              ...priorityCommands(
                 widget.state.priorities[widget.listController.selected!],
-              ),
-              PinPriority(
-                widget.state.priorities[widget.listController.selected!],
-              ),
-              ArchivePriority(
-                Future.value(
-                  widget.state.priorities[widget.listController.selected!],
-                ),
               ),
             ],
           ),
@@ -149,10 +145,7 @@ class PriorityPage extends StatelessWidget {
           commands: [
             StaticCommandGroup(
               title: state.context.title,
-              commands: [
-                priorityCommand(state.context),
-                ArchivePriority(Future.value(state.context)),
-              ],
+              commands: priorityCommands(state.context),
             ),
           ],
           child: BidirectionalListSelector(
@@ -173,11 +166,7 @@ class PriorityPage extends StatelessWidget {
                         onSelect:
                             (p) => context.run<void>(ChangeCurrentPriority(p)),
                       ),
-                      commands: [
-                        if (!state.context.root)
-                          ArchivePriority(Future.value(state.context)),
-                        priorityCommand(state.context),
-                      ],
+                      commands: priorityCommands(state.context),
                     ),
                     body: Column(
                       children: [
