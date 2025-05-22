@@ -81,41 +81,32 @@ class DialogProvider extends InheritedWidget {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   Future<Value<T>> push<T>(BuildContext context, Widget dialog) async {
+    final child = NoTransitionRoute<Value<T>>(
+      builder:
+          (context) => _InnerDialogProvider(
+            this,
+            child: CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.escape): () {
+                  pop(context, Value<T>.absent());
+                },
+              },
+              child: dialog,
+            ),
+          ),
+    );
+
     if (_navigatorKey.currentState == null) {
       final result = await material.showDialog<Value<T>>(
         context: context,
         barrierDismissible: false,
         builder: (context) {
-          return Navigator(
-            key: _navigatorKey,
-            onGenerateRoute:
-                (settings) => material.MaterialPageRoute<Value<T>>(
-                  builder:
-                      (context) => _InnerDialogProvider(
-                        this,
-                        child: CallbackShortcuts(
-                          bindings: {
-                            const SingleActivator(
-                              LogicalKeyboardKey.escape,
-                            ): () {
-                              pop(context, Value<T>.absent());
-                            },
-                          },
-                          child: dialog,
-                        ),
-                      ),
-                  settings: settings,
-                ),
-          );
+          return Navigator(key: _navigatorKey, onGenerateRoute: (_) => child);
         },
       );
       return result ?? Value.absent();
     } else {
-      final result = await _navigatorKey.currentState!.push(
-        material.MaterialPageRoute<Value<T>>(
-          builder: (context) => _InnerDialogProvider(this, child: dialog),
-        ),
-      );
+      final result = await _navigatorKey.currentState!.push(child);
       return result ?? Value.absent();
     }
   }
@@ -148,4 +139,41 @@ class _InnerDialogProvider extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_InnerDialogProvider oldWidget) => false;
+}
+
+class NoTransitionRoute<T> extends PageRoute<T> {
+  NoTransitionRoute({required this.builder, super.settings});
+
+  final WidgetBuilder builder;
+
+  @override
+  Color get barrierColor => Color(0x80000000);
+
+  @override
+  String get barrierLabel => "Dialog";
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration => Duration.zero;
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    return builder(context);
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return child; // No transition
+  }
 }
