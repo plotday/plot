@@ -20,9 +20,9 @@ class CalendarSettingsPageState extends State<CalendarSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      header: Header(title: "Calendar Settings", modal: true),
-      body: BlocBuilder<AccountsBloc, AccountsState>(
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: BlocBuilder<AccountsBloc, AccountsState>(
         builder:
             (context, state) => Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
