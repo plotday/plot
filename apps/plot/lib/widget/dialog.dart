@@ -100,6 +100,7 @@ class DialogProvider extends InheritedWidget {
       final result = await material.showDialog<Value<T>>(
         context: context,
         barrierDismissible: false,
+        // requestFocus: true,
         builder: (context) {
           return Navigator(key: _navigatorKey, onGenerateRoute: (_) => child);
         },
