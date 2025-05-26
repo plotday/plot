@@ -55,10 +55,6 @@ enum PriorityOrder { sorted, nested, recent }
 
 class PriorityAncestor {
   static List<PriorityAncestor> fromStore(PriorityAncestryData row) {
-    if (row.ancestors == null || row.titles == null) {
-      log.warning('PriorityAncestor.fromStore called with null ancestor data');
-      return [];
-    }
     final ids =
         (jsonDecode(row.ancestors!) as List)
             .map((e) => Uuid.fromString(e as String))
@@ -646,12 +642,19 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   bool isParent(Priority other) => path.isParent(other.path);
   List<Priority> get peers => parent?.children ?? [];
 
+  // For the user, doAt can never be in the past
+  @override
+  DateTime? get doAt =>
+      _doAt?.isBefore(DateTime.now()) == true ? DateTime.now() : _doAt;
+
+  DateTime? get _doAt => super.doAt;
+
   bool get doNow {
-    return !done && doAt?.isSameOrBefore(DateTime.now()) == true;
+    return !done && _doAt?.isSameOrBefore(DateTime.now()) == true;
   }
 
   bool get scheduled {
-    return doAt?.isAfter(DateTime.now()) == true;
+    return _doAt?.isAfter(DateTime.now()) == true;
   }
 
   bool get done => doneAt != null;
@@ -668,7 +671,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       return pinned ? -1 : 1;
     }
     if (doNow && other.doNow) {
-      final doAtComp = doAt!.compareTo(other.doAt!);
+      final doAtComp = _doAt!.compareTo(other._doAt!);
       if (doAtComp != 0) {
         return doAtComp;
       }

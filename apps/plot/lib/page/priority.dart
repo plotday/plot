@@ -196,21 +196,29 @@ class PriorityPage extends StatelessWidget {
                             count: state.priorities.length,
                             reverse: true,
                             builder: (context, index, selected) {
-                              final previous =
-                                  index > 0
-                                      ? state.priorities[index - 1]
+                              final next =
+                                  index < state.priorities.length - 1
+                                      ? state.priorities[index + 1]
                                       : null;
                               final current = state.priorities[index];
+                              final scheduled = index < state.scheduled.length;
+                              final date =
+                                  (scheduled
+                                          ? current.doAt!
+                                          : current.createdAt)
+                                      .toDate();
+                              final nextDate =
+                                  (index + 1 < state.scheduled.length
+                                          ? next?.doAt
+                                          : next?.createdAt)
+                                      ?.toDate();
                               return Column(
                                 mainAxisSize: MainAxisSize.min,
                                 key: ValueKey(state.priorities[index].id),
                                 children: [
-                                  if (previous?.createdAt.toDate() !=
-                                      current.createdAt.toDate())
+                                  if (nextDate != date)
                                     Text(
-                                      state.priorities[index].createdAt
-                                          .toDate()
-                                          .format(),
+                                      date.format(),
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         color:

@@ -129,14 +129,13 @@ class PriorityWidget extends StatelessWidget {
       body: Viewer(
         markdown: (expanded ? priority.note : null) ?? priority.title,
       ),
-      header:
-          contextChild
-              ? null
-              : PriorityLabel(
-                priority: priority,
-                context: this.context,
-                onlyAncestors: true,
-              ),
+      header: contextChild
+          ? null
+          : PriorityLabel(
+              priority: priority,
+              context: this.context,
+              onlyAncestors: true,
+            ),
       selected: selected,
     );
   }

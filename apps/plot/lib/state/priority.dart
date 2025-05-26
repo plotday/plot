@@ -32,11 +32,13 @@ class PriorityBloc extends Cubit<PriorityState> {
   void _loadPriority(Priority priority) {
     _reset();
 
+    // Watch the current priority (context)
     _subscriptions.add(
       Priority.watchOne(priority.id).listen((priority) {
         emit(state.copyWith(context: priority));
       }),
     );
+    // Watch pinned priorities
     _subscriptions.add(
       Priority.watch(
         path: priority.path,
@@ -47,13 +49,15 @@ class PriorityBloc extends Cubit<PriorityState> {
         emit(state.copyWith(pinned: priorities));
       }),
     );
+    // Watch upcoming, scheduled priorities
     _subscriptions.add(
       Priority.watch(path: priority.path, self: false, active: true).listen((
         priorities,
       ) {
-        emit(state.copyWith(upcoming: priorities, moreAfter: false));
+        emit(state.copyWith(scheduled: priorities, moreScheduled: false));
       }),
     );
+    // Watch past activity
     _subscriptions.add(
       Priority.watch(
         path: priority.path,
@@ -61,7 +65,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         active: false,
         pinned: false,
       ).listen((priorities) {
-        emit(state.copyWith(past: priorities, moreBefore: false));
+        emit(state.copyWith(activity: priorities, moreActivity: false));
       }),
     );
   }

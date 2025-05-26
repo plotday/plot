@@ -5,43 +5,46 @@ class PriorityState extends Equatable {
     required this.context,
     Priority? draft,
     this.pinned = const [],
-    this.upcoming = const [],
-    this.moreAfter = true,
-    List<Priority> past = const [],
-    this.moreBefore = true,
+    this.scheduled = const [],
+    this.moreScheduled = true,
+    List<Priority> activity = const [],
+    this.moreActivity = true,
   }) : draft = draft ?? Priority(parent: context, draft: true),
-       past = [...past, if (context.note != null && !moreBefore) context];
+       activity = [
+         ...activity,
+         if (context.note != null && !moreActivity) context,
+       ];
 
   final Priority context;
   final Priority draft;
   final List<Priority> pinned;
-  final List<Priority> upcoming;
-  final bool moreAfter;
-  final List<Priority> past;
-  final bool moreBefore;
+  final List<Priority> scheduled;
+  final bool moreScheduled;
+  final List<Priority> activity;
+  final bool moreActivity;
 
   PriorityState copyWith({
     Priority? context,
     Priority? draft,
     List<Priority>? pinned,
-    List<Priority>? upcoming,
-    bool? moreAfter,
-    List<Priority>? past,
-    bool? moreBefore,
+    List<Priority>? scheduled,
+    bool? moreScheduled,
+    List<Priority>? activity,
+    bool? moreActivity,
   }) {
     return PriorityState(
       context: context ?? this.context,
       draft: draft ?? this.draft,
       pinned: pinned ?? this.pinned,
-      upcoming: upcoming ?? this.upcoming,
-      moreAfter: moreAfter ?? this.moreAfter,
-      past: past ?? this.past,
-      moreBefore: moreBefore ?? this.moreBefore,
+      scheduled: scheduled ?? this.scheduled,
+      moreScheduled: moreScheduled ?? this.moreScheduled,
+      activity: activity ?? this.activity,
+      moreActivity: moreActivity ?? this.moreActivity,
     );
   }
 
   List<Priority> get priorities {
-    return [...upcoming, ...past];
+    return [...scheduled.reversed, ...activity];
   }
 
   @override
@@ -49,9 +52,9 @@ class PriorityState extends Equatable {
     context,
     draft,
     pinned,
-    upcoming,
-    moreAfter,
-    past,
-    moreBefore,
+    scheduled,
+    moreScheduled,
+    activity,
+    moreActivity,
   ];
 }
