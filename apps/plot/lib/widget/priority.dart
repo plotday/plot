@@ -5,6 +5,8 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
+import 'logging.dart';
+
 class PriorityLabel extends StatelessWidget {
   const PriorityLabel({
     required this.priority,
@@ -36,7 +38,15 @@ class PriorityLabel extends StatelessWidget {
             child: Row(
               children: [
                 Tapable(
-                  onTap: () => onSelect?.call(ancestor.id),
+                  onTap: () async {
+                    if (onSelect != null) {
+                      onSelect?.call(ancestor.id);
+                    } else {
+                      final priority = await Priority.getOne(ancestor.id);
+                      if (!context.mounted) return;
+                      context.run<void>(ChangeCurrentPriority(priority));
+                    }
+                  },
                   child: Text(ancestor.title),
                 ),
                 if (!isLast || !onlyAncestors) Text(Priority.separator),
@@ -129,13 +139,14 @@ class PriorityWidget extends StatelessWidget {
       body: Viewer(
         markdown: (expanded ? priority.note : null) ?? priority.title,
       ),
-      header: contextChild
-          ? null
-          : PriorityLabel(
-              priority: priority,
-              context: this.context,
-              onlyAncestors: true,
-            ),
+      header:
+          contextChild
+              ? null
+              : PriorityLabel(
+                priority: priority,
+                context: this.context,
+                onlyAncestors: true,
+              ),
       selected: selected,
     );
   }
