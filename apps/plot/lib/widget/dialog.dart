@@ -10,7 +10,7 @@ import 'colour_scheme.dart';
 
 class Dialog extends StatelessWidget {
   const Dialog({
-    required this.body,
+    required this.builder,
     this.header,
     this.constraints = const BoxConstraints(maxHeight: 500, maxWidth: 750),
     this.maxWidthPercentage = 0.8,
@@ -19,7 +19,7 @@ class Dialog extends StatelessWidget {
     super.key,
   });
 
-  final Widget body;
+  final Widget Function(BuildContext context) builder;
   final Widget? header;
   final BoxConstraints constraints;
   final double maxWidthPercentage;
@@ -63,7 +63,7 @@ class Dialog extends StatelessWidget {
                           padding: padding,
                           child: ConstrainedBox(
                             constraints: constraints,
-                            child: body,
+                            child: builder(context),
                           ),
                         ),
                       ],

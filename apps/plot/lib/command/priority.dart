@@ -232,13 +232,14 @@ class PickSchedulePriority extends ShowCommand<Date> {
         icon: PlotIcon.scheduled,
         builder:
             (context) => Dialog(
-              body: FCalendar(
-                controller: FCalendarController.date(),
-                onPress:
-                    (date) => DialogProvider.of(
-                      context,
-                    ).pop(context, Value(date.toDate())),
-              ),
+              builder:
+                  (context) => FCalendar(
+                    controller: FCalendarController.date(),
+                    onPress:
+                        (date) => DialogProvider.of(
+                          context,
+                        ).pop(context, Value(date.toDate())),
+                  ),
             ),
       );
 
@@ -286,7 +287,7 @@ List<Command> priorityCommands(Priority priority) => [
     },
     statusIcon: Value(switch (priority) {
       _ when priority.pinned => PlotIcon.pinned,
-      _ when priority.doNow => PlotIcon.todo,
+      _ when priority.scheduled => PlotIcon.done,
       _ when priority.done => PlotIcon.done,
       _ => PlotIcon.doNow,
     }),

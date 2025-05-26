@@ -31,7 +31,7 @@ class NewPriorityPage extends HookWidget {
         ),
         modal: true,
       ),
-      body: Column(
+      builder: (context) => Column(
         spacing: 16,
         mainAxisSize: MainAxisSize.min,
         children: [
