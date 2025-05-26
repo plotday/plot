@@ -59,12 +59,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
     // Watch past activity
     _subscriptions.add(
-      Priority.watch(
-        path: priority.path,
-        self: false,
-        active: false,
-        pinned: false,
-      ).listen((priorities) {
+      Priority.watch(path: priority.path, self: false).listen((priorities) {
         emit(state.copyWith(activity: priorities, moreActivity: false));
       }),
     );
