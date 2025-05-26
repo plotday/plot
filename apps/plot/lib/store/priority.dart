@@ -280,7 +280,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
           // Pinned
           OrderingTerm(expression: p.pinned, mode: OrderingMode.desc),
           // Active
-          OrderingTerm.asc(
+          OrderingTerm.desc(
             CaseWhenExpression(
               cases: [
                 CaseWhen(
