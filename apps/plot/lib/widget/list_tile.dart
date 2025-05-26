@@ -15,6 +15,9 @@ class ListTile extends StatefulWidget {
     /// The primary command run when the tile is tapped.
     this.command,
 
+    /// The command to run when the tile is double-tapped.
+    this.doubleTapCommand,
+
     /// Secondary commands visible on the left.
     this.leadingCommand,
 
@@ -48,6 +51,7 @@ class ListTile extends StatefulWidget {
   final bool selected;
   final Widget? details;
   final Command? command;
+  final Command? doubleTapCommand;
   final Command? leadingCommand;
   final List<Command> trailingCommands;
   final List<Command> hiddenCommands;
@@ -63,24 +67,6 @@ class _ListTileState extends State<ListTile> {
   bool _focused = false;
   final _focusNode = FocusNode();
   Offset? lastMousePosition;
-
-  Map<ShortcutActivator, Intent> get _shortcuts => {
-    const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
-    const SingleActivator(LogicalKeyboardKey.space): const ActivateIntent(),
-  };
-
-  Map<Type, Action<Intent>> get _actions => {
-    ActivateIntent: CallbackAction<ActivateIntent>(
-      onInvoke: (ActivateIntent intent) {
-        if (widget.command != null) {
-          widget.command!.run(context);
-        } else if (widget.trailingCommands.isNotEmpty) {
-          widget.trailingCommands.first.run(context);
-        }
-        return null;
-      },
-    ),
-  };
 
   @override
   void dispose() {
@@ -98,6 +84,20 @@ class _ListTileState extends State<ListTile> {
                   widget.command!.run(context);
                 } catch (e, t) {
                   log.warning("Command ${widget.command?.title} failed", e, t);
+                }
+              }
+              : null,
+      onDoubleTap:
+          widget.doubleTapCommand != null
+              ? () {
+                try {
+                  widget.doubleTapCommand!.run(context);
+                } catch (e, t) {
+                  log.warning(
+                    "Command ${widget.doubleTapCommand?.title} failed",
+                    e,
+                    t,
+                  );
                 }
               }
               : null,
