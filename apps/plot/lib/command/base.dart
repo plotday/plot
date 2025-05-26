@@ -110,15 +110,15 @@ class ShowCommand<T> extends Command {
     super.description,
     super.icon,
     super.shortcut,
-    required this.dialog,
+    required this.builder,
   });
 
-  final Dialog dialog;
+  final Dialog Function(BuildContext context) builder;
 
   @override
   Future<CommandValue<T>?> run(BuildContext context) async {
     try {
-      final value = await dialog.show<T>(context);
+      final value = await builder(context).show<T>(context);
       log.info(
         'CommandBar returned ${value.present ? value.value : 'no value'}',
       );
@@ -213,18 +213,16 @@ abstract class CommandGroup {
         )
         .toList()
       ..sort((a, b) {
-        int aScore =
-            match(a.title)
-                ? 3
-                : match(a.subtitle)
-                ? 2
-                : 1;
-        int bScore =
-            match(b.title)
-                ? 3
-                : match(b.subtitle)
-                ? 2
-                : 1;
+        int aScore = match(a.title)
+            ? 3
+            : match(a.subtitle)
+            ? 2
+            : 1;
+        int bScore = match(b.title)
+            ? 3
+            : match(b.subtitle)
+            ? 2
+            : 1;
         return bScore.compareTo(aScore);
       });
   }
@@ -311,26 +309,25 @@ class CommandScopeState extends State<CommandScope> {
     return CallbackShortcuts(
       bindings: widget.commands.expand((group) => group.commands).fold(
         <ShortcutActivator, VoidCallback>{
-          const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
-              () => Commands<void>(
+          const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
+              Commands<void>(
                 prompt: 'Run a command',
                 groups: CommandRegistry.of(context).commands,
               ).show(context),
         },
-        (bindings, command) =>
-            command.shortcut == null
-                ? bindings
-                : {
-                  ...bindings,
-                  command.shortcut!: () {
-                    try {
-                      context.run<void>(command);
-                    } catch (e) {
-                      print('Error running command: $e');
-                      rethrow;
-                    }
-                  },
+        (bindings, command) => command.shortcut == null
+            ? bindings
+            : {
+                ...bindings,
+                command.shortcut!: () {
+                  try {
+                    context.run<void>(command);
+                  } catch (e) {
+                    print('Error running command: $e');
+                    rethrow;
+                  }
                 },
+              },
       ),
       child: widget.child,
     );

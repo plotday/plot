@@ -230,7 +230,16 @@ class PickSchedulePriority extends ShowCommand<Date> {
     : super(
         title: 'Schedule',
         icon: PlotIcon.scheduled,
-        dialog: Dialog(body: FCalendar(controller: FCalendarController.date())),
+        builder:
+            (context) => Dialog(
+              body: FCalendar(
+                controller: FCalendarController.date(),
+                onPress:
+                    (date) => DialogProvider.of(
+                      context,
+                    ).pop(context, Value(date.toDate())),
+              ),
+            ),
       );
 
   final Priority priority;
