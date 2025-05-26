@@ -138,6 +138,9 @@ class PriorityWidget extends StatelessWidget {
       trailingCommands: priorityCommands(priority),
       body: Viewer(
         markdown: (expanded ? priority.note : null) ?? priority.title,
+        onTap: () {
+          context.run<void>(ChangeCurrentPriority(priority));
+        },
       ),
       header:
           contextChild

@@ -203,28 +203,24 @@ class EditorState extends State<Editor> {
 }
 
 class Viewer extends StatefulWidget {
-  const Viewer({required this.markdown, super.key});
+  const Viewer({required this.markdown, this.onTap, super.key});
 
   final String markdown;
+  final void Function()? onTap;
 
   @override
   ViewerState createState() => ViewerState();
 }
 
 class ViewerState extends State<Viewer> {
-  late Document document; // no need for `late final` if we're updating it
+  late final Document document;
+
   late final ValueNotifier<DocumentSelection?> _selection;
   final _selectionLayerLinks = SelectionLayerLinks();
 
   @override
   void initState() {
     super.initState();
-    // Initialize the Document and ValueNotifier
-    _initializeDocumentAndSelection();
-  }
-
-  // Utility method for initialization that's reusable
-  void _initializeDocumentAndSelection() {
     document = deserializeMarkdownToDocument(widget.markdown);
     _selection = ValueNotifier<DocumentSelection?>(null);
   }
@@ -257,6 +253,9 @@ class ViewerState extends State<Viewer> {
         stylesheet: isDark ? _darkStyles : _styles,
         selection: _selection,
         selectionLayerLinks: _selectionLayerLinks,
+        contentTapDelegateFactory:
+            (context) =>
+                ViewerTapHandler(context.document, onTap: widget.onTap),
       ),
     );
   }
@@ -310,4 +309,26 @@ class HintComponentBuilder implements ComponentBuilder {
 
 class SubmitIntent extends Intent {
   const SubmitIntent();
+}
+
+class ViewerTapHandler extends SuperReaderLaunchLinkTapHandler {
+  ViewerTapHandler(super.document, {void Function()? onTap}) : _handler = onTap;
+
+  final void Function()? _handler;
+
+  @override
+  MouseCursor? mouseCursorForContentHover(DocumentPosition hoverPosition) {
+    return super.mouseCursorForContentHover(hoverPosition) ??
+        (_handler != null ? SystemMouseCursors.basic : null);
+  }
+
+  @override
+  TapHandlingInstruction onTap(DocumentTapDetails details) {
+    super.onTap(details);
+    if (_handler != null) {
+      _handler();
+      return TapHandlingInstruction.halt;
+    }
+    return TapHandlingInstruction.continueHandling;
+  }
 }
