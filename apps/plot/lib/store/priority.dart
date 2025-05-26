@@ -8,20 +8,17 @@ class Priorities extends Table
   TextColumn get title => text().nullable()();
   TextColumn get path => text().map(const PathConverter())();
   BlobColumn get createdBy => blob().map(const UuidConverter())();
-  RealColumn get order =>
-      real()
-          .clientDefault(() => Order.first().value)
-          .map(const OrderConverter())();
-  IntColumn get pomodoro =>
-      integer()
-          .nullable()
-          .withDefault(const Constant(25 * 60))
-          .map(const DurationConverter())();
-  IntColumn get color =>
-      integer()
-          .nullable()
-          .withDefault(const Constant(0))
-          .map(const ThemeColorConverter())();
+  RealColumn get order => real()
+      .clientDefault(() => Order.first().value)
+      .map(const OrderConverter())();
+  IntColumn get pomodoro => integer()
+      .nullable()
+      .withDefault(const Constant(25 * 60))
+      .map(const DurationConverter())();
+  IntColumn get color => integer()
+      .nullable()
+      .withDefault(const Constant(0))
+      .map(const ThemeColorConverter())();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
@@ -55,12 +52,12 @@ enum PriorityOrder { sorted, nested, recent }
 
 class PriorityAncestor {
   static List<PriorityAncestor> fromStore(PriorityAncestryData row) {
-    final ids =
-        (jsonDecode(row.ancestors!) as List)
-            .map((e) => Uuid.fromString(e as String))
-            .toList();
-    final titles =
-        (jsonDecode(row.titles!) as List).map((e) => e as String).toList();
+    final ids = (jsonDecode(row.ancestors!) as List)
+        .map((e) => Uuid.fromString(e as String))
+        .toList();
+    final titles = (jsonDecode(row.titles!) as List)
+        .map((e) => e as String)
+        .toList();
     return List.generate(
       ids.length,
       (index) => PriorityAncestor(id: ids[index], title: titles[index]),
@@ -238,13 +235,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         id == null && path == null
             ? base.id.equalsExp(p.id)
             : p.path.likeExp(base.path + Constant('%')) &
-                ((ancestors
-                        ? base.path.likeExp(p.path + Constant('%'))
-                        : Constant(true)) |
-                    (p.path.likeExp(base.path + Constant('%')))) &
-                (depth == null
-                    ? Constant(true)
-                    : CustomExpression<int>("""
+                  ((ancestors
+                          ? base.path.likeExp(p.path + Constant('%'))
+                          : Constant(true)) |
+                      (p.path.likeExp(base.path + Constant('%')))) &
+                  (depth == null
+                      ? Constant(true)
+                      : CustomExpression<int>("""
   LENGTH(p.path) - LENGTH(REPLACE(p.path, '.', '')) -
   (CASE WHEN base.path IS NULL THEN 0 ELSE LENGTH(base.path) - LENGTH(REPLACE(base.path, '.', '')) END)
   """).isSmallerOrEqualValue(depth)),
@@ -423,11 +420,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.private = false,
     super.pinned = false,
   }) : children = [],
-       _ancestors =
-           parent == null
-               ? const []
-               : parent._ancestors +
-                   [PriorityAncestor(id: parent.id, title: parent.title)],
+       _ancestors = parent == null
+           ? const []
+           : parent._ancestors +
+                 [PriorityAncestor(id: parent.id, title: parent.title)],
        super(
          id: Uuid.generate(),
          createdBy: Base.userId,
@@ -447,13 +443,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     this.balance,
     PriorityAncestryData? ancestry,
   }) : children = children ?? [],
-       _ancestors =
-           ancestry == null
-               ? parent == null
-                   ? const []
-                   : parent._ancestors +
+       _ancestors = ancestry == null
+           ? parent == null
+                 ? const []
+                 : parent._ancestors +
                        [PriorityAncestor(id: parent.id, title: parent.title)]
-               : PriorityAncestor.fromStore(ancestry),
+           : PriorityAncestor.fromStore(ancestry),
        super(
          id: row.id,
          createdAt: row.createdAt,
@@ -545,12 +540,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   Priority merge(Priority other) {
     return copyWith(
-      title:
-          !hasTitle
-              ? other.hasTitle
-                  ? Value(other.title)
-                  : Value.absent()
-              : Value(title),
+      title: !hasTitle
+          ? other.hasTitle
+                ? Value(other.title)
+                : Value.absent()
+          : Value(title),
       doAt: Value(doAt ?? other.doAt),
       doneAt: Value(doneAt ?? other.doneAt),
       pinned: pinned || other.pinned,
@@ -653,8 +647,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return !done && _doAt?.isSameOrBefore(DateTime.now()) == true;
   }
 
-  bool get scheduled {
+  bool get doLater {
     return _doAt?.isAfter(DateTime.now()) == true;
+  }
+
+  bool get scheduled {
+    return _doAt != null;
   }
 
   bool get done => doneAt != null;
