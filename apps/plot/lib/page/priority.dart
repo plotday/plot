@@ -233,13 +233,14 @@ class PriorityPage extends StatelessWidget {
                                                 .fontSize,
                                       ),
                                     ),
-                                  PriorityWidget(
-                                    priority: state.priorities[index],
-                                    context: state.context,
-                                    selected: selected,
-                                    onHover:
-                                        () => listController.selected = index,
-                                  ),
+                                  if (!(scheduled && current.doNow))
+                                    PriorityWidget(
+                                      priority: current,
+                                      context: state.context,
+                                      selected: selected,
+                                      onHover:
+                                          () => listController.selected = index,
+                                    ),
                                 ],
                               );
                             },
