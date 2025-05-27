@@ -19,4 +19,5 @@ class PlotIcon {
   static const IconData priorities = FontAwesomeIcons.house;
   static const IconData delete = FontAwesomeIcons.trash;
   static const IconData open = FontAwesomeIcons.arrowRight;
+  static const IconData menu = FontAwesomeIcons.ellipsisVertical;
 }

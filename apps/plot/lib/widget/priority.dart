@@ -138,7 +138,8 @@ class PriorityWidget extends StatelessWidget {
         isContext || (!priority.doNow && !priority.done && !priority.pinned);
     return ListTile(
       command: !isContext ? ChangeCurrentPriority(priority) : null,
-      trailingCommands: priorityCommands(priority),
+      leadingCommand: priorityPrimaryCommand(priority),
+      trailingCommands: [ShowPriorityCommands(priority)],
       body: Viewer(
         markdown: (expanded ? priority.note : null) ?? priority.title,
         onTap: () {

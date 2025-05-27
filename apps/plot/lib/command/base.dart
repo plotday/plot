@@ -246,11 +246,8 @@ class StaticCommandGroup extends CommandGroup {
 }
 
 class Commands<T> {
-  const Commands({
-    required this.prompt,
-    required this.groups,
-    this.secondaryCommand,
-  });
+  const Commands({String? prompt, required this.groups, this.secondaryCommand})
+    : prompt = prompt ?? 'Run a command';
 
   final String prompt;
   final List<CommandGroup> groups;

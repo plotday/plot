@@ -24,9 +24,6 @@ class ListTile extends StatefulWidget {
     /// Secondary commands visible on the right.
     this.trailingCommands = const [],
 
-    /// Commands revealed on hover or long press.
-    this.hiddenCommands = const [],
-
     /// Extra details shown below the title.
     this.details,
 
@@ -52,7 +49,6 @@ class ListTile extends StatefulWidget {
   final Command? doubleTapCommand;
   final Command? leadingCommand;
   final List<Command> trailingCommands;
-  final List<Command> hiddenCommands;
   final String title;
   final Widget? body;
   final Widget? header;
@@ -114,10 +110,9 @@ class _ListTileState extends State<ListTile> {
           // },
           child: Container(
             color: widget.selected ? context.colour.highlight : null,
-            padding: EdgeInsets.symmetric(
-              horizontal: widgetPadding.horizontal / 2,
-            ),
+            padding: EdgeInsets.symmetric(horizontal: 4),
             child: Row(
+              spacing: 4,
               children: [
                 if (widget.leadingCommand != null)
                   Button.icon(widget.leadingCommand!),

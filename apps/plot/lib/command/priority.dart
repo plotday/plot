@@ -277,22 +277,51 @@ class PinPriority extends _UpdatePriorityCommand {
   }
 }
 
-List<Command> priorityCommands(Priority priority) => [
-  CommandWrapper(
-    switch (priority) {
-      _ when priority.pinned => PinPriority(priority),
-      _ when priority.doNow => FinishPriority(priority),
-      _ when priority.done => MarkPriorityIncomplete(priority),
-      _ => StartPriority(priority),
-    },
-    statusIcon: Value(switch (priority) {
-      _ when priority.pinned => PlotIcon.pinned,
-      _ when priority.scheduled => PlotIcon.done,
-      _ when priority.done => PlotIcon.done,
-      _ => PlotIcon.doNow,
-    }),
-  ),
+class PriorityCommands extends Commands<void> {
+  final Priority priority;
+
+  PriorityCommands(this.priority)
+    : super(
+        groups: [
+          StaticCommandGroup(
+            title: priority.title,
+            commands: priorityCommands(priority),
+          ),
+        ],
+      );
+}
+
+class ShowPriorityCommands extends ShowCommands<void> {
+  ShowPriorityCommands(Priority priority)
+    : super(
+        title: 'More Commands',
+        icon: PlotIcon.menu,
+        commands: (context) => PriorityCommands(priority),
+      );
+}
+
+Command priorityPrimaryCommand(Priority priority) => CommandWrapper(
+  switch (priority) {
+    _ when priority.pinned => PinPriority(priority),
+    _ when priority.scheduled => FinishPriority(priority),
+    _ when priority.done => MarkPriorityIncomplete(priority),
+    _ => StartPriority(priority),
+  },
+  statusIcon: Value(switch (priority) {
+    _ when priority.pinned => PlotIcon.pinned,
+    _ when priority.scheduled => PlotIcon.todo,
+    _ when priority.done => PlotIcon.done,
+    _ => PlotIcon.doNow,
+  }),
+);
+
+List<Command> prioritySecondaryCommands(Priority priority) => [
   PickSchedulePriority(priority),
   PinPriority(priority),
   if (!priority.root) ArchivePriority(Future.value(priority)),
+];
+
+List<Command> priorityCommands(Priority priority) => [
+  priorityPrimaryCommand(priority),
+  ...prioritySecondaryCommands(priority),
 ];
