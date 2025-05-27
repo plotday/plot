@@ -128,7 +128,7 @@ class PriorityWidget extends StatelessWidget {
 
   final bool selected;
 
-  final void Function()? onHover;
+  final void Function(bool hovered)? onHover;
 
   @override
   Widget build(BuildContext context) {
@@ -146,14 +146,13 @@ class PriorityWidget extends StatelessWidget {
           context.run<void>(ChangeCurrentPriority(priority));
         },
       ),
-      header:
-          contextChild
-              ? null
-              : PriorityLabel(
-                priority: priority,
-                context: this.context,
-                onlyAncestors: true,
-              ),
+      header: contextChild
+          ? null
+          : PriorityLabel(
+              priority: priority,
+              context: this.context,
+              onlyAncestors: true,
+            ),
       selected: selected,
       onHover: onHover,
     );

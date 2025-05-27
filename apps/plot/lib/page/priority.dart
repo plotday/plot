@@ -104,18 +104,13 @@ class _SelectionCommandScopeState extends State<_SelectionCommandScope> {
   Widget build(BuildContext context) {
     return CommandScope(
       commands: [
-        StaticCommandGroup(
-          title: 'Commands',
-          commands: [PickCurrentPriority(), ShowSettings()],
-        ),
         if (widget.listController.selected != null &&
             widget.listController.selected! < widget.state.priorities.length)
           StaticCommandGroup(
             title:
                 widget.state.priorities[widget.listController.selected!].title,
-            subtitle:
-                widget.state.priorities[widget.listController.selected!]
-                    .ancestorsLabel(),
+            subtitle: widget.state.priorities[widget.listController.selected!]
+                .ancestorsLabel(),
             commands: [
               if (widget.state.priorities[widget.listController.selected!] !=
                   widget.state.context)
@@ -153,125 +148,112 @@ class PriorityPage extends StatelessWidget {
             onActivate: (index) {
               context.run<void>(ChangeCurrentPriority(state.priorities[index]));
             },
-            builder:
-                (context, listController) => _SelectionCommandScope(
-                  state: state,
-                  listController: listController,
-                  child: Scaffold(
-                    translucent: true,
-                    header: Header(
-                      main: PrioritySelector(
-                        selected: state.context,
-                        onSelect:
-                            (p) => context.run<void>(ChangeCurrentPriority(p)),
+            builder: (context, listController) => _SelectionCommandScope(
+              state: state,
+              listController: listController,
+              child: Scaffold(
+                translucent: true,
+                header: Header(
+                  main: PrioritySelector(
+                    selected: state.context,
+                    onSelect: (p) =>
+                        context.run<void>(ChangeCurrentPriority(p)),
+                  ),
+                  commands: priorityCommands(state.context),
+                ),
+                body: Column(
+                  children: [
+                    Flexible(
+                      flex: 0,
+                      fit: FlexFit.loose,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              width: 1.0,
+                              color: context.colour.border,
+                            ),
+                          ),
+                        ),
+                        child: _PinnedSection(),
                       ),
-                      commands: priorityCommands(state.context),
                     ),
-                    body: Column(
-                      children: [
-                        Flexible(
-                          flex: 0,
-                          fit: FlexFit.loose,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  width: 1.0,
-                                  color: context.colour.border,
+                    Flexible(
+                      flex: 1,
+                      fit: FlexFit.tight,
+                      child: BidirectionalList(
+                        controller: listController,
+                        scrollController: ScrollControllerContext.of(context),
+                        count: state.priorities.length,
+                        reverse: true,
+                        builder: (context, index, selected) {
+                          final next = index < state.priorities.length - 1
+                              ? state.priorities[index + 1]
+                              : null;
+                          final current = state.priorities[index];
+                          final scheduled = index < state.scheduled.length;
+                          final date =
+                              (scheduled ? current.doAt! : current.createdAt)
+                                  .toDate();
+                          final nextDate =
+                              (index + 1 < state.scheduled.length
+                                      ? next?.doAt
+                                      : next?.createdAt)
+                                  ?.toDate();
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            key: ValueKey(state.priorities[index].id),
+                            children: [
+                              if (nextDate != date)
+                                Text(
+                                  date.format(),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: context.theme.colors.mutedForeground,
+                                    fontSize:
+                                        context.theme.typography.xs.fontSize,
+                                  ),
                                 ),
-                              ),
-                            ),
-                            child: _PinnedSection(),
-                          ),
-                        ),
-                        Flexible(
-                          flex: 1,
-                          fit: FlexFit.tight,
-                          child: BidirectionalList(
-                            controller: listController,
-                            scrollController: ScrollControllerContext.of(
-                              context,
-                            ),
-                            count: state.priorities.length,
-                            reverse: true,
-                            builder: (context, index, selected) {
-                              final next =
-                                  index < state.priorities.length - 1
-                                      ? state.priorities[index + 1]
-                                      : null;
-                              final current = state.priorities[index];
-                              final scheduled = index < state.scheduled.length;
-                              final date =
-                                  (scheduled
-                                          ? current.doAt!
-                                          : current.createdAt)
-                                      .toDate();
-                              final nextDate =
-                                  (index + 1 < state.scheduled.length
-                                          ? next?.doAt
-                                          : next?.createdAt)
-                                      ?.toDate();
-                              return Column(
-                                mainAxisSize: MainAxisSize.min,
-                                key: ValueKey(state.priorities[index].id),
-                                children: [
-                                  if (nextDate != date)
-                                    Text(
-                                      date.format(),
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color:
-                                            context
-                                                .theme
-                                                .colors
-                                                .mutedForeground,
-                                        fontSize:
-                                            context
-                                                .theme
-                                                .typography
-                                                .xs
-                                                .fontSize,
-                                      ),
-                                    ),
-                                  if (!(scheduled && current.doNow))
-                                    PriorityWidget(
-                                      priority: current,
-                                      context: state.context,
-                                      selected: selected,
-                                      onHover:
-                                          () => listController.selected = index,
-                                    ),
-                                ],
-                              );
-                            },
-                            onReorder:
-                                (oldIndex, newIndex) => onReorder(
-                                  state.priorities,
-                                  oldIndex,
-                                  newIndex,
+                              if (!(scheduled && current.doNow))
+                                PriorityWidget(
+                                  priority: current,
+                                  context: state.context,
+                                  selected: selected,
+                                  onHover: (hovered) {
+                                    if (hovered) {
+                                      listController.selected = index;
+                                    } else if (listController.selected ==
+                                        index) {
+                                      listController.selected = null;
+                                    }
+                                  },
                                 ),
-                          ),
-                        ),
-                      ],
+                            ],
+                          );
+                        },
+                        onReorder: (oldIndex, newIndex) =>
+                            onReorder(state.priorities, oldIndex, newIndex),
+                      ),
                     ),
-                    footer: EditableArea(
-                      position: EditableAreaPosition.bottom,
-                      builder:
-                          (context, focusNode) => Editor(
-                            hint: 'Add a priority',
-                            autofocus: true,
-                            focusNode: focusNode,
-                            onSubmitted: (body) async {
-                              final priority = state.draft.copyWith(
-                                note: Value(body),
-                                draft: false,
-                              );
-                              await context.read<PriorityBloc>().add(priority);
-                            },
-                          ),
-                    ),
+                  ],
+                ),
+                footer: EditableArea(
+                  position: EditableAreaPosition.bottom,
+                  builder: (context, focusNode) => Editor(
+                    hint: 'Add a priority',
+                    autofocus: true,
+                    focusNode: focusNode,
+                    onSubmitted: (body) async {
+                      final priority = state.draft.copyWith(
+                        note: Value(body),
+                        draft: false,
+                      );
+                      await context.read<PriorityBloc>().add(priority);
+                    },
                   ),
                 ),
+              ),
+            ),
           ),
         );
       },
@@ -304,10 +286,9 @@ class PriorityPage extends StatelessWidget {
           ),
           // Action priorities are sorted first by doAt, so we need to set this
           // to have the same doAt as one of its neighbours.
-          doAt:
-              priority.doNow
-                  ? Value(previous?.doAt ?? next?.doAt ?? priority.doAt)
-                  : const Value.absent(),
+          doAt: priority.doNow
+              ? Value(previous?.doAt ?? next?.doAt ?? priority.doAt)
+              : const Value.absent(),
         )
         .save();
   }
@@ -331,9 +312,8 @@ class _PinnedSection extends StatelessWidget {
             children: [
               ReorderableListView(
                 list: state.pinned,
-                itemBuilder:
-                    (buildContext, item) =>
-                        PriorityWidget(priority: item, context: state.context),
+                itemBuilder: (buildContext, item) =>
+                    PriorityWidget(priority: item, context: state.context),
                 shrinkWrap: true,
                 onReorder: (int oldIndex, int newIndex) async {
                   var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
@@ -357,12 +337,11 @@ class _PinnedSection extends StatelessWidget {
                         ),
                         // Action state.pinned are sorted first by doAt, so we need to set this
                         // to have the same doAt as one of its neighbours.
-                        doAt:
-                            priority.doNow
-                                ? Value(
-                                  previous?.doAt ?? next?.doAt ?? priority.doAt,
-                                )
-                                : const Value.absent(),
+                        doAt: priority.doNow
+                            ? Value(
+                                previous?.doAt ?? next?.doAt ?? priority.doAt,
+                              )
+                            : const Value.absent(),
                       )
                       .save();
                 },

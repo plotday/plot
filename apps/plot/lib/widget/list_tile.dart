@@ -52,7 +52,7 @@ class ListTile extends StatefulWidget {
   final String title;
   final Widget? body;
   final Widget? header;
-  final void Function()? onHover;
+  final void Function(bool hovered)? onHover;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -71,43 +71,39 @@ class _ListTileState extends State<ListTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap:
-          widget.command != null
-              ? () {
-                try {
-                  widget.command!.run(context);
-                } catch (e, t) {
-                  log.warning("Command ${widget.command?.title} failed", e, t);
-                }
+      onTap: widget.command != null
+          ? () {
+              try {
+                widget.command!.run(context);
+              } catch (e, t) {
+                log.warning("Command ${widget.command?.title} failed", e, t);
               }
-              : null,
-      onDoubleTap:
-          widget.doubleTapCommand != null
-              ? () {
-                try {
-                  widget.doubleTapCommand!.run(context);
-                } catch (e, t) {
-                  log.warning(
-                    "Command ${widget.doubleTapCommand?.title} failed",
-                    e,
-                    t,
-                  );
-                }
+            }
+          : null,
+      onDoubleTap: widget.doubleTapCommand != null
+          ? () {
+              try {
+                widget.doubleTapCommand!.run(context);
+              } catch (e, t) {
+                log.warning(
+                  "Command ${widget.doubleTapCommand?.title} failed",
+                  e,
+                  t,
+                );
               }
-              : null,
+            }
+          : null,
       child: MouseRegion(
         onHover: (PointerHoverEvent event) {
           if (event.position != lastMousePosition) {
-            widget.onHover?.call();
+            widget.onHover?.call(true);
             lastMousePosition = event.position;
           }
         },
         child: FocusableActionDetector(
           focusNode: _focusNode,
-          // onShowFocusHighlight: (focused) => setState(() => _focused = focused),
-          // onShowHoverHighlight: (hovered) {
-          //   if (!hovered) setState(() => _focused = false);
-          // },
+          onShowFocusHighlight: (focused) => widget.onHover?.call(focused),
+          onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
           child: Container(
             color: widget.selected ? context.colour.highlight : null,
             padding: EdgeInsets.symmetric(horizontal: 4),
@@ -148,8 +144,8 @@ class _ListTileState extends State<ListTile> {
                                     style: context.theme.typography.xs.copyWith(
                                       color:
                                           widget.style == ListTileStyle.header
-                                              ? context.colour.muted
-                                              : context.colour.foreground,
+                                          ? context.colour.muted
+                                          : context.colour.foreground,
                                     ),
                                   ),
                                 ),
