@@ -71,28 +71,30 @@ class _ListTileState extends State<ListTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.command != null
-          ? () {
-              try {
-                widget.command!.run(context);
-              } catch (e, t) {
-                log.warning("Command ${widget.command?.title} failed", e, t);
+      onTap:
+          widget.command != null
+              ? () {
+                try {
+                  widget.command!.run(context);
+                } catch (e, t) {
+                  log.warning("Command ${widget.command?.title} failed", e, t);
+                }
               }
-            }
-          : null,
-      onDoubleTap: widget.doubleTapCommand != null
-          ? () {
-              try {
-                widget.doubleTapCommand!.run(context);
-              } catch (e, t) {
-                log.warning(
-                  "Command ${widget.doubleTapCommand?.title} failed",
-                  e,
-                  t,
-                );
+              : null,
+      onDoubleTap:
+          widget.doubleTapCommand != null
+              ? () {
+                try {
+                  widget.doubleTapCommand!.run(context);
+                } catch (e, t) {
+                  log.warning(
+                    "Command ${widget.doubleTapCommand?.title} failed",
+                    e,
+                    t,
+                  );
+                }
               }
-            }
-          : null,
+              : null,
       child: MouseRegion(
         onHover: (PointerHoverEvent event) {
           if (event.position != lastMousePosition) {
@@ -106,9 +108,9 @@ class _ListTileState extends State<ListTile> {
           onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
           child: Container(
             color: widget.selected ? context.colour.highlight : null,
-            padding: EdgeInsets.symmetric(horizontal: 4),
+            padding: EdgeInsets.symmetric(horizontal: 8),
             child: Row(
-              spacing: 4,
+              spacing: 8,
               children: [
                 if (widget.leadingCommand != null)
                   Button.icon(widget.leadingCommand!),
@@ -116,13 +118,10 @@ class _ListTileState extends State<ListTile> {
                     widget.body == null &&
                     (widget.command?.statusIcon.or(widget.command?.icon)) !=
                         null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: Icon(
-                      (widget.command!.statusIcon.or(widget.command!.icon))!,
-                      size: 12,
-                      color: context.colour.muted,
-                    ),
+                  Icon(
+                    widget.command!.statusIcon.or(widget.command!.icon)!,
+                    size: 12,
+                    color: context.colour.muted,
                   ),
                 Expanded(
                   child: Padding(
@@ -144,8 +143,8 @@ class _ListTileState extends State<ListTile> {
                                     style: context.theme.typography.xs.copyWith(
                                       color:
                                           widget.style == ListTileStyle.header
-                                          ? context.colour.muted
-                                          : context.colour.foreground,
+                                              ? context.colour.muted
+                                              : context.colour.foreground,
                                     ),
                                   ),
                                 ),

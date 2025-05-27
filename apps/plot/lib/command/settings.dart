@@ -2,11 +2,12 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
-import 'package:plot/base.dart';
 
-import 'command.dart';
+import 'package:plot/base.dart';
 import 'package:plot/page/calendar_settings.dart';
+import 'package:plot/widget/icon.dart';
 import 'package:plot/store/store.dart';
+import 'command.dart';
 
 class SettingsCommands extends Commands<void> {
   SettingsCommands()
@@ -25,6 +26,7 @@ class ShowSettings extends ShowCommands<void> {
   ShowSettings()
     : super(
         title: 'Settings',
+        icon: PlotIcon.settings,
         commands: (context) => SettingsCommands(),
         shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
       );
