@@ -151,7 +151,6 @@ class PriorityPage extends StatelessWidget {
           child: BidirectionalListSelector(
             reverse: true,
             onActivate: (index) {
-              log.info("Activate $index: ${state.priorities[index].title}");
               context.run<void>(ChangeCurrentPriority(state.priorities[index]));
             },
             builder:
@@ -238,6 +237,8 @@ class PriorityPage extends StatelessWidget {
                                     priority: state.priorities[index],
                                     context: state.context,
                                     selected: selected,
+                                    onHover:
+                                        () => listController.selected = index,
                                   ),
                                 ],
                               );

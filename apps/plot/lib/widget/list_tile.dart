@@ -30,11 +30,10 @@ class ListTile extends StatefulWidget {
     /// Extra details shown below the title.
     this.details,
 
-    /// Highlight the tile (often when unread).
-    this.highlighted = false,
     this.style = ListTileStyle.item,
 
     this.selected = false,
+    this.onHover,
 
     /// Override the command title
     String? title,
@@ -47,7 +46,6 @@ class ListTile extends StatefulWidget {
   }) : title = title ?? command?.title ?? '';
 
   final ListTileStyle style;
-  final bool highlighted;
   final bool selected;
   final Widget? details;
   final Command? command;
@@ -58,13 +56,13 @@ class ListTile extends StatefulWidget {
   final String title;
   final Widget? body;
   final Widget? header;
+  final void Function()? onHover;
 
   @override
   State<ListTile> createState() => _ListTileState();
 }
 
 class _ListTileState extends State<ListTile> {
-  bool _focused = false;
   final _focusNode = FocusNode();
   Offset? lastMousePosition;
 
@@ -103,22 +101,19 @@ class _ListTileState extends State<ListTile> {
               : null,
       child: MouseRegion(
         onHover: (PointerHoverEvent event) {
-          setState(() {
-            if (event.position != lastMousePosition) {
-              setState(() => _focused = true);
-              lastMousePosition = event.position;
-            }
-          });
+          if (event.position != lastMousePosition) {
+            widget.onHover?.call();
+            lastMousePosition = event.position;
+          }
         },
         child: FocusableActionDetector(
           focusNode: _focusNode,
-          onShowFocusHighlight: (focused) => setState(() => _focused = focused),
-          onShowHoverHighlight: (hovered) {
-            if (!hovered) setState(() => _focused = false);
-          },
+          // onShowFocusHighlight: (focused) => setState(() => _focused = focused),
+          // onShowHoverHighlight: (hovered) {
+          //   if (!hovered) setState(() => _focused = false);
+          // },
           child: Container(
-            color:
-                widget.selected || _focused ? context.colour.highlight : null,
+            color: widget.selected ? context.colour.highlight : null,
             padding: EdgeInsets.symmetric(
               horizontal: widgetPadding.horizontal / 2,
             ),

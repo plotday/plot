@@ -116,6 +116,7 @@ class PriorityWidget extends StatelessWidget {
     required this.priority,
     this.context,
     this.selected = false,
+    this.onHover,
     super.key,
   });
 
@@ -126,6 +127,8 @@ class PriorityWidget extends StatelessWidget {
   final Priority? context;
 
   final bool selected;
+
+  final void Function()? onHover;
 
   @override
   Widget build(BuildContext context) {
@@ -151,6 +154,7 @@ class PriorityWidget extends StatelessWidget {
                 onlyAncestors: true,
               ),
       selected: selected,
+      onHover: onHover,
     );
   }
 }
