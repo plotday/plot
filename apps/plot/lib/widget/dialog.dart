@@ -41,36 +41,34 @@ class Dialog extends StatelessWidget {
     );
 
     return PlatformBuilder(
-      builder:
-          (_) => FDialog.raw(
-            style: context.theme.dialogStyle.copyWith(
-              decoration: BoxDecoration(
-                color: context.colour.modalBackground,
-                border: Border.all(color: context.colour.border),
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            builder:
-                (context, style) => Padding(
-                  padding: EdgeInsets.all(1),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (header != null) header!,
-                        Container(
-                          padding: padding,
-                          child: ConstrainedBox(
-                            constraints: constraints,
-                            child: builder(context),
-                          ),
-                        ),
-                      ],
-                    ),
+      builder: (_) => FDialog.raw(
+        style: context.theme.dialogStyle.copyWith(
+          decoration: BoxDecoration(
+            color: context.colour.modalBackground,
+            border: Border.all(color: context.colour.border),
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        builder: (context, style) => Padding(
+          padding: EdgeInsets.all(1),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (header != null) header!,
+                Container(
+                  padding: padding,
+                  child: ConstrainedBox(
+                    constraints: constraints,
+                    child: builder(context),
                   ),
                 ),
+              ],
+            ),
           ),
+        ),
+      ),
     );
   }
 }
@@ -82,25 +80,23 @@ class DialogProvider extends InheritedWidget {
 
   Future<Value<T>> push<T>(BuildContext context, Widget dialog) async {
     final child = NoTransitionRoute<Value<T>>(
-      builder:
-          (context) => _InnerDialogProvider(
-            this,
-            child: CallbackShortcuts(
-              bindings: {
-                const SingleActivator(LogicalKeyboardKey.escape): () {
-                  pop(context, Value<T>.absent());
-                },
-              },
-              child: dialog,
-            ),
-          ),
+      builder: (context) => _InnerDialogProvider(
+        this,
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): () {
+              pop(context, Value<T>.absent());
+            },
+          },
+          child: dialog,
+        ),
+      ),
     );
 
     if (_navigatorKey.currentState == null) {
       final result = await material.showDialog<Value<T>>(
         context: context,
-        barrierDismissible: false,
-        // requestFocus: true,
+        requestFocus: true,
         builder: (context) {
           return Navigator(key: _navigatorKey, onGenerateRoute: (_) => child);
         },
