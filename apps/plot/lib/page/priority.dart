@@ -197,6 +197,8 @@ class PriorityPage extends StatelessWidget {
                                       : null;
                               final current = state.priorities[index];
                               final scheduled = index < state.scheduled.length;
+                              final firstScheduled =
+                                  index == state.scheduled.length - 1;
                               final date =
                                   (scheduled
                                           ? current.doAt!
@@ -218,6 +220,24 @@ class PriorityPage extends StatelessWidget {
                                   if (nextDate != date)
                                     Text(
                                       date.format(),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color:
+                                            context
+                                                .theme
+                                                .colors
+                                                .mutedForeground,
+                                        fontSize:
+                                            context
+                                                .theme
+                                                .typography
+                                                .xs
+                                                .fontSize,
+                                      ),
+                                    ),
+                                  if (firstScheduled)
+                                    Text(
+                                      'NOW',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         color:
