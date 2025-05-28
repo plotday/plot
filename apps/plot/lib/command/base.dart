@@ -336,11 +336,18 @@ class CommandScopeState extends State<CommandScope> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _register();
+    });
   }
 
   @override
   void didUpdateWidget(covariant CommandScope oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _register();
+  }
+
+  void _register() {
     if (register == null) {
       CommandRegistry registry = CommandRegistry.of(context);
       register = registry.register();

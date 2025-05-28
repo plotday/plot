@@ -5,9 +5,15 @@ import 'package:plot/router.dart';
 import 'command.dart';
 
 class GlobalShortcuts extends StatelessWidget {
-  const GlobalShortcuts({required this.child, super.key});
+  GlobalShortcuts({required this.child, super.key});
 
   final Widget child;
+  final List<StaticCommandGroup> commands = [
+    StaticCommandGroup(
+      title: 'Commands',
+      commands: [PickCurrentPriority(), ShowSettings()],
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -17,15 +23,7 @@ class GlobalShortcuts extends StatelessWidget {
           context.focusedRouter.maybePop();
         },
       },
-      child: CommandScope(
-        commands: [
-          StaticCommandGroup(
-            title: 'Commands',
-            commands: [PickCurrentPriority(), ShowSettings()],
-          ),
-        ],
-        child: child,
-      ),
+      child: CommandScope(commands: commands, child: child),
     );
   }
 }
