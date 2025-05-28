@@ -9,12 +9,6 @@ upload_source_maps = true
   RELEASE = '"dev"'
   PACKAGE = '"event"'
 
-[[queues.consumers]]
-  queue = "event-sync"
-  max_batch_size = 100
-  max_batch_timeout = 3
-  max_retries = 3
-
 [placement]
   mode = "smart"
 
@@ -23,3 +17,18 @@ upload_source_maps = true
 
 [observability.logs]
   enabled = true
+
+[env.production]
+[[env.production.queues.consumers]]
+  queue = "event-sync"
+  max_batch_size = 100
+  max_batch_timeout = 3
+  max_retries = 3
+
+
+[env.development]
+[[env.development.queues.consumers]]
+  queue = "event-sync"
+  max_batch_size = 10
+  max_batch_timeout = 3
+  max_retries = 0

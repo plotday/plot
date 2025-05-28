@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "pnpm run dev:config && pnpm run dev:start",
     "dev:config": "../../scripts/gen-env development $npm_package_config_env_vars > .dev.vars && for dir in $npm_package_config_workers; do cp .dev.vars \"$dir/\"; done",
-    "dev:start": "wrangler dev --test-scheduled $(for dir in $npm_package_config_workers; do echo -c \"$dir/wrangler.toml\"; done)",
+    "dev:start": "wrangler dev --env development --test-scheduled $(for dir in $npm_package_config_workers; do echo -c \"$dir/wrangler.toml\"; done)",
     "types": "wrangler types"
   },
   "dependencies": {
