@@ -158,6 +158,7 @@ export default withSentry(
     release: RELEASE,
     dist: PACKAGE,
     environment: ENV,
+    enabled: ENV !== "development",
   }),
   app as any
 );

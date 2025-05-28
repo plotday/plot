@@ -1,25 +1,22 @@
 {
   "name": "@plotday/dev-worker",
-  "version": "0.0.4",
+  "version": "1.0.0",
   "sideEffects": false,
   "private": true,
   "config": {
-    "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY SENTRY_DSN:SENTRY_WORKERS_DSN SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT=workers GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET AUTH_CALLBACK_URL"
+    "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY SENTRY_DSN:SENTRY_WORKERS_DSN SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT=workers GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET AUTH_CALLBACK_URL",
+    "workers": "../api ../calendar-webhook ../contact-sync ../event ../mailer ../sync"
   },
   "scripts": {
     "dev": "pnpm run dev:config && pnpm run dev:start",
-    "dev:config": "../../scripts/gen-env development $npm_package_config_env_vars> .dev.vars",
-    "dev:start": "wrangler dev --test-scheduled"
+    "dev:config": "../../scripts/gen-env development $npm_package_config_env_vars > .dev.vars && for dir in $npm_package_config_workers; do cp .dev.vars \"$dir/\"; done",
+    "dev:start": "wrangler dev --test-scheduled $(for dir in $npm_package_config_workers; do echo -c \"$dir/wrangler.toml\"; done)",
+    "types": "wrangler types"
   },
   "dependencies": {
     "@plotday/api": "workspace:^",
     "@plotday/contact-sync": "workspace:^",
     "@plotday/event-sync": "workspace:^",
     "@plotday/sync": "workspace:^"
-  },
-  "devDependencies": {
-    "@plotday/eslint-config-custom": "workspace:*",
-    "@plotday/tsconfig": "workspace:*",
-    "@types/node": "^22.15.19"
   }
 }

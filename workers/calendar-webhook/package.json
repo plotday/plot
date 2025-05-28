@@ -12,6 +12,7 @@
     "dev:start": "wrangler dev --inspector-port 9231",
     "deploy": "../../scripts/deploy-worker",
     "deploy:vars": "../../scripts/deploy-worker-vars",
+    "types": "wrangler types",
     "lint": "tsc && eslint ."
   },
   "dependencies": {

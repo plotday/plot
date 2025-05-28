@@ -66,6 +66,7 @@ export default Sentry.withSentry(
     environment: ENV,
     release: RELEASE,
     dist: PACKAGE,
+    enabled: ENV !== "development",
   }),
   {
     async fetch(request, env) {

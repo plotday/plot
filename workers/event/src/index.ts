@@ -91,6 +91,7 @@ export default Sentry.withSentry(
     release: RELEASE,
     dist: PACKAGE,
     environment: ENV,
+    enabled: ENV !== "development",
   }),
   {
     async queue(unknownBatch, env): Promise<void> {
@@ -322,15 +323,19 @@ export default Sentry.withSentry(
         Sentry.captureException(e);
         throw e;
       } finally {
-        const backgroundErrors = (await Promise.allSettled(backgroundJobs))
+        const backgroundErrors = (
+          backgroundJobs.length ? await Promise.allSettled(backgroundJobs) : []
+        )
           .map((result) =>
             result.status === "rejected" ? result.reason : null
           )
           .filter((result) => result);
         backgroundErrors.forEach((error) => Sentry.captureException(error));
         if (backgroundErrors.length === 1) {
+          console.error("Background job failed:", backgroundErrors[0]);
           throw new Error(backgroundErrors[0]);
         } else if (backgroundErrors.length > 1) {
+          console.error("Background jobs failed:", backgroundErrors);
           throw new Error("Background jobs failed", {
             cause: backgroundErrors,
           });

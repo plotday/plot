@@ -3,6 +3,7 @@ packages:
   - workers/*
   - libs/*
 onlyBuiltDependencies:
+  - '@sentry/cli'
   - esbuild
   - sharp
   - supabase
