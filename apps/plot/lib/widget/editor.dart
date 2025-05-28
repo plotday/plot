@@ -324,11 +324,11 @@ class ViewerTapHandler extends SuperReaderLaunchLinkTapHandler {
 
   @override
   TapHandlingInstruction onTap(DocumentTapDetails details) {
-    super.onTap(details);
-    if (_handler != null) {
+    final instructions = super.onTap(details);
+    if (instructions != TapHandlingInstruction.halt && _handler != null) {
       _handler();
       return TapHandlingInstruction.halt;
     }
-    return TapHandlingInstruction.continueHandling;
+    return instructions;
   }
 }
