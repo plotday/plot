@@ -71,30 +71,28 @@ class _ListTileState extends State<ListTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap:
-          widget.command != null
-              ? () {
-                try {
-                  widget.command!.run(context);
-                } catch (e, t) {
-                  log.warning("Command ${widget.command?.title} failed", e, t);
-                }
+      onTap: widget.command != null
+          ? () {
+              try {
+                widget.command!.run(context);
+              } catch (e, t) {
+                log.warning("Command ${widget.command?.title} failed", e, t);
               }
-              : null,
-      onDoubleTap:
-          widget.doubleTapCommand != null
-              ? () {
-                try {
-                  widget.doubleTapCommand!.run(context);
-                } catch (e, t) {
-                  log.warning(
-                    "Command ${widget.doubleTapCommand?.title} failed",
-                    e,
-                    t,
-                  );
-                }
+            }
+          : null,
+      onDoubleTap: widget.doubleTapCommand != null
+          ? () {
+              try {
+                widget.doubleTapCommand!.run(context);
+              } catch (e, t) {
+                log.warning(
+                  "Command ${widget.doubleTapCommand?.title} failed",
+                  e,
+                  t,
+                );
               }
-              : null,
+            }
+          : null,
       child: MouseRegion(
         onHover: (PointerHoverEvent event) {
           if (event.position != lastMousePosition) {
@@ -108,7 +106,7 @@ class _ListTileState extends State<ListTile> {
           onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
           child: Container(
             color: widget.selected ? context.colour.highlight : null,
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               spacing: 8,
@@ -125,44 +123,48 @@ class _ListTileState extends State<ListTile> {
                     color: context.colour.muted,
                   ),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    spacing: 2,
-                    children: [
-                      if (widget.header != null) widget.header!,
-                      widget.body ??
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  widget.style == ListTileStyle.header
-                                      ? widget.title.toUpperCase()
-                                      : widget.title,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: context.theme.typography.xs.copyWith(
-                                    color:
-                                        widget.style == ListTileStyle.header
-                                            ? context.colour.muted
-                                            : context.colour.foreground,
-                                  ),
-                                ),
-                              ),
-                              if (widget.command?.subtitle != null)
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 2,
+                      children: [
+                        if (widget.header != null) widget.header!,
+                        widget.body ??
+                            Row(
+                              children: [
                                 Flexible(
                                   child: Text(
-                                    '  ${widget.command!.subtitle!}',
+                                    widget.style == ListTileStyle.header
+                                        ? widget.title.toUpperCase()
+                                        : widget.title,
                                     overflow: TextOverflow.ellipsis,
                                     style: context.theme.typography.xs.copyWith(
-                                      color: context.colour.muted,
+                                      color:
+                                          widget.style == ListTileStyle.header
+                                          ? context.colour.muted
+                                          : context.colour.foreground,
                                     ),
                                   ),
                                 ),
-                            ],
-                          ),
-                      if (widget.command?.description != null)
-                        Text(widget.command!.description!),
-                      if (widget.details != null) widget.details!,
-                    ],
+                                if (widget.command?.subtitle != null)
+                                  Flexible(
+                                    child: Text(
+                                      '  ${widget.command!.subtitle!}',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: context.theme.typography.xs
+                                          .copyWith(
+                                            color: context.colour.muted,
+                                          ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                        if (widget.command?.description != null)
+                          Text(widget.command!.description!),
+                        if (widget.details != null) widget.details!,
+                      ],
+                    ),
                   ),
                 ),
                 ...widget.trailingCommands.map((c) => Button.icon(c)),
