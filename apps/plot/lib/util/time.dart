@@ -7,12 +7,9 @@ import 'package:timeago/timeago.dart' as timeago;
 export 'package:dart_date/dart_date.dart' hide Interval;
 export 'package:flutter/material.dart' show TimeOfDay;
 
-enum TimeDirection {
-  descending,
-  ascending,
-}
+enum TimeDirection { descending, ascending }
 
-class Date extends Equatable {
+class Date extends Equatable implements Comparable<Date> {
   static Date today() => DateTime.now().toLocal().toDate();
 
   static Stream<Date> current() async* {
@@ -30,9 +27,9 @@ class Date extends Equatable {
   const Date(this.year, this.month, this.day);
 
   Date.fromString(String date)
-      : year = int.parse(date.substring(0, 4)),
-        month = int.parse(date.substring(5, 7)),
-        day = int.parse(date.substring(8, 10));
+    : year = int.parse(date.substring(0, 4)),
+      month = int.parse(date.substring(5, 7)),
+      day = int.parse(date.substring(8, 10));
 
   final int year;
   final int month;
@@ -87,15 +84,23 @@ class Date extends Equatable {
   String format({String format = 'EEEE, MMM d'}) {
     return toDateTime().format(format);
   }
+
+  @override
+  int compareTo(Date other) {
+    if (year != other.year) return year.compareTo(other.year);
+    if (month != other.month) return month.compareTo(other.month);
+    return day.compareTo(other.day);
+  }
 }
 
 abstract class DateRange extends Equatable {
   static DateRange fromString(String db) {
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateStrings = stripped.split(',');
-    List<Date> dates = dateStrings
-        .map((timestamp) => Date.fromString(timestamp.trim()))
-        .toList();
+    List<Date> dates =
+        dateStrings
+            .map((timestamp) => Date.fromString(timestamp.trim()))
+            .toList();
     switch (dates[1].difference(dates[0]).inDays) {
       case 1:
         return Day(dates[0]);
@@ -282,9 +287,10 @@ class DateTimeRange extends Equatable {
   factory DateTimeRange.fromString(String db) {
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateTimeStrings = stripped.split(',');
-    List<DateTime> dateTimes = dateTimeStrings
-        .map((timestamp) => DateTime.parse(timestamp.trim()).toLocal())
-        .toList();
+    List<DateTime> dateTimes =
+        dateTimeStrings
+            .map((timestamp) => DateTime.parse(timestamp.trim()).toLocal())
+            .toList();
     return DateTimeRange(dateTimes[0], dateTimes[1]);
   }
 
@@ -304,14 +310,14 @@ class DateTimeRange extends Equatable {
   }
 
   DateTimeRange min(DateTime start) => DateTimeRange(
-        this.start.isBefore(start) ? start : this.start,
-        end.isBefore(start) ? start : end,
-      );
+    this.start.isBefore(start) ? start : this.start,
+    end.isBefore(start) ? start : end,
+  );
 
   DateTimeRange max(DateTime end) => DateTimeRange(
-        start.isAfter(end) ? end : start,
-        this.end.isAfter(end) ? end : this.end,
-      );
+    start.isAfter(end) ? end : start,
+    this.end.isAfter(end) ? end : this.end,
+  );
 
   final DateTime start;
   final DateTime end;
@@ -437,8 +443,9 @@ extension PlotDateTimeExtension on DateTime {
   DateTime min(DateTime other) => isBefore(other) ? other : this;
   DateTime max(DateTime other) => isAfter(other) ? other : this;
 
-  DateTime round({int minutes = 30, bool down = true}) => sub(Duration(
-      minutes: down ? minute % minutes : (minute % minutes) - minutes));
+  DateTime round({int minutes = 30, bool down = true}) => sub(
+    Duration(minutes: down ? minute % minutes : (minute % minutes) - minutes),
+  );
 
   DateTime previousMidnight() => toDate().subDays(1).toDateTime();
   DateTime nextMidnight() => toDate().addDays(1).toDateTime();
@@ -448,12 +455,14 @@ extension PlotDateTimeExtension on DateTime {
 
 Duration durationFromString(String durationString) {
   final RegExp postgresDateTimeRangeRegExp = RegExp(
-      r'^(([0-9]+) days? )?([0-9]{2-3}):([0-9]{2}):([0-9]+(\.[0-9]+)?)?$');
+    r'^(([0-9]+) days? )?([0-9]{2-3}):([0-9]{2}):([0-9]+(\.[0-9]+)?)?$',
+  );
   final RegExp iso8601RegExp = RegExp(
-      r'^P(([0-9]+)D)?(T(([0-9]+)H)?(([0-9]+)M)?(([0-9]+(\.[0-9]+)?)S)?)?$');
+    r'^P(([0-9]+)D)?(T(([0-9]+)H)?(([0-9]+)M)?(([0-9]+(\.[0-9]+)?)S)?)?$',
+  );
 
-  final Match? postgresDateTimeRangeMatch =
-      postgresDateTimeRangeRegExp.matchAsPrefix(durationString);
+  final Match? postgresDateTimeRangeMatch = postgresDateTimeRangeRegExp
+      .matchAsPrefix(durationString);
   final Match? iso8601Match = iso8601RegExp.matchAsPrefix(durationString);
 
   String? hours;

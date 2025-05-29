@@ -50,6 +50,9 @@ class CustomSerializer extends ValueSerializer {
     if (value is DateTime) {
       return (value as DateTime).toUtc().toIso8601String();
     }
+    if (value is Date) {
+      return (value as Date).toString();
+    }
 
     return _inner.toJson(value);
   }

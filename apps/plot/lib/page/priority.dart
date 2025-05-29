@@ -200,19 +200,17 @@ class PriorityPage extends StatelessWidget {
                               final firstScheduled =
                                   index == state.scheduled.length - 1;
                               final date =
-                                  (scheduled
+                                  scheduled
                                           ? current.doAt!
-                                          : current.createdAt)
-                                      .toDate();
+                                          : current.createdAt.toDate();
                               final nextDate =
                                   (index + 1 < state.scheduled.length
                                           ? next?.doAt
-                                          : next?.createdAt)
-                                      ?.toDate();
+                                          : next?.createdAt?.toDate());
                               final hidden =
                                   !scheduled &&
                                   current.createdAt.toDate() ==
-                                      current.doAt?.toDate();
+                                      current.doAt;
                               return Column(
                                 mainAxisSize: MainAxisSize.min,
                                 key: ValueKey(state.priorities[index].id),

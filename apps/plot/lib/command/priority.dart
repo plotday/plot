@@ -182,7 +182,7 @@ class StartPriority extends _UpdatePriorityCommand {
       priority.copyWith(
         doAt:
             start
-                ? Value(DateTime.now().subtract(Duration(seconds: 10)))
+                ? Value(Date.today())
                 : const Value(null),
       ),
     );
@@ -212,7 +212,7 @@ class SchedulePriority extends _UpdatePriorityCommand {
         icon: PlotIcon.scheduled,
       );
 
-  final DateTime when;
+  final Date when;
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
@@ -247,7 +247,7 @@ class PickSchedulePriority extends ShowCommand<Date> {
 
   @override
   void onSelect(BuildContext context, Date value) async {
-    SchedulePriority(priority, when: value.toDateTime()).run(context);
+    SchedulePriority(priority, when: value).run(context);
   }
 }
 
