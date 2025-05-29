@@ -1087,30 +1087,6 @@ export type Database = {
         Args: { at: unknown }
         Returns: boolean
       }
-      calendar: {
-        Args: { "": unknown }
-        Returns: {
-          account_id: number
-          created_at: string
-          deleted_at: string | null
-          enabled: boolean
-          full_sync_at: string | null
-          full_sync_started_at: string | null
-          id: number
-          name: string | null
-          provider_id: string
-          ready: boolean
-          sequence: number
-          sync_error: string | null
-          sync_state: string | null
-          synced_at: string | null
-          synced_dates: unknown | null
-          updated_at: string
-          watch_expires_at: string | null
-          watch_id: string | null
-          watch_secret: string | null
-        }[]
-      }
       calendars: {
         Args: { "": Database["public"]["Tables"]["account"]["Row"] }
         Returns: {
@@ -1167,18 +1143,6 @@ export type Database = {
       insert_domain: {
         Args: { email: string }
         Returns: number
-      }
-      invitee: {
-        Args: { "": unknown }
-        Returns: {
-          created_at: string
-          deleted_at: string | null
-          email: string
-          event_id: string | null
-          is_optional: boolean
-          response: Database["public"]["Enums"]["event_response"] | null
-          updated_at: string
-        }[]
       }
       is_finite: {
         Args: { test: unknown }
