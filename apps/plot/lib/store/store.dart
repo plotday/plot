@@ -5,7 +5,6 @@ import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:collection/collection.dart';
-import 'package:equatable/equatable.dart';
 import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:stack_trace/stack_trace.dart';
@@ -27,6 +26,7 @@ export 'package:plot/util/value.dart';
 export 'package:plot/util/time.dart';
 export 'package:plot/util/uuid.dart';
 export 'package:plot/util/order.dart';
+export 'schedule.dart';
 
 part 'sync.dart';
 part 'account.dart';
