@@ -35,7 +35,7 @@ class ScheduleWidget extends StatelessWidget {
         final end = start.addDays(count);
         await fetcher(DateRangeCustom(start, end));
       },
-      builder: (context, index) {
+      builder: (context, index, isSelected) {
         final day = schedule[range.start.addDays(index)];
         if (day == null) return null;
         return DayWidget(

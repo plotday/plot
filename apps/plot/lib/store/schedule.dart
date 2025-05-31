@@ -9,11 +9,13 @@ class ScheduledDay extends Equatable {
     DateRange range, {
     bool? deleted = false,
   }) {
-    return Rx.combineLatest2(
+    return Rx.combineLatest3(
       Event.watch(range, withPriority: true, deleted: deleted),
       Priority.watchDefault(),
-      (events, defaultPriority) {
+      Priority.watch(deleted: deleted),
+      (events, defaultPriority, allPriorities) {
         var (start, end) = range.bounds;
+        final today = Date.today();
 
         final direction =
             start < end ? TimeDirection.ascending : TimeDirection.descending;
@@ -27,9 +29,38 @@ class ScheduledDay extends Equatable {
             dayEvents.add(eventIterator.current);
             hasMore = eventIterator.moveNext();
           }
+
+          // Get priorities for this day
+          List<Priority> dayPriorities = [];
+          for (final priority in allPriorities) {
+            bool shouldInclude = false;
+
+            if (start <= today) {
+              // If the day is current or in the past, include if created that day
+              if (priority.createdAt.toDate() == start) {
+                shouldInclude = true;
+              }
+            }
+
+            if (start >= today) {
+              // If the day is current or in the future, include if doAt is that day
+              if (priority.doAt == start) {
+                shouldInclude = true;
+              }
+              // Also include if priorityNextEvent.start is that day
+              // This is handled by the doAt logic above since Priority.fromStore
+              // sets doAt to nextEventStart when available
+            }
+
+            if (shouldInclude) {
+              dayPriorities.add(priority);
+            }
+          }
+
           days[start] = ScheduledDay(
             date: start,
             events: dayEvents,
+            priorities: dayPriorities,
             defaultPriority: defaultPriority,
           );
           start = start.next(direction: direction);
@@ -40,47 +71,73 @@ class ScheduledDay extends Equatable {
   }
 
   static Stream<ScheduledDay> watchToday() {
-    return Priority.watchDefault().switchMap(
-      (defaultPriority) => Date.current().switchMap(
-        (today) => Event.watch(today.toDateRange()).transform(
-          ExpiringStreamTransformer((events) {
-            final now = DateTime.now();
-            final currentEvent = events.any((event) => event.at.includes(now));
-            DateTime? expiry;
-            if (currentEvent) {
-              // Expire every minute on the minute
-              expiry = now + Duration(seconds: 60 - now.second);
-            } else {
-              // Find the earliest event start or end following now
-              expiry = events.fold(
-                null,
-                (DateTime? next, Event e) =>
-                    e.at.start.isAfter(now) &&
-                            (next == null || next.isAfter(e.at.start))
-                        ? e.at.start
-                        : e.at.end.isAfter(now) &&
-                            (next == null || next.isAfter(e.at.end))
-                        ? e.at.end
-                        : next,
+    return Rx.combineLatest2(
+      Priority.watchDefault(),
+      Priority.watch(deleted: false),
+      (Priority defaultPriority, List<Priority> allPriorities) => (defaultPriority, allPriorities),
+    ).switchMap(
+      ((Priority, List<Priority>) tuple) {
+        final defaultPriority = tuple.$1;
+        final allPriorities = tuple.$2;
+        return Date.current().switchMap(
+          (today) => Event.watch(today.toDateRange()).transform(
+            ExpiringStreamTransformer((events) {
+              final now = DateTime.now();
+              final currentEvent = events.any((event) => event.at.includes(now));
+              DateTime? expiry;
+              if (currentEvent) {
+                // Expire every minute on the minute
+                expiry = now + Duration(seconds: 60 - now.second);
+              } else {
+                // Find the earliest event start or end following now
+                expiry = events.fold(
+                  null,
+                  (DateTime? next, Event e) =>
+                      e.at.start.isAfter(now) &&
+                              (next == null || next.isAfter(e.at.start))
+                          ? e.at.start
+                          : e.at.end.isAfter(now) &&
+                              (next == null || next.isAfter(e.at.end))
+                          ? e.at.end
+                          : next,
+                );
+              }
+
+              // Get priorities for today
+              List<Priority> dayPriorities = [];
+              for (final priority in allPriorities) {
+                bool shouldInclude = false;
+
+                // For today: include if created today or if doAt is today
+                if (priority.createdAt.toDate() == today || priority.doAt == today) {
+                  shouldInclude = true;
+                }
+
+                if (shouldInclude) {
+                  dayPriorities.add(priority);
+                }
+              }
+
+              return ExpiringResult(
+                value: ScheduledDay(
+                  date: today,
+                  events: events,
+                  priorities: dayPriorities,
+                  defaultPriority: defaultPriority,
+                ),
+                expiry: expiry,
               );
-            }
-            return ExpiringResult(
-              value: ScheduledDay(
-                date: today,
-                events: events,
-                defaultPriority: defaultPriority,
-              ),
-              expiry: expiry,
-            );
-          }),
-        ),
-      ),
+            }),
+          ),
+        );
+      },
     );
   }
 
   ScheduledDay({
     required this.date,
     required List<Event> events,
+    this.priorities = const [],
     required this.defaultPriority,
   }) : events = _addGaps(
          date,
@@ -97,6 +154,7 @@ class ScheduledDay extends Equatable {
   final Date date;
   final List<Event> events;
   final List<Event> allDayEvents;
+  final List<Priority> priorities;
   final Priority defaultPriority;
 
   ScheduledDay copyWith(Event event) {
@@ -109,6 +167,7 @@ class ScheduledDay extends Equatable {
     return ScheduledDay(
       date: date,
       events: list,
+      priorities: priorities,
       defaultPriority: defaultPriority,
     );
   }
@@ -118,7 +177,7 @@ class ScheduledDay extends Equatable {
   }
 
   @override
-  List<Object> get props => [date, events];
+  List<Object> get props => [date, events, priorities];
 
   /* Private */
 
