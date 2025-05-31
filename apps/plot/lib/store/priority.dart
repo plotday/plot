@@ -82,6 +82,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   static Future<List<Priority>> get({
+    DateRange? range,
     PriorityId? id,
     Path? path,
     int? depth,
@@ -93,6 +94,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     PriorityOrder order = PriorityOrder.sorted,
   }) async {
     return _get(
+      range: range,
       id: id,
       path: path,
       depth: depth,
@@ -106,6 +108,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   static Stream<List<Priority>> watch({
+    DateRange? range,
     PriorityId? id,
     Path? path,
     int? depth,
@@ -117,6 +120,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     PriorityOrder order = PriorityOrder.sorted,
   }) {
     return _get(
+      range: range,
       id: id,
       path: path,
       depth: depth,
@@ -202,6 +206,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   ).map((priorities) => _asNested(priorities));
 
   static MultiSelectable<Priority> _get({
+    DateRange? range,
+
     /* Selectors */
     PriorityId? id,
     Path? path,
@@ -332,6 +338,38 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     final pne = Store.get.alias(Store.get.priorityNextEvent, 'pne');
     query = query.join([leftOuterJoin(pne, pne.priorityId.equalsExp(p.id))]);
+
+    if (range != null) {
+      final today = Date.today();
+      final rangeStart = range.start;
+      final rangeEnd = range.end;
+
+      // Priority should be included if:
+      // 1. createdAt is during the range
+      // 2. doAt is during the range (treat past doAt as today)
+      // 3. priorityNextEvent.start is during the range
+      query.where(
+        // 1. Created during range
+        (p.createdAt.isBiggerOrEqualValue(rangeStart.toStart()) &
+                p.createdAt.isSmallerThanValue(rangeEnd.toEnd())) |
+            // 2. doAt during range (with past doAt treated as today)
+            (p.doAt.isNotNull() &
+                ((p.doAt.isSmallerOrEqualValue(today.toString()) &
+                        Constant(
+                          rangeStart.toString(),
+                        ).isSmallerOrEqualValue(today.toString()) &
+                        Constant(
+                          today.toString(),
+                        ).isSmallerThanValue(rangeEnd.toString())) |
+                    (p.doAt.isBiggerThanValue(today.toString()) &
+                        p.doAt.isBiggerOrEqualValue(rangeStart.toString()) &
+                        p.doAt.isSmallerThanValue(rangeEnd.toString())))) |
+            // 3. priorityNextEvent.start during range
+            (pne.start.isNotNull() &
+                pne.start.isBiggerOrEqualValue(rangeStart.toStart()) &
+                pne.start.isSmallerThanValue(rangeEnd.toEnd())),
+      );
+    }
 
     if (ancestry) {
       final pa = Store.get.alias(Store.get.priorityAncestry, 'pa');

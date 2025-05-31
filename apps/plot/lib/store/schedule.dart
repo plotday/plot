@@ -12,7 +12,7 @@ class ScheduledDay extends Equatable {
     return Rx.combineLatest3(
       Event.watch(range, withPriority: true, deleted: deleted),
       Priority.watchDefault(),
-      Priority.watch(deleted: deleted),
+      Priority.watch(range: range, deleted: deleted),
       (events, defaultPriority, allPriorities) {
         var (start, end) = range.bounds;
         final today = Date.today();
@@ -73,7 +73,7 @@ class ScheduledDay extends Equatable {
   static Stream<ScheduledDay> watchToday() {
     return Rx.combineLatest2(
       Priority.watchDefault(),
-      Priority.watch(deleted: false),
+      Priority.watch(range: Day.today(), deleted: false),
       (Priority defaultPriority, List<Priority> allPriorities) => (defaultPriority, allPriorities),
     ).switchMap(
       ((Priority, List<Priority>) tuple) {
