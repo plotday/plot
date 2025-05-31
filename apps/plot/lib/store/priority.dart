@@ -330,6 +330,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         break;
     }
 
+    final pne = Store.get.alias(Store.get.priorityNextEvent, 'pne');
+    query = query.join([leftOuterJoin(pne, pne.priorityId.equalsExp(p.id))]);
+
     if (ancestry) {
       final pa = Store.get.alias(Store.get.priorityAncestry, 'pa');
       return query
@@ -338,11 +341,17 @@ class Priority extends PriorityRow implements Comparable<Priority> {
             (row) => Priority.fromStore(
               row.readTable(p),
               ancestry: row.readTableOrNull(pa),
+              nextEventStart: row.readTableOrNull(pne)?.start,
             ),
           );
     }
 
-    return query.map((row) => Priority.fromStore(row.readTable(p)));
+    return query.map(
+      (row) => Priority.fromStore(
+        row.readTable(p),
+        nextEventStart: row.readTableOrNull(pne)?.start,
+      ),
+    );
   }
 
   static SingleSelectable<Priority> _default() {
@@ -449,6 +458,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     List<Priority>? children,
     this.balance,
     PriorityAncestryData? ancestry,
+    DateTime? nextEventStart,
   }) : children = children ?? [],
        _ancestors =
            ancestry == null
@@ -473,7 +483,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          private: row.private,
          pinned: row.pinned,
          createdBy: row.createdBy,
-         doAt: row.doAt,
+         doAt: nextEventStart != null ? nextEventStart.toDate() : row.doAt,
          doneAt: row.doneAt,
          eventSeries: row.eventSeries,
        ) {

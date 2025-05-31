@@ -50,3 +50,26 @@ GROUP BY
 ORDER BY
     priority_id;
 
+CREATE VIEW priority_next_event AS
+WITH ranked_events AS (
+    SELECT
+        e.id AS event_id,
+        e.series,
+        e.start AS start,
+        ROW_NUMBER() OVER (PARTITION BY e.series ORDER BY e.start ASC) AS rn
+    FROM
+        events e
+    WHERE
+        e.series IS NOT NULL
+        AND e.end < datetime ('now'))
+SELECT
+    p.id AS priority_id,
+    re.event_id,
+    re.start
+FROM
+    priorities p
+    INNER JOIN ranked_events re ON p.event_series = re.series
+        AND re.rn = 1
+WHERE
+    p.event_series IS NOT NULL;
+
