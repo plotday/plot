@@ -15,6 +15,7 @@ CREATE TABLE "public"."priority" (
     "done_at" timestamp with time zone,
     "order" double precision NOT NULL DEFAULT public.order_first (),
     "note" text,
+    "event_series" text,
     CHECK (draft = FALSE OR title IS NOT NULL)
 );
 

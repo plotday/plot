@@ -29,6 +29,7 @@ class Priorities extends Table
   DateTimeColumn get doneAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get note => text().nullable()();
+  TextColumn get eventSeries => text().nullable()();
 
   @override
   List<String> get customConstraints => [
@@ -423,6 +424,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.draft = false,
     super.private = false,
     super.pinned = false,
+    super.eventSeries,
   }) : children = [],
        _ancestors =
            parent == null
@@ -473,6 +475,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdBy: row.createdBy,
          doAt: row.doAt,
          doneAt: row.doneAt,
+         eventSeries: row.eventSeries,
        ) {
     parent?._addChild(this);
   }
@@ -556,6 +559,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       doneAt: Value(doneAt ?? other.doneAt),
       pinned: pinned || other.pinned,
       private: private || other.private,
+      eventSeries: Value(eventSeries ?? other.eventSeries),
     );
   }
 
@@ -580,6 +584,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<String?> note = const Value.absent(),
     Priority? parent,
     Balance? balance,
+    Value<String?> eventSeries = const Value.absent(),
   }) {
     final publish = this.draft && draft == false;
     if (doAt.present && doAt.value != null) {
@@ -627,6 +632,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         doAt: doAt,
         doneAt: doneAt,
         note: note,
+        eventSeries: eventSeries,
       ),
       parent: parent ?? this.parent,
       children: children,
