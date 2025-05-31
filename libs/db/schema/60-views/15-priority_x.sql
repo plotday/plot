@@ -87,9 +87,9 @@ DECLARE
     _priority_id uuid;
 BEGIN
     _priority_id := NEW.id;
-    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.draft IS DISTINCT FROM OLD.draft OR NEW.private IS DISTINCT FROM OLD.private OR NEW.pinned IS DISTINCT FROM OLD.pinned OR NEW.do_at IS DISTINCT FROM OLD.do_at OR NEW.done_at IS DISTINCT FROM OLD.done_at OR NEW.order IS DISTINCT FROM OLD.order OR NEW.note IS DISTINCT FROM OLD.note) THEN
-        INSERT INTO priority (id, deleted_at, title, path, draft, private, pinned, do_at, done_at, "order", note)
-            VALUES (NEW.id, NEW.deleted_at, NEW.title, NEW.path, NEW.draft, NEW.private, NEW.pinned, NEW.do_at, NEW.done_at, NEW.order, NEW.note)
+    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.draft IS DISTINCT FROM OLD.draft OR NEW.private IS DISTINCT FROM OLD.private OR NEW.pinned IS DISTINCT FROM OLD.pinned OR NEW.do_at IS DISTINCT FROM OLD.do_at OR NEW.done_at IS DISTINCT FROM OLD.done_at OR NEW.order IS DISTINCT FROM OLD.order OR NEW.note IS DISTINCT FROM OLD.note OR NEW.event_series IS DISTINCT FROM OLD.event_series) THEN
+        INSERT INTO priority (id, deleted_at, title, path, draft, private, pinned, do_at, done_at, "order", note, event_series)
+            VALUES (NEW.id, NEW.deleted_at, NEW.title, NEW.path, NEW.draft, NEW.private, NEW.pinned, NEW.do_at, NEW.done_at, NEW.order, NEW.note, NEW.event_series)
         ON CONFLICT (id)
             DO UPDATE SET
                 deleted_at = NEW.deleted_at,
@@ -101,7 +101,8 @@ BEGIN
                 do_at = NEW.do_at,
                 done_at = NEW.done_at,
                 "order" = NEW.order,
-                note = NEW.note
+                note = NEW.note,
+                event_series = NEW.event_series
             RETURNING
                 id INTO _priority_id;
     END IF;
