@@ -43,6 +43,7 @@ SELECT
     p.do_at,
     p.done_at,
     p.note,
+    p.event_series,
     CASE WHEN pu.priority_id = p.id
         AND pu.order IS NOT NULL THEN
         pu.order
