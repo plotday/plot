@@ -1,5 +1,40 @@
 part of 'priority.dart';
 
+abstract class AgendaItem {
+  const AgendaItem();
+
+  T when<T>({
+    required T Function(Priority) priority,
+    required T Function(Event) event,
+  });
+}
+
+class PriorityAgendaItem extends AgendaItem {
+  final Priority priority;
+  const PriorityAgendaItem(this.priority);
+
+  @override
+  T when<T>({
+    required T Function(Priority) priority,
+    required T Function(Event) event,
+  }) {
+    return priority(this.priority);
+  }
+}
+
+class EventAgendaItem extends AgendaItem {
+  final Event event;
+  const EventAgendaItem(this.event);
+
+  @override
+  T when<T>({
+    required T Function(Priority) priority,
+    required T Function(Event) event,
+  }) {
+    return event(this.event);
+  }
+}
+
 class PriorityState extends Equatable {
   PriorityState({
     required this.context,
@@ -7,29 +42,29 @@ class PriorityState extends Equatable {
     this.pinned = const [],
     this.scheduled = const [],
     this.moreScheduled = true,
-    List<Priority> activity = const [],
+    List<AgendaItem> activity = const [],
     this.moreActivity = true,
   }) : draft = draft ?? Priority(parent: context, draft: true),
        activity = [
          ...activity,
-         if (context.note != null && !moreActivity) context,
+         if (context.note != null && !moreActivity) PriorityAgendaItem(context),
        ];
 
   final Priority context;
   final Priority draft;
-  final List<Priority> pinned;
-  final List<Priority> scheduled;
+  final List<AgendaItem> pinned;
+  final List<AgendaItem> scheduled;
   final bool moreScheduled;
-  final List<Priority> activity;
+  final List<AgendaItem> activity;
   final bool moreActivity;
 
   PriorityState copyWith({
     Priority? context,
     Priority? draft,
-    List<Priority>? pinned,
-    List<Priority>? scheduled,
+    List<AgendaItem>? pinned,
+    List<AgendaItem>? scheduled,
     bool? moreScheduled,
-    List<Priority>? activity,
+    List<AgendaItem>? activity,
     bool? moreActivity,
   }) {
     return PriorityState(
@@ -43,7 +78,7 @@ class PriorityState extends Equatable {
     );
   }
 
-  List<Priority> get priorities {
+  List<AgendaItem> get agendaItems {
     return [...scheduled.reversed, ...activity];
   }
 

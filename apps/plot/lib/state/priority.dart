@@ -46,7 +46,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         depth: 1,
         pinned: true,
       ).listen((priorities) {
-        emit(state.copyWith(pinned: priorities));
+        emit(state.copyWith(pinned: priorities.map((p) => PriorityAgendaItem(p)).toList()));
       }),
     );
     // Watch upcoming, scheduled priorities and past activity using ScheduledDay.watch
@@ -59,21 +59,21 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     _subscriptions.add(
       ScheduledDay.watch(range, context: priority).listen((scheduleMap) {
-        final activity = <Priority>[];
-        final scheduled = <Priority>[];
+        final activity = <AgendaItem>[];
+        final scheduled = <AgendaItem>[];
         for (final scheduledDay in scheduleMap.values) {
           if (scheduledDay.date < today) {
-            activity.addAll(scheduledDay.priorities);
+            activity.addAll(scheduledDay.priorities.map((p) => PriorityAgendaItem(p)));
           } else if (scheduledDay.date == today) {
             for (final priority in scheduledDay.priorities) {
               if (priority.doNow) {
-                scheduled.add(priority);
+                scheduled.add(PriorityAgendaItem(priority));
               } else {
-                activity.add(priority);
+                activity.add(PriorityAgendaItem(priority));
               }
             }
           } else {
-            scheduled.addAll(scheduledDay.priorities);
+            scheduled.addAll(scheduledDay.priorities.map((p) => PriorityAgendaItem(p)));
           }
         }
         emit(
