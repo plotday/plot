@@ -49,18 +49,41 @@ class PriorityBloc extends Cubit<PriorityState> {
         emit(state.copyWith(pinned: priorities));
       }),
     );
-    // Watch upcoming, scheduled priorities
+    // Watch upcoming, scheduled priorities and past activity using ScheduledDay.watch
+    final today = Date.today();
+    final oneMonthAgo =
+        today.toDateTime().subtract(const Duration(days: 30)).toDate();
+    final oneMonthFromNow =
+        today.toDateTime().add(const Duration(days: 30)).toDate();
+    final range = DateRangeCustom(oneMonthAgo, oneMonthFromNow);
+
     _subscriptions.add(
-      Priority.watch(path: priority.path, self: false, active: true).listen((
-        priorities,
-      ) {
-        emit(state.copyWith(scheduled: priorities, moreScheduled: false));
-      }),
-    );
-    // Watch past activity
-    _subscriptions.add(
-      Priority.watch(path: priority.path, self: false).listen((priorities) {
-        emit(state.copyWith(activity: priorities, moreActivity: false));
+      ScheduledDay.watch(range, context: priority).listen((scheduleMap) {
+        final activity = <Priority>[];
+        final scheduled = <Priority>[];
+        for (final scheduledDay in scheduleMap.values) {
+          if (scheduledDay.date < today) {
+            activity.addAll(scheduledDay.priorities);
+          } else if (scheduledDay.date == today) {
+            for (final priority in scheduledDay.priorities) {
+              if (priority.doNow) {
+                scheduled.add(priority);
+              } else {
+                activity.add(priority);
+              }
+            }
+          } else {
+            scheduled.addAll(scheduledDay.priorities);
+          }
+        }
+        emit(
+          state.copyWith(
+            activity: activity.reversed.toList(),
+            moreActivity: false,
+            scheduled: scheduled.reversed.toList(),
+            moreScheduled: false,
+          ),
+        );
       }),
     );
   }

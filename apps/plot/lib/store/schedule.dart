@@ -7,16 +7,22 @@ import 'store.dart';
 class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> watch(
     DateRange range, {
+    Priority? context,
     bool? deleted = false,
   }) {
     return Date.current().switchMap((today) {
       final includesCurrentDay = range.includes(today);
-      
+
       if (includesCurrentDay) {
         // If range includes current day, combine with _watchToday for that day
         return Rx.combineLatest2(
-          _watchRangeExcludingToday(range, today, deleted: deleted),
-          _watchToday(today),
+          _watchRangeExcludingToday(
+            range,
+            today,
+            context: context,
+            deleted: deleted,
+          ),
+          _watchToday(today, context: context),
           (rangeMap, todaySchedule) {
             final result = Map<Date, ScheduledDay>.from(rangeMap);
             result[today] = todaySchedule;
@@ -25,7 +31,12 @@ class ScheduledDay extends Equatable {
         );
       } else {
         // If range doesn't include current day, use standard range watching
-        return _watchRangeExcludingToday(range, today, deleted: deleted);
+        return _watchRangeExcludingToday(
+          range,
+          today,
+          context: context,
+          deleted: deleted,
+        );
       }
     });
   }
@@ -33,12 +44,20 @@ class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> _watchRangeExcludingToday(
     DateRange range,
     Date today, {
+    Priority? context,
     bool? deleted = false,
   }) {
     return Rx.combineLatest3(
       Event.watch(range, withPriority: true, deleted: deleted),
       Priority.watchDefault(),
-      Priority.watch(range: range, deleted: deleted),
+      context != null
+          ? Priority.watch(
+            range: range,
+            path: context.path,
+            self: false,
+            deleted: deleted,
+          )
+          : Stream.value(<Priority>[]),
       (events, defaultPriority, allPriorities) {
         var (start, end) = range.bounds;
 
@@ -64,26 +83,8 @@ class ScheduledDay extends Equatable {
           // Get priorities for this day
           List<Priority> dayPriorities = [];
           for (final priority in allPriorities) {
-            bool shouldInclude = false;
-
-            if (start <= today) {
-              // If the day is current or in the past, include if created that day
-              if (priority.createdAt.toDate() == start) {
-                shouldInclude = true;
-              }
-            }
-
-            if (start >= today) {
-              // If the day is current or in the future, include if doAt is that day
-              if (priority.doAt == start) {
-                shouldInclude = true;
-              }
-              // Also include if priorityNextEvent.start is that day
-              // This is handled by the doAt logic above since Priority.fromStore
-              // sets doAt to nextEventStart when available
-            }
-
-            if (shouldInclude) {
+            if (priority.createdAt.toDate() == start ||
+                (priority.doAt == start && start > today)) {
               dayPriorities.add(priority);
             }
           }
@@ -105,66 +106,75 @@ class ScheduledDay extends Equatable {
     return Date.current().switchMap((today) => _watchToday(today));
   }
 
-  static Stream<ScheduledDay> _watchToday(Date today) {
+  static Stream<ScheduledDay> _watchToday(Date today, {Priority? context}) {
     return Rx.combineLatest2(
       Priority.watchDefault(),
-      Priority.watch(range: Day(today), deleted: false),
-      (Priority defaultPriority, List<Priority> allPriorities) => (defaultPriority, allPriorities),
-    ).switchMap(
-      ((Priority, List<Priority>) tuple) {
-        final defaultPriority = tuple.$1;
-        final allPriorities = tuple.$2;
-        return Event.watch(today.toDateRange()).transform(
-          ExpiringStreamTransformer((events) {
-            final now = DateTime.now();
-            final currentEvent = events.any((event) => event.at.includes(now));
-            DateTime? expiry;
-            if (currentEvent) {
-              // Expire every minute on the minute
-              expiry = now + Duration(seconds: 60 - now.second);
-            } else {
-              // Find the earliest event start or end following now
-              expiry = events.fold(
-                null,
-                (DateTime? next, Event e) =>
-                    e.at.start.isAfter(now) &&
-                            (next == null || next.isAfter(e.at.start))
-                        ? e.at.start
-                        : e.at.end.isAfter(now) &&
-                            (next == null || next.isAfter(e.at.end))
-                        ? e.at.end
-                        : next,
-              );
-            }
-
-            // Get priorities for today
-            List<Priority> dayPriorities = [];
-            for (final priority in allPriorities) {
-              bool shouldInclude = false;
-
-              // For today: include if created today or if doAt is today
-              if (priority.createdAt.toDate() == today || priority.doAt == today) {
-                shouldInclude = true;
-              }
-
-              if (shouldInclude) {
-                dayPriorities.add(priority);
-              }
-            }
-
-            return ExpiringResult(
-              value: ScheduledDay(
-                date: today,
-                events: events,
-                priorities: dayPriorities,
-                defaultPriority: defaultPriority,
-              ),
-              expiry: expiry,
+      context != null
+          ? Priority.watch(
+            range: Day(today),
+            path: context.path,
+            self: false,
+            deleted: false,
+          )
+          : Stream.value(<Priority>[]),
+      (Priority defaultPriority, List<Priority> allPriorities) => (
+        defaultPriority,
+        allPriorities,
+      ),
+    ).switchMap(((Priority, List<Priority>) tuple) {
+      final defaultPriority = tuple.$1;
+      final allPriorities = tuple.$2;
+      return Event.watch(today.toDateRange()).transform(
+        ExpiringStreamTransformer((events) {
+          final now = DateTime.now();
+          final currentEvent = events.any((event) => event.at.includes(now));
+          DateTime? expiry;
+          if (currentEvent) {
+            // Expire every minute on the minute
+            expiry = now + Duration(seconds: 60 - now.second);
+          } else {
+            // Find the earliest event start or end following now
+            expiry = events.fold(
+              null,
+              (DateTime? next, Event e) =>
+                  e.at.start.isAfter(now) &&
+                          (next == null || next.isAfter(e.at.start))
+                      ? e.at.start
+                      : e.at.end.isAfter(now) &&
+                          (next == null || next.isAfter(e.at.end))
+                      ? e.at.end
+                      : next,
             );
-          }),
-        );
-      },
-    );
+          }
+
+          // Get priorities for today - only include if context is provided
+          List<Priority> dayPriorities = [];
+          for (final priority in allPriorities) {
+            bool shouldInclude = false;
+
+            // For today: include if created today or if doAt is today
+            if (priority.createdAt.toDate() == today ||
+                priority.doAt == today) {
+              shouldInclude = true;
+            }
+
+            if (shouldInclude) {
+              dayPriorities.add(priority);
+            }
+          }
+
+          return ExpiringResult(
+            value: ScheduledDay(
+              date: today,
+              events: events,
+              priorities: dayPriorities,
+              defaultPriority: defaultPriority,
+            ),
+            expiry: expiry,
+          );
+        }),
+      );
+    });
   }
 
   ScheduledDay({
