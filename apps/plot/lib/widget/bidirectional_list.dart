@@ -47,8 +47,11 @@ class BidirectionalListController extends ChangeNotifier {
   }
 
   void move(int offset) {
-    if (selected == null) return;
-    selected = selected! + offset;
+    if (selected == null) {
+      selected = 0;
+    } else {
+      selected = selected! + offset;
+    }
   }
 
   void clear() {
