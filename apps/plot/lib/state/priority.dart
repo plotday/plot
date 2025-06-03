@@ -67,7 +67,6 @@ class PriorityBloc extends Cubit<PriorityState> {
         final activity = <AgendaItem>[];
         final scheduled = <AgendaItem>[];
         for (final scheduledDay in scheduleMap.values) {
-          log.info('Processing scheduled day: ${scheduledDay.date}');
           if (scheduledDay.date < today) {
             activity.addAll(
               scheduledDay.priorities.map((p) => PriorityAgendaItem(p)),
