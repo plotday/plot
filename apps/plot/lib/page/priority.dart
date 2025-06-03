@@ -230,6 +230,13 @@ class PriorityPage extends StatelessWidget {
                                         priority.createdAt.toDate() ==
                                             priority.doAt,
                               );
+                              void onHover(bool hovered) {
+                                if (hovered) {
+                                  listController.selected = index;
+                                } else if (listController.selected == index) {
+                                  listController.selected = null;
+                                }
+                              }
 
                               return Column(
                                 mainAxisSize: MainAxisSize.min,
@@ -283,19 +290,15 @@ class PriorityPage extends StatelessWidget {
                                           priority: priority,
                                           context: state.context,
                                           selected: selected,
-                                          onHover: (hovered) {
-                                            if (hovered) {
-                                              listController.selected = index;
-                                            } else if (listController
-                                                    .selected ==
-                                                index) {
-                                              listController.selected = null;
-                                            }
-                                          },
+                                          onHover: onHover,
                                         );
                                       },
                                       event:
-                                          (event) => EventWidget(event: event),
+                                          (event) => EventWidget(
+                                            event: event,
+                                            selected: selected,
+                                            onHover: onHover,
+                                          ),
                                     ),
                                 ],
                               );

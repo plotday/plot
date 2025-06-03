@@ -114,7 +114,7 @@ class Event extends EventRow {
 
     if (withPriority) {
       final joinedQuery = query.join([
-        innerJoin(
+        leftOuterJoin(
           Store.get.priorities,
           Store.get.priorities.id.equalsExp(Store.get.events.priorityId),
         ),

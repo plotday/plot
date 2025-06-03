@@ -8,6 +8,7 @@ class EventWidget extends StatelessWidget {
     required this.event,
     this.context,
     this.selected = false,
+    this.onHover,
     super.key,
   });
 
@@ -17,11 +18,13 @@ class EventWidget extends StatelessWidget {
   final Priority? context;
 
   final bool selected;
+  final void Function(bool hovered)? onHover;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       selected: selected,
+      onHover: onHover,
       header:
           event.priorityId != null && event.priorityId != this.context?.id
               ? PriorityLabel(
