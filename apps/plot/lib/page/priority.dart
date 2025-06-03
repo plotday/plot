@@ -4,6 +4,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/widget/event.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/command/command.dart';
@@ -293,13 +294,8 @@ class PriorityPage extends StatelessWidget {
                                           },
                                         );
                                       },
-                                      event: (event) {
-                                        return
-                                        // TODO: Add EventWidget here when it's available
-                                        Text(
-                                          'Event: ${event.name ?? 'Untitled'}',
-                                        );
-                                      },
+                                      event:
+                                          (event) => EventWidget(event: event),
                                     ),
                                 ],
                               );

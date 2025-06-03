@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
@@ -6,70 +6,86 @@ import 'package:plot/widget/widget.dart';
 class EventWidget extends StatelessWidget {
   const EventWidget({
     required this.event,
-    required this.onSelect,
+    this.context,
     this.selected = false,
     super.key,
   });
 
   final Event event;
-  final void Function() onSelect;
+
+  /// Display priority relative to this priority.
+  final Priority? context;
+
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => onSelect(),
-      child: Padding(
-        padding: const EdgeInsetsDirectional.all(4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 68,
-              alignment: Alignment.topRight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (!event.at.start.toTimeOfDay().isMidnight)
-                    TimeWidget(time: event.at.start),
-                  if (!event.at.start.toTimeOfDay().isMidnight &&
-                      !event.at.end.toTimeOfDay().isMidnight) ...[
-                    const SizedBox(height: 4),
-                    DurationText(
-                      duration: !(event.at.start.toTimeOfDay().isMidnight ||
-                              event.at.end.toTimeOfDay().isMidnight)
-                          ? event.at.duration
-                          : Duration.zero,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (event.name == null)
-                    const SizedBox(
-                      height: 16,
-                      child: Squiggle(),
-                    ),
-                  if (event.name != null)
-                    Text(
-                      event.name!,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w500, height: 1.0),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  if (event.name != null) const SizedBox(height: 4),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+    return ListTile(
+      selected: selected,
+      header:
+          event.priorityId != null && event.priorityId != this.context?.id
+              ? PriorityLabel(
+                priority: event.priority,
+                context: this.context,
+                onlyAncestors: true,
+              )
+              : null,
+      body: event.name == null ? Squiggle() : null,
+      title: event.name?.isNotEmpty == true ? event.name! : null,
     );
+    // GestureDetector(
+    //   onTap: () => onSelect(),
+    //   child: Padding(
+    //     padding: const EdgeInsetsDirectional.all(4),
+    //     child: Row(
+    //       crossAxisAlignment: CrossAxisAlignment.start,
+    //       children: [
+    //         Container(
+    //           width: 68,
+    //           alignment: Alignment.topRight,
+    //           child: Column(
+    //             crossAxisAlignment: CrossAxisAlignment.end,
+    //             children: [
+    //               if (!event.at.start.toTimeOfDay().isMidnight)
+    //                 TimeWidget(time: event.at.start),
+    //               if (!event.at.start.toTimeOfDay().isMidnight &&
+    //                   !event.at.end.toTimeOfDay().isMidnight) ...[
+    //                 const SizedBox(height: 4),
+    //                 DurationText(
+    //                   duration: !(event.at.start.toTimeOfDay().isMidnight ||
+    //                           event.at.end.toTimeOfDay().isMidnight)
+    //                       ? event.at.duration
+    //                       : Duration.zero,
+    //                 ),
+    //               ],
+    //             ],
+    //           ),
+    //         ),
+    //         const SizedBox(width: 8),
+    //         Expanded(
+    //           child: Column(
+    //             crossAxisAlignment: CrossAxisAlignment.stretch,
+    //             children: [
+    //               if (event.name == null)
+    //                 const SizedBox(
+    //                   height: 16,
+    //                   child: Squiggle(),
+    //                 ),
+    //               if (event.name != null)
+    //                 Text(
+    //                   event.name!,
+    //                   style: const TextStyle(
+    //                       fontWeight: FontWeight.w500, height: 1.0),
+    //                   overflow: TextOverflow.ellipsis,
+    //                 ),
+    //               if (event.name != null) const SizedBox(height: 4),
+    //             ],
+    //           ),
+    //         ),
+    //       ],
+    //     ),
+    //   ),
+    // );
   }
 }
 

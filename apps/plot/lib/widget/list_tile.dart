@@ -135,8 +135,9 @@ class _ListTileState extends State<ListTile> {
                       spacing: 2,
                       children: [
                         if (widget.header != null) widget.header!,
-                        widget.body ??
-                            Row(
+                        widget.body != null
+                            ? Row(children: [Expanded(child: widget.body!)])
+                            : Row(
                               children: [
                                 Flexible(
                                   child: Text(

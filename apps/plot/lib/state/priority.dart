@@ -64,6 +64,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         for (final scheduledDay in scheduleMap.values) {
           if (scheduledDay.date < today) {
             activity.addAll(scheduledDay.priorities.map((p) => PriorityAgendaItem(p)));
+            activity.addAll(scheduledDay.events.map((e) => EventAgendaItem(e)));
           } else if (scheduledDay.date == today) {
             for (final priority in scheduledDay.priorities) {
               if (priority.doNow) {
@@ -72,8 +73,11 @@ class PriorityBloc extends Cubit<PriorityState> {
                 activity.add(PriorityAgendaItem(priority));
               }
             }
+            // Add events for today
+            scheduled.addAll(scheduledDay.events.map((e) => EventAgendaItem(e)));
           } else {
             scheduled.addAll(scheduledDay.priorities.map((p) => PriorityAgendaItem(p)));
+            scheduled.addAll(scheduledDay.events.map((e) => EventAgendaItem(e)));
           }
         }
         emit(
