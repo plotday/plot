@@ -79,7 +79,7 @@ class PriorityState extends Equatable {
   }
 
   List<AgendaItem> get agendaItems {
-    return [...scheduled.reversed, ...activity];
+    return [...scheduled, ...activity];
   }
 
   @override

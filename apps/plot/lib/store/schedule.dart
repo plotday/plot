@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'dart:collection';
 import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/util/async.dart';
@@ -26,7 +27,9 @@ class ScheduledDay extends Equatable {
           (rangeMap, todaySchedule) {
             final result = Map<Date, ScheduledDay>.from(rangeMap);
             result[today] = todaySchedule;
-            return result;
+            final sortedEntries = result.entries.toList()
+              ..sort((a, b) => a.key.compareTo(b.key));
+            return LinkedHashMap<Date, ScheduledDay>.fromEntries(sortedEntries);
           },
         );
       } else {
@@ -52,17 +55,18 @@ class ScheduledDay extends Equatable {
       Priority.watchDefault(),
       context != null
           ? Priority.watch(
-            range: range,
-            path: context.path,
-            self: false,
-            deleted: deleted,
-          )
+              range: range,
+              path: context.path,
+              self: false,
+              deleted: deleted,
+            )
           : Stream.value(<Priority>[]),
       (events, defaultPriority, allPriorities) {
         var (start, end) = range.bounds;
 
-        final direction =
-            start < end ? TimeDirection.ascending : TimeDirection.descending;
+        final direction = start < end
+            ? TimeDirection.ascending
+            : TimeDirection.descending;
         Map<Date, ScheduledDay> days = {};
         Iterator<Event> eventIterator = events.iterator;
         bool hasMore = eventIterator.moveNext();
@@ -111,16 +115,14 @@ class ScheduledDay extends Equatable {
       Priority.watchDefault(),
       context != null
           ? Priority.watch(
-            range: Day(today),
-            path: context.path,
-            self: false,
-            deleted: false,
-          )
+              range: Day(today),
+              path: context.path,
+              self: false,
+              deleted: false,
+            )
           : Stream.value(<Priority>[]),
-      (Priority defaultPriority, List<Priority> allPriorities) => (
-        defaultPriority,
-        allPriorities,
-      ),
+      (Priority defaultPriority, List<Priority> allPriorities) =>
+          (defaultPriority, allPriorities),
     ).switchMap(((Priority, List<Priority>) tuple) {
       final defaultPriority = tuple.$1;
       final allPriorities = tuple.$2;
@@ -138,12 +140,12 @@ class ScheduledDay extends Equatable {
               null,
               (DateTime? next, Event e) =>
                   e.at.start.isAfter(now) &&
-                          (next == null || next.isAfter(e.at.start))
-                      ? e.at.start
-                      : e.at.end.isAfter(now) &&
-                          (next == null || next.isAfter(e.at.end))
-                      ? e.at.end
-                      : next,
+                      (next == null || next.isAfter(e.at.start))
+                  ? e.at.start
+                  : e.at.end.isAfter(now) &&
+                        (next == null || next.isAfter(e.at.end))
+                  ? e.at.end
+                  : next,
             );
           }
 
@@ -189,10 +191,9 @@ class ScheduledDay extends Equatable {
              .toList(),
          defaultPriority,
        ),
-       allDayEvents =
-           events
-               .where((e) => e.at.duration >= const Duration(hours: 22))
-               .toList();
+       allDayEvents = events
+           .where((e) => e.at.duration >= const Duration(hours: 22))
+           .toList();
 
   final Date date;
   final List<Event> events;

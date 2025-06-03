@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
+import 'logging.dart';
 
 part 'priority_state.dart';
 
@@ -46,7 +47,11 @@ class PriorityBloc extends Cubit<PriorityState> {
         depth: 1,
         pinned: true,
       ).listen((priorities) {
-        emit(state.copyWith(pinned: priorities.map((p) => PriorityAgendaItem(p)).toList()));
+        emit(
+          state.copyWith(
+            pinned: priorities.map((p) => PriorityAgendaItem(p)).toList(),
+          ),
+        );
       }),
     );
     // Watch upcoming, scheduled priorities and past activity using ScheduledDay.watch
@@ -62,8 +67,11 @@ class PriorityBloc extends Cubit<PriorityState> {
         final activity = <AgendaItem>[];
         final scheduled = <AgendaItem>[];
         for (final scheduledDay in scheduleMap.values) {
+          log.info('Processing scheduled day: ${scheduledDay.date}');
           if (scheduledDay.date < today) {
-            activity.addAll(scheduledDay.priorities.map((p) => PriorityAgendaItem(p)));
+            activity.addAll(
+              scheduledDay.priorities.map((p) => PriorityAgendaItem(p)),
+            );
             activity.addAll(scheduledDay.events.map((e) => EventAgendaItem(e)));
           } else if (scheduledDay.date == today) {
             for (final priority in scheduledDay.priorities) {
@@ -74,10 +82,16 @@ class PriorityBloc extends Cubit<PriorityState> {
               }
             }
             // Add events for today
-            scheduled.addAll(scheduledDay.events.map((e) => EventAgendaItem(e)));
+            scheduled.addAll(
+              scheduledDay.events.map((e) => EventAgendaItem(e)),
+            );
           } else {
-            scheduled.addAll(scheduledDay.priorities.map((p) => PriorityAgendaItem(p)));
-            scheduled.addAll(scheduledDay.events.map((e) => EventAgendaItem(e)));
+            scheduled.addAll(
+              scheduledDay.priorities.map((p) => PriorityAgendaItem(p)),
+            );
+            scheduled.addAll(
+              scheduledDay.events.map((e) => EventAgendaItem(e)),
+            );
           }
         }
         emit(
