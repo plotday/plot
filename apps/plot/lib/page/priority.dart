@@ -284,21 +284,46 @@ class PriorityPage extends StatelessWidget {
                                       ),
                                     ),
                                   if (!hidden)
-                                    current.when(
-                                      priority: (priority) {
-                                        return PriorityWidget(
-                                          priority: priority,
-                                          context: state.context,
-                                          selected: selected,
-                                          onHover: onHover,
-                                        );
-                                      },
+                                    ...current.when(
+                                      priority:
+                                          (priority) => [
+                                            PriorityWidget(
+                                              priority: priority,
+                                              context: state.context,
+                                              selected: selected,
+                                              onHover: onHover,
+                                            ),
+                                          ],
                                       event:
-                                          (event) => EventWidget(
-                                            event: event,
-                                            selected: selected,
-                                            onHover: onHover,
-                                          ),
+                                          (event) => [
+                                            if (!event.at.start
+                                                .toTimeOfDay()
+                                                .isMidnight)
+                                              Text(
+                                                event.start
+                                                    .toTimeOfDay()
+                                                    .format(context),
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                  color:
+                                                      context
+                                                          .theme
+                                                          .colors
+                                                          .mutedForeground,
+                                                  fontSize:
+                                                      context
+                                                          .theme
+                                                          .typography
+                                                          .xs
+                                                          .fontSize,
+                                                ),
+                                              ),
+                                            EventWidget(
+                                              event: event,
+                                              selected: selected,
+                                              onHover: onHover,
+                                            ),
+                                          ],
                                     ),
                                 ],
                               );
