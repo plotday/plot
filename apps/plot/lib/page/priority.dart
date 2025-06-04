@@ -300,9 +300,7 @@ class PriorityPage extends StatelessWidget {
                                                 .toTimeOfDay()
                                                 .isMidnight)
                                               Text(
-                                                event.start
-                                                    .toTimeOfDay()
-                                                    .format(context),
+                                                "${event.start.toTimeOfDay().format(context)}${event.end.toTimeOfDay().isMidnight ? "" : " | ${event.at.duration.format()}"}",
                                                 textAlign: TextAlign.center,
                                                 style: TextStyle(
                                                   color:

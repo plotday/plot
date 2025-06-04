@@ -510,7 +510,26 @@ extension DurationExtension on Duration {
   }
 
   String format() {
-    return '${inHours > 0 ? inHours : ''}:${inMinutes.remainder(60).toString().padLeft(2, '0')}';
+    final int hours = inHours;
+    final int minutes = inMinutes.remainder(60);
+
+    if (hours == 0 && minutes == 0) {
+      return '—';
+    }
+
+    final buffer = StringBuffer();
+    if (hours > 0) {
+      buffer.write('$hours');
+      buffer.write('h');
+    }
+    if (hours > 0 && minutes > 0) {
+      buffer.write(' ');
+    }
+    if (minutes > 0) {
+      buffer.write('$minutes');
+      buffer.write('m');
+    }
+    return buffer.toString();
   }
 
   bool get hasHours => inHours > 0;
