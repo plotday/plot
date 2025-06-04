@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/command/command.dart';
 
 class EventWidget extends StatelessWidget {
   const EventWidget({
@@ -23,6 +24,12 @@ class EventWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      icon: PlotIcon.event,
+      iconPadding: true,
+      command:
+          event.priority != null
+              ? ChangeCurrentPriority(event.priority!)
+              : null,
       selected: selected,
       onHover: onHover,
       header:

@@ -21,4 +21,5 @@ class PlotIcon {
   static const IconData open = FontAwesomeIcons.arrowRight;
   static const IconData menu = FontAwesomeIcons.ellipsisVertical;
   static const IconData settings = FontAwesomeIcons.gear;
+  static const IconData event = FontAwesomeIcons.calendar;
 }

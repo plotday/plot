@@ -5,7 +5,6 @@ import 'package:forui/forui.dart';
 import 'package:plot/command/command.dart';
 import 'button.dart';
 import 'colour_scheme.dart';
-import 'theme.dart';
 import 'logging.dart';
 
 enum ListTileStyle { item, header }
@@ -38,6 +37,8 @@ class ListTile extends StatefulWidget {
     /// Override the body
     this.body,
     this.header,
+    this.icon,
+    this.iconPadding = false,
 
     super.key,
   }) : title = title ?? command?.title ?? '';
@@ -52,6 +53,8 @@ class ListTile extends StatefulWidget {
   final String title;
   final Widget? body;
   final Widget? header;
+  final IconData? icon;
+  final bool iconPadding;
   final void Function(bool hovered)? onHover;
 
   @override
@@ -71,30 +74,28 @@ class _ListTileState extends State<ListTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap:
-          widget.command != null
-              ? () {
-                try {
-                  widget.command!.run(context);
-                } catch (e, t) {
-                  log.warning("Command ${widget.command?.title} failed", e, t);
-                }
+      onTap: widget.command != null
+          ? () {
+              try {
+                widget.command!.run(context);
+              } catch (e, t) {
+                log.warning("Command ${widget.command?.title} failed", e, t);
               }
-              : null,
-      onDoubleTap:
-          widget.doubleTapCommand != null
-              ? () {
-                try {
-                  widget.doubleTapCommand!.run(context);
-                } catch (e, t) {
-                  log.warning(
-                    "Command ${widget.doubleTapCommand?.title} failed",
-                    e,
-                    t,
-                  );
-                }
+            }
+          : null,
+      onDoubleTap: widget.doubleTapCommand != null
+          ? () {
+              try {
+                widget.doubleTapCommand!.run(context);
+              } catch (e, t) {
+                log.warning(
+                  "Command ${widget.doubleTapCommand?.title} failed",
+                  e,
+                  t,
+                );
               }
-              : null,
+            }
+          : null,
       child: MouseRegion(
         onHover: (PointerHoverEvent event) {
           if (event.position != lastMousePosition) {
@@ -110,22 +111,30 @@ class _ListTileState extends State<ListTile> {
             color: widget.selected ? context.colour.highlight : null,
             padding: EdgeInsets.symmetric(horizontal: 8),
             child: Row(
-              crossAxisAlignment:
-                  widget.body == null
-                      ? CrossAxisAlignment.center
-                      : CrossAxisAlignment.start,
+              crossAxisAlignment: widget.body == null
+                  ? CrossAxisAlignment.center
+                  : CrossAxisAlignment.start,
               spacing: 8,
               children: [
                 if (widget.leadingCommand != null)
                   Button.icon(widget.leadingCommand!),
                 if (widget.leadingCommand == null &&
                     widget.body == null &&
-                    (widget.command?.statusIcon.or(widget.command?.icon)) !=
+                    (widget.icon ??
+                            widget.command?.statusIcon.or(
+                              widget.command?.icon,
+                            )) !=
                         null)
-                  Icon(
-                    widget.command!.statusIcon.or(widget.command!.icon)!,
-                    size: 12,
-                    color: context.colour.muted,
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: widget.iconPadding ? 6 : 0,
+                    ),
+                    child: Icon(
+                      widget.icon ??
+                          widget.command!.statusIcon.or(widget.command!.icon)!,
+                      size: 16,
+                      color: context.colour.muted,
+                    ),
                   ),
                 Expanded(
                   child: Padding(
@@ -138,34 +147,36 @@ class _ListTileState extends State<ListTile> {
                         widget.body != null
                             ? Row(children: [Expanded(child: widget.body!)])
                             : Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    widget.style == ListTileStyle.header
-                                        ? widget.title.toUpperCase()
-                                        : widget.title,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: context.theme.typography.xs.copyWith(
-                                      color:
-                                          widget.style == ListTileStyle.header
-                                              ? context.colour.muted
-                                              : context.colour.foreground,
-                                    ),
-                                  ),
-                                ),
-                                if (widget.command?.subtitle != null)
+                                children: [
                                   Flexible(
                                     child: Text(
-                                      '  ${widget.command!.subtitle!}',
+                                      widget.style == ListTileStyle.header
+                                          ? widget.title.toUpperCase()
+                                          : widget.title,
                                       overflow: TextOverflow.ellipsis,
                                       style: context.theme.typography.xs
                                           .copyWith(
-                                            color: context.colour.muted,
+                                            color:
+                                                widget.style ==
+                                                    ListTileStyle.header
+                                                ? context.colour.muted
+                                                : context.colour.foreground,
                                           ),
                                     ),
                                   ),
-                              ],
-                            ),
+                                  if (widget.command?.subtitle != null)
+                                    Flexible(
+                                      child: Text(
+                                        '  ${widget.command!.subtitle!}',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: context.theme.typography.xs
+                                            .copyWith(
+                                              color: context.colour.muted,
+                                            ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                         if (widget.command?.description != null)
                           Text(widget.command!.description!),
                         if (widget.details != null) widget.details!,
