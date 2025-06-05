@@ -544,17 +544,25 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   static const separator = ' › ';
 
-  List<PriorityAncestor> ancestors({Priority? context}) {
-    if (_ancestors.length < 2) {
-      return const [];
-    } else if (context != null) {
-      int startIndex = _ancestors.indexWhere((a) => a.id == context.id);
+  List<PriorityAncestor> ancestors({
+    Priority? context,
+    bool includeSelf = false,
+  }) {
+    final ancestors = [
+      ..._ancestors,
+      if (includeSelf) PriorityAncestor(id: id, title: title),
+    ];
+    if (context != null) {
+      int startIndex = ancestors.indexWhere((a) => a.id == context.id);
       if (startIndex != -1) {
-        return _ancestors.sublist(startIndex + 1);
+        return ancestors.sublist(startIndex + 1);
       }
     }
-    // Skip "Everything" root priority
-    return _ancestors.sublist(1);
+    if (ancestors.length > 1) {
+      // Skip "Everything" root priority
+      return ancestors.sublist(1);
+    }
+    return ancestors;
   }
 
   String ancestorsLabel({Priority? context}) {

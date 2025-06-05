@@ -5,18 +5,17 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
 class AgendaHeader extends StatelessWidget {
-  const AgendaHeader({
-    required this.event,
-    this.context,
+  AgendaHeader({
+    List<PriorityAncestor>? priorityAncestry,
+    this.event,
     this.selected = false,
     this.onHover,
     super.key,
-  });
+  }) : priorityAncestry =
+           priorityAncestry ?? event?.priority?.ancestors(includeSelf: true);
 
-  final Event event;
-
-  /// Display priority relative to this priority.
-  final Priority? context;
+  final Event? event;
+  final List<PriorityAncestor>? priorityAncestry;
 
   final bool selected;
   final void Function(bool hovered)? onHover;
@@ -25,45 +24,39 @@ class AgendaHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       // icon: PlotIcon.event,
-      leading: Text(
-        event.start.toTimeOfDay().isMidnight
-            ? ''
-            : event.start.toTimeOfDay().format(context),
-        textAlign: TextAlign.end,
-        style: TextStyle(
-          color: context.theme.colors.mutedForeground,
-          fontSize: context.theme.typography.xs.fontSize,
-        ),
-      ),
+      leading:
+          event == null
+              ? SizedBox()
+              : Text(
+                event!.start.toTimeOfDay().isMidnight
+                    ? ''
+                    : event!.start.toTimeOfDay().format(context),
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                  color: context.theme.colors.mutedForeground,
+                  fontSize: context.theme.typography.xs.fontSize,
+                ),
+              ),
       leadingWidth: 60.0,
       leadingPadding: true,
       command:
-          event.priority != null
-              ? ChangeCurrentPriority(event.priority!)
+          priorityAncestry?.isNotEmpty == false
+              ? ChangeCurrentPriority.byId(priorityAncestry!.last.id)
               : null,
       selected: selected,
       onHover: onHover,
-      body: Column(
+      body: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        spacing: 8.0,
         children: [
-          Row(
-            spacing: 8.0,
-            children: [
-              Expanded(child: Squiggle()),
-              if (event.duration.inSeconds > 0)
-                Text(
-                  event.duration.format(),
-                  style: TextStyle(
-                    color: context.theme.colors.mutedForeground,
-                    fontSize: context.theme.typography.xs.fontSize,
-                  ),
-                ),
-            ],
-          ),
-          if (event.priorityId != null && event.priorityId != this.context?.id)
-            PriorityLabel(
-              priority: event.priority,
-              context: this.context,
-              onlyAncestors: true,
+          Expanded(child: PriorityLabel(ancestors: priorityAncestry)),
+          if (event != null && event!.duration.inSeconds > 0)
+            Text(
+              event!.duration.format(),
+              style: TextStyle(
+                color: context.theme.colors.mutedForeground,
+                fontSize: context.theme.typography.xs.fontSize,
+              ),
             ),
         ],
       ),

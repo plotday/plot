@@ -303,6 +303,12 @@ class PriorityPage extends StatelessWidget {
                                     ...current.when(
                                       priority:
                                           (priority) => [
+                                            AgendaHeader(
+                                              priorityAncestry:
+                                                  priority.ancestors(),
+                                              selected: selected,
+                                              onHover: onHover,
+                                            ),
                                             PriorityWidget(
                                               priority: priority,
                                               context: state.context,
