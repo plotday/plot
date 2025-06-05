@@ -55,7 +55,7 @@ class Editor extends StatefulWidget {
 
   final String? hint;
   final bool autofocus;
-  final ValueChanged<String>? onSubmitted;
+  final void Function(String value, {bool alt})? onSubmitted;
   final ValueChanged<String>? onChange;
   final FocusNode? focusNode;
 
@@ -145,14 +145,17 @@ class EditorState extends State<Editor> {
           _isEmpty
               ? BidirectionalList.shortcuts
               : {
-                const SingleActivator(LogicalKeyboardKey.enter, shift: false):
-                    SubmitIntent(),
+                const SingleActivator(LogicalKeyboardKey.enter): SubmitIntent(),
+                const SingleActivator(
+                  LogicalKeyboardKey.enter,
+                  meta: true,
+                ): SubmitIntent(alt: true),
               },
       child: Actions(
         actions: <Type, Action<Intent>>{
           SubmitIntent: CallbackAction<SubmitIntent>(
             onInvoke: (SubmitIntent intent) {
-              submit();
+              submit(intent.alt);
               return KeyEventResult.handled;
             },
           ),
@@ -194,10 +197,10 @@ class EditorState extends State<Editor> {
     );
   }
 
-  void submit() {
+  void submit(bool alt) {
     final md = serializeDocumentToMarkdown(_document);
     if (md.trim().isEmpty) return;
-    widget.onSubmitted?.call(md);
+    widget.onSubmitted?.call(md, alt: alt);
     clear();
   }
 }
@@ -308,7 +311,9 @@ class HintComponentBuilder implements ComponentBuilder {
 }
 
 class SubmitIntent extends Intent {
-  const SubmitIntent();
+  const SubmitIntent({this.alt = false});
+
+  final bool alt;
 }
 
 class ViewerTapHandler extends SuperReaderLaunchLinkTapHandler {

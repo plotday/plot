@@ -266,6 +266,7 @@ class Event extends EventRow {
       Store.get.save(table, toCompanion(false), EventsBase());
 
   DateTimeRange get at => DateTimeRange(start, end);
+  Duration get duration => at.duration;
 
   BalanceType get balanceType {
     switch (response) {

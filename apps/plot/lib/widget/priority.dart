@@ -139,6 +139,7 @@ class PriorityWidget extends StatelessWidget {
     return ListTile(
       command: !isContext ? ChangeCurrentPriority(priority) : null,
       leadingCommand: priorityPrimaryCommand(priority),
+      leadingWidth: 60,
       trailingCommands: [ShowPriorityCommands(priority)],
       body: Viewer(
         markdown: (expanded ? priority.note : null) ?? priority.title,
@@ -146,13 +147,14 @@ class PriorityWidget extends StatelessWidget {
           context.run<void>(ChangeCurrentPriority(priority));
         },
       ),
-      header: contextChild
-          ? null
-          : PriorityLabel(
-              priority: priority,
-              context: this.context,
-              onlyAncestors: true,
-            ),
+      header:
+          contextChild
+              ? null
+              : PriorityLabel(
+                priority: priority,
+                context: this.context,
+                onlyAncestors: true,
+              ),
       selected: selected,
       onHover: onHover,
     );

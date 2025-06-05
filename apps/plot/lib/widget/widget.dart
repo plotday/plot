@@ -1,3 +1,5 @@
+export 'package:forui/forui.dart';
+
 export 'priority.dart';
 export 'alert.dart';
 export 'badge.dart';

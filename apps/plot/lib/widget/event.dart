@@ -24,134 +24,50 @@ class EventWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      icon: PlotIcon.event,
-      iconPadding: true,
+      // icon: PlotIcon.event,
+      leading: Text(
+        event.start.toTimeOfDay().isMidnight
+            ? ''
+            : event.start.toTimeOfDay().format(context),
+        textAlign: TextAlign.end,
+        style: TextStyle(
+          color: context.theme.colors.mutedForeground,
+          fontSize: context.theme.typography.xs.fontSize,
+        ),
+      ),
+      leadingWidth: 60.0,
+      leadingPadding: true,
       command:
           event.priority != null
               ? ChangeCurrentPriority(event.priority!)
               : null,
       selected: selected,
       onHover: onHover,
-      header:
-          event.priorityId != null && event.priorityId != this.context?.id
-              ? PriorityLabel(
-                priority: event.priority,
-                context: this.context,
-                onlyAncestors: true,
-              )
-              : null,
-      body: event.name == null ? Squiggle() : null,
-      title: event.name?.isNotEmpty == true ? event.name! : null,
+      body: Column(
+        children: [
+          Row(
+            spacing: 8.0,
+            children: [
+              Expanded(child: Squiggle()),
+              if (event.duration.inSeconds > 0)
+                Text(
+                  event.duration.format(),
+                  style: TextStyle(
+                    color: context.theme.colors.mutedForeground,
+                    fontSize: context.theme.typography.xs.fontSize,
+                  ),
+                ),
+            ],
+          ),
+          if (event.priorityId != null && event.priorityId != this.context?.id)
+            PriorityLabel(
+              priority: event.priority,
+              context: this.context,
+              onlyAncestors: true,
+            ),
+          if (event.name?.isNotEmpty == true) Text(event.name!),
+        ],
+      ),
     );
-    // GestureDetector(
-    //   onTap: () => onSelect(),
-    //   child: Padding(
-    //     padding: const EdgeInsetsDirectional.all(4),
-    //     child: Row(
-    //       crossAxisAlignment: CrossAxisAlignment.start,
-    //       children: [
-    //         Container(
-    //           width: 68,
-    //           alignment: Alignment.topRight,
-    //           child: Column(
-    //             crossAxisAlignment: CrossAxisAlignment.end,
-    //             children: [
-    //               if (!event.at.start.toTimeOfDay().isMidnight)
-    //                 TimeWidget(time: event.at.start),
-    //               if (!event.at.start.toTimeOfDay().isMidnight &&
-    //                   !event.at.end.toTimeOfDay().isMidnight) ...[
-    //                 const SizedBox(height: 4),
-    //                 DurationText(
-    //                   duration: !(event.at.start.toTimeOfDay().isMidnight ||
-    //                           event.at.end.toTimeOfDay().isMidnight)
-    //                       ? event.at.duration
-    //                       : Duration.zero,
-    //                 ),
-    //               ],
-    //             ],
-    //           ),
-    //         ),
-    //         const SizedBox(width: 8),
-    //         Expanded(
-    //           child: Column(
-    //             crossAxisAlignment: CrossAxisAlignment.stretch,
-    //             children: [
-    //               if (event.name == null)
-    //                 const SizedBox(
-    //                   height: 16,
-    //                   child: Squiggle(),
-    //                 ),
-    //               if (event.name != null)
-    //                 Text(
-    //                   event.name!,
-    //                   style: const TextStyle(
-    //                       fontWeight: FontWeight.w500, height: 1.0),
-    //                   overflow: TextOverflow.ellipsis,
-    //                 ),
-    //               if (event.name != null) const SizedBox(height: 4),
-    //             ],
-    //           ),
-    //         ),
-    //       ],
-    //     ),
-    //   ),
-    // );
   }
 }
-
-// builder: (context, prioritiesState) => Expanded(
-//   child: MenuAnchor(
-//     builder: (BuildContext context, MenuController controller,
-//             Widget? child) =>
-//         InkWell(
-//       child: Column(
-//         crossAxisAlignment: CrossAxisAlignment.start,
-//         children: [
-//           Text(
-//             event.context?.name ?? 'Open',
-//           ),
-//           if (event.name != null)
-//             Text(
-//               event.name!,
-//               style: const TextStyle(fontWeight: FontWeight.w500),
-//             ),
-//         ],
-//       ),
-//       onTap: () {
-//         if (controller.isOpen) {
-//           controller.close();
-//         } else {
-//           controller.open();
-//         }
-//       },
-//     ),
-//     menuChildren: [
-//       if (event.id != null &&
-//           event.at.end.isAfter(DateTime.now()))
-//         MenuItemButton(
-//           leadingIcon: const Icon(Icons.event_busy),
-//           onPressed: () {
-//             event
-//                 .copyWith(
-//                   response: EventResponse.declined,
-//                 )
-//                 .save();
-//           },
-//           child: const Text('Release time'),
-//         ),
-//       if (prioritiesState is PriorityLoaded)
-//         ...prioritiesState.priorities.map(
-//           (priority) => MenuItemButton(
-//             onPressed: () {
-//               event
-//                   .copyWith(
-//                     context: priority.context,
-//                   )
-//                   .save();
-//             },
-//             child: Text(priority.context?.name ?? 'Other'),
-//           ),
-//         )
-//     ],
-//   ),
-// ),

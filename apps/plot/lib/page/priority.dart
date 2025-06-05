@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
-import 'package:forui/forui.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/event.dart';
@@ -248,22 +247,39 @@ class PriorityPage extends StatelessWidget {
                                 ),
                                 children: [
                                   if (nextDate != date)
-                                    Text(
-                                      date.format(),
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color:
-                                            context
-                                                .theme
-                                                .colors
-                                                .mutedForeground,
-                                        fontSize:
-                                            context
-                                                .theme
-                                                .typography
-                                                .xs
-                                                .fontSize,
+                                    ListTile(
+                                      leading: Text(
+                                        date.format(format: 'EEE'),
+                                        // .toUpperCase(),
+                                        textAlign: TextAlign.end,
+                                        style: TextStyle(
+                                          fontSize:
+                                              context
+                                                  .theme
+                                                  .typography
+                                                  .xs
+                                                  .fontSize,
+                                        ),
                                       ),
+                                      leadingPadding: true,
+                                      body: Text(
+                                        date.format(format: 'MMM d'),
+                                        textAlign: TextAlign.start,
+                                        style: TextStyle(
+                                          color:
+                                              context
+                                                  .theme
+                                                  .colors
+                                                  .mutedForeground,
+                                          fontSize:
+                                              context
+                                                  .theme
+                                                  .typography
+                                                  .xs
+                                                  .fontSize,
+                                        ),
+                                      ),
+                                      leadingWidth: 60,
                                     ),
                                   if (firstScheduled)
                                     Text(
@@ -296,26 +312,20 @@ class PriorityPage extends StatelessWidget {
                                           ],
                                       event:
                                           (event) => [
-                                            if (!event.at.start
-                                                .toTimeOfDay()
-                                                .isMidnight)
-                                              Text(
-                                                "${event.start.toTimeOfDay().format(context)}${event.end.toTimeOfDay().isMidnight ? "" : " | ${event.at.duration.format()}"}",
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  color:
-                                                      context
-                                                          .theme
-                                                          .colors
-                                                          .mutedForeground,
-                                                  fontSize:
-                                                      context
-                                                          .theme
-                                                          .typography
-                                                          .xs
-                                                          .fontSize,
-                                                ),
-                                              ),
+                                            // if (!event.at.start
+                                            //     .toTimeOfDay()
+                                            //     .isMidnight)
+                                            //   TimeHeader(
+                                            //     label: event.start
+                                            //         .toTimeOfDay()
+                                            //         .format(context),
+                                            //     duration:
+                                            //         event.end
+                                            //                 .toTimeOfDay()
+                                            //                 .isMidnight
+                                            //             ? const Duration()
+                                            //             : event.at.duration,
+                                            //   ),
                                             EventWidget(
                                               event: event,
                                               selected: selected,
@@ -343,10 +353,17 @@ class PriorityPage extends StatelessWidget {
                             hint: 'Add a priority',
                             autofocus: true,
                             focusNode: focusNode,
-                            onSubmitted: (body) async {
+                            onSubmitted: (body, {bool alt = false}) async {
+                              log.info(
+                                'Adding new priority with body: $body ($alt)',
+                              );
                               final priority = state.draft.copyWith(
                                 note: Value(body),
                                 draft: false,
+                                doAt:
+                                    alt
+                                        ? Value(Date.today())
+                                        : const Value.absent(),
                               );
                               await context.read<PriorityBloc>().add(priority);
                             },
