@@ -312,25 +312,17 @@ class PriorityPage extends StatelessWidget {
                                           ],
                                       event:
                                           (event) => [
-                                            // if (!event.at.start
-                                            //     .toTimeOfDay()
-                                            //     .isMidnight)
-                                            //   TimeHeader(
-                                            //     label: event.start
-                                            //         .toTimeOfDay()
-                                            //         .format(context),
-                                            //     duration:
-                                            //         event.end
-                                            //                 .toTimeOfDay()
-                                            //                 .isMidnight
-                                            //             ? const Duration()
-                                            //             : event.at.duration,
-                                            //   ),
-                                            EventWidget(
+                                            AgendaHeader(
                                               event: event,
                                               selected: selected,
                                               onHover: onHover,
                                             ),
+                                            if (event.name?.isNotEmpty == true)
+                                              EventWidget(
+                                                event: event,
+                                                selected: selected,
+                                                onHover: onHover,
+                                              ),
                                           ],
                                     ),
                                 ],

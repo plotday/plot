@@ -12,23 +12,24 @@ class SmallCapsWidget extends StatelessWidget {
     final words = text.split(' ');
     return Text.rich(
       TextSpan(
-        children: words
-            .expand((word) => [
-                  TextSpan(
-                    text: word[0].toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+        children:
+            words
+                .expand(
+                  (word) => [
+                    TextSpan(
+                      text: word[0].toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  TextSpan(
-                    text: word.substring(1).toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 9,
+                    TextSpan(
+                      text: word.substring(1).toUpperCase(),
+                      style: const TextStyle(fontSize: 9),
                     ),
-                  ),
-                ])
-            .toList(),
+                  ],
+                )
+                .toList(),
       ),
     );
   }
@@ -43,28 +44,15 @@ class TimeWidget extends StatelessWidget {
     final parts = time.toTimeOfDay().formatShort(context).split(' ');
     return Text.rich(
       TextSpan(
-        style: const TextStyle(
-          height: 1,
-        ),
+        style: const TextStyle(height: 1),
         children: <TextSpan>[
           TextSpan(
             text: parts[0],
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
+          if (parts.length > 1) const TextSpan(text: ' '),
           if (parts.length > 1)
-            const TextSpan(
-              text: ' ',
-            ),
-          if (parts.length > 1)
-            TextSpan(
-              text: parts[1],
-              style: const TextStyle(
-                fontSize: 9,
-              ),
-            ),
+            TextSpan(text: parts[1], style: const TextStyle(fontSize: 9)),
         ],
       ),
     );
@@ -114,35 +102,18 @@ class DurationText extends StatelessWidget {
         if (icon != null) Icon(icon!),
         Text.rich(
           TextSpan(
-            style: const TextStyle(
-              fontSize: 12,
-              height: 1,
-            ),
+            style: const TextStyle(fontSize: 12, height: 1),
             children: <TextSpan>[
               if (!duration.hasHours && !duration.hasMinutes)
-                const TextSpan(
-                  text: '—',
-                ),
+                const TextSpan(text: '—'),
+              if (duration.hasHours) TextSpan(text: duration.hoursString),
               if (duration.hasHours)
-                TextSpan(
-                  text: duration.hoursString,
-                ),
-              if (duration.hasHours)
-                const TextSpan(
-                  text: 'h',
-                  style: TextStyle(fontSize: 10),
-                ),
+                const TextSpan(text: 'h', style: TextStyle(fontSize: 10)),
               if (duration.hasHours && duration.hasMinutes)
                 const TextSpan(text: ' '),
+              if (duration.hasMinutes) TextSpan(text: duration.minutesString),
               if (duration.hasMinutes)
-                TextSpan(
-                  text: duration.minutesString,
-                ),
-              if (duration.hasMinutes)
-                const TextSpan(
-                  text: 'm',
-                  style: TextStyle(fontSize: 10),
-                ),
+                const TextSpan(text: 'm', style: TextStyle(fontSize: 10)),
             ],
           ),
         ),

@@ -4,8 +4,8 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
-class EventWidget extends StatelessWidget {
-  const EventWidget({
+class AgendaHeader extends StatelessWidget {
+  const AgendaHeader({
     required this.event,
     this.context,
     this.selected = false,
@@ -65,9 +65,42 @@ class EventWidget extends StatelessWidget {
               context: this.context,
               onlyAncestors: true,
             ),
-          if (event.name?.isNotEmpty == true) Text(event.name!),
         ],
       ),
+    );
+  }
+}
+
+class EventWidget extends StatelessWidget {
+  const EventWidget({
+    required this.event,
+    this.context,
+    this.selected = false,
+    this.onHover,
+    super.key,
+  });
+
+  final Event event;
+
+  /// Display priority relative to this priority.
+  final Priority? context;
+
+  final bool selected;
+  final void Function(bool hovered)? onHover;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      icon: PlotIcon.event,
+      leadingWidth: 60.0,
+      leadingPadding: true,
+      command:
+          event.priority != null
+              ? ChangeCurrentPriority(event.priority!)
+              : null,
+      selected: selected,
+      onHover: onHover,
+      title: event.name ?? 'Untitled Event',
     );
   }
 }

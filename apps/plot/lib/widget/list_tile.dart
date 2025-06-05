@@ -142,10 +142,13 @@ class _ListTileState extends State<ListTile> {
                         alignment: Alignment.centerRight,
                         child: Button.icon(command),
                       ),
-                      (null, null, var icon?) => Icon(
-                        icon,
-                        size: 16,
-                        color: context.colour.muted,
+                      (null, null, var icon?) => Align(
+                        alignment: Alignment.centerRight,
+                        child: Icon(
+                          icon,
+                          size: 16,
+                          color: context.colour.muted,
+                        ),
                       ),
                       _ => null,
                     },
