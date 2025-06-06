@@ -400,7 +400,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         return ancestors.sublist(startIndex + 1);
       }
     }
-    if (ancestors.isNotEmpty) {
+    if (ancestors.length > (includeSelf ? 1 : 0)) {
       // Skip "Everything" root priority
       return ancestors.sublist(1);
     }
