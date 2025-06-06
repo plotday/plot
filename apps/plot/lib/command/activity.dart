@@ -75,14 +75,15 @@ class PickActivity extends Commands<Activity> {
     this.priorityId,
     this.initialActivity,
   }) : super(
-        groups: [ActivityCommandGroup(priorityId: priorityId)],
-        secondaryCommand: priorityId != null 
-          ? (prompt) => NewActivity(
-              priorityId: priorityId!,
-              parent: initialActivity,
-            )
-          : null,
-      );
+         groups: [ActivityCommandGroup(priorityId: priorityId)],
+         secondaryCommand:
+             priorityId != null
+                 ? (prompt) => NewActivity(
+                   priorityId: priorityId!,
+                   parent: initialActivity,
+                 )
+                 : null,
+       );
 
   final PriorityId? priorityId;
   final Activity? initialActivity;
@@ -103,12 +104,12 @@ class ChangeCurrentActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    final priorityId = activity?.priorityId ?? 
-        (await Activity.getOne(activityId)).priorityId;
-    await context.router.navigate(PriorityRoute(
-      priorityId: priorityId,
-      activityId: activityId,
-    ));
+    final priorityId =
+        activity?.priorityId ?? (await Activity.getOne(activityId)).priorityId;
+    if (!context.mounted) return null;
+    await context.router.navigate(
+      PriorityRoute(priorityId: priorityId, activityId: activityId),
+    );
     return null;
   }
 }
@@ -119,10 +120,11 @@ class PickCurrentActivity extends ShowCommands<Activity> {
         title: 'Pick Current Activity',
         icon: PlotIcon.activity,
         shortcut: const SingleActivator(LogicalKeyboardKey.keyK, meta: true),
-        commands: (context) => PickActivity(
-          prompt: 'Change Current Activity',
-          priorityId: priorityId,
-        ),
+        commands:
+            (context) => PickActivity(
+              prompt: 'Change Current Activity',
+              priorityId: priorityId,
+            ),
       );
 
   final PriorityId? priorityId;
@@ -145,10 +147,9 @@ class AddActivity extends Command {
     await activity.copyWith(draft: false).save();
     Posthog().capture(eventName: 'Activity Added');
     if (context.mounted) {
-      await context.router.replace(PriorityRoute(
-        priorityId: activity.priorityId,
-        activityId: activity.id,
-      ));
+      await context.router.replace(
+        PriorityRoute(priorityId: activity.priorityId, activityId: activity.id),
+      );
     }
     return null;
   }
@@ -202,12 +203,7 @@ class StartActivity extends _UpdateActivityCommand {
   Future<CommandReturn?> run(BuildContext context) async {
     final start = !activity.doNow;
     await onUpdate(
-      activity.copyWith(
-        doAt:
-            start
-                ? Value(Date.today())
-                : const Value(null),
-      ),
+      activity.copyWith(doAt: start ? Value(Date.today()) : const Value(null)),
     );
     Posthog().capture(
       eventName: start ? 'Activity Started' : 'Activity Finished',
@@ -348,3 +344,4 @@ List<Command> activityCommands(Activity activity) => [
   activityPrimaryCommand(activity),
   ...activitySecondaryCommands(activity),
 ];
+
