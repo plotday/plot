@@ -56,7 +56,7 @@ class ScheduledDay extends Equatable {
       context != null
           ? Activity.watch(
               range: range,
-              priorityId: context.id,
+              priorityPath: context.path,
               deleted: deleted,
             )
           : Stream.value(<Activity>[]),
@@ -115,7 +115,7 @@ class ScheduledDay extends Equatable {
       context != null
           ? Activity.watch(
               range: Day(today),
-              priorityId: context.id,
+              priorityPath: context.path,
               deleted: false,
             )
           : Stream.value(<Activity>[]),

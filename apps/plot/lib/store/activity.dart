@@ -49,6 +49,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     DateRange? range,
     ActivityId? id,
     PriorityId? priorityId,
+    Path? priorityPath,
     Path? path,
     int? depth,
     bool? pinned,
@@ -62,6 +63,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       range: range,
       id: id,
       priorityId: priorityId,
+      priorityPath: priorityPath,
       path: path,
       depth: depth,
       pinned: pinned,
@@ -77,6 +79,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     DateRange? range,
     ActivityId? id,
     PriorityId? priorityId,
+    Path? priorityPath,
     Path? path,
     int? depth,
     bool? pinned,
@@ -90,6 +93,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       range: range,
       id: id,
       priorityId: priorityId,
+      priorityPath: priorityPath,
       path: path,
       depth: depth,
       pinned: pinned,
@@ -145,6 +149,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     /* Selectors */
     ActivityId? id,
     PriorityId? priorityId,
+    Path? priorityPath,
     Path? path,
 
     /* Filters */
@@ -198,6 +203,19 @@ class Activity extends ActivityRow implements Comparable<Activity> {
                     : Constant(true)),
       ),
     ]);
+
+    // Add priority path filtering if priorityPath is provided
+    if (priorityPath != null) {
+      final p = Store.get.alias(Store.get.priorities, 'p');
+      query = query.join([
+        innerJoin(
+          p,
+          p.id.equalsExp(a.priorityId) &
+              (p.path.equalsValue(priorityPath) |
+                  p.path.likeExp(Constant('$priorityPath%'))),
+        ),
+      ]);
+    }
 
     final nextEvent = Store.get.alias(Store.get.activityNextEvent, 'nextEvent');
     query = query.join([
