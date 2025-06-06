@@ -17,6 +17,7 @@ class PlotIcon {
   static const IconData startOfDay = FontAwesomeIcons.sunHaze;
   static const IconData priority = FontAwesomeIcons.rankingStar;
   static const IconData priorities = FontAwesomeIcons.house;
+  static const IconData activity = FontAwesomeIcons.listCheck;
   static const IconData delete = FontAwesomeIcons.trash;
   static const IconData open = FontAwesomeIcons.arrowRight;
   static const IconData menu = FontAwesomeIcons.ellipsisVertical;

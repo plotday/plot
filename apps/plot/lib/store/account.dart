@@ -3,7 +3,8 @@ part of 'store.dart';
 enum AccountProvider { google, outlook }
 
 @DataClassName('AccountRow')
-class Accounts extends Table with SyncableTable, IdTable, DeletableTable {
+class Accounts extends Table
+    with SyncableTable, IdTable, CreatedTable, DeletableTable {
   TextColumn get email => text()();
   TextColumn get provider => textEnum<AccountProvider>()();
 }
@@ -76,6 +77,7 @@ class Account extends AccountRow {
   Account.fromStore(AccountRow row, {this.calendars})
     : super(
         id: row.id,
+        createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         deletedAt: row.deletedAt,
         email: row.email,
@@ -85,6 +87,7 @@ class Account extends AccountRow {
   @override
   Account copyWith({
     int? id,
+    DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
     String? email,
@@ -92,7 +95,8 @@ class Account extends AccountRow {
   }) => Account.fromStore(
     super.copyWith(
       id: id,
-      updatedAt: DateTime.now(),
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? DateTime.now(),
       deletedAt: deletedAt,
       email: email,
       provider: provider,

@@ -32,6 +32,7 @@ part 'sync.dart';
 part 'account.dart';
 part 'calendar.dart';
 part 'priority.dart';
+part 'activity.dart';
 part 'event.dart';
 part 'session.dart';
 part 'balance.dart';
@@ -45,11 +46,14 @@ mixin SyncableTable on Table {
           .map(const LocalDateTimeConverter())();
 }
 
-mixin DraftTable on Table {
+mixin CreatedTable on Table {
   DateTimeColumn get createdAt =>
       dateTime()
           .withDefault(currentDateAndTime)
           .map(const LocalDateTimeConverter())();
+}
+
+mixin DraftTable on Table {
   BoolColumn get draft => boolean().withDefault(const Constant(false))();
 }
 
@@ -215,11 +219,12 @@ abstract class BaseTable {
     Accounts,
     Calendars,
     Priorities,
+    Activities,
     Events,
     Sessions,
     Balances,
   ],
-  include: {'priority.drift', 'balance.drift'},
+  include: {'priority.drift', 'activity.drift', 'balance.drift'},
 )
 class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
@@ -436,7 +441,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 56;
+  int get schemaVersion => 57;
 
   @override
   MigrationStrategy get migration {

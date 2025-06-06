@@ -4,21 +4,21 @@ abstract class AgendaItem {
   const AgendaItem();
 
   T when<T>({
-    required T Function(Priority) priority,
+    required T Function(Activity) activity,
     required T Function(Event) event,
   });
 }
 
-class PriorityAgendaItem extends AgendaItem {
-  final Priority priority;
-  const PriorityAgendaItem(this.priority);
+class ActivityAgendaItem extends AgendaItem {
+  final Activity activity;
+  const ActivityAgendaItem(this.activity);
 
   @override
   T when<T>({
-    required T Function(Priority) priority,
+    required T Function(Activity) activity,
     required T Function(Event) event,
   }) {
-    return priority(this.priority);
+    return activity(this.activity);
   }
 }
 
@@ -28,7 +28,7 @@ class EventAgendaItem extends AgendaItem {
 
   @override
   T when<T>({
-    required T Function(Priority) priority,
+    required T Function(Activity) activity,
     required T Function(Event) event,
   }) {
     return event(this.event);
@@ -38,20 +38,16 @@ class EventAgendaItem extends AgendaItem {
 class PriorityState extends Equatable {
   PriorityState({
     required this.context,
-    Priority? draft,
+    Activity? draft,
     this.pinned = const [],
     this.scheduled = const [],
     this.moreScheduled = true,
-    List<AgendaItem> activity = const [],
+    this.activity = const [],
     this.moreActivity = true,
-  }) : draft = draft ?? Priority(parent: context, draft: true),
-       activity = [
-         ...activity,
-         if (context.note != null && !moreActivity) PriorityAgendaItem(context),
-       ];
+  }) : draft = draft ?? Activity(priorityId: context.id, draft: true);
 
   final Priority context;
-  final Priority draft;
+  final Activity draft;
   final List<AgendaItem> pinned;
   final List<AgendaItem> scheduled;
   final bool moreScheduled;
@@ -60,7 +56,7 @@ class PriorityState extends Equatable {
 
   PriorityState copyWith({
     Priority? context,
-    Priority? draft,
+    Activity? draft,
     List<AgendaItem>? pinned,
     List<AgendaItem>? scheduled,
     bool? moreScheduled,

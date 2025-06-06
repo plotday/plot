@@ -3,7 +3,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:plot/state/root_provider.dart';
 import 'package:platform_builder/platform_builder.dart';
-import 'package:forui/forui.dart';
 import 'package:adaptive_theme/adaptive_theme.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;

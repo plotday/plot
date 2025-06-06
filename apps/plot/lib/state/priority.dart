@@ -4,16 +4,17 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
-import 'logging.dart';
 
 part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
-  PriorityBloc({required Priority priority})
+  PriorityBloc({required Priority priority, this.activityId})
     : _subscriptions = [],
       super(PriorityState(context: priority)) {
     _loadPriority(priority);
   }
+
+  final ActivityId? activityId;
 
   void _reset() {
     for (final subscription in _subscriptions) {
@@ -39,17 +40,15 @@ class PriorityBloc extends Cubit<PriorityState> {
         emit(state.copyWith(context: priority));
       }),
     );
-    // Watch pinned priorities
+    // Watch pinned activities
     _subscriptions.add(
-      Priority.watch(
-        path: priority.path,
-        self: false,
-        depth: 1,
+      Activity.watch(
+        priorityId: priority.id,
         pinned: true,
-      ).listen((priorities) {
+      ).listen((activities) {
         emit(
           state.copyWith(
-            pinned: priorities.map((p) => PriorityAgendaItem(p)).toList(),
+            pinned: activities.map((a) => ActivityAgendaItem(a)).toList(),
           ),
         );
       }),
@@ -69,15 +68,15 @@ class PriorityBloc extends Cubit<PriorityState> {
         for (final scheduledDay in scheduleMap.values) {
           if (scheduledDay.date < today) {
             activity.addAll(
-              scheduledDay.priorities.map((p) => PriorityAgendaItem(p)),
+              scheduledDay.activities.map((a) => ActivityAgendaItem(a)),
             );
             activity.addAll(scheduledDay.events.map((e) => EventAgendaItem(e)));
           } else if (scheduledDay.date == today) {
-            for (final priority in scheduledDay.priorities) {
-              if (priority.doNow) {
-                scheduled.add(PriorityAgendaItem(priority));
+            for (final activityItem in scheduledDay.activities) {
+              if (activityItem.doNow) {
+                scheduled.add(ActivityAgendaItem(activityItem));
               } else {
-                activity.add(PriorityAgendaItem(priority));
+                activity.add(ActivityAgendaItem(activityItem));
               }
             }
             // Add events for today
@@ -86,7 +85,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             );
           } else {
             scheduled.addAll(
-              scheduledDay.priorities.map((p) => PriorityAgendaItem(p)),
+              scheduledDay.activities.map((a) => ActivityAgendaItem(a)),
             );
             scheduled.addAll(
               scheduledDay.events.map((e) => EventAgendaItem(e)),
@@ -105,15 +104,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
-  Future<void> save(Priority priority) async {
-    await priority.save();
+  Future<void> save(Activity activity) async {
+    await activity.save();
   }
 
-  Future<void> add(Priority priority) async {
-    priority = priority.copyWith(draft: false);
-    await priority.save();
+  Future<void> add(Activity activity) async {
+    activity = activity.copyWith(draft: false);
+    await activity.save();
     // Create a new draft
-    emit(state.copyWith(draft: Priority(parent: state.context, draft: true)));
+    emit(state.copyWith(draft: Activity(priorityId: state.context.id, draft: true)));
   }
 
   List<StreamSubscription<void>> _subscriptions;

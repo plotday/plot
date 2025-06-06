@@ -40,7 +40,7 @@ class AgendaHeader extends StatelessWidget {
       leadingWidth: 60.0,
       leadingPadding: true,
       command:
-          priorityAncestry?.isNotEmpty == false
+          priorityAncestry?.isNotEmpty == true
               ? ChangeCurrentPriority.byId(priorityAncestry!.last.id)
               : null,
       selected: selected,

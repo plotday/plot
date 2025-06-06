@@ -16,6 +16,9 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
     Priority? priority,
     PriorityId? priorityId,
     @PathParam("priorityId") String? priorityIdString,
+    Activity? activity,
+    ActivityId? activityId,
+    @QueryParam("activityId") String? activityIdString,
     super.key,
   }) {
     priorityId =
@@ -29,9 +32,18 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
       'A priority must be provided via one of the parameters: priority, priorityId, or priorityIdString.',
     );
     this.priorityId = priorityId!;
+
+    activityId =
+        activity?.id ??
+        activityId ??
+        (activityIdString != null
+            ? ActivityId.fromShortString(activityIdString)
+            : null);
+    this.activityId = activityId;
   }
 
   late final PriorityId priorityId;
+  late final ActivityId? activityId;
 
   @override
   Widget wrappedRoute(BuildContext context) {
@@ -50,7 +62,8 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
         }
 
         return BlocProvider(
-          create: (_) => PriorityBloc(priority: snapshot.data!),
+          create: (_) =>
+              PriorityBloc(priority: snapshot.data!, activityId: activityId),
           key: ValueKey(snapshot.data!.id),
           child: this,
         );
@@ -107,22 +120,19 @@ class _SelectionCommandScopeState extends State<_SelectionCommandScope> {
         if (widget.listController.selected != null &&
             widget.listController.selected! < widget.state.agendaItems.length)
           widget.state.agendaItems[widget.listController.selected!].when(
-            priority:
-                (priority) => StaticCommandGroup(
-                  title: priority.title,
-                  subtitle: priority.ancestorsLabel(),
-                  commands: [
-                    if (priority != widget.state.context)
-                      ChangeCurrentPriority(priority),
-                    ...priorityCommands(priority),
-                  ],
-                ),
-            event:
-                (event) => StaticCommandGroup(
-                  title: event.name ?? 'Untitled Event',
-                  subtitle: 'Event',
-                  commands: [],
-                ),
+            activity: (activity) => StaticCommandGroup(
+              title: activity.title,
+              subtitle: activity.parent?.title ?? '',
+              commands: [
+                ChangeCurrentActivity(activity),
+                ...activityCommands(activity),
+              ],
+            ),
+            event: (event) => StaticCommandGroup(
+              title: event.name ?? 'Untitled Event',
+              subtitle: 'Event',
+              commands: [],
+            ),
           ),
       ],
       child: widget.child,
@@ -149,226 +159,183 @@ class PriorityPage extends StatelessWidget {
             reverse: true,
             onActivate: (index) {
               state.agendaItems[index].when(
-                priority:
-                    (priority) =>
-                        context.run<void>(ChangeCurrentPriority(priority)),
+                activity: (activity) =>
+                    context.run<void>(ChangeCurrentActivity(activity)),
                 event: (event) => <void>{}, // TODO: Handle event activation
               );
             },
-            builder:
-                (context, listController) => _SelectionCommandScope(
-                  state: state,
-                  listController: listController,
-                  child: Scaffold(
-                    translucent: true,
-                    header: Header(
-                      main: PrioritySelector(
-                        selected: state.context,
-                        onSelect:
-                            (p) => context.run<void>(ChangeCurrentPriority(p)),
+            builder: (context, listController) => _SelectionCommandScope(
+              state: state,
+              listController: listController,
+              child: Scaffold(
+                translucent: true,
+                header: Header(
+                  main: PrioritySelector(
+                    selected: state.context,
+                    onSelect: (p) =>
+                        context.run<void>(ChangeCurrentPriority(p)),
+                  ),
+                  commands: priorityCommands(state.context),
+                ),
+                body: Column(
+                  children: [
+                    Flexible(
+                      flex: 0,
+                      fit: FlexFit.loose,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              width: 1.0,
+                              color: context.colour.border,
+                            ),
+                          ),
+                        ),
+                        child: _PinnedSection(),
                       ),
-                      commands: priorityCommands(state.context),
                     ),
-                    body: Column(
-                      children: [
-                        Flexible(
-                          flex: 0,
-                          fit: FlexFit.loose,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  width: 1.0,
-                                  color: context.colour.border,
-                                ),
+                    Flexible(
+                      flex: 1,
+                      fit: FlexFit.tight,
+                      child: BidirectionalList(
+                        controller: listController,
+                        scrollController: ScrollControllerContext.of(context),
+                        count: state.agendaItems.length,
+                        reverse: true,
+                        builder: (context, index, selected) {
+                          final current = state.agendaItems[index];
+                          final next = index < state.agendaItems.length - 1
+                              ? state.agendaItems[index + 1]
+                              : null;
+                          final scheduled = index < state.scheduled.length;
+                          final firstScheduled =
+                              index == state.scheduled.length - 1;
+                          final date = current.when(
+                            activity: (activity) => scheduled
+                                ? activity.doAt!
+                                : activity.createdAt.toDate(),
+                            event: (event) => event.start.toDate(),
+                          );
+                          final nextDate = next?.when(
+                            activity: (nextActivity) =>
+                                (index + 1 < state.scheduled.length
+                                ? nextActivity.doAt
+                                : nextActivity.createdAt.toDate()),
+                            event: (nextEvent) => nextEvent.start.toDate(),
+                          );
+                          final hidden = current.when(
+                            event: (_) => false,
+                            activity: (activity) =>
+                                !scheduled &&
+                                activity.createdAt.toDate() == activity.doAt,
+                          );
+                          void onHover(bool hovered) {
+                            if (hovered) {
+                              listController.selected = index;
+                            } else if (listController.selected == index) {
+                              listController.selected = null;
+                            }
+                          }
+
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            key: ValueKey(
+                              current.when(
+                                activity: (a) => a.id,
+                                event: (e) => e.id,
                               ),
                             ),
-                            child: _PinnedSection(),
-                          ),
-                        ),
-                        Flexible(
-                          flex: 1,
-                          fit: FlexFit.tight,
-                          child: BidirectionalList(
-                            controller: listController,
-                            scrollController: ScrollControllerContext.of(
-                              context,
-                            ),
-                            count: state.agendaItems.length,
-                            reverse: true,
-                            builder: (context, index, selected) {
-                              final current = state.agendaItems[index];
-                              final next =
-                                  index < state.agendaItems.length - 1
-                                      ? state.agendaItems[index + 1]
-                                      : null;
-                              final scheduled = index < state.scheduled.length;
-                              final firstScheduled =
-                                  index == state.scheduled.length - 1;
-                              final date = current.when(
-                                priority:
-                                    (priority) =>
-                                        scheduled
-                                            ? priority.doAt!
-                                            : priority.createdAt.toDate(),
-                                event: (event) => event.start.toDate(),
-                              );
-                              final nextDate = next?.when(
-                                priority:
-                                    (nextPriority) =>
-                                        (index + 1 < state.scheduled.length
-                                            ? nextPriority.doAt
-                                            : nextPriority.createdAt.toDate()),
-                                event: (nextEvent) => nextEvent.start.toDate(),
-                              );
-                              final hidden = current.when(
-                                event: (_) => false,
-                                priority:
-                                    (priority) =>
-                                        !scheduled &&
-                                        priority.createdAt.toDate() ==
-                                            priority.doAt,
-                              );
-                              void onHover(bool hovered) {
-                                if (hovered) {
-                                  listController.selected = index;
-                                } else if (listController.selected == index) {
-                                  listController.selected = null;
-                                }
-                              }
-
-                              return Column(
-                                mainAxisSize: MainAxisSize.min,
-                                key: ValueKey(
-                                  current.when(
-                                    priority: (p) => p.id,
-                                    event: (e) => e.id,
+                            children: [
+                              if (nextDate != date)
+                                ListTile(
+                                  leading: Text(
+                                    date.format(format: 'EEE'),
+                                    // .toUpperCase(),
+                                    textAlign: TextAlign.end,
+                                    style: TextStyle(
+                                      fontSize:
+                                          context.theme.typography.xs.fontSize,
+                                    ),
+                                  ),
+                                  leadingPadding: true,
+                                  body: Text(
+                                    date.format(format: 'MMM d'),
+                                    textAlign: TextAlign.start,
+                                    style: TextStyle(
+                                      color:
+                                          context.theme.colors.mutedForeground,
+                                      fontSize:
+                                          context.theme.typography.xs.fontSize,
+                                    ),
+                                  ),
+                                  leadingWidth: 60,
+                                ),
+                              if (firstScheduled)
+                                Text(
+                                  'NOW',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: context.theme.colors.mutedForeground,
+                                    fontSize:
+                                        context.theme.typography.xs.fontSize,
                                   ),
                                 ),
-                                children: [
-                                  if (nextDate != date)
-                                    ListTile(
-                                      leading: Text(
-                                        date.format(format: 'EEE'),
-                                        // .toUpperCase(),
-                                        textAlign: TextAlign.end,
-                                        style: TextStyle(
-                                          fontSize:
-                                              context
-                                                  .theme
-                                                  .typography
-                                                  .xs
-                                                  .fontSize,
-                                        ),
-                                      ),
-                                      leadingPadding: true,
-                                      body: Text(
-                                        date.format(format: 'MMM d'),
-                                        textAlign: TextAlign.start,
-                                        style: TextStyle(
-                                          color:
-                                              context
-                                                  .theme
-                                                  .colors
-                                                  .mutedForeground,
-                                          fontSize:
-                                              context
-                                                  .theme
-                                                  .typography
-                                                  .xs
-                                                  .fontSize,
-                                        ),
-                                      ),
-                                      leadingWidth: 60,
+                              if (!hidden)
+                                ...current.when(
+                                  activity: (activity) => [
+                                    AgendaHeader(
+                                      selected: selected,
+                                      onHover: onHover,
                                     ),
-                                  if (firstScheduled)
-                                    Text(
-                                      'NOW',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color:
-                                            context
-                                                .theme
-                                                .colors
-                                                .mutedForeground,
-                                        fontSize:
-                                            context
-                                                .theme
-                                                .typography
-                                                .xs
-                                                .fontSize,
+                                    ActivityWidget(
+                                      activity: activity,
+                                      context: null,
+                                      selected: selected,
+                                      onHover: onHover,
+                                    ),
+                                  ],
+                                  event: (event) => [
+                                    AgendaHeader(
+                                      event: event,
+                                      selected: selected,
+                                      onHover: onHover,
+                                    ),
+                                    if (event.name?.isNotEmpty == true)
+                                      EventWidget(
+                                        event: event,
+                                        selected: selected,
+                                        onHover: onHover,
                                       ),
-                                    ),
-                                  if (!hidden)
-                                    ...current.when(
-                                      priority:
-                                          (priority) => [
-                                            AgendaHeader(
-                                              priorityAncestry:
-                                                  priority.ancestors(),
-                                              selected: selected,
-                                              onHover: onHover,
-                                            ),
-                                            PriorityWidget(
-                                              priority: priority,
-                                              context: state.context,
-                                              selected: selected,
-                                              onHover: onHover,
-                                            ),
-                                          ],
-                                      event:
-                                          (event) => [
-                                            AgendaHeader(
-                                              event: event,
-                                              selected: selected,
-                                              onHover: onHover,
-                                            ),
-                                            if (event.name?.isNotEmpty == true)
-                                              EventWidget(
-                                                event: event,
-                                                selected: selected,
-                                                onHover: onHover,
-                                              ),
-                                          ],
-                                    ),
-                                ],
-                              );
-                            },
-                            onReorder:
-                                (oldIndex, newIndex) => onReorder(
-                                  state.agendaItems,
-                                  oldIndex,
-                                  newIndex,
+                                  ],
                                 ),
-                          ),
-                        ),
-                      ],
+                            ],
+                          );
+                        },
+                        onReorder: (oldIndex, newIndex) =>
+                            onReorder(state.agendaItems, oldIndex, newIndex),
+                      ),
                     ),
-                    footer: EditableArea(
-                      position: EditableAreaPosition.bottom,
-                      builder:
-                          (context, focusNode) => Editor(
-                            hint: 'Add a priority',
-                            autofocus: true,
-                            focusNode: focusNode,
-                            onSubmitted: (body, {bool alt = false}) async {
-                              log.info(
-                                'Adding new priority with body: $body ($alt)',
-                              );
-                              final priority = state.draft.copyWith(
-                                note: Value(body),
-                                draft: false,
-                                doAt:
-                                    alt
-                                        ? Value(Date.today())
-                                        : const Value.absent(),
-                              );
-                              await context.read<PriorityBloc>().add(priority);
-                            },
-                          ),
-                    ),
+                  ],
+                ),
+                footer: EditableArea(
+                  position: EditableAreaPosition.bottom,
+                  builder: (context, focusNode) => Editor(
+                    hint: 'Add activity',
+                    autofocus: true,
+                    focusNode: focusNode,
+                    onSubmitted: (body, {bool alt = false}) async {
+                      log.info('Adding new priority with body: $body ($alt)');
+                      final priority = state.draft.copyWith(
+                        note: Value(body),
+                        draft: false,
+                        doAt: alt ? Value(Date.today()) : const Value.absent(),
+                      );
+                      await context.read<PriorityBloc>().add(priority);
+                    },
                   ),
                 ),
+              ),
+            ),
           ),
         );
       },
@@ -384,23 +351,23 @@ class PriorityPage extends StatelessWidget {
     var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
 
     final currentItem = agendaItems[oldIndex];
-    // Only reorder Priority items for now
+    // Only reorder Activity items for now
     currentItem.when(
-      priority: (priority) async {
-        Priority? previous;
+      activity: (activity) async {
+        Activity? previous;
         if (previousIndex >= 0) {
           final prevItem = agendaItems[previousIndex];
           prevItem.when(
-            priority: (p) => previous = p,
+            activity: (a) => previous = a,
             event: (_) => previous = null,
           );
         }
-        Priority? next;
+        Activity? next;
         if (nextIndex < agendaItems.length) {
           final nextItem = agendaItems[nextIndex];
-          nextItem.when(priority: (p) => next = p, event: (_) => next = null);
+          nextItem.when(activity: (a) => next = a, event: (_) => next = null);
         }
-        priority
+        activity
             .copyWith(
               order: Order.between(
                 previous?.order,
@@ -408,12 +375,11 @@ class PriorityPage extends StatelessWidget {
                     ? next?.order
                     : null,
               ),
-              // Action priorities are sorted first by doAt, so we need to set this
+              // Action activities are sorted first by doAt, so we need to set this
               // to have the same doAt as one of its neighbours.
-              doAt:
-                  priority.doNow
-                      ? Value(previous?.doAt ?? next?.doAt ?? priority.doAt)
-                      : const Value.absent(),
+              doAt: activity.doNow
+                  ? Value(previous?.doAt ?? next?.doAt ?? activity.doAt)
+                  : const Value.absent(),
             )
             .save();
       },
@@ -442,44 +408,39 @@ class _PinnedSection extends StatelessWidget {
             children: [
               ReorderableListView<AgendaItem>(
                 list: state.pinned,
-                itemBuilder:
-                    (buildContext, item) => item.when(
-                      priority:
-                          (priority) => PriorityWidget(
-                            priority: priority,
-                            context: state.context,
-                          ),
-                      event:
-                          (event) => Text(
-                            'Event: ${event.name ?? 'Untitled'}',
-                          ), // TODO: EventWidget
-                    ),
+                itemBuilder: (buildContext, item) => item.when(
+                  activity: (activity) =>
+                      ActivityWidget(activity: activity, context: null),
+                  event: (event) => Text(
+                    'Event: ${event.name ?? 'Untitled'}',
+                  ), // TODO: EventWidget
+                ),
                 shrinkWrap: true,
                 onReorder: (int oldIndex, int newIndex) async {
                   var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
                   var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
 
                   final currentItem = state.pinned[oldIndex];
-                  // Only handle priority reordering for now
+                  // Only handle activity reordering for now
                   currentItem.when(
-                    priority: (priority) async {
-                      Priority? previous;
+                    activity: (activity) async {
+                      Activity? previous;
                       if (previousIndex >= 0) {
                         final prevItem = state.pinned[previousIndex];
                         prevItem.when(
-                          priority: (p) => previous = p,
+                          activity: (a) => previous = a,
                           event: (_) => previous = null,
                         );
                       }
-                      Priority? next;
+                      Activity? next;
                       if (nextIndex < state.pinned.length) {
                         final nextItem = state.pinned[nextIndex];
                         nextItem.when(
-                          priority: (p) => next = p,
+                          activity: (a) => next = a,
                           event: (_) => next = null,
                         );
                       }
-                      priority
+                      activity
                           .copyWith(
                             order: Order.between(
                               previous?.order,
@@ -490,14 +451,13 @@ class _PinnedSection extends StatelessWidget {
                             ),
                             // Action state.pinned are sorted first by doAt, so we need to set this
                             // to have the same doAt as one of its neighbours.
-                            doAt:
-                                priority.doNow
-                                    ? Value(
-                                      previous?.doAt ??
-                                          next?.doAt ??
-                                          priority.doAt,
-                                    )
-                                    : const Value.absent(),
+                            doAt: activity.doNow
+                                ? Value(
+                                    previous?.doAt ??
+                                        next?.doAt ??
+                                        activity.doAt,
+                                  )
+                                : const Value.absent(),
                           )
                           .save();
                     },

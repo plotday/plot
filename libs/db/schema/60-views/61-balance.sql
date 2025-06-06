@@ -40,28 +40,28 @@ GROUP BY
     priority_id
 UNION ALL
 SELECT
-    user_id,
-    (COALESCE(done_at, do_at) at time zone user_timezone ())::date AS day,
-    priority_id,
-    CASE WHEN done_at IS NULL THEN
+    priority_user.user_id,
+    (COALESCE(activity.done_at, activity.do_at) at time zone user_timezone ())::date AS day,
+    activity.priority_id,
+    CASE WHEN activity.done_at IS NULL THEN
         'todo'
     ELSE
         'done'
     END AS type,
     COUNT(*) AS "count",
     0 AS "seconds",
-    MAX(priority.updated_at) AS updated_at
+    MAX(activity.updated_at) AS updated_at
 FROM
-    "public"."priority"
-    INNER JOIN "public"."priority_user" ON priority_user.priority_id = priority.id
+    "public"."activity"
+    INNER JOIN "public"."priority_user" ON priority_user.priority_id = activity.priority_id
 WHERE
-    draft = FALSE
-    AND do_at IS NOT NULL
-    AND done_at IS NULL
+    activity.draft = FALSE
+    AND (activity.do_at IS NOT NULL
+        OR activity.done_at IS NOT NULL)
 GROUP BY
-    user_id,
+    priority_user.user_id,
     day,
-    priority_id,
+    activity.priority_id,
     type;
 
 CREATE OR REPLACE VIEW balance WITH ( security_invoker = TRUE)
