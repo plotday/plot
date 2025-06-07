@@ -104,12 +104,7 @@ class ChangeCurrentActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    final priorityId =
-        activity?.priorityId ?? (await Activity.getOne(activityId)).priorityId;
-    if (!context.mounted) return null;
-    await context.router.navigate(
-      PriorityRoute(priorityId: priorityId, activityId: activityId),
-    );
+    await context.router.navigate(ActivityRoute(activityId: activityId));
     return null;
   }
 }
@@ -147,9 +142,7 @@ class AddActivity extends Command {
     await activity.copyWith(draft: false).save();
     Posthog().capture(eventName: 'Activity Added');
     if (context.mounted) {
-      await context.router.replace(
-        PriorityRoute(priorityId: activity.priorityId, activityId: activity.id),
-      );
+      await context.router.replace(ActivityRoute(activityId: activity.id));
     }
     return null;
   }
@@ -344,4 +337,3 @@ List<Command> activityCommands(Activity activity) => [
   activityPrimaryCommand(activity),
   ...activitySecondaryCommands(activity),
 ];
-

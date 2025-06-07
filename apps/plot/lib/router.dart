@@ -66,7 +66,12 @@ class AppRouter extends RootStackRouter {
         AutoRoute(page: SignInRoute.page, path: 'login'),
         AutoRoute(
           page: PriorityRoute.page,
-          path: ':priorityId',
+          path: 'p/:priorityId',
+          children: [AutoRoute(page: PriorityMainRoute.page, path: '')],
+        ),
+        AutoRoute(
+          page: ActivityRoute.page,
+          path: 'a/:activityId',
           children: [AutoRoute(page: PriorityMainRoute.page, path: '')],
         ),
       ],
