@@ -422,6 +422,7 @@ class Store extends _$Store {
   Future<void> sync() async {
     await Future.wait([
       Chain.capture(() => Account.push().then((_) => Account.pull())),
+      Chain.capture(() => Calendar.push().then((_) => Calendar.pull())),
       Chain.capture(() => Priority.push().then((_) => Priority.pull())),
       Chain.capture(() => Event.push().then((_) => Event.pull())),
       Chain.capture(() => Session.push().then((_) => Session.pull())),
@@ -441,7 +442,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 57;
+  int get schemaVersion => 58;
 
   @override
   MigrationStrategy get migration {
