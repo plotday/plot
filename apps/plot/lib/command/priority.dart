@@ -158,19 +158,6 @@ class NewPriority extends Command {
   }
 }
 
-abstract class _UpdatePriorityCommand extends Command {
-  _UpdatePriorityCommand(
-    this.priority, {
-    Future<void> Function(Priority)? onUpdate,
-    required super.title,
-    super.icon,
-  }) : onUpdate = onUpdate ?? ((priority) => priority.save());
-
-  final Priority priority;
-  final Future<void> Function(Priority) onUpdate;
-}
-
-
 class PriorityCommands extends Commands<void> {
   final Priority priority;
 
@@ -194,13 +181,15 @@ class ShowPriorityCommands extends ShowCommands<void> {
       );
 }
 
-Command priorityPrimaryCommand(Priority priority) => ChangeCurrentPriority(priority);
+Command priorityPrimaryCommand(Priority priority) =>
+    ChangeCurrentPriority(priority);
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.root) ArchivePriority(Future.value(priority)),
 ];
 
 List<Command> priorityCommands(Priority priority) => [
+  NewPriority(parent: priority),
   priorityPrimaryCommand(priority),
   ...prioritySecondaryCommands(priority),
 ];
