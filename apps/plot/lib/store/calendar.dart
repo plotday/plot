@@ -6,6 +6,7 @@ class Calendars extends Table
   TextColumn get name => text()();
   BoolColumn get enabled => boolean()();
   IntColumn get accountId => integer().references(Accounts, #id)();
+  BlobColumn get priorityId => blob().map(const UuidConverter()).references(Priorities, #id).nullable()();
 }
 
 class CalendarsBase extends BaseTable {
@@ -43,6 +44,7 @@ class Calendar extends CalendarRow {
         name: row.name,
         enabled: row.enabled,
         accountId: row.accountId,
+        priorityId: row.priorityId,
       );
 
   @override
@@ -54,6 +56,7 @@ class Calendar extends CalendarRow {
     String? name,
     bool? enabled,
     int? accountId,
+    Value<Uuid?> priorityId = const Value.absent(),
   }) => Calendar.fromStore(
     super.copyWith(
       id: id,
@@ -63,6 +66,7 @@ class Calendar extends CalendarRow {
       name: name,
       enabled: enabled,
       accountId: accountId,
+      priorityId: priorityId,
     ),
   );
 
@@ -71,5 +75,14 @@ class Calendar extends CalendarRow {
 
   Future<void> sync() async {
     await api.post("/sync", body: {'calendarId': id});
+  }
+
+  Future<Priority?> getPriority() async {
+    if (priorityId == null) return null;
+    try {
+      return await Priority.getOne(priorityId!);
+    } catch (e) {
+      return null;
+    }
   }
 }

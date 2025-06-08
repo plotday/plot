@@ -21,7 +21,7 @@ DROP VIEW IF EXISTS "public"."priority_x";
 
 DROP VIEW IF EXISTS "public"."gap";
 
-DROP VIEW IF EXISTS "public"."event_x";
+DROP VIEW IF EXISTS "public"."event_x" CASCADE;
 
 CREATE TABLE "public"."activity" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid_v7 (),

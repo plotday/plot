@@ -4,6 +4,7 @@ CREATE TABLE "public"."calendar" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "deleted_at" timestamp with time zone,
     "account_id" bigint NOT NULL REFERENCES "account" ON DELETE CASCADE,
+    "priority_id" uuid REFERENCES "priority" ON DELETE CASCADE,
     "provider_id" text NOT NULL,
     "synced_dates" tstzrange,
     "sync_state" text,
@@ -18,7 +19,8 @@ CREATE TABLE "public"."calendar" (
     "name" text,
     "enabled" boolean NOT NULL DEFAULT FALSE,
     "ready" boolean NOT NULL DEFAULT FALSE,
-    CONSTRAINT calendar_account_provider_id_unique UNIQUE (account_id, provider_id)
+    CONSTRAINT calendar_account_provider_id_unique UNIQUE (account_id, provider_id),
+    CONSTRAINT calendar_priority_required_when_enabled CHECK (NOT enabled OR priority_id IS NOT NULL)
 );
 
 ALTER TABLE "public"."calendar" ENABLE ROW LEVEL SECURITY;
