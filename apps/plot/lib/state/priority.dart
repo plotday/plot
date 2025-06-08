@@ -63,14 +63,15 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     _subscriptions.add(
       ScheduledDay.watch(range, context: priority).listen((scheduleMap) {
-        final agendaItems = AgendaItem.fromScheduledDays(
+        final agenda = Agenda.fromScheduledDays(
           scheduleMap.values.toList(),
-          today,
+          today: today,
         );
 
         emit(
           state.copyWith(
-            agendaItems: agendaItems.reversed.toList(),
+            agendaItems: agenda.items.reversed.toList(),
+            anchorIndex: agenda.items.length - agenda.anchorIndex - 1,
             moreAgendaItems: false,
           ),
         );

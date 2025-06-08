@@ -9,6 +9,7 @@ class AgendaHeader extends StatelessWidget {
     List<PriorityAncestor>? priorityAncestry,
     this.event,
     this.date,
+    this.now = false,
     this.selected = false,
     this.onHover,
     super.key,
@@ -17,6 +18,7 @@ class AgendaHeader extends StatelessWidget {
 
   final Event? event;
   final Date? date;
+  final bool now;
   final List<PriorityAncestor>? priorityAncestry;
 
   final bool selected;

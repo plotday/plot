@@ -252,6 +252,7 @@ class PriorityPage extends StatelessWidget {
                               context,
                             ),
                             count: state.agendaItems.length,
+                            anchor: state.anchorIndex,
                             reverse: true,
                             builder: (context, index, selected) {
                               final current = state.agendaItems[index];
@@ -297,6 +298,7 @@ class PriorityPage extends StatelessWidget {
                                           AgendaHeader(
                                             event: header.event,
                                             date: header.date,
+                                            now: header.now,
                                             priorityAncestry:
                                                 header.priorityAncestry,
                                             selected: selected,
@@ -433,6 +435,7 @@ class _PinnedSection extends StatelessWidget {
                           (header) => AgendaHeader(
                             event: header.event,
                             date: header.date,
+                            now: header.now,
                             priorityAncestry: header.priorityAncestry,
                           ),
                     ),
