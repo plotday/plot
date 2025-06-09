@@ -1455,10 +1455,11 @@ packages:
   super_editor:
     dependency: "direct main"
     description:
-      path: "../../../super_editor/super_editor"
-      relative: true
-    source: path
-    version: "0.3.0-dev.24"
+      name: super_editor
+      sha256: cdb7a4976db273d3d0821d53877904091ef8ae7cbd9bbc3bcb7aa58b4766c379
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.0-dev.25"
   super_editor_markdown:
     dependency: "direct main"
     description:

@@ -71,8 +71,7 @@ dependencies:
     git:
       url: https://github.com/Ax0elz/figma_squircle
   b: ^0.2.0
-  super_editor: # ^0.3.0-dev.24
-    path: ../../../super_editor/super_editor
+  super_editor: ^0.3.0-dev.25
   super_editor_markdown: ^0.1.7
   sliver_tools: ^0.2.12
   timeago: ^3.7.0
@@ -103,10 +102,6 @@ dev_dependencies:
   test: ^1.25.2
   drift_dev: ^2.26.0
   auto_route_generator: ^10.0.1
-
-dependency_overrides:
-  super_editor:
-    path: ../../../super_editor/super_editor
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
