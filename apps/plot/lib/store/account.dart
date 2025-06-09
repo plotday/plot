@@ -43,35 +43,86 @@ class Account extends AccountRow {
   static Future<bool> pull() =>
       Store.get.pull(PullType.all, table, AccountsBase());
 
+  static Future<List<Account>> get({
+    bool withCalendars = false,
+    bool? deleted = false,
+  }) async {
+    if (withCalendars) {
+      final joinedRows = await _getWithCalendars(deleted: deleted).get();
+      return _groupAccountsWithCalendars(joinedRows);
+    }
+    return _get(deleted: deleted).get();
+  }
+
   static Stream<List<Account>> watch({
     bool withCalendars = false,
     bool? deleted = false,
   }) {
-    final accountStream = (Store.get.select(table)..where(
-      (t) =>
-          deleted == null
+    if (withCalendars) {
+      return _getWithCalendars(
+        deleted: deleted,
+      ).watch().map(_groupAccountsWithCalendars);
+    }
+    return _get(deleted: deleted).watch();
+  }
+
+  static List<Account> _groupAccountsWithCalendars(
+    List<_JoinedAccountCalendar> joinedRows,
+  ) {
+    final accountCalendarsMap = <int, List<Calendar>>{};
+    final accountsMap = <int, AccountRow>{};
+
+    for (final joined in joinedRows) {
+      accountsMap[joined.account.id] = joined.account;
+      if (joined.calendar != null) {
+        accountCalendarsMap
+            .putIfAbsent(joined.account.id, () => [])
+            .add(Calendar.fromStore(joined.calendar!));
+      }
+    }
+
+    return accountsMap.values.map((accountRow) {
+      final calendars = accountCalendarsMap[accountRow.id] ?? [];
+      return Account.fromStore(accountRow, calendars: calendars);
+    }).toList();
+  }
+
+  static MultiSelectable<Account> _get({bool? deleted = false}) {
+    return (Store.get.select(table)..where(
+          (t) => deleted == null
               ? const Constant(true)
               : deleted
               ? t.deletedAt.isNotNull()
               : t.deletedAt.isNull(),
-    )).watch().map(
-      (rows) => rows.map((row) => Account.fromStore(row)).toList(),
-    );
-    if (withCalendars) {
-      return Rx.combineLatest2(
-        accountStream,
-        Calendar.watch(),
-        (List<Account> accounts, List<Calendar> calendars) =>
-            accounts.map((account) {
-              final accountCalendars =
-                  calendars
-                      .where((calendar) => calendar.accountId == account.id)
-                      .toList();
-              return Account.fromStore(account, calendars: accountCalendars);
-            }).toList(),
+        ))
+        .map((row) => Account.fromStore(row));
+  }
+
+  static MultiSelectable<_JoinedAccountCalendar> _getWithCalendars({
+    bool? deleted = false,
+  }) {
+    final query = Store.get.select(table)
+      ..where(
+        (t) => deleted == null
+            ? const Constant(true)
+            : deleted
+            ? t.deletedAt.isNotNull()
+            : t.deletedAt.isNull(),
       );
-    }
-    return accountStream;
+
+    final joinedQuery = query.join([
+      leftOuterJoin(
+        Store.get.calendars,
+        Store.get.calendars.accountId.equalsExp(Store.get.accounts.id) &
+            Store.get.calendars.deletedAt.isNull(),
+      ),
+    ]);
+
+    return joinedQuery.map((row) {
+      final account = row.readTable(Store.get.accounts);
+      final calendar = row.readTableOrNull(Store.get.calendars);
+      return _JoinedAccountCalendar(account: account, calendar: calendar);
+    });
   }
 
   Account.fromStore(AccountRow row, {this.calendars})
@@ -117,4 +168,11 @@ class Account extends AccountRow {
   int get hashCode {
     return Object.hash(super.hashCode, calendars.hashCode);
   }
+}
+
+class _JoinedAccountCalendar {
+  const _JoinedAccountCalendar({required this.account, required this.calendar});
+
+  final AccountRow account;
+  final CalendarRow? calendar;
 }
