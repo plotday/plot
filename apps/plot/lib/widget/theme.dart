@@ -14,8 +14,8 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
     ).transform((t) => t.copyWith(base: t.base.copyWith(fontSize: 12))),
   );
   theme = theme.copyWith(
-    headerStyle: theme.headerStyle.copyWith(
-      rootStyle: theme.headerStyle.rootStyle.copyWith(
+    headerStyles: theme.headerStyles.copyWith(
+      rootStyle: theme.headerStyles.rootStyle.copyWith(
         titleTextStyle: theme.typography.xl.copyWith(
           color: colourScheme.foreground,
           fontWeight: FontWeight.w700,
