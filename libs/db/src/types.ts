@@ -71,6 +71,96 @@ export type Database = {
         }
         Relationships: []
       }
+      activity: {
+        Row: {
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          do_at: string | null
+          done_at: string | null
+          draft: boolean
+          event_series: string | null
+          id: string
+          note: string | null
+          order: number
+          path: unknown
+          pinned: boolean
+          priority_id: string
+          private: boolean
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          do_at?: string | null
+          done_at?: string | null
+          draft?: boolean
+          event_series?: string | null
+          id?: string
+          note?: string | null
+          order?: number
+          path: unknown
+          pinned?: boolean
+          priority_id: string
+          private?: boolean
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          do_at?: string | null
+          done_at?: string | null
+          draft?: boolean
+          event_series?: string | null
+          id?: string
+          note?: string | null
+          order?: number
+          path?: unknown
+          pinned?: boolean
+          priority_id?: string
+          private?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calendar: {
         Row: {
           account_id: number
@@ -81,6 +171,7 @@ export type Database = {
           full_sync_started_at: string | null
           id: number
           name: string | null
+          priority_id: string | null
           provider_id: string
           ready: boolean
           sequence: number
@@ -103,6 +194,7 @@ export type Database = {
           full_sync_started_at?: string | null
           id?: never
           name?: string | null
+          priority_id?: string | null
           provider_id: string
           ready?: boolean
           sequence?: number
@@ -124,6 +216,7 @@ export type Database = {
           full_sync_started_at?: string | null
           id?: never
           name?: string | null
+          priority_id?: string | null
           provider_id?: string
           ready?: boolean
           sequence?: number
@@ -142,6 +235,41 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "account"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_x"
             referencedColumns: ["id"]
           },
         ]
@@ -295,6 +423,13 @@ export type Database = {
             referencedRelation: "calendar"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "event_calendar_id_fkey"
+            columns: ["calendar_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_x"
+            referencedColumns: ["id"]
+          },
         ]
       }
       invitation: {
@@ -387,51 +522,33 @@ export type Database = {
           created_at: string
           created_by: string
           deleted_at: string | null
-          do_at: string | null
-          done_at: string | null
-          draft: boolean
           id: string
-          note: string | null
           order: number
           path: unknown
-          pinned: boolean
-          private: boolean
           root: boolean
-          title: string | null
+          title: string
           updated_at: string
         }
         Insert: {
           created_at?: string
           created_by: string
           deleted_at?: string | null
-          do_at?: string | null
-          done_at?: string | null
-          draft?: boolean
           id?: string
-          note?: string | null
           order?: number
           path: unknown
-          pinned?: boolean
-          private?: boolean
           root?: boolean
-          title?: string | null
+          title: string
           updated_at?: string
         }
         Update: {
           created_at?: string
           created_by?: string
           deleted_at?: string | null
-          do_at?: string | null
-          done_at?: string | null
-          draft?: boolean
           id?: string
-          note?: string | null
           order?: number
           path?: unknown
-          pinned?: boolean
-          private?: boolean
           root?: boolean
-          title?: string | null
+          title?: string
           updated_at?: string
         }
         Relationships: []
@@ -590,6 +707,13 @@ export type Database = {
             columns: ["calendar_id"]
             isOneToOne: false
             referencedRelation: "calendar"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "raw_event_calendar_id_fkey"
+            columns: ["calendar_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_x"
             referencedColumns: ["id"]
           },
         ]
@@ -800,6 +924,71 @@ export type Database = {
       }
     }
     Views: {
+      activity_children: {
+        Row: {
+          child_id: string | null
+          id: string | null
+        }
+        Relationships: []
+      }
+      activity_x: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          deleted_at: string | null
+          do_at: string | null
+          done_at: string | null
+          draft: boolean | null
+          event_series: string | null
+          id: string | null
+          note: string | null
+          order: number | null
+          order_x: number | null
+          path: unknown | null
+          pinned: boolean | null
+          priority_id: string | null
+          private: boolean | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       balance: {
         Row: {
           count: number | null
@@ -823,6 +1012,75 @@ export type Database = {
           user_id: string | null
         }
         Relationships: []
+      }
+      calendar_x: {
+        Row: {
+          account_id: number | null
+          created_at: string | null
+          deleted_at: string | null
+          enabled: boolean | null
+          full_sync_at: string | null
+          full_sync_started_at: string | null
+          id: number | null
+          name: string | null
+          priority_id: string | null
+          provider_id: string | null
+          ready: boolean | null
+          sequence: number | null
+          sync_error: string | null
+          sync_state: string | null
+          synced_at: string | null
+          synced_dates: unknown | null
+          updated_at: string | null
+          user_id: string | null
+          watch_expires_at: string | null
+          watch_id: string | null
+          watch_secret: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "account"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_x"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       event_invitees: {
         Row: {
@@ -911,6 +1169,13 @@ export type Database = {
             columns: ["calendar_id"]
             isOneToOne: false
             referencedRelation: "calendar"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_calendar_id_fkey"
+            columns: ["calendar_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_x"
             referencedColumns: ["id"]
           },
         ]
@@ -1012,17 +1277,11 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           deleted_at: string | null
-          do_at: string | null
-          done_at: string | null
-          draft: boolean | null
           id: string | null
-          note: string | null
           order: number | null
           order_x: number | null
           path: unknown | null
-          pinned: boolean | null
           pomodoro: number | null
-          private: boolean | null
           root: boolean | null
           tags: Json | null
           title: string | null
@@ -1087,6 +1346,31 @@ export type Database = {
         Args: { at: unknown }
         Returns: boolean
       }
+      calendar: {
+        Args: { "": unknown }
+        Returns: {
+          account_id: number
+          created_at: string
+          deleted_at: string | null
+          enabled: boolean
+          full_sync_at: string | null
+          full_sync_started_at: string | null
+          id: number
+          name: string | null
+          priority_id: string | null
+          provider_id: string
+          ready: boolean
+          sequence: number
+          sync_error: string | null
+          sync_state: string | null
+          synced_at: string | null
+          synced_dates: unknown | null
+          updated_at: string
+          watch_expires_at: string | null
+          watch_id: string | null
+          watch_secret: string | null
+        }[]
+      }
       calendars: {
         Args: { "": Database["public"]["Tables"]["account"]["Row"] }
         Returns: {
@@ -1098,6 +1382,7 @@ export type Database = {
           full_sync_started_at: string | null
           id: number
           name: string | null
+          priority_id: string | null
           provider_id: string
           ready: boolean
           sequence: number
@@ -1143,6 +1428,18 @@ export type Database = {
       insert_domain: {
         Args: { email: string }
         Returns: number
+      }
+      invitee: {
+        Args: { "": unknown }
+        Returns: {
+          created_at: string
+          deleted_at: string | null
+          email: string
+          event_id: string | null
+          is_optional: boolean
+          response: Database["public"]["Enums"]["event_response"] | null
+          updated_at: string
+        }[]
       }
       is_finite: {
         Args: { test: unknown }
