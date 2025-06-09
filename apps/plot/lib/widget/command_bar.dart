@@ -96,6 +96,7 @@ class CommandBarState<T> extends State<_CommandBar<T>> {
 
       if (result is CommandCommands<T>) {
         commands = result.commands;
+        _controller.text = '';
         _initCommands();
       } else if (result is CommandPage) {
         setState(() => _child = result.child);
