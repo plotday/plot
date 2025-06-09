@@ -155,8 +155,9 @@ class BidirectionalList extends StatefulWidget {
   final int count;
   // index of the first item
   final int first;
-  // the item at this index is centred in the initial view
+  // the item at this index is at the anchorOffset position in the intial view
   final int anchor;
+  final double anchorOffset;
   final bool doneStart;
   final bool doneEnd;
   final int estimatedItemExtent;
@@ -172,6 +173,7 @@ class BidirectionalList extends StatefulWidget {
     this.fetcher,
     this.first = 0,
     this.anchor = 0,
+    this.anchorOffset = 0,
     bool? doneStart,
     bool? doneEnd,
     this.scrollController,
@@ -382,9 +384,7 @@ class BidirectionalListState extends State<BidirectionalList> {
             getScrollAdjustment: _getScrollAdjustment,
           ),
           center: _downListKey,
-          anchor: widget.reverse
-              ? 0.8
-              : 0.2, // offset % for the anchor element in the initial view
+          anchor: widget.anchorOffset,
           reverse: widget.reverse,
           slivers: [
             if (widget.count > 0 && !widget.doneStart) spinner,
