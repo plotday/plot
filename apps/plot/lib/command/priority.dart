@@ -57,11 +57,23 @@ class PriorityCommandGroup extends CommandGroup {
 
   @override
   Future<List<Command>> list({String? search}) async {
-    final all =
-        (await Priority.get(
-          order: PriorityOrder.recent,
-          search: search,
-        )).map((priority) => _PriorityValue(priority)).toList();
+    final all = (await Priority.get(
+      order: PriorityOrder.recent,
+      search: search,
+    )).map((priority) => _PriorityValue(priority)).toList();
+    return CommandGroup.filter(all, search);
+  }
+}
+
+class ChangeCurrentPriorityGroup extends CommandGroup {
+  ChangeCurrentPriorityGroup() : super(title: 'Change Current Priority');
+
+  @override
+  Future<List<Command>> list({String? search}) async {
+    final all = (await Priority.get(
+      order: PriorityOrder.recent,
+      search: search,
+    )).map((priority) => ChangeCurrentPriority(priority)).toList();
     return CommandGroup.filter(all, search);
   }
 }
@@ -148,7 +160,8 @@ class ArchivePriority extends Command {
 }
 
 class NewPriority extends Command {
-  NewPriority({this.parent}) : super(title: 'New Priority', icon: PlotIcon.add);
+  NewPriority({this.parent})
+    : super(title: 'New Sub-priority', icon: PlotIcon.add);
 
   final Priority? parent;
 
@@ -181,15 +194,21 @@ class ShowPriorityCommands extends ShowCommands<void> {
       );
 }
 
-Command priorityPrimaryCommand(Priority priority) =>
-    ChangeCurrentPriority(priority);
-
 List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.root) ArchivePriority(Future.value(priority)),
 ];
 
 List<Command> priorityCommands(Priority priority) => [
-  NewPriority(parent: priority),
-  priorityPrimaryCommand(priority),
+  ChangeCurrentPriority(priority),
   ...prioritySecondaryCommands(priority),
 ];
+
+List<Command> currentPriorityCommands(Priority priority) => [
+  ...prioritySecondaryCommands(priority),
+  NewPriority(parent: priority),
+];
+
+final prioritiesCommands = StaticCommandGroup(
+  title: 'Current Priority',
+  commands: [PickCurrentPriority()],
+);

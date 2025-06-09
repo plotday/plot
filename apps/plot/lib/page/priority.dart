@@ -224,7 +224,7 @@ class PriorityPage extends StatelessWidget {
                         onSelect:
                             (p) => context.run<void>(ChangeCurrentPriority(p)),
                       ),
-                      commands: priorityCommands(state.context),
+                      commands: currentPriorityCommands(state.context),
                     ),
                     body: Column(
                       children: [
