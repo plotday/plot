@@ -40,17 +40,15 @@ part 'balance.dart';
 part 'store.g.dart';
 
 mixin SyncableTable on Table {
-  DateTimeColumn get updatedAt =>
-      dateTime()
-          .withDefault(currentDateAndTime)
-          .map(const LocalDateTimeConverter())();
+  DateTimeColumn get updatedAt => dateTime()
+      .withDefault(currentDateAndTime)
+      .map(const LocalDateTimeConverter())();
 }
 
 mixin CreatedTable on Table {
-  DateTimeColumn get createdAt =>
-      dateTime()
-          .withDefault(currentDateAndTime)
-          .map(const LocalDateTimeConverter())();
+  DateTimeColumn get createdAt => dateTime()
+      .withDefault(currentDateAndTime)
+      .map(const LocalDateTimeConverter())();
 }
 
 mixin DraftTable on Table {
@@ -70,10 +68,9 @@ mixin IdTable on Table {
 }
 
 mixin UuidTable on Table {
-  BlobColumn get id =>
-      blob()
-          .clientDefault(() => Uuid.generate().toBytes())
-          .map(const UuidConverter())();
+  BlobColumn get id => blob()
+      .clientDefault(() => Uuid.generate().toBytes())
+      .map(const UuidConverter())();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -290,9 +287,9 @@ class Store extends _$Store {
     BaseTable baseTable,
   ) async {
     final entity = baseTable.fullName;
-    final syncState =
-        await (select(syncStates)
-          ..where((row) => row.entity.equals(entity))).getSingleOrNull();
+    final syncState = await (select(
+      syncStates,
+    )..where((row) => row.entity.equals(entity))).getSingleOrNull();
 
     final storeQuery = select(table);
     if (syncState?.pushedAt != null) {
@@ -342,9 +339,9 @@ class Store extends _$Store {
       return false;
     }
     final entity = baseTable.fullName;
-    final syncState =
-        await (select(syncStates)
-          ..where((row) => row.entity.equals(entity))).getSingleOrNull();
+    final syncState = await (select(
+      syncStates,
+    )..where((row) => row.entity.equals(entity))).getSingleOrNull();
     if (paged && syncState?.more == false) {
       _noMore.add(entity);
       return false;
@@ -390,12 +387,11 @@ class Store extends _$Store {
           pulledAt: Value(lastUpdated),
           from: paged ? Value(from) : const Value.absent(),
           to: paged ? Value(to) : const Value.absent(),
-          more:
-              paged
-                  ? Value(more)
-                  : type == PullType.all
-                  ? const Value(false)
-                  : const Value.absent(),
+          more: paged
+              ? Value(more)
+              : type == PullType.all
+              ? const Value(false)
+              : const Value.absent(),
         ),
       ),
     );
@@ -424,6 +420,7 @@ class Store extends _$Store {
       Chain.capture(() => Account.push().then((_) => Account.pull())),
       Chain.capture(() => Calendar.push().then((_) => Calendar.pull())),
       Chain.capture(() => Priority.push().then((_) => Priority.pull())),
+      Chain.capture(() => Activity.push().then((_) => Activity.pull())),
       Chain.capture(() => Event.push().then((_) => Event.pull())),
       Chain.capture(() => Session.push().then((_) => Session.pull())),
       Chain.capture(() => Balance.pull()),
