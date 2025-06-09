@@ -116,7 +116,7 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
             CallbackAction<ActivateListSelectionIntent>(
               onInvoke: (intent) {
                 if (controller.selected == null) {
-                  KeyEventResult.ignored;
+                  return KeyEventResult.ignored;
                 }
                 widget.onActivate?.call(controller.selected!);
                 return KeyEventResult.handled;
@@ -153,12 +153,10 @@ class BidirectionalList extends StatefulWidget {
   final ItemBuilder builder;
   final ItemFetcher? fetcher;
   final int count;
-  // index of the item in the list that should be centred in the initial view
-  // TODO: support positioing the anchor at other other positions
+  // index of the first item
+  final int first;
+  // the item at this index is centred in the initial view
   final int anchor;
-  // arbitrary, relative value representing the position of the first item in
-  // the list
-  final int offset;
   final bool doneStart;
   final bool doneEnd;
   final int estimatedItemExtent;
@@ -172,8 +170,8 @@ class BidirectionalList extends StatefulWidget {
     required this.builder,
     required this.count,
     this.fetcher,
+    this.first = 0,
     this.anchor = 0,
-    this.offset = 0,
     bool? doneStart,
     bool? doneEnd,
     this.scrollController,
@@ -202,10 +200,21 @@ class BidirectionalListState extends State<BidirectionalList> {
   // amount of shrinkage, which is used to adjust the scroll position.
   int _shrinkUp = 0;
   int _shrinkDown = 0;
-  late int _upCount = widget.anchor;
-  late int _downCount = widget.count - widget.anchor;
+  late int _upCount;
+  late int _downCount;
   late double _averageItemExtent = widget.estimatedItemExtent.toDouble();
   (double?, double?) _lastListExtents = (null, null);
+
+  void _setCounts() {
+    assert(
+      widget.count == 0 ||
+          (widget.anchor >= widget.first &&
+              widget.anchor < widget.first + widget.count),
+      'Anchor must be a valid index',
+    );
+    _upCount = max(widget.anchor - widget.first, 0);
+    _downCount = max(widget.count - _upCount, 0);
+  }
 
   (double?, double?) get _listExtents => (
     (_upListKey.currentContext?.findRenderObject() as RenderSliverList?)
@@ -307,6 +316,7 @@ class BidirectionalListState extends State<BidirectionalList> {
   @override
   void initState() {
     super.initState();
+    _setCounts();
     _scrollController = widget.scrollController ?? ScrollController();
   }
 
@@ -321,27 +331,22 @@ class BidirectionalListState extends State<BidirectionalList> {
   @override
   void didUpdateWidget(covariant BidirectionalList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.anchor != widget.anchor) {
-      _upCount = widget.anchor;
-      _downCount = widget.count - widget.anchor;
-    }
-    if (oldWidget.offset == widget.offset && oldWidget.count == widget.count) {
+    if (oldWidget.first == widget.first &&
+        oldWidget.count == widget.count &&
+        oldWidget.anchor == widget.anchor) {
       return;
     }
-    int moveUp = widget.offset - oldWidget.offset;
-    int moveDown = widget.count - oldWidget.count - moveUp;
     setState(() {
-      _shrinkUp = max(0, moveUp);
-      _shrinkDown = max(0, moveDown);
-      // TODO handle the ends of lists
-      _upCount = min(max(_upCount + moveUp, 0), widget.count);
-      _downCount = min(max(_downCount + moveDown, 0), widget.count);
-      widget.controller.clamp(
-        -(widget.count - _downCount),
-        widget.count - _upCount,
-      );
-      if (widget.controller.selected != null) {
-        widget.controller.move(widget.offset - oldWidget.offset);
+      _setCounts();
+      widget.controller.clamp(widget.first, widget.first + widget.count - 1);
+      if (oldWidget.anchor == widget.anchor) {
+        int moveUp = widget.first - oldWidget.first;
+        int moveDown = widget.count - oldWidget.count - moveUp;
+        _shrinkUp = max(0, moveUp);
+        _shrinkDown = max(0, moveDown);
+        if (widget.controller.selected != null) {
+          widget.controller.move(moveUp);
+        }
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -371,55 +376,53 @@ class BidirectionalListState extends State<BidirectionalList> {
       },
       child: ListenableBuilder(
         listenable: widget.controller,
-        builder:
-            (context, child) => CustomScrollView(
-              controller: _scrollController,
-              physics: BidirectionalListScrollPhysics(
-                getScrollAdjustment: _getScrollAdjustment,
-              ),
-              center: _downListKey,
-              reverse: widget.reverse,
-              slivers: [
-                if (widget.count > 0 && !widget.doneStart) spinner,
-                SliverReorderableList(
-                  key: _upListKey,
-                  itemCount: _upCount - _shrinkUp,
-                  itemBuilder:
-                      (context, index) =>
-                          widget.builder(
-                            context,
-                            _upCount - index - 1,
-                            index == widget.controller.selected,
-                          ) ??
-                          Container(),
-                  onReorder: (oldIndex, newIndex) {
-                    widget.onReorder?.call(
-                      _upCount - oldIndex - 1,
-                      _upCount - newIndex - 1,
-                    );
-                  },
-                ),
-                SliverReorderableList(
-                  key: _downListKey,
-                  itemCount: _downCount - _shrinkDown,
-                  itemBuilder:
-                      (context, index) =>
-                          widget.builder(
-                            context,
-                            _upCount + index,
-                            index == widget.controller.selected,
-                          ) ??
-                          Container(),
-                  onReorder: (oldIndex, newIndex) {
-                    widget.onReorder?.call(
-                      _upCount + oldIndex,
-                      _upCount + newIndex,
-                    );
-                  },
-                ),
-                if (!widget.doneEnd) spinner,
-              ],
+        builder: (context, child) => CustomScrollView(
+          controller: _scrollController,
+          physics: BidirectionalListScrollPhysics(
+            getScrollAdjustment: _getScrollAdjustment,
+          ),
+          center: _downListKey,
+          reverse: widget.reverse,
+          slivers: [
+            if (widget.count > 0 && !widget.doneStart) spinner,
+            SliverReorderableList(
+              key: _upListKey,
+              itemCount: _upCount - _shrinkUp,
+              itemBuilder: (context, index) =>
+                  widget.builder(
+                    context,
+                    _upCount - _shrinkUp - index - 1,
+                    _upCount - _shrinkUp - index - 1 ==
+                        widget.controller.selected,
+                  ) ??
+                  Container(),
+              onReorder: (oldIndex, newIndex) {
+                widget.onReorder?.call(
+                  _upCount - _shrinkUp - oldIndex - 1,
+                  _upCount - _shrinkUp - newIndex - 1,
+                );
+              },
             ),
+            SliverReorderableList(
+              key: _downListKey,
+              itemCount: _downCount - _shrinkDown,
+              itemBuilder: (context, index) =>
+                  widget.builder(
+                    context,
+                    _upCount + index,
+                    _upCount + index == widget.controller.selected,
+                  ) ??
+                  Container(),
+              onReorder: (oldIndex, newIndex) {
+                widget.onReorder?.call(
+                  _upCount + oldIndex,
+                  _upCount + newIndex,
+                );
+              },
+            ),
+            if (!widget.doneEnd) spinner,
+          ],
+        ),
       ),
     );
   }
