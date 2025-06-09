@@ -92,6 +92,7 @@ SELECT
     ctx.path AS priority_path
 FROM
     event_x1 e
+    JOIN calendar c ON c.id = e.calendar_id
     LEFT JOIN LATERAL (
         SELECT
             priority_id
@@ -105,7 +106,7 @@ FROM
             invitees = e.invitees DESC,
             embedding <-> e.embedding DESC
         LIMIT 1) AS s ON TRUE
-    LEFT JOIN priority ctx ON ctx.id = s.priority_id;
+    LEFT JOIN priority ctx ON ctx.id = COALESCE(s.priority_id, c.priority_id);
 
 CREATE OR REPLACE FUNCTION handle_event_x_upsert ()
     RETURNS TRIGGER
@@ -117,7 +118,22 @@ BEGIN
         VALUES (NEW.id, NEW.user_id, NEW.name, NEW.at, NEW.calendar_id, NEW.status, NEW.provider_link, NEW.summary, NEW.description, NEW.visibility, NEW.availability, NEW.conferencing_url, NEW.organizer_email, NEW.response, NEW.series, NEW.invitees_hidden, NEW.draft, NEW.deleted_at)
     ON CONFLICT (id)
         DO UPDATE SET
-            name = NEW.name, at = NEW.at, calendar_id = NEW.calendar_id, status = NEW.status, provider_link = NEW.provider_link, summary = NEW.summary, description = NEW.description, visibility = NEW.visibility, availability = NEW.availability, conferencing_url = NEW.conferencing_url, organizer_email = NEW.organizer_email, response = NEW.response, series = NEW.series, invitees_hidden = NEW.invitees_hidden, draft = NEW.draft, deleted_at = NEW.deleted_at;
+            name = NEW.name,
+            at = NEW.at,
+            calendar_id = NEW.calendar_id,
+            status = NEW.status,
+            provider_link = NEW.provider_link,
+            summary = NEW.summary,
+            description = NEW.description,
+            visibility = NEW.visibility,
+            availability = NEW.availability,
+            conferencing_url = NEW.conferencing_url,
+            organizer_email = NEW.organizer_email,
+            response = NEW.response,
+            series = NEW.series,
+            invitees_hidden = NEW.invitees_hidden,
+            draft = NEW.draft,
+            deleted_at = NEW.deleted_at;
     IF OLD.invitees IS NOT NULL THEN
         -- Delete those invitees that are no longer present
         FOREACH invitee IN ARRAY OLD.invitees LOOP

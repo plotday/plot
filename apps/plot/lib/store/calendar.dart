@@ -6,15 +6,15 @@ class Calendars extends Table
   TextColumn get name => text()();
   BoolColumn get enabled => boolean()();
   IntColumn get accountId => integer().references(Accounts, #id)();
-  BlobColumn get priorityId =>
-      blob()
-          .map(const UuidConverter())
-          .references(Priorities, #id)
-          .nullable()();
+  BlobColumn get priorityId => blob()
+      .map(const UuidConverter())
+      .references(Priorities, #id)
+      .nullable()();
 }
 
 class CalendarsBase extends BaseTable {
-  CalendarsBase() : super(table: 'calendar_x', writeTable: 'calendar');
+  CalendarsBase()
+    : super(name: 'calendar', table: 'calendar_x', writeTable: 'calendar');
 
   @override
   Insertable<CalendarRow> fromBase(Map<String, dynamic> json) =>
@@ -28,15 +28,16 @@ class Calendar extends CalendarRow {
   static Future<bool> pull() =>
       Store.get.pull(PullType.all, table, CalendarsBase());
 
-  static Stream<List<Calendar>> watch({bool? deleted = false}) => (Store.get
-    .select(table)..where(
-    (t) =>
-        deleted == null
-            ? const Constant(true)
-            : deleted
-            ? t.deletedAt.isNotNull()
-            : t.deletedAt.isNull(),
-  )).watch().map((rows) => rows.map((row) => Calendar.fromStore(row)).toList());
+  static Stream<List<Calendar>> watch({bool? deleted = false}) =>
+      (Store.get.select(table)..where(
+            (t) => deleted == null
+                ? const Constant(true)
+                : deleted
+                ? t.deletedAt.isNotNull()
+                : t.deletedAt.isNull(),
+          ))
+          .watch()
+          .map((rows) => rows.map((row) => Calendar.fromStore(row)).toList());
 
   Calendar.fromStore(CalendarRow row)
     : super(
