@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/page/page.dart';
 import 'command.dart';
 
 class ShowAllCalendarSettings extends Command {
@@ -28,9 +29,10 @@ class EnableCalendar extends ShowCommands<Priority> {
     : super(
         title: calendar.enabled ? 'Change Default Priority' : 'Enable',
         icon: PlotIcon.add,
-        commands: (context) => PickPriority(
-          prompt: 'Select Default Priority for ${calendar.name}',
-        ),
+        commands:
+            (context) => PickPriority(
+              prompt: 'Select Default Priority for ${calendar.name}',
+            ),
       );
 
   final Calendar calendar;
@@ -86,15 +88,28 @@ class ShowCalendarSettings extends Command {
   }
 }
 
+class AddGoogleAccount extends Command {
+  AddGoogleAccount() : super(title: 'Sync with Google');
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return CommandPage(const AuthAccountPage());
+  }
+}
+
 Future<List<CommandGroup>> calendarSettingsCommands() async {
   final accounts = await Account.get(withCalendars: true);
-  return accounts.map((account) {
-    final accountCalendars = account.calendars ?? [];
-    return StaticCommandGroup(
-      title: account.email,
-      commands: accountCalendars
-          .map((calendar) => ShowCalendarSettings(calendar))
-          .toList(),
-    );
-  }).toList();
+  return [
+    ...accounts.map((account) {
+      final accountCalendars = account.calendars ?? [];
+      return StaticCommandGroup(
+        title: account.email,
+        commands:
+            accountCalendars
+                .map((calendar) => ShowCalendarSettings(calendar))
+                .toList(),
+      );
+    }),
+    StaticCommandGroup(title: 'Add an Account', commands: [AddGoogleAccount()]),
+  ];
 }
