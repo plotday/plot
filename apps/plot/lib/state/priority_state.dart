@@ -1,85 +1,38 @@
 part of 'priority.dart';
 
-abstract class AgendaItem {
-  const AgendaItem();
-
-  T when<T>({
-    required T Function(Priority) priority,
-    required T Function(Event) event,
-  });
-}
-
-class PriorityAgendaItem extends AgendaItem {
-  final Priority priority;
-  const PriorityAgendaItem(this.priority);
-
-  @override
-  T when<T>({
-    required T Function(Priority) priority,
-    required T Function(Event) event,
-  }) {
-    return priority(this.priority);
-  }
-}
-
-class EventAgendaItem extends AgendaItem {
-  final Event event;
-  const EventAgendaItem(this.event);
-
-  @override
-  T when<T>({
-    required T Function(Priority) priority,
-    required T Function(Event) event,
-  }) {
-    return event(this.event);
-  }
-}
-
 class PriorityState extends Equatable {
   PriorityState({
     required this.context,
-    Priority? draft,
+    Activity? draft,
     this.pinned = const [],
-    this.scheduled = const [],
-    this.moreScheduled = true,
-    List<AgendaItem> activity = const [],
-    this.moreActivity = true,
-  }) : draft = draft ?? Priority(parent: context, draft: true),
-       activity = [
-         ...activity,
-         if (context.note != null && !moreActivity) PriorityAgendaItem(context),
-       ];
+    this.agendaItems = const [],
+    this.anchorIndex = 0,
+    this.moreAgendaItems = true,
+  }) : draft = draft ?? Activity(priorityId: context.id, draft: true);
 
   final Priority context;
-  final Priority draft;
+  final Activity draft;
   final List<AgendaItem> pinned;
-  final List<AgendaItem> scheduled;
-  final bool moreScheduled;
-  final List<AgendaItem> activity;
-  final bool moreActivity;
+  final List<AgendaItem> agendaItems;
+  final int anchorIndex;
+  final bool moreAgendaItems;
 
   PriorityState copyWith({
     Priority? context,
-    Priority? draft,
+    Activity? draft,
     List<AgendaItem>? pinned,
-    List<AgendaItem>? scheduled,
-    bool? moreScheduled,
-    List<AgendaItem>? activity,
-    bool? moreActivity,
+    List<AgendaItem>? agendaItems,
+    int? anchorIndex,
+    bool? moreAgendaItems,
   }) {
     return PriorityState(
       context: context ?? this.context,
       draft: draft ?? this.draft,
       pinned: pinned ?? this.pinned,
-      scheduled: scheduled ?? this.scheduled,
-      moreScheduled: moreScheduled ?? this.moreScheduled,
-      activity: activity ?? this.activity,
-      moreActivity: moreActivity ?? this.moreActivity,
+      agendaItems: agendaItems ?? this.agendaItems,
+      anchorIndex: anchorIndex ?? this.anchorIndex,
+      moreAgendaItems: moreAgendaItems ?? this.moreAgendaItems,
     );
-  }
-
-  List<AgendaItem> get agendaItems {
-    return [...scheduled, ...activity];
   }
 
   @override
@@ -87,9 +40,8 @@ class PriorityState extends Equatable {
     context,
     draft,
     pinned,
-    scheduled,
-    moreScheduled,
-    activity,
-    moreActivity,
+    agendaItems,
+    anchorIndex,
+    moreAgendaItems,
   ];
 }

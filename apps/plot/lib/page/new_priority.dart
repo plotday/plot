@@ -16,60 +16,43 @@ class NewPriorityPage extends HookWidget {
     final (nameController, title) = useTextEditingValue();
     final parent = useState<Priority?>(_initialParent);
 
-    return Dialog(
-      header: Header(
-        main: Row(
+    return Column(
+      spacing: 16,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: nameController,
+          label: "Add a priority",
+          maxLines: 1,
+          autofocus: true,
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Text('New priority in '),
-            PrioritySelector(
-              selected: parent.value,
-              onSelect: (priority) {
-                parent.value = priority;
-              },
+            Button.primary(
+              CommandWrapper(
+                AddPriority(
+                  Future.value(
+                    Priority(
+                      title: title,
+                      parent: parent.value,
+                      order: Order.first(),
+                    ),
+                  ),
+                ),
+                run: (command, context) async {
+                  final ret = await command.run(context);
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                  return ret;
+                },
+              ),
+              enabled: title.isNotEmpty,
             ),
           ],
         ),
-        modal: true,
-      ),
-      builder: (context) => Column(
-        spacing: 16,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: nameController,
-            label: "Add a priority",
-            maxLines: 1,
-            autofocus: true,
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Button.primary(
-                CommandWrapper(
-                  AddPriority(
-                    Future.value(
-                      Priority(
-                        title: title,
-                        parent: parent.value,
-                        order: Order.first(),
-                      ),
-                    ),
-                  ),
-                  run: (command, context) async {
-                    final ret = command.run(context);
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                    }
-                    return ret;
-                  },
-                ),
-                enabled: title.isNotEmpty,
-              ),
-            ],
-          ),
-        ],
-      ),
-      // ),
+      ],
     );
   }
 }

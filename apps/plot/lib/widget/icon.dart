@@ -1,25 +1,26 @@
-import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class PlotIcon {
-  static const IconData left = FontAwesomeIcons.chevronLeft;
-  static const IconData right = FontAwesomeIcons.chevronRight;
-  static const IconData up = FontAwesomeIcons.caretUp;
-  static const IconData down = FontAwesomeIcons.caretDown;
-  static const IconData pipe = FontAwesomeIcons.pipe;
-  static const IconData todo = FontAwesomeIcons.circle;
-  static const IconData doNow = FontAwesomeIcons.play;
-  static const IconData done = FontAwesomeIcons.check;
-  static const IconData scheduled = FontAwesomeIcons.alarmClock;
-  static const IconData pinned = FontAwesomeIcons.thumbtack;
-  static const IconData today = FontAwesomeIcons.calendar;
-  static const IconData add = FontAwesomeIcons.plusLarge;
-  static const IconData startOfDay = FontAwesomeIcons.sunHaze;
-  static const IconData priority = FontAwesomeIcons.rankingStar;
-  static const IconData priorities = FontAwesomeIcons.house;
-  static const IconData delete = FontAwesomeIcons.trash;
-  static const IconData open = FontAwesomeIcons.arrowRight;
-  static const IconData menu = FontAwesomeIcons.ellipsisVertical;
-  static const IconData settings = FontAwesomeIcons.gear;
-  static const IconData event = FontAwesomeIcons.calendar;
+  static const left = FontAwesomeIcons.chevronLeft;
+  static const right = FontAwesomeIcons.chevronRight;
+  static const up = FontAwesomeIcons.caretUp;
+  static const down = FontAwesomeIcons.caretDown;
+  static const pipe = FontAwesomeIcons.pipe;
+  static const todo = FontAwesomeIcons.circle;
+  static const doNow = FontAwesomeIcons.play;
+  static const done = FontAwesomeIcons.check;
+  static const scheduled = FontAwesomeIcons.alarmClock;
+  static const pinned = FontAwesomeIcons.thumbtack;
+  static const today = FontAwesomeIcons.calendar;
+  static const add = FontAwesomeIcons.plusLarge;
+  static const startOfDay = FontAwesomeIcons.sunHaze;
+  static const priority = FontAwesomeIcons.rankingStar;
+  static const priorities = FontAwesomeIcons.house;
+  static const activity = FontAwesomeIcons.listCheck;
+  static const delete = FontAwesomeIcons.trash;
+  static const open = FontAwesomeIcons.arrowRight;
+  static const menu = FontAwesomeIcons.ellipsisVertical;
+  static const settings = FontAwesomeIcons.gear;
+  static const event = FontAwesomeIcons.calendar;
+  static const signOut = FontAwesomeIcons.rightFromBracket;
 }

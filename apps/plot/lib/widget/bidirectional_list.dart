@@ -153,6 +153,9 @@ class BidirectionalList extends StatefulWidget {
   final ItemBuilder builder;
   final ItemFetcher? fetcher;
   final int count;
+  // index of the item in the list that should be centred in the initial view
+  // TODO: support positioing the anchor at other other positions
+  final int anchor;
   // arbitrary, relative value representing the position of the first item in
   // the list
   final int offset;
@@ -169,6 +172,7 @@ class BidirectionalList extends StatefulWidget {
     required this.builder,
     required this.count,
     this.fetcher,
+    this.anchor = 0,
     this.offset = 0,
     bool? doneStart,
     bool? doneEnd,
@@ -198,8 +202,8 @@ class BidirectionalListState extends State<BidirectionalList> {
   // amount of shrinkage, which is used to adjust the scroll position.
   int _shrinkUp = 0;
   int _shrinkDown = 0;
-  late int _upCount = widget.count ~/ 2;
-  late int _downCount = widget.count - widget.count ~/ 2;
+  late int _upCount = widget.anchor;
+  late int _downCount = widget.count - widget.anchor;
   late double _averageItemExtent = widget.estimatedItemExtent.toDouble();
   (double?, double?) _lastListExtents = (null, null);
 
@@ -317,6 +321,10 @@ class BidirectionalListState extends State<BidirectionalList> {
   @override
   void didUpdateWidget(covariant BidirectionalList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.anchor != widget.anchor) {
+      _upCount = widget.anchor;
+      _downCount = widget.count - widget.anchor;
+    }
     if (oldWidget.offset == widget.offset && oldWidget.count == widget.count) {
       return;
     }

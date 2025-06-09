@@ -1,14 +1,20 @@
 part of 'store.dart';
 
 @DataClassName('CalendarRow')
-class Calendars extends Table with SyncableTable, IdTable, DeletableTable {
+class Calendars extends Table
+    with SyncableTable, IdTable, CreatedTable, DeletableTable {
   TextColumn get name => text()();
   BoolColumn get enabled => boolean()();
   IntColumn get accountId => integer().references(Accounts, #id)();
+  BlobColumn get priorityId =>
+      blob()
+          .map(const UuidConverter())
+          .references(Priorities, #id)
+          .nullable()();
 }
 
 class CalendarsBase extends BaseTable {
-  CalendarsBase() : super(table: 'calendar');
+  CalendarsBase() : super(table: 'calendar_x', writeTable: 'calendar');
 
   @override
   Insertable<CalendarRow> fromBase(Map<String, dynamic> json) =>
@@ -20,7 +26,7 @@ class Calendar extends CalendarRow {
 
   static Future<void> push() => Store.get.push(table, CalendarsBase());
   static Future<bool> pull() =>
-      Store.get.pull(PullType.all, table, BalanceBase());
+      Store.get.pull(PullType.all, table, CalendarsBase());
 
   static Stream<List<Calendar>> watch({bool? deleted = false}) => (Store.get
     .select(table)..where(
@@ -35,29 +41,35 @@ class Calendar extends CalendarRow {
   Calendar.fromStore(CalendarRow row)
     : super(
         id: row.id,
+        createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         deletedAt: row.deletedAt,
         name: row.name,
         enabled: row.enabled,
         accountId: row.accountId,
+        priorityId: row.priorityId,
       );
 
   @override
   Calendar copyWith({
     int? id,
+    DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
     String? name,
     bool? enabled,
     int? accountId,
+    Value<Uuid?> priorityId = const Value.absent(),
   }) => Calendar.fromStore(
     super.copyWith(
       id: id,
-      updatedAt: DateTime.now(),
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? DateTime.now(),
       deletedAt: deletedAt,
       name: name,
       enabled: enabled,
       accountId: accountId,
+      priorityId: priorityId,
     ),
   );
 
@@ -66,5 +78,14 @@ class Calendar extends CalendarRow {
 
   Future<void> sync() async {
     await api.post("/sync", body: {'calendarId': id});
+  }
+
+  Future<Priority?> getPriority() async {
+    if (priorityId == null) return null;
+    try {
+      return await Priority.getOne(priorityId!);
+    } catch (e) {
+      return null;
+    }
   }
 }

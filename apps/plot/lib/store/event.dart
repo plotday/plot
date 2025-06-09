@@ -12,7 +12,7 @@ typedef EventId = Uuid;
 
 @DataClassName('EventRow')
 class Events extends Table
-    with SyncableTable, UuidTable, DraftTable, DeletableTable {
+    with SyncableTable, UuidTable, CreatedTable, DraftTable, DeletableTable {
   TextColumn get name => text().nullable()();
   DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();
   DateTimeColumn get end => dateTime().map(const LocalDateTimeConverter())();

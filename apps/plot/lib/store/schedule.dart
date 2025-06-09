@@ -54,14 +54,13 @@ class ScheduledDay extends Equatable {
       Event.watch(range, withPriority: true, deleted: deleted),
       Priority.watchDefault(),
       context != null
-          ? Priority.watch(
+          ? Activity.watch(
               range: range,
-              path: context.path,
-              self: false,
+              priorityPath: context.path,
               deleted: deleted,
             )
-          : Stream.value(<Priority>[]),
-      (events, defaultPriority, allPriorities) {
+          : Stream.value(<Activity>[]),
+      (events, defaultPriority, allActivities) {
         var (start, end) = range.bounds;
 
         final direction = start < end
@@ -84,19 +83,19 @@ class ScheduledDay extends Equatable {
             hasMore = eventIterator.moveNext();
           }
 
-          // Get priorities for this day
-          List<Priority> dayPriorities = [];
-          for (final priority in allPriorities) {
-            if (priority.createdAt.toDate() == start ||
-                (priority.doAt == start && start > today)) {
-              dayPriorities.add(priority);
+          // Get activities for this day
+          List<Activity> dayActivities = [];
+          for (final activity in allActivities) {
+            if (activity.createdAt.toDate() == start ||
+                (activity.doAt == start && start > today)) {
+              dayActivities.add(activity);
             }
           }
 
           days[start] = ScheduledDay(
             date: start,
             events: dayEvents,
-            priorities: dayPriorities,
+            activities: dayActivities,
             defaultPriority: defaultPriority,
           );
           start = start.next(direction: direction);
@@ -114,18 +113,17 @@ class ScheduledDay extends Equatable {
     return Rx.combineLatest2(
       Priority.watchDefault(),
       context != null
-          ? Priority.watch(
+          ? Activity.watch(
               range: Day(today),
-              path: context.path,
-              self: false,
+              priorityPath: context.path,
               deleted: false,
             )
-          : Stream.value(<Priority>[]),
-      (Priority defaultPriority, List<Priority> allPriorities) =>
-          (defaultPriority, allPriorities),
-    ).switchMap(((Priority, List<Priority>) tuple) {
+          : Stream.value(<Activity>[]),
+      (Priority defaultPriority, List<Activity> allActivities) =>
+          (defaultPriority, allActivities),
+    ).switchMap(((Priority, List<Activity>) tuple) {
       final defaultPriority = tuple.$1;
-      final allPriorities = tuple.$2;
+      final allActivities = tuple.$2;
       return Event.watch(today.toDateRange()).transform(
         ExpiringStreamTransformer((events) {
           final now = DateTime.now();
@@ -149,19 +147,19 @@ class ScheduledDay extends Equatable {
             );
           }
 
-          // Get priorities for today - only include if context is provided
-          List<Priority> dayPriorities = [];
-          for (final priority in allPriorities) {
+          // Get activities for today - only include if context is provided
+          List<Activity> dayActivities = [];
+          for (final activity in allActivities) {
             bool shouldInclude = false;
 
             // For today: include if created today or if doAt is today
-            if (priority.createdAt.toDate() == today ||
-                priority.doAt == today) {
+            if (activity.createdAt.toDate() == today ||
+                activity.doAt == today) {
               shouldInclude = true;
             }
 
             if (shouldInclude) {
-              dayPriorities.add(priority);
+              dayActivities.add(activity);
             }
           }
 
@@ -169,7 +167,7 @@ class ScheduledDay extends Equatable {
             value: ScheduledDay(
               date: today,
               events: events,
-              priorities: dayPriorities,
+              activities: dayActivities,
               defaultPriority: defaultPriority,
             ),
             expiry: expiry,
@@ -182,7 +180,7 @@ class ScheduledDay extends Equatable {
   ScheduledDay({
     required this.date,
     required List<Event> events,
-    this.priorities = const [],
+    this.activities = const [],
     required this.defaultPriority,
   }) : events = _addGaps(
          date,
@@ -198,7 +196,7 @@ class ScheduledDay extends Equatable {
   final Date date;
   final List<Event> events;
   final List<Event> allDayEvents;
-  final List<Priority> priorities;
+  final List<Activity> activities;
   final Priority defaultPriority;
 
   ScheduledDay copyWith(Event event) {
@@ -211,7 +209,7 @@ class ScheduledDay extends Equatable {
     return ScheduledDay(
       date: date,
       events: list,
-      priorities: priorities,
+      activities: activities,
       defaultPriority: defaultPriority,
     );
   }
@@ -221,7 +219,7 @@ class ScheduledDay extends Equatable {
   }
 
   @override
-  List<Object> get props => [date, events, priorities];
+  List<Object> get props => [date, events, activities];
 
   /* Private */
 

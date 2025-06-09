@@ -1,6 +1,7 @@
 export 'package:forui/forui.dart';
 
 export 'priority.dart';
+export 'activity.dart';
 export 'alert.dart';
 export 'badge.dart';
 export 'bidirectional_list.dart';

@@ -4,8 +4,8 @@ typedef PriorityId = Uuid;
 
 @DataClassName('PriorityRow')
 class Priorities extends Table
-    with SyncableTable, UuidTable, DraftTable, DeletableTable {
-  TextColumn get title => text().nullable()();
+    with SyncableTable, UuidTable, CreatedTable, DeletableTable {
+  TextColumn get title => text()();
   TextColumn get path => text().map(const PathConverter())();
   BlobColumn get createdBy => blob().map(const UuidConverter())();
   RealColumn get order =>
@@ -23,18 +23,6 @@ class Priorities extends Table
           .withDefault(const Constant(0))
           .map(const ThemeColorConverter())();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
-  BoolColumn get pinned => boolean().withDefault(const Constant(false))();
-  BoolColumn get private => boolean().withDefault(const Constant(false))();
-  TextColumn get doAt => text().nullable().map(const DateConverter())();
-  DateTimeColumn get doneAt =>
-      dateTime().nullable().map(const LocalDateTimeConverter())();
-  TextColumn get note => text().nullable()();
-  TextColumn get eventSeries => text().nullable()();
-
-  @override
-  List<String> get customConstraints => [
-    'CHECK (draft = 1 OR title IS NOT NULL)',
-  ];
 }
 
 class PrioritiesBase extends BaseTable {
@@ -82,24 +70,18 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   static Future<List<Priority>> get({
-    DateRange? range,
     PriorityId? id,
     Path? path,
     int? depth,
-    bool? pinned,
-    bool? active,
     bool? deleted = false,
     String? search,
     bool self = true,
     PriorityOrder order = PriorityOrder.sorted,
   }) async {
     return _get(
-      range: range,
       id: id,
       path: path,
       depth: depth,
-      pinned: pinned,
-      active: active,
       deleted: deleted,
       order: order,
       search: search,
@@ -108,24 +90,18 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   static Stream<List<Priority>> watch({
-    DateRange? range,
     PriorityId? id,
     Path? path,
     int? depth,
-    bool? pinned,
-    bool? active,
     bool? deleted = false,
     String? search,
     bool self = true,
     PriorityOrder order = PriorityOrder.sorted,
   }) {
     return _get(
-      range: range,
       id: id,
       path: path,
       depth: depth,
-      pinned: pinned,
-      active: active,
       deleted: deleted,
       order: order,
       search: search,
@@ -136,16 +112,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   static Future<Priority> getOne(
     PriorityId id, {
     int? depth = 0,
-    bool? pinned,
-    bool? active,
     bool? deleted = false,
     bool ancestors = true,
   }) {
     return _get(
       id: id,
       depth: depth,
-      pinned: pinned,
-      active: active,
       deleted: deleted,
       ancestors: ancestors,
       order: PriorityOrder.nested,
@@ -155,16 +127,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   static Stream<Priority> watchOne(
     PriorityId id, {
     int? depth = 0,
-    bool? pinned,
-    bool? active,
     bool? deleted = false,
     bool ancestors = true,
   }) {
     return _get(
       id: id,
       depth: depth,
-      pinned: pinned,
-      active: active,
       deleted: deleted,
       ancestors: ancestors,
       order: PriorityOrder.nested,
@@ -179,35 +147,23 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return _default().watchSingle();
   }
 
-  static Future<List<Priority>> getRoot({
-    int? depth,
-    bool? pinned,
-    bool? active,
-    bool? deleted = false,
-  }) => get(
-    depth: depth,
-    pinned: pinned,
-    active: active,
-    deleted: deleted,
-    order: PriorityOrder.nested,
-  ).then((priorities) => _asNested(priorities));
+  static Future<List<Priority>> getRoot({int? depth, bool? deleted = false}) =>
+      get(
+        depth: depth,
+        deleted: deleted,
+        order: PriorityOrder.nested,
+      ).then((priorities) => _asNested(priorities));
 
   static Stream<List<Priority>> watchRoot({
     int? depth,
-    bool? pinned,
-    bool? active,
     bool? deleted = false,
   }) => watch(
     depth: depth,
-    pinned: pinned,
-    active: active,
     deleted: deleted,
     order: PriorityOrder.nested,
   ).map((priorities) => _asNested(priorities));
 
   static MultiSelectable<Priority> _get({
-    DateRange? range,
-
     /* Selectors */
     PriorityId? id,
     Path? path,
@@ -216,8 +172,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     int? depth,
     bool ancestors = false,
     bool self = true,
-    bool? pinned,
-    bool? active,
     bool? deleted = false,
     String? search,
 
@@ -257,14 +211,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       ),
     ]);
 
-    if (active == true) {
-      query.where(p.doAt.isNotNull() & p.doneAt.isNull());
-    } else if (active == false) {
-      query.where(p.doAt.isNull() | p.doneAt.isNotNull());
-    }
-    if (pinned != null) {
-      query.where(p.pinned.equals(pinned));
-    }
     if (deleted != null) {
       query.where(deleted ? p.deletedAt.isNotNull() : p.deletedAt.isNull());
     }
@@ -282,39 +228,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     switch (order) {
       case PriorityOrder.sorted:
-        query.orderBy([
-          // Pinned
-          OrderingTerm(expression: p.pinned, mode: OrderingMode.desc),
-          // Active
-          OrderingTerm.desc(
-            CaseWhenExpression(
-              cases: [
-                CaseWhen(
-                  p.doAt.isSmallerOrEqual(Constant(Date.today().toString())) &
-                      p.doneAt.isNull(),
-                  then: p.doAt,
-                ),
-              ],
-              orElse: const Constant(null),
-            ),
-          ),
-          OrderingTerm.asc(
-            CaseWhenExpression(
-              cases: [
-                CaseWhen(
-                  p.pinned |
-                      (p.doAt.isSmallerOrEqual(
-                            Constant(Date.today().toString()),
-                          ) &
-                          p.doneAt.isNull()),
-                  then: p.order,
-                ),
-              ],
-              orElse: const Constant(null),
-            ),
-          ),
-          OrderingTerm.desc(p.order),
-        ]);
+        query.orderBy([OrderingTerm.asc(p.order)]);
         break;
       case PriorityOrder.nested:
         // order by path so parents always precede children
@@ -332,43 +246,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
             expression: Store.get.sessions.end,
             mode: OrderingMode.desc,
           ),
+          OrderingTerm.asc(p.order),
         ]);
         break;
-    }
-
-    final pne = Store.get.alias(Store.get.priorityNextEvent, 'pne');
-    query = query.join([leftOuterJoin(pne, pne.priorityId.equalsExp(p.id))]);
-
-    if (range != null) {
-      final today = Date.today();
-      final rangeStart = range.start;
-      final rangeEnd = range.end;
-
-      // Priority should be included if:
-      // 1. createdAt is during the range
-      // 2. doAt is during the range (treat past doAt as today)
-      // 3. priorityNextEvent.start is during the range
-      query.where(
-        // 1. Created during range
-        (p.createdAt.isBiggerOrEqualValue(rangeStart.toStart()) &
-                p.createdAt.isSmallerThanValue(rangeEnd.toEnd())) |
-            // 2. doAt during range (with past doAt treated as today)
-            (p.doAt.isNotNull() &
-                ((p.doAt.isSmallerOrEqualValue(today.toString()) &
-                        Constant(
-                          rangeStart.toString(),
-                        ).isSmallerOrEqualValue(today.toString()) &
-                        Constant(
-                          today.toString(),
-                        ).isSmallerThanValue(rangeEnd.toString())) |
-                    (p.doAt.isBiggerThanValue(today.toString()) &
-                        p.doAt.isBiggerOrEqualValue(rangeStart.toString()) &
-                        p.doAt.isSmallerThanValue(rangeEnd.toString())))) |
-            // 3. priorityNextEvent.start during range
-            (pne.start.isNotNull() &
-                pne.start.isBiggerOrEqualValue(rangeStart.toStart()) &
-                pne.start.isSmallerThanValue(rangeEnd.toEnd())),
-      );
     }
 
     if (ancestry) {
@@ -379,17 +259,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
             (row) => Priority.fromStore(
               row.readTable(p),
               ancestry: row.readTableOrNull(pa),
-              nextEventStart: row.readTableOrNull(pne)?.start,
             ),
           );
     }
 
-    return query.map(
-      (row) => Priority.fromStore(
-        row.readTable(p),
-        nextEventStart: row.readTableOrNull(pne)?.start,
-      ),
-    );
+    return query.map((row) => Priority.fromStore(row.readTable(p)));
   }
 
   static SingleSelectable<Priority> _default() {
@@ -455,23 +329,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return matches;
   }
 
-  Future<String> generateTitle() async {
-    final response = await api.post("/summary", body: {'body': note});
-    return response['title'] as String;
-  }
-
   Priority({
     Order? order,
     this.parent,
     this.balance,
-    super.title,
-    super.note,
+    required super.title,
     super.pomodoro = const Duration(minutes: 25),
     super.color = const ThemeColor.defaultColor(),
-    super.draft = false,
-    super.private = false,
-    super.pinned = false,
-    super.eventSeries,
   }) : children = [],
        _ancestors =
            parent == null
@@ -496,7 +360,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     List<Priority>? children,
     this.balance,
     PriorityAncestryData? ancestry,
-    DateTime? nextEventStart,
   }) : children = children ?? [],
        _ancestors =
            ancestry == null
@@ -510,36 +373,15 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdAt: row.createdAt,
          updatedAt: row.updatedAt,
          deletedAt: row.deletedAt,
-         draft: row.draft,
          title: row.title,
-         note: row.note,
          pomodoro: row.pomodoro,
          color: row.color,
          root: row.root,
          order: row.order,
          path: row.path,
-         private: row.private,
-         pinned: row.pinned,
          createdBy: row.createdBy,
-         doAt: nextEventStart != null ? nextEventStart.toDate() : row.doAt,
-         doneAt: row.doneAt,
-         eventSeries: row.eventSeries,
        ) {
     parent?._addChild(this);
-  }
-
-  /// Title is always set when draft = false
-  @override
-  String get title => super.title ?? 'Untitled';
-
-  bool get hasTitle => super.title != null;
-
-  static String noteToTitle(String markdown) {
-    final firstLine = markdown.split("\n").first.removeMarkdown().trim();
-    if (firstLine.length > 40) {
-      return "${firstLine.substring(0, 40)}…";
-    }
-    return firstLine;
   }
 
   static const separator = ' › ';
@@ -558,7 +400,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         return ancestors.sublist(startIndex + 1);
       }
     }
-    if (ancestors.length > 1) {
+    if (ancestors.length > (includeSelf ? 1 : 0)) {
       // Skip "Everything" root priority
       return ancestors.sublist(1);
     }
@@ -603,92 +445,35 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   Future<void> delete() => copyWith(deletedAt: Value(DateTime.now())).save();
 
-  Priority merge(Priority other) {
-    return copyWith(
-      title:
-          !hasTitle
-              ? other.hasTitle
-                  ? Value(other.title)
-                  : Value.absent()
-              : Value(title),
-      doAt: Value(doAt ?? other.doAt),
-      doneAt: Value(doneAt ?? other.doneAt),
-      pinned: pinned || other.pinned,
-      private: private || other.private,
-      eventSeries: Value(eventSeries ?? other.eventSeries),
-    );
-  }
-
   @override
   Priority copyWith({
     Uuid? id,
     DateTime? updatedAt,
     DateTime? createdAt,
-    bool? draft,
     Value<DateTime?> deletedAt = const Value.absent(),
-    Value<String?> title = const Value.absent(),
+    String? title,
     Path? path,
     Uuid? createdBy,
     Order? order,
     Value<Duration?> pomodoro = const Value.absent(),
     Value<ThemeColor?> color = const Value.absent(),
     bool? root,
-    bool? pinned,
-    bool? private,
-    Value<Date?> doAt = const Value.absent(),
-    Value<DateTime?> doneAt = const Value.absent(),
-    Value<String?> note = const Value.absent(),
     Priority? parent,
     Balance? balance,
-    Value<String?> eventSeries = const Value.absent(),
   }) {
-    final publish = this.draft && draft == false;
-    if (doAt.present && doAt.value != null) {
-      doneAt = const Value(null);
-      pinned = false;
-    } else if (pinned == true) {
-      doAt = const Value(null);
-      doneAt = const Value(null);
-    } else if (doneAt.present) {
-      doAt = const Value(null);
-      pinned = false;
-    }
-    if (publish &&
-        note.present &&
-        note.value != null &&
-        !title.present &&
-        !hasTitle) {
-      title = Value(noteToTitle(note.value!));
-      if (note.value!.length < 40 && !note.value!.contains(RegExp(r'[\n]'))) {
-        note = Value.absent();
-      }
-    }
-    if (publish ||
-        (doAt.present && doAt.value != this.doAt) ||
-        (doneAt.present && doneAt.value != null) ||
-        (pinned != null && pinned != this.pinned)) {
-      order ??= Order.first();
-    }
     return Priority.fromStore(
       super.copyWith(
         id: id,
         createdBy: createdBy,
-        createdAt: publish ? DateTime.now() : this.createdAt,
+        createdAt: createdAt ?? this.createdAt,
         updatedAt: DateTime.now(),
         deletedAt: deletedAt,
-        draft: draft,
-        title: title,
-        path: path,
-        order: order,
+        title: title ?? this.title,
+        path: path ?? this.path,
+        order: order ?? this.order,
         pomodoro: pomodoro,
         color: color,
-        root: root,
-        pinned: pinned,
-        private: private,
-        doAt: doAt,
-        doneAt: doneAt,
-        note: note,
-        eventSeries: eventSeries,
+        root: root ?? this.root,
       ),
       parent: parent ?? this.parent,
       children: children,
@@ -705,48 +490,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   bool isParent(Priority other) => path.isParent(other.path);
   List<Priority> get peers => parent?.children ?? [];
 
-  // For the user, doAt can never be in the past
-  @override
-  Date? get doAt =>
-      _doAt != null && _doAt! < Date.today() ? Date.today() : _doAt;
-
-  Date? get _doAt => super.doAt;
-
-  bool get doNow {
-    return !done && _doAt != null && _doAt! <= Date.today();
-  }
-
-  bool get doLater {
-    return _doAt != null && _doAt! > Date.today();
-  }
-
-  bool get scheduled {
-    return _doAt != null;
-  }
-
-  bool get done => doneAt != null;
-
   Future<void> save() =>
       Store.get.save(table, toCompanion(false), PrioritiesBase());
 
   @override
   int compareTo(Priority other) {
-    if (pinned && other.pinned) {
-      return -order.compareTo(other.order);
-    }
-    if (pinned || other.pinned) {
-      return pinned ? -1 : 1;
-    }
-    if (doNow && other.doNow) {
-      final doAtComp = _doAt!.compareTo(other._doAt!);
-      if (doAtComp != 0) {
-        return doAtComp;
-      }
-      return -order.compareTo(other.order);
-    }
-    if (doNow || other.doNow) {
-      return doNow ? -1 : 1;
-    }
     return order.compareTo(other.order);
   }
 

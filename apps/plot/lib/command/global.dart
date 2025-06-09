@@ -9,10 +9,8 @@ class GlobalShortcuts extends StatelessWidget {
 
   final Widget child;
   final List<StaticCommandGroup> commands = [
-    StaticCommandGroup(
-      title: 'Commands',
-      commands: [PickCurrentPriority(), ShowSettings()],
-    ),
+    prioritiesCommands,
+    settingsCommands,
   ];
 
   @override

@@ -12,7 +12,8 @@ enum SessionPriority implements Comparable<SessionPriority> {
 }
 
 @DataClassName('SessionRow')
-class Sessions extends Table with SyncableTable, UuidTable, DeletableTable {
+class Sessions extends Table
+    with SyncableTable, CreatedTable, UuidTable, DeletableTable {
   BlobColumn get priorityId =>
       blob()
           .nullable()
@@ -194,6 +195,7 @@ class Session extends SessionRow {
   Session({this.priority, required super.end})
     : super(
         id: Uuid.generate(),
+        createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         priorityId: priority?.id,
         start: DateTime.now(),
@@ -205,6 +207,7 @@ class Session extends SessionRow {
   Session.fromStore(SessionRow row, {this.priority})
     : super(
         id: row.id,
+        createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         deletedAt: row.deletedAt,
         priorityId: row.priorityId,
@@ -218,6 +221,7 @@ class Session extends SessionRow {
   @override
   Session copyWith({
     Uuid? id,
+    DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
     Value<Uuid?> priorityId = const Value.absent(),
@@ -229,7 +233,8 @@ class Session extends SessionRow {
   }) => Session.fromStore(
     super.copyWith(
       id: id,
-      updatedAt: DateTime.now(),
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? DateTime.now(),
       deletedAt: deletedAt,
       priorityId: priorityId,
       start: start,
