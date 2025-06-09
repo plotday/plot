@@ -382,6 +382,9 @@ class BidirectionalListState extends State<BidirectionalList> {
             getScrollAdjustment: _getScrollAdjustment,
           ),
           center: _downListKey,
+          anchor: widget.reverse
+              ? 0.8
+              : 0.2, // offset % for the anchor element in the initial view
           reverse: widget.reverse,
           slivers: [
             if (widget.count > 0 && !widget.doneStart) spinner,
