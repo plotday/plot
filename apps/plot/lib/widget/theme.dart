@@ -25,9 +25,9 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
     ),
     textFieldStyle: theme.textFieldStyle.copyWith(
       cursorColor: colourScheme.accent,
-      // contentTextStyle: theme.textFieldStyle.contentTextStyle.map(
-      //   (style) => style.copyWith(color: colourScheme.foreground),
-      // ),
+      contentTextStyle: theme.textFieldStyle.contentTextStyle.map(
+        (style) => style.copyWith(color: colourScheme.foreground),
+      ),
     ),
     buttonStyles: theme.buttonStyles.copyWith(
       primary: theme.buttonStyles.primary.copyWith(

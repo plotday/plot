@@ -54,7 +54,7 @@ class ColourSchemeData extends Equatable {
           ? pureForeground.withAlpha(0.2).toColor()
           : pureForeground.withAlpha(0.1).toColor();
   Color get foreground =>
-      brightness == Brightness.light ? Color(0x0FF00000) : Color(0xFFFFFFFF);
+      brightness == Brightness.light ? Color(0xFF000000) : Color(0xFFFFFFFF);
   Color get muted =>
       brightness == Brightness.light
           ? base.withSaturation(0.2).withLightness(0.2).toColor()
