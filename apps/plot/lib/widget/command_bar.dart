@@ -108,8 +108,6 @@ class CommandBarState<T> extends State<_CommandBar<T>> {
         DialogProvider.of(
           context,
         ).pop(context, Value.absentIfNull(result.value));
-      } else if (result == null && mounted) {
-        DialogProvider.of(context).pop<T>(context, Value.absent());
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
