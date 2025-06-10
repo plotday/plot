@@ -92,7 +92,7 @@ SELECT
     ctx.path AS priority_path
 FROM
     event_x1 e
-    JOIN calendar c ON c.id = e.calendar_id
+    LEFT JOIN calendar c ON c.id = e.calendar_id
     LEFT JOIN LATERAL (
         SELECT
             priority_id
