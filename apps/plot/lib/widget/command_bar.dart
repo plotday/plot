@@ -16,9 +16,8 @@ class CommandBar<T> extends Dialog {
     super.key,
   }) : super(
          padding: const EdgeInsets.all(0),
-         builder:
-             (_) =>
-                 _CommandBar<T>(commands, secondaryCommand: secondaryCommand),
+         builder: (_) =>
+             _CommandBar<T>(commands, secondaryCommand: secondaryCommand),
        );
 }
 
@@ -91,6 +90,9 @@ class CommandBarState<T> extends State<_CommandBar<T>> {
   }
 
   Future<CommandReturn?> _executeCommand(Command command) async {
+    setState(() {
+      _error = null;
+    });
     try {
       final result = await command.run(context);
 
@@ -111,6 +113,9 @@ class CommandBarState<T> extends State<_CommandBar<T>> {
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
+      setState(() {
+        _error = 'Something went wrong';
+      });
     }
     return null;
   }
@@ -133,80 +138,74 @@ class CommandBarState<T> extends State<_CommandBar<T>> {
     final totalCommandCount = _allCommandsCount();
 
     return BidirectionalListSelector(
-      onActivate: (index) => _getCommandAtIndex(index).run(context),
-      builder:
-          (context, listController) => Shortcuts(
-            shortcuts: BidirectionalList.shortcuts,
-            child:
-                _child != null
-                    ? _child!
-                    : Column(
-                      mainAxisSize: MainAxisSize.min,
+      onActivate: (index) => _executeCommand(_getCommandAtIndex(index)),
+      builder: (context, listController) => Shortcuts(
+        shortcuts: BidirectionalList.shortcuts,
+        child: _child != null
+            ? _child!
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  EditableArea(
+                    position: EditableAreaPosition.top,
+                    padding: false,
+                    builder: (context, focusNode) => Row(
                       children: [
-                        EditableArea(
-                          position: EditableAreaPosition.top,
-                          padding: false,
-                          builder:
-                              (context, focusNode) => Row(
-                                children: [
-                                  Expanded(
-                                    child: Padding(
-                                      padding: widgetPadding,
-                                      child: TextField(
-                                        maxLines: 1,
-                                        style: TextFieldStyle.ghost,
-                                        controller: _controller,
-                                        autofocus: true,
-                                        label: "${widget.commands.prompt}…",
-                                        focusNode: focusNode,
-                                      ),
-                                    ),
-                                  ),
-                                  if (secondaryCommand != null)
-                                    Button.icon(
-                                      CommandWrapper(
-                                        secondaryCommand,
-                                        run:
-                                            (_, __) => _executeCommand(
-                                              secondaryCommand,
-                                            ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                        ),
-                        if (errorBox != null) errorBox,
-                        Flexible(
-                          child: BidirectionalList(
-                            // shrinkWrap: true,
-                            controller: listController,
-                            count: totalCommandCount,
-                            builder: (context, index, selected) {
-                              final group = _getGroupAtIndex(index);
-                              final command = _getCommandAtIndex(index);
-                              final body = command.buildBody(context);
-                              Widget? header;
-                              if (index == 0 ||
-                                  group != _getGroupAtIndex(index - 1)) {
-                                header = Text(group.title);
-                              }
-                              return Column(
-                                key: ValueKey(index),
-                                children: [
-                                  if (header != null) header,
-                                  ListTile(
-                                    command: command,
-                                    body: body,
-                                    selected: listController.selected == index,
-                                  ),
-                                ],
-                              );
-                            },
+                        Expanded(
+                          child: Padding(
+                            padding: widgetPadding,
+                            child: TextField(
+                              maxLines: 1,
+                              style: TextFieldStyle.ghost,
+                              controller: _controller,
+                              autofocus: true,
+                              label: "${widget.commands.prompt}…",
+                              focusNode: focusNode,
+                            ),
                           ),
                         ),
+                        if (secondaryCommand != null)
+                          Button.icon(
+                            CommandWrapper(
+                              secondaryCommand,
+                              run: (_, __) => _executeCommand(secondaryCommand),
+                            ),
+                          ),
                       ],
                     ),
-          ),
+                  ),
+                  if (errorBox != null) errorBox,
+                  Flexible(
+                    child: BidirectionalList(
+                      // shrinkWrap: true,
+                      controller: listController,
+                      count: totalCommandCount,
+                      builder: (context, index, selected) {
+                        final group = _getGroupAtIndex(index);
+                        final command = _getCommandAtIndex(index);
+                        final body = command.buildBody(context);
+                        Widget? header;
+                        if (index == 0 ||
+                            group != _getGroupAtIndex(index - 1)) {
+                          header = Text(group.title);
+                        }
+                        return Column(
+                          key: ValueKey(index),
+                          children: [
+                            if (header != null) header,
+                            ListTile(
+                              command: command,
+                              body: body,
+                              selected: listController.selected == index,
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 
