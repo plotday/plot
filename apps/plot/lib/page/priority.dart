@@ -239,7 +239,7 @@ class PriorityPage extends StatelessWidget {
                         scrollController: ScrollControllerContext.of(context),
                         count: state.agendaItems.length,
                         anchor: state.anchorIndex,
-                        anchorOffset: 0.8,
+                        anchorOffset: 0.0,
                         reverse: true,
                         builder: (context, index, selected) {
                           final current = state.agendaItems[index];

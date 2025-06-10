@@ -26,7 +26,10 @@ class ScheduledDay extends Equatable {
           _watchToday(today, context: context),
           (rangeMap, todaySchedule) {
             final result = Map<Date, ScheduledDay>.from(rangeMap);
-            result[today] = todaySchedule;
+            // Only include today if it has events or activities
+            if (todaySchedule.events.isNotEmpty || todaySchedule.activities.isNotEmpty) {
+              result[today] = todaySchedule;
+            }
             final sortedEntries = result.entries.toList()
               ..sort((a, b) => a.key.compareTo(b.key));
             return LinkedHashMap<Date, ScheduledDay>.fromEntries(sortedEntries);
@@ -92,12 +95,15 @@ class ScheduledDay extends Equatable {
             }
           }
 
-          days[start] = ScheduledDay(
-            date: start,
-            events: dayEvents,
-            activities: dayActivities,
-            defaultPriority: defaultPriority,
-          );
+          // Only include days that have events or activities
+          if (dayEvents.isNotEmpty || dayActivities.isNotEmpty) {
+            days[start] = ScheduledDay(
+              date: start,
+              events: dayEvents,
+              activities: dayActivities,
+              defaultPriority: defaultPriority,
+            );
+          }
           start = start.next(direction: direction);
         }
         return days;
@@ -182,13 +188,9 @@ class ScheduledDay extends Equatable {
     required List<Event> events,
     this.activities = const [],
     required this.defaultPriority,
-  }) : events = _addGaps(
-         date,
-         events
-             .where((e) => e.at.duration < const Duration(hours: 22))
-             .toList(),
-         defaultPriority,
-       ),
+  }) : events = events
+           .where((e) => e.at.duration < const Duration(hours: 22))
+           .toList(),
        allDayEvents = events
            .where((e) => e.at.duration >= const Duration(hours: 22))
            .toList();
@@ -220,49 +222,4 @@ class ScheduledDay extends Equatable {
 
   @override
   List<Object> get props => [date, events, activities];
-
-  /* Private */
-
-  static List<Event> _addGaps(
-    Date date,
-    List<Event> events,
-    Priority defaultPriority,
-  ) {
-    List<Event> expanded = [];
-    final start = date.toDateTime();
-    final end = start.nextDay;
-    if (events.isEmpty ||
-        events.first.at.start.difference(start).inMinutes > 0) {
-      expanded.add(
-        Event(
-          at: DateTimeRange(
-            start,
-            events.isEmpty
-                ? end
-                : start.at(events.first.at.start.toTimeOfDay()),
-          ),
-          priority: defaultPriority,
-        ),
-      );
-    }
-    for (var i = 0; i < events.length; i++) {
-      expanded.add(events[i]);
-      // If there is a gap between events or at the end of the day
-      if ((i + 1 < events.length &&
-              events[i].at.end < events[i + 1].at.start) ||
-          (i + 1 == events.length &&
-              events[i].at.end.difference(end).inMinutes < 0)) {
-        expanded.add(
-          Event(
-            at: DateTimeRange(
-              events[i].at.end,
-              i + 1 == events.length ? end : events[i + 1].at.start,
-            ),
-            priority: defaultPriority,
-          ),
-        );
-      }
-    }
-    return expanded;
-  }
 }

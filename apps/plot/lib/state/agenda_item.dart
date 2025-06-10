@@ -15,13 +15,10 @@ class Agenda {
   }) {
     anchor ??= today;
     final agendaItems = <AgendaItem>[];
-    int anchorIndex = -1;
+    int anchorIndex = 0;
 
     for (final scheduledDay in scheduledDays) {
       // Date header
-      if (scheduledDay.date == anchor) {
-        anchorIndex = agendaItems.length;
-      }
       agendaItems.add(
         HeaderAgendaItem(
           date: scheduledDay.date,
@@ -42,9 +39,14 @@ class Agenda {
         priorities,
       );
 
-      // Add scheduled events
+      // Add scheduled events with gaps
+      final eventsWithGaps = _addGapsToEvents(
+        scheduledDay.date,
+        scheduledDay.events,
+        scheduledDay.defaultPriority,
+      );
       agendaItems.addAll(
-        scheduledDay.events.reversed.expand(
+        eventsWithGaps.reversed.expand(
           (e) => [
             HeaderAgendaItem(
               event: e,
@@ -54,6 +56,10 @@ class Agenda {
           ],
         ),
       );
+
+      if (scheduledDay.date <= anchor) {
+        anchorIndex = agendaItems.length - 1;
+      }
     }
 
     return Agenda(items: agendaItems, anchorIndex: anchorIndex);
@@ -110,6 +116,33 @@ class Agenda {
         activitiesWithoutPriority.map((a) => ActivityAgendaItem(a)),
       );
     }
+  }
+
+  /// Adds gap events between scheduled events to fill the day
+  static List<Event> _addGapsToEvents(
+    Date date,
+    List<Event> events,
+    Priority defaultPriority,
+  ) {
+    List<Event> expanded = [];
+    final start = date.toDateTime();
+    final end = start.nextDay;
+
+    for (var i = 0; i < events.length; i++) {
+      expanded.add(events[i]);
+      if (i + 1 < events.length && events[i].at.end < events[i + 1].at.start) {
+        expanded.add(
+          Event(
+            at: DateTimeRange(
+              events[i].at.end,
+              i + 1 == events.length ? end : events[i + 1].at.start,
+            ),
+            priority: defaultPriority,
+          ),
+        );
+      }
+    }
+    return expanded;
   }
 }
 
