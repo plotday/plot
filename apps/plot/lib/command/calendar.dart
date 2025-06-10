@@ -29,10 +29,9 @@ class EnableCalendar extends ShowCommands<Priority> {
     : super(
         title: calendar.enabled ? 'Change Default Priority' : 'Enable',
         icon: PlotIcon.add,
-        commands:
-            (context) => PickPriority(
-              prompt: 'Select Default Priority for ${calendar.name}',
-            ),
+        commands: (context) => PickPriority(
+          prompt: 'Select Default Priority for ${calendar.name}',
+        ),
       );
 
   final Calendar calendar;
@@ -51,7 +50,7 @@ class EnableCalendar extends ShowCommands<Priority> {
 
 class SyncCalendar extends Command {
   SyncCalendar(this.calendar)
-    : super(title: calendar.enabled ? 'Re-sync' : 'Sync');
+    : super(title: calendar.enabled ? 'Re-sync' : 'Sync', icon: PlotIcon.sync);
 
   final Calendar calendar;
 
@@ -104,10 +103,9 @@ Future<List<CommandGroup>> calendarSettingsCommands() async {
       final accountCalendars = account.calendars ?? [];
       return StaticCommandGroup(
         title: account.email,
-        commands:
-            accountCalendars
-                .map((calendar) => ShowCalendarSettings(calendar))
-                .toList(),
+        commands: accountCalendars
+            .map((calendar) => ShowCalendarSettings(calendar))
+            .toList(),
       );
     }),
     StaticCommandGroup(title: 'Add an Account', commands: [AddGoogleAccount()]),

@@ -23,4 +23,5 @@ class PlotIcon {
   static const settings = FontAwesomeIcons.gear;
   static const event = FontAwesomeIcons.calendar;
   static const signOut = FontAwesomeIcons.rightFromBracket;
+  static const sync = FontAwesomeIcons.arrowsRotate;
 }
