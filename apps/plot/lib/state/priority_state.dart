@@ -3,6 +3,7 @@ part of 'priority.dart';
 class PriorityState extends Equatable {
   PriorityState({
     required this.context,
+    this.activity,
     Activity? draft,
     this.pinned = const [],
     this.agendaItems = const [],
@@ -11,6 +12,7 @@ class PriorityState extends Equatable {
   }) : draft = draft ?? Activity(priorityId: context.id, draft: true);
 
   final Priority context;
+  final Activity? activity;
   final Activity draft;
   final List<AgendaItem> pinned;
   final List<AgendaItem> agendaItems;
@@ -19,6 +21,7 @@ class PriorityState extends Equatable {
 
   PriorityState copyWith({
     Priority? context,
+    Activity? activity,
     Activity? draft,
     List<AgendaItem>? pinned,
     List<AgendaItem>? agendaItems,
@@ -27,6 +30,7 @@ class PriorityState extends Equatable {
   }) {
     return PriorityState(
       context: context ?? this.context,
+      activity: activity ?? this.activity,
       draft: draft ?? this.draft,
       pinned: pinned ?? this.pinned,
       agendaItems: agendaItems ?? this.agendaItems,
@@ -38,6 +42,7 @@ class PriorityState extends Equatable {
   @override
   List<Object?> get props => [
     context,
+    activity,
     draft,
     pinned,
     agendaItems,

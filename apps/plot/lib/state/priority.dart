@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/state/agenda_item.dart';
@@ -9,13 +10,14 @@ import 'package:plot/state/agenda_item.dart';
 part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
-  PriorityBloc({required Priority priority, this.activityId})
+  PriorityBloc({required Priority priority, Activity? activity})
     : _subscriptions = [],
-      super(PriorityState(context: priority)) {
+      super(PriorityState(context: priority, activity: activity)) {
     _loadPriority(priority);
+    if (activity != null) {
+      _loadActivity(activity);
+    }
   }
-
-  final ActivityId? activityId;
 
   void _reset() {
     for (final subscription in _subscriptions) {
@@ -41,6 +43,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         emit(state.copyWith(context: priority));
       }),
     );
+
     // Watch pinned activities
     _subscriptions.add(
       Activity.watch(priorityId: priority.id, pinned: true).listen((
@@ -55,17 +58,29 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
     // Watch upcoming, scheduled priorities and past activity using ScheduledDay.watch
     final today = Date.today();
-    final oneMonthAgo =
-        today.toDateTime().subtract(const Duration(days: 30)).toDate();
-    final oneMonthFromNow =
-        today.toDateTime().add(const Duration(days: 30)).toDate();
+    final oneMonthAgo = today
+        .toDateTime()
+        .subtract(const Duration(days: 30))
+        .toDate();
+    final oneMonthFromNow = today
+        .toDateTime()
+        .add(const Duration(days: 30))
+        .toDate();
     final range = DateRangeCustom(oneMonthAgo, oneMonthFromNow);
 
     _subscriptions.add(
-      ScheduledDay.watch(range, context: priority).listen((scheduleMap) {
+      Rx.combineLatest2(
+        ScheduledDay.watch(range, context: priority),
+        Priority.watch(order: PriorityOrder.sorted),
+        (scheduleMap, priorities) => (scheduleMap, priorities),
+      ).listen((data) {
+        final (scheduleMap, priorities) = data;
+        final priorityMap = Priority.asMap(priorities);
+
         final agenda = Agenda.fromScheduledDays(
           scheduleMap.values.toList(),
           today: today,
+          priorities: priorityMap,
         );
 
         emit(
@@ -75,6 +90,15 @@ class PriorityBloc extends Cubit<PriorityState> {
             moreAgendaItems: false,
           ),
         );
+      }),
+    );
+  }
+
+  void _loadActivity(Activity activity) {
+    // Watch the activity
+    _subscriptions.add(
+      Activity.watchOne(activity.id).listen((watchedActivity) {
+        emit(state.copyWith(activity: watchedActivity));
       }),
     );
   }

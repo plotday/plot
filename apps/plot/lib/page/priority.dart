@@ -48,8 +48,7 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
         }
 
         return BlocProvider(
-          create: (_) =>
-              PriorityBloc(priority: snapshot.data!, activityId: null),
+          create: (_) => PriorityBloc(priority: snapshot.data!, activity: null),
           key: ValueKey(snapshot.data!.id),
           child: this,
         );
@@ -80,14 +79,15 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
 
   @override
   Widget wrappedRoute(BuildContext context) {
-    return FutureBuilder<Priority?>(
-      future: Activity.getOne(
-        activityId,
-      ).then((a) => Priority.getOne(a.priorityId)),
+    return FutureBuilder<(Priority, Activity)>(
+      future: Activity.getOne(activityId).then((activity) async {
+        final priority = await Priority.getOne(activity.priorityId);
+        return (priority, activity);
+      }),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           log.warning(
-            "Failed to load Priority",
+            "Failed to load Priority and Activity",
             snapshot.error,
             snapshot.stackTrace,
           );
@@ -96,10 +96,10 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
           return const LoadingPage();
         }
 
+        final (priority, activity) = snapshot.data!;
         return BlocProvider(
-          create: (_) =>
-              PriorityBloc(priority: snapshot.data!, activityId: activityId),
-          key: ValueKey(snapshot.data!.id),
+          create: (_) => PriorityBloc(priority: priority, activity: activity),
+          key: ValueKey(activity.id),
           child: this,
         );
       },
@@ -154,22 +154,18 @@ class _SelectionCommandScopeState extends State<_SelectionCommandScope> {
       commands: [
         if (widget.listController.selected != null &&
             widget.listController.selected! < widget.state.agendaItems.length)
-          widget.state.agendaItems[widget.listController.selected!].when(
-            activity: (activity) => StaticCommandGroup(
-              title: activity.title,
-              subtitle: activity.parent?.title ?? '',
-              commands: [
-                ChangeCurrentActivity(activity),
-                ...activityCommands(activity),
-              ],
-            ),
-            event: (event) => StaticCommandGroup(
-              title: event.name ?? 'Untitled Event',
-              subtitle: 'Event',
-              commands: [],
-            ),
-            header: (header) =>
-                StaticCommandGroup(title: 'Header', subtitle: '', commands: []),
+          ...widget.state.agendaItems[widget.listController.selected!].when(
+            activity: (activity) => [
+              StaticCommandGroup(
+                title: activity.title,
+                commands: [
+                  ChangeCurrentActivity(activity),
+                  ...activityCommands(activity),
+                ],
+              ),
+            ],
+            event: (event) => [],
+            header: (header) => [],
           ),
       ],
       child: widget.child,
@@ -208,11 +204,14 @@ class PriorityPage extends StatelessWidget {
               child: Scaffold(
                 translucent: true,
                 header: Header(
-                  main: PrioritySelector(
-                    selected: state.context,
-                    onSelect: (p) =>
-                        context.run<void>(ChangeCurrentPriority(p)),
-                  ),
+                  title: state.activity?.title,
+                  main: state.activity == null
+                      ? PrioritySelector(
+                          selected: state.context,
+                          onSelect: (p) =>
+                              context.run<void>(ChangeCurrentPriority(p)),
+                        )
+                      : null,
                   commands: currentPriorityCommands(state.context),
                 ),
                 body: Column(

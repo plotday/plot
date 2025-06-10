@@ -7,12 +7,11 @@ class Agenda {
   const Agenda({required this.items, required this.anchorIndex});
 
   /// Converts a list of ScheduledDay objects into AgendaItems with appropriate headers.
-  /// Returns a combined list of all agenda items in reverse chronological order.
-  /// The list is ready to be reversed for display.
   static Agenda fromScheduledDays(
     List<ScheduledDay> scheduledDays, {
     required Date today,
     Date? anchor,
+    required Map<PriorityId, Priority> priorities,
   }) {
     anchor ??= today;
     final agendaItems = <AgendaItem>[];
@@ -30,74 +29,87 @@ class Agenda {
         ),
       );
 
-      if (scheduledDay.date < today) {
-        agendaItems.addAll(
-          scheduledDay.activities.map((a) => ActivityAgendaItem(a)),
-        );
-        for (final event in scheduledDay.events) {
-          agendaItems.add(
+      // Group activities by priority
+      _addActivitiesByPriority(
+        agendaItems,
+        scheduledDay.activities.where((a) => !a.doNow).toList(),
+        priorities,
+      );
+
+      _addActivitiesByPriority(
+        agendaItems,
+        scheduledDay.activities.where((a) => a.doNow).toList(),
+        priorities,
+      );
+
+      // Add scheduled events
+      agendaItems.addAll(
+        scheduledDay.events.reversed.expand(
+          (e) => [
             HeaderAgendaItem(
-              event: event,
-              priorityAncestry: event.priority?.ancestors(includeSelf: true),
+              event: e,
+              priorityAncestry: e.priority?.ancestors(includeSelf: true),
             ),
-          );
-          agendaItems.add(EventAgendaItem(event));
-        }
-      } else if (scheduledDay.date == today) {
-        // For today, we need to handle scheduled items (doNow activities and events) first,
-        // then unscheduled activities, to maintain the original ordering
-
-        // Add scheduled items (doNow activities and events)
-        final scheduledItems = <AgendaItem>[];
-        bool hasScheduledItems = false;
-
-        for (final activityItem in scheduledDay.activities) {
-          if (activityItem.doNow) {
-            scheduledItems.add(ActivityAgendaItem(activityItem));
-            hasScheduledItems = true;
-          }
-        }
-
-        for (final event in scheduledDay.events) {
-          scheduledItems.add(
-            HeaderAgendaItem(
-              event: event,
-              priorityAncestry: event.priority?.ancestors(includeSelf: true),
-            ),
-          );
-          scheduledItems.add(EventAgendaItem(event));
-          hasScheduledItems = true;
-        }
-
-        if (hasScheduledItems) {
-          agendaItems.addAll(scheduledItems);
-        }
-
-        // Add unscheduled activities
-        final unscheduledActivities =
-            scheduledDay.activities.where((a) => !a.doNow).toList();
-        if (unscheduledActivities.isNotEmpty) {
-          agendaItems.addAll(
-            unscheduledActivities.map((a) => ActivityAgendaItem(a)),
-          );
-        }
-      } else {
-        agendaItems.addAll(
-          scheduledDay.activities.map((a) => ActivityAgendaItem(a)),
-        );
-        for (final event in scheduledDay.events) {
-          agendaItems.add(
-            HeaderAgendaItem(
-              event: event,
-              priorityAncestry: event.priority?.ancestors(includeSelf: true),
-            ),
-          );
-          agendaItems.add(EventAgendaItem(event));
-        }
-      }
+            EventAgendaItem(e),
+          ],
+        ),
+      );
     }
 
     return Agenda(items: agendaItems, anchorIndex: anchorIndex);
+  }
+
+  /// Groups activities by priority and adds them to the agenda with priority headers
+  static void _addActivitiesByPriority(
+    List<AgendaItem> agendaItems,
+    List<Activity> activities,
+    Map<PriorityId, Priority> priorities,
+  ) {
+    if (activities.isEmpty) return;
+
+    // Group activities by priority
+    final priorityGroups = <Priority, List<Activity>>{};
+    final activitiesWithoutPriority = <Activity>[];
+
+    for (final activity in activities) {
+      final priority = priorities[activity.priorityId];
+      if (priority != null) {
+        priorityGroups.putIfAbsent(priority, () => []).add(activity);
+      } else {
+        activitiesWithoutPriority.add(activity);
+      }
+    }
+
+    // Sort priority groups by priority order
+    final sortedPriorities = priorityGroups.keys.toList()..sort();
+
+    // Add groups to agenda
+    for (final priority in sortedPriorities) {
+      final activitiesForPriority = priorityGroups[priority]!;
+
+      // Sort activities within the priority group by their order
+      activitiesForPriority.sort();
+
+      // Add priority header
+      agendaItems.add(
+        HeaderAgendaItem(
+          priorityAncestry: priority.ancestors(includeSelf: true),
+        ),
+      );
+
+      // Add activities for this priority
+      agendaItems.addAll(
+        activitiesForPriority.map((a) => ActivityAgendaItem(a)),
+      );
+    }
+
+    // Add activities without a valid priority at the end
+    if (activitiesWithoutPriority.isNotEmpty) {
+      activitiesWithoutPriority.sort();
+      agendaItems.addAll(
+        activitiesWithoutPriority.map((a) => ActivityAgendaItem(a)),
+      );
+    }
   }
 }
 

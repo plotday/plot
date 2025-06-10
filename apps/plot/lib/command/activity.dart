@@ -59,12 +59,11 @@ class ActivityCommandGroup extends CommandGroup {
 
   @override
   Future<List<Command>> list({String? search}) async {
-    final all =
-        (await Activity.get(
-          priorityId: priorityId,
-          order: ActivityOrder.recent,
-          search: search,
-        )).map((activity) => _ActivityValue(activity)).toList();
+    final all = (await Activity.get(
+      priorityId: priorityId,
+      order: ActivityOrder.recent,
+      search: search,
+    )).map((activity) => _ActivityValue(activity)).toList();
     return CommandGroup.filter(all, search);
   }
 }
@@ -76,13 +75,10 @@ class PickActivity extends Commands<Activity> {
     this.initialActivity,
   }) : super(
          groups: [ActivityCommandGroup(priorityId: priorityId)],
-         secondaryCommand:
-             priorityId != null
-                 ? (prompt) => NewActivity(
-                   priorityId: priorityId!,
-                   parent: initialActivity,
-                 )
-                 : null,
+         secondaryCommand: priorityId != null
+             ? (prompt) =>
+                   NewActivity(priorityId: priorityId!, parent: initialActivity)
+             : null,
        );
 
   final PriorityId? priorityId;
@@ -115,11 +111,10 @@ class PickCurrentActivity extends ShowCommands<Activity> {
         title: 'Pick Current Activity',
         icon: PlotIcon.activity,
         shortcut: const SingleActivator(LogicalKeyboardKey.keyK, meta: true),
-        commands:
-            (context) => PickActivity(
-              prompt: 'Change Current Activity',
-              priorityId: priorityId,
-            ),
+        commands: (context) => PickActivity(
+          prompt: 'Change Current Activity',
+          priorityId: priorityId,
+        ),
       );
 
   final PriorityId? priorityId;
@@ -230,8 +225,9 @@ class ScheduleActivity extends _UpdateActivityCommand {
   Future<CommandReturn?> run(BuildContext context) async {
     await onUpdate(activity.copyWith(doAt: Value(when)));
     Posthog().capture(
-      eventName:
-          activity.scheduled ? 'Activity Rescheduled' : 'Activity Scheduled',
+      eventName: activity.scheduled
+          ? 'Activity Rescheduled'
+          : 'Activity Scheduled',
     );
     return null;
   }
@@ -242,17 +238,13 @@ class PickScheduleActivity extends ShowCommand<Date> {
     : super(
         title: 'Schedule',
         icon: PlotIcon.scheduled,
-        builder:
-            (context) => Dialog(
-              builder:
-                  (context) => FCalendar(
-                    controller: FCalendarController.date(),
-                    onPress:
-                        (date) => DialogProvider.of(
-                          context,
-                        ).pop(context, Value(date.toDate())),
-                  ),
-            ),
+        builder: (context) => Dialog(
+          builder: (context) => FCalendar(
+            controller: FCalendarController.date(),
+            onPress: (date) =>
+                DialogProvider.of(context).pop(context, Value(date.toDate())),
+          ),
+        ),
       );
 
   final Activity activity;

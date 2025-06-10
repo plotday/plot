@@ -5,18 +5,78 @@ import 'package:flutter/material.dart' show Icons;
 
 import 'package:plot/command/command.dart';
 
-class Header extends StatelessWidget {
-  Header({
-    Widget? main,
-    String? title,
+class Header extends StatefulWidget {
+  const Header({
+    this.main,
+    this.title,
     this.commands = const [],
     this.modal = false,
     super.key,
-  }) : main = main ?? (title != null ? Text(title) : null);
+  });
 
   final Widget? main;
+  final String? title;
   final List<Command> commands;
   final bool modal;
+
+  @override
+  State<Header> createState() => _HeaderState();
+}
+
+class _HeaderState extends State<Header> with RouteAware {
+  late final RouteObserver<ModalRoute<dynamic>> _routeObserver;
+  bool _canPop = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _routeObserver = RouteObserver<ModalRoute<dynamic>>();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateCanPop();
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      _routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    _routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  void _updateCanPop() {
+    final canPop = context.router.canPop();
+    if (_canPop != canPop) {
+      setState(() {
+        _canPop = canPop;
+      });
+    }
+  }
+
+  @override
+  void didPush() {
+    _updateCanPop();
+  }
+
+  @override
+  void didPop() {
+    _updateCanPop();
+  }
+
+  @override
+  void didPopNext() {
+    _updateCanPop();
+  }
+
+  @override
+  void didPushNext() {
+    _updateCanPop();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,25 +85,30 @@ class Header extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         spacing: 8,
         children: [
-          if (!modal && context.router.canPop())
+          if (!widget.modal && _canPop)
             FTappable(
               onPress: () => context.router.maybePop(),
               child: Icon(Icons.arrow_back, size: 14),
             ),
-          if (main != null) main!,
+          if ((widget.main ?? widget.title) != null)
+            widget.main ??
+                Text(
+                  widget.title!,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.theme.typography.xs,
+                ),
         ],
       ),
       suffixes: [
-        ...commands.map(
+        ...widget.commands.map(
           (command) => FHeaderAction(
-            icon:
-                command.icon != null
-                    ? Icon(command.icon!, size: 14)
-                    : Text(command.title),
+            icon: command.icon != null
+                ? Icon(command.icon!, size: 14)
+                : Text(command.title),
             onPress: () => context.run<void>(command),
           ),
         ),
-        if (modal && context.router.canPop())
+        if (widget.modal && _canPop)
           FTappable(
             onPress: () => context.router.maybePop(),
             child: Icon(Icons.close, size: 14),
