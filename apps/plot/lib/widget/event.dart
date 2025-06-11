@@ -121,6 +121,9 @@ class EventWidget extends StatelessWidget {
           event.priority != null
               ? ChangeCurrentPriority(event.priority!)
               : null,
+      trailingCommands: [
+        ChangeEventPriority(event),
+      ],
       selected: selected,
       onHover: onHover,
       title: event.name ?? 'Untitled Event',

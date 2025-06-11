@@ -24,3 +24,21 @@ class ArchiveEventCommand extends Command {
     return null;
   }
 }
+
+class ChangeEventPriority extends ShowCommands<Priority> {
+  ChangeEventPriority(this.event)
+    : super(
+        title: 'Change Priority',
+        icon: PlotIcon.priority,
+        commands: (context) => PickPriority(prompt: 'Pick priority for event'),
+      );
+
+  final Event event;
+
+  @override
+  void onSelect(BuildContext context, Priority value) async {
+    await context
+        .read<ScheduleBloc>()
+        .update(event.copyWith(priorityId: Value(value.id)));
+  }
+}
