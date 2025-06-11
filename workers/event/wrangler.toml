@@ -18,17 +18,8 @@ upload_source_maps = true
 [observability.logs]
   enabled = true
 
-[env.production]
-[[env.production.queues.consumers]]
+[[queues.consumers]]
   queue = "event-sync"
   max_batch_size = 100
   max_batch_timeout = 3
   max_retries = 3
-
-
-[env.development]
-[[env.development.queues.consumers]]
-  queue = "event-sync"
-  max_batch_size = 10
-  max_batch_timeout = 3
-  max_retries = 0
