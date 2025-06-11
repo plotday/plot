@@ -94,7 +94,7 @@ app.post("/sync", async (c) => {
       return new Response("Forbidden", { status: 403 });
     }
     await syncCalendar(c.env, calendarId);
-    return c.text("OK");
+    return c.json({});
   }
 
   const code = (body as any)?.code;
