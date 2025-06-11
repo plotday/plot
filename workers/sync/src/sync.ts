@@ -88,7 +88,12 @@ export async function syncCalendar(
         credentials,
         calendar.provider_id
       ));
-      await saveCredentials(supabase, accountId, credentials, true);
+      await saveCredentials(
+        supabase,
+        calendar.account.user_id,
+        credentials,
+        true
+      );
       safeQuery(
         await supabase
           .from("calendar")
@@ -170,7 +175,12 @@ export async function syncCalendar(
           state.more ? "more" : "no more"
         })`
       );
-      await saveCredentials(supabase, accountId, credentials, true);
+      await saveCredentials(
+        supabase,
+        calendar.account.user_id,
+        credentials,
+        true
+      );
 
       if (!state.sequence) throw new Error("Sync state sequence unset");
 
