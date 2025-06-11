@@ -66,7 +66,7 @@ class ShowCalendarSettings extends Command {
     : super(
         title: calendar.name,
         icon: PlotIcon.settings,
-        description: 'Change sync settings',
+        description: calendar.enabled ? 'Change sync settings' : 'Enable',
       );
 
   final Calendar calendar;

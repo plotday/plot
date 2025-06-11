@@ -14,8 +14,7 @@ class PlotIcon {
   static const today = FontAwesomeIcons.calendar;
   static const add = FontAwesomeIcons.plusLarge;
   static const startOfDay = FontAwesomeIcons.sunHaze;
-  static const priority = FontAwesomeIcons.rankingStar;
-  static const priorities = FontAwesomeIcons.house;
+  static const priority = FontAwesomeIcons.bullseyeArrow;
   static const activity = FontAwesomeIcons.listCheck;
   static const delete = FontAwesomeIcons.trash;
   static const open = FontAwesomeIcons.arrowRight;
