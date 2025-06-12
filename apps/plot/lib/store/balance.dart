@@ -8,11 +8,10 @@ typedef BalanceByDatePriorityType = Map<Date, BalanceByPriorityType>;
 
 @DataClassName('BalanceRow')
 class Balances extends Table with SyncableTable {
-  BlobColumn get priorityId =>
-      blob()
-          .nullable()
-          .map(const UuidConverter())
-          .references(Priorities, #id)();
+  BlobColumn get priorityId => blob()
+      .nullable()
+      .map(const UuidConverter())
+      .references(Priorities, #id)();
   TextColumn get day => text().map(const DateConverter())();
   TextColumn get type => textEnum<BalanceType>()();
 
@@ -86,7 +85,9 @@ class Balance extends BalanceRow {
                 );
                 result.putIfAbsent(row.day, () => {});
                 result[row.day]!.putIfAbsent(row.priorityId, () => {});
-                result[row.day]![row.priorityId]![row.type] = balanceStat;
+                result[row.day]![row.priorityId]![row.type ??
+                        BalanceType.tentative] =
+                    balanceStat;
                 if (row.nextAt != null && row.nextAt!.isBefore(nextAt)) {
                   nextAt = row.nextAt!;
                 }

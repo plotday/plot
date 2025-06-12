@@ -364,7 +364,19 @@ class Store extends _$Store {
     ));
     final (from, to) = newRange ?? (null, null);
 
-    final storeRows = baseRows.map(baseTable.fromBase);
+    log.info("Pulling ${baseRows.length} rows from ${baseTable.table}");
+    final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
+      try {
+        return [baseTable.fromBase(r)];
+      } catch (e, stackTrace) {
+        log.warning(
+          "Error parsing row ${jsonEncode(r)} from ${baseTable.table}",
+          e,
+          stackTrace,
+        );
+        return [];
+      }
+    });
     await batch((batch) {
       batch.insertAllOnConflictUpdate(table, storeRows);
     });
@@ -439,7 +451,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 58;
+  int get schemaVersion => 60;
 
   @override
   MigrationStrategy get migration {

@@ -17,29 +17,24 @@ class Events extends Table
   DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();
   DateTimeColumn get end => dateTime().map(const LocalDateTimeConverter())();
   TextColumn get series => text().nullable()();
-  TextColumn get response =>
-      textEnum<EventResponse>().withDefault(
-        Constant(EventResponse.accepted.toString()),
-      )();
-  TextColumn get status =>
-      textEnum<EventStatus>().withDefault(
-        Constant(EventStatus.confirmed.toString()),
-      )();
-  TextColumn get visibility =>
-      textEnum<EventVisibility>().withDefault(
-        Constant(EventVisibility.normal.toString()),
-      )();
-  TextColumn get availability =>
-      textEnum<EventAvailability>().withDefault(
-        Constant(EventAvailability.free.toString()),
-      )();
+  TextColumn get response => textEnum<EventResponse>().nullable().withDefault(
+    Constant(EventResponse.accepted.name),
+  )();
+  TextColumn get status => textEnum<EventStatus>().withDefault(
+    Constant(EventStatus.confirmed.name),
+  )();
+  TextColumn get visibility => textEnum<EventVisibility>().withDefault(
+    Constant(EventVisibility.normal.name),
+  )();
+  TextColumn get availability => textEnum<EventAvailability>().withDefault(
+    Constant(EventAvailability.free.name),
+  )();
   BoolColumn get inviteesHidden =>
       boolean().withDefault(const Constant(false))();
-  BlobColumn get priorityId =>
-      blob()
-          .nullable()
-          .map(const UuidConverter())
-          .references(Priorities, #id)();
+  BlobColumn get priorityId => blob()
+      .nullable()
+      .map(const UuidConverter())
+      .references(Priorities, #id)();
 }
 
 class EventsBase extends BaseTable {
@@ -99,13 +94,13 @@ class Event extends EventRow {
     bool? deleted = false,
   }) {
     pullRange(range);
-    final order =
-        range.start <= range.end ? OrderingMode.asc : OrderingMode.desc;
+    final order = range.start <= range.end
+        ? OrderingMode.asc
+        : OrderingMode.desc;
 
-    final query =
-        Store.get.select(table)
-          ..where((t) => t.start.isBiggerOrEqualValue(range.start.toStart()))
-          ..where((t) => t.start.isSmallerThanValue(range.end.toEnd()));
+    final query = Store.get.select(table)
+      ..where((t) => t.start.isBiggerOrEqualValue(range.start.toStart()))
+      ..where((t) => t.start.isSmallerThanValue(range.end.toEnd()));
     if (deleted != null) {
       query.where(
         (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
@@ -127,18 +122,16 @@ class Event extends EventRow {
             ]))
             .watch(),
         Priority.watchDefault(),
-        (events, defaultPriority) =>
-            events
-                .map(
-                  (row) => Event.fromStore(
-                    row.readTable(Store.get.events),
-                    priority: Priority.fromStore(
-                      row.readTableOrNull(Store.get.priorities) ??
-                          defaultPriority,
-                    ),
-                  ),
-                )
-                .toList(),
+        (events, defaultPriority) => events
+            .map(
+              (row) => Event.fromStore(
+                row.readTable(Store.get.events),
+                priority: Priority.fromStore(
+                  row.readTableOrNull(Store.get.priorities) ?? defaultPriority,
+                ),
+              ),
+            )
+            .toList(),
       );
     }
 
@@ -218,7 +211,7 @@ class Event extends EventRow {
     DateTime? end,
     DateTimeRange? at,
     Value<String?> name = const Value.absent(),
-    EventResponse? response,
+    Value<EventResponse?> response = const Value.absent(),
     EventStatus? status,
     EventVisibility? visibility,
     EventAvailability? availability,
@@ -275,6 +268,7 @@ class Event extends EventRow {
       case EventResponse.declined:
         return BalanceType.declined;
       case EventResponse.tentative:
+      case null:
         return BalanceType.tentative;
     }
   }

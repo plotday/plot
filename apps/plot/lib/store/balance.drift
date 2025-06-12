@@ -11,7 +11,7 @@ CREATE VIEW calculated_balances AS
 SELECT
     e.priority_id AS priority_id,
     DATE(e.start) AS day,
-    e.response AS type,
+    COALESCE(e.response, 'tentative') AS type,
     COUNT(
         CASE WHEN e.start <= CURRENT_TIMESTAMP THEN
             1
