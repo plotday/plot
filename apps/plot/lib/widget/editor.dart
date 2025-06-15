@@ -141,16 +141,13 @@ class EditorState extends State<Editor> {
     bool isDark =
         MediaQuery.of(context).platformBrightness == material.Brightness.dark;
     return Shortcuts(
-      shortcuts:
-          _isEmpty
-              ? BidirectionalList.shortcuts
-              : {
-                const SingleActivator(LogicalKeyboardKey.enter): SubmitIntent(),
-                const SingleActivator(
-                  LogicalKeyboardKey.enter,
-                  meta: true,
-                ): SubmitIntent(alt: true),
-              },
+      shortcuts: _isEmpty
+          ? BidirectionalList.shortcuts
+          : {
+              const SingleActivator(LogicalKeyboardKey.enter): SubmitIntent(),
+              const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+                  SubmitIntent(alt: true),
+            },
       child: Actions(
         actions: <Type, Action<Intent>>{
           SubmitIntent: CallbackAction<SubmitIntent>(
@@ -206,17 +203,35 @@ class EditorState extends State<Editor> {
 }
 
 class Viewer extends StatefulWidget {
-  const Viewer({required this.markdown, this.onTap, super.key});
+  Viewer({required this.markdown, this.onTap, super.key})
+    : document = deserializeMarkdownToDocument(markdown);
 
   final String markdown;
   final void Function()? onTap;
+  final Document document;
 
   @override
-  ViewerState createState() => ViewerState();
+  Widget build(BuildContext context) {
+    bool isDark =
+        MediaQuery.of(context).platformBrightness == material.Brightness.dark;
+    return BoxToSliverAdapter(
+      child: SuperReader(
+        document: document,
+        stylesheet: isDark ? _darkStyles : _styles,
+        // selection: _selection,
+        // selectionLayerLinks: _selectionLayerLinks,
+        contentTapDelegateFactory: (context) =>
+            ViewerTapHandler(context.document, onTap: onTap),
+      ),
+    );
+  }
+
+  // @override
+  // ViewerState createState() => ViewerState();
 }
 
 class ViewerState extends State<Viewer> {
-  late final Document document;
+  late Document document;
 
   late final ValueNotifier<DocumentSelection?> _selection;
   final _selectionLayerLinks = SelectionLayerLinks();
@@ -256,9 +271,8 @@ class ViewerState extends State<Viewer> {
         stylesheet: isDark ? _darkStyles : _styles,
         selection: _selection,
         selectionLayerLinks: _selectionLayerLinks,
-        contentTapDelegateFactory:
-            (context) =>
-                ViewerTapHandler(context.document, onTap: widget.onTap),
+        contentTapDelegateFactory: (context) =>
+            ViewerTapHandler(context.document, onTap: widget.onTap),
       ),
     );
   }
