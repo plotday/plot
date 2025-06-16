@@ -85,7 +85,7 @@ enum PullType {
 
 /// A table in the remote database that can be synced with the local database.
 abstract class BaseTable {
-  BaseTable({
+  const BaseTable({
     required this.table,
     this.writeTable,
     this.order = 'updated_at',
@@ -225,16 +225,18 @@ abstract class BaseTable {
 )
 class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
+
   static Future<void> init(User user) async {
     driftRuntimeOptions.defaultSerializer = const CustomSerializer();
     if (Injector.appInstance.exists<Store>()) {
       await get.close();
     }
-    Injector.appInstance.registerSingleton<Store>(
-      () => Store._(user),
-      override: true,
-    );
+    final inst = Store._(user);
+    Injector.appInstance.registerSingleton<Store>(() => inst, override: true);
+    await inst._startSync();
   }
+
+  RealtimeChannel? _realtimeChannel;
 
   Future<DATA> add<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
@@ -427,7 +429,7 @@ class Store extends _$Store {
     return !_noMore.contains(baseTable.fullName);
   }
 
-  Future<void> sync() async {
+  Future<void> _startSync() async {
     await Future.wait([
       Chain.capture(() => Account.push().then((_) => Account.pull())),
       Chain.capture(() => Calendar.push().then((_) => Calendar.pull())),
@@ -437,6 +439,60 @@ class Store extends _$Store {
       Chain.capture(() => Session.push().then((_) => Session.pull())),
       Chain.capture(() => Balance.pull()),
     ]);
+
+    final userId = Base.userId.toString();
+    final channel = Base.client.channel('user:$userId');
+
+    channel.onBroadcast(
+      event: 'sync',
+      callback: (message) async {
+        final payload = message['payload'];
+        final table = payload['table'] as String;
+        log.info("Syncing $table");
+        try {
+          switch (table) {
+            case 'account':
+              await Account.push();
+              await Account.pull();
+              break;
+            case 'calendar':
+              await Calendar.push();
+              await Calendar.pull();
+              break;
+            case 'priority':
+              await Priority.push();
+              await Priority.pull();
+              break;
+            case 'activity':
+              await Activity.push();
+              await Activity.pull();
+              break;
+            case 'event':
+              await Event.push();
+              await Event.pull();
+              break;
+            case 'session':
+              await Session.push();
+              await Session.pull();
+              break;
+            case 'balance':
+              await Balance.pull();
+              break;
+            default:
+              log.warning("Unknown table update for $table");
+          }
+        } catch (e, stackTrace) {
+          log.warning(
+            "Error handling realtime update for $table",
+            e,
+            stackTrace,
+          );
+        }
+      },
+    );
+
+    _realtimeChannel = channel;
+    channel.subscribe();
   }
 
   Store._(User user)
@@ -464,5 +520,16 @@ class Store extends _$Store {
         }
       },
     );
+  }
+
+  @override
+  Future<void> close() async {
+    _unsubscribeFromRealtime();
+    await super.close();
+  }
+
+  void _unsubscribeFromRealtime() {
+    _realtimeChannel?.unsubscribe();
+    _realtimeChannel = null;
   }
 }

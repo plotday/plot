@@ -19,3 +19,24 @@ CREATE TRIGGER set_account_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
+CREATE OR REPLACE FUNCTION public.notify_user_for_account ()
+    RETURNS TRIGGER
+    SECURITY DEFINER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM
+        realtime.send (jsonb_build_object('table', 'account'), -- JSONB Payload
+            'sync', -- Event name
+            'user:' || OLD.user_id::text, -- Topic
+            FALSE -- Public / Private flag
+);
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER handle_account_changes
+    AFTER INSERT OR UPDATE ON public.account
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_user_for_account ();
+

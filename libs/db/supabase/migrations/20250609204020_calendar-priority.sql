@@ -1,3 +1,5 @@
+DROP VIEW IF EXISTS "public"."calendar_x";
+
 CREATE OR REPLACE VIEW "public"."calendar_x" AS
 SELECT
     calendar.id,

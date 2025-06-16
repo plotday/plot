@@ -13,9 +13,6 @@ ALTER TABLE "public"."invitee" ENABLE ROW LEVEL SECURITY;
 
 CREATE INDEX invitee_event_id_idx ON public.invitee USING btree (event_id);
 
-ALTER publication supabase_realtime
-    ADD TABLE public.invitee;
-
 CREATE TRIGGER set_invitee_updated_at
     BEFORE UPDATE ON "public"."invitee"
     FOR EACH ROW

@@ -17,8 +17,11 @@ CREATE TABLE "public"."activity" (
 );
 
 CREATE INDEX idx_activity_priority_id ON "public"."activity" ("priority_id");
+
 CREATE INDEX idx_activity_path ON "public"."activity" USING gist ("path");
+
 CREATE INDEX idx_activity_do_at ON "public"."activity" ("do_at");
+
 CREATE INDEX idx_activity_done_at ON "public"."activity" ("done_at");
 
 ALTER TABLE "public"."activity" ENABLE ROW LEVEL SECURITY;
@@ -32,3 +35,25 @@ CREATE TRIGGER set_activity_created_by
     BEFORE INSERT ON "public"."activity"
     FOR EACH ROW
     EXECUTE FUNCTION update_created_by ();
+
+CREATE OR REPLACE FUNCTION public.notify_user_for_activity ()
+    RETURNS TRIGGER
+    SECURITY DEFINER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM
+        realtime.send (jsonb_build_object('table', 'activity'), -- JSONB Payload
+            'sync', -- Event name
+            'user:' || OLD.created_by::text, -- Topic
+            FALSE -- Public / Private flag
+);
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER handle_activity_changes
+    AFTER INSERT OR UPDATE ON public.activity
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_user_for_activity ();
+

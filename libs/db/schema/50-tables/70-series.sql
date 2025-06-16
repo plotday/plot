@@ -14,9 +14,6 @@ CREATE TABLE "public"."series" (
 
 ALTER TABLE "public"."series" ENABLE ROW LEVEL SECURITY;
 
-ALTER publication supabase_realtime
-    ADD TABLE public.series;
-
 CREATE TRIGGER set_series_updated_at
     BEFORE UPDATE ON "public"."series"
     FOR EACH ROW

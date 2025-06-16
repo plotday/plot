@@ -21,7 +21,6 @@ class UserBloc extends Cubit<UserState> {
         log.info('User signed in: ${user.primaryEmail}');
         try {
           await Store.init(user);
-          await Store.get.sync();
           emit(UserReady(user));
           Base.client.auth.refreshSession();
         } catch (e, stackTrace) {

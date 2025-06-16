@@ -45,3 +45,24 @@ CREATE TRIGGER set_calendar_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
+CREATE OR REPLACE FUNCTION public.notify_user_for_calendar ()
+    RETURNS TRIGGER
+    SECURITY DEFINER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM
+        realtime.send (jsonb_build_object('table', 'calendar'), -- JSONB Payload
+            'sync', -- Event name
+            'user:' || (SELECT user_id FROM account WHERE id = OLD.account_id)::text, -- Topic
+            FALSE -- Public / Private flag
+);
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER handle_calendar_changes
+    AFTER INSERT OR UPDATE ON public.calendar
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_user_for_calendar ();
+

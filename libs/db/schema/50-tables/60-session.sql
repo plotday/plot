@@ -24,13 +24,31 @@ CREATE TABLE "public"."session" (
 
 ALTER TABLE "public"."session" ENABLE ROW LEVEL SECURITY;
 
-ALTER publication supabase_realtime
-    ADD TABLE public."session";
-
 CREATE INDEX session_at_idx ON "session" USING spgist (at);
 
 CREATE TRIGGER set_session_updated_at
     BEFORE UPDATE ON "public"."session"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE OR REPLACE FUNCTION public.notify_user_for_session ()
+    RETURNS TRIGGER
+    SECURITY DEFINER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM
+        realtime.send (jsonb_build_object('table', 'session'), -- JSONB Payload
+            'sync', -- Event name
+            'user:' || OLD.user_id::text, -- Topic
+            FALSE -- Public / Private flag
+);
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER handle_session_changes
+    AFTER INSERT OR UPDATE ON public.session
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_user_for_session ();
 

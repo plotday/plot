@@ -27,13 +27,31 @@ CREATE TABLE "public"."event" (
 
 ALTER TABLE "public"."event" ENABLE ROW LEVEL SECURITY;
 
-ALTER publication supabase_realtime
-    ADD TABLE public.event;
-
 CREATE INDEX event_at_idx ON event USING spgist (at);
 
 CREATE TRIGGER set_event_updated_at
     BEFORE UPDATE ON "public"."event"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+CREATE OR REPLACE FUNCTION public.notify_user_for_event ()
+    RETURNS TRIGGER
+    SECURITY DEFINER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM
+        realtime.send (jsonb_build_object('table', 'event'), -- JSONB Payload
+            'sync', -- Event name
+            'user:' || OLD.user_id::text, -- Topic
+            FALSE -- Public / Private flag
+);
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER handle_event_changes
+    AFTER INSERT OR UPDATE ON public.event
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_user_for_event ();
 

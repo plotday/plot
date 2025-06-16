@@ -90,3 +90,24 @@ CREATE TRIGGER set_priority_user_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
+CREATE OR REPLACE FUNCTION public.notify_user_for_priority ()
+    RETURNS TRIGGER
+    SECURITY DEFINER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM
+        realtime.send (jsonb_build_object('table', 'priority'), -- JSONB Payload
+            'sync', -- Event name
+            'user:' || OLD.created_by::text, -- Topic
+            FALSE -- Public / Private flag
+);
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER handle_priority_changes
+    AFTER INSERT OR UPDATE ON public.priority
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_user_for_priority ();
+
