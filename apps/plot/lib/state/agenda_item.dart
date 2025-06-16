@@ -45,12 +45,12 @@ class Agenda extends Equatable {
     List<Activity> buildBlock({
       required List<Activity> activities,
       required DateTimeRange at,
+      required Date currentDay,
       Event? event,
     }) {
       if (at.includes(DateTime.now())) {
         nowIndex = agendaItems.length;
       }
-      final priority = event?.priority;
       if (event != null) {
         agendaItems.add(
           HeaderAgendaItem(
@@ -62,10 +62,69 @@ class Agenda extends Equatable {
           agendaItems.add(EventAgendaItem(event));
         }
       }
-      // TODO: filter activites to include only those doneAt/createdAt within the range (unless also doAt for the same day)
-      // TODO: create ActivityAgendaItem for each activity in the range
-      // TODO: return the remaining activities that are not included in the range
-      return activities;
+      // Filter activities to include only those doneAt/createdAt within the range (unless also doAt for the same day)
+      final activitiesInRange = <Activity>[];
+      final remainingActivities = <Activity>[];
+
+      for (final activity in activities) {
+        // Check if activity's doneAt or createdAt falls within the time range
+        if (at.includes(activity.doneAt ?? activity.createdAt) &&
+            activity.doAt?.toDateTimeRange().includes(
+                  activity.doneAt ?? activity.createdAt,
+                ) !=
+                true) {
+          activitiesInRange.add(activity);
+        } else {
+          remainingActivities.add(activity);
+        }
+      }
+
+      // Create ActivityAgendaItem for each activity in the range
+      if (activitiesInRange.isNotEmpty) {
+        // Sort activities by order
+        activitiesInRange.sort();
+
+        // Group activities by priority and add headers
+        final priorityGroups = <Priority?, List<Activity>>{};
+        for (final activity in activitiesInRange) {
+          final activityPriority = priorities[activity.priorityId];
+          priorityGroups.putIfAbsent(activityPriority, () => []).add(activity);
+        }
+
+        // Sort priority groups
+        final sortedPriorities =
+            priorityGroups.keys
+                .where((p) => p != null)
+                .cast<Priority>()
+                .toList()
+              ..sort();
+        final activitiesWithoutPriority = priorityGroups[null] ?? [];
+
+        // Add priority headers and activities
+        for (final priority in sortedPriorities) {
+          final activitiesForPriority = priorityGroups[priority]!;
+
+          agendaItems.add(
+            HeaderAgendaItem(
+              priorityAncestry: priority.ancestors(includeSelf: true),
+            ),
+          );
+
+          agendaItems.addAll(
+            activitiesForPriority.map((a) => ActivityAgendaItem(a)),
+          );
+        }
+
+        // Add activities without priority at the end
+        if (activitiesWithoutPriority.isNotEmpty) {
+          agendaItems.addAll(
+            activitiesWithoutPriority.map((a) => ActivityAgendaItem(a)),
+          );
+        }
+      }
+
+      // Return the remaining activities that are not included in the range
+      return remainingActivities;
     }
 
     for (final scheduledDay in scheduledDays) {
@@ -94,6 +153,7 @@ class Agenda extends Equatable {
               previous?.end ?? scheduledDay.date.toStart(),
               current.start,
             ),
+            currentDay: scheduledDay.date,
             event: null,
           );
         }
@@ -102,6 +162,7 @@ class Agenda extends Equatable {
         activities = buildBlock(
           activities: activities,
           at: current.at,
+          currentDay: scheduledDay.date,
           event: current,
         );
         agendaItems.addAll(items);
@@ -116,6 +177,7 @@ class Agenda extends Equatable {
             previous?.end ?? scheduledDay.date.toStart(),
             scheduledDay.date.toEnd(),
           ),
+          currentDay: scheduledDay.date,
           event: null,
         );
       }
