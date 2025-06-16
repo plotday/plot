@@ -67,8 +67,11 @@ class Agenda extends Equatable {
       final remainingActivities = <Activity>[];
 
       for (final activity in activities) {
-        // Check if activity's doneAt or createdAt falls within the time range
-        if (at.includes(activity.doneAt ?? activity.createdAt) &&
+        // Check if we're not in the past and the activity is actionable
+        if (at.start.isSameOrAfter(DateTime.now()) && activity.doAt != null) {
+          activitiesInRange.add(activity);
+          // Check if activity's doneAt or createdAt falls within the time range
+        } else if (at.includes(activity.doneAt ?? activity.createdAt) &&
             activity.doAt?.toDateTimeRange().includes(
                   activity.doneAt ?? activity.createdAt,
                 ) !=
@@ -170,7 +173,8 @@ class Agenda extends Equatable {
         previous = current;
       }
       // Handle gap after last event
-      if (previous == null || !previous.end.toTimeOfDay().isMidnight) {
+      if (previous == null ||
+          previous.end.isBefore(scheduledDay.date.toEnd())) {
         activities = buildBlock(
           activities: activities,
           at: DateTimeRange(
