@@ -301,12 +301,16 @@ class Store extends _$Store {
     }
     storeQuery.orderBy([(t) => OrderingTerm(expression: t.updatedAt)]);
     final storeRows = await storeQuery.get();
-    if (storeRows.isNotEmpty) {
+    var success = false;
+    if (storeRows.isEmpty) {
+      success = true;
+    } else {
       log.info("Pushing ${storeRows.length} rows to ${baseTable.table}");
       try {
         await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
-      } catch (e) {
-        log.warning("Batch push failed", e);
+        success = true;
+      } catch (e, trace) {
+        log.warning("Batch push failed", e, trace);
         for (final row in storeRows) {
           try {
             await baseTable.put([baseTable.toBase(row)]);
@@ -319,14 +323,22 @@ class Store extends _$Store {
           }
         }
       }
-      final now = DateTime.now();
-      await into(syncStates).insert(
-        SyncStatesCompanion.insert(entity: entity, pushedAt: Value(now)),
-        onConflict: DoUpdate(
-          (old) =>
-              SyncStatesCompanion(entity: Value(entity), pushedAt: Value(now)),
-        ),
-      );
+    }
+    if (success) {
+      try {
+        final now = DateTime.now();
+        await into(syncStates).insert(
+          SyncStatesCompanion.insert(entity: entity, pushedAt: Value(now)),
+          onConflict: DoUpdate(
+            (old) => SyncStatesCompanion(
+              entity: Value(entity),
+              pushedAt: Value(now),
+            ),
+          ),
+        );
+      } catch (e, trace) {
+        log.warning("Updating sync state failed", e, trace);
+      }
     }
   }
 
@@ -507,7 +519,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 62;
+  int get schemaVersion => 64;
 
   @override
   MigrationStrategy get migration {
