@@ -226,10 +226,10 @@ export default Sentry.withSentry(
 
         let series: (DbSeries & { text?: string })[] = Object.values(
           Object.fromEntries(
-            eventInserts.map((insert) => [
+            eventInserts.map((insert, index) => [
               insert.event.series ?? insert.event.id,
               {
-                user_id: insert.db.user_id,
+                user_id: events[index].userId,
                 series: insert.event.series ?? insert.event.id,
                 text: insert.event.name ?? "Untitled",
                 invitees: insert.event.invitees.map((invitee) => invitee.email),

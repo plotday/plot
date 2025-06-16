@@ -25,7 +25,7 @@ AS
 WITH event_x1 AS (
     SELECT
         e.id AS id,
-        e.user_id AS user_id,
+        COALESCE(a.user_id, e.user_id) AS user_id,
         e.name,
         (
             CASE WHEN calc_all_day (e.at) THEN
@@ -115,11 +115,20 @@ DECLARE
     invitee text;
 BEGIN
     INSERT INTO event (id, user_id, name, at, calendar_id, status, provider_link, summary, description, visibility, availability, conferencing_url, organizer_email, response, series, invitees_hidden, draft, deleted_at)
-        VALUES (NEW.id, NEW.user_id, NEW.name, NEW.at, NEW.calendar_id, NEW.status, NEW.provider_link, NEW.summary, NEW.description, NEW.visibility, NEW.availability, NEW.conferencing_url, NEW.organizer_email, NEW.response, NEW.series, NEW.invitees_hidden, NEW.draft, NEW.deleted_at)
+        VALUES (NEW.id, CASE WHEN NEW.calendar_id IS NOT NULL THEN
+                NULL
+            ELSE
+                NEW.user_id
+            END, NEW.name, NEW.at, NEW.calendar_id, NEW.status, NEW.provider_link, NEW.summary, NEW.description, NEW.visibility, NEW.availability, NEW.conferencing_url, NEW.organizer_email, NEW.response, NEW.series, NEW.invitees_hidden, NEW.draft, NEW.deleted_at)
     ON CONFLICT (id)
         DO UPDATE SET
             name = NEW.name,
             at = NEW.at,
+            user_id = CASE WHEN NEW.calendar_id IS NOT NULL THEN
+                NULL
+            ELSE
+                NEW.user_id
+            END,
             calendar_id = NEW.calendar_id,
             status = NEW.status,
             provider_link = NEW.provider_link,

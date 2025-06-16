@@ -4,9 +4,12 @@ CREATE TABLE "public"."event" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "deleted_at" timestamp with time zone,
     "draft" boolean NOT NULL DEFAULT FALSE,
-    "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+    -- Either calendar_id or user_id must be set, but not both.
+    -- Events with calend_id null aren't published to a calendar.
+    "user_id" uuid REFERENCES auth.users ON DELETE CASCADE,
     "calendar_id" bigint REFERENCES calendar ON DELETE CASCADE,
-    "provider_id" text NOT NULL DEFAULT gen_random_uuid () ::text,
+    -- provider_id is only set if calendar_id is set.
+    "provider_id" text DEFAULT gen_random_uuid () ::text,
     "series" text,
     "name" text,
     "status" event_status NOT NULL DEFAULT 'confirmed' ::event_status,
@@ -22,7 +25,9 @@ CREATE TABLE "public"."event" (
     "sequence" integer NOT NULL DEFAULT 1,
     "optional" boolean NOT NULL DEFAULT FALSE,
     "invitees_hidden" boolean NOT NULL DEFAULT FALSE,
-    CONSTRAINT event_calendar_provider_id_unique UNIQUE (calendar_id, provider_id)
+    CONSTRAINT event_calendar_provider_id_unique UNIQUE (calendar_id, provider_id),
+    CONSTRAINT event_user_or_calendar CHECK ((user_id IS NOT NULL AND calendar_id IS NULL) OR (user_id IS NULL AND calendar_id IS NOT NULL)),
+    CONSTRAINT event_provider_id_only_with_calendar CHECK ((calendar_id IS NULL AND provider_id IS NULL) OR (calendar_id IS NOT NULL AND provider_id IS NOT NULL))
 );
 
 ALTER TABLE "public"."event" ENABLE ROW LEVEL SECURITY;

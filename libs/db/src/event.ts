@@ -48,10 +48,10 @@ export function calendarToDb(
   sequence?: number
 ): Database["public"]["Tables"]["event"]["Insert"] {
   return {
-    user_id,
+    user_id: calendar_id ? null : user_id,
     calendar_id,
     sequence,
-    provider_id: event.id,
+    provider_id: calendar_id ? event.id : null,
     series: event.series,
     name: event.name,
     status: event.status,

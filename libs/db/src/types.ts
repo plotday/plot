@@ -354,7 +354,7 @@ export type Database = {
           name: string | null
           optional: boolean
           organizer_email: string | null
-          provider_id: string
+          provider_id: string | null
           provider_link: string | null
           response: Database["public"]["Enums"]["event_response"] | null
           sequence: number
@@ -362,7 +362,7 @@ export type Database = {
           status: Database["public"]["Enums"]["event_status"]
           summary: string | null
           updated_at: string
-          user_id: string
+          user_id: string | null
           visibility: Database["public"]["Enums"]["event_visibility"]
         }
         Insert: {
@@ -379,7 +379,7 @@ export type Database = {
           name?: string | null
           optional?: boolean
           organizer_email?: string | null
-          provider_id?: string
+          provider_id?: string | null
           provider_link?: string | null
           response?: Database["public"]["Enums"]["event_response"] | null
           sequence?: number
@@ -387,7 +387,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["event_status"]
           summary?: string | null
           updated_at?: string
-          user_id: string
+          user_id?: string | null
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
         Update: {
@@ -404,7 +404,7 @@ export type Database = {
           name?: string | null
           optional?: boolean
           organizer_email?: string | null
-          provider_id?: string
+          provider_id?: string | null
           provider_link?: string | null
           response?: Database["public"]["Enums"]["event_response"] | null
           sequence?: number
@@ -412,7 +412,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["event_status"]
           summary?: string | null
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
         Relationships: [
