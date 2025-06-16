@@ -1,12 +1,35 @@
+import 'package:equatable/equatable.dart';
 import 'package:plot/store/store.dart';
 
-class Agenda {
+class Agenda extends Equatable {
   final List<AgendaItem> items;
   final int anchorIndex;
+  final int nowIndex;
 
-  const Agenda({required this.items, required this.anchorIndex});
+  const Agenda({
+    required this.items,
+    required this.anchorIndex,
+    required this.nowIndex,
+  });
+
+  @override
+  List<Object?> get props => [items, anchorIndex, nowIndex];
 
   /// Converts a list of ScheduledDay objects into AgendaItems with appropriate headers.
+  ///
+  /// Each day has the following structure:
+  /// 1. Activities appear in the past based on their doneAt time (if set) or createdAt time, except on the current day if doAt is the current day.
+  /// 2. Activities with doAt set appear on that day as well as their doneAt/createdAt day.
+  /// 3. Use doNow to see if an event should be included in the current day. (This includes events with previous doAt that are not yet done.)
+  /// 4. Events show at their scheduled time, preceded by a HeaderAgendaItem with the event's priority and date.
+  /// 5. On current/future days, Activities with eventSeries equal to an event's series are shown below the event (with no intervening header).
+  /// 6. When there's a time gap between events, add a HeaderAgendaItem for it (but not an event), with priority set to the default priority.
+  /// 7. On the current day, activities with doAt always appear after the now header, under the first header for which their priority matches or is a child.
+  /// 8. On future days, Activities with doAt set but without eventSeries are shown before the first (if any) event.
+  /// 9. All doNow/doAt activities are grouped and ordered by priority.order and preceeded by a HeaderAgendaItem.
+  ///
+  /// nowIndex is the index of the current HeaderAgendaItem, either for a current event or gap between events, or the first priority if before/after all events.
+  /// anchorIndex is the index of HeaderAgendaItem for the anchor date, which is today by default.
   static Agenda fromScheduledDays(
     List<ScheduledDay> scheduledDays, {
     required Date today,
@@ -16,137 +39,97 @@ class Agenda {
     anchor ??= today;
     final agendaItems = <AgendaItem>[];
     int anchorIndex = 0;
+    int nowIndex = 0;
+
+    // Add to agendaItems and return remaining activities
+    List<Activity> buildBlock({
+      required List<Activity> activities,
+      required DateTimeRange at,
+      Event? event,
+    }) {
+      if (at.includes(DateTime.now())) {
+        nowIndex = agendaItems.length;
+      }
+      final priority = event?.priority;
+      if (event != null) {
+        agendaItems.add(
+          HeaderAgendaItem(
+            event: event,
+            priorityAncestry: event.priority?.ancestors(includeSelf: true),
+          ),
+        );
+        if (event.name != null) {
+          agendaItems.add(EventAgendaItem(event));
+        }
+      }
+      // TODO: filter activites to include only those doneAt/createdAt within the range (unless also doAt for the same day)
+      // TODO: create ActivityAgendaItem for each activity in the range
+      // TODO: return the remaining activities that are not included in the range
+      return activities;
+    }
 
     for (final scheduledDay in scheduledDays) {
+      var activities = scheduledDay.activities;
+      final isToday = scheduledDay.date == today;
+
       // Date header
-      agendaItems.add(
-        HeaderAgendaItem(
-          date: scheduledDay.date,
-          now: scheduledDay.date == today,
-        ),
-      );
-
-      // Group activities by priority
-      _addActivitiesByPriority(
-        agendaItems,
-        scheduledDay.activities.where((a) => !a.doNow).toList(),
-        priorities,
-      );
-
-      _addActivitiesByPriority(
-        agendaItems,
-        scheduledDay.activities.where((a) => a.doNow).toList(),
-        priorities,
-      );
-
-      // Add scheduled events with gaps
-      final eventsWithGaps = _addGapsToEvents(
-        scheduledDay.date,
-        scheduledDay.events,
-        scheduledDay.defaultPriority,
-      );
-      agendaItems.addAll(
-        eventsWithGaps.reversed.expand(
-          (e) => [
-            HeaderAgendaItem(
-              event: e,
-              priorityAncestry: e.priority?.ancestors(includeSelf: true),
-            ),
-            EventAgendaItem(e),
-          ],
-        ),
-      );
-
-      if (scheduledDay.date <= anchor) {
-        anchorIndex = agendaItems.length - 1;
+      if (anchor == scheduledDay.date) {
+        anchorIndex = agendaItems.length;
       }
-    }
+      agendaItems.add(HeaderAgendaItem(date: scheduledDay.date, now: isToday));
 
-    return Agenda(items: agendaItems, anchorIndex: anchorIndex);
-  }
+      // Iterate through each time block in the day
+      Event? previous;
+      var items = <AgendaItem>[];
+      for (int i = 0; i < scheduledDay.events.length; i++) {
+        var current = scheduledDay.events[i];
 
-  /// Groups activities by priority and adds them to the agenda with priority headers
-  static void _addActivitiesByPriority(
-    List<AgendaItem> agendaItems,
-    List<Activity> activities,
-    Map<PriorityId, Priority> priorities,
-  ) {
-    if (activities.isEmpty) return;
-
-    // Group activities by priority
-    final priorityGroups = <Priority, List<Activity>>{};
-    final activitiesWithoutPriority = <Activity>[];
-
-    for (final activity in activities) {
-      final priority = priorities[activity.priorityId];
-      if (priority != null) {
-        priorityGroups.putIfAbsent(priority, () => []).add(activity);
-      } else {
-        activitiesWithoutPriority.add(activity);
-      }
-    }
-
-    // Sort priority groups by priority order
-    final sortedPriorities = priorityGroups.keys.toList()..sort();
-
-    // Add groups to agenda
-    for (final priority in sortedPriorities) {
-      final activitiesForPriority = priorityGroups[priority]!;
-
-      // Sort activities within the priority group by their order
-      activitiesForPriority.sort();
-
-      // Add priority header
-      agendaItems.add(
-        HeaderAgendaItem(
-          priorityAncestry: priority.ancestors(includeSelf: true),
-        ),
-      );
-
-      // Add activities for this priority
-      agendaItems.addAll(
-        activitiesForPriority.map((a) => ActivityAgendaItem(a)),
-      );
-    }
-
-    // Add activities without a valid priority at the end
-    if (activitiesWithoutPriority.isNotEmpty) {
-      activitiesWithoutPriority.sort();
-      agendaItems.addAll(
-        activitiesWithoutPriority.map((a) => ActivityAgendaItem(a)),
-      );
-    }
-  }
-
-  /// Adds gap events between scheduled events to fill the day
-  static List<Event> _addGapsToEvents(
-    Date date,
-    List<Event> events,
-    Priority defaultPriority,
-  ) {
-    List<Event> expanded = [];
-    final start = date.toDateTime();
-    final end = start.nextDay;
-
-    for (var i = 0; i < events.length; i++) {
-      expanded.add(events[i]);
-      if (i + 1 < events.length && events[i].at.end < events[i + 1].at.start) {
-        expanded.add(
-          Event(
+        // Handle gap between events
+        if (current.start.isAfter(
+          previous?.end ?? scheduledDay.date.toStart(),
+        )) {
+          activities = buildBlock(
+            activities: activities,
             at: DateTimeRange(
-              events[i].at.end,
-              i + 1 == events.length ? end : events[i + 1].at.start,
+              previous?.end ?? scheduledDay.date.toStart(),
+              current.start,
             ),
-            priority: defaultPriority,
+            event: null,
+          );
+        }
+
+        // Current event block
+        activities = buildBlock(
+          activities: activities,
+          at: current.at,
+          event: current,
+        );
+        agendaItems.addAll(items);
+
+        previous = current;
+      }
+      // Handle gap after last event
+      if (previous == null || !previous.end.toTimeOfDay().isMidnight) {
+        activities = buildBlock(
+          activities: activities,
+          at: DateTimeRange(
+            previous?.end ?? scheduledDay.date.toStart(),
+            scheduledDay.date.toEnd(),
           ),
+          event: null,
         );
       }
     }
-    return expanded;
+
+    return Agenda(
+      items: agendaItems,
+      anchorIndex: anchorIndex,
+      nowIndex: nowIndex,
+    );
   }
 }
 
-abstract class AgendaItem {
+abstract class AgendaItem extends Equatable {
   const AgendaItem();
 
   T when<T>({
@@ -168,6 +151,9 @@ class ActivityAgendaItem extends AgendaItem {
   }) {
     return activity(this.activity);
   }
+
+  @override
+  List<Object?> get props => [activity];
 }
 
 class EventAgendaItem extends AgendaItem {
@@ -182,6 +168,9 @@ class EventAgendaItem extends AgendaItem {
   }) {
     return event(this.event);
   }
+
+  @override
+  List<Object?> get props => [event];
 }
 
 class HeaderAgendaItem extends AgendaItem {
@@ -205,4 +194,7 @@ class HeaderAgendaItem extends AgendaItem {
   }) {
     return header(this);
   }
+
+  @override
+  List<Object?> get props => [event, priorityAncestry, date, now];
 }
