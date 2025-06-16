@@ -211,23 +211,7 @@ class Viewer extends StatefulWidget {
   final Document document;
 
   @override
-  Widget build(BuildContext context) {
-    bool isDark =
-        MediaQuery.of(context).platformBrightness == material.Brightness.dark;
-    return BoxToSliverAdapter(
-      child: SuperReader(
-        document: document,
-        stylesheet: isDark ? _darkStyles : _styles,
-        // selection: _selection,
-        // selectionLayerLinks: _selectionLayerLinks,
-        contentTapDelegateFactory: (context) =>
-            ViewerTapHandler(context.document, onTap: onTap),
-      ),
-    );
-  }
-
-  // @override
-  // ViewerState createState() => ViewerState();
+  ViewerState createState() => ViewerState();
 }
 
 class ViewerState extends State<Viewer> {
