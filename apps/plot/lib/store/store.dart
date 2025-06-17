@@ -7,8 +7,8 @@ import 'package:rxdart/rxdart.dart';
 import 'package:collection/collection.dart';
 import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
-import 'package:stack_trace/stack_trace.dart';
 import 'package:remove_markdown/remove_markdown.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
@@ -233,7 +233,11 @@ class Store extends _$Store {
     }
     final inst = Store._(user);
     Injector.appInstance.registerSingleton<Store>(() => inst, override: true);
-    await inst._startSync();
+    if (await Priority.hasDefault()) {
+      inst._startSync();
+    } else {
+      await inst._startSync();
+    }
   }
 
   RealtimeChannel? _realtimeChannel;
@@ -441,7 +445,7 @@ class Store extends _$Store {
     return !_noMore.contains(baseTable.fullName);
   }
 
-  Future<void> _startSync() async {
+  Future<void> _syncAll() async {
     await Account.push();
     await Account.pull();
     await Calendar.push();
@@ -455,7 +459,48 @@ class Store extends _$Store {
     await Session.push();
     await Session.pull();
     await Balance.pull();
+  }
 
+  Future<void> _handleTableSync(String table) async {
+    log.info("Syncing $table");
+    try {
+      switch (table) {
+        case 'account':
+          await Account.push();
+          await Account.pull();
+          break;
+        case 'calendar':
+          await Calendar.push();
+          await Calendar.pull();
+          break;
+        case 'priority':
+          await Priority.push();
+          await Priority.pull();
+          break;
+        case 'activity':
+          await Activity.push();
+          await Activity.pull();
+          break;
+        case 'event':
+          await Event.push();
+          await Event.pull();
+          break;
+        case 'session':
+          await Session.push();
+          await Session.pull();
+          break;
+        case 'balance':
+          await Balance.pull();
+          break;
+        default:
+          log.warning("Unknown table update for $table");
+      }
+    } catch (e, stackTrace) {
+      log.warning("Error handling realtime update for $table", e, stackTrace);
+    }
+  }
+
+  RealtimeChannel _createChannel() {
     final userId = Base.userId.toString();
     final channel = Base.client.channel('user:$userId');
 
@@ -464,51 +509,63 @@ class Store extends _$Store {
       callback: (message) async {
         final payload = message['payload'];
         final table = payload['table'] as String;
-        log.info("Syncing $table");
-        try {
-          switch (table) {
-            case 'account':
-              await Account.push();
-              await Account.pull();
-              break;
-            case 'calendar':
-              await Calendar.push();
-              await Calendar.pull();
-              break;
-            case 'priority':
-              await Priority.push();
-              await Priority.pull();
-              break;
-            case 'activity':
-              await Activity.push();
-              await Activity.pull();
-              break;
-            case 'event':
-              await Event.push();
-              await Event.pull();
-              break;
-            case 'session':
-              await Session.push();
-              await Session.pull();
-              break;
-            case 'balance':
-              await Balance.pull();
-              break;
-            default:
-              log.warning("Unknown table update for $table");
-          }
-        } catch (e, stackTrace) {
-          log.warning(
-            "Error handling realtime update for $table",
-            e,
-            stackTrace,
-          );
-        }
+        await _handleTableSync(table);
       },
     );
+    channel.subscribe((status, error) {
+      switch (status) {
+        case RealtimeSubscribeStatus.channelError:
+          log.warning("Broadcast channel error: $error");
+          _startSync();
+          break;
+        case RealtimeSubscribeStatus.timedOut:
+          log.warning("Broadcast channel timed out");
+          _startSync();
+          break;
+        case RealtimeSubscribeStatus.closed:
+          log.info("Broadcast channel closed");
+          break;
+        case RealtimeSubscribeStatus.subscribed:
+          break;
+      }
+    });
+    return channel;
+  }
 
-    _realtimeChannel = channel;
-    channel.subscribe();
+  Future<bool> _hasNetworkConnectivity() async {
+    try {
+      final connectivity = await Connectivity().checkConnectivity();
+      return connectivity.any((result) => result != ConnectivityResult.none);
+    } catch (e) {
+      log.warning("Error checking connectivity: $e");
+      return false;
+    }
+  }
+
+  Future<void> _waitForNetworkConnectivity() async {
+    if (await _hasNetworkConnectivity()) {
+      return;
+    }
+
+    log.info("No network connectivity, waiting for connection...");
+    final completer = Completer<void>();
+
+    late StreamSubscription<List<ConnectivityResult>> subscription;
+    subscription = Connectivity().onConnectivityChanged.listen((results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        log.info("Network connectivity restored");
+        subscription.cancel();
+        completer.complete();
+      }
+    });
+
+    return completer.future;
+  }
+
+  Future<void> _startSync() async {
+    await _waitForNetworkConnectivity();
+    await _syncAll();
+    _realtimeChannel = _createChannel();
   }
 
   Store._(User user)
