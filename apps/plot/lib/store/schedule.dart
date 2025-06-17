@@ -27,7 +27,8 @@ class ScheduledDay extends Equatable {
           (rangeMap, todaySchedule) {
             final result = Map<Date, ScheduledDay>.from(rangeMap);
             // Only include today if it has events or activities
-            if (todaySchedule.events.isNotEmpty || todaySchedule.activities.isNotEmpty) {
+            if (todaySchedule.events.isNotEmpty ||
+                todaySchedule.activities.isNotEmpty) {
               result[today] = todaySchedule;
             }
             final sortedEntries = result.entries.toList()
@@ -89,8 +90,7 @@ class ScheduledDay extends Equatable {
           // Get activities for this day
           List<Activity> dayActivities = [];
           for (final activity in allActivities) {
-            if (activity.createdAt.toDate() == start ||
-                (activity.doAt == start && start > today)) {
+            if (activity.at.toDate() == start || activity.doAt == start) {
               dayActivities.add(activity);
             }
           }
@@ -156,15 +156,8 @@ class ScheduledDay extends Equatable {
           // Get activities for today - only include if context is provided
           List<Activity> dayActivities = [];
           for (final activity in allActivities) {
-            bool shouldInclude = false;
-
-            // For today: include if created today or if doAt is today
-            if (activity.createdAt.toDate() == today ||
-                activity.doAt == today) {
-              shouldInclude = true;
-            }
-
-            if (shouldInclude) {
+            if ((activity.at.toDate() == today && !activity.doNow) ||
+                activity.doNow) {
               dayActivities.add(activity);
             }
           }

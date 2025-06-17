@@ -68,7 +68,7 @@ class Agenda extends Equatable {
 
       for (final activity in activities) {
         // Check if we're not in the past and the activity is actionable
-        if (at.start.isSameOrAfter(DateTime.now()) && activity.doAt != null) {
+        if (at.end.isAfter(DateTime.now()) && activity.scheduled) {
           activitiesInRange.add(activity);
           // Check if activity's doneAt or createdAt falls within the time range
         } else if (at.includes(activity.doneAt ?? activity.createdAt) &&

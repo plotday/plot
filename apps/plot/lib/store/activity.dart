@@ -8,10 +8,9 @@ class Activities extends Table
   BlobColumn get priorityId => blob().map(const UuidConverter())();
   TextColumn get path => text().map(const PathConverter())();
   BlobColumn get createdBy => blob().map(const UuidConverter())();
-  RealColumn get order =>
-      real()
-          .clientDefault(() => Order.first().value)
-          .map(const OrderConverter())();
+  RealColumn get order => real()
+      .clientDefault(() => Order.first().value)
+      .map(const OrderConverter())();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   TextColumn get doAt => text().nullable().map(const DateConverter())();
@@ -185,22 +184,22 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         id == null && path == null && priorityId == null
             ? base.id.equalsExp(a.id)
             : (priorityId != null
-                    ? a.priorityId.equalsValue(priorityId)
-                    : Constant(true)) &
-                (path != null
-                    ? a.path.likeExp(base.path + Constant('%')) &
-                        ((getParent
-                                // This gets all parents and could be optimized to get just the direct parent.
-                                ? base.path.likeExp(a.path + Constant('%'))
-                                : Constant(true)) |
-                            (a.path.likeExp(base.path + Constant('%')))) &
-                        (depth == null
-                            ? Constant(true)
-                            : CustomExpression<int>("""
+                      ? a.priorityId.equalsValue(priorityId)
+                      : Constant(true)) &
+                  (path != null
+                      ? a.path.likeExp(base.path + Constant('%')) &
+                            ((getParent
+                                    // This gets all parents and could be optimized to get just the direct parent.
+                                    ? base.path.likeExp(a.path + Constant('%'))
+                                    : Constant(true)) |
+                                (a.path.likeExp(base.path + Constant('%')))) &
+                            (depth == null
+                                ? Constant(true)
+                                : CustomExpression<int>("""
     LENGTH(a.path) - LENGTH(REPLACE(a.path, '.', '')) -
     (CASE WHEN base.path IS NULL THEN 0 ELSE LENGTH(base.path) - LENGTH(REPLACE(base.path, '.', '')) END)
     """).isSmallerOrEqualValue(depth))
-                    : Constant(true)),
+                      : Constant(true)),
       ),
     ]);
 
@@ -497,6 +496,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
   bool isParent(Activity other) => path.isParent(other.path);
   List<Activity> get peers => parent?.children ?? [];
+
+  DateTime get at => doneAt ?? createdAt;
 
   // For the user, doAt can never be in the past
   @override
