@@ -35,6 +35,8 @@ class Events extends Table
       .nullable()
       .map(const UuidConverter())
       .references(Priorities, #id)();
+  IntColumn get calendarId => integer().nullable().references(Calendars, #id)();
+  TextColumn get conferencingUrl => text().nullable()();
 }
 
 class EventsBase extends BaseTable {

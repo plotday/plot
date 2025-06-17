@@ -442,15 +442,19 @@ class Store extends _$Store {
   }
 
   Future<void> _startSync() async {
-    await Future.wait([
-      Chain.capture(() => Account.push().then((_) => Account.pull())),
-      Chain.capture(() => Calendar.push().then((_) => Calendar.pull())),
-      Chain.capture(() => Priority.push().then((_) => Priority.pull())),
-      Chain.capture(() => Activity.push().then((_) => Activity.pull())),
-      Chain.capture(() => Event.push().then((_) => Event.pull())),
-      Chain.capture(() => Session.push().then((_) => Session.pull())),
-      Chain.capture(() => Balance.pull()),
-    ]);
+    await Account.push();
+    await Account.pull();
+    await Calendar.push();
+    await Calendar.pull();
+    await Priority.push();
+    await Priority.pull();
+    await Event.push();
+    await Event.pull();
+    await Activity.push();
+    await Activity.pull();
+    await Session.push();
+    await Session.pull();
+    await Balance.pull();
 
     final userId = Base.userId.toString();
     final channel = Base.client.channel('user:$userId');
@@ -519,7 +523,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 64;
+  int get schemaVersion => 65;
 
   @override
   MigrationStrategy get migration {
