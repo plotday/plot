@@ -7,8 +7,12 @@ class PriorityState extends Equatable {
     Activity? draft,
     this.pinned = const [],
     this.agendaItems = const [],
+    this.first = 0,
     this.anchorIndex = 0,
     this.moreAgendaItems = true,
+    this.doneStart = false,
+    this.doneEnd = false,
+    this.range,
   }) : draft = draft ?? Activity(priorityId: context.id, draft: true);
 
   final Priority context;
@@ -18,6 +22,10 @@ class PriorityState extends Equatable {
   final List<AgendaItem> agendaItems;
   final int anchorIndex;
   final bool moreAgendaItems;
+  final bool doneStart;
+  final bool doneEnd;
+  final int first;
+  final DateRange? range;
 
   PriorityState copyWith({
     Priority? context,
@@ -25,8 +33,12 @@ class PriorityState extends Equatable {
     Activity? draft,
     List<AgendaItem>? pinned,
     List<AgendaItem>? agendaItems,
+    int? first,
     int? anchorIndex,
     bool? moreAgendaItems,
+    bool? doneStart,
+    bool? doneEnd,
+    DateRange? range,
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -35,7 +47,11 @@ class PriorityState extends Equatable {
       pinned: pinned ?? this.pinned,
       agendaItems: agendaItems ?? this.agendaItems,
       anchorIndex: anchorIndex ?? this.anchorIndex,
+      first: first ?? this.first,
       moreAgendaItems: moreAgendaItems ?? this.moreAgendaItems,
+      doneStart: doneStart ?? this.doneStart,
+      doneEnd: doneEnd ?? this.doneEnd,
+      range: range ?? this.range,
     );
   }
 
@@ -48,5 +64,9 @@ class PriorityState extends Equatable {
     agendaItems,
     anchorIndex,
     moreAgendaItems,
+    doneStart,
+    doneEnd,
+    first,
+    range,
   ];
 }

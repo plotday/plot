@@ -91,16 +91,23 @@ class Date extends Equatable implements Comparable<Date> {
     if (month != other.month) return month.compareTo(other.month);
     return day.compareTo(other.day);
   }
+
+  bool isBefore(Date other) {
+    return this < other;
+  }
+
+  bool isAfter(Date other) {
+    return this > other;
+  }
 }
 
 abstract class DateRange extends Equatable {
   static DateRange fromString(String db) {
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateStrings = stripped.split(',');
-    List<Date> dates =
-        dateStrings
-            .map((timestamp) => Date.fromString(timestamp.trim()))
-            .toList();
+    List<Date> dates = dateStrings
+        .map((timestamp) => Date.fromString(timestamp.trim()))
+        .toList();
     switch (dates[1].difference(dates[0]).inDays) {
       case 1:
         return Day(dates[0]);
@@ -287,10 +294,9 @@ class DateTimeRange extends Equatable {
   factory DateTimeRange.fromString(String db) {
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateTimeStrings = stripped.split(',');
-    List<DateTime> dateTimes =
-        dateTimeStrings
-            .map((timestamp) => DateTime.parse(timestamp.trim()).toLocal())
-            .toList();
+    List<DateTime> dateTimes = dateTimeStrings
+        .map((timestamp) => DateTime.parse(timestamp.trim()).toLocal())
+        .toList();
     return DateTimeRange(dateTimes[0], dateTimes[1]);
   }
 

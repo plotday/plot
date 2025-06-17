@@ -124,31 +124,6 @@ class _SelectionCommandScope extends StatefulWidget {
 
 class _SelectionCommandScopeState extends State<_SelectionCommandScope> {
   @override
-  void initState() {
-    super.initState();
-    widget.listController.addListener(_updateCommands);
-  }
-
-  @override
-  void didUpdateWidget(_SelectionCommandScope oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.listController != widget.listController) {
-      oldWidget.listController.removeListener(_updateCommands);
-      widget.listController.addListener(_updateCommands);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.listController.removeListener(_updateCommands);
-    super.dispose();
-  }
-
-  void _updateCommands() {
-    setState(() {});
-  }
-
-  @override
   Widget build(BuildContext context) {
     return CommandScope(
       commands: [
@@ -241,6 +216,13 @@ class PriorityPage extends StatelessWidget {
                         anchor: state.anchorIndex,
                         anchorOffset: 0.0,
                         reverse: true,
+                        doneStart: state.doneStart,
+                        doneEnd: state.doneEnd,
+                        fetcher: (move, targetCount) async {
+                          await context
+                              .read<PriorityBloc>()
+                              .fetchMoreAgendaItems(move, targetCount);
+                        },
                         builder: (context, index, selected) {
                           final current = state.agendaItems[index];
                           void onHover(bool hovered) {

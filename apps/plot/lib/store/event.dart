@@ -219,6 +219,8 @@ class Event extends EventRow {
     EventAvailability? availability,
     bool? inviteesHidden,
     Value<String?> series = const Value.absent(),
+    Value<int?> calendarId = const Value.absent(),
+    Value<String?> conferencingUrl = const Value.absent(),
   }) {
     if (start != null || end != null || at != null) {
       start ??= at?.start ?? this.start;
@@ -248,6 +250,8 @@ class Event extends EventRow {
         availability: availability,
         inviteesHidden: inviteesHidden,
         series: series,
+        calendarId: calendarId,
+        conferencingUrl: conferencingUrl,
       ),
       priority: activity.present ? activity.value : null,
       unsaved: unsaved,

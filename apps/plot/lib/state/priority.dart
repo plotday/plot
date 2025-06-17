@@ -6,98 +6,75 @@ import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/state/agenda_item.dart';
+import 'logging.dart';
 
 part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
   PriorityBloc({required Priority priority, Activity? activity})
     : _subscriptions = [],
+      _agendaSubscription = null,
       super(PriorityState(context: priority, activity: activity)) {
     _loadPriority(priority);
     if (activity != null) {
       _loadActivity(activity);
     }
-  }
 
-  void _reset() {
-    for (final subscription in _subscriptions) {
-      subscription.cancel();
-    }
-    _subscriptions = [];
+    final today = Date.today();
+    final initialStartDate = today
+        .toDateTime()
+        .subtract(const Duration(days: 14))
+        .toDate();
+    final initialEndDate = today
+        .toDateTime()
+        .add(const Duration(days: 14))
+        .toDate();
+    DateRange range = DateRangeCustom(initialStartDate, initialEndDate);
+    _loadAgendaItems(range);
   }
 
   @override
   Future<void> close() {
-    _reset();
+    for (final subscription in _subscriptions) {
+      subscription.cancel();
+    }
+    _agendaSubscription?.cancel();
     return super.close();
   }
 
   PriorityId get currentId => state.context.id;
 
   void _loadPriority(Priority priority) {
-    _reset();
+    // Watch the current priority (context) - only add if not already watching
+    if (_subscriptions.isEmpty) {
+      _subscriptions.add(
+        Priority.watchOne(priority.id).listen((priority) {
+          log.info('Priority updated');
+          emit(state.copyWith(context: priority));
+        }),
+      );
 
-    // Watch the current priority (context)
-    _subscriptions.add(
-      Priority.watchOne(priority.id).listen((priority) {
-        emit(state.copyWith(context: priority));
-      }),
-    );
-
-    // Watch pinned activities
-    _subscriptions.add(
-      Activity.watch(priorityId: priority.id, pinned: true).listen((
-        activities,
-      ) {
-        emit(
-          state.copyWith(
-            pinned: activities.map((a) => ActivityAgendaItem(a)).toList(),
-          ),
-        );
-      }),
-    );
-    // Watch upcoming, scheduled priorities and past activity using ScheduledDay.watch
-    final today = Date.today();
-    final oneMonthAgo = today
-        .toDateTime()
-        .subtract(const Duration(days: 30))
-        .toDate();
-    final oneMonthFromNow = today
-        .toDateTime()
-        .add(const Duration(days: 30))
-        .toDate();
-    final range = DateRangeCustom(oneMonthAgo, oneMonthFromNow);
-
-    _subscriptions.add(
-      Rx.combineLatest2(
-        ScheduledDay.watch(range, context: priority),
-        Priority.watch(order: PriorityOrder.sorted),
-        (scheduleMap, priorities) => (scheduleMap, priorities),
-      ).listen((data) {
-        final (scheduleMap, priorities) = data;
-        final priorityMap = Priority.asMap(priorities);
-
-        final agenda = Agenda.fromScheduledDays(
-          scheduleMap.values.toList(),
-          today: today,
-          priorities: priorityMap,
-        );
-
-        emit(
-          state.copyWith(
-            agendaItems: agenda.items.reversed.toList(),
-            anchorIndex: agenda.items.length - agenda.anchorIndex - 1,
-            moreAgendaItems: false,
-          ),
-        );
-      }),
-    );
+      // Watch pinned activities
+      _subscriptions.add(
+        Activity.watch(priorityId: priority.id, pinned: true).listen((
+          activities,
+        ) {
+          log.info('Pinned activities updated');
+          emit(
+            state.copyWith(
+              pinned: activities.map((a) => ActivityAgendaItem(a)).toList(),
+            ),
+          );
+        }),
+      );
+    }
   }
 
   void _loadActivity(Activity activity) {
     // Watch the activity
     _subscriptions.add(
       Activity.watchOne(activity.id).listen((watchedActivity) {
+        log.info('Activity updated');
         emit(state.copyWith(activity: watchedActivity));
       }),
     );
@@ -111,6 +88,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     activity = activity.copyWith(draft: false);
     await activity.save();
     // Create a new draft
+    log.info('New draft');
     emit(
       state.copyWith(
         draft: Activity(priorityId: state.context.id, draft: true),
@@ -118,5 +96,100 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
-  List<StreamSubscription<void>> _subscriptions;
+  void _loadAgendaItems(DateRange range) {
+    log.info('Loading agenda items (${range.start} to ${range.end})');
+
+    // Ensure the new range overlaps with the previous one by at least one day
+    // Find the first and last HeaderAgendaItem in the current agenda items
+    var overlappingIndex = state.agendaItems.indexWhere(
+      (item) => item.when(
+        activity: (_) => false,
+        event: (_) => false,
+        header: (header) => header.date != null,
+      ),
+    );
+    Date? overlappingDate;
+    if (overlappingIndex != -1) {
+      overlappingDate =
+          (state.agendaItems[overlappingIndex] as HeaderAgendaItem).date!;
+      if (range.end.isBefore(overlappingDate)) {
+        range = DateRangeCustom(range.start, overlappingDate);
+      } else {
+        overlappingIndex = state.agendaItems.lastIndexWhere(
+          (item) => item.when(
+            activity: (_) => false,
+            event: (_) => false,
+            header: (header) => header.date != null,
+          ),
+        );
+        overlappingDate =
+            (state.agendaItems[overlappingIndex] as HeaderAgendaItem).date!;
+        if (range.start.isAfter(overlappingDate)) {
+          range = DateRangeCustom(overlappingDate, range.end);
+        }
+      }
+    }
+
+    _agendaSubscription?.cancel();
+    _agendaSubscription =
+        Rx.combineLatest2(
+          ScheduledDay.watch(range, context: state.context),
+          Priority.watch(order: PriorityOrder.sorted),
+          (scheduleMap, priorities) => (scheduleMap, priorities),
+        ).listen((data) {
+          final (scheduleMap, priorities) = data;
+          final priorityMap = Priority.asMap(priorities);
+          final today = Date.today();
+
+          final agenda = Agenda.fromScheduledDays(
+            scheduleMap.values.toList(),
+            today: today,
+            priorities: priorityMap,
+          );
+
+          final newAgendaItems = agenda.items.reversed.toList();
+
+          // Calculate the new first index based on header overlap
+          final first = overlappingIndex == -1
+              ? 0
+              : newAgendaItems.indexWhere(
+                      (item) => item.when(
+                        activity: (_) => false,
+                        event: (_) => false,
+                        header: (header) => header.date == overlappingDate,
+                      ),
+                    ) -
+                    overlappingIndex;
+
+          log.info('Agenda updated');
+          emit(
+            state.copyWith(
+              range: range,
+              agendaItems: newAgendaItems,
+              first: first,
+              anchorIndex: agenda.items.length - agenda.anchorIndex - 1,
+              moreAgendaItems: true,
+              doneStart: false,
+              doneEnd: false,
+            ),
+          );
+        });
+  }
+
+  Future<void> fetchMoreAgendaItems(int move, int targetCount) async {
+    if (state.range == null) return;
+    log.info(
+      'Fetching more agenda items: move=$move, targetCount=$targetCount',
+    );
+    final itemsPerDay = state.range!.duration.inDays / state.agendaItems.length;
+    final newStart = state.range!.start.subDays((move / itemsPerDay).ceil());
+    final newRange = DateRangeCustom(
+      newStart,
+      newStart.addDays((targetCount / itemsPerDay).ceil()),
+    );
+    _loadAgendaItems(newRange);
+  }
+
+  final List<StreamSubscription<void>> _subscriptions;
+  StreamSubscription<void>? _agendaSubscription;
 }
