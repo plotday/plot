@@ -101,8 +101,8 @@ class Event extends EventRow {
         : OrderingMode.desc;
 
     final query = Store.get.select(table)
-      ..where((t) => t.start.isBiggerOrEqualValue(range.start.toStart()))
-      ..where((t) => t.start.isSmallerThanValue(range.end.toEnd()));
+      ..where((t) => t.start.isBiggerOrEqualValue(range.start.toDateTime()))
+      ..where((t) => t.start.isSmallerThanValue(range.end.toDateTime()));
     if (deleted != null) {
       query.where(
         (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
