@@ -66,7 +66,6 @@ class ScheduledDay extends Equatable {
           : Stream.value(<Activity>[]),
       (events, defaultPriority, allActivities) {
         var (start, end) = range.bounds;
-
         final direction = start < end
             ? TimeDirection.ascending
             : TimeDirection.descending;
@@ -75,16 +74,16 @@ class ScheduledDay extends Equatable {
         bool hasMore = eventIterator.moveNext();
 
         while (start != end) {
-          // Skip today if it's in the range - it will be handled by _watchToday
-          if (start == today) {
-            start = start.next(direction: direction);
-            continue;
-          }
-
           List<Event> dayEvents = [];
           while (hasMore && eventIterator.current.start.toDate() == start) {
             dayEvents.add(eventIterator.current);
             hasMore = eventIterator.moveNext();
+          }
+
+          // Skip today if it's in the range - it will be handled by _watchToday
+          if (start == today) {
+            start = start.next(direction: direction);
+            continue;
           }
 
           // Get activities for this day
