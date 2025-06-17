@@ -76,7 +76,8 @@ class ScheduledDay extends Equatable {
         while (start != end) {
           List<Event> dayEvents = [];
           while (hasMore && eventIterator.current.start.toDate() == start) {
-            dayEvents.add(eventIterator.current);
+            final event = eventIterator.current;
+            dayEvents.add(event);
             hasMore = eventIterator.moveNext();
           }
 
@@ -180,12 +181,8 @@ class ScheduledDay extends Equatable {
     required List<Event> events,
     this.activities = const [],
     required this.defaultPriority,
-  }) : events = events
-           .where((e) => e.at.duration < const Duration(hours: 22))
-           .toList(),
-       allDayEvents = events
-           .where((e) => e.at.duration >= const Duration(hours: 22))
-           .toList();
+  }) : events = events.where((e) => !e.isAllDay).toList(),
+       allDayEvents = events.where((e) => e.isAllDay).toList();
 
   final Date date;
   final List<Event> events;

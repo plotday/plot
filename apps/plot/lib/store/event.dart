@@ -262,6 +262,7 @@ class Event extends EventRow {
 
   DateTimeRange get at => DateTimeRange(start, end);
   Duration get duration => at.duration;
+  bool get isAllDay => at.duration >= const Duration(hours: 22);
 
   BalanceType get balanceType {
     switch (response) {
