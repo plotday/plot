@@ -244,6 +244,38 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       }
     }
 
+    // Add range filtering based on createdAt, doAt, and doneAt fields
+    if (range != null) {
+      // Filter activities that fall within the date range based on:
+      // 1. createdAt - when the activity was created
+      // 2. doAt - when the activity is scheduled (if scheduled)
+      //    - Past doAt dates are treated as current date
+      // 3. doneAt - when the activity was completed (if completed)
+      final rangeStart = range.start.toDateTime();
+      final rangeEnd = range.end.toDateTime();
+      final today = Date.today().toString();
+
+      query.where(
+        // Activity was created within the range
+        (a.createdAt.isBiggerOrEqualValue(rangeStart) &
+                a.createdAt.isSmallerThanValue(rangeEnd)) |
+            // Activity is scheduled within the range (future dates)
+            (a.doAt.isNotNull() &
+                a.doAt.isBiggerOrEqualValue(today) &
+                a.doAt.isBiggerOrEqualValue(range.start.toString()) &
+                a.doAt.isSmallerThanValue(range.end.toString())) |
+            // Activity is scheduled in the past (treat as current date)
+            (a.doAt.isNotNull() &
+                a.doAt.isSmallerThanValue(today) &
+                Constant(today).isBiggerOrEqualValue(range.start.toString()) &
+                Constant(today).isSmallerThanValue(range.end.toString())) |
+            // Activity was completed within the range
+            (a.doneAt.isNotNull() &
+                a.doneAt.isBiggerOrEqualValue(rangeStart) &
+                a.doneAt.isSmallerThanValue(rangeEnd)),
+      );
+    }
+
     switch (order) {
       case ActivityOrder.sorted:
         query.orderBy([
