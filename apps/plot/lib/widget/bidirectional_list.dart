@@ -153,14 +153,18 @@ class BidirectionalList extends StatefulWidget {
   final ItemBuilder builder;
   final ItemFetcher? fetcher;
   final int count;
-  // index of the first item
+
+  /// index of the first item
   final int first;
-  // the item at this index is at the anchorOffset position in the intial view
+
+  /// the item at this index is at the anchorOffset position in the intial view
   final int anchor;
   final double anchorOffset;
   final bool doneStart;
   final bool doneEnd;
   final int estimatedItemExtent;
+
+  /// Minimum number of pages to load before and after the current view.
   final double overflow;
   final ScrollController? scrollController;
   final BidirectionalListController controller;
