@@ -137,12 +137,13 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     _agendaSubscription?.cancel();
     _agendaSubscription =
-        Rx.combineLatest2(
+        Rx.combineLatest3(
           ScheduledDay.watch(range, context: state.context),
           Priority.watch(order: PriorityOrder.sorted),
-          (scheduleMap, priorities) => (scheduleMap, priorities),
+          ScheduledDay.watchRange(context: state.context),
+          (scheduleMap, priorities, totalRange) => (scheduleMap, priorities, totalRange),
         ).listen((data) {
-          final (scheduleMap, priorities) = data;
+          final (scheduleMap, priorities, totalRange) = data;
           final priorityMap = Priority.asMap(priorities);
           final today = Date.today();
 
@@ -168,8 +169,24 @@ class PriorityBloc extends Cubit<PriorityState> {
                 overlappingIndex;
           }
 
+          // Determine done states based on comparison with total available range
+          bool doneStart = true;
+          bool doneEnd = true;
+
+          if (totalRange != null) {
+            final (totalEarliest, totalLatest) = totalRange;
+            
+            if (totalEarliest != null && totalLatest != null) {
+              // We're done at start if our current range start is at or before the earliest available data
+              doneStart = range.start <= totalEarliest;
+              
+              // We're done at end if our current range end is at or after the latest available data  
+              doneEnd = range.end >= totalLatest.addDays(1); // Add 1 day since range.end is exclusive
+            }
+          }
+
           log.info(
-            'Agenda updated (${range.start} to ${range.end}, first=$first, count=${newAgendaItems.length})',
+            'Agenda updated (${range.start} to ${range.end}, first=$first, count=${newAgendaItems.length}, totalRange=$totalRange, doneStart=$doneStart, doneEnd=$doneEnd)',
           );
           emit(
             state.copyWith(
@@ -178,8 +195,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               first: first,
               anchorIndex: agenda.items.length - agenda.anchorIndex - 1,
               moreAgendaItems: true,
-              doneStart: false,
-              doneEnd: false,
+              doneStart: doneStart,
+              doneEnd: doneEnd,
             ),
           );
         });

@@ -55,7 +55,7 @@ class ScheduledDay extends Equatable {
     bool? deleted = false,
   }) {
     return Rx.combineLatest3(
-      Event.watch(range, withPriority: true, deleted: deleted),
+      Event.watch(range, withPriority: true, deleted: deleted, context: context),
       Priority.watchDefault(),
       context != null
           ? Activity.watch(
@@ -115,6 +115,50 @@ class ScheduledDay extends Equatable {
     return Date.current().switchMap((today) => _watchToday(today));
   }
 
+  static Stream<(Date?, Date?)?> watchRange({
+    Priority? context,
+  }) {
+    return Rx.combineLatest2(
+      Event.watchRange(deleted: false, context: context),
+      Activity.watchRange(context: context, deleted: false),
+      (eventRange, activityRange) {
+        // If neither events nor activities exist, return null
+        if (eventRange == null && activityRange == null) {
+          return null;
+        }
+
+        Date? earliest;
+        Date? latest;
+
+        // Consider event range
+        if (eventRange != null) {
+          earliest = eventRange.$1;
+          latest = eventRange.$2;
+        }
+
+        // Consider activity range and merge with event range
+        if (activityRange != null) {
+          final activityEarliest = activityRange.$1;
+          final activityLatest = activityRange.$2;
+
+          if (activityEarliest != null) {
+            if (earliest == null || activityEarliest.isBefore(earliest)) {
+              earliest = activityEarliest;
+            }
+          }
+
+          if (activityLatest != null) {
+            if (latest == null || activityLatest.isAfter(latest)) {
+              latest = activityLatest;
+            }
+          }
+        }
+
+        return (earliest, latest);
+      },
+    );
+  }
+
   static Stream<ScheduledDay> _watchToday(Date today, {Priority? context}) {
     return Rx.combineLatest2(
       Priority.watchDefault(),
@@ -130,7 +174,7 @@ class ScheduledDay extends Equatable {
     ).switchMap(((Priority, List<Activity>) tuple) {
       final defaultPriority = tuple.$1;
       final allActivities = tuple.$2;
-      return Event.watch(today.toDateRange()).transform(
+      return Event.watch(today.toDateRange(), context: context).transform(
         ExpiringStreamTransformer((events) {
           final now = DateTime.now();
           final currentEvent = events.any((event) => event.at.includes(now));

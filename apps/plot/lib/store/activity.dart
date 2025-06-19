@@ -142,6 +142,52 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     ).watch().map((activities) => _asNested(activities, id: id).first);
   }
 
+  static Stream<(Date?, Date?)?> watchRange({
+    Priority? context,
+    bool? deleted = false,
+  }) {
+    // Use the existing _get method to leverage its filtering logic
+    final activities = _get(
+      priorityPath: context?.path,
+      deleted: deleted,
+      order: ActivityOrder.sorted,
+    ).watch();
+
+    return activities.map((activityList) {
+      if (activityList.isEmpty) {
+        return null;
+      }
+
+      Date? earliest;
+      Date? latest;
+      final today = Date.today();
+
+      for (final activity in activityList) {
+        // Determine the effective date for this activity
+        Date effectiveDate;
+        if (activity.doneAt != null) {
+          effectiveDate = activity.doneAt!.toDate();
+        } else if (activity.doAt != null) {
+          final doAtDate = activity.doAt!;
+          // Treat past doAt dates as today
+          effectiveDate = doAtDate.isBefore(today) ? today : doAtDate;
+        } else {
+          effectiveDate = activity.createdAt.toDate();
+        }
+
+        // Update earliest and latest
+        if (earliest == null || effectiveDate.isBefore(earliest)) {
+          earliest = effectiveDate;
+        }
+        if (latest == null || effectiveDate.isAfter(latest)) {
+          latest = effectiveDate;
+        }
+      }
+
+      return (earliest, latest);
+    });
+  }
+
   static MultiSelectable<Activity> _get({
     DateRange? range,
 

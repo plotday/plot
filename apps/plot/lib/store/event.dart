@@ -94,6 +94,7 @@ class Event extends EventRow {
     DateRange range, {
     bool withPriority = false,
     bool? deleted = false,
+    Priority? context,
   }) {
     pullRange(range);
     final order = range.start <= range.end
@@ -109,13 +110,21 @@ class Event extends EventRow {
       );
     }
 
-    if (withPriority) {
+    if (withPriority || context != null) {
       final joinedQuery = query.join([
         leftOuterJoin(
           Store.get.priorities,
           Store.get.priorities.id.equalsExp(Store.get.events.priorityId),
         ),
       ]);
+
+      // Add context filter if provided
+      if (context != null) {
+        joinedQuery.where(
+          Store.get.priorities.path.equalsValue(context.path) |
+          Store.get.priorities.path.likeExp(Constant('${context.path}%'))
+        );
+      }
 
       return Rx.combineLatest2(
         (joinedQuery..orderBy([
@@ -158,6 +167,47 @@ class Event extends EventRow {
       } else {
         yield Event.fromStore(row);
       }
+    });
+  }
+
+  static Stream<(Date?, Date?)?> watchRange({
+    bool? deleted = false,
+    Priority? context,
+  }) {
+    // Use the existing watch method to leverage its filtering logic
+    // Create a very wide date range to capture all events
+    final today = Date.today();
+    final wideRange = DateRangeCustom(
+      today.subDays(365 * 10), // 10 years ago
+      today.addDays(365 * 10),  // 10 years from now
+    );
+
+    final eventsStream = watch(
+      wideRange,
+      withPriority: context != null,
+      deleted: deleted,
+      context: context,
+    );
+
+    return eventsStream.map((events) {
+      if (events.isEmpty) {
+        return null;
+      }
+
+      Date? earliest;
+      Date? latest;
+
+      for (final event in events) {
+        final eventDate = event.start.toDate();
+        if (earliest == null || eventDate.isBefore(earliest)) {
+          earliest = eventDate;
+        }
+        if (latest == null || eventDate.isAfter(latest)) {
+          latest = eventDate;
+        }
+      }
+
+      return (earliest, latest);
     });
   }
 
