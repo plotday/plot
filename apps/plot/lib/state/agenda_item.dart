@@ -45,7 +45,6 @@ class Agenda extends Equatable {
     List<Activity> buildBlock({
       required List<Activity> activities,
       required DateTimeRange at,
-      required Date currentDay,
       Event? event,
     }) {
       if (at.includes(DateTime.now())) {
@@ -135,9 +134,6 @@ class Agenda extends Equatable {
       final isToday = scheduledDay.date == today;
 
       // Date header
-      if (anchor == scheduledDay.date) {
-        anchorIndex = agendaItems.length;
-      }
       agendaItems.add(HeaderAgendaItem(date: scheduledDay.date, now: isToday));
 
       // Iterate through each time block in the day
@@ -156,7 +152,6 @@ class Agenda extends Equatable {
               previous?.end ?? scheduledDay.date.toStart(),
               current.start,
             ),
-            currentDay: scheduledDay.date,
             event: null,
           );
         }
@@ -165,7 +160,6 @@ class Agenda extends Equatable {
         activities = buildBlock(
           activities: activities,
           at: current.at,
-          currentDay: scheduledDay.date,
           event: current,
         );
         agendaItems.addAll(items);
@@ -181,9 +175,12 @@ class Agenda extends Equatable {
             previous?.end ?? scheduledDay.date.toStart(),
             scheduledDay.date.toEnd(),
           ),
-          currentDay: scheduledDay.date,
           event: null,
         );
+      }
+
+      if (anchor == scheduledDay.date) {
+        anchorIndex = agendaItems.length - 1;
       }
     }
 
