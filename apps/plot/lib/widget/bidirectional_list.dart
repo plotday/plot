@@ -448,14 +448,16 @@ class BidirectionalListState extends State<BidirectionalList> {
             SliverReorderableList(
               key: _upListKey,
               itemCount: _upCount - _shrinkUp,
-              itemBuilder: (context, index) =>
-                  widget.builder(
-                    context,
-                    widget.first + _upCount - _shrinkUp - index - 1,
-                    widget.first + _upCount - _shrinkUp - index - 1 ==
-                        widget.controller.selected,
-                  ) ??
-                  Container(),
+              itemBuilder: (context, index) {
+                final itemIndex = widget.first + _upCount - _shrinkUp - index - 1;
+                final isSelected = itemIndex == widget.controller.selected;
+                final child = widget.builder(context, itemIndex, isSelected);
+                return child ??
+                    SizedBox(
+                      key: ValueKey('empty_$itemIndex'),
+                      height: 0,
+                    );
+              },
               onReorder: (oldIndex, newIndex) {
                 widget.onReorder?.call(
                   widget.first + _upCount - _shrinkUp - oldIndex - 1,
@@ -466,14 +468,16 @@ class BidirectionalListState extends State<BidirectionalList> {
             SliverReorderableList(
               key: _downListKey,
               itemCount: _downCount - _shrinkDown,
-              itemBuilder: (context, index) =>
-                  widget.builder(
-                    context,
-                    widget.first + _upCount + index,
-                    widget.first + _upCount + index ==
-                        widget.controller.selected,
-                  ) ??
-                  Container(),
+              itemBuilder: (context, index) {
+                final itemIndex = widget.first + _upCount + index;
+                final isSelected = itemIndex == widget.controller.selected;
+                final child = widget.builder(context, itemIndex, isSelected);
+                return child ??
+                    SizedBox(
+                      key: ValueKey('empty_$itemIndex'),
+                      height: 0,
+                    );
+              },
               onReorder: (oldIndex, newIndex) {
                 widget.onReorder?.call(
                   widget.first + _upCount + oldIndex,
