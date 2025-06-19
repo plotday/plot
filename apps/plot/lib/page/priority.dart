@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/widget/event.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/agenda_item.dart';
@@ -189,6 +188,7 @@ class PriorityPage extends StatelessWidget {
                       : null,
                   commands: currentPriorityCommands(state.context),
                 ),
+                sidebar: PrioritiesSidebar(),
                 body: Column(
                   children: [
                     Flexible(

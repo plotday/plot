@@ -7,6 +7,7 @@ class Scaffold extends StatelessWidget {
   const Scaffold({
     required this.body,
     this.header,
+    this.sidebar,
     this.footer,
     this.translucent = false,
     super.key,
@@ -14,6 +15,7 @@ class Scaffold extends StatelessWidget {
 
   final Widget body;
   final Widget? header;
+  final Widget? sidebar;
   final Widget? footer;
   final bool translucent;
 
@@ -23,6 +25,7 @@ class Scaffold extends StatelessWidget {
       color: translucent ? null : context.colour.background,
       child: FScaffold(
         header: header,
+        sidebar: sidebar,
         footer: footer,
         childPad: false,
         child: body,

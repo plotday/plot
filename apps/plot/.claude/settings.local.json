@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(flutter analyze:*)",
-      "Bash(flutter test:*)"
+      "Bash(flutter test:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:pub.dev)",
+      "WebFetch(domain:forui.dev)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(flutter packages pub run:*)"
     ],
     "deny": []
   }

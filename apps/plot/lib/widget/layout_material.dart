@@ -3,6 +3,8 @@ import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/command/command.dart';
+import 'priorities_sidebar.dart';
+import '../router.dart';
 
 class MaterialLayout extends StatelessWidget {
   static const singleBreakpoint = WidthPlatformBreakpoint(end: 600);
@@ -48,8 +50,8 @@ class MaterialLayout extends StatelessWidget {
             MaterialLayout.tripleBreakpoint: SlotLayout.from(
               key: const Key('Drawer'),
               builder: (_) => SizedBox(
-                width: 240,
-                child: drawer!,
+                width: 280,
+                child: drawer ?? const PrioritiesSidebar(),
               ),
             ),
           },
@@ -108,7 +110,18 @@ class MaterialLayout extends StatelessWidget {
                             context.run<void>(ShowSettings());
                             return;
                           }
-                          tabsRouter!.setActiveIndex(index);
+                          
+                          // Handle custom navigation for Priorities and Schedule
+                          if (index == 0) {
+                            // Priorities - navigate to PrioritiesPage
+                            context.router.navigate(const PrioritiesRoute());
+                          } else if (index == 1) {
+                            // Schedule - navigate back to current priority
+                            // Navigate to root which will redirect to current priority
+                            context.router.navigate(const AppShellRoute());
+                          } else {
+                            tabsRouter!.setActiveIndex(index);
+                          }
                         },
                       ),
             )

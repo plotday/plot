@@ -1,4 +1,5 @@
 export 'priority.dart';
+export 'priorities.dart';
 export 'auth_account.dart';
 export 'loading.dart';
 export 'new_priority.dart';
