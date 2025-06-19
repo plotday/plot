@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'package:plot/widget/widget.dart';
+import 'logging.dart';
 
 class BidirectionalListController extends ChangeNotifier {
   BidirectionalListController({
@@ -140,7 +141,7 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
 
 typedef ItemBuilder =
     Widget? Function(BuildContext context, int index, bool selected);
-typedef ItemFetcher = Future<void> Function(int move, int count);
+typedef ItemFetcher = void Function(int first, int count);
 
 class BidirectionalList extends StatefulWidget {
   static const Map<ShortcutActivator, Intent> shortcuts = {
@@ -157,7 +158,7 @@ class BidirectionalList extends StatefulWidget {
   /// index of the first item
   final int first;
 
-  /// the item at this index is at the anchorOffset position in the intial view
+  /// the item at this index is at the anchorOffset position in the initial view
   final int anchor;
   final double anchorOffset;
   final bool doneStart;
@@ -201,7 +202,8 @@ class BidirectionalListState extends State<BidirectionalList> {
 
   late final ScrollController _scrollController;
 
-  bool _loading = false;
+  bool _fetching = false;
+
   // Prevent the list from growing on the first frame in order to calculate the
   // amount of shrinkage, which is used to adjust the scroll position.
   int _shrinkUp = 0;
@@ -246,7 +248,11 @@ class BidirectionalListState extends State<BidirectionalList> {
       count += _upCount;
     }
     if (count > 0 && extent > 0) {
-      _averageItemExtent = extent / count;
+      final newAverage = extent / count;
+      // Ensure we don't set an extremely small or zero average that could cause issues
+      if (newAverage > 0.1) {
+        _averageItemExtent = newAverage;
+      }
     }
   }
 
@@ -271,51 +277,87 @@ class BidirectionalListState extends State<BidirectionalList> {
   }
 
   double averageItemsPerPage() {
+    // Prevent division by zero and ensure scroll controller is ready
+    if (!_scrollController.hasClients || _averageItemExtent <= 0) {
+      return 1.0; // Fallback to 1 item per page
+    }
     return _scrollController.position.viewportDimension / _averageItemExtent;
   }
 
   double pagesBefore() {
+    if (!_scrollController.hasClients ||
+        _scrollController.position.viewportDimension <= 0) {
+      return 0.0;
+    }
     return (_scrollController.position.pixels -
             _scrollController.position.minScrollExtent) /
         _scrollController.position.viewportDimension;
   }
 
   double pagesAfter() {
+    if (!_scrollController.hasClients ||
+        _scrollController.position.viewportDimension <= 0) {
+      return 0.0;
+    }
     return (_scrollController.position.maxScrollExtent -
             _scrollController.position.pixels) /
         _scrollController.position.viewportDimension;
   }
 
   Future<void> _loadIfNecessary() async {
-    if (_loading) return;
+    if (_fetching) return;
     if (widget.doneStart && widget.doneEnd) return;
+    if (!_scrollController.hasClients) return;
+
+    // Check if we have enough buffer
     if (pagesBefore() >= widget.overflow && pagesAfter() >= widget.overflow) {
       return;
     }
+
+    // Determine scroll direction
     bool scrollingUp =
         _scrollController.position.userScrollDirection ==
         ScrollDirection.forward;
     bool scrollingDown =
         _scrollController.position.userScrollDirection ==
         ScrollDirection.reverse;
-    final moveUp =
-        ((widget.overflow * (scrollingUp ? 1.5 : 1) - pagesBefore()) *
-                averageItemsPerPage())
-            .ceil();
-    final moveDown =
-        ((widget.overflow * (scrollingDown ? 1.5 : 1) - pagesAfter()) *
-                averageItemsPerPage())
-            .ceil();
-    _loadMoreItems(moveUp, moveDown);
+
+    // Calculate how many items we need to fetch
+    final itemsPerPage = averageItemsPerPage();
+    int itemsToFetchBefore = 0;
+    int itemsToFetchAfter = 0;
+
+    // Only fetch in the direction we're scrolling or if we're below the threshold
+    if (pagesBefore() < widget.overflow && !widget.doneStart) {
+      final targetPages = widget.overflow * (scrollingUp ? 1.5 : 1);
+      itemsToFetchBefore = ((targetPages - pagesBefore()) * itemsPerPage)
+          .ceil();
+    }
+
+    if (pagesAfter() < widget.overflow && !widget.doneEnd) {
+      final targetPages = widget.overflow * (scrollingDown ? 1.5 : 1);
+      itemsToFetchAfter = ((targetPages - pagesAfter()) * itemsPerPage).ceil();
+    }
+
+    if (itemsToFetchBefore > 0 || itemsToFetchAfter > 0) {
+      _loadMoreItems(itemsToFetchBefore, itemsToFetchAfter);
+    }
   }
 
-  Future<void> _loadMoreItems(int moveUp, int moveDown) async {
-    if (widget.fetcher == null || _loading) return;
+  Future<void> _loadMoreItems(int itemsBefore, int itemsAfter) async {
+    if (widget.fetcher == null || _fetching) return;
+
+    // Calculate the new range
+    final newFirst = widget.first - itemsBefore;
+    final newCount = widget.count + itemsBefore + itemsAfter;
+
     try {
-      _loading = true;
-      await widget.fetcher!(-moveUp, widget.count + moveUp + moveDown);
-    } finally {
-      _loading = false;
+      _fetching = true;
+
+      // Call the fetcher with the new range
+      widget.fetcher!(newFirst, newCount);
+    } catch (error) {
+      debugPrint('BidirectionalList fetcher error: $error');
     }
   }
 
@@ -339,20 +381,29 @@ class BidirectionalListState extends State<BidirectionalList> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.first == widget.first &&
         oldWidget.count == widget.count &&
+        oldWidget.doneStart == widget.doneStart &&
+        oldWidget.doneEnd == widget.doneEnd &&
         oldWidget.anchor == widget.anchor) {
       return;
     }
+
     setState(() {
+      _fetching = false;
       _setCounts();
       widget.controller.clamp(widget.first, widget.first + widget.count - 1);
       if (oldWidget.anchor == widget.anchor) {
         int moveUp = widget.first - oldWidget.first;
-        int moveDown = widget.count - oldWidget.count - moveUp;
+        int moveDown = oldWidget.count - widget.count - moveUp;
         _shrinkUp = max(0, moveUp);
         _shrinkDown = max(0, moveDown);
+        log.info(
+          'BidirectionalList: moveUp=$moveUp, moveDown=$moveDown, shrinkUp=$_shrinkUp, shrinkDown=$_shrinkDown',
+        );
         if (widget.controller.selected != null) {
           widget.controller.move(moveUp);
         }
+      } else {
+        log.info('Anchor ${oldWidget.anchor} changed to ${widget.anchor}');
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -375,10 +426,12 @@ class BidirectionalListState extends State<BidirectionalList> {
       ),
     );
 
-    return NotificationListener<ScrollMetricsNotification>(
-      onNotification: (ScrollMetricsNotification notification) {
-        _loadIfNecessary();
-        return false; // Return false to allow the notification to continue to be dispatched
+    return NotificationListener<ScrollNotification>(
+      onNotification: (ScrollNotification notification) {
+        if (notification is ScrollUpdateNotification) {
+          _loadIfNecessary();
+        }
+        return false;
       },
       child: ListenableBuilder(
         listenable: widget.controller,
@@ -398,15 +451,15 @@ class BidirectionalListState extends State<BidirectionalList> {
               itemBuilder: (context, index) =>
                   widget.builder(
                     context,
-                    _upCount - _shrinkUp - index - 1,
-                    _upCount - _shrinkUp - index - 1 ==
+                    widget.first + _upCount - _shrinkUp - index - 1,
+                    widget.first + _upCount - _shrinkUp - index - 1 ==
                         widget.controller.selected,
                   ) ??
                   Container(),
               onReorder: (oldIndex, newIndex) {
                 widget.onReorder?.call(
-                  _upCount - _shrinkUp - oldIndex - 1,
-                  _upCount - _shrinkUp - newIndex - 1,
+                  widget.first + _upCount - _shrinkUp - oldIndex - 1,
+                  widget.first + _upCount - _shrinkUp - newIndex - 1,
                 );
               },
             ),
@@ -416,14 +469,15 @@ class BidirectionalListState extends State<BidirectionalList> {
               itemBuilder: (context, index) =>
                   widget.builder(
                     context,
-                    _upCount + index,
-                    _upCount + index == widget.controller.selected,
+                    widget.first + _upCount + index,
+                    widget.first + _upCount + index ==
+                        widget.controller.selected,
                   ) ??
                   Container(),
               onReorder: (oldIndex, newIndex) {
                 widget.onReorder?.call(
-                  _upCount + oldIndex,
-                  _upCount + newIndex,
+                  widget.first + _upCount + oldIndex,
+                  widget.first + _upCount + newIndex,
                 );
               },
             ),

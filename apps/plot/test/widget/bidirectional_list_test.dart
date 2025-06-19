@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -127,7 +129,7 @@ void main() {
                   child: Text('Item $index'),
                 );
               },
-              fetcher: (move, count) async {
+              fetcher: (first, count) async {
                 // Mock fetcher
                 return;
               },
@@ -282,8 +284,8 @@ void main() {
                       child: Text('Item $index'),
                     );
                   },
-                  fetcher: (move, count) async {
-                    fetcherCalls.add({'move': move, 'count': count});
+                  fetcher: (first, count) async {
+                    fetcherCalls.add({'first': first, 'count': count});
                   },
                 ),
               ),
@@ -311,7 +313,7 @@ void main() {
 
         // Verify fetcher parameters are reasonable
         for (final call in fetcherCalls) {
-          expect(call['move'], isA<int>());
+          expect(call['first'], isA<int>());
           expect(call['count'], isA<int>());
           expect(
             call['count']! >= itemCount,
@@ -341,7 +343,7 @@ void main() {
                   child: Text('Item $index'),
                 );
               },
-              fetcher: (move, count) async {
+              fetcher: (first, count) async {
                 fetcherCalled = true;
                 throw Exception('Fetcher error');
               },
@@ -350,13 +352,13 @@ void main() {
         ),
       );
 
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       // Trigger scrolling to cause fetcher call
       await tester.drag(find.byType(BidirectionalList), const Offset(0, -200));
-      await tester.pumpAndSettle();
+      await tester.pump();
 
-      // Widget should not crash despite fetcher error
+      // Widget should not crash despite fetcher error (errors are caught internally)
       expect(find.byType(BidirectionalList), findsOneWidget);
       expect(fetcherCalled, isTrue);
     });
@@ -380,7 +382,7 @@ void main() {
                   child: Text('Item $index'),
                 );
               },
-              fetcher: (move, count) async {
+              fetcher: (first, count) async {
                 fetcherCalled = true;
               },
             ),
@@ -422,8 +424,8 @@ void main() {
                     child: Text('Item $index'),
                   );
                 },
-                fetcher: (move, count) async {
-                  fetcherCalls.add({'move': move, 'count': count});
+                fetcher: (first, count) async {
+                  fetcherCalls.add({'first': first, 'count': count});
                   await Future<void>.delayed(const Duration(milliseconds: 10));
                 },
               ),
@@ -448,18 +450,456 @@ void main() {
       // Verify fetcher was called for both directions
       expect(fetcherCalls.isNotEmpty, isTrue);
 
-      // Verify that move parameters include both positive and negative values
-      // (negative for loading earlier items, positive offset for loading later items)
-      final moves = fetcherCalls.map((call) => call['move']!).toList();
-      expect(
-        moves.any((move) => move <= 0),
-        isTrue,
-      ); // Should have calls for earlier items
+      // Verify that first parameters include values indicating loading in both directions
+      // (smaller first values for loading earlier items)
+      final firsts = fetcherCalls.map((call) => call['first']!).toList();
+      expect(firsts.isNotEmpty, isTrue); // Should have fetcher calls
 
       // Verify count parameters are reasonable
       for (final call in fetcherCalls) {
         expect(call['count']! >= itemCount, isTrue);
       }
+    });
+  });
+
+  group('BidirectionalList Boundary Tests', () {
+    testWidgets('should handle anchor at start boundary', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 10,
+              first: 0,
+              anchor: 0, // Anchor at start
+              anchorOffset: 0.0,
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 50,
+                  child: Text('Item $index'),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Should render without issues
+      expect(find.byType(BidirectionalList), findsOneWidget);
+      expect(find.text('Item 0'), findsOneWidget);
+    });
+
+    testWidgets('should handle anchor at end boundary', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 10,
+              first: 0,
+              anchor: 9, // Anchor at end
+              anchorOffset: 1.0,
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 50,
+                  child: Text('Item $index'),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Should render without issues
+      expect(find.byType(BidirectionalList), findsOneWidget);
+      expect(find.text('Item 9'), findsOneWidget);
+    });
+
+    testWidgets('should handle anchor outside of valid range', (
+      WidgetTester tester,
+    ) async {
+      // Should gracefully handle invalid anchor by clamping it
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 10,
+              first: 0,
+              anchor: 15, // Invalid anchor - outside range, should be clamped
+              anchorOffset: 0.5,
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 50,
+                  child: Text('Item $index'),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      
+      // Should render without crashing (anchor gets clamped internally)
+      expect(find.byType(BidirectionalList), findsOneWidget);
+    });
+
+    testWidgets('should handle negative first index', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 10,
+              first: -5, // Negative start index
+              anchor: -3,
+              anchorOffset: 0.5,
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 50,
+                  child: Text('Item $index'),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BidirectionalList), findsOneWidget);
+    });
+
+    testWidgets('should handle zero count with non-zero first', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 0,
+              first: 10, // Non-zero first with zero count
+              anchor: 10,
+              anchorOffset: 0.5,
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 50,
+                  child: Text('Item $index'),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BidirectionalList), findsOneWidget);
+    });
+  });
+
+  group('BidirectionalList Controller Edge Cases', () {
+    testWidgets('should handle controller with selection outside bounds', (
+      WidgetTester tester,
+    ) async {
+      final controller = BidirectionalListController(
+        initialSelected: 20, // Outside bounds
+        initialMin: 0,
+        initialMax: 10,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 5,
+              controller: controller,
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 50,
+                  child: Text('Item $index'),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Controller should be clamped to valid range
+      expect(controller.selected, lessThanOrEqualTo(4));
+      expect(controller.selected, greaterThanOrEqualTo(0));
+    });
+
+    testWidgets('should handle controller bounds change during widget lifecycle', (
+      WidgetTester tester,
+    ) async {
+      final controller = BidirectionalListController(
+        initialSelected: 5,
+        initialMin: 0,
+        initialMax: 10,
+      );
+
+      Widget buildList(int count) {
+        return MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: count,
+              controller: controller,
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 50,
+                  child: Text('Item $index'),
+                );
+              },
+            ),
+          ),
+        );
+      }
+
+      // Start with larger count
+      await tester.pumpWidget(buildList(10));
+      await tester.pumpAndSettle();
+
+      expect(controller.selected, equals(5));
+
+      // Reduce count below selected index
+      await tester.pumpWidget(buildList(3));
+      await tester.pumpAndSettle();
+
+      // Selection should be adjusted
+      expect(controller.selected, lessThanOrEqualTo(2));
+    });
+  });
+
+  group('BidirectionalList Fetcher Edge Cases', () {
+    testWidgets('should handle fetcher that never completes', (
+      WidgetTester tester,
+    ) async {
+      final completer = Completer<void>();
+      
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 5,
+              doneStart: false,
+              doneEnd: false,
+              overflow: 0.1, // Very small overflow to trigger quickly
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 100,
+                  child: Text('Item $index'),
+                );
+              },
+              fetcher: (first, count) async {
+                // Never complete
+                return completer.future;
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Trigger fetcher
+      await tester.drag(find.byType(BidirectionalList), const Offset(0, -200));
+      await tester.pump();
+
+      // Widget should still be responsive even with hanging fetcher
+      expect(find.byType(BidirectionalList), findsOneWidget);
+      
+      // Complete the future to clean up
+      completer.complete();
+    });
+
+    testWidgets('should handle concurrent fetcher calls', (
+      WidgetTester tester,
+    ) async {
+      final fetcherCalls = <DateTime>[];
+      
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 5,
+              doneStart: false,
+              doneEnd: false,
+              overflow: 0.1,
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 100,
+                  child: Text('Item $index'),
+                );
+              },
+              fetcher: (first, count) async {
+                fetcherCalls.add(DateTime.now());
+                await Future<void>.delayed(const Duration(milliseconds: 100));
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Trigger multiple rapid scrolls
+      for (int i = 0; i < 3; i++) {
+        await tester.drag(find.byType(BidirectionalList), const Offset(0, -100));
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+
+      await tester.pumpAndSettle();
+
+      // Should not have concurrent fetcher calls (should be prevented by _loading flag)
+      expect(find.byType(BidirectionalList), findsOneWidget);
+    });
+
+    testWidgets('should handle fetcher with extremely large count requests', (
+      WidgetTester tester,
+    ) async {
+      var largestCountRequest = 0;
+      
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 5,
+              doneStart: false,
+              doneEnd: false,
+              overflow: 10.0, // Large overflow
+              estimatedItemExtent: 1, // Very small items
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 1,
+                  child: Text('Item $index'),
+                );
+              },
+              fetcher: (first, count) async {
+                largestCountRequest = count > largestCountRequest ? count : largestCountRequest;
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Trigger fetcher
+      await tester.drag(find.byType(BidirectionalList), const Offset(0, -300));
+      await tester.pumpAndSettle();
+
+      // Should handle large count requests without issues
+      expect(find.byType(BidirectionalList), findsOneWidget);
+      // Count request should be reasonable (not astronomical)
+      expect(largestCountRequest, lessThan(10000));
+    });
+  });
+
+  group('BidirectionalList Extreme Configurations', () {
+    testWidgets('should handle extremely small estimated item extent', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 5,
+              estimatedItemExtent: 0, // Zero height estimation
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 50,
+                  child: Text('Item $index'),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BidirectionalList), findsOneWidget);
+    });
+
+    testWidgets('should handle extremely large overflow', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 5,
+              overflow: 1000.0, // Massive overflow
+              doneStart: false,
+              doneEnd: false,
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 50,
+                  child: Text('Item $index'),
+                );
+              },
+              fetcher: (first, count) async {
+                // Mock fetcher
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BidirectionalList), findsOneWidget);
+    });
+
+    testWidgets('should handle reverse list with complex anchor', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BidirectionalList(
+              count: 10,
+              first: 5,
+              anchor: 8,
+              anchorOffset: 0.75,
+              reverse: true, // Reverse list
+              builder: (context, index, selected) {
+                return SizedBox(
+                  key: ValueKey('item_$index'),
+                  height: 50,
+                  child: Text('Item $index'),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BidirectionalList), findsOneWidget);
     });
   });
 

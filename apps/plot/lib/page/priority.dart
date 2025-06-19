@@ -218,11 +218,9 @@ class PriorityPage extends StatelessWidget {
                         reverse: true,
                         doneStart: state.doneStart,
                         doneEnd: state.doneEnd,
-                        fetcher: (move, targetCount) async {
-                          await context
-                              .read<PriorityBloc>()
-                              .fetchMoreAgendaItems(move, targetCount);
-                        },
+                        fetcher: (first, count) => context
+                            .read<PriorityBloc>()
+                            .fetchMoreAgendaItems(first, count),
                         builder: (context, index, selected) {
                           final current = state.agendaItems[index];
                           void onHover(bool hovered) {

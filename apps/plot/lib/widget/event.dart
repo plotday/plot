@@ -32,13 +32,11 @@ class AgendaHeader extends StatelessWidget {
         leading: Text(
           date!.format(format: 'EEE'),
           textAlign: TextAlign.end,
-          style: TextStyle(
-            fontSize: context.theme.typography.xs.fontSize,
-          ),
+          style: TextStyle(fontSize: context.theme.typography.xs.fontSize),
         ),
         leadingPadding: true,
         body: Text(
-          date!.format(format: 'MMM d'),
+          date!.format(format: 'MMM d, yyyy'),
           textAlign: TextAlign.start,
           style: TextStyle(
             color: context.theme.colors.mutedForeground,
@@ -50,29 +48,27 @@ class AgendaHeader extends StatelessWidget {
         onHover: onHover,
       );
     }
-    
+
     // Handle event header case
     return ListTile(
       // icon: PlotIcon.event,
-      leading:
-          event == null
-              ? SizedBox()
-              : Text(
-                event!.start.toTimeOfDay().isMidnight
-                    ? ''
-                    : event!.start.toTimeOfDay().format(context),
-                textAlign: TextAlign.end,
-                style: TextStyle(
-                  color: context.theme.colors.mutedForeground,
-                  fontSize: context.theme.typography.xs.fontSize,
-                ),
+      leading: event == null
+          ? SizedBox()
+          : Text(
+              event!.start.toTimeOfDay().isMidnight
+                  ? ''
+                  : event!.start.toTimeOfDay().format(context),
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                color: context.theme.colors.mutedForeground,
+                fontSize: context.theme.typography.xs.fontSize,
               ),
+            ),
       leadingWidth: 60.0,
       leadingPadding: true,
-      command:
-          priorityAncestry?.isNotEmpty == true
-              ? ChangeCurrentPriority.byId(priorityAncestry!.last.id)
-              : null,
+      command: priorityAncestry?.isNotEmpty == true
+          ? ChangeCurrentPriority.byId(priorityAncestry!.last.id)
+          : null,
       selected: selected,
       onHover: onHover,
       body: Row(
@@ -117,13 +113,10 @@ class EventWidget extends StatelessWidget {
       icon: PlotIcon.event,
       leadingWidth: 60.0,
       leadingPadding: true,
-      command:
-          event.priority != null
-              ? ChangeCurrentPriority(event.priority!)
-              : null,
-      trailingCommands: [
-        ChangeEventPriority(event),
-      ],
+      command: event.priority != null
+          ? ChangeCurrentPriority(event.priority!)
+          : null,
+      trailingCommands: [ChangeEventPriority(event)],
       selected: selected,
       onHover: onHover,
       title: event.name ?? 'Untitled Event',
