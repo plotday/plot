@@ -23,6 +23,7 @@ class PrioritiesTreeWidget extends StatefulWidget {
 
 class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
   final Set<String> _expandedNodes = <String>{};
+  bool _initializedExpansion = false;
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +46,12 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
             }
 
             final rootPriorities = snapshot.data!;
+            
+            // Initialize expansion state on first build
+            if (!_initializedExpansion) {
+              _initializeExpansion(rootPriorities);
+              _initializedExpansion = true;
+            }
             return SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -137,6 +144,15 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
           ),
       ],
     );
+  }
+
+  void _initializeExpansion(List<Priority> priorities) {
+    for (final priority in priorities) {
+      if (priority.children.isNotEmpty) {
+        _expandedNodes.add(priority.id.toString());
+        _initializeExpansion(priority.children);
+      }
+    }
   }
 
   void _toggleExpansion(String priorityId) {
