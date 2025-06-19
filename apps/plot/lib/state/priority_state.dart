@@ -27,6 +27,14 @@ class PriorityState extends Equatable {
   final int first;
   final DateRange? range;
 
+  AgendaItem? atIndex(int index) {
+    index += first;
+    if (index < 0 || index >= agendaItems.length) {
+      return null;
+    }
+    return agendaItems[index];
+  }
+
   PriorityState copyWith({
     Priority? context,
     Activity? activity,

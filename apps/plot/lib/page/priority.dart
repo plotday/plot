@@ -126,21 +126,23 @@ class _SelectionCommandScopeState extends State<_SelectionCommandScope> {
   Widget build(BuildContext context) {
     return CommandScope(
       commands: [
-        if (widget.listController.selected != null &&
-            widget.listController.selected! < widget.state.agendaItems.length)
-          ...widget.state.agendaItems[widget.listController.selected!].when(
-            activity: (activity) => [
-              StaticCommandGroup(
-                title: activity.title,
-                commands: [
-                  ChangeCurrentActivity(activity),
-                  ...activityCommands(activity),
-                ],
-              ),
-            ],
-            event: (event) => [],
-            header: (header) => [],
-          ),
+        if (widget.listController.selected != null)
+          ...(widget.state
+                  .atIndex(widget.listController.selected!)
+                  ?.when(
+                    activity: (activity) => [
+                      StaticCommandGroup(
+                        title: activity.title,
+                        commands: [
+                          ChangeCurrentActivity(activity),
+                          ...activityCommands(activity),
+                        ],
+                      ),
+                    ],
+                    event: (event) => [],
+                    header: (header) => [],
+                  ) ??
+              []),
       ],
       child: widget.child,
     );
