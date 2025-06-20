@@ -16,6 +16,21 @@ class NewPriorityPage extends HookWidget {
     final (nameController, title) = useTextEditingValue();
     final parent = useState<Priority?>(_initialParent);
 
+    Future<void> submitPriority() async {
+      if (title.isEmpty) return;
+
+      final command = AddPriority(
+        Future.value(
+          Priority(title: title, parent: parent.value, order: Order.first()),
+        ),
+      );
+
+      await command.run(context);
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+    }
+
     return Column(
       spacing: 16,
       mainAxisSize: MainAxisSize.min,
@@ -25,6 +40,7 @@ class NewPriorityPage extends HookWidget {
           label: "Add a priority",
           maxLines: 1,
           autofocus: true,
+          onSubmitted: (_) => submitPriority(),
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
@@ -41,11 +57,8 @@ class NewPriorityPage extends HookWidget {
                   ),
                 ),
                 run: (command, context) async {
-                  final ret = await command.run(context);
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                  return ret;
+                  await submitPriority();
+                  return null;
                 },
               ),
               enabled: title.isNotEmpty,

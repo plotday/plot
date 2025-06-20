@@ -16,18 +16,16 @@ class Window extends StatelessWidget {
       await const MacosWindowUtilsConfig(
         toolbarStyle: NSWindowToolbarStyle.unifiedCompact,
       ).apply();
-      await macos_win.WindowManipulator.hideZoomButton();
-      await macos_win.WindowManipulator.hideMiniaturizeButton();
-      await macos_win.WindowManipulator.hideCloseButton();
+      // await macos_win.WindowManipulator.hideZoomButton();
+      // await macos_win.WindowManipulator.hideMiniaturizeButton();
+      // await macos_win.WindowManipulator.hideCloseButton();
       toolbarHeight = await macos_win.WindowManipulator.getTitlebarHeight();
 
       final lastWindowButtonPos =
           await macos_win.WindowManipulator.getStandardWindowButtonPosition(
-        buttonType: NSWindowButtonType.zoomButton,
-      );
-      toolbarPadding = EdgeInsets.only(
-        left: lastWindowButtonPos.right,
-      );
+            buttonType: NSWindowButtonType.zoomButton,
+          );
+      toolbarPadding = EdgeInsets.only(left: lastWindowButtonPos.right);
     } else {
       toolbarHeight = 32.0;
       toolbarPadding = const EdgeInsets.all(0);
@@ -50,10 +48,7 @@ class Window extends StatelessWidget {
         // those artifacts, the TransparentMacOSBottomBar widget adds a large
         // negative margin to the visual effect subview.
         padding: const EdgeInsets.all(-2000.0),
-        child: Container(
-          color: context.colour.canvas,
-          child: child,
-        ),
+        child: Container(color: context.colour.canvas, child: child),
       ),
       builder: (_) => child,
     );

@@ -13,6 +13,7 @@ class TextField extends StatefulWidget {
     required this.label,
     this.style = TextFieldStyle.outline,
     this.onChanged,
+    this.onSubmitted,
     this.controller,
     this.value,
     this.autocorrect = true,
@@ -26,6 +27,7 @@ class TextField extends StatefulWidget {
 
   final TextFieldStyle style;
   final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
   final TextEditingController? controller;
   final String label;
   final String? value;
@@ -93,29 +95,37 @@ class TextFieldState extends State<TextField> {
       //   autofocus: widget.autofocus,
       // ),
       builder:
-          (_) => FTextField(
-            controller: _controller,
-            style:
-                widget.style == TextFieldStyle.outline
-                    ? null
-                    : context.theme.textFieldStyle.copyWith(
-                      contentPadding: EdgeInsets.all(0),
-                      border: context.theme.textFieldStyle.border.map(
-                        (style) => style.copyWith(
-                          borderSide: BorderSide(
-                            width: 0,
-                            style: BorderStyle.none,
+          (_) => KeyboardListener(
+            focusNode: FocusNode(),
+            onKeyEvent: (KeyEvent event) {
+              if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.enter) {
+                widget.onSubmitted?.call(_controller.text);
+              }
+            },
+            child: FTextField(
+              controller: _controller,
+              style:
+                  widget.style == TextFieldStyle.outline
+                      ? null
+                      : context.theme.textFieldStyle.copyWith(
+                        contentPadding: EdgeInsets.all(0),
+                        border: context.theme.textFieldStyle.border.map(
+                          (style) => style.copyWith(
+                            borderSide: BorderSide(
+                              width: 0,
+                              style: BorderStyle.none,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-            hint: widget.label,
-            autocorrect: widget.autocorrect,
-            maxLines: widget.maxLines,
-            textAlign: widget.textAlign,
-            focusNode: widget.focusNode,
-            inputFormatters: widget.inputFormatters,
-            autofocus: widget.autofocus,
+              hint: widget.label,
+              autocorrect: widget.autocorrect,
+              maxLines: widget.maxLines,
+              textAlign: widget.textAlign,
+              focusNode: widget.focusNode,
+              inputFormatters: widget.inputFormatters,
+              autofocus: widget.autofocus,
+            ),
           ),
     );
   }
