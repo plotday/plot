@@ -7,7 +7,7 @@ import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
-import 'package:plot/page/new_priority.dart';
+import 'package:plot/page/edit_priority.dart';
 
 class _PriorityValue extends ValueCommand<Priority?> {
   _PriorityValue(Priority? priority)
@@ -138,6 +138,20 @@ class AddPriority extends Command {
   }
 }
 
+class EditPriority extends Command {
+  EditPriority(this._priority) : super(title: 'Save');
+
+  final Future<Priority> _priority;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    final priority = await _priority;
+    await priority.save();
+    Posthog().capture(eventName: 'Priority Edited');
+    return null;
+  }
+}
+
 class ArchivePriority extends Command {
   ArchivePriority(this._priority)
     : super(title: 'Archive', icon: PlotIcon.delete);
@@ -167,7 +181,19 @@ class NewPriority extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    return CommandPage(NewPriorityPage(parent: parent));
+    return CommandPage(EditPriorityPage(parent: parent));
+  }
+}
+
+class EditPriorityCommand extends Command {
+  EditPriorityCommand(this.priority)
+    : super(title: 'Edit', icon: PlotIcon.settings);
+
+  final Priority priority;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    return CommandPage(EditPriorityPage(priority: priority));
   }
 }
 
@@ -195,6 +221,7 @@ class ShowPriorityCommands extends ShowCommands<void> {
 }
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
+  EditPriorityCommand(priority),
   if (!priority.root) ArchivePriority(Future.value(priority)),
 ];
 

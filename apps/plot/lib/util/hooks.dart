@@ -3,9 +3,9 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 
 export 'package:flutter_hooks/flutter_hooks.dart';
 
-(TextEditingController nameController, String name) useTextEditingValue() {
-  final controller = useTextEditingController();
-  final text = useState("");
+(TextEditingController nameController, String name) useTextEditingValue({String? initialValue}) {
+  final controller = useTextEditingController(text: initialValue ?? "");
+  final text = useState(initialValue ?? "");
   useEffect(() {
     void textChangeListener() {
       text.value = controller.text;
