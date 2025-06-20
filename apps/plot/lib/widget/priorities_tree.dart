@@ -8,11 +8,13 @@ import 'package:plot/command/command.dart';
 import 'colour_scheme.dart';
 
 class PrioritiesTreeWidget extends StatefulWidget {
+  final List<Priority> priorities;
   final void Function(Priority)? onPrioritySelected;
   final bool isCompact;
 
   const PrioritiesTreeWidget({
     super.key,
+    required this.priorities,
     this.onPrioritySelected,
     this.isCompact = false,
   });
@@ -29,38 +31,28 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
-        return FutureBuilder<List<Priority>>(
-          future: Priority.getRoot(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
+        if (widget.priorities.isEmpty) {
+          return Center(
+            child: Text(
+              'No priorities found',
+              style: context.theme.typography.base,
+            ),
+          );
+        }
 
-            if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return Center(
-                child: Text(
-                  'No priorities found',
-                  style: context.theme.typography.base,
-                ),
-              );
-            }
-
-            final rootPriorities = snapshot.data!;
-            
-            // Initialize expansion state on first build
-            if (!_initializedExpansion) {
-              _initializeExpansion(rootPriorities);
-              _initializedExpansion = true;
-            }
-            return SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: rootPriorities
-                    .map((priority) => _buildPriorityNode(priority, 0))
-                    .toList(),
-              ),
-            );
-          },
+        // Initialize expansion state on first build
+        if (!_initializedExpansion) {
+          _initializeExpansion(widget.priorities);
+          _initializedExpansion = true;
+        }
+        
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: widget.priorities
+                .map((priority) => _buildPriorityNode(priority, 0))
+                .toList(),
+          ),
         );
       },
     );

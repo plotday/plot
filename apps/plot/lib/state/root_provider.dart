@@ -3,8 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
-import 'package:plot/state/schedule.dart';
 import 'package:plot/state/accounts.dart';
+import 'package:plot/state/priorities.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/page/sign_in.dart';
 import 'logging.dart';
@@ -38,7 +38,7 @@ class RootProviderState extends State<RootProvider> {
               providers: [
                 BlocProvider(create: (_) => AccountsBloc()),
                 BlocProvider(create: (_) => NowBloc()),
-                BlocProvider(create: (_) => ScheduleBloc()),
+                BlocProvider(create: (_) => PrioritiesBloc()),
               ],
               child: BlocBuilder<NowBloc, NowState>(
                 builder: (context, state) {
