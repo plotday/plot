@@ -138,10 +138,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaSubscription?.cancel();
     _agendaSubscription =
         Rx.combineLatest3(
-          ScheduledDay.watch(range, context: state.context),
+          ScheduledDay.watch(
+            range,
+            context: state.context,
+            activityContext: state.activity,
+          ),
           Priority.watch(order: PriorityOrder.sorted),
           ScheduledDay.watchRange(context: state.context),
-          (scheduleMap, priorities, totalRange) => (scheduleMap, priorities, totalRange),
+          (scheduleMap, priorities, totalRange) =>
+              (scheduleMap, priorities, totalRange),
         ).listen((data) {
           final (scheduleMap, priorities, totalRange) = data;
           final priorityMap = Priority.asMap(priorities);
@@ -175,13 +180,17 @@ class PriorityBloc extends Cubit<PriorityState> {
 
           if (totalRange != null) {
             final (totalEarliest, totalLatest) = totalRange;
-            
+
             if (totalEarliest != null && totalLatest != null) {
               // We're done at start if our current range start is at or before the earliest available data
               doneStart = range.start <= totalEarliest;
-              
-              // We're done at end if our current range end is at or after the latest available data  
-              doneEnd = range.end >= totalLatest.addDays(1); // Add 1 day since range.end is exclusive
+
+              // We're done at end if our current range end is at or after the latest available data
+              doneEnd =
+                  range.end >=
+                  totalLatest.addDays(
+                    1,
+                  ); // Add 1 day since range.end is exclusive
             }
           }
 

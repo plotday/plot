@@ -9,6 +9,7 @@ class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> watch(
     DateRange range, {
     Priority? context,
+    Activity? activityContext,
     bool? deleted = false,
   }) {
     return Date.current().switchMap((today) {
@@ -21,9 +22,10 @@ class ScheduledDay extends Equatable {
             range,
             today,
             context: context,
+            activityContext: activityContext,
             deleted: deleted,
           ),
-          _watchToday(today, context: context),
+          _watchToday(today, context: context, activityContext: activityContext),
           (rangeMap, todaySchedule) {
             final result = Map<Date, ScheduledDay>.from(rangeMap);
             // Only include today if it has events or activities
@@ -42,6 +44,7 @@ class ScheduledDay extends Equatable {
           range,
           today,
           context: context,
+          activityContext: activityContext,
           deleted: deleted,
         );
       }
@@ -52,6 +55,7 @@ class ScheduledDay extends Equatable {
     DateRange range,
     Date today, {
     Priority? context,
+    Activity? activityContext,
     bool? deleted = false,
   }) {
     return Rx.combineLatest3(
@@ -61,6 +65,7 @@ class ScheduledDay extends Equatable {
           ? Activity.watch(
               range: range,
               priorityPath: context.path,
+              activityPath: activityContext?.path,
               deleted: deleted,
             )
           : Stream.value(<Activity>[]),
@@ -159,13 +164,14 @@ class ScheduledDay extends Equatable {
     );
   }
 
-  static Stream<ScheduledDay> _watchToday(Date today, {Priority? context}) {
+  static Stream<ScheduledDay> _watchToday(Date today, {Priority? context, Activity? activityContext}) {
     return Rx.combineLatest2(
       Priority.watchDefault(),
       context != null
           ? Activity.watch(
               range: Day(today),
               priorityPath: context.path,
+              activityPath: activityContext?.path,
               deleted: false,
             )
           : Stream.value(<Activity>[]),

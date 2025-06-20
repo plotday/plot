@@ -49,6 +49,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     ActivityId? id,
     PriorityId? priorityId,
     Path? priorityPath,
+    Path? activityPath,
     Path? path,
     int? depth,
     bool? pinned,
@@ -63,6 +64,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       id: id,
       priorityId: priorityId,
       priorityPath: priorityPath,
+      activityPath: activityPath,
       path: path,
       depth: depth,
       pinned: pinned,
@@ -79,6 +81,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     ActivityId? id,
     PriorityId? priorityId,
     Path? priorityPath,
+    Path? activityPath,
     Path? path,
     int? depth,
     bool? pinned,
@@ -93,6 +96,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       id: id,
       priorityId: priorityId,
       priorityPath: priorityPath,
+      activityPath: activityPath,
       path: path,
       depth: depth,
       pinned: pinned,
@@ -195,6 +199,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     ActivityId? id,
     PriorityId? priorityId,
     Path? priorityPath,
+    Path? activityPath,
     Path? path,
 
     /* Filters */
@@ -260,6 +265,14 @@ class Activity extends ActivityRow implements Comparable<Activity> {
                   p.path.likeExp(Constant('$priorityPath%'))),
         ),
       ]);
+    }
+
+    // Add activity path filtering if activityPath is provided
+    if (activityPath != null) {
+      query.where(
+        a.path.equalsValue(activityPath) |
+            a.path.likeExp(Constant('$activityPath.%')),
+      );
     }
 
     final nextEvent = Store.get.alias(Store.get.activityNextEvent, 'nextEvent');
