@@ -13,7 +13,11 @@ class PriorityState extends Equatable {
     this.doneStart = false,
     this.doneEnd = false,
     this.range,
-  }) : draft = draft ?? Activity(priorityId: context.id, draft: true);
+  }) : draft =
+           draft ??
+           Activity(priorityId: context.id, parent: activity, draft: true) {
+    log.info('Draft: ${draft?.path} / ${activity?.path}');
+  }
 
   final Priority context;
   final Activity? activity;

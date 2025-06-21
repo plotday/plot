@@ -91,7 +91,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     log.info('New draft');
     emit(
       state.copyWith(
-        draft: Activity(priorityId: state.context.id, draft: true),
+        draft: Activity(
+          priorityId: state.context.id, 
+          parent: state.activity, // Make new activities children of the current activity
+          draft: true,
+        ),
       ),
     );
   }
