@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'package:plot/widget/widget.dart';
+import 'package:plot/command/base.dart';
 import 'logging.dart';
 
 class BidirectionalListController extends ChangeNotifier {
@@ -449,14 +450,12 @@ class BidirectionalListState extends State<BidirectionalList> {
               key: _upListKey,
               itemCount: _upCount - _shrinkUp,
               itemBuilder: (context, index) {
-                final itemIndex = widget.first + _upCount - _shrinkUp - index - 1;
+                final itemIndex =
+                    widget.first + _upCount - _shrinkUp - index - 1;
                 final isSelected = itemIndex == widget.controller.selected;
                 final child = widget.builder(context, itemIndex, isSelected);
                 return child ??
-                    SizedBox(
-                      key: ValueKey('empty_$itemIndex'),
-                      height: 0,
-                    );
+                    SizedBox(key: ValueKey('empty_$itemIndex'), height: 0);
               },
               onReorder: (oldIndex, newIndex) {
                 widget.onReorder?.call(
@@ -473,10 +472,7 @@ class BidirectionalListState extends State<BidirectionalList> {
                 final isSelected = itemIndex == widget.controller.selected;
                 final child = widget.builder(context, itemIndex, isSelected);
                 return child ??
-                    SizedBox(
-                      key: ValueKey('empty_$itemIndex'),
-                      height: 0,
-                    );
+                    SizedBox(key: ValueKey('empty_$itemIndex'), height: 0);
               },
               onReorder: (oldIndex, newIndex) {
                 widget.onReorder?.call(
@@ -524,5 +520,34 @@ class BidirectionalListScrollPhysics extends ScrollPhysics {
       velocity: velocity,
     );
     return unadjustedPosition + getScrollAdjustment();
+  }
+}
+
+class SelectionCommandScope extends StatefulWidget {
+  const SelectionCommandScope({
+    required this.commandBuilder,
+    required this.listController,
+    required this.child,
+    super.key,
+  });
+
+  final List<StaticCommandGroup> Function(int index) commandBuilder;
+  final BidirectionalListController listController;
+  final Widget child;
+
+  @override
+  SelectionCommandScopeState createState() => SelectionCommandScopeState();
+}
+
+class SelectionCommandScopeState extends State<SelectionCommandScope> {
+  @override
+  Widget build(BuildContext context) {
+    return CommandScope(
+      commands: [
+        if (widget.listController.selected != null)
+          ...widget.commandBuilder(widget.listController.selected!),
+      ],
+      child: widget.child,
+    );
   }
 }
