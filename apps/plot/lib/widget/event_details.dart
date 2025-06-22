@@ -17,7 +17,7 @@ class EventDetails extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (event.priority?.title != null) Text(event.priority!.title!),
+          if (event.priority?.title != null) Text(event.priority!.title),
           Row(
             children: [
               Text(event.at.start.toDate().format()),
@@ -49,8 +49,9 @@ class EventDetails extends StatelessWidget {
             onChanged: (free) {
               onChanged(
                 event.copyWith(
-                  availability:
-                      free ? EventAvailability.free : EventAvailability.busy,
+                  availability: free
+                      ? EventAvailability.free
+                      : EventAvailability.busy,
                 ),
               );
             },

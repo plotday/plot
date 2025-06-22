@@ -87,6 +87,7 @@ class PickActivity extends Commands<Activity> {
 
 class ChangeCurrentActivity extends Command {
   ChangeCurrentActivity(Activity activity)
+    // ignore: prefer_initializing_formals
     : activity = activity,
       activityId = activity.id,
       super(title: "Open", icon: PlotIcon.open);

@@ -78,7 +78,7 @@ class MacosSearchField extends StatefulWidget {
   final List<SearchResultItem>? results;
 
   /// The action to perform when any suggestion is selected.
-  final Function(SearchResultItem)? onResultSelected;
+  final void Function(SearchResultItem)? onResultSelected;
 
   /// Specifies the number of results that will be displayed.
   ///

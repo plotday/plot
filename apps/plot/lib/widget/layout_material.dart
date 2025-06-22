@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
-import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/command/command.dart';
 import 'priorities_sidebar.dart';
@@ -16,10 +15,10 @@ class MaterialLayout extends StatelessWidget {
 
   static int numPanels(BuildContext context) =>
       singleBreakpoint.isActive(context)
-          ? 1
-          : doubleBreakpoint.isActive(context)
-              ? 2
-              : 3;
+      ? 1
+      : doubleBreakpoint.isActive(context)
+      ? 2
+      : 3;
 
   const MaterialLayout({
     required this.primary,
@@ -89,42 +88,42 @@ class MaterialLayout extends StatelessWidget {
               builder: tabsRouter == null
                   ? null
                   : (_) => AdaptiveScaffold.standardBottomNavigationBar(
-                        destinations: const [
-                          NavigationDestination(
-                            icon: Icon(Icons.crisis_alert),
-                            label: 'Priorities',
-                          ),
-                          NavigationDestination(
-                            icon: Icon(Icons.calendar_today),
-                            label: 'Schedule',
-                          ),
-                          NavigationDestination(
-                            icon: Icon(Icons.settings),
-                            label: 'Settings',
-                          ),
-                        ],
-                        currentIndex: tabsRouter!.activeIndex,
-                        onDestinationSelected: (int index) {
-                          if (tabsRouter == null) return;
-                          if (index == 2) {
-                            context.run<void>(ShowSettings());
-                            return;
-                          }
-                          
-                          // Handle custom navigation for Priorities and Schedule
-                          if (index == 0) {
-                            // Priorities - navigate to PrioritiesPage
-                            context.router.navigate(const PrioritiesRoute());
-                          } else if (index == 1) {
-                            // Schedule - navigate back to current priority
-                            // Navigate to root which will redirect to current priority
-                            context.router.navigate(const AppShellRoute());
-                          } else {
-                            tabsRouter!.setActiveIndex(index);
-                          }
-                        },
-                      ),
-            )
+                      destinations: const [
+                        NavigationDestination(
+                          icon: Icon(Icons.crisis_alert),
+                          label: 'Priorities',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.calendar_today),
+                          label: 'Schedule',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.settings),
+                          label: 'Settings',
+                        ),
+                      ],
+                      currentIndex: tabsRouter!.activeIndex,
+                      onDestinationSelected: (int index) {
+                        if (tabsRouter == null) return;
+                        if (index == 2) {
+                          context.run<void>(ShowSettings());
+                          return;
+                        }
+
+                        // Handle custom navigation for Priorities and Schedule
+                        if (index == 0) {
+                          // Priorities - navigate to PrioritiesPage
+                          context.router.navigate(const PrioritiesRoute());
+                        } else if (index == 1) {
+                          // Schedule - navigate back to current priority
+                          // Navigate to root which will redirect to current priority
+                          context.router.navigate(const AppShellRoute());
+                        } else {
+                          tabsRouter!.setActiveIndex(index);
+                        }
+                      },
+                    ),
+            ),
           },
         ),
       ),

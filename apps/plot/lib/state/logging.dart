@@ -5,7 +5,7 @@ final Logger log = Logger('plot.state');
 
 class BlocLogger extends BlocObserver {
   @override
-  void onChange(BlocBase bloc, Change change) {
+  void onChange(BlocBase<dynamic> bloc, Change<dynamic> change) {
     super.onChange(bloc, change);
     log.info('${bloc.runtimeType}: $change');
   }

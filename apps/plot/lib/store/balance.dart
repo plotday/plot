@@ -85,9 +85,7 @@ class Balance extends BalanceRow {
                 );
                 result.putIfAbsent(row.day, () => {});
                 result[row.day]!.putIfAbsent(row.priorityId, () => {});
-                result[row.day]![row.priorityId]![row.type ??
-                        BalanceType.tentative] =
-                    balanceStat;
+                result[row.day]![row.priorityId]![row.type] = balanceStat;
                 if (row.nextAt != null && row.nextAt!.isBefore(nextAt)) {
                   nextAt = row.nextAt!;
                 }

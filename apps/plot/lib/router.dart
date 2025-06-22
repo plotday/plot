@@ -118,7 +118,7 @@ extension FocusedRouterExtension on BuildContext {
 }
 
 class RouteLogger extends AutoRouterObserver {
-  void _log(Route route) {
+  void _log(Route<dynamic> route) {
     if (route.settings.name != null) {
       _logger.info(
         'Navigated to ${route.settings.name}${route.settings.arguments == null ? '' : ' (${route.settings.arguments})'}',
@@ -127,17 +127,17 @@ class RouteLogger extends AutoRouterObserver {
   }
 
   @override
-  void didPush(Route route, Route? previousRoute) {
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     _log(route);
   }
 
   @override
-  void didPop(Route route, Route? previousRoute) {
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     _log(route);
   }
 
   @override
-  void didReplace({Route? newRoute, Route? oldRoute}) {
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     if (newRoute == null) return;
     _log(newRoute);
   }
