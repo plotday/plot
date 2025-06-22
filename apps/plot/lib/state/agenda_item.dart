@@ -54,7 +54,7 @@ class Agenda extends Equatable {
         agendaItems.add(
           HeaderAgendaItem(
             event: event,
-            priorityAncestry: event.priority?.ancestors(includeSelf: true),
+            priority: event.priority,
           ),
         );
         if (event.name != null) {
@@ -108,7 +108,7 @@ class Agenda extends Equatable {
 
           agendaItems.add(
             HeaderAgendaItem(
-              priorityAncestry: priority.ancestors(includeSelf: true),
+              priority: priority,
             ),
           );
 
@@ -238,13 +238,13 @@ class EventAgendaItem extends AgendaItem {
 
 class HeaderAgendaItem extends AgendaItem {
   final Event? event;
-  final List<PriorityAncestor>? priorityAncestry;
+  final Priority? priority;
   final Date? date;
   final bool now;
 
   const HeaderAgendaItem({
     this.event,
-    this.priorityAncestry,
+    this.priority,
     this.date,
     this.now = false,
   });
@@ -259,5 +259,5 @@ class HeaderAgendaItem extends AgendaItem {
   }
 
   @override
-  List<Object?> get props => [event, priorityAncestry, date, now];
+  List<Object?> get props => [event, priority, date, now];
 }

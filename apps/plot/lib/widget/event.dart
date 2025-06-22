@@ -5,21 +5,22 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
 class AgendaHeader extends StatelessWidget {
-  AgendaHeader({
-    List<PriorityAncestor>? priorityAncestry,
+  const AgendaHeader({
+    this.priority,
+    this.context,
     this.event,
     this.date,
     this.now = false,
     this.selected = false,
     this.onHover,
     super.key,
-  }) : priorityAncestry =
-           priorityAncestry ?? event?.priority?.ancestors(includeSelf: true);
+  });
 
   final Event? event;
   final Date? date;
   final bool now;
-  final List<PriorityAncestor>? priorityAncestry;
+  final Priority? priority;
+  final Priority? context;
 
   final bool selected;
   final void Function(bool hovered)? onHover;
@@ -48,6 +49,63 @@ class AgendaHeader extends StatelessWidget {
         onHover: onHover,
       );
     }
+
+    // Compute priority ancestry from the priority or event
+    final currentPriority = priority ?? event?.priority;
+
+    // Handle special case where priorityContext equals priority (display "Other")
+    final currentPriorityId = currentPriority?.id;
+    final priorityContextId = this.context?.id;
+    if (currentPriorityId != null &&
+        priorityContextId != null &&
+        currentPriorityId == priorityContextId) {
+      return ListTile(
+        leading: event == null
+            ? SizedBox()
+            : Text(
+                event!.start.toTimeOfDay().isMidnight
+                    ? ''
+                    : event!.start.toTimeOfDay().format(context),
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                  color: context.theme.colors.mutedForeground,
+                  fontSize: context.theme.typography.xs.fontSize,
+                ),
+              ),
+        leadingWidth: 60.0,
+        leadingPadding: true,
+        selected: selected,
+        onHover: onHover,
+        body: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          spacing: 8.0,
+          children: [
+            Expanded(
+              child: Text(
+                'Other',
+                style: context.theme.typography.xs.copyWith(
+                  color: context.theme.colors.mutedForeground,
+                ),
+              ),
+            ),
+            if (event != null && event!.duration.inSeconds > 0)
+              Text(
+                event!.duration.format(),
+                style: TextStyle(
+                  color: context.theme.colors.mutedForeground,
+                  fontSize: context.theme.typography.xs.fontSize,
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    // Compute ancestry relative to priorityContext
+    final priorityAncestry = currentPriority?.ancestors(
+      context: this.context,
+      includeSelf: true,
+    );
 
     // Handle event header case
     return ListTile(
