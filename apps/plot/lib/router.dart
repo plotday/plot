@@ -36,14 +36,13 @@ class AppRouter extends RootStackRouter {
   RouteType get defaultRouteType => PlatformResolver.current(
     iOSResolver: () => RouteType.cupertino(),
     androidResolver: () => RouteType.material(),
-    defaultResolver:
-        () => RouteType.custom(
-          duration: const Duration(milliseconds: 100),
-          reverseDuration: const Duration(milliseconds: 10),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-        ),
+    defaultResolver: () => RouteType.custom(
+      duration: const Duration(milliseconds: 100),
+      reverseDuration: const Duration(milliseconds: 10),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(opacity: animation, child: child);
+      },
+    ),
   );
 
   @override
@@ -57,8 +56,11 @@ class AppRouter extends RootStackRouter {
           path: '',
           guards: [
             AutoRouteGuardCallback((resolver, router) async {
-              final priorityId =
-                  resolver.context.read<NowBloc>().loadedState.priority.id;
+              final priorityId = resolver.context
+                  .read<NowBloc>()
+                  .loadedState
+                  .priority
+                  .id;
               resolver.redirectUntil(PriorityRoute(priorityId: priorityId));
             }),
           ],
@@ -73,7 +75,7 @@ class AppRouter extends RootStackRouter {
         AutoRoute(
           page: ActivityRoute.page,
           path: 'a/:activityId',
-          children: [AutoRoute(page: PriorityMainRoute.page, path: '')],
+          children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
         ),
       ],
     ),

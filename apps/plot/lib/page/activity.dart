@@ -11,34 +11,37 @@ import 'package:plot/command/command.dart';
 import 'loading.dart';
 import 'logging.dart';
 
-@RoutePage(name: "PriorityRoute")
-class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
-  PriorityWrapper({
-    Priority? priority,
-    PriorityId? priorityId,
-    @PathParam("priorityId") String? priorityIdString,
+@RoutePage(name: "ActivityRoute")
+class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
+  ActivityWrapper({
+    Activity? activity,
+    ActivityId? activityId,
+    @PathParam("activityId") String? activityIdString,
     super.key,
   }) {
-    final resolvedPriorityId =
-        priority?.id ??
-        priorityId ??
-        (priorityIdString != null
-            ? PriorityId.fromShortString(priorityIdString)
+    final resolvedActivityId =
+        activity?.id ??
+        activityId ??
+        (activityIdString != null
+            ? ActivityId.fromShortString(activityIdString)
             : null);
-    assert(resolvedPriorityId != null, 'A priority must be provided.');
-    this.priorityId = resolvedPriorityId!;
+    assert(resolvedActivityId != null, 'An activity must be provided.');
+    this.activityId = resolvedActivityId!;
   }
 
-  late final PriorityId priorityId;
+  late final ActivityId activityId;
 
   @override
   Widget wrappedRoute(BuildContext context) {
-    return FutureBuilder<Priority?>(
-      future: Priority.getOne(priorityId),
+    return FutureBuilder<(Priority, Activity)>(
+      future: Activity.getOne(activityId).then((activity) async {
+        final priority = await Priority.getOne(activity.priorityId);
+        return (priority, activity);
+      }),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           log.warning(
-            "Failed to load Priority",
+            "Failed to load Priority and Activity",
             snapshot.error,
             snapshot.stackTrace,
           );
@@ -47,9 +50,10 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
           return const LoadingPage();
         }
 
+        final (priority, activity) = snapshot.data!;
         return BlocProvider(
-          create: (_) => PriorityBloc(priority: snapshot.data!, activity: null),
-          key: ValueKey(snapshot.data!.id),
+          create: (_) => PriorityBloc(priority: priority, activity: activity),
+          key: ValueKey(activity.id),
           child: this,
         );
       },
@@ -57,9 +61,9 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
   }
 }
 
-@RoutePage(name: "PriorityMainRoute")
-class PriorityPage extends StatelessWidget {
-  const PriorityPage({super.key});
+@RoutePage(name: "ActivityMainRoute")
+class ActivityPage extends StatelessWidget {
+  const ActivityPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -220,7 +224,7 @@ class PriorityPage extends StatelessWidget {
                           );
                         },
                         onReorder: (oldIndex, newIndex) =>
-                            onReorder(state.agendaItems, oldIndex, newIndex),
+                            ActivityPage.onReorder(state.agendaItems, oldIndex, newIndex),
                       ),
                     ),
                   ],
@@ -232,13 +236,13 @@ class PriorityPage extends StatelessWidget {
                     autofocus: true,
                     focusNode: focusNode,
                     onSubmitted: (body, {bool alt = false}) async {
-                      log.info('Adding new priority with body: $body ($alt)');
-                      final priority = state.draft.copyWith(
+                      log.info('Adding new activity with body: $body ($alt)');
+                      final activity = state.draft.copyWith(
                         note: Value(body),
                         draft: false,
                         doAt: alt ? Value(Date.today()) : const Value.absent(),
                       );
-                      await context.read<PriorityBloc>().add(priority);
+                      await context.read<PriorityBloc>().add(activity);
                     },
                   ),
                 ),
@@ -305,4 +309,3 @@ class PriorityPage extends StatelessWidget {
     );
   }
 }
-
