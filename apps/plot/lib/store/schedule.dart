@@ -25,7 +25,11 @@ class ScheduledDay extends Equatable {
             activityContext: activityContext,
             deleted: deleted,
           ),
-          _watchToday(today, context: context, activityContext: activityContext),
+          _watchToday(
+            today,
+            context: context,
+            activityContext: activityContext,
+          ),
           (rangeMap, todaySchedule) {
             final result = Map<Date, ScheduledDay>.from(rangeMap);
             // Only include today if it has events or activities
@@ -59,7 +63,12 @@ class ScheduledDay extends Equatable {
     bool? deleted = false,
   }) {
     return Rx.combineLatest3(
-      Event.watch(range, withPriority: true, deleted: deleted, context: context),
+      Event.watch(
+        range,
+        withPriority: true,
+        deleted: deleted,
+        context: context,
+      ),
       Priority.watchDefault(),
       context != null
           ? Activity.watch(
@@ -95,7 +104,7 @@ class ScheduledDay extends Equatable {
           // Get activities for this day
           List<Activity> dayActivities = [];
           for (final activity in allActivities) {
-            if (activity.at.toDate() == start || activity.doAt == start) {
+            if (activity.at == start) {
               dayActivities.add(activity);
             }
           }
@@ -120,9 +129,7 @@ class ScheduledDay extends Equatable {
     return Date.current().switchMap((today) => _watchToday(today));
   }
 
-  static Stream<(Date?, Date?)?> watchRange({
-    Priority? context,
-  }) {
+  static Stream<(Date?, Date?)?> watchRange({Priority? context}) {
     return Rx.combineLatest2(
       Event.watchRange(deleted: false, context: context),
       Activity.watchRange(context: context, deleted: false),
@@ -164,7 +171,11 @@ class ScheduledDay extends Equatable {
     );
   }
 
-  static Stream<ScheduledDay> _watchToday(Date today, {Priority? context, Activity? activityContext}) {
+  static Stream<ScheduledDay> _watchToday(
+    Date today, {
+    Priority? context,
+    Activity? activityContext,
+  }) {
     return Rx.combineLatest2(
       Priority.watchDefault(),
       context != null
@@ -203,11 +214,9 @@ class ScheduledDay extends Equatable {
             );
           }
 
-          // Get activities for today - only include if context is provided
           List<Activity> dayActivities = [];
           for (final activity in allActivities) {
-            if ((activity.at.toDate() == today && !activity.doNow) ||
-                activity.doNow) {
+            if (activity.at == today) {
               dayActivities.add(activity);
             }
           }

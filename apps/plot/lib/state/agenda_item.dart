@@ -52,40 +52,30 @@ class Agenda extends Equatable {
       }
       if (event != null) {
         agendaItems.add(
-          HeaderAgendaItem(
-            event: event,
-            priority: event.priority,
-          ),
+          HeaderAgendaItem(event: event, priority: event.priority),
         );
         if (event.name != null) {
           agendaItems.add(EventAgendaItem(event));
         }
       }
-      // Filter activities to include only those doneAt/createdAt within the range (unless also doAt for the same day)
-      final activitiesInRange = <Activity>[];
-      final remainingActivities = <Activity>[];
 
+      var pastActivities = <Activity>[];
+      var scheduledActivities = <Activity>[];
+      // Filter activities to include only those doneAt/createdAt within the range (unless also doAt for the same day)
+      final remainingActivities = <Activity>[];
       for (final activity in activities) {
-        // Check if we're not in the past and the activity is actionable
         if (at.end.isAfter(DateTime.now()) && activity.scheduled) {
-          activitiesInRange.add(activity);
-          // Check if activity's doneAt or createdAt falls within the time range
-        } else if (at.includes(activity.doneAt ?? activity.createdAt) &&
-            activity.doAt?.toDateTimeRange().includes(
-                  activity.doneAt ?? activity.createdAt,
-                ) !=
-                true) {
-          activitiesInRange.add(activity);
+          scheduledActivities.add(activity);
+        } else if (at.includes(activity.doneAt ?? activity.createdAt)) {
+          pastActivities.add(activity);
         } else {
           remainingActivities.add(activity);
         }
       }
+      final activitiesInRange = [...pastActivities, ...scheduledActivities];
 
       // Create ActivityAgendaItem for each activity in the range
       if (activitiesInRange.isNotEmpty) {
-        // Sort activities by order
-        activitiesInRange.sort();
-
         // Group activities by priority and add headers
         final priorityGroups = <Priority?, List<Activity>>{};
         for (final activity in activitiesInRange) {
@@ -106,11 +96,7 @@ class Agenda extends Equatable {
         for (final priority in sortedPriorities) {
           final activitiesForPriority = priorityGroups[priority]!;
 
-          agendaItems.add(
-            HeaderAgendaItem(
-              priority: priority,
-            ),
-          );
+          agendaItems.add(HeaderAgendaItem(priority: priority));
 
           agendaItems.addAll(
             activitiesForPriority.map((a) => ActivityAgendaItem(a)),

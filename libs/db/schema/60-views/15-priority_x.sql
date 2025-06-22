@@ -37,13 +37,11 @@ SELECT
         -- Otherwise, replace the parent path with either the specified path, or the user's root
         COALESCE(pu.path, user_root.path) || subpath (p.path, extensions.nlevel (root.path))
     END AS path,
-    CASE WHEN pu.priority_id = p.id
-        AND pu.order IS NOT NULL THEN
-        pu.order
+    CASE WHEN pu.priority_id = p.id THEN
+        COALESCE(pu.order, p.order)
     ELSE
         p.order
     END AS "order",
-    COALESCE(pu.order, p.order) AS order_x,
     settings.pomodoro AS pomodoro,
     settings.color AS color,
     tags.tags AS tags

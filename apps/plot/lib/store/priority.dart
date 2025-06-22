@@ -27,7 +27,7 @@ class PrioritiesBase extends BaseTable {
     : super(
         table: 'priority_x',
         name: "priorities",
-        order: 'order_x',
+        order: 'order',
         upsertAsUpdate: true,
       );
 

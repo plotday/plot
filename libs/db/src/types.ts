@@ -935,6 +935,7 @@ export type Database = {
         Row: {
           created_at: string | null
           created_by: string | null
+          day: string | null
           deleted_at: string | null
           do_at: string | null
           done_at: string | null
@@ -943,7 +944,6 @@ export type Database = {
           id: string | null
           note: string | null
           order: number | null
-          order_x: number | null
           path: unknown | null
           pinned: boolean | null
           priority_id: string | null
@@ -1279,7 +1279,6 @@ export type Database = {
           deleted_at: string | null
           id: string | null
           order: number | null
-          order_x: number | null
           path: unknown | null
           pomodoro: number | null
           root: boolean | null

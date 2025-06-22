@@ -25,7 +25,7 @@ class ActivitiesBase extends BaseTable {
     : super(
         table: 'activity_x',
         name: "activities",
-        order: 'order_x',
+        order: 'day',
         upsertAsUpdate: true,
       );
 
@@ -368,7 +368,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
               orElse: const Constant(null),
             ),
           ),
-          OrderingTerm.desc(a.order),
+          OrderingTerm.asc(a.order),
         ]);
         break;
       case ActivityOrder.nested:
@@ -588,7 +588,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   bool isParent(Activity other) => path.isParent(other.path);
   List<Activity> get peers => parent?.children ?? [];
 
-  DateTime get at => doneAt ?? createdAt;
+  Date get at => doAt ?? doneAt?.toDate() ?? createdAt.toDate();
 
   // For the user, doAt can never be in the past
   @override

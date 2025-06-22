@@ -88,7 +88,7 @@ abstract class BaseTable {
   const BaseTable({
     required this.table,
     this.writeTable,
-    this.order = 'updated_at',
+    this.order = 'created_at',
     this.ascending = true,
     this.upsertAsUpdate = false,
     String? name,
@@ -580,7 +580,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 66;
+  int get schemaVersion => 67;
 
   @override
   MigrationStrategy get migration {

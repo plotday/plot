@@ -18,19 +18,7 @@ SELECT
     a.note,
     a.event_series,
     a.order,
-    (
-        CASE WHEN a.pinned = TRUE THEN
-            -- Pinned activities first
-            4E14 - a.order
-        WHEN a.do_at <= NOW() THEN
-            -- Current actions ordered first by when they were added.
-            -- do_at epoch (seconds) shifted left by 1E3 and order (milliseconds)
-            -- shifted right by 1E7 for a total of 1E10 between to avoid overlaps.
-            2E14 - EXTRACT(EPOCH FROM a.do_at) * 1E3 - a.order / 1E7
-        ELSE
-            -- Everything else
-            a.order
-        END) AS order_x
+    COALESCE(a.done_at, a.do_at, a.created_at)::date AS day
 FROM
     -- User access to priorities
     priority_user pu
@@ -93,5 +81,4 @@ SELECT
 FROM
     "public"."activity_x" a
     JOIN "public"."activity" c ON c.path <@ a.path;
-
 
