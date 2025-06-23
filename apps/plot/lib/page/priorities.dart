@@ -5,7 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/priorities.dart';
-import '../widget/priorities_tree.dart';
+import '../widget/priorities_list.dart';
 import '../widget/scaffold.dart';
 import '../widget/header.dart';
 
@@ -23,10 +23,10 @@ class PrioritiesPage extends StatelessWidget {
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: BlocBuilder<PrioritiesBloc, PrioritiesState>(
-          builder: (context, state) {
-            return PrioritiesTreeWidget(
+          builder: (builderContext, state) {
+            return PrioritiesList(
               priorities: state.priorities,
-              onPrioritySelected: (priority) => _navigateToPriority(context, priority),
+              onPrioritySelected: (priority) => _navigateToPriority(builderContext, priority),
             );
           },
         ),

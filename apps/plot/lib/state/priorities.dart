@@ -9,9 +9,7 @@ import 'logging.dart';
 part 'priorities_state.dart';
 
 class PrioritiesBloc extends Cubit<PrioritiesState> {
-  PrioritiesBloc() 
-    : _subscription = null,
-      super(const PrioritiesState()) {
+  PrioritiesBloc() : _subscription = null, super(const PrioritiesState()) {
     _loadPriorities();
   }
 
@@ -22,11 +20,17 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
   }
 
   void _loadPriorities() {
-    _subscription = Priority.watchRoot().listen((priorities) {
+    _subscription = Priority.watch().listen((priorities) {
       log.info('Root priorities updated: ${priorities.length} priorities');
-      emit(state.copyWith(priorities: priorities));
+      emit(
+        state.copyWith(
+          priorities: priorities,
+          root: Priority.asNested(priorities).first,
+        ),
+      );
     });
   }
 
   StreamSubscription<List<Priority>>? _subscription;
 }
+

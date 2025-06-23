@@ -118,7 +118,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       deleted: deleted,
       ancestors: ancestors,
       order: PriorityOrder.nested,
-    ).get().then((priorities) => _asNested(priorities, id: id).first);
+    ).get().then((priorities) => asNested(priorities, id: id).first);
   }
 
   static Stream<Priority> watchOne(
@@ -133,7 +133,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       deleted: deleted,
       ancestors: ancestors,
       order: PriorityOrder.nested,
-    ).watch().map((priorities) => _asNested(priorities, id: id).first);
+    ).watch().map((priorities) => asNested(priorities, id: id).first);
   }
 
   static Future<bool> hasDefault() async {
@@ -153,7 +153,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         depth: depth,
         deleted: deleted,
         order: PriorityOrder.nested,
-      ).then((priorities) => _asNested(priorities));
+      ).then((priorities) => asNested(priorities));
 
   static Stream<List<Priority>> watchRoot({
     int? depth,
@@ -162,7 +162,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     depth: depth,
     deleted: deleted,
     order: PriorityOrder.nested,
-  ).map((priorities) => _asNested(priorities));
+  ).map((priorities) => asNested(priorities));
 
   static MultiSelectable<Priority> _get({
     /* Selectors */
@@ -296,7 +296,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   /// Transform a flat list in PriorityOrder.nested order to a list of the top-level items with descendants.
-  static List<Priority> _asNested(
+  static List<Priority> asNested(
     List<Priority> priorities, {
     PriorityId? id,
     Path? path,

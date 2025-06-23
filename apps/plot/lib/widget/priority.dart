@@ -29,15 +29,9 @@ class PriorityWidget extends StatelessWidget {
     // bool contextChild = priority.parentId == this.context?.id;
     return ListTile(
       command: !isContext ? ChangeCurrentPriority(priority) : null,
-      leadingCommand: priorityCommands(priority).firstOrNull,
-      leadingWidth: 60,
       trailingCommands: [ShowPriorityCommands(priority)],
-      body: Viewer(
-        markdown: priority.title,
-        onTap: () {
-          context.run<void>(ChangeCurrentPriority(priority));
-        },
-      ),
+      leadingWidth: 0,
+      body: PriorityLabel(priority: priority),
       selected: selected,
       onHover: onHover,
     );
@@ -60,6 +54,7 @@ class PriorityLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.max,
     children: [
       ...ancestors.indexed.map((entry) {
         final i = entry.$1;
@@ -82,7 +77,7 @@ class PriorityLabel extends StatelessWidget {
                     context.run<void>(ChangeCurrentPriority(priority));
                   }
                 },
-                child: Text(ancestor.title),
+                child: Text(ancestor.title, overflow: TextOverflow.ellipsis),
               ),
               if (!isLast || priority != null) Text(Priority.separator),
             ],
@@ -94,7 +89,7 @@ class PriorityLabel extends StatelessWidget {
           style: DefaultTextStyle.of(
             context,
           ).style.copyWith(fontSize: context.theme.typography.xs.fontSize),
-          child: Text(priority!.title),
+          child: Text(priority!.title, overflow: TextOverflow.ellipsis),
         ),
     ],
   );

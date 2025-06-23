@@ -80,30 +80,28 @@ class _ListTileState extends State<ListTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap:
-          widget.command != null
-              ? () {
-                try {
-                  widget.command!.run(context);
-                } catch (e, t) {
-                  log.warning("Command ${widget.command?.title} failed", e, t);
-                }
+      onTap: widget.command != null
+          ? () {
+              try {
+                widget.command!.run(context);
+              } catch (e, t) {
+                log.warning("Command ${widget.command?.title} failed", e, t);
               }
-              : null,
-      onDoubleTap:
-          widget.doubleTapCommand != null
-              ? () {
-                try {
-                  widget.doubleTapCommand!.run(context);
-                } catch (e, t) {
-                  log.warning(
-                    "Command ${widget.doubleTapCommand?.title} failed",
-                    e,
-                    t,
-                  );
-                }
+            }
+          : null,
+      onDoubleTap: widget.doubleTapCommand != null
+          ? () {
+              try {
+                widget.doubleTapCommand!.run(context);
+              } catch (e, t) {
+                log.warning(
+                  "Command ${widget.doubleTapCommand?.title} failed",
+                  e,
+                  t,
+                );
               }
-              : null,
+            }
+          : null,
       child: MouseRegion(
         onHover: (PointerHoverEvent event) {
           if (event.position != lastMousePosition) {
@@ -119,10 +117,9 @@ class _ListTileState extends State<ListTile> {
             color: widget.selected ? context.colour.highlight : null,
             padding: EdgeInsets.symmetric(horizontal: 8),
             child: Row(
-              crossAxisAlignment:
-                  widget.body == null
-                      ? CrossAxisAlignment.center
-                      : CrossAxisAlignment.start,
+              crossAxisAlignment: widget.body == null
+                  ? CrossAxisAlignment.center
+                  : CrossAxisAlignment.start,
               spacing: 8,
               children: [
                 SizedBox(
@@ -134,8 +131,12 @@ class _ListTileState extends State<ListTile> {
                     child: switch ((
                       widget.leading,
                       widget.leadingCommand,
-                      (widget.icon ??
-                          widget.command?.statusIcon.or(widget.command?.icon)),
+                      (widget.leadingWidth == 0
+                          ? null
+                          : widget.icon ??
+                                widget.command?.statusIcon.or(
+                                  widget.command?.icon,
+                                )),
                     )) {
                       (var widget?, _, _) => widget,
                       (null, var command?, _) => Align(
@@ -165,34 +166,36 @@ class _ListTileState extends State<ListTile> {
                         widget.body != null
                             ? Row(children: [Expanded(child: widget.body!)])
                             : Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    widget.style == ListTileStyle.header
-                                        ? widget.title.toUpperCase()
-                                        : widget.title,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: context.theme.typography.xs.copyWith(
-                                      color:
-                                          widget.style == ListTileStyle.header
-                                              ? context.colour.muted
-                                              : context.colour.foreground,
-                                    ),
-                                  ),
-                                ),
-                                if (widget.command?.subtitle != null)
+                                children: [
                                   Flexible(
                                     child: Text(
-                                      '  ${widget.command!.subtitle!}',
+                                      widget.style == ListTileStyle.header
+                                          ? widget.title.toUpperCase()
+                                          : widget.title,
                                       overflow: TextOverflow.ellipsis,
                                       style: context.theme.typography.xs
                                           .copyWith(
-                                            color: context.colour.muted,
+                                            color:
+                                                widget.style ==
+                                                    ListTileStyle.header
+                                                ? context.colour.muted
+                                                : context.colour.foreground,
                                           ),
                                     ),
                                   ),
-                              ],
-                            ),
+                                  if (widget.command?.subtitle != null)
+                                    Flexible(
+                                      child: Text(
+                                        '  ${widget.command!.subtitle!}',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: context.theme.typography.xs
+                                            .copyWith(
+                                              color: context.colour.muted,
+                                            ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                         if (widget.command?.description != null)
                           Text(widget.command!.description!),
                         if (widget.details != null) widget.details!,

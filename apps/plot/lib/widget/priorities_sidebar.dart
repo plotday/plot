@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/state/priorities.dart';
-import 'priorities_tree.dart';
+import 'priorities_list.dart';
 
 class PrioritiesSidebar extends StatelessWidget {
   const PrioritiesSidebar({super.key});
@@ -14,7 +14,7 @@ class PrioritiesSidebar extends StatelessWidget {
       builder: (context, state) {
         return FSidebar(
           children: [
-            PrioritiesTreeWidget(
+            PrioritiesList(
               priorities: state.priorities,
               isCompact: true,
             ),
