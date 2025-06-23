@@ -53,60 +53,62 @@ class PriorityLabel extends StatelessWidget {
   final void Function(PriorityId)? onSelect;
 
   @override
-  Widget build(BuildContext context) => Flexible(
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ...ancestors.indexed.map((entry) {
-          final i = entry.$1;
-          final ancestor = entry.$2;
-          final isLast = i == ancestors.length - 1;
-          return DefaultTextStyle(
-            style: DefaultTextStyle.of(context).style.copyWith(
-              color: context.theme.colors.mutedForeground,
-              fontSize: context.theme.typography.xs.fontSize,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Tapable(
-                    onTap: () async {
-                      if (onSelect != null) {
-                        onSelect?.call(ancestor.id);
-                      } else {
-                        final priority = await Priority.getOne(ancestor.id);
-                        if (!context.mounted) return;
-                        context.run<void>(ChangeCurrentPriority(priority));
-                      }
-                    },
-                    child: Text(
-                      ancestor.title, 
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  ),
-                ),
-                if (!isLast || priority != null) Text(Priority.separator),
-              ],
-            ),
-          );
-        }),
-        if (priority != null)
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      ...ancestors.indexed.expand((entry) {
+        final i = entry.$1;
+        final ancestor = entry.$2;
+        final isLast = i == ancestors.length - 1;
+        return [
           Flexible(
             child: DefaultTextStyle(
-              style: DefaultTextStyle.of(
-                context,
-              ).style.copyWith(fontSize: context.theme.typography.xs.fontSize),
-              child: Text(
-                priority!.title, 
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
+              style: DefaultTextStyle.of(context).style.copyWith(
+                color: context.theme.colors.mutedForeground,
+                fontSize: context.theme.typography.xs.fontSize,
+              ),
+              child: Tapable(
+                onTap: () async {
+                  if (onSelect != null) {
+                    onSelect?.call(ancestor.id);
+                  } else {
+                    final priority = await Priority.getOne(ancestor.id);
+                    if (!context.mounted) return;
+                    context.run<void>(ChangeCurrentPriority(priority));
+                  }
+                },
+                child: Text(
+                  ancestor.title, 
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ),
             ),
           ),
-      ],
-    ),
+          if (!isLast || priority != null) 
+            DefaultTextStyle(
+              style: DefaultTextStyle.of(context).style.copyWith(
+                color: context.theme.colors.mutedForeground,
+                fontSize: context.theme.typography.xs.fontSize,
+              ),
+              child: Text(Priority.separator),
+            ),
+        ];
+      }),
+      if (priority != null)
+        Flexible(
+          child: DefaultTextStyle(
+            style: DefaultTextStyle.of(
+              context,
+            ).style.copyWith(fontSize: context.theme.typography.xs.fontSize),
+            child: Text(
+              priority!.title, 
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ),
+    ],
   );
 }
 
