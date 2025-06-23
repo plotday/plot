@@ -74,7 +74,8 @@ class ScheduledDay extends Equatable {
           ? Activity.watch(
               range: range,
               priorityPath: context.path,
-              activityPath: activityContext?.path,
+              path: activityContext?.path,
+              depth: activityContext == null ? 0 : null,
               deleted: deleted,
             )
           : Stream.value(<Activity>[]),
@@ -182,7 +183,8 @@ class ScheduledDay extends Equatable {
           ? Activity.watch(
               range: Day(today),
               priorityPath: context.path,
-              activityPath: activityContext?.path,
+              path: activityContext?.path,
+              depth: activityContext == null ? 0 : null,
               deleted: false,
             )
           : Stream.value(<Activity>[]),

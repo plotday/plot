@@ -15,9 +15,7 @@ class PriorityState extends Equatable {
     this.range,
   }) : draft =
            draft ??
-           Activity(priorityId: context.id, parent: activity, draft: true) {
-    log.info('Draft: ${draft?.path} / ${activity?.path}');
-  }
+           Activity(priorityId: context.id, parent: activity, draft: true);
 
   final Priority context;
   final Activity? activity;

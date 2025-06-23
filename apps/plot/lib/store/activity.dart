@@ -49,7 +49,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     ActivityId? id,
     PriorityId? priorityId,
     Path? priorityPath,
-    Path? activityPath,
     Path? path,
     int? depth,
     bool? pinned,
@@ -64,7 +63,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       id: id,
       priorityId: priorityId,
       priorityPath: priorityPath,
-      activityPath: activityPath,
       path: path,
       depth: depth,
       pinned: pinned,
@@ -81,7 +79,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     ActivityId? id,
     PriorityId? priorityId,
     Path? priorityPath,
-    Path? activityPath,
     Path? path,
     int? depth,
     bool? pinned,
@@ -96,7 +93,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       id: id,
       priorityId: priorityId,
       priorityPath: priorityPath,
-      activityPath: activityPath,
       path: path,
       depth: depth,
       pinned: pinned,
@@ -199,7 +195,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     ActivityId? id,
     PriorityId? priorityId,
     Path? priorityPath,
-    Path? activityPath,
     Path? path,
 
     /* Filters */
@@ -227,32 +222,33 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     if (path != null) {
       startingQuery.where((t) => t.path.equalsValue(path));
     }
+    if (id == null && priorityId == null && path == null && depth == 0) {
+      startingQuery.where((t) => t.path.likeExp(Constant('%.%')).not());
+    }
 
-    final a = Store.get.alias(Store.get.activities, 'a');
+    final includeDescendants = depth == null || depth > 0;
+    var a = includeDescendants
+        ? Store.get.alias(Store.get.activities, 'a')
+        : base;
     var query = startingQuery.join([
-      innerJoin(
-        a,
-        id == null && path == null && priorityId == null
-            ? base.id.equalsExp(a.id)
-            : (priorityId != null
-                      ? a.priorityId.equalsValue(priorityId)
-                      : Constant(true)) &
-                  (path != null
-                      ? a.path.likeExp(base.path + Constant('%')) &
-                            ((getParent
-                                    // This gets all parents and could be optimized to get just the direct parent.
-                                    ? base.path.likeExp(a.path + Constant('%'))
-                                    : Constant(true)) |
-                                (a.path.likeExp(base.path + Constant('%')))) &
-                            (depth == null
-                                ? Constant(true)
-                                : CustomExpression<int>("""
-    LENGTH(a.path) - LENGTH(REPLACE(a.path, '.', '')) -
-    (CASE WHEN base.path IS NULL THEN 0 ELSE LENGTH(base.path) - LENGTH(REPLACE(base.path, '.', '')) END)
-    """).isSmallerOrEqualValue(depth))
-                      : Constant(true)),
-      ),
+      if (includeDescendants)
+        innerJoin(
+          a,
+          a.path.likeExp(base.path + Constant('%')) |
+              (getParent
+                  // This gets all parents and could be optimized to get just the direct parent.
+                  ? base.path.likeExp(a.path + Constant('%'))
+                  : Constant(false)),
+        ),
     ]);
+    if (depth != null && depth > 0) {
+      query.where(
+        CustomExpression<int>("""
+            LENGTH(a.path) - LENGTH(REPLACE(a.path, '.', '')) -
+            (CASE WHEN base.path IS NULL THEN 0 ELSE LENGTH(base.path) - LENGTH(REPLACE(base.path, '.', '')) END)
+          """).isSmallerOrEqualValue(depth),
+      );
+    }
 
     // Add priority path filtering if priorityPath is provided
     if (priorityPath != null) {
@@ -267,11 +263,10 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       ]);
     }
 
-    // Add activity path filtering if activityPath is provided
-    if (activityPath != null) {
+    // Add activity path filtering if path is provided
+    if (path != null) {
       query.where(
-        a.path.equalsValue(activityPath) |
-            a.path.likeExp(Constant('$activityPath.%')),
+        a.path.equalsValue(path) | a.path.likeExp(Constant('$path.%')),
       );
     }
 
