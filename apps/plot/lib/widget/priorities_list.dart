@@ -25,9 +25,7 @@ class PrioritiesList extends StatelessWidget {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
         if (priorities.isEmpty) {
-          return Center(
-            child: Text('No priorities found'),
-          );
+          return Center(child: Text('No priorities found'));
         }
 
         return custom.ReorderableListView<Priority>(
@@ -43,16 +41,34 @@ class PrioritiesList extends StatelessWidget {
                   context.run<void>(ChangeCurrentPriority(priority));
                 }
               },
-              child: PriorityWidget(
-                priority: priority,
-                selected: isSelected,
-              ),
+              child: PriorityWidget(priority: priority, selected: isSelected),
             );
           },
-          onReorder: onReorder ?? (oldIndex, newIndex) {},
+          onReorder:
+              onReorder ??
+              (oldIndex, newIndex) {
+                var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+                var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+
+                final currentPriority = priorities[oldIndex];
+                Priority? previous;
+                if (previousIndex >= 0) {
+                  previous = priorities[previousIndex];
+                }
+                Priority? next;
+                if (nextIndex < priorities.length) {
+                  next = priorities[nextIndex];
+                }
+                currentPriority
+                    .copyWith(
+                      order: Order.between(previous?.order, next?.order),
+                    )
+                    .save();
+              },
           shrinkWrap: true,
         );
       },
     );
   }
 }
+
