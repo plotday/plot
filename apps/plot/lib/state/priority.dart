@@ -92,8 +92,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     emit(
       state.copyWith(
         draft: Activity(
-          priorityId: state.context.id, 
-          parent: state.activity, // Make new activities children of the current activity
+          priorityId: state.context.id,
+          parent: state
+              .activity, // Make new activities children of the current activity
           draft: true,
         ),
       ),
@@ -140,79 +141,98 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     _agendaSubscription?.cancel();
-    _agendaSubscription =
-        Rx.combineLatest3(
-          ScheduledDay.watch(
-            range,
-            context: state.context,
-            activityContext: state.activity,
-          ),
-          Priority.watch(order: PriorityOrder.sorted),
-          ScheduledDay.watchRange(context: state.context),
-          (scheduleMap, priorities, totalRange) =>
-              (scheduleMap, priorities, totalRange),
-        ).listen((data) {
-          final (scheduleMap, priorities, totalRange) = data;
-          final priorityMap = Priority.asMap(priorities);
-          final today = Date.today();
+    if (state.activity == null) {
+      _agendaSubscription =
+          Rx.combineLatest3(
+            ScheduledDay.watch(range, context: state.context),
+            Priority.watch(order: PriorityOrder.sorted),
+            ScheduledDay.watchRange(context: state.context),
+            (scheduleMap, priorities, totalRange) =>
+                (scheduleMap, priorities, totalRange),
+          ).listen((data) {
+            final (scheduleMap, priorities, totalRange) = data;
+            final priorityMap = Priority.asMap(priorities);
+            final today = Date.today();
 
-          final agenda = Agenda.fromScheduledDays(
-            scheduleMap.values.toList(),
-            today: today,
-            priorities: priorityMap,
-          );
+            final agenda = Agenda.fromScheduledDays(
+              scheduleMap.values.toList(),
+              today: today,
+              priorities: priorityMap,
+            );
 
-          final newAgendaItems = agenda.items.reversed.toList();
+            final newAgendaItems = agenda.items.reversed.toList();
 
-          // Calculate the new first index based on header overlap
-          int? first;
-          if (state.range != null && overlappingIndex != -1) {
-            first =
-                newAgendaItems.indexWhere(
-                  (item) => item.when(
-                    activity: (_) => false,
-                    event: (_) => false,
-                    header: (header) => header.date == overlappingDate,
-                  ),
-                ) -
-                overlappingIndex;
-          }
-
-          // Determine done states based on comparison with total available range
-          bool doneStart = true;
-          bool doneEnd = true;
-
-          if (totalRange != null) {
-            final (totalEarliest, totalLatest) = totalRange;
-
-            if (totalEarliest != null && totalLatest != null) {
-              // We're done at start if our current range start is at or before the earliest available data
-              doneStart = range.start <= totalEarliest;
-
-              // We're done at end if our current range end is at or after the latest available data
-              doneEnd =
-                  range.end >=
-                  totalLatest.addDays(
-                    1,
-                  ); // Add 1 day since range.end is exclusive
+            // Calculate the new first index based on header overlap
+            int? first;
+            if (state.range != null && overlappingIndex != -1) {
+              first =
+                  newAgendaItems.indexWhere(
+                    (item) => item.when(
+                      activity: (_) => false,
+                      event: (_) => false,
+                      header: (header) => header.date == overlappingDate,
+                    ),
+                  ) -
+                  overlappingIndex;
             }
-          }
 
-          log.info(
-            'Agenda updated (${range.start} to ${range.end}, first=$first, count=${newAgendaItems.length}, totalRange=$totalRange, doneStart=$doneStart, doneEnd=$doneEnd)',
-          );
-          emit(
-            state.copyWith(
-              range: range,
-              agendaItems: newAgendaItems,
-              first: first,
-              anchorIndex: agenda.items.length - agenda.anchorIndex - 1,
-              moreAgendaItems: true,
-              doneStart: doneStart,
-              doneEnd: doneEnd,
-            ),
-          );
-        });
+            // Determine done states based on comparison with total available range
+            bool doneStart = true;
+            bool doneEnd = true;
+
+            if (totalRange != null) {
+              final (totalEarliest, totalLatest) = totalRange;
+
+              if (totalEarliest != null && totalLatest != null) {
+                // We're done at start if our current range start is at or before the earliest available data
+                doneStart = range.start <= totalEarliest;
+
+                // We're done at end if our current range end is at or after the latest available data
+                doneEnd =
+                    range.end >=
+                    totalLatest.addDays(
+                      1,
+                    ); // Add 1 day since range.end is exclusive
+              }
+            }
+
+            log.info(
+              'Agenda updated (${range.start} to ${range.end}, first=$first, count=${newAgendaItems.length}, totalRange=$totalRange, doneStart=$doneStart, doneEnd=$doneEnd)',
+            );
+            emit(
+              state.copyWith(
+                range: range,
+                agendaItems: newAgendaItems,
+                first: first,
+                anchorIndex: agenda.items.length - agenda.anchorIndex - 1,
+                moreAgendaItems: true,
+                doneStart: doneStart,
+                doneEnd: doneEnd,
+              ),
+            );
+          });
+    } else {
+      _agendaSubscription =
+          Activity.watch(
+            // range: range,
+            priorityPath: state.context.path,
+            path: state.activity!.path,
+          ).listen((activities) {
+            emit(
+              state.copyWith(
+                // range: range,
+                agendaItems: activities
+                    .map((activity) => ActivityAgendaItem(activity))
+                    .toList(),
+                first: 0,
+                anchorIndex: 0,
+                moreAgendaItems: false,
+                doneStart: true,
+                doneEnd: true,
+              ),
+            );
+          });
+    }
   }
 
   void fetchMoreAgendaItems(int first, int count) {
