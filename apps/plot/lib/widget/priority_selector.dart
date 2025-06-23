@@ -17,18 +17,6 @@ class PrioritySelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        PriorityLabel(priority: selected, onSelect: _onSelect),
-        // TODO: Implement a dialog to select a priority
-        // Button(ChangeCurrentPriority()),
-        //     final priority = await (PickPriority(
-        //       initialPriority: selected,
-        //     ).show(context));
-        //     if (priority.present) {
-        //       onSelect?.call(priority.value);
-        //     }
-      ],
-    );
+    return PriorityLabel(priority: selected, onSelect: _onSelect);
   }
 }
