@@ -72,6 +72,7 @@ class Agenda extends Equatable {
           remainingActivities.add(activity);
         }
       }
+      scheduledActivities.sort((a, b) => a.order.compareTo(b.order));
       final activitiesInRange = [...pastActivities, ...scheduledActivities];
 
       // Create ActivityAgendaItem for each activity in the range
