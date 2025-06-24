@@ -316,29 +316,23 @@ class BidirectionalListState extends State<BidirectionalList> {
     }
 
     // Determine scroll direction
-    bool scrollingUp =
+    final scrollingUp =
         _scrollController.position.userScrollDirection ==
         ScrollDirection.forward;
-    bool scrollingDown =
+    final scrollingDown =
         _scrollController.position.userScrollDirection ==
         ScrollDirection.reverse;
 
     // Calculate how many items we need to fetch
     final itemsPerPage = averageItemsPerPage();
-    int itemsToFetchBefore = 0;
-    int itemsToFetchAfter = 0;
-
-    // Only fetch in the direction we're scrolling or if we're below the threshold
-    if (pagesBefore() < widget.overflow && !widget.doneStart) {
-      final targetPages = widget.overflow * (scrollingUp ? 1.5 : 1);
-      itemsToFetchBefore = ((targetPages - pagesBefore()) * itemsPerPage)
-          .ceil();
-    }
-
-    if (pagesAfter() < widget.overflow && !widget.doneEnd) {
-      final targetPages = widget.overflow * (scrollingDown ? 1.5 : 1);
-      itemsToFetchAfter = ((targetPages - pagesAfter()) * itemsPerPage).ceil();
-    }
+    final itemsToFetchBefore =
+        ((widget.overflow * (scrollingUp ? 1.5 : 1) - pagesBefore()) *
+                itemsPerPage)
+            .ceil();
+    final itemsToFetchAfter =
+        ((widget.overflow * (scrollingDown ? 1.5 : 1) - pagesAfter()) *
+                itemsPerPage)
+            .ceil();
 
     if (itemsToFetchBefore > 0 || itemsToFetchAfter > 0) {
       _loadMoreItems(itemsToFetchBefore, itemsToFetchAfter);
