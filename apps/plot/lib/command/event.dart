@@ -13,9 +13,7 @@ class ArchiveEventCommand extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    // await context
-    //     .read<ScheduleBloc>()
-    //     .update(event.copyWith(deletedAt: Value(DateTime.now())));
+    await event.copyWith(deletedAt: Value(DateTime.now())).save();
     return null;
   }
 }
@@ -71,19 +69,20 @@ class ChangeEventResponse extends ShowCommands<EventResponse> {
 
   @override
   void onSelect(BuildContext context, EventResponse value) async {
-    // TODO: Update event response through bloc
-    // await context
-    //     .read<ScheduleBloc>()
-    //     .update(event.copyWith(response: Value(value)));
+    await event
+        .copyWith(
+          response: Value(value),
+          deletedAt: value == EventResponse.declined
+              ? Value(DateTime.now())
+              : Value(null),
+        )
+        .save();
   }
 }
 
 class PickEventResponse extends Commands<EventResponse> {
   PickEventResponse()
-    : super(
-        prompt: 'Select response',
-        groups: [EventResponseCommandGroup()],
-      );
+    : super(prompt: 'Select response', groups: [EventResponseCommandGroup()]);
 }
 
 class EventResponseCommandGroup extends StaticCommandGroup {
