@@ -11,6 +11,56 @@ import 'package:plot/command/command.dart';
 import 'loading.dart';
 import 'logging.dart';
 
+@RoutePage(name: "EventRoute")
+class EventWrapper extends AutoRouter implements AutoRouteWrapper {
+  EventWrapper({
+    Event? event,
+    EventId? eventId,
+    @PathParam("eventId") String? eventIdString,
+    super.key,
+  }) {
+    final resolvedEventId =
+        event?.id ??
+        eventId ??
+        (eventIdString != null
+            ? EventId.fromShortString(eventIdString)
+            : null);
+    assert(resolvedEventId != null, 'An event must be provided.');
+    this.eventId = resolvedEventId!;
+  }
+
+  late final EventId eventId;
+
+  @override
+  Widget wrappedRoute(BuildContext context) {
+    return FutureBuilder<(Priority, Event)>(
+      future: Event.getOne(eventId, withPriority: true).then((event) async {
+        final priority = event.priority ?? await Priority.getOne(event.priorityId!);
+        return (priority, event);
+      }),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          log.warning(
+            "Failed to load Priority and Event",
+            snapshot.error,
+            snapshot.stackTrace,
+          );
+        }
+        if (!snapshot.hasData) {
+          return const LoadingPage();
+        }
+
+        final (priority, event) = snapshot.data!;
+        return BlocProvider(
+          create: (_) => PriorityBloc(priority: priority, event: event),
+          key: ValueKey(event.id),
+          child: this,
+        );
+      },
+    );
+  }
+}
+
 @RoutePage(name: "ActivityRoute")
 class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
   ActivityWrapper({
@@ -108,8 +158,8 @@ class ActivityPage extends StatelessWidget {
               child: Scaffold(
                 translucent: true,
                 header: Header(
-                  title: state.activity?.title,
-                  main: state.activity == null
+                  title: state.activity?.title ?? state.event?.name,
+                  main: state.activity == null && state.event == null
                       ? PrioritySelector(
                           selected: state.context,
                           onSelect: (p) =>

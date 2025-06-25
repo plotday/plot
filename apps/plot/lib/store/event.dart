@@ -122,7 +122,7 @@ class Event extends EventRow {
       if (context != null) {
         joinedQuery.where(
           Store.get.priorities.path.equalsValue(context.path) |
-          Store.get.priorities.path.likeExp(Constant('${context.path}%'))
+              Store.get.priorities.path.likeExp(Constant('${context.path}%')),
         );
       }
 
@@ -154,6 +154,17 @@ class Event extends EventRow {
         .map((rows) => rows.map((row) => Event.fromStore(row)).toList());
   }
 
+  static Future<Event> getOne(EventId id, {bool withPriority = false}) async {
+    final query = Store.get.select(table)
+      ..where((t) => t.id.equals(id.toBytes()));
+    final row = await query.getSingle();
+    if (withPriority && row.priorityId != null) {
+      final priority = await Priority.getOne(row.priorityId!);
+      return Event.fromStore(row, priority: priority);
+    }
+    return Event.fromStore(row);
+  }
+
   static Stream<Event> watchOne(EventId id, {bool withPriority = false}) {
     // TODO if not found, pull
     final query = Store.get.select(table)
@@ -179,7 +190,7 @@ class Event extends EventRow {
     final today = Date.today();
     final wideRange = DateRangeCustom(
       today.subDays(365 * 10), // 10 years ago
-      today.addDays(365 * 10),  // 10 years from now
+      today.addDays(365 * 10), // 10 years from now
     );
 
     final eventsStream = watch(
@@ -317,6 +328,7 @@ class Event extends EventRow {
   DateTimeRange get at => DateTimeRange(start, end);
   Duration get duration => at.duration;
   bool get isAllDay => at.duration >= const Duration(hours: 22);
+  Path get path => Path("e_${id.toShortString()}");
 
   BalanceType get balanceType {
     switch (response) {

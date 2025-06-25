@@ -220,13 +220,17 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       startingQuery.where((t) => t.priorityId.equalsValue(priorityId));
     }
     if (path != null) {
-      startingQuery.where((t) => t.path.equalsValue(path));
+      if (depth == 0) {
+        startingQuery.where((t) => t.path.equalsValue(path));
+      } else {
+        startingQuery.where((t) => t.path.likeExp(Constant('$path%')));
+      }
     }
     if (id == null && priorityId == null && path == null && depth == 0) {
       startingQuery.where((t) => t.path.likeExp(Constant('%.%')).not());
     }
 
-    final includeDescendants = depth == null || depth > 0;
+    final includeDescendants = path == null && (depth == null || depth > 0);
     var a = includeDescendants
         ? Store.get.alias(Store.get.activities, 'a')
         : base;
@@ -432,6 +436,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   Activity({
     Order? order,
     this.parent,
+    this.parentEvent,
     required super.priorityId,
     super.note,
     super.draft = false,
@@ -445,30 +450,34 @@ class Activity extends ActivityRow implements Comparable<Activity> {
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
          order: order ?? Order.first(),
-         path: Path.generate(parent: parent?.path),
+         path: Path.generate(parent: parent?.path ?? parentEvent?.path),
        ) {
     parent?._addChild(this);
   }
 
-  Activity.fromStore(ActivityRow row, {this.parent, List<Activity>? children})
-    : children = children ?? [],
-      super(
-        id: row.id,
-        priorityId: row.priorityId,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
-        draft: row.draft,
-        note: row.note,
-        order: row.order,
-        path: row.path,
-        private: row.private,
-        pinned: row.pinned,
-        createdBy: row.createdBy,
-        doAt: row.doAt,
-        doneAt: row.doneAt,
-        eventSeries: row.eventSeries,
-      ) {
+  Activity.fromStore(
+    ActivityRow row, {
+    this.parent,
+    this.parentEvent,
+    List<Activity>? children,
+  }) : children = children ?? [],
+       super(
+         id: row.id,
+         priorityId: row.priorityId,
+         createdAt: row.createdAt,
+         updatedAt: row.updatedAt,
+         deletedAt: row.deletedAt,
+         draft: row.draft,
+         note: row.note,
+         order: row.order,
+         path: row.path,
+         private: row.private,
+         pinned: row.pinned,
+         createdBy: row.createdBy,
+         doAt: row.doAt,
+         doneAt: row.doneAt,
+         eventSeries: row.eventSeries,
+       ) {
     parent?._addChild(this);
   }
 
@@ -486,6 +495,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   static const separator = ' › ';
 
   final Activity? parent;
+  final Event? parentEvent;
   List<Activity> children;
 
   List<Activity> descendants() {
@@ -532,6 +542,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Value<DateTime?> doneAt = const Value.absent(),
     Value<String?> note = const Value.absent(),
     Activity? parent,
+    Event? parentEvent,
     Value<String?> eventSeries = const Value.absent(),
   }) {
     final publish = this.draft && draft == false;
@@ -570,6 +581,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         eventSeries: eventSeries,
       ),
       parent: parent ?? this.parent,
+      parentEvent: parentEvent ?? this.parentEvent,
       children: children,
     );
   }

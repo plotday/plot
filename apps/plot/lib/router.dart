@@ -77,6 +77,11 @@ class AppRouter extends RootStackRouter {
           path: 'a/:activityId',
           children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
         ),
+        AutoRoute(
+          page: EventRoute.page,
+          path: 'e/:eventId',
+          children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
+        ),
       ],
     ),
   ];

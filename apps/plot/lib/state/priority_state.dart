@@ -4,6 +4,7 @@ class PriorityState extends Equatable {
   PriorityState({
     required this.context,
     this.activity,
+    this.event,
     Activity? draft,
     this.pinned = const [],
     this.agendaItems = const [],
@@ -15,10 +16,16 @@ class PriorityState extends Equatable {
     this.range,
   }) : draft =
            draft ??
-           Activity(priorityId: context.id, parent: activity, draft: true);
+           Activity(
+             priorityId: context.id,
+             parent: activity,
+             parentEvent: event,
+             draft: true,
+           );
 
   final Priority context;
   final Activity? activity;
+  final Event? event;
   final Activity draft;
   final List<AgendaItem> pinned;
   final List<AgendaItem> agendaItems;
@@ -40,6 +47,7 @@ class PriorityState extends Equatable {
   PriorityState copyWith({
     Priority? context,
     Activity? activity,
+    Event? event,
     Activity? draft,
     List<AgendaItem>? pinned,
     List<AgendaItem>? agendaItems,
@@ -53,6 +61,7 @@ class PriorityState extends Equatable {
     return PriorityState(
       context: context ?? this.context,
       activity: activity ?? this.activity,
+      event: event ?? this.event,
       draft: draft ?? this.draft,
       pinned: pinned ?? this.pinned,
       agendaItems: agendaItems ?? this.agendaItems,
@@ -69,6 +78,7 @@ class PriorityState extends Equatable {
   List<Object?> get props => [
     context,
     activity,
+    event,
     draft,
     pinned,
     agendaItems,

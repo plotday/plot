@@ -9,11 +9,15 @@ extension type Path(String value) {
     if (parent != null) {
       prefix = "${parent.value}.";
     }
-    return Path(prefix +
-        String.fromCharCodes(Iterable.generate(
-          4,
-          (_) => characters.codeUnitAt(random.nextInt(characters.length)),
-        )));
+    return Path(
+      prefix +
+          String.fromCharCodes(
+            Iterable.generate(
+              4,
+              (_) => characters.codeUnitAt(random.nextInt(characters.length)),
+            ),
+          ),
+    );
   }
 
   int get depth => value.split('.').length;

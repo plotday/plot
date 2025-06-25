@@ -171,9 +171,7 @@ class EventWidget extends StatelessWidget {
       icon: PlotIcon.event,
       leadingWidth: 60.0,
       leadingPadding: true,
-      command: event.priority != null
-          ? ChangeCurrentPriority(event.priority!)
-          : null,
+      command: ChangeCurrentEvent(event),
       trailingCommands: [ChangeEventPriority(event)],
       selected: selected,
       onHover: onHover,

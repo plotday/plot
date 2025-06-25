@@ -11,13 +11,18 @@ import 'logging.dart';
 part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
-  PriorityBloc({required Priority priority, Activity? activity})
+  PriorityBloc({required Priority priority, Activity? activity, Event? event})
     : _subscriptions = [],
       _agendaSubscription = null,
-      super(PriorityState(context: priority, activity: activity)) {
+      super(
+        PriorityState(context: priority, activity: activity, event: event),
+      ) {
     _loadPriority(priority);
     if (activity != null) {
       _loadActivity(activity);
+    }
+    if (event != null) {
+      _loadEvent(event);
     }
 
     final today = Date.today();
@@ -80,6 +85,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
+  void _loadEvent(Event event) {
+    // Watch the event
+    _subscriptions.add(
+      Event.watchOne(event.id).listen((watchedEvent) {
+        log.info('Event updated');
+        emit(state.copyWith(event: watchedEvent));
+      }),
+    );
+  }
+
   Future<void> save(Activity activity) async {
     await activity.save();
   }
@@ -93,8 +108,8 @@ class PriorityBloc extends Cubit<PriorityState> {
       state.copyWith(
         draft: Activity(
           priorityId: state.context.id,
-          parent: state
-              .activity, // Make new activities children of the current activity
+          parent: state.activity,
+          parentEvent: state.event,
           draft: true,
         ),
       ),
@@ -141,7 +156,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     _agendaSubscription?.cancel();
-    if (state.activity == null) {
+    if (state.activity == null && state.event == null) {
       _agendaSubscription =
           Rx.combineLatest3(
             ScheduledDay.watch(range, context: state.context),
@@ -216,7 +231,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           Activity.watch(
             // range: range,
             priorityPath: state.context.path,
-            path: state.activity!.path,
+            path: state.activity?.path ?? state.event?.path,
           ).listen((activities) {
             emit(
               state.copyWith(
