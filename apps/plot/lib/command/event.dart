@@ -58,3 +58,57 @@ class ChangeEventPriority extends ShowCommands<Priority> {
     //     .update(event.copyWith(priorityId: Value(value.id)));
   }
 }
+
+class ChangeEventResponse extends ShowCommands<EventResponse> {
+  ChangeEventResponse(this.event)
+    : super(
+        title: 'Change Response',
+        icon: PlotIcon.event,
+        commands: (context) => PickEventResponse(),
+      );
+
+  final Event event;
+
+  @override
+  void onSelect(BuildContext context, EventResponse value) async {
+    // TODO: Update event response through bloc
+    // await context
+    //     .read<ScheduleBloc>()
+    //     .update(event.copyWith(response: Value(value)));
+  }
+}
+
+class PickEventResponse extends Commands<EventResponse> {
+  PickEventResponse()
+    : super(
+        prompt: 'Select response',
+        groups: [EventResponseCommandGroup()],
+      );
+}
+
+class EventResponseCommandGroup extends StaticCommandGroup {
+  EventResponseCommandGroup()
+    : super(
+        title: 'Response Options',
+        commands: [
+          ValueCommand<EventResponse>(
+            title: 'Accepted',
+            subtitle: 'Accept this event',
+            icon: PlotIcon.done,
+            value: EventResponse.accepted,
+          ),
+          ValueCommand<EventResponse>(
+            title: 'Declined',
+            subtitle: 'Decline this event',
+            icon: PlotIcon.delete,
+            value: EventResponse.declined,
+          ),
+          ValueCommand<EventResponse>(
+            title: 'Tentative',
+            subtitle: 'Maybe attend this event',
+            icon: PlotIcon.priority,
+            value: EventResponse.tentative,
+          ),
+        ],
+      );
+}

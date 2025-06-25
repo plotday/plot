@@ -172,7 +172,10 @@ class EventWidget extends StatelessWidget {
       leadingWidth: 60.0,
       leadingPadding: true,
       command: ChangeCurrentEvent(event),
-      trailingCommands: [ChangeEventPriority(event)],
+      trailingCommands: [
+        ChangeEventPriority(event),
+        ChangeEventResponse(event),
+      ],
       selected: selected,
       onHover: onHover,
       title: event.name ?? 'Untitled Event',
