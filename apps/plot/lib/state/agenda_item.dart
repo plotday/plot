@@ -35,6 +35,7 @@ class Agenda extends Equatable {
     required Date today,
     Date? anchor,
     required Map<PriorityId, Priority> priorities,
+    Priority? context,
   }) {
     anchor ??= today;
     final agendaItems = <AgendaItem>[];
@@ -97,7 +98,13 @@ class Agenda extends Equatable {
         for (final priority in sortedPriorities) {
           final activitiesForPriority = priorityGroups[priority]!;
 
-          agendaItems.add(HeaderAgendaItem(priority: priority));
+          // Skip adding HeaderAgendaItem if this is the only priority and it equals contextPriority
+          if (priorityGroups.length > 1 || priority != context) {
+            print(
+              'Adding header for priority: ${priority.title} because ${priorityGroups.length} groups found or priority is not ${context?.title}',
+            );
+            agendaItems.add(HeaderAgendaItem(priority: priority));
+          }
 
           agendaItems.addAll(
             activitiesForPriority.map((a) => ActivityAgendaItem(a)),

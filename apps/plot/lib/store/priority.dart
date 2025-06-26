@@ -517,14 +517,4 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     // Start the recursive fold process with the initial value and starting from depth 0
     return foldRecursively(this, initialValue, 0);
   }
-
-  @override
-  bool operator ==(Object other) {
-    return super == other && children == (other as Priority).children;
-  }
-
-  @override
-  int get hashCode {
-    return Object.hash(super.hashCode, children.hashCode);
-  }
 }

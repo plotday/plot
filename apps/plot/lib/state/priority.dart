@@ -109,7 +109,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     final newShowArchived = !state.showArchived;
     log.info('Toggling showArchived to $newShowArchived');
     emit(state.copyWith(showArchived: newShowArchived));
-    
+
     // Reload pinned activities and agenda items with new archived filter
     _loadPinnedActivities();
     if (state.range != null) {
@@ -123,16 +123,14 @@ class PriorityBloc extends Cubit<PriorityState> {
       _subscriptions[1].cancel();
       _subscriptions.removeAt(1);
     }
-    
+
     // Watch pinned activities with current archived filter
     _subscriptions.add(
       Activity.watch(
-        priorityId: state.context.id, 
-        pinned: true, 
+        priorityId: state.context.id,
+        pinned: true,
         deleted: state.showArchived,
-      ).listen((
-        activities,
-      ) {
+      ).listen((activities) {
         log.info('Pinned activities updated');
         emit(
           state.copyWith(
@@ -186,9 +184,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (state.activity == null && state.event == null) {
       _agendaSubscription =
           Rx.combineLatest3(
-            ScheduledDay.watch(range, context: state.context, deleted: state.showArchived),
+            ScheduledDay.watch(
+              range,
+              context: state.context,
+              deleted: state.showArchived,
+            ),
             Priority.watch(order: PriorityOrder.sorted),
-            ScheduledDay.watchRange(context: state.context, deleted: state.showArchived),
+            ScheduledDay.watchRange(
+              context: state.context,
+              deleted: state.showArchived,
+            ),
             (scheduleMap, priorities, totalRange) =>
                 (scheduleMap, priorities, totalRange),
           ).listen((data) {
@@ -200,6 +205,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               scheduleMap.values.toList(),
               today: today,
               priorities: priorityMap,
+              context: state.context,
             );
 
             final newAgendaItems = agenda.items.reversed.toList();
