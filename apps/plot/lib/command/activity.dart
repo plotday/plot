@@ -68,23 +68,6 @@ class ActivityCommandGroup extends CommandGroup {
   }
 }
 
-class PickActivity extends Commands<Activity> {
-  PickActivity({
-    super.prompt = 'Pick an activity',
-    this.priorityId,
-    this.initialActivity,
-  }) : super(
-         groups: [ActivityCommandGroup(priorityId: priorityId)],
-         secondaryCommand: priorityId != null
-             ? (prompt) =>
-                   NewActivity(priorityId: priorityId!, parent: initialActivity)
-             : null,
-       );
-
-  final PriorityId? priorityId;
-  final Activity? initialActivity;
-}
-
 class ChangeCurrentActivity extends Command {
   ChangeCurrentActivity(Activity activity)
     // ignore: prefer_initializing_formals
@@ -103,27 +86,6 @@ class ChangeCurrentActivity extends Command {
   Future<CommandReturn?> run(BuildContext context) async {
     await context.router.navigate(ActivityRoute(activityId: activityId));
     return null;
-  }
-}
-
-class PickCurrentActivity extends ShowCommands<Activity> {
-  PickCurrentActivity({this.priorityId})
-    : super(
-        title: 'Pick Current Activity',
-        icon: PlotIcon.activity,
-        shortcut: const SingleActivator(LogicalKeyboardKey.keyK, meta: true),
-        commands: (context) => PickActivity(
-          prompt: 'Change Current Activity',
-          priorityId: priorityId,
-        ),
-      );
-
-  final PriorityId? priorityId;
-
-  @override
-  void onSelect(BuildContext context, Activity value) async {
-    log.info('Change current activity to ${value.title}');
-    ChangeCurrentActivity(value).run(context);
   }
 }
 
@@ -174,19 +136,6 @@ class ArchiveActivity extends Command {
       Posthog().capture(eventName: 'Activity Archived');
     }
     return null;
-  }
-}
-
-class NewActivity extends Command {
-  NewActivity({required this.priorityId, this.parent})
-    : super(title: 'New Activity', icon: PlotIcon.add);
-
-  final PriorityId priorityId;
-  final Activity? parent;
-
-  @override
-  Future<CommandReturn?> run(BuildContext context) async {
-    return CommandPage(NewActivityPage(priorityId: priorityId, parent: parent));
   }
 }
 
