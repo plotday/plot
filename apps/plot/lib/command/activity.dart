@@ -145,16 +145,34 @@ class AddActivity extends Command {
 }
 
 class ArchiveActivity extends Command {
-  ArchiveActivity(this._activity)
-    : super(title: 'Archive', icon: PlotIcon.delete);
+  ArchiveActivity(Activity activity)
+    : _activity = Future.value(activity),
+      super(
+        title: activity.deletedAt != null ? 'Un-archive' : 'Archive',
+        icon: activity.deletedAt != null
+            ? PlotIcon.unarchive
+            : PlotIcon.archive,
+      );
+
+  ArchiveActivity.future(this._activity)
+    : super(title: 'Archive', icon: PlotIcon.archive);
 
   final Future<Activity> _activity;
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
     final activity = await _activity;
-    await activity.delete();
-    Posthog().capture(eventName: 'Activity Archived');
+    final isArchived = activity.deletedAt != null;
+
+    if (isArchived) {
+      // Un-archive: set deletedAt to null
+      await activity.copyWith(deletedAt: const Value(null)).save();
+      Posthog().capture(eventName: 'Activity Un-archived');
+    } else {
+      // Archive: set deletedAt to current time
+      await activity.delete();
+      Posthog().capture(eventName: 'Activity Archived');
+    }
     return null;
   }
 }
@@ -323,7 +341,7 @@ Command activityPrimaryCommand(Activity activity) => CommandWrapper(
 List<Command> activitySecondaryCommands(Activity activity) => [
   PickScheduleActivity(activity),
   PinActivity(activity),
-  ArchiveActivity(Future.value(activity)),
+  ArchiveActivity(activity),
 ];
 
 List<Command> activityCommands(Activity activity) => [

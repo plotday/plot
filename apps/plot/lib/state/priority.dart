@@ -59,19 +59,8 @@ class PriorityBloc extends Cubit<PriorityState> {
         }),
       );
 
-      // Watch pinned activities
-      _subscriptions.add(
-        Activity.watch(priorityId: priority.id, pinned: true).listen((
-          activities,
-        ) {
-          log.info('Pinned activities updated');
-          emit(
-            state.copyWith(
-              pinned: activities.map((a) => ActivityAgendaItem(a)).toList(),
-            ),
-          );
-        }),
-      );
+      // Load pinned activities
+      _loadPinnedActivities();
     }
   }
 
@@ -113,6 +102,44 @@ class PriorityBloc extends Cubit<PriorityState> {
           draft: true,
         ),
       ),
+    );
+  }
+
+  void toggleShowArchived() {
+    final newShowArchived = !state.showArchived;
+    log.info('Toggling showArchived to $newShowArchived');
+    emit(state.copyWith(showArchived: newShowArchived));
+    
+    // Reload pinned activities and agenda items with new archived filter
+    _loadPinnedActivities();
+    if (state.range != null) {
+      _loadAgendaItems(state.range!);
+    }
+  }
+
+  void _loadPinnedActivities() {
+    // Cancel existing pinned subscription if it exists
+    if (_subscriptions.length > 1) {
+      _subscriptions[1].cancel();
+      _subscriptions.removeAt(1);
+    }
+    
+    // Watch pinned activities with current archived filter
+    _subscriptions.add(
+      Activity.watch(
+        priorityId: state.context.id, 
+        pinned: true, 
+        deleted: state.showArchived,
+      ).listen((
+        activities,
+      ) {
+        log.info('Pinned activities updated');
+        emit(
+          state.copyWith(
+            pinned: activities.map((a) => ActivityAgendaItem(a)).toList(),
+          ),
+        );
+      }),
     );
   }
 
@@ -159,9 +186,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (state.activity == null && state.event == null) {
       _agendaSubscription =
           Rx.combineLatest3(
-            ScheduledDay.watch(range, context: state.context),
+            ScheduledDay.watch(range, context: state.context, deleted: state.showArchived),
             Priority.watch(order: PriorityOrder.sorted),
-            ScheduledDay.watchRange(context: state.context),
+            ScheduledDay.watchRange(context: state.context, deleted: state.showArchived),
             (scheduleMap, priorities, totalRange) =>
                 (scheduleMap, priorities, totalRange),
           ).listen((data) {
@@ -232,6 +259,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             // range: range,
             priorityPath: state.context.path,
             path: state.activity?.path ?? state.event?.path,
+            deleted: state.showArchived,
           ).listen((activities) {
             emit(
               state.copyWith(

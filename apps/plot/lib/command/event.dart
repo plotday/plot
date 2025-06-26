@@ -7,7 +7,7 @@ import 'command.dart';
 
 class ArchiveEventCommand extends Command {
   ArchiveEventCommand(this.event)
-    : super(title: 'Archive Event', icon: PlotIcon.delete);
+    : super(title: 'Archive Event', icon: PlotIcon.archive);
 
   final Event event;
 
@@ -99,7 +99,7 @@ class EventResponseCommandGroup extends StaticCommandGroup {
           ValueCommand<EventResponse>(
             title: 'Declined',
             subtitle: 'Decline this event',
-            icon: PlotIcon.delete,
+            icon: PlotIcon.archive,
             value: EventResponse.declined,
           ),
           ValueCommand<EventResponse>(

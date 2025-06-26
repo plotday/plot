@@ -112,7 +112,10 @@ class PriorityPage extends StatelessWidget {
                               context.run<void>(ChangeCurrentPriority(p)),
                         )
                       : null,
-                  commands: currentPriorityCommands(state.context),
+                  commands: [
+                    ...currentPriorityCommands(state.context),
+                    ToggleShowArchived(showArchived: state.showArchived),
+                  ],
                 ),
                 sidebar: PrioritiesSidebar(),
                 body: Column(

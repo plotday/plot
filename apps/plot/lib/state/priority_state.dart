@@ -14,6 +14,7 @@ class PriorityState extends Equatable {
     this.doneStart = false,
     this.doneEnd = false,
     this.range,
+    this.showArchived = false,
   }) : draft =
            draft ??
            Activity(
@@ -35,6 +36,7 @@ class PriorityState extends Equatable {
   final bool doneEnd;
   final int first;
   final DateRange? range;
+  final bool showArchived;
 
   AgendaItem? atIndex(int index) {
     index += first;
@@ -57,6 +59,7 @@ class PriorityState extends Equatable {
     bool? doneStart,
     bool? doneEnd,
     DateRange? range,
+    bool? showArchived,
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -71,6 +74,7 @@ class PriorityState extends Equatable {
       doneStart: doneStart ?? this.doneStart,
       doneEnd: doneEnd ?? this.doneEnd,
       range: range ?? this.range,
+      showArchived: showArchived ?? this.showArchived,
     );
   }
 
@@ -88,5 +92,6 @@ class PriorityState extends Equatable {
     doneEnd,
     first,
     range,
+    showArchived,
   ];
 }

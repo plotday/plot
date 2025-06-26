@@ -23,7 +23,7 @@ class ScheduledDay extends Equatable {
             context: context,
             deleted: deleted,
           ),
-          _watchToday(today, context: context),
+          _watchToday(today, context: context, deleted: deleted),
           (rangeMap, todaySchedule) {
             final result = Map<Date, ScheduledDay>.from(rangeMap);
             // Only include today if it has events or activities
@@ -121,10 +121,10 @@ class ScheduledDay extends Equatable {
     return Date.current().switchMap((today) => _watchToday(today));
   }
 
-  static Stream<(Date?, Date?)?> watchRange({Priority? context}) {
+  static Stream<(Date?, Date?)?> watchRange({Priority? context, bool? deleted = false}) {
     return Rx.combineLatest2(
-      Event.watchRange(deleted: false, context: context),
-      Activity.watchRange(context: context, deleted: false),
+      Event.watchRange(deleted: deleted, context: context),
+      Activity.watchRange(context: context, deleted: deleted),
       (eventRange, activityRange) {
         // If neither events nor activities exist, return null
         if (eventRange == null && activityRange == null) {
@@ -163,7 +163,7 @@ class ScheduledDay extends Equatable {
     );
   }
 
-  static Stream<ScheduledDay> _watchToday(Date today, {Priority? context}) {
+  static Stream<ScheduledDay> _watchToday(Date today, {Priority? context, bool? deleted = false}) {
     return Rx.combineLatest2(
       Priority.watchDefault(),
       context != null
@@ -171,7 +171,7 @@ class ScheduledDay extends Equatable {
               range: Day(today),
               priorityPath: context.path,
               depth: 0,
-              deleted: false,
+              deleted: deleted,
             )
           : Stream.value(<Activity>[]),
       (Priority defaultPriority, List<Activity> allActivities) =>
@@ -179,7 +179,7 @@ class ScheduledDay extends Equatable {
     ).switchMap(((Priority, List<Activity>) tuple) {
       final defaultPriority = tuple.$1;
       final allActivities = tuple.$2;
-      return Event.watch(today.toDateRange(), context: context).transform(
+      return Event.watch(today.toDateRange(), context: context, deleted: deleted).transform(
         ExpiringStreamTransformer((events) {
           final now = DateTime.now();
           final currentEvent = events.any((event) => event.at.includes(now));

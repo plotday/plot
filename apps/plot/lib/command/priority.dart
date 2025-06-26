@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'logging.dart';
@@ -8,6 +9,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/page/edit_priority.dart';
+import 'package:plot/state/priority.dart';
 
 class _PriorityValue extends ValueCommand<Priority?> {
   _PriorityValue(Priority? priority)
@@ -154,7 +156,7 @@ class EditPriority extends Command {
 
 class ArchivePriority extends Command {
   ArchivePriority(this._priority)
-    : super(title: 'Archive', icon: PlotIcon.delete);
+    : super(title: 'Archive', icon: PlotIcon.archive);
 
   final Future<Priority> _priority;
 
@@ -234,6 +236,24 @@ List<Command> currentPriorityCommands(Priority priority) => [
   ...prioritySecondaryCommands(priority),
   NewPriority(parent: priority),
 ];
+
+class ToggleShowArchived extends Command {
+  ToggleShowArchived({required this.showArchived})
+    : super(
+        title: showArchived ? 'Show Active Items' : 'Show Archived Items',
+        subtitle: showArchived ? 'Hide archived items' : 'Show archived items',
+        icon: showArchived ? PlotIcon.hideArchived : PlotIcon.unarchive,
+      );
+
+  final bool showArchived;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    final bloc = context.read<PriorityBloc>();
+    bloc.toggleShowArchived();
+    return null;
+  }
+}
 
 final prioritiesCommands = StaticCommandGroup(
   title: 'Current Priority',

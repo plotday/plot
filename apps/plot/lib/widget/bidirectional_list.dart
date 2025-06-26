@@ -442,7 +442,7 @@ class BidirectionalListState extends State<BidirectionalList> {
             if (widget.count > 0 && !widget.doneStart) spinner,
             SliverReorderableList(
               key: _upListKey,
-              itemCount: _upCount - _shrinkUp,
+              itemCount: max(_upCount - _shrinkUp, 0),
               itemBuilder: (context, index) {
                 final itemIndex =
                     widget.first + _upCount - _shrinkUp - index - 1;
@@ -460,7 +460,7 @@ class BidirectionalListState extends State<BidirectionalList> {
             ),
             SliverReorderableList(
               key: _downListKey,
-              itemCount: _downCount - _shrinkDown,
+              itemCount: max(_downCount - _shrinkDown, 0),
               itemBuilder: (context, index) {
                 final itemIndex = widget.first + _upCount + index;
                 final isSelected = itemIndex == widget.controller.selected;
