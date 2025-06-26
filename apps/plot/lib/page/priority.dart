@@ -7,6 +7,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_list.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/agenda_item.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/command/command.dart';
 import 'loading.dart';
 import 'logging.dart';
@@ -47,9 +48,17 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
           return const LoadingPage();
         }
 
+        final priority = snapshot.data!;
+
+        // Set the current priority in NowBloc when entering this route
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          log.info('Setting current priority to ${priority.title}');
+          context.read<NowBloc>().setPriority(priority);
+        });
+
         return BlocProvider(
-          create: (_) => PriorityBloc(priority: snapshot.data!, activity: null),
-          key: ValueKey(snapshot.data!.id),
+          create: (_) => PriorityBloc(priority: priority, activity: null),
+          key: ValueKey(priority.id),
           child: this,
         );
       },
@@ -308,4 +317,3 @@ class PriorityPage extends StatelessWidget {
     );
   }
 }
-

@@ -7,6 +7,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_list.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/agenda_item.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/command/command.dart';
 import 'loading.dart';
 import 'logging.dart';
@@ -51,6 +52,13 @@ class EventWrapper extends AutoRouter implements AutoRouteWrapper {
         }
 
         final (priority, event) = snapshot.data!;
+        
+        // Set the current priority in NowBloc when entering this route
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          log.info('Setting current priority to ${priority.title} (from event ${event.name ?? "Untitled Event"})');
+          context.read<NowBloc>().setPriority(priority);
+        });
+
         return BlocProvider(
           create: (_) => PriorityBloc(priority: priority, event: event),
           key: ValueKey(event.id),
@@ -101,6 +109,13 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
         }
 
         final (priority, activity) = snapshot.data!;
+        
+        // Set the current priority in NowBloc when entering this route
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          log.info('Setting current priority to ${priority.title} (from activity ${activity.title})');
+          context.read<NowBloc>().setPriority(priority);
+        });
+
         return BlocProvider(
           create: (_) => PriorityBloc(priority: priority, activity: activity),
           key: ValueKey(activity.id),
