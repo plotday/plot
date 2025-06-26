@@ -328,7 +328,9 @@ class Event extends EventRow {
   DateTimeRange get at => DateTimeRange(start, end);
   Duration get duration => at.duration;
   bool get isAllDay => at.duration >= const Duration(hours: 22);
-  Path get path => Path("e_${id.toShortString()}");
+  Path get path => Path(
+    "e_${BaseConversion(from: base10, to: base58)(series.hashCode.toString())}",
+  );
 
   BalanceType get balanceType {
     switch (response) {

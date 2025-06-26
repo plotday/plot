@@ -9,6 +9,7 @@ import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:remove_markdown/remove_markdown.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:b/b.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
