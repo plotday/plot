@@ -85,13 +85,19 @@ class Agenda extends Equatable {
           priorityGroups.putIfAbsent(activityPriority, () => []).add(activity);
         }
 
-        // Sort priority groups
+        // Sort priority groups with context priority last
         final sortedPriorities =
             priorityGroups.keys
                 .where((p) => p != null)
                 .cast<Priority>()
                 .toList()
-              ..sort();
+              ..sort((a, b) {
+                // If one is the context priority, it comes last
+                if (a == context) return 1;
+                if (b == context) return -1;
+                // Otherwise, sort normally
+                return a.compareTo(b);
+              });
         final activitiesWithoutPriority = priorityGroups[null] ?? [];
 
         // Add priority headers and activities
