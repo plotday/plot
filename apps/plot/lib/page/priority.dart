@@ -181,7 +181,7 @@ class PriorityPage extends StatelessWidget {
                         builder: (context, index, selected) {
                           final current =
                               state.agendaItems[index - state.first];
-                          log.info('Building $index: $current');
+                          log.fine('Building $index: $current');
                           void onHover(bool hovered) {
                             if (hovered) {
                               listController.selected = index;

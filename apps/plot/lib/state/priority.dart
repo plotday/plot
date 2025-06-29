@@ -301,11 +301,13 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void fetchMoreAgendaItems(int first, int count) {
     if (state.range == null) return;
-    log.info('Fetching more agenda items: first=$first, count=$count');
     final itemsPerDay = state.agendaItems.length / state.range!.duration.inDays;
     // Calculate how many days to move backwards from current first
     final moveStart = first - state.first;
     final moveEnd = first - state.first + count - state.agendaItems.length;
+    log.info(
+      'Fetching more agenda items: first=$first, count=$count, moveStart=$moveStart, moveEnd=$moveEnd',
+    );
     final newRange = DateRangeCustom(
       state.range!.start.addDays((moveStart / itemsPerDay).ceil()),
       state.range!.end.addDays((moveEnd / itemsPerDay).ceil()),

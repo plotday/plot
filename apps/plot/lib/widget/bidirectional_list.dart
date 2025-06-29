@@ -301,20 +301,14 @@ class BidirectionalListState extends State<BidirectionalList> {
     );
     final itemsToFetchBefore = widget.doneStart
         ? 0
-        : max(
-            ((widget.overflow * (scrollingUp ? 1.5 : 1) - pagesBefore()) *
-                    itemsPerPage)
-                .ceil(),
-            0,
-          );
+        : ((widget.overflow * (scrollingUp ? 1.5 : 1) - pagesBefore()) *
+                  itemsPerPage)
+              .ceil();
     final itemsToFetchAfter = widget.doneEnd
         ? 0
-        : max(
-            ((widget.overflow * (scrollingDown ? 1.5 : 1) - pagesAfter()) *
-                    itemsPerPage)
-                .ceil(),
-            0,
-          );
+        : ((widget.overflow * (scrollingDown ? 1.5 : 1) - pagesAfter()) *
+                  itemsPerPage)
+              .ceil();
 
     if (itemsToFetchBefore > 0 || itemsToFetchAfter > 0) {
       _loadMoreItems(itemsToFetchBefore, itemsToFetchAfter);
@@ -326,7 +320,7 @@ class BidirectionalListState extends State<BidirectionalList> {
 
     // Calculate the new range
     final newFirst = widget.first - itemsBefore;
-    final newCount = widget.count + itemsBefore + itemsAfter;
+    final newCount = max(widget.count + itemsBefore + itemsAfter, 0);
     log.info(
       'BidirectionalList loading more items: '
       'newFirst=$newFirst, newCount=$newCount, '
