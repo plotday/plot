@@ -265,7 +265,7 @@ class ActivityPage extends StatelessWidget {
                             children: [
                               ...current.when(
                                 activity: (activity) => [
-                                  ActivityWidget(
+                                  ActivityDetailWidget(
                                     activity: activity,
                                     context: null,
                                     selected: selected,
@@ -295,12 +295,6 @@ class ActivityPage extends StatelessWidget {
                             ],
                           );
                         },
-                        onReorder: (oldIndex, newIndex) =>
-                            ActivityPage.onReorder(
-                              state.agendaItems,
-                              oldIndex,
-                              newIndex,
-                            ),
                       ),
                     ),
                   ],
@@ -329,60 +323,4 @@ class ActivityPage extends StatelessWidget {
       },
     );
   }
-
-  static void onReorder(
-    List<AgendaItem> agendaItems,
-    int oldIndex,
-    int newIndex,
-  ) async {
-    var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-    var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-
-    final currentItem = agendaItems[oldIndex];
-    // Only reorder Activity items for now
-    currentItem.when(
-      activity: (activity) async {
-        Activity? previous;
-        if (previousIndex >= 0) {
-          final prevItem = agendaItems[previousIndex];
-          prevItem.when(
-            activity: (a) => previous = a,
-            event: (_) => previous = null,
-            header: (_) => previous = null,
-          );
-        }
-        Activity? next;
-        if (nextIndex < agendaItems.length) {
-          final nextItem = agendaItems[nextIndex];
-          nextItem.when(
-            activity: (a) => next = a,
-            event: (_) => next = null,
-            header: (_) => next = null,
-          );
-        }
-        activity
-            .copyWith(
-              order: Order.between(
-                previous?.order,
-                previous?.doAt == null || next?.doAt == previous?.doAt
-                    ? next?.order
-                    : null,
-              ),
-              // Action activities are sorted first by doAt, so we need to set this
-              // to have the same doAt as one of its neighbours.
-              doAt: activity.doNow
-                  ? Value(previous?.doAt ?? next?.doAt ?? activity.doAt)
-                  : const Value.absent(),
-            )
-            .save();
-      },
-      event: (_) {
-        // TODO: Handle event reordering
-      },
-      header: (_) {
-        // Headers cannot be reordered
-      },
-    );
-  }
 }
-

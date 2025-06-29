@@ -30,7 +30,7 @@ class ActivityList extends StatelessWidget {
           ReorderableListView<Activity>(
             list: activities,
             itemBuilder: (buildContext, activity) =>
-                ActivityWidget(activity: activity, context: null),
+                ActivityWidget(activity: activity),
             shrinkWrap: true,
             onReorder: (int oldIndex, int newIndex) async {
               var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
@@ -55,7 +55,9 @@ class ActivityList extends StatelessWidget {
                     ),
                     doAt: currentActivity.doNow
                         ? Value(
-                            previous?.doAt ?? next?.doAt ?? currentActivity.doAt,
+                            previous?.doAt ??
+                                next?.doAt ??
+                                currentActivity.doAt,
                           )
                         : const Value.absent(),
                   )
@@ -67,3 +69,4 @@ class ActivityList extends StatelessWidget {
     );
   }
 }
+

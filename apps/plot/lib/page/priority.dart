@@ -204,7 +204,6 @@ class PriorityPage extends StatelessWidget {
                                 activity: (activity) => [
                                   ActivityWidget(
                                     activity: activity,
-                                    context: null,
                                     selected: selected,
                                     onHover: onHover,
                                   ),
@@ -232,8 +231,18 @@ class PriorityPage extends StatelessWidget {
                             ],
                           );
                         },
-                        onReorder: (oldIndex, newIndex) =>
-                            onReorder(state.agendaItems, oldIndex, newIndex),
+                        onReorder: (index) =>
+                            state.agendaItems[index - state.first].when(
+                              activity: (activity) => activity.scheduled
+                                  ? (int oldIndex, int newIndex) => onReorder(
+                                      state.agendaItems,
+                                      oldIndex,
+                                      newIndex,
+                                    )
+                                  : null,
+                              event: (_) => null,
+                              header: (_) => null,
+                            ),
                       ),
                     ),
                   ],

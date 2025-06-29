@@ -5,27 +5,26 @@ import 'package:equatable/equatable.dart';
 import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/store/store.dart';
-import 'logging.dart';
 
 part 'now_state.dart';
 
 class NowBloc extends Cubit<NowState> {
   NowBloc() : super(const NowLoadingState()) {
-    _subscription = Rx.combineLatest3(
-      Priority.watchDefault(),
-      ScheduledDay.watchToday(),
-      Session.watchCurrent(),
-      (priority, day, session) {
-        log.info('Default priority: ${priority.id}');
-        return NowLoadedState(
-          defaultPriority: priority,
-          day: day,
-          session: session,
-        );
-      },
-    ).listen((state) {
-      emit(state);
-    });
+    _subscription =
+        Rx.combineLatest3(
+          Priority.watchDefault(),
+          ScheduledDay.watchToday(),
+          Session.watchCurrent(),
+          (priority, day, session) {
+            return NowLoadedState(
+              defaultPriority: priority,
+              day: day,
+              session: session,
+            );
+          },
+        ).listen((state) {
+          emit(state);
+        });
   }
 
   NowLoadedState get loadedState => super.state as NowLoadedState;

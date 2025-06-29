@@ -7,6 +7,32 @@ import 'package:plot/command/command.dart';
 class ActivityWidget extends StatelessWidget {
   const ActivityWidget({
     required this.activity,
+    this.selected = false,
+    this.onHover,
+    super.key,
+  });
+
+  final Activity activity;
+  final bool selected;
+  final void Function(bool hovered)? onHover;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      command: ChangeCurrentActivity(activity),
+      title: activity.title,
+      leadingCommand: activityPrimaryCommand(activity),
+      leadingWidth: 60,
+      trailingCommands: [ShowActivityCommands(activity)],
+      selected: selected,
+      onHover: onHover,
+    );
+  }
+}
+
+class ActivityDetailWidget extends StatelessWidget {
+  const ActivityDetailWidget({
+    required this.activity,
     this.context,
     this.selected = false,
     this.onHover,
@@ -39,4 +65,3 @@ class ActivityWidget extends StatelessWidget {
     );
   }
 }
-

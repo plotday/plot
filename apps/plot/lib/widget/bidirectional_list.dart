@@ -171,7 +171,7 @@ class BidirectionalList extends StatefulWidget {
   final ScrollController? scrollController;
   final BidirectionalListController controller;
   final bool reverse;
-  final ReorderCallback? onReorder;
+  final ReorderCallback? Function(int index)? onReorder;
 
   BidirectionalList({
     required this.builder,
@@ -426,11 +426,26 @@ class BidirectionalListState extends State<BidirectionalList> {
         final itemIndex = itemIndexCalculator(index);
         final isSelected = itemIndex == widget.controller.selected;
         final child = widget.builder(context, itemIndex, isSelected);
-        return child ??
-            SizedBox(key: ValueKey('empty_$itemIndex'), height: 0);
+
+        if (child == null) {
+          return SizedBox(key: ValueKey('empty_$itemIndex'), height: 0);
+        }
+
+        final onReorder = widget.onReorder?.call(itemIndex);
+        if (onReorder != null) {
+          return ReorderableDragStartListener(
+            index: index,
+            key: ValueKey('item_$itemIndex'),
+            child: child,
+          );
+        }
+        return child;
       },
       onReorder: (oldIndex, newIndex) {
-        widget.onReorder?.call(
+        final onReorder = widget.onReorder?.call(
+          reorderOldIndexCalculator(oldIndex),
+        );
+        onReorder?.call(
           reorderOldIndexCalculator(oldIndex),
           reorderNewIndexCalculator(newIndex),
         );

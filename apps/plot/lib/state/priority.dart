@@ -214,14 +214,15 @@ class PriorityBloc extends Cubit<PriorityState> {
             int? first;
             if (state.range != null && overlappingIndex != -1) {
               first =
+                  (first ?? 0) +
+                  overlappingIndex -
                   newAgendaItems.indexWhere(
                     (item) => item.when(
                       activity: (_) => false,
                       event: (_) => false,
                       header: (header) => header.date == overlappingDate,
                     ),
-                  ) -
-                  overlappingIndex;
+                  );
             }
 
             // Determine done states based on comparison with total available range
