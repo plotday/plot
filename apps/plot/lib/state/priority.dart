@@ -143,6 +143,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void _loadAgendaItems(DateRange range) {
     log.info('Loading agenda items (${range.start} to ${range.end})');
+    _agendaSubscription?.cancel();
 
     // Ensure the new range overlaps with the previous one by at least one day
     // Find the first and last HeaderAgendaItem in the current agenda items
@@ -160,10 +161,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (overlappingIndex != -1) {
       overlappingDate =
           (state.agendaItems[overlappingIndex] as HeaderAgendaItem).date!;
-      if (range.end.isBefore(overlappingDate)) {
-        // If the new range ends before the old range, extend it to overlap by one day
-        range = DateRangeCustom(range.start, overlappingDate);
-      } else {
+      if (!range.includes(overlappingDate)) {
+        log.info('$overlappingDate is not in range $range');
         overlappingIndex = state.agendaItems.lastIndexWhere(
           (item) => item.when(
             activity: (_) => false,
@@ -173,14 +172,17 @@ class PriorityBloc extends Cubit<PriorityState> {
         );
         overlappingDate =
             (state.agendaItems[overlappingIndex] as HeaderAgendaItem).date!;
-        if (range.start.isAfter(overlappingDate)) {
+        if (!range.includes(overlappingDate)) {
+          log.info('$overlappingDate is not in range $range, adding it');
           // If the new range starts after the old range, extend it to overlap by one day
           range = DateRangeCustom(overlappingDate, range.end);
         }
       }
     }
+    log.info(
+      'Range: ${range.start} to ${range.end}, overlappingIndex: $overlappingIndex, overlappingDate: $overlappingDate',
+    );
 
-    _agendaSubscription?.cancel();
     if (state.activity == null && state.event == null) {
       _agendaSubscription =
           Rx.combineLatest3(
@@ -208,21 +210,26 @@ class PriorityBloc extends Cubit<PriorityState> {
               context: state.context,
             );
 
-            final newAgendaItems = agenda.items.reversed.toList();
-
             // Calculate the new first index based on header overlap
-            int? first;
-            if (state.range != null && overlappingIndex != -1) {
-              first =
-                  (first ?? 0) +
-                  overlappingIndex -
-                  newAgendaItems.indexWhere(
-                    (item) => item.when(
-                      activity: (_) => false,
-                      event: (_) => false,
-                      header: (header) => header.date == overlappingDate,
-                    ),
-                  );
+            int first = state.first;
+            if (overlappingIndex != -1) {
+              final newIndex = agenda.items.indexWhere(
+                (item) => item.when(
+                  activity: (_) => false,
+                  event: (_) => false,
+                  header: (header) => header.date == overlappingDate,
+                ),
+              );
+              log.info(
+                'First was $first, overlappingIndex is $overlappingIndex, newIndex is $newIndex newFirst = ${first + overlappingIndex - newIndex}',
+              );
+              assert(
+                newIndex != -1,
+                'Overlapping date should be found in new agenda items',
+              );
+              first += overlappingIndex - newIndex;
+              // The listener may trigger multiple times, but we only want to adjust first once
+              overlappingIndex = -1;
             }
 
             // Determine done states based on comparison with total available range
@@ -246,14 +253,21 @@ class PriorityBloc extends Cubit<PriorityState> {
             }
 
             log.info(
-              'Agenda updated (${range.start} to ${range.end}, first=$first, count=${newAgendaItems.length}, totalRange=$totalRange, doneStart=$doneStart, doneEnd=$doneEnd)',
+              'Agenda updated (${range.start} to ${range.end}, first=$first, count=${agenda.items.length}, totalRange=$totalRange, doneStart=$doneStart, doneEnd=$doneEnd)',
+            );
+            log.info(
+              'Anchor ${agenda.anchorIndex == null ? null : first + agenda.anchorIndex!}: ${agenda.anchorIndex == null ? null : agenda.items[agenda.anchorIndex!]}',
             );
             emit(
               state.copyWith(
                 range: range,
-                agendaItems: newAgendaItems,
+                agendaItems: agenda.items,
                 first: first,
-                anchorIndex: agenda.items.length - agenda.anchorIndex - 1,
+                anchorIndex:
+                    agenda.anchorIndex ==
+                        null //|| state.anchorIndex != 0
+                    ? null
+                    : first + agenda.anchorIndex!,
                 moreAgendaItems: true,
                 doneStart: doneStart,
                 doneEnd: doneEnd,
@@ -290,11 +304,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     log.info('Fetching more agenda items: first=$first, count=$count');
     final itemsPerDay = state.agendaItems.length / state.range!.duration.inDays;
     // Calculate how many days to move backwards from current first
-    final move = first - state.first;
-    final newEnd = state.range!.end.subDays((move / itemsPerDay).ceil());
+    final moveStart = first - state.first;
+    final moveEnd = first - state.first + count - state.agendaItems.length;
     final newRange = DateRangeCustom(
-      newEnd.subDays((count / itemsPerDay).ceil()),
-      newEnd,
+      state.range!.start.addDays((moveStart / itemsPerDay).ceil()),
+      state.range!.end.addDays((moveEnd / itemsPerDay).ceil()),
     );
     _loadAgendaItems(newRange);
   }

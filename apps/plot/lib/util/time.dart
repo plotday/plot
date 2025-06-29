@@ -271,7 +271,9 @@ class Month extends DateRange {
 }
 
 class DateRangeCustom extends DateRange {
-  const DateRangeCustom(this.start, this.end);
+  DateRangeCustom(this.start, this.end) {
+    assert(start < end, 'Invalid DateRangeCustom: $start - $end');
+  }
 
   @override
   final Date start;

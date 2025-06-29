@@ -3,8 +3,8 @@ import 'package:plot/store/store.dart';
 
 class Agenda extends Equatable {
   final List<AgendaItem> items;
-  final int anchorIndex;
-  final int nowIndex;
+  final int? anchorIndex;
+  final int? nowIndex;
 
   const Agenda({
     required this.items,
@@ -39,8 +39,8 @@ class Agenda extends Equatable {
   }) {
     anchor ??= today;
     final agendaItems = <AgendaItem>[];
-    int anchorIndex = 0;
-    int nowIndex = 0;
+    int? anchorIndex;
+    int? nowIndex;
 
     // Add to agendaItems and return remaining activities
     List<Activity> buildBlock({

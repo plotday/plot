@@ -82,7 +82,6 @@ class PriorityPage extends StatelessWidget {
             ),
           ],
           child: BidirectionalListSelector(
-            reverse: true,
             onActivate: (index) {
               state.agendaItems[index].when(
                 activity: (activity) =>
@@ -173,15 +172,16 @@ class PriorityPage extends StatelessWidget {
                         first: state.first,
                         count: state.agendaItems.length,
                         anchor: state.anchorIndex,
-                        anchorOffset: 0.0,
-                        reverse: true,
+                        anchorOffset: 0.8,
                         doneStart: state.doneStart,
                         doneEnd: state.doneEnd,
                         fetcher: (first, count) => context
                             .read<PriorityBloc>()
                             .fetchMoreAgendaItems(first, count),
                         builder: (context, index, selected) {
-                          final current = state.agendaItems[index];
+                          final current =
+                              state.agendaItems[index - state.first];
+                          log.info('Building $index: $current');
                           void onHover(bool hovered) {
                             if (hovered) {
                               listController.selected = index;
@@ -231,18 +231,34 @@ class PriorityPage extends StatelessWidget {
                             ],
                           );
                         },
-                        onReorder: (index) =>
-                            state.agendaItems[index - state.first].when(
-                              activity: (activity) => activity.scheduled
-                                  ? (int oldIndex, int newIndex) => onReorder(
-                                      state.agendaItems,
-                                      oldIndex,
-                                      newIndex,
-                                    )
-                                  : null,
-                              event: (_) => null,
-                              header: (_) => null,
-                            ),
+                        onReorder: (index) {
+                          final item = state.agendaItems[index - state.first];
+                          if (!item.when(
+                            activity: (activity) => true,
+                            event: (_) => false,
+                            header: (_) => false,
+                          )) {
+                            return null;
+                          }
+                          return (int newIndex) {
+                            newIndex -= state.first;
+                            var prevIndex = newIndex;
+                            var nextIndex = newIndex - 1;
+                            AgendaItem? prev;
+                            if (prevIndex >= 0) {
+                              prev = state.agendaItems[prevIndex];
+                            }
+                            AgendaItem? next;
+                            if (nextIndex < state.agendaItems.length) {
+                              next = state.agendaItems[nextIndex];
+                            }
+                            onReorderActivity(
+                              (item as ActivityAgendaItem).activity,
+                              prev,
+                              next,
+                            );
+                          };
+                        },
                       ),
                     ),
                   ],
@@ -272,58 +288,42 @@ class PriorityPage extends StatelessWidget {
     );
   }
 
-  static void onReorder(
-    List<AgendaItem> agendaItems,
-    int oldIndex,
-    int newIndex,
+  static void onReorderActivity(
+    Activity activity,
+    AgendaItem? prev,
+    AgendaItem? next,
   ) async {
-    var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-    var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
-
-    final currentItem = agendaItems[oldIndex];
-    // Only reorder Activity items for now
-    currentItem.when(
-      activity: (activity) async {
-        Activity? previous;
-        if (previousIndex >= 0) {
-          final prevItem = agendaItems[previousIndex];
-          prevItem.when(
-            activity: (a) => previous = a,
-            event: (_) => previous = null,
-            header: (_) => previous = null,
-          );
-        }
-        Activity? next;
-        if (nextIndex < agendaItems.length) {
-          final nextItem = agendaItems[nextIndex];
-          nextItem.when(
-            activity: (a) => next = a,
-            event: (_) => next = null,
-            header: (_) => next = null,
-          );
-        }
-        activity
-            .copyWith(
-              order: Order.between(
-                previous?.order,
-                previous?.doAt == null || next?.doAt == previous?.doAt
-                    ? next?.order
-                    : null,
-              ),
-              // Action activities are sorted first by doAt, so we need to set this
-              // to have the same doAt as one of its neighbours.
-              doAt: activity.doNow
-                  ? Value(previous?.doAt ?? next?.doAt ?? activity.doAt)
-                  : const Value.absent(),
-            )
-            .save();
-      },
-      event: (_) {
-        // TODO: Handle event reordering
-      },
-      header: (_) {
-        // Headers cannot be reordered
-      },
+    final prevActivity = prev?.when(
+      activity: (a) => a,
+      event: (_) => null,
+      header: (_) => null,
     );
+    final nextActivity = next?.when(
+      activity: (a) => a,
+      event: (_) => null,
+      header: (_) => null,
+    );
+    final priorityId = prev?.when(
+      activity: (a) => a.priorityId,
+      event: (e) => e.priorityId,
+      header: (h) => h.priority?.id,
+    );
+    final eventSeries = prev?.when(
+      activity: (a) => a.eventSeries,
+      event: (e) => e.series,
+      header: (h) => h.event?.series,
+    );
+    log.info(
+      'Reordering ${activity.title} between '
+      '${prevActivity?.title} and ${nextActivity?.title}',
+    );
+    activity
+        .copyWith(
+          priorityId: priorityId,
+          order: Order.between(prevActivity?.order, nextActivity?.order),
+          doAt: Value((prevActivity ?? nextActivity)?.doAt),
+          eventSeries: Value(eventSeries),
+        )
+        .save();
   }
 }

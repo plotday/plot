@@ -171,7 +171,7 @@ class BidirectionalList extends StatefulWidget {
   final ScrollController? scrollController;
   final BidirectionalListController controller;
   final bool reverse;
-  final ReorderCallback? Function(int index)? onReorder;
+  final void Function(int newIndex)? Function(int index)? onReorder;
 
   BidirectionalList({
     required this.builder,
@@ -205,24 +205,16 @@ class BidirectionalListState extends State<BidirectionalList> {
 
   bool _fetching = false;
 
-  // Prevent the list from growing on the first frame in order to calculate the
-  // amount of shrinkage, which is used to adjust the scroll position.
-  int _shrinkUp = 0;
-  int _shrinkDown = 0;
   late int _upCount;
   late int _downCount;
   late double _averageItemExtent = widget.estimatedItemExtent.toDouble();
-  (double?, double?) _lastListExtents = (null, null);
 
   void _setCounts() {
-    assert(
-      widget.count == 0 ||
-          (widget.anchor >= widget.first &&
-              widget.anchor < widget.first + widget.count),
-      'Anchor must be a valid index',
-    );
     _upCount = max(widget.anchor - widget.first, 0);
-    _downCount = max(widget.count - _upCount, 0);
+    _downCount = max(widget.first + widget.count - widget.anchor, 0);
+    log.info(
+      'BidirectionalList counts set: upCount=$_upCount, downCount=$_downCount, first=${widget.first}, count=${widget.count}, anchor=${widget.anchor}',
+    );
   }
 
   (double?, double?) get _listExtents => (
@@ -257,26 +249,6 @@ class BidirectionalListState extends State<BidirectionalList> {
     }
   }
 
-  double _getScrollAdjustment() {
-    final (up, down) = _listExtents;
-    final (lastUp, lastDown) = _lastListExtents;
-    var move = 0.0;
-    // We need to adjust the position only when either list removes items from
-    // their start. We detect this by checking if they have shrunk before new
-    // items are added.
-    if (_shrinkUp != 0 && lastUp != null && up != null && up < lastUp) {
-      move += lastUp - up;
-    }
-    if (_shrinkDown != 0 &&
-        lastDown != null &&
-        down != null &&
-        down < lastDown) {
-      move += down - lastDown;
-    }
-    _lastListExtents = (up, down);
-    return move;
-  }
-
   double averageItemsPerPage() {
     // Prevent division by zero and ensure scroll controller is ready
     if (!_scrollController.hasClients || _averageItemExtent <= 0) {
@@ -307,7 +279,6 @@ class BidirectionalListState extends State<BidirectionalList> {
 
   Future<void> _loadIfNecessary() async {
     if (_fetching) return;
-    if (widget.doneStart && widget.doneEnd) return;
     if (!_scrollController.hasClients) return;
 
     // Check if we have enough buffer
@@ -325,14 +296,25 @@ class BidirectionalListState extends State<BidirectionalList> {
 
     // Calculate how many items we need to fetch
     final itemsPerPage = averageItemsPerPage();
-    final itemsToFetchBefore =
-        ((widget.overflow * (scrollingUp ? 1.5 : 1) - pagesBefore()) *
-                itemsPerPage)
-            .ceil();
-    final itemsToFetchAfter =
-        ((widget.overflow * (scrollingDown ? 1.5 : 1) - pagesAfter()) *
-                itemsPerPage)
-            .ceil();
+    log.info(
+      'Pages before: ${pagesBefore()}, Pages after: ${pagesAfter()}, Scrolling: $scrollingUp/$scrollingDown, Items per page: $itemsPerPage, Average item extent: $_averageItemExtent',
+    );
+    final itemsToFetchBefore = widget.doneStart
+        ? 0
+        : max(
+            ((widget.overflow * (scrollingUp ? 1.5 : 1) - pagesBefore()) *
+                    itemsPerPage)
+                .ceil(),
+            0,
+          );
+    final itemsToFetchAfter = widget.doneEnd
+        ? 0
+        : max(
+            ((widget.overflow * (scrollingDown ? 1.5 : 1) - pagesAfter()) *
+                    itemsPerPage)
+                .ceil(),
+            0,
+          );
 
     if (itemsToFetchBefore > 0 || itemsToFetchAfter > 0) {
       _loadMoreItems(itemsToFetchBefore, itemsToFetchAfter);
@@ -345,14 +327,19 @@ class BidirectionalListState extends State<BidirectionalList> {
     // Calculate the new range
     final newFirst = widget.first - itemsBefore;
     final newCount = widget.count + itemsBefore + itemsAfter;
+    log.info(
+      'BidirectionalList loading more items: '
+      'newFirst=$newFirst, newCount=$newCount, '
+      'itemsBefore=$itemsBefore, itemsAfter=$itemsAfter',
+    );
 
     try {
       _fetching = true;
 
       // Call the fetcher with the new range
       widget.fetcher!(newFirst, newCount);
-    } catch (error) {
-      debugPrint('BidirectionalList fetcher error: $error');
+    } catch (error, trace) {
+      log.warning('BidirectionalList fetcher error', error, trace);
     }
   }
 
@@ -386,44 +373,31 @@ class BidirectionalListState extends State<BidirectionalList> {
       _fetching = false;
       _setCounts();
       widget.controller.clamp(widget.first, widget.first + widget.count - 1);
-      if (oldWidget.anchor == widget.anchor) {
-        int moveUp = widget.first - oldWidget.first;
-        int moveDown = oldWidget.count - widget.count - moveUp;
-        _shrinkUp = max(0, moveUp);
-        _shrinkDown = max(0, moveDown);
-        log.info(
-          'BidirectionalList: moveUp=$moveUp, moveDown=$moveDown, shrinkUp=$_shrinkUp, shrinkDown=$_shrinkDown',
-        );
-        if (widget.controller.selected != null) {
-          widget.controller.move(moveUp);
-        }
-      } else {
-        log.info('Anchor ${oldWidget.anchor} changed to ${widget.anchor}');
+      if (oldWidget.first != widget.first) {
+        log.info('First moved ${oldWidget.first} to ${widget.first}');
+      }
+      if (oldWidget.anchor != widget.anchor) {
+        log.info('Anchor changed ${oldWidget.anchor} to ${widget.anchor}');
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      setState(() {
-        _shrinkUp = 0;
-        _shrinkDown = 0;
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _updateAverageItemExtent();
-      });
+      _updateAverageItemExtent();
     });
   }
 
   SliverReorderableList _buildSliverList({
     required GlobalKey key,
     required int itemCount,
-    required int Function(int index) itemIndexCalculator,
-    required int Function(int oldIndex) reorderOldIndexCalculator,
-    required int Function(int newIndex) reorderNewIndexCalculator,
+    required int? Function(int index) itemIndexCalculator,
   }) {
     return SliverReorderableList(
       key: key,
       itemCount: itemCount,
       itemBuilder: (context, index) {
         final itemIndex = itemIndexCalculator(index);
+        if (itemIndex == null) {
+          return SizedBox(key: ValueKey('empty_$index'), height: 0);
+        }
         final isSelected = itemIndex == widget.controller.selected;
         final child = widget.builder(context, itemIndex, isSelected);
 
@@ -443,12 +417,9 @@ class BidirectionalListState extends State<BidirectionalList> {
       },
       onReorder: (oldIndex, newIndex) {
         final onReorder = widget.onReorder?.call(
-          reorderOldIndexCalculator(oldIndex),
+          itemIndexCalculator(oldIndex)!,
         );
-        onReorder?.call(
-          reorderOldIndexCalculator(oldIndex),
-          reorderNewIndexCalculator(newIndex),
-        );
+        onReorder?.call(itemIndexCalculator(newIndex)!);
       },
     );
   }
@@ -473,9 +444,6 @@ class BidirectionalListState extends State<BidirectionalList> {
         listenable: widget.controller,
         builder: (context, child) => CustomScrollView(
           controller: _scrollController,
-          physics: BidirectionalListScrollPhysics(
-            getScrollAdjustment: _getScrollAdjustment,
-          ),
           center: _downListKey,
           anchor: widget.anchorOffset,
           reverse: widget.reverse,
@@ -483,22 +451,29 @@ class BidirectionalListState extends State<BidirectionalList> {
             if (widget.count > 0 && !widget.doneStart) spinner,
             _buildSliverList(
               key: _upListKey,
-              itemCount: max(_upCount - _shrinkUp, 0),
-              itemIndexCalculator: (index) =>
-                  widget.first + _upCount - _shrinkUp - index - 1,
-              reorderOldIndexCalculator: (oldIndex) =>
-                  widget.first + _upCount - _shrinkUp - oldIndex - 1,
-              reorderNewIndexCalculator: (newIndex) =>
-                  widget.first + _upCount - _shrinkUp - newIndex - 1,
+              itemCount: _upCount,
+              // itemIndexCalculator: (index) =>
+              //     widget.first + _upCount - index - 1,
+              itemIndexCalculator: (index) {
+                index = widget.anchor - index - 1;
+                if (index >= widget.first &&
+                    index < widget.first + widget.count) {
+                  return index;
+                }
+                return null;
+              },
             ),
             _buildSliverList(
               key: _downListKey,
-              itemCount: max(_downCount - _shrinkDown, 0),
-              itemIndexCalculator: (index) => widget.first + _upCount + index,
-              reorderOldIndexCalculator: (oldIndex) =>
-                  widget.first + _upCount + oldIndex,
-              reorderNewIndexCalculator: (newIndex) =>
-                  widget.first + _upCount + newIndex,
+              itemCount: _downCount,
+              itemIndexCalculator: (index) {
+                index += widget.anchor;
+                if (index >= widget.first &&
+                    index < widget.first + widget.count) {
+                  return index;
+                }
+                return null;
+              },
             ),
             if (!widget.doneEnd) spinner,
           ],
