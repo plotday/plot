@@ -1,13 +1,10 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/services.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
-import 'logging.dart';
 import 'command.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
-import 'package:plot/page/new_activity.dart';
 
 class _ActivityValue extends ValueCommand<Activity?> {
   _ActivityValue(Activity? activity)

@@ -106,9 +106,6 @@ class Agenda extends Equatable {
 
           // Skip adding HeaderAgendaItem if this is the only priority and it equals contextPriority
           if (priorityGroups.length > 1 || priority != context) {
-            print(
-              'Adding header for priority: ${priority.title} because ${priorityGroups.length} groups found or priority is not ${context?.title}',
-            );
             agendaItems.add(HeaderAgendaItem(priority: priority));
           }
 

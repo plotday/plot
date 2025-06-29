@@ -23,9 +23,7 @@ class EventWrapper extends AutoRouter implements AutoRouteWrapper {
     final resolvedEventId =
         event?.id ??
         eventId ??
-        (eventIdString != null
-            ? EventId.fromShortString(eventIdString)
-            : null);
+        (eventIdString != null ? EventId.fromShortString(eventIdString) : null);
     assert(resolvedEventId != null, 'An event must be provided.');
     this.eventId = resolvedEventId!;
   }
@@ -36,7 +34,8 @@ class EventWrapper extends AutoRouter implements AutoRouteWrapper {
   Widget wrappedRoute(BuildContext context) {
     return FutureBuilder<(Priority, Event)>(
       future: Event.getOne(eventId, withPriority: true).then((event) async {
-        final priority = event.priority ?? await Priority.getOne(event.priorityId!);
+        final priority =
+            event.priority ?? await Priority.getOne(event.priorityId!);
         return (priority, event);
       }),
       builder: (context, snapshot) {
@@ -52,10 +51,12 @@ class EventWrapper extends AutoRouter implements AutoRouteWrapper {
         }
 
         final (priority, event) = snapshot.data!;
-        
+
         // Set the current priority in NowBloc when entering this route
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          log.info('Setting current priority to ${priority.title} (from event ${event.name ?? "Untitled Event"})');
+          log.info(
+            'Setting current priority to ${priority.title} (from event ${event.name ?? "Untitled Event"})',
+          );
           context.read<NowBloc>().setPriority(priority);
         });
 
@@ -109,10 +110,12 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
         }
 
         final (priority, activity) = snapshot.data!;
-        
+
         // Set the current priority in NowBloc when entering this route
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          log.info('Setting current priority to ${priority.title} (from activity ${activity.title})');
+          log.info(
+            'Setting current priority to ${priority.title} (from activity ${activity.title})',
+          );
           context.read<NowBloc>().setPriority(priority);
         });
 
@@ -230,6 +233,7 @@ class ActivityPage extends StatelessWidget {
                       child: BidirectionalList(
                         controller: listController,
                         scrollController: ScrollControllerContext.of(context),
+                        first: state.first,
                         count: state.agendaItems.length,
                         anchor: state.anchorIndex,
                         anchorOffset: 0.0,
@@ -292,7 +296,11 @@ class ActivityPage extends StatelessWidget {
                           );
                         },
                         onReorder: (oldIndex, newIndex) =>
-                            ActivityPage.onReorder(state.agendaItems, oldIndex, newIndex),
+                            ActivityPage.onReorder(
+                              state.agendaItems,
+                              oldIndex,
+                              newIndex,
+                            ),
                       ),
                     ),
                   ],
@@ -377,3 +385,4 @@ class ActivityPage extends StatelessWidget {
     );
   }
 }
+

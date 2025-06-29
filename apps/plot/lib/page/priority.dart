@@ -170,6 +170,7 @@ class PriorityPage extends StatelessWidget {
                       child: BidirectionalList(
                         controller: listController,
                         scrollController: ScrollControllerContext.of(context),
+                        first: state.first,
                         count: state.agendaItems.length,
                         anchor: state.anchorIndex,
                         anchorOffset: 0.0,

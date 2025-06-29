@@ -412,6 +412,32 @@ class BidirectionalListState extends State<BidirectionalList> {
     });
   }
 
+  SliverReorderableList _buildSliverList({
+    required GlobalKey key,
+    required int itemCount,
+    required int Function(int index) itemIndexCalculator,
+    required int Function(int oldIndex) reorderOldIndexCalculator,
+    required int Function(int newIndex) reorderNewIndexCalculator,
+  }) {
+    return SliverReorderableList(
+      key: key,
+      itemCount: itemCount,
+      itemBuilder: (context, index) {
+        final itemIndex = itemIndexCalculator(index);
+        final isSelected = itemIndex == widget.controller.selected;
+        final child = widget.builder(context, itemIndex, isSelected);
+        return child ??
+            SizedBox(key: ValueKey('empty_$itemIndex'), height: 0);
+      },
+      onReorder: (oldIndex, newIndex) {
+        widget.onReorder?.call(
+          reorderOldIndexCalculator(oldIndex),
+          reorderNewIndexCalculator(newIndex),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const spinner = SliverToBoxAdapter(
@@ -440,40 +466,24 @@ class BidirectionalListState extends State<BidirectionalList> {
           reverse: widget.reverse,
           slivers: [
             if (widget.count > 0 && !widget.doneStart) spinner,
-            SliverReorderableList(
+            _buildSliverList(
               key: _upListKey,
               itemCount: max(_upCount - _shrinkUp, 0),
-              itemBuilder: (context, index) {
-                final itemIndex =
-                    widget.first + _upCount - _shrinkUp - index - 1;
-                final isSelected = itemIndex == widget.controller.selected;
-                final child = widget.builder(context, itemIndex, isSelected);
-                return child ??
-                    SizedBox(key: ValueKey('empty_$itemIndex'), height: 0);
-              },
-              onReorder: (oldIndex, newIndex) {
-                widget.onReorder?.call(
+              itemIndexCalculator: (index) =>
+                  widget.first + _upCount - _shrinkUp - index - 1,
+              reorderOldIndexCalculator: (oldIndex) =>
                   widget.first + _upCount - _shrinkUp - oldIndex - 1,
+              reorderNewIndexCalculator: (newIndex) =>
                   widget.first + _upCount - _shrinkUp - newIndex - 1,
-                );
-              },
             ),
-            SliverReorderableList(
+            _buildSliverList(
               key: _downListKey,
               itemCount: max(_downCount - _shrinkDown, 0),
-              itemBuilder: (context, index) {
-                final itemIndex = widget.first + _upCount + index;
-                final isSelected = itemIndex == widget.controller.selected;
-                final child = widget.builder(context, itemIndex, isSelected);
-                return child ??
-                    SizedBox(key: ValueKey('empty_$itemIndex'), height: 0);
-              },
-              onReorder: (oldIndex, newIndex) {
-                widget.onReorder?.call(
+              itemIndexCalculator: (index) => widget.first + _upCount + index,
+              reorderOldIndexCalculator: (oldIndex) =>
                   widget.first + _upCount + oldIndex,
+              reorderNewIndexCalculator: (newIndex) =>
                   widget.first + _upCount + newIndex,
-                );
-              },
             ),
             if (!widget.doneEnd) spinner,
           ],
