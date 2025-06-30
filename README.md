@@ -22,6 +22,13 @@ After making local changes to the DB, run `pnpm types`. This generates
 Migrations are applied by GitHub Actions. Generate a migration using `pnpm
 gen-migration MIGRATION_NAME` and include it with the relevant change.
 
+## Accounts
+
+- [1Password](https://plotco.1password.com/vaults/details/opfjdkmleais6inytphoetcf3y)
+- [Linear](https://linear.app/plotday/settings/members)
+- [Supabase](https://supabase.com/dashboard/org/zjomdxrdnixcnkpqxcmg/team)
+- [Cloudflare](https://dash.cloudflare.com/34ceb662899230b63c7e8114eaf9277c/members)
+
 ## Hosting setup
 
 ### Cloudflare
