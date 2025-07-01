@@ -1241,46 +1241,6 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.redeem_invitation (_user_id bigint, _invitation text)
-    RETURNS void
-    LANGUAGE plpgsql
-    AS $function$
-BEGIN
-    UPDATE
-        "invitation"
-    SET
-        remaining = remaining - 1
-    WHERE
-        code = _invitation
-        AND remaining > 0;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Invitation code % not valid', _invitation;
-    END IF;
-    BEGIN
-        UPDATE
-            public.user
-        SET
-            invitation = _invitation,
-            activated_at = now()
-        WHERE
-            id = _user_id;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'User % not found', _user_id;
-        END IF;
-    EXCEPTION
-        WHEN OTHERS THEN
-            UPDATE
-                "invitation"
-            SET
-                remaining = remaining + 1
-            WHERE
-                code = _invitation;
-                RAISE;
-    END;
-END;
-
-$function$;
-
 CREATE OR REPLACE FUNCTION public.replace_parent_path (parent_path ltree, child_path ltree, new_parent_path ltree)
     RETURNS ltree
     LANGUAGE plpgsql

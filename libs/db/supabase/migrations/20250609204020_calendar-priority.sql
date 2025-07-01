@@ -144,46 +144,6 @@ FROM (((event_x1 e
         LIMIT 1) s ON (TRUE))
     LEFT JOIN priority ctx ON ((ctx.id = COALESCE(s.priority_id, c.priority_id))));
 
-CREATE OR REPLACE FUNCTION public.redeem_invitation (_user_id bigint, _invitation text)
-    RETURNS void
-    LANGUAGE plpgsql
-    AS $function$
-BEGIN
-    UPDATE
-        "invitation"
-    SET
-        remaining = remaining - 1
-    WHERE
-        code = _invitation
-        AND remaining > 0;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Invitation code % not valid', _invitation;
-    END IF;
-    BEGIN
-        UPDATE
-            public.user
-        SET
-            invitation = _invitation,
-            activated_at = now()
-        WHERE
-            id = _user_id;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'User % not found', _user_id;
-        END IF;
-    EXCEPTION
-        WHEN OTHERS THEN
-            UPDATE
-                "invitation"
-            SET
-                remaining = remaining + 1
-            WHERE
-                code = _invitation;
-                RAISE;
-    END;
-END;
-
-$function$;
-
 ALTER VIEW "public"."activity_x" SET (security_invoker = TRUE);
 
 ALTER VIEW "public"."activity_children" SET (security_invoker = TRUE);
