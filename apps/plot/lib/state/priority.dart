@@ -255,9 +255,6 @@ class PriorityBloc extends Cubit<PriorityState> {
             log.info(
               'Agenda updated (${range.start} to ${range.end}, first=$first, count=${agenda.items.length}, totalRange=$totalRange, doneStart=$doneStart, doneEnd=$doneEnd)',
             );
-            log.info(
-              'Anchor ${agenda.anchorIndex == null ? null : first + agenda.anchorIndex!}: ${agenda.anchorIndex == null ? null : agenda.items[agenda.anchorIndex!]}',
-            );
             emit(
               state.copyWith(
                 range: range,
