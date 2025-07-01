@@ -11,6 +11,10 @@
 1. `brew install postgresql`
 1. `pnpm install`
 1. Add `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_KEY` from the `pnpm start` output to `.env.development.local`.
+1. `brew install cocoapods`
+1. `asdf install`
+1. `dart pub global activate derry`
+1. `derry env dev default`
 
 ## Local dev
 
