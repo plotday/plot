@@ -52,11 +52,12 @@ CREATE OR REPLACE FUNCTION public.notify_user_for_calendar ()
     AS $$
 BEGIN
     PERFORM
-        realtime.send (jsonb_build_object('table', 'calendar'), -- JSONB Payload
-            'sync', -- Event name
-            'user:' || (SELECT user_id FROM account WHERE id = OLD.account_id)::text, -- Topic
-            FALSE -- Public / Private flag
-);
+        realtime.send (jsonb_build_object('table', 'calendar'), 'sync', 'user:' || (
+                SELECT
+                    user_id
+                FROM account
+                WHERE
+                    id = OLD.account_id)::text, FALSE);
     RETURN NULL;
 END;
 $$;

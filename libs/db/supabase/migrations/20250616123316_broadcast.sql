@@ -34,24 +34,20 @@ $function$;
 
 CREATE OR REPLACE FUNCTION public.notify_user_for_calendar ()
     RETURNS TRIGGER
-    LANGUAGE plpgsql
     SECURITY DEFINER
-    AS $function$
+    LANGUAGE plpgsql
+    AS $$
 BEGIN
     PERFORM
-        realtime.send (jsonb_build_object('table', 'calendar'), -- JSONB Payload
-            'sync', -- Event name
-            'user:' || (
+        realtime.send (jsonb_build_object('table', 'calendar'), 'sync', 'user:' || (
                 SELECT
                     user_id
                 FROM account
                 WHERE
-                    id = OLD.account_id)::text, -- Topic
-            FALSE -- Public / Private flag
-);
+                    id = OLD.account_id)::text, FALSE);
     RETURN NULL;
 END;
-$function$;
+$$;
 
 CREATE OR REPLACE FUNCTION public.notify_user_for_event ()
     RETURNS TRIGGER
@@ -101,46 +97,6 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.redeem_invitation (_user_id bigint, _invitation text)
-    RETURNS void
-    LANGUAGE plpgsql
-    AS $function$
-BEGIN
-    UPDATE
-        "invitation"
-    SET
-        remaining = remaining - 1
-    WHERE
-        code = _invitation
-        AND remaining > 0;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Invitation code % not valid', _invitation;
-    END IF;
-    BEGIN
-        UPDATE
-            public.user
-        SET
-            invitation = _invitation,
-            activated_at = now()
-        WHERE
-            id = _user_id;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'User % not found', _user_id;
-        END IF;
-    EXCEPTION
-        WHEN OTHERS THEN
-            UPDATE
-                "invitation"
-            SET
-                remaining = remaining + 1
-            WHERE
-                code = _invitation;
-                RAISE;
-    END;
-END;
-
-$function$;
-
 CREATE TRIGGER handle_account_changes
     AFTER INSERT OR UPDATE ON public.account
     FOR EACH ROW
@@ -171,20 +127,37 @@ CREATE TRIGGER handle_session_changes
     FOR EACH ROW
     EXECUTE FUNCTION notify_user_for_session ();
 
-ALTER VIEW "public"."activity_x" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."activity_children" SET ( security_invoker = TRUE);
-ALTER VIEW gap SET ( security_invoker = TRUE);
-ALTER VIEW gap_monthly SET ( security_invoker = TRUE);
-ALTER VIEW gap_daily SET ( security_invoker = TRUE);
-ALTER VIEW insight SET ( security_invoker = TRUE);
-ALTER VIEW "admin"."sync" SET ( security_invoker = FALSE);
-ALTER VIEW "admin"."invitation" SET ( security_invoker = FALSE);
-ALTER VIEW "public"."event_invitees" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."event_x" SET ( security_invoker = TRUE);
-ALTER VIEW public.calendar_x SET ( security_invoker = TRUE);
-ALTER VIEW "admin"."user" SET ( security_invoker = FALSE);
-ALTER VIEW balance_without_children SET ( security_invoker = TRUE);
-ALTER VIEW balance SET ( security_invoker = TRUE);
-ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."priority_x" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."priority_children" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_x" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."activity_children" SET (security_invoker = TRUE);
+
+ALTER VIEW gap SET (security_invoker = TRUE);
+
+ALTER VIEW gap_monthly SET (security_invoker = TRUE);
+
+ALTER VIEW gap_daily SET (security_invoker = TRUE);
+
+ALTER VIEW insight SET (security_invoker = TRUE);
+
+ALTER VIEW "admin"."sync" SET (security_invoker = FALSE);
+
+ALTER VIEW "admin"."invitation" SET (security_invoker = FALSE);
+
+ALTER VIEW "public"."event_invitees" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."event_x" SET (security_invoker = TRUE);
+
+ALTER VIEW public.calendar_x SET (security_invoker = TRUE);
+
+ALTER VIEW "admin"."user" SET (security_invoker = FALSE);
+
+ALTER VIEW balance_without_children SET (security_invoker = TRUE);
+
+ALTER VIEW balance SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_x" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_children" SET (security_invoker = TRUE);
+
