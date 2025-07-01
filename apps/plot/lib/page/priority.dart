@@ -261,24 +261,28 @@ class PriorityPage extends StatelessWidget {
                         },
                       ),
                     ),
+                    EditableArea(
+                      position: EditableAreaPosition.bottom,
+                      builder: (context, focusNode) => Editor(
+                        hint: 'Add activity',
+                        autofocus: true,
+                        focusNode: focusNode,
+                        onSubmitted: (body, {bool alt = false}) async {
+                          log.info(
+                            'Adding new priority with body: $body ($alt)',
+                          );
+                          final priority = state.draft.copyWith(
+                            note: Value(body),
+                            draft: false,
+                            doAt: alt
+                                ? Value(Date.today())
+                                : const Value.absent(),
+                          );
+                          await context.read<PriorityBloc>().add(priority);
+                        },
+                      ),
+                    ),
                   ],
-                ),
-                footer: EditableArea(
-                  position: EditableAreaPosition.bottom,
-                  builder: (context, focusNode) => Editor(
-                    hint: 'Add activity',
-                    autofocus: true,
-                    focusNode: focusNode,
-                    onSubmitted: (body, {bool alt = false}) async {
-                      log.info('Adding new priority with body: $body ($alt)');
-                      final priority = state.draft.copyWith(
-                        note: Value(body),
-                        draft: false,
-                        doAt: alt ? Value(Date.today()) : const Value.absent(),
-                      );
-                      await context.read<PriorityBloc>().add(priority);
-                    },
-                  ),
                 ),
               ),
             ),

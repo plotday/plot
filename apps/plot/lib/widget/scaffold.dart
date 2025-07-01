@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:forui/forui.dart';
 
 import 'colour_scheme.dart';
@@ -22,7 +22,7 @@ class Scaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
+    return material.Material(
       child: Directionality(
         textDirection: TextDirection.ltr,
         child: Container(
