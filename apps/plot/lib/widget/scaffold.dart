@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
 import 'colour_scheme.dart';
@@ -21,14 +22,19 @@ class Scaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: translucent ? null : context.colour.background,
-      child: FScaffold(
-        header: header,
-        sidebar: sidebar,
-        footer: footer,
-        childPad: false,
-        child: body,
+    return Material(
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: Container(
+          color: translucent ? null : context.colour.background,
+          child: FScaffold(
+            header: header,
+            sidebar: sidebar,
+            footer: footer,
+            childPad: false,
+            child: body,
+          ),
+        ),
       ),
     );
   }
