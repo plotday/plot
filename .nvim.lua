@@ -6,6 +6,12 @@ require("flutter-tools").setup_project({
 		device = "macos",
 	},
 	{
+		name = "Android",
+		target = "lib/main.dart",
+		cwd = "apps/plot",
+		device = "emulator-5554",
+	},
+	{
 		name = "Web",
 		target = "lib/main.dart",
 		cwd = "apps/plot",
