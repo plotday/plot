@@ -238,6 +238,7 @@ class Store extends _$Store {
       inst._startSync();
     } else {
       await inst._startSync();
+      assert(await Priority.hasDefault(), "No default priority");
     }
   }
 
