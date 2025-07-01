@@ -185,7 +185,7 @@ class ActivityPage extends StatelessWidget {
                         )
                       : null,
                   commands: [
-                    ...currentPriorityCommands(state.context),
+                    ...activityCommands(state.activity!),
                     ToggleShowArchived(showArchived: state.showArchived),
                   ],
                 ),
