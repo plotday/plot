@@ -297,24 +297,24 @@ class ActivityPage extends StatelessWidget {
                         },
                       ),
                     ),
+                    EditableArea(
+                      position: EditableAreaPosition.bottom,
+                      builder: (context, focusNode) => Editor(
+                        hint: 'Add activity',
+                        autofocus: true,
+                        focusNode: focusNode,
+                        onSubmitted: (body, {bool alt = false}) async {
+                          log.info('Adding new activity with body: $body ($alt)');
+                          final activity = state.draft.copyWith(
+                            note: Value(body),
+                            draft: false,
+                            doAt: alt ? Value(Date.today()) : const Value.absent(),
+                          );
+                          await context.read<PriorityBloc>().add(activity);
+                        },
+                      ),
+                    ),
                   ],
-                ),
-                footer: EditableArea(
-                  position: EditableAreaPosition.bottom,
-                  builder: (context, focusNode) => Editor(
-                    hint: 'Add activity',
-                    autofocus: true,
-                    focusNode: focusNode,
-                    onSubmitted: (body, {bool alt = false}) async {
-                      log.info('Adding new activity with body: $body ($alt)');
-                      final activity = state.draft.copyWith(
-                        note: Value(body),
-                        draft: false,
-                        doAt: alt ? Value(Date.today()) : const Value.absent(),
-                      );
-                      await context.read<PriorityBloc>().add(activity);
-                    },
-                  ),
                 ),
               ),
             ),
