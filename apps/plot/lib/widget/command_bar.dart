@@ -142,7 +142,6 @@ class CommandBarState<T> extends State<_CommandBar<T>> {
         child: _child != null
             ? _child!
             : Column(
-                mainAxisSize: MainAxisSize.min,
                 children: [
                   EditableArea(
                     position: EditableAreaPosition.top,

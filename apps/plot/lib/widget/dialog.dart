@@ -33,9 +33,15 @@ class Dialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
+    final safeAreaHeight =
+        mediaQuery.size.height -
+        mediaQuery.viewPadding.top -
+        mediaQuery.viewPadding.bottom -
+        mediaQuery.viewInsets.bottom;
+
     BoxConstraints constraints = this.constraints.enforce(
       BoxConstraints(
-        maxHeight: mediaQuery.size.height * maxHeightPercentage,
+        maxHeight: safeAreaHeight * maxHeightPercentage,
         maxWidth: mediaQuery.size.width * maxWidthPercentage,
       ),
     );
