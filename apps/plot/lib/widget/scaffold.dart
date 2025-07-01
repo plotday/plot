@@ -3,7 +3,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
-import 'package:plot/router.dart';
+// import 'package:plot/router.dart';
 import 'colour_scheme.dart';
 
 class Scaffold extends StatelessWidget {
@@ -49,17 +49,23 @@ class Scaffold extends StatelessWidget {
               child: body,
             ),
       ),
-      builder: (_) => material.Material(
-        child: Directionality(
-          textDirection: TextDirection.ltr,
-          child: Container(
-            color: translucent ? null : context.colour.background,
-            child: FScaffold(
-              header: header,
-              sidebar: sidebar,
-              childPad: false,
-              child: body,
-            ),
+      webBuilder: (_) => material.Material(
+        child: FScaffold(
+          header: header,
+          sidebar: sidebar,
+          childPad: false,
+          child: body,
+        ),
+      ),
+      builder: (_) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: Container(
+          color: translucent ? null : context.colour.background,
+          child: FScaffold(
+            header: header,
+            sidebar: sidebar,
+            childPad: false,
+            child: body,
           ),
         ),
       ),
