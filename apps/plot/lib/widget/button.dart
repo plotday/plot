@@ -83,33 +83,36 @@ class Button extends StatelessWidget {
     final onPress = enabled ? () => context.run<void>(command) : null;
     final button = PlatformBuilder(
       builder:
-          (_) =>
-              iconOnly
-                  ? FButton.icon(
-                    style: fStyle,
-                    onPress: onPress,
-                    child: Icon(
-                      command.statusIcon.or(command.icon) ?? PlotIcon.right,
-                      size: 12,
-                      color:
-                          command.statusIcon.or(command.icon) != null
-                              ? context.colour.muted
-                              : Color(0x00000000),
-                    ),
-                  )
-                  : FButton(
-                    style: fStyle,
-                    onPress: onPress,
-                    prefix:
-                        command.icon != null
-                            ? Icon(
-                              command.icon!,
-                              size: 12,
-                              color: context.colour.muted,
-                            )
-                            : null,
-                    child: Text(command.title),
-                  ),
+          (_) {
+            final icon = command.statusIcon.or(command.icon);
+            return iconOnly
+              ? FButton.icon(
+                style: fStyle,
+                onPress: onPress,
+                child: Icon(
+                  icon ?? PlotIcon.right,
+                  size: 12,
+                  color:
+                      icon != null
+                          ? context.colour.muted
+                          : Color(0x00000000),
+                ),
+              )
+              : FButton(
+                style: fStyle,
+                onPress: onPress,
+                prefix:
+                    icon != null
+                        ? Icon(
+                          icon,
+                          size: 12,
+                          color: context.colour.muted,
+                        )
+                        : null,
+                child: Text(command.title),
+              );
+          }
+              
     );
 
     return Stack(
