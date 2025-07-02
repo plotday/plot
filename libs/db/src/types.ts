@@ -1470,10 +1470,6 @@ export type Database = {
         Args: { p: unknown }
         Returns: unknown
       }
-      redeem_invitation: {
-        Args: { _user_id: number; _invitation: string }
-        Returns: undefined
-      }
       server_timestamp: {
         Args: Record<PropertyKey, never>
         Returns: string
