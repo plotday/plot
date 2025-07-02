@@ -286,7 +286,7 @@ Command activityPrimaryCommand(Activity activity) => CommandWrapper(
 
 List<Command> activitySecondaryCommands(Activity activity) => [
   if (activity.path.isRoot) PickScheduleActivity(activity),
-  PinActivity(activity),
+  if (!activity.pinned) PinActivity(activity),
   ArchiveActivity(activity),
 ];
 
