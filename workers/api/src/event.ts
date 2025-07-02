@@ -57,7 +57,7 @@ export async function respond(
       .eq("id", eventId)
       .maybeSingle()
   );
-  if (!event?.calendar?.account?.email) {
+  if (!event?.calendar?.account?.email || !event?.provider_id) {
     throw new Response("Not found", { status: 404 });
   }
 
