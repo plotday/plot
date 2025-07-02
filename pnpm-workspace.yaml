@@ -4,7 +4,12 @@ packages:
   - libs/*
 onlyBuiltDependencies:
   - '@sentry/cli'
+  - bufferutil
+  - es5-ext
   - esbuild
+  - fast-folder-size
+  - nx
   - sharp
   - supabase
+  - utf-8-validate
   - workerd

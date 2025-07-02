@@ -20,7 +20,6 @@
     "migrate": "nx migrate @plotday/db",
     "lint": "pnpm lint:pnpm-installed && nx run-many -t lint --exclude @plotday/plot",
     "lint:pnpm-installed": "pnpm install --silent --frozen-lockfile",
-    "pre-commit": "#",
     "test": "nx run-many -t test --exclude @plotday/plot",
     "test:watch": "pnpm -r run test:watch",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
