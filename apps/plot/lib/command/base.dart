@@ -125,16 +125,16 @@ class ShowPage extends Command {
 }
 
 extension BuildContextCommandExtension on BuildContext {
-  Future<Value<T>> run<T>(Command command) async {
+  Future<void> run(Command command) async {
     final next = await command.run(this);
     if (next is CommandCommands) {
-      return await CommandBar(next.commands).show<T>(this);
+      await CommandBar(next.commands).run(this);
     } else if (next is CommandPage) {
       final pageResult = await Dialog(
         builder: (_) => next.child,
       ).show<CommandReturn?>(this);
       if (pageResult.present) {
-        return await run<T>(
+        return await run(
           CommandWrapper(command, run: (_, __) async => pageResult.value),
         );
       }
@@ -145,7 +145,6 @@ extension BuildContextCommandExtension on BuildContext {
         router.navigate(next.route);
       }
     }
-    return Value.absent();
   }
 }
 
@@ -284,7 +283,7 @@ class CommandScopeState extends State<CommandScope> {
                 ...bindings,
                 command.shortcut!: () {
                   try {
-                    context.run<void>(command);
+                    context.run(command);
                   } catch (e) {
                     print('Error running command: $e');
                     rethrow;

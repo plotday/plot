@@ -38,7 +38,7 @@ class PrioritiesList extends StatelessWidget {
                 if (onPrioritySelected != null) {
                   onPrioritySelected!(priority);
                 } else {
-                  context.run<void>(ChangeCurrentPriority(priority));
+                  context.run(ChangeCurrentPriority(priority));
                 }
               },
               child: PriorityWidget(priority: priority, selected: isSelected),
@@ -71,4 +71,3 @@ class PrioritiesList extends StatelessWidget {
     );
   }
 }
-

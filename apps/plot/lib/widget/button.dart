@@ -80,7 +80,7 @@ class Button extends StatelessWidget {
       };
     }
 
-    final onPress = enabled ? () => context.run<void>(command) : null;
+    final onPress = enabled ? () => context.run(command) : null;
     final button = PlatformBuilder(
       builder: (_) {
         final icon = command.icon;

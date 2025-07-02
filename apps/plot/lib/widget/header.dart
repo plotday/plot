@@ -105,7 +105,7 @@ class _HeaderState extends State<Header> with RouteAware {
             icon: command.icon != null
                 ? Icon(command.icon!, size: 14)
                 : Text(command.title),
-            onPress: () => context.run<void>(command),
+            onPress: () => context.run(command),
           ),
         ),
         if (widget.modal && _canPop)

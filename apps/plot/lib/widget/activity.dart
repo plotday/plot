@@ -57,7 +57,7 @@ class ActivityDetailWidget extends StatelessWidget {
       body: Viewer(
         markdown: (expanded ? activity.note : null) ?? activity.title,
         onTap: () {
-          context.run<void>(ChangeCurrentActivity(activity));
+          context.run(ChangeCurrentActivity(activity));
         },
       ),
       selected: selected,

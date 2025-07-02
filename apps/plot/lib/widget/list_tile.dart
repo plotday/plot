@@ -82,8 +82,9 @@ class _ListTileState extends State<ListTile> {
     return GestureDetector(
       onTap: widget.command != null
           ? () {
+              log.info("Running command: ${widget.command?.title}");
               try {
-                widget.command!.run(context);
+                context.run(widget.command!);
               } catch (e, t) {
                 log.warning("Command ${widget.command?.title} failed", e, t);
               }
@@ -92,7 +93,7 @@ class _ListTileState extends State<ListTile> {
       onDoubleTap: widget.doubleTapCommand != null
           ? () {
               try {
-                widget.doubleTapCommand!.run(context);
+                context.run(widget.doubleTapCommand!);
               } catch (e, t) {
                 log.warning(
                   "Command ${widget.doubleTapCommand?.title} failed",
