@@ -125,7 +125,7 @@ class AgendaHeader extends StatelessWidget {
       leadingWidth: 60.0,
       leadingPadding: true,
       command: priorityAncestry?.isNotEmpty == true
-          ? ChangeCurrentPriority.byId(priorityAncestry!.last.id)
+          ? OpenPriority.byId(priorityAncestry!.last.id)
           : null,
       selected: selected,
       onHover: onHover,
@@ -172,10 +172,7 @@ class EventWidget extends StatelessWidget {
       leadingWidth: 60.0,
       leadingPadding: true,
       command: ChangeCurrentEvent(event),
-      trailingCommands: [
-        ChangeEventPriority(event),
-        ChangeEventResponse(event),
-      ],
+      trailingCommands: [PickEventPriority(event), PickEventResponse(event)],
       selected: selected,
       onHover: onHover,
       title: event.name ?? 'Untitled Event',

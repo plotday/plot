@@ -34,80 +34,104 @@ class ChangeCurrentEvent extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.router.navigate(EventRoute(eventId: eventId));
+    return CommandRoute(EventRoute(eventId: eventId));
+  }
+}
+
+class ChangeEventPriority extends PriorityCommand {
+  ChangeEventPriority(this.event, super.priority);
+
+  final Event event;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    await event.copyWith(priorityId: Value(priority?.id)).save();
     return null;
   }
 }
 
-class ChangeEventPriority extends ShowCommands<Priority> {
-  ChangeEventPriority(this.event)
+class PickEventPriority extends ShowCommands {
+  PickEventPriority(this.event)
     : super(
         title: 'Change Priority',
         icon: PlotIcon.priority,
-        commands: (context) => PickPriority(prompt: 'Pick priority for event'),
+        commands: (context) => Future.value(
+          Commands(
+            groups: [
+              PriorityGroup(
+                title: 'Select Priority',
+                builder: (priority) => ChangeEventPriority(event, priority),
+              ),
+            ],
+          ),
+        ),
       );
 
   final Event event;
-
-  @override
-  void onSelect(BuildContext context, Priority value) async {
-    // await context
-    //     .read<ScheduleBloc>()
-    //     .update(event.copyWith(priorityId: Value(value.id)));
-  }
 }
 
-class ChangeEventResponse extends ShowCommands<EventResponse> {
-  ChangeEventResponse(this.event)
+class PickEventResponse extends ShowCommands {
+  PickEventResponse(Event event)
     : super(
         title: 'Change Response',
         icon: PlotIcon.event,
-        commands: (context) => PickEventResponse(),
+        commands: (context) => Future.value(
+          Commands(
+            prompt: 'Select response',
+            groups: [
+              StaticCommandGroup(
+                title: 'Response Options',
+                commands: [
+                  ChangeEventResponse(
+                    event,
+                    EventResponse.accepted,
+                    title: 'Accepted',
+                    subtitle: 'Accept this event',
+                    icon: PlotIcon.done,
+                  ),
+                  ChangeEventResponse(
+                    event,
+                    EventResponse.declined,
+                    title: 'Declined',
+                    subtitle: 'Decline this event',
+                    icon: PlotIcon.archive,
+                  ),
+                  ChangeEventResponse(
+                    event,
+                    EventResponse.tentative,
+                    title: 'Tentative',
+                    subtitle: 'Maybe attend this event',
+                    icon: PlotIcon.priority,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       );
+}
 
+class ChangeEventResponse extends Command {
+  ChangeEventResponse(
+    this.event,
+    this.response, {
+    required super.title,
+    super.subtitle,
+    super.icon,
+  });
   final Event event;
+  final EventResponse response;
 
   @override
-  void onSelect(BuildContext context, EventResponse value) async {
+  Future<CommandReturn?> run(BuildContext context) async {
     await event
         .copyWith(
-          response: Value(value),
-          deletedAt: value == EventResponse.declined
+          response: Value(response),
+          deletedAt: response == EventResponse.declined
               ? Value(DateTime.now())
               : Value(null),
         )
         .save();
+    return null;
   }
-}
-
-class PickEventResponse extends Commands<EventResponse> {
-  PickEventResponse()
-    : super(prompt: 'Select response', groups: [EventResponseCommandGroup()]);
-}
-
-class EventResponseCommandGroup extends StaticCommandGroup {
-  EventResponseCommandGroup()
-    : super(
-        title: 'Response Options',
-        commands: [
-          ValueCommand<EventResponse>(
-            title: 'Accepted',
-            subtitle: 'Accept this event',
-            icon: PlotIcon.done,
-            value: EventResponse.accepted,
-          ),
-          ValueCommand<EventResponse>(
-            title: 'Declined',
-            subtitle: 'Decline this event',
-            icon: PlotIcon.archive,
-            value: EventResponse.declined,
-          ),
-          ValueCommand<EventResponse>(
-            title: 'Tentative',
-            subtitle: 'Maybe attend this event',
-            icon: PlotIcon.priority,
-            value: EventResponse.tentative,
-          ),
-        ],
-      );
 }

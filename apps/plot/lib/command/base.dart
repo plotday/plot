@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/util/value.dart';
 import 'package:plot/widget/widget.dart';
@@ -8,14 +9,9 @@ import 'logging.dart';
 
 sealed class CommandReturn {}
 
-class CommandValue<T> extends CommandReturn {
-  CommandValue(this.value);
-  final T value;
-}
-
-class CommandCommands<T> extends CommandReturn {
+class CommandCommands extends CommandReturn {
   CommandCommands(this.commands);
-  final Commands<T> commands;
+  final Commands commands;
 }
 
 class CommandPage extends CommandReturn {
@@ -29,15 +25,18 @@ class CommandMessage extends CommandReturn {
   final bool isError;
 }
 
+class CommandRoute extends CommandReturn {
+  CommandRoute(this.route, {this.replace = false});
+  final PageRouteInfo route;
+  final bool replace;
+}
+
 abstract class Command {
   const Command({
     required this.title,
     this.subtitle,
     this.description,
     this.icon,
-
-    /// If specified, overrides icon until hovered.
-    this.statusIcon = const Value.absent(),
     this.shortcut,
   });
 
@@ -45,7 +44,6 @@ abstract class Command {
   final String? subtitle;
   final String? description;
   final IconData? icon;
-  final Value<IconData?> statusIcon;
   final ShortcutActivator? shortcut;
 
   Future<CommandReturn?> run(BuildContext context);
@@ -61,14 +59,13 @@ class CommandWrapper extends Command {
   CommandWrapper(
     this.command, {
     Future<CommandReturn?> Function(Command command, BuildContext context)? run,
-    Value<IconData?> statusIcon = const Value.absent(),
+    Value<IconData?> icon = const Value<IconData?>.absent(),
   }) : _run = run,
        super(
          title: command.title,
          subtitle: command.subtitle,
          description: command.description,
-         icon: command.icon,
-         statusIcon: statusIcon | command.statusIcon,
+         icon: icon.or(command.icon),
          shortcut: command.shortcut,
        );
 
@@ -84,60 +81,8 @@ class CommandWrapper extends Command {
   Widget? buildBody(BuildContext context) => command.buildBody(context);
 }
 
-/// A command for returning a value
-class ValueCommand<T> extends Command {
-  ValueCommand({
-    required super.title,
-    super.subtitle,
-    super.description,
-    super.icon,
-    required this.value,
-  });
-
-  final T value;
-
-  @override
-  Future<CommandValue<T>> run(BuildContext context) {
-    log.info('ValueCommand returned $value');
-    return Future.value(CommandValue(value));
-  }
-}
-
-/// A command for showing a widget and returning a value
-class ShowCommand<T> extends Command {
-  ShowCommand({
-    required super.title,
-    super.description,
-    super.icon,
-    super.shortcut,
-    required this.builder,
-  });
-
-  final Dialog Function(BuildContext context) builder;
-
-  @override
-  Future<CommandValue<T>?> run(BuildContext context) async {
-    try {
-      final value = await builder(context).show<T>(context);
-      log.info(
-        'CommandBar returned ${value.present ? value.value : 'no value'}',
-      );
-      if (context.mounted && value.present) {
-        onSelect(context, value.value);
-        return CommandValue(value.value);
-      }
-      return null;
-    } on Error catch (e) {
-      log.warning(e, e.stackTrace);
-      rethrow;
-    }
-  }
-
-  void onSelect(BuildContext context, T value) {}
-}
-
-/// A command for showing a set of options and returning a value
-class ShowCommands<T> extends Command {
+/// A command for showing a set of commands
+class ShowCommands extends Command {
   ShowCommands({
     required super.title,
     super.description,
@@ -146,38 +91,59 @@ class ShowCommands<T> extends Command {
     required this.commands,
   });
 
-  final Commands<T> Function(BuildContext context) commands;
+  final Future<Commands> Function(BuildContext context) commands;
 
   @override
-  Future<CommandValue<T>?> run(BuildContext context) async {
+  Future<CommandReturn?> run(BuildContext context) async {
     try {
-      final value = await CommandBar(commands(context)).show<T>(context);
-      log.info(
-        'CommandBar returned ${value.present ? value.value : 'no value'}',
-      );
-      if (context.mounted && value.present) {
-        onSelect(context, value.value);
-        return CommandValue(value.value);
-      }
-      return null;
+      final commandReturn = CommandBar(await commands(context));
+      if (!context.mounted) return null;
+      return await commandReturn.run(context);
     } on Error catch (e) {
       log.warning(e, e.stackTrace);
       rethrow;
     }
   }
+}
 
-  void onSelect(BuildContext context, T value) {}
+/// A command for showing a page widget in a dialog
+class ShowPage extends Command {
+  ShowPage({
+    required super.title,
+    super.description,
+    super.icon,
+    super.shortcut,
+    required this.builder,
+  });
+
+  final Widget Function(BuildContext context) builder;
+
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    return CommandPage(builder(context));
+  }
 }
 
 extension BuildContextCommandExtension on BuildContext {
   Future<Value<T>> run<T>(Command command) async {
     final next = await command.run(this);
-    if (next is CommandValue<T>) {
-      return Value(next.value);
-    } else if (next is CommandCommands<T>) {
+    if (next is CommandCommands) {
       return await CommandBar(next.commands).show<T>(this);
     } else if (next is CommandPage) {
-      await Dialog(builder: (_) => next.child).show<void>(this);
+      final pageResult = await Dialog(
+        builder: (_) => next.child,
+      ).show<CommandReturn?>(this);
+      if (pageResult.present) {
+        return await run<T>(
+          CommandWrapper(command, run: (_, __) async => pageResult.value),
+        );
+      }
+    } else if (next is CommandRoute) {
+      if (next.replace) {
+        router.replace(next.route);
+      } else {
+        router.navigate(next.route);
+      }
     }
     return Value.absent();
   }
@@ -243,7 +209,7 @@ class StaticCommandGroup extends CommandGroup {
   }
 }
 
-class Commands<T> {
+class Commands {
   const Commands({String? prompt, required this.groups, this.secondaryCommand})
     : prompt = prompt ?? 'Run a command';
 
@@ -251,12 +217,12 @@ class Commands<T> {
   final List<CommandGroup> groups;
   final Command? Function(String promptValue)? secondaryCommand;
 
-  Future<Value<T>> show(BuildContext context) async {
+  Future<CommandReturn?> show(BuildContext context) async {
     try {
       return await CommandBar(
         this,
         secondaryCommand: secondaryCommand,
-      ).show<T>(context);
+      ).run(context);
     } on Error catch (e) {
       print(e);
       print(e.stackTrace);
@@ -307,7 +273,7 @@ class CommandScopeState extends State<CommandScope> {
       bindings: widget.commands.expand((group) => group.commands).fold(
         <ShortcutActivator, VoidCallback>{
           const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
-              Commands<void>(
+              Commands(
                 prompt: 'Run a command',
                 groups: CommandRegistry.of(context).commands,
               ).show(context),

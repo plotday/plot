@@ -133,10 +133,7 @@ class _ListTileState extends State<ListTile> {
                       widget.leadingCommand,
                       (widget.leadingWidth == 0
                           ? null
-                          : widget.icon ??
-                                widget.command?.statusIcon.or(
-                                  widget.command?.icon,
-                                )),
+                          : widget.icon ?? widget.command?.icon),
                     )) {
                       (var widget?, _, _) => widget,
                       (null, var command?, _) => Align(

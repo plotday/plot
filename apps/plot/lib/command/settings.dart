@@ -12,14 +12,14 @@ final settingsCommands = StaticCommandGroup(
   commands: [ShowAllCalendarSettings(), SignOut()],
 );
 
-class ShowSettings extends ShowCommands<void> {
+class ShowSettings extends ShowCommands {
   ShowSettings()
     : super(
         title: 'Settings',
         icon: PlotIcon.settings,
-        commands:
-            (context) =>
-                Commands<void>(groups: [settingsCommands], prompt: 'Settings'),
+        commands: (context) => Future.value(
+          Commands(groups: [settingsCommands], prompt: 'Settings'),
+        ),
         // SettingsCommands(),
         shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
       );

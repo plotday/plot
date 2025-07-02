@@ -6,22 +6,23 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 
-class _ActivityValue extends ValueCommand<Activity?> {
-  _ActivityValue(Activity? activity)
+abstract class ActivityCommand extends Command {
+  ActivityCommand(this.activity)
     : super(
         title: activity?.title ?? 'None',
         subtitle: activity?.parent?.title ?? '',
-        value: activity,
       );
+
+  final Activity? activity;
 
   @override
   Widget buildBody(BuildContext context) {
     return Row(
       children: [
-        if (value?.parent?.title.isNotEmpty == true) ...[
+        if (activity?.parent?.title.isNotEmpty == true) ...[
           Flexible(
             child: Text(
-              value!.parent?.title ?? '',
+              activity!.parent?.title ?? '',
               overflow: TextOverflow.ellipsis,
               style: context.theme.typography.xs.copyWith(
                 color: context.colour.muted,
@@ -37,7 +38,7 @@ class _ActivityValue extends ValueCommand<Activity?> {
         ],
         Flexible(
           child: Text(
-            value?.title ?? 'None',
+            activity?.title ?? 'None',
             overflow: TextOverflow.ellipsis,
             style: context.theme.typography.xs.copyWith(
               color: context.colour.foreground,
@@ -49,9 +50,19 @@ class _ActivityValue extends ValueCommand<Activity?> {
   }
 }
 
-class ActivityCommandGroup extends CommandGroup {
-  ActivityCommandGroup({this.priorityId}) : super(title: 'Activities');
+class ChangeCurrentActivity extends ActivityCommand {
+  ChangeCurrentActivity(super.activity);
 
+  @override
+  Future<CommandReturn?> run(BuildContext context) async {
+    return CommandRoute(ActivityRoute(activityId: activity?.id));
+  }
+}
+
+class ActivityGroup extends CommandGroup {
+  ActivityGroup({required super.title, required this.builder, this.priorityId});
+
+  final Command Function(Activity activity) builder;
   final PriorityId? priorityId;
 
   @override
@@ -60,19 +71,19 @@ class ActivityCommandGroup extends CommandGroup {
       priorityId: priorityId,
       order: ActivityOrder.recent,
       search: search,
-    )).map((activity) => _ActivityValue(activity)).toList();
+    )).map((activity) => builder(activity)).toList();
     return CommandGroup.filter(all, search);
   }
 }
 
-class ChangeCurrentActivity extends Command {
-  ChangeCurrentActivity(Activity activity)
+class OpenActivity extends Command {
+  OpenActivity(Activity activity)
     // ignore: prefer_initializing_formals
     : activity = activity,
       activityId = activity.id,
       super(title: "Open", icon: PlotIcon.open);
 
-  ChangeCurrentActivity.byId(this.activityId)
+  OpenActivity.byId(this.activityId)
     : activity = null,
       super(title: "Open", icon: PlotIcon.open);
 
@@ -81,8 +92,7 @@ class ChangeCurrentActivity extends Command {
 
   @override
   Future<CommandReturn?> run(BuildContext context) async {
-    await context.router.navigate(ActivityRoute(activityId: activityId));
-    return null;
+    return CommandRoute(ActivityRoute(activityId: activityId));
   }
 }
 
@@ -96,10 +106,7 @@ class AddActivity extends Command {
     final activity = await _activity;
     await activity.copyWith(draft: false).save();
     Posthog().capture(eventName: 'Activity Added');
-    if (context.mounted) {
-      await context.router.replace(ActivityRoute(activityId: activity.id));
-    }
-    return null;
+    return CommandRoute(ActivityRoute(activityId: activity.id), replace: true);
   }
 }
 
@@ -198,26 +205,30 @@ class ScheduleActivity extends _UpdateActivityCommand {
   }
 }
 
-class PickScheduleActivity extends ShowCommand<Date> {
-  PickScheduleActivity(this.activity)
+class PickScheduleActivity extends ShowPage {
+  PickScheduleActivity(Activity activity)
     : super(
         title: 'Schedule',
         icon: PlotIcon.scheduled,
         builder: (context) => Dialog(
           builder: (context) => FCalendar(
             controller: FCalendarController.date(),
-            onPress: (date) =>
-                DialogProvider.of(context).pop(context, Value(date.toDate())),
+            onPress: (date) async {
+              final commandReturn = await ScheduleActivity(
+                activity,
+                when: date.toDate(),
+              ).run(context);
+              if (!context.mounted) return;
+              DialogProvider.of(context).pop(context, Value(commandReturn));
+            },
           ),
         ),
       );
 
-  final Activity activity;
-
-  @override
-  void onSelect(BuildContext context, Date value) async {
-    ScheduleActivity(activity, when: value).run(context);
-  }
+  // @override
+  // void onSelect(BuildContext context, Date value) async {
+  //   ScheduleActivity(activity, when: value).run(context);
+  // }
 }
 
 class MarkActivityIncomplete extends _UpdateActivityCommand {
@@ -246,26 +257,21 @@ class PinActivity extends _UpdateActivityCommand {
   }
 }
 
-class ActivityCommands extends Commands<void> {
-  final Activity activity;
-
-  ActivityCommands(this.activity)
-    : super(
-        groups: [
-          StaticCommandGroup(
-            title: activity.title,
-            commands: activityCommands(activity),
-          ),
-        ],
-      );
-}
-
-class ShowActivityCommands extends ShowCommands<void> {
+class ShowActivityCommands extends ShowCommands {
   ShowActivityCommands(Activity activity)
     : super(
         title: 'More Commands',
         icon: PlotIcon.menu,
-        commands: (context) => ActivityCommands(activity),
+        commands: (context) => Future.value(
+          Commands(
+            groups: [
+              StaticCommandGroup(
+                title: activity.title,
+                commands: activityCommands(activity),
+              ),
+            ],
+          ),
+        ),
       );
 }
 
@@ -276,7 +282,7 @@ Command activityPrimaryCommand(Activity activity) => CommandWrapper(
     _ when activity.done => MarkActivityIncomplete(activity),
     _ => StartActivity(activity),
   },
-  statusIcon: Value(switch (activity) {
+  icon: Value(switch (activity) {
     _ when activity.pinned => PlotIcon.pinned,
     _ when activity.scheduled => PlotIcon.todo,
     _ when activity.done => PlotIcon.done,

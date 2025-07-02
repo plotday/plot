@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/bidirectional_list.dart';
@@ -9,32 +10,38 @@ import 'button.dart';
 import 'theme.dart';
 import 'logging.dart';
 
-class CommandBar<T> extends Dialog {
+class CommandBar extends Dialog {
   CommandBar(
-    Commands<T> commands, {
+    Commands commands, {
     Command? Function(String promptValue)? secondaryCommand,
     super.key,
   }) : super(
          padding: const EdgeInsets.all(0),
          builder: (_) =>
-             _CommandBar<T>(commands, secondaryCommand: secondaryCommand),
+             _CommandBar(commands, secondaryCommand: secondaryCommand),
        );
+
+  Future<CommandReturn?> run(BuildContext context) {
+    return super
+        .show<CommandReturn?>(context)
+        .then((value) => value.present ? value.value : null);
+  }
 }
 
-class _CommandBar<T> extends StatefulWidget {
-  const _CommandBar(this.commands, {this.secondaryCommand, super.key});
+class _CommandBar extends StatefulWidget {
+  const _CommandBar(this.commands, {this.secondaryCommand});
 
-  final Commands<T> commands;
+  final Commands commands;
   final Command? Function(String promptValue)? secondaryCommand;
 
   @override
-  CommandBarState<T> createState() => CommandBarState();
+  CommandBarState createState() => CommandBarState();
 }
 
-class CommandBarState<T> extends State<_CommandBar<T>> {
+class CommandBarState extends State<_CommandBar> {
   final TextEditingController _controller = TextEditingController();
   List<StaticCommandGroup> _filteredCommandGroups = [];
-  late Commands<T> commands = widget.commands;
+  late Commands commands = widget.commands;
   Widget? _child;
   String? _error;
   bool _isDisposed = false;
@@ -96,18 +103,8 @@ class CommandBarState<T> extends State<_CommandBar<T>> {
     try {
       final result = await command.run(context);
 
-      if (result is CommandCommands<T>) {
-        commands = result.commands;
-        _controller.text = '';
-        _initCommands();
-      } else if (result is CommandPage) {
-        setState(() => _child = result.child);
-      } else if (result is CommandValue<T> && mounted) {
-        DialogProvider.of(context).pop(context, Value(result.value));
-      } else if (result is CommandValue<T?> && mounted) {
-        DialogProvider.of(
-          context,
-        ).pop(context, Value.absentIfNull(result.value));
+      if (result != null) {
+        await _processCommandReturn(result);
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
@@ -116,6 +113,37 @@ class CommandBarState<T> extends State<_CommandBar<T>> {
       });
     }
     return null;
+  }
+
+  Future<void> _processCommandReturn(CommandReturn result) async {
+    if (result is CommandCommands) {
+      commands = result.commands;
+      _controller.text = '';
+      _initCommands();
+    } else if (result is CommandPage) {
+      final pageReturn = await DialogProvider.of(
+        context,
+      ).push<CommandReturn?>(context, result.child);
+      if (pageReturn.notNull) {
+        _processCommandReturn(pageReturn.value!);
+      }
+    } else if (result is CommandRoute && mounted) {
+      log.info(
+        'Executing command route: ${result.route} (${result.replace ? 'replace' : 'navigate'})',
+      );
+      DialogProvider.of(context).pop(context, Value(null));
+      log.info('Popped');
+      if (result.replace) {
+        context.router.replace(result.route);
+      } else {
+        context.router.navigate(result.route);
+      }
+      log.info('Command route executed: ${result.route}');
+    } else if (result is CommandMessage) {
+      setState(() {
+        _error = result.message;
+      });
+    }
   }
 
   @override

@@ -5,47 +5,56 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/page/page.dart';
 import 'command.dart';
 
-class ShowAllCalendarSettings extends Command {
+class ShowAllCalendarSettings extends ShowCommands {
   ShowAllCalendarSettings()
     : super(
         title: 'Calendar Settings',
         icon: PlotIcon.settings,
         description: 'Add calendars and change sync settings',
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandCommands(
-      Commands<void>(
-        prompt: 'Manage calendars',
-        groups: await calendarSettingsCommands(),
-      ),
-    );
-  }
-}
-
-class EnableCalendar extends ShowCommands<Priority> {
-  EnableCalendar(this.calendar)
-    : super(
-        title: calendar.enabled ? 'Change Default Priority' : 'Enable',
-        icon: PlotIcon.add,
-        commands: (context) => PickPriority(
-          prompt: 'Select Default Priority for ${calendar.name}',
+        commands: (context) async => Commands(
+          prompt: 'Manage calendars',
+          groups: await calendarSettingsCommands(),
         ),
       );
+}
+
+class ChangeCalendarDefaultPriority extends PriorityCommand {
+  ChangeCalendarDefaultPriority(this.calendar, super.priority);
 
   final Calendar calendar;
 
   @override
-  void onSelect(BuildContext context, Priority value) async {
+  Future<CommandReturn?> run(BuildContext context) async {
     try {
       await calendar
-          .copyWith(priorityId: Value(value.id), enabled: true)
+          .copyWith(priorityId: Value(priority?.id), enabled: true)
           .save();
     } catch (e) {
       print('Error enabling calendar: $e');
     }
+    return null;
   }
+}
+
+class EnableCalendar extends ShowCommands {
+  EnableCalendar(Calendar calendar)
+    : super(
+        title: calendar.enabled ? 'Change Default Priority' : 'Enable',
+        icon: PlotIcon.add,
+        commands: (context) => Future.value(
+          Commands(
+            groups: [
+              PriorityGroup(
+                title: 'Select Default Priority for ${calendar.name}',
+                builder: (priority) =>
+                    ChangeCalendarDefaultPriority(calendar, priority),
+              ),
+            ],
+          ),
+
+          // PickPriority(prompt: 'Select Default Priority for ${calendar.name}'),
+        ),
+      );
 }
 
 class SyncCalendar extends Command {
@@ -74,7 +83,7 @@ class ShowCalendarSettings extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     return CommandCommands(
-      Commands<void>(
+      Commands(
         prompt: 'Calendar settings for ${calendar.name}',
         groups: [
           StaticCommandGroup(
