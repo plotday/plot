@@ -102,10 +102,7 @@ class CommandBarState extends State<_CommandBar> {
     });
     try {
       final result = await command.run(context);
-
-      if (result != null) {
-        await _processCommandReturn(result);
-      }
+      await _processCommandReturn(result);
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
       setState(() {
@@ -115,7 +112,7 @@ class CommandBarState extends State<_CommandBar> {
     return null;
   }
 
-  Future<void> _processCommandReturn(CommandReturn result) async {
+  Future<void> _processCommandReturn(CommandReturn? result) async {
     if (result is CommandCommands) {
       commands = result.commands;
       _controller.text = '';
@@ -125,24 +122,25 @@ class CommandBarState extends State<_CommandBar> {
         context,
       ).push<CommandReturn?>(context, result.child);
       if (pageReturn.notNull) {
-        _processCommandReturn(pageReturn.value!);
+        _processCommandReturn(pageReturn.value);
       }
     } else if (result is CommandRoute && mounted) {
       log.info(
         'Executing command route: ${result.route} (${result.replace ? 'replace' : 'navigate'})',
       );
       DialogProvider.of(context).pop(context, Value(null));
-      log.info('Popped');
       if (result.replace) {
         context.router.replace(result.route);
       } else {
         context.router.navigate(result.route);
       }
       log.info('Command route executed: ${result.route}');
-    } else if (result is CommandMessage) {
+    } else if (result is CommandMessage && result.isError) {
       setState(() {
         _error = result.message;
       });
+    } else if (result == null) {
+      DialogProvider.of(context).pop(context, Value(null));
     }
   }
 
