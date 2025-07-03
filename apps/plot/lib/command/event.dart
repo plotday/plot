@@ -12,9 +12,9 @@ class ArchiveEventCommand extends Command {
   final Event event;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await event.copyWith(deletedAt: Value(DateTime.now())).save();
-    return null;
+    return const CommandDone();
   }
 }
 
@@ -33,7 +33,7 @@ class ChangeCurrentEvent extends Command {
   final EventId eventId;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     return CommandRoute(EventRoute(eventId: eventId));
   }
 }
@@ -44,9 +44,9 @@ class ChangeEventPriority extends PriorityCommand {
   final Event event;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await event.copyWith(priorityId: Value(priority?.id)).save();
-    return null;
+    return const CommandDone();
   }
 }
 
@@ -123,7 +123,7 @@ class ChangeEventResponse extends Command {
   final EventResponse response;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await event
         .copyWith(
           response: Value(response),
@@ -132,6 +132,6 @@ class ChangeEventResponse extends Command {
               : Value(null),
         )
         .save();
-    return null;
+    return const CommandDone();
   }
 }

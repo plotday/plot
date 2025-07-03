@@ -24,7 +24,7 @@ class ChangeCalendarDefaultPriority extends PriorityCommand {
   final Calendar calendar;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     try {
       await calendar
           .copyWith(priorityId: Value(priority?.id), enabled: true)
@@ -32,7 +32,7 @@ class ChangeCalendarDefaultPriority extends PriorityCommand {
     } catch (e) {
       print('Error enabling calendar: $e');
     }
-    return null;
+    return const CommandDone();
   }
 }
 
@@ -64,9 +64,9 @@ class SyncCalendar extends Command {
   final Calendar calendar;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await calendar.sync();
-    return null;
+    return const CommandDone();
   }
 }
 
@@ -90,13 +90,12 @@ class ShowCalendarSettings extends ShowCommands {
       );
 }
 
-class AddGoogleAccount extends Command {
-  AddGoogleAccount() : super(title: 'Sync with Google');
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandPage(const AuthAccountPage());
-  }
+class AddGoogleAccount extends ShowPage {
+  AddGoogleAccount()
+    : super(
+        title: 'Sync with Google',
+        builder: (context) => const AuthAccountPage(),
+      );
 }
 
 Future<List<CommandGroup>> calendarSettingsCommands() async {

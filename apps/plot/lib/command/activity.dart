@@ -54,7 +54,7 @@ class ChangeCurrentActivity extends ActivityCommand {
   ChangeCurrentActivity(super.activity);
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     return CommandRoute(ActivityRoute(activityId: activity?.id));
   }
 }
@@ -91,7 +91,7 @@ class OpenActivity extends Command {
   final ActivityId activityId;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     return CommandRoute(ActivityRoute(activityId: activityId));
   }
 }
@@ -102,7 +102,7 @@ class AddActivity extends Command {
   final Future<Activity> _activity;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final activity = await _activity;
     await activity.copyWith(draft: false).save();
     Posthog().capture(eventName: 'Activity Added');
@@ -126,7 +126,7 @@ class ArchiveActivity extends Command {
   final Future<Activity> _activity;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final activity = await _activity;
     final isArchived = activity.deletedAt != null;
 
@@ -139,7 +139,7 @@ class ArchiveActivity extends Command {
       await activity.delete();
       Posthog().capture(eventName: 'Activity Archived');
     }
-    return null;
+    return const CommandDone();
   }
 }
 
@@ -160,7 +160,7 @@ class StartActivity extends _UpdateActivityCommand {
     : super(title: 'Do Now', icon: PlotIcon.doNow);
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final start = !activity.doNow;
     await onUpdate(
       activity.copyWith(doAt: start ? Value(Date.today()) : const Value(null)),
@@ -168,7 +168,7 @@ class StartActivity extends _UpdateActivityCommand {
     Posthog().capture(
       eventName: start ? 'Activity Started' : 'Activity Finished',
     );
-    return null;
+    return const CommandDone();
   }
 }
 
@@ -177,10 +177,10 @@ class FinishActivity extends _UpdateActivityCommand {
     : super(title: 'Finish', icon: PlotIcon.done);
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await onUpdate(activity.copyWith(doneAt: Value(DateTime.now())));
     Posthog().capture(eventName: 'Activity Finished');
-    return null;
+    return const CommandDone();
   }
 }
 
@@ -194,14 +194,14 @@ class ScheduleActivity extends _UpdateActivityCommand {
   final Date when;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await onUpdate(activity.copyWith(doAt: Value(when)));
     Posthog().capture(
       eventName: activity.scheduled
           ? 'Activity Rescheduled'
           : 'Activity Scheduled',
     );
-    return null;
+    return const CommandDone();
   }
 }
 
@@ -236,10 +236,10 @@ class MarkActivityIncomplete extends _UpdateActivityCommand {
     : super(title: 'Mark Activity Not Finished', icon: PlotIcon.done);
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await onUpdate(activity.copyWith(doneAt: const Value(null)));
     Posthog().capture(eventName: 'Activity Marked Not Finished');
-    return null;
+    return const CommandDone();
   }
 }
 
@@ -248,12 +248,12 @@ class PinActivity extends _UpdateActivityCommand {
     : super(title: activity.pinned ? 'Unpin' : 'Pin', icon: PlotIcon.pinned);
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await onUpdate(activity.copyWith(pinned: !activity.pinned));
     Posthog().capture(
       eventName: activity.pinned ? 'Activity Un-pinned' : 'Activity Pinned',
     );
-    return null;
+    return const CommandDone();
   }
 }
 

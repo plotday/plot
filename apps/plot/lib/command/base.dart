@@ -7,23 +7,40 @@ import 'package:plot/widget/widget.dart';
 import 'provider.dart';
 import 'logging.dart';
 
-sealed class CommandReturn {}
-
-class CommandPage extends CommandReturn {
-  CommandPage(this.child);
-  final Widget child;
+sealed class CommandReturn {
+  const CommandReturn();
 }
 
+// Command completed successfully
+class CommandDone extends CommandReturn {
+  const CommandDone();
+}
+
+// The user aborted the command (e.g. by pressing Escape)
+class CommandSkipped extends CommandReturn {
+  const CommandSkipped();
+}
+
+// Status message from running the command
 class CommandMessage extends CommandReturn {
-  CommandMessage(this.message, {this.isError = false});
+  const CommandMessage(this.message, {this.isError = false});
   final String message;
   final bool isError;
 }
 
+// Command is triggering navigation
 class CommandRoute extends CommandReturn {
-  CommandRoute(this.route, {this.replace = false});
+  const CommandRoute(this.route, {this.replace = false});
   final PageRouteInfo route;
   final bool replace;
+
+  void go(BuildContext context) {
+    if (replace) {
+      context.router.replace(route);
+    } else {
+      context.router.navigate(route);
+    }
+  }
 }
 
 abstract class Command {
@@ -41,19 +58,19 @@ abstract class Command {
   final IconData? icon;
   final ShortcutActivator? shortcut;
 
-  Future<CommandReturn?> run(BuildContext context);
+  Future<CommandReturn> run(BuildContext context);
 
   Widget? buildBody(BuildContext context) => null;
 }
 
 class CommandWrapper extends Command {
   final Command command;
-  final Future<CommandReturn?> Function(Command command, BuildContext context)?
+  final Future<CommandReturn> Function(Command command, BuildContext context)?
   _run;
 
   CommandWrapper(
     this.command, {
-    Future<CommandReturn?> Function(Command command, BuildContext context)? run,
+    Future<CommandReturn> Function(Command command, BuildContext context)? run,
     Value<IconData?> icon = const Value<IconData?>.absent(),
   }) : _run = run,
        super(
@@ -65,7 +82,7 @@ class CommandWrapper extends Command {
        );
 
   @override
-  Future<CommandReturn?> run(BuildContext context) {
+  Future<CommandReturn> run(BuildContext context) {
     if (_run != null) {
       return _run(command, context);
     }
@@ -89,10 +106,10 @@ class ShowCommands extends Command {
   final Future<Commands> Function(BuildContext context) commands;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     try {
       final commandReturn = CommandBar(await commands(context));
-      if (!context.mounted) return null;
+      if (!context.mounted) return const CommandSkipped();
       return await commandReturn.run(context);
     } on Error catch (e) {
       log.warning(e, e.stackTrace);
@@ -114,29 +131,20 @@ class ShowPage extends Command {
   final Widget Function(BuildContext context) builder;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
-    return CommandPage(builder(context));
+  Future<CommandReturn> run(BuildContext context) async {
+    final commandReturn = await Dialog(
+      builder: builder,
+    ).show<CommandReturn>(context);
+    return commandReturn.present ? commandReturn.value : const CommandSkipped();
   }
 }
 
 extension BuildContextCommandExtension on BuildContext {
   Future<void> run(Command command) async {
     final next = await command.run(this);
-    if (next is CommandPage) {
-      final pageResult = await Dialog(
-        builder: (_) => next.child,
-      ).show<CommandReturn?>(this);
-      if (pageResult.present) {
-        return await run(
-          CommandWrapper(command, run: (_, __) async => pageResult.value),
-        );
-      }
-    } else if (next is CommandRoute) {
-      if (next.replace) {
-        router.replace(next.route);
-      } else {
-        router.navigate(next.route);
-      }
+    // TODO show toast for CommandMessage
+    if (next is CommandRoute) {
+      next.go(this);
     }
   }
 }
@@ -209,7 +217,7 @@ class Commands {
   final List<CommandGroup> groups;
   final Command? Function(String promptValue)? secondaryCommand;
 
-  Future<CommandReturn?> show(BuildContext context) async {
+  Future<CommandReturn> show(BuildContext context) async {
     try {
       return await CommandBar(
         this,

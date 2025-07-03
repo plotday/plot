@@ -58,7 +58,7 @@ class ChangeCurrentPriority extends PriorityCommand {
   ChangeCurrentPriority(super.priority);
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     return CommandRoute(PriorityRoute(priorityId: priority?.id));
   }
 }
@@ -104,7 +104,7 @@ class OpenPriority extends Command {
   final PriorityId priorityId;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     return CommandRoute(PriorityRoute(priorityId: priorityId));
   }
 }
@@ -125,7 +125,7 @@ class AddPriority extends Command {
   final Future<Priority> _priority;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
     await priority.save();
     Posthog().capture(eventName: 'Priority Added');
@@ -139,11 +139,11 @@ class EditPriority extends Command {
   final Future<Priority> _priority;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
     await priority.save();
     Posthog().capture(eventName: 'Priority Edited');
-    return null;
+    return const CommandDone();
   }
 }
 
@@ -154,42 +154,36 @@ class ArchivePriority extends Command {
   final Future<Priority> _priority;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
     if (priority.root) {
       return CommandMessage(
-        'You cannot archive the default priority',
+        "The default priority can't be archived",
         isError: true,
       );
     }
     await priority.delete();
     Posthog().capture(eventName: 'Priority Archived');
-    return null;
+    return const CommandDone();
   }
 }
 
-class NewPriority extends Command {
-  NewPriority({this.parent})
-    : super(title: 'New Sub-priority', icon: PlotIcon.add);
-
-  final Priority? parent;
-
-  @override
-  Future<CommandReturn?> run(BuildContext context) async {
-    return CommandPage(EditPriorityPage(parent: parent));
-  }
+class NewPriority extends ShowPage {
+  NewPriority({Priority? parent})
+    : super(
+        title: 'New Sub-priority',
+        icon: PlotIcon.add,
+        builder: (context) => EditPriorityPage(parent: parent),
+      );
 }
 
-class EditPriorityCommand extends Command {
-  EditPriorityCommand(this.priority)
-    : super(title: 'Edit', icon: PlotIcon.settings);
-
-  final Priority priority;
-
-  @override
-  Future<CommandReturn?> run(BuildContext context) async {
-    return CommandPage(EditPriorityPage(priority: priority));
-  }
+class EditPriorityCommand extends ShowPage {
+  EditPriorityCommand(Priority priority)
+    : super(
+        title: 'Edit',
+        icon: PlotIcon.settings,
+        builder: (context) => EditPriorityPage(priority: priority),
+      );
 }
 
 class ShowPriorityCommands extends ShowCommands {
@@ -236,10 +230,9 @@ class ToggleShowArchived extends Command {
   final bool showArchived;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
-    final bloc = context.read<PriorityBloc>();
-    bloc.toggleShowArchived();
-    return null;
+  Future<CommandReturn> run(BuildContext context) async {
+    context.read<PriorityBloc>().toggleShowArchived();
+    return const CommandDone();
   }
 }
 

@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/bidirectional_list.dart';
@@ -21,10 +20,10 @@ class CommandBar extends Dialog {
              _CommandBar(commands, secondaryCommand: secondaryCommand),
        );
 
-  Future<CommandReturn?> run(BuildContext context) {
+  Future<CommandReturn> run(BuildContext context) {
     return super
-        .show<CommandReturn?>(context)
-        .then((value) => value.present ? value.value : null);
+        .show<CommandReturn>(context)
+        .then((value) => value.present ? value.value : const CommandSkipped());
   }
 }
 
@@ -96,48 +95,32 @@ class CommandBarState extends State<_CommandBar> {
     );
   }
 
-  Future<CommandReturn?> _executeCommand(Command command) async {
+  Future<CommandReturn> _executeCommand(Command command) async {
     setState(() {
       _error = null;
     });
     try {
       final result = await command.run(context);
-      await _processCommandReturn(result);
+      if (!mounted) return const CommandSkipped();
+      if (result is CommandSkipped) {
+        return result;
+      } else if (result is CommandMessage) {
+        setState(() {
+          _error = result.message;
+        });
+        return const CommandDone();
+      }
+      DialogProvider.of(context).popAll(context);
+      if (result is CommandRoute) {
+        result.go(context);
+      }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
       setState(() {
         _error = 'Something went wrong';
       });
     }
-    return null;
-  }
-
-  Future<void> _processCommandReturn(CommandReturn? result) async {
-    if (result is CommandPage) {
-      final pageReturn = await DialogProvider.of(
-        context,
-      ).push<CommandReturn?>(context, result.child);
-      if (pageReturn.notNull) {
-        _processCommandReturn(pageReturn.value);
-      }
-    } else if (result is CommandRoute && mounted) {
-      log.info(
-        'Executing command route: ${result.route} (${result.replace ? 'replace' : 'navigate'})',
-      );
-      DialogProvider.of(context).pop(context, Value(null));
-      if (result.replace) {
-        context.router.replace(result.route);
-      } else {
-        context.router.navigate(result.route);
-      }
-      log.info('Command route executed: ${result.route}');
-    } else if (result is CommandMessage && result.isError) {
-      setState(() {
-        _error = result.message;
-      });
-    } else if (result == null) {
-      DialogProvider.of(context).pop(context, Value(null));
-    }
+    return const CommandDone();
   }
 
   @override

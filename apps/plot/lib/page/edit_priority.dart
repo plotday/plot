@@ -5,6 +5,8 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/hooks.dart';
 
+import 'logging.dart';
+
 class EditPriorityPage extends HookWidget {
   const EditPriorityPage({Priority? parent, Priority? priority, super.key})
     : _initialParent = parent,
@@ -43,7 +45,7 @@ class EditPriorityPage extends HookWidget {
       }
 
       if (context.mounted) {
-        DialogProvider.of(context).pop<CommandReturn?>(context, Value(result));
+        DialogProvider.of(context).pop(context, Value(result));
       }
     }
 
@@ -80,7 +82,7 @@ class EditPriorityPage extends HookWidget {
                       ),
                 run: (command, context) async {
                   await submitPriority();
-                  return null;
+                  return const CommandDone();
                 },
               ),
               enabled: title.isNotEmpty,
