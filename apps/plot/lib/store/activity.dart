@@ -109,7 +109,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     int? depth = 0,
     bool? pinned,
     bool? active,
-    bool? deleted = false,
     bool getParent = true,
   }) {
     return _get(
@@ -117,7 +116,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       depth: depth,
       pinned: pinned,
       active: active,
-      deleted: deleted,
+      deleted: null,
       getParent: getParent,
       order: ActivityOrder.nested,
     ).get().then((activities) => _asNested(activities, id: id).first);
@@ -128,7 +127,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     int? depth = 0,
     bool? pinned,
     bool? active,
-    bool? deleted = false,
     bool getParent = true,
   }) {
     return _get(
@@ -136,7 +134,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       depth: depth,
       pinned: pinned,
       active: active,
-      deleted: deleted,
+      deleted: null,
       getParent: getParent,
       order: ActivityOrder.nested,
     ).watch().map((activities) => _asNested(activities, id: id).first);

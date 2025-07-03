@@ -20,7 +20,7 @@ class GlobalMenu extends StatelessWidget {
               members: <PlatformMenuItem>[
                 PlatformMenuItem(
                   onSelected: () {
-                    context.run<void>(ShowSettings());
+                    context.run(ShowSettings());
                   },
                   label: "Settings",
                 ),

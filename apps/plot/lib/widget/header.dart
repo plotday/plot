@@ -102,10 +102,10 @@ class _HeaderState extends State<Header> with RouteAware {
       suffixes: [
         ...widget.commands.map(
           (command) => FHeaderAction(
-            icon: command.statusIcon != null || command.icon != null
-                ? Icon(command.statusIcon.or(command.icon)!, size: 14)
+            icon: command.icon != null
+                ? Icon(command.icon!, size: 14)
                 : Text(command.title),
-            onPress: () => context.run<void>(command),
+            onPress: () => context.run(command),
           ),
         ),
         if (widget.modal && _canPop)

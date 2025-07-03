@@ -85,7 +85,7 @@ class PriorityPage extends StatelessWidget {
             onActivate: (index) {
               state.agendaItems[index].when(
                 activity: (activity) =>
-                    context.run<void>(ChangeCurrentActivity(activity)),
+                    context.run(ChangeCurrentActivity(activity)),
                 event: (event) => <void>{}, // TODO: Handle event activation
                 header: (header) => <void>{}, // TODO: Handle header activation
               );
@@ -117,7 +117,7 @@ class PriorityPage extends StatelessWidget {
                       ? PrioritySelector(
                           selected: state.context,
                           onSelect: (p) =>
-                              context.run<void>(ChangeCurrentPriority(p)),
+                              context.run(ChangeCurrentPriority(p)),
                         )
                       : null,
                   commands: [

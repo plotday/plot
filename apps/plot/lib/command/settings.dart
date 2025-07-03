@@ -6,20 +6,21 @@ import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 import 'package:plot/base.dart';
 import 'package:plot/widget/icon.dart';
 import 'command.dart';
+import 'logging.dart';
 
 final settingsCommands = StaticCommandGroup(
   title: 'Settings',
   commands: [ShowAllCalendarSettings(), SignOut()],
 );
 
-class ShowSettings extends ShowCommands<void> {
+class ShowSettings extends ShowCommands {
   ShowSettings()
     : super(
         title: 'Settings',
         icon: PlotIcon.settings,
-        commands:
-            (context) =>
-                Commands<void>(groups: [settingsCommands], prompt: 'Settings'),
+        commands: (context) => Future.value(
+          Commands(groups: [settingsCommands], prompt: 'Settings'),
+        ),
         // SettingsCommands(),
         shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
       );
@@ -29,18 +30,13 @@ class SignOut extends Command {
   SignOut() : super(title: 'Sign Out', icon: PlotIcon.signOut);
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     try {
       await Base.client.auth.signOut();
-    } on supa.AuthException catch (e) {
-      print("Sign out error: ${e.message}");
-      // if (context.mounted) {
-      // SnackBar(
-      //   content: Text(e.message),
-      //   backgroundColor: Theme.of(context).colorScheme.error,
-      // );
-      // }
+      return const CommandDone();
+    } on supa.AuthException catch (e, t) {
+      log.warning("Sign out failed", e, t);
+      return CommandMessage('Sign out failed: ${e.message}', isError: true);
     }
-    return null;
   }
 }

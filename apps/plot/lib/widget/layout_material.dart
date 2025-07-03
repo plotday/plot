@@ -106,7 +106,7 @@ class MaterialLayout extends StatelessWidget {
                       onDestinationSelected: (int index) {
                         if (tabsRouter == null) return;
                         if (index == 2) {
-                          context.run<void>(ShowSettings());
+                          context.run(ShowSettings());
                           return;
                         }
 

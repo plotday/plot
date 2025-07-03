@@ -5,47 +5,56 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/page/page.dart';
 import 'command.dart';
 
-class ShowAllCalendarSettings extends Command {
+class ShowAllCalendarSettings extends ShowCommands {
   ShowAllCalendarSettings()
     : super(
         title: 'Calendar Settings',
         icon: PlotIcon.settings,
         description: 'Add calendars and change sync settings',
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandCommands(
-      Commands<void>(
-        prompt: 'Manage calendars',
-        groups: await calendarSettingsCommands(),
-      ),
-    );
-  }
-}
-
-class EnableCalendar extends ShowCommands<Priority> {
-  EnableCalendar(this.calendar)
-    : super(
-        title: calendar.enabled ? 'Change Default Priority' : 'Enable',
-        icon: PlotIcon.add,
-        commands: (context) => PickPriority(
-          prompt: 'Select Default Priority for ${calendar.name}',
+        commands: (context) async => Commands(
+          prompt: 'Manage calendars',
+          groups: await calendarSettingsCommands(),
         ),
       );
+}
+
+class ChangeCalendarDefaultPriority extends PriorityCommand {
+  ChangeCalendarDefaultPriority(this.calendar, super.priority);
 
   final Calendar calendar;
 
   @override
-  void onSelect(BuildContext context, Priority value) async {
+  Future<CommandReturn> run(BuildContext context) async {
     try {
       await calendar
-          .copyWith(priorityId: Value(value.id), enabled: true)
+          .copyWith(priorityId: Value(priority?.id), enabled: true)
           .save();
     } catch (e) {
       print('Error enabling calendar: $e');
     }
+    return const CommandDone();
   }
+}
+
+class EnableCalendar extends ShowCommands {
+  EnableCalendar(Calendar calendar)
+    : super(
+        title: calendar.enabled ? 'Change Default Priority' : 'Enable',
+        icon: PlotIcon.add,
+        commands: (context) => Future.value(
+          Commands(
+            groups: [
+              PriorityGroup(
+                title: 'Select Default Priority for ${calendar.name}',
+                builder: (priority) =>
+                    ChangeCalendarDefaultPriority(calendar, priority),
+              ),
+            ],
+          ),
+
+          // PickPriority(prompt: 'Select Default Priority for ${calendar.name}'),
+        ),
+      );
 }
 
 class SyncCalendar extends Command {
@@ -55,45 +64,38 @@ class SyncCalendar extends Command {
   final Calendar calendar;
 
   @override
-  Future<CommandReturn?> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await calendar.sync();
-    return null;
+    return const CommandDone();
   }
 }
 
-class ShowCalendarSettings extends Command {
-  ShowCalendarSettings(this.calendar)
+class ShowCalendarSettings extends ShowCommands {
+  ShowCalendarSettings(Calendar calendar)
     : super(
         title: calendar.name,
         icon: PlotIcon.settings,
         description: calendar.enabled ? 'Change sync settings' : 'Enable',
-      );
-
-  final Calendar calendar;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandCommands(
-      Commands<void>(
-        prompt: 'Calendar settings for ${calendar.name}',
-        groups: [
-          StaticCommandGroup(
-            title: 'Calendar settings for ${calendar.name}',
-            commands: [EnableCalendar(calendar), SyncCalendar(calendar)],
+        commands: (context) => Future.value(
+          Commands(
+            prompt: 'Calendar settings for ${calendar.name}',
+            groups: [
+              StaticCommandGroup(
+                title: 'Calendar settings for ${calendar.name}',
+                commands: [EnableCalendar(calendar), SyncCalendar(calendar)],
+              ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      );
 }
 
-class AddGoogleAccount extends Command {
-  AddGoogleAccount() : super(title: 'Sync with Google');
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandPage(const AuthAccountPage());
-  }
+class AddGoogleAccount extends ShowPage {
+  AddGoogleAccount()
+    : super(
+        title: 'Sync with Google',
+        builder: (context) => const AuthAccountPage(),
+      );
 }
 
 Future<List<CommandGroup>> calendarSettingsCommands() async {

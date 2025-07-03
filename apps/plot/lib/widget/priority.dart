@@ -74,18 +74,18 @@ class PriorityLabel extends StatelessWidget {
                   } else {
                     final priority = await Priority.getOne(ancestor.id);
                     if (!context.mounted) return;
-                    context.run<void>(ChangeCurrentPriority(priority));
+                    context.run(ChangeCurrentPriority(priority));
                   }
                 },
                 child: Text(
-                  ancestor.title, 
+                  ancestor.title,
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
               ),
             ),
           ),
-          if (!isLast || priority != null) 
+          if (!isLast || priority != null)
             DefaultTextStyle(
               style: DefaultTextStyle.of(context).style.copyWith(
                 color: context.theme.colors.mutedForeground,
@@ -102,7 +102,7 @@ class PriorityLabel extends StatelessWidget {
               context,
             ).style.copyWith(fontSize: context.theme.typography.xs.fontSize),
             child: Text(
-              priority!.title, 
+              priority!.title,
               overflow: TextOverflow.ellipsis,
               maxLines: 1,
             ),

@@ -149,7 +149,7 @@ class ActivityPage extends StatelessWidget {
             onActivate: (index) {
               state.agendaItems[index].when(
                 activity: (activity) =>
-                    context.run<void>(ChangeCurrentActivity(activity)),
+                    context.run(ChangeCurrentActivity(activity)),
                 event: (event) => <void>{}, // TODO: Handle event activation
                 header: (header) => <void>{}, // TODO: Handle header activation
               );
@@ -181,7 +181,7 @@ class ActivityPage extends StatelessWidget {
                       ? PrioritySelector(
                           selected: state.context,
                           onSelect: (p) =>
-                              context.run<void>(ChangeCurrentPriority(p)),
+                              context.run(ChangeCurrentPriority(p)),
                         )
                       : null,
                   commands: [
@@ -304,11 +304,15 @@ class ActivityPage extends StatelessWidget {
                         autofocus: true,
                         focusNode: focusNode,
                         onSubmitted: (body, {bool alt = false}) async {
-                          log.info('Adding new activity with body: $body ($alt)');
+                          log.info(
+                            'Adding new activity with body: $body ($alt)',
+                          );
                           final activity = state.draft.copyWith(
                             note: Value(body),
                             draft: false,
-                            doAt: alt ? Value(Date.today()) : const Value.absent(),
+                            doAt: alt
+                                ? Value(Date.today())
+                                : const Value.absent(),
                           );
                           await context.read<PriorityBloc>().add(activity);
                         },

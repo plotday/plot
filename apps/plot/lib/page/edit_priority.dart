@@ -5,6 +5,8 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/hooks.dart';
 
+import 'logging.dart';
+
 class EditPriorityPage extends HookWidget {
   const EditPriorityPage({Priority? parent, Priority? priority, super.key})
     : _initialParent = parent,
@@ -17,18 +19,21 @@ class EditPriorityPage extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (nameController, title) = useTextEditingValue(initialValue: _priority?.title ?? '');
+    final (nameController, title) = useTextEditingValue(
+      initialValue: _priority?.title ?? '',
+    );
     final parent = useState<Priority?>(_initialParent);
 
     Future<void> submitPriority() async {
       if (title.isEmpty) return;
 
+      CommandReturn? result;
       if (isEditing) {
         // Edit existing priority
         final command = EditPriority(
           Future.value(_priority!.copyWith(title: title)),
         );
-        await command.run(context);
+        result = await command.run(context);
       } else {
         // Create new priority
         final command = AddPriority(
@@ -36,11 +41,11 @@ class EditPriorityPage extends HookWidget {
             Priority(title: title, parent: parent.value, order: Order.first()),
           ),
         );
-        await command.run(context);
+        result = await command.run(context);
       }
 
       if (context.mounted) {
-        Navigator.of(context).pop();
+        DialogProvider.of(context).pop(context, Value(result));
       }
     }
 
@@ -62,22 +67,22 @@ class EditPriorityPage extends HookWidget {
           children: [
             Button.primary(
               CommandWrapper(
-                isEditing 
-                  ? EditPriority(
-                      Future.value(_priority!.copyWith(title: title)),
-                    )
-                  : AddPriority(
-                      Future.value(
-                        Priority(
-                          title: title,
-                          parent: parent.value,
-                          order: Order.first(),
+                isEditing
+                    ? EditPriority(
+                        Future.value(_priority!.copyWith(title: title)),
+                      )
+                    : AddPriority(
+                        Future.value(
+                          Priority(
+                            title: title,
+                            parent: parent.value,
+                            order: Order.first(),
+                          ),
                         ),
                       ),
-                    ),
                 run: (command, context) async {
                   await submitPriority();
-                  return null;
+                  return const CommandDone();
                 },
               ),
               enabled: title.isNotEmpty,

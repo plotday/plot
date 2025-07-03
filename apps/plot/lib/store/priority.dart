@@ -109,13 +109,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   static Future<Priority> getOne(
     PriorityId id, {
     int? depth = 0,
-    bool? deleted = false,
     bool ancestors = true,
   }) {
     return _get(
       id: id,
       depth: depth,
-      deleted: deleted,
+      deleted: null,
       ancestors: ancestors,
       order: PriorityOrder.nested,
     ).get().then((priorities) => asNested(priorities, id: id).first);
@@ -124,13 +123,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   static Stream<Priority> watchOne(
     PriorityId id, {
     int? depth = 0,
-    bool? deleted = false,
     bool ancestors = true,
   }) {
     return _get(
       id: id,
       depth: depth,
-      deleted: deleted,
+      deleted: null,
       ancestors: ancestors,
       order: PriorityOrder.nested,
     ).watch().map((priorities) => asNested(priorities, id: id).first);

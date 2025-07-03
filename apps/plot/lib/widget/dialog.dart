@@ -118,7 +118,14 @@ class DialogProvider extends InheritedWidget {
     Navigator.of(
       context,
       rootNavigator: !Navigator.of(context).canPop(),
-    ).pop(result);
+    ).maybePop(result);
+  }
+
+  void popAll(BuildContext context) {
+    final navigator = Navigator.of(context);
+    while (navigator.canPop()) {
+      navigator.pop();
+    }
   }
 
   static DialogProvider of(BuildContext context) {
