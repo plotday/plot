@@ -128,6 +128,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _subscriptions.add(
       Activity.watch(
         priorityId: state.context.id,
+        path: state.activity?.path ?? state.event?.path,
         pinned: true,
         deleted: state.showArchived,
       ).listen((activities) {
