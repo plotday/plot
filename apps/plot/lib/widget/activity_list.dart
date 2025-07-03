@@ -49,9 +49,7 @@ class ActivityList extends StatelessWidget {
                   .copyWith(
                     order: Order.between(
                       previous?.order,
-                      previous?.doAt == null || next?.doAt == previous?.doAt
-                          ? next?.order
-                          : null,
+                        next?.order
                     ),
                     doAt: currentActivity.doNow
                         ? Value(
