@@ -9,11 +9,6 @@ import 'logging.dart';
 
 sealed class CommandReturn {}
 
-class CommandCommands extends CommandReturn {
-  CommandCommands(this.commands);
-  final Commands commands;
-}
-
 class CommandPage extends CommandReturn {
   CommandPage(this.child);
   final Widget child;
@@ -127,9 +122,7 @@ class ShowPage extends Command {
 extension BuildContextCommandExtension on BuildContext {
   Future<void> run(Command command) async {
     final next = await command.run(this);
-    if (next is CommandCommands) {
-      await CommandBar(next.commands).run(this);
-    } else if (next is CommandPage) {
+    if (next is CommandPage) {
       final pageResult = await Dialog(
         builder: (_) => next.child,
       ).show<CommandReturn?>(this);

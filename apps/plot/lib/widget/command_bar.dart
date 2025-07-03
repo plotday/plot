@@ -113,11 +113,7 @@ class CommandBarState extends State<_CommandBar> {
   }
 
   Future<void> _processCommandReturn(CommandReturn? result) async {
-    if (result is CommandCommands) {
-      commands = result.commands;
-      _controller.text = '';
-      _initCommands();
-    } else if (result is CommandPage) {
+    if (result is CommandPage) {
       final pageReturn = await DialogProvider.of(
         context,
       ).push<CommandReturn?>(context, result.child);

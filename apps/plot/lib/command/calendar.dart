@@ -70,30 +70,24 @@ class SyncCalendar extends Command {
   }
 }
 
-class ShowCalendarSettings extends Command {
-  ShowCalendarSettings(this.calendar)
+class ShowCalendarSettings extends ShowCommands {
+  ShowCalendarSettings(Calendar calendar)
     : super(
         title: calendar.name,
         icon: PlotIcon.settings,
         description: calendar.enabled ? 'Change sync settings' : 'Enable',
-      );
-
-  final Calendar calendar;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandCommands(
-      Commands(
-        prompt: 'Calendar settings for ${calendar.name}',
-        groups: [
-          StaticCommandGroup(
-            title: 'Calendar settings for ${calendar.name}',
-            commands: [EnableCalendar(calendar), SyncCalendar(calendar)],
+        commands: (context) => Future.value(
+          Commands(
+            prompt: 'Calendar settings for ${calendar.name}',
+            groups: [
+              StaticCommandGroup(
+                title: 'Calendar settings for ${calendar.name}',
+                commands: [EnableCalendar(calendar), SyncCalendar(calendar)],
+              ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      );
 }
 
 class AddGoogleAccount extends Command {
