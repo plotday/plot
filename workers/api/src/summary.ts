@@ -13,28 +13,13 @@ export async function summarize(ai: Ai, body: string) {
     };
   }
   try {
-    const response = await ai.run("@cf/meta/llama-4-scout-17b-16e-instruct", {
-      prompt: `Generate a short title for the following item.
-Include any details required to distinguish it from similar items.
-Prefer the shortest title that is still likely to uniquely identify the item.
-
-Item to title:
-
-\`\`\`markdown
-${body}
-\`\`\`
-`,
-      guided_json: {
-        type: "object",
-        properties: {
-          title: {
-            type: "string",
-          },
-        },
-      },
+    const response = await ai.run("@cf/facebook/bart-large-cnn", {
+      input_text: body,
+      max_length: 80,
     });
-    const text = typeof response === "string" ? response : response.response;
-    const json = JSON.parse(text);
+    const json = {
+      title: response.summary
+    }
     return json;
   } catch (e) {
     console.error(e);
