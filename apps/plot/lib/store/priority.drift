@@ -50,4 +50,12 @@ GROUP BY
 ORDER BY
     priority_id;
 
+CREATE VIEW latest_priorities AS
+SELECT
+    priority_id,
+    MAX("end") AS at
+FROM
+    sessions
+GROUP BY
+    priority_id;
 

@@ -238,13 +238,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       case PriorityOrder.recent:
         query = query.join([
           leftOuterJoin(
-            Store.get.sessions,
-            Store.get.sessions.priorityId.equalsExp(p.id),
+            Store.get.latestPriorities,
+            Store.get.latestPriorities.priorityId.equalsExp(p.id),
           ),
         ]);
         query.orderBy([
           OrderingTerm(
-            expression: Store.get.sessions.end,
+            expression: Store.get.latestPriorities.at,
             mode: OrderingMode.desc,
           ),
           OrderingTerm.asc(p.order),

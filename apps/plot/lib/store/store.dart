@@ -582,17 +582,18 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 68;
+  int get schemaVersion => 73;
 
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
       onUpgrade: (Migrator m, int from, int to) async {
-        final m = createMigrator();
-        for (final table in allTables) {
-          await m.deleteTable(table.actualTableName);
-          await m.createTable(table);
+        for (final entity in allSchemaEntities) {
+          try {
+            await m.drop(entity);
+          } catch (e) {}
         }
+        await m.createAll();
       },
     );
   }
