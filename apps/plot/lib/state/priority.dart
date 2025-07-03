@@ -124,13 +124,29 @@ class PriorityBloc extends Cubit<PriorityState> {
       _subscriptions.removeAt(1);
     }
 
-    // Watch pinned activities with current archived filter
+    // Combine pinned activities and active activities streams
     _subscriptions.add(
-      Activity.watch(
-        priorityId: state.context.id,
-        path: state.activity?.path ?? state.event?.path,
-        pinned: true,
-        deleted: state.showArchived,
+      Rx.combineLatest2(
+        Activity.watch(
+          priorityId: state.context.id,
+          path: state.activity?.path ?? state.event?.path,
+          pinned: true,
+          deleted: state.showArchived,
+        ),
+        Activity.watch(
+          priorityId: state.context.id,
+          path: state.activity?.path ?? state.event?.path,
+          active: true,
+          deleted: state.showArchived,
+        ),
+        (pinnedActivities, activeActivities) {
+          final combined = {
+            ...pinnedActivities,
+            ...activeActivities,
+          }.toList();
+          combined.sort((a, b) => a.order.compareTo(b.order));
+          return combined;
+        },
       ).listen((activities) {
         log.info('Pinned activities updated');
         emit(
