@@ -100,7 +100,7 @@ export type Database = {
           id?: string
           note?: string | null
           order?: number
-          path: unknown
+          path?: unknown
           pinned?: boolean
           priority_id: string
           private?: boolean

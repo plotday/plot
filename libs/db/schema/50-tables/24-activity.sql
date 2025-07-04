@@ -5,7 +5,7 @@ CREATE TABLE "public"."activity" (
     "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "deleted_at" timestamp with time zone,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
-    "path" ltree NOT NULL,
+    "path" ltree NOT NULL DEFAULT generate_path (NULL),
     "order" double precision NOT NULL DEFAULT public.order_first (),
     "draft" boolean NOT NULL DEFAULT FALSE,
     "private" boolean NOT NULL DEFAULT FALSE,

@@ -8,9 +8,10 @@ import type { SupabaseClient } from "@plotday/db";
 import { createClient } from "@plotday/db";
 import type { SyncRequest } from "@plotday/sync";
 
-import { create, respond, update } from "./event";
+import { create as createEvent, respond as respondEvent, update as updateEvent } from "./event";
 import { summarize } from "./summary";
 import { addAccount, syncCalendar } from "./sync";
+import { create as createActivity, update as updateActivity } from "./activity";
 
 export type Bindings = {
   readonly SENTRY_DSN: string;
@@ -121,7 +122,7 @@ app.post("/event", async (c) => {
   if (!event) {
     return new Response("Bad request (missing event)", { status: 400 });
   }
-  const dbEvent = await create(c.env, c.var.supabase, event);
+  const dbEvent = await createEvent(c.env, c.var.supabase, event);
   return c.json(dbEvent);
 });
 
@@ -132,10 +133,10 @@ app.patch("/event/:id", async (c) => {
   if (!event) {
     return new Response("Bad request (missing event)", { status: 400 });
   }
-  const dbEvent = await update(c.env, c.var.supabase, eventId, event);
+  const dbEvent = await updateEvent(c.env, c.var.supabase, eventId, event);
   const response = (body as any)?.response;
   if (response) {
-    await respond(c.env, c.var.supabase, eventId, response);
+    await respondEvent(c.env, c.var.supabase, eventId, response);
   }
   return c.json(dbEvent);
 });
@@ -150,6 +151,27 @@ app.post("/summary", async (c) => {
   } catch (error) {
     return c.json({ error: "Error processing request." }, 500);
   }
+});
+
+app.post("/activity", async (c) => {
+  const body = await c.req.json();
+  const activity = (body as any)?.activity;
+  if (!activity) {
+    return new Response("Bad request (missing activity)", { status: 400 });
+  }
+  const dbActivity = await createActivity(c.var.supabase, activity);
+  return c.json(dbActivity);
+});
+
+app.patch("/activity/:id", async (c) => {
+  const activityId = c.req.param("id");
+  const body = await c.req.json();
+  const activity = (body as any)?.activity;
+  if (!activity) {
+    return new Response("Bad request (missing activity)", { status: 400 });
+  }
+  const dbActivity = await updateActivity(c.var.supabase, activityId, activity);
+  return c.json(dbActivity);
 });
 
 export default withSentry(
