@@ -5,7 +5,7 @@
   "private": true,
   "config": {
     "env_vars": "SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY SENTRY_DSN:SENTRY_WORKERS_DSN SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT=workers GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET AUTH_CALLBACK_URL",
-    "workers": "../api ../calendar-webhook ../contact-sync ../event ../mailer ../sync"
+    "workers": "../api ../calendar-webhook ../contact-sync ../event ../mailer ../sync ../onboarding"
   },
   "scripts": {
     "dev": "pnpm run dev:config && pnpm run dev:start",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@plotday/api": "workspace:^",
+    "@plotday/onboarding": "workspace:^",
     "@plotday/contact-sync": "workspace:^",
     "@plotday/event-sync": "workspace:^",
     "@plotday/sync": "workspace:^"

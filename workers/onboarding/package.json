@@ -1,0 +1,27 @@
+{
+  "name": "@plotday/onboarding",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "version": "0.0.1",
+  "private": true,
+  "deploy_vars": "",
+  "scripts": {
+    "deploy": "../../scripts/deploy-worker",
+    "types": "wrangler types",
+    "lint": "tsc && eslint ."
+  },
+  "dependencies": {
+    "@worker-tools/json-fetch": "2.1.0-pre.6"
+  },
+  "devDependencies": {
+    "@plotday/eslint-config-custom": "workspace:*",
+    "@plotday/tsconfig": "workspace:*",
+    "@types/node": "^22.15.19"
+  },
+  "nx": {
+    "tags": [
+      "worker"
+    ]
+  }
+}

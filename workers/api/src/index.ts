@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 
 import { withSentry } from "@sentry/cloudflare";
+import { WorkerEntrypoint } from "cloudflare:workers";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
@@ -8,10 +9,19 @@ import type { SupabaseClient } from "@plotday/db";
 import { createClient } from "@plotday/db";
 import type { SyncRequest } from "@plotday/sync";
 
-import { create as createEvent, respond as respondEvent, update as updateEvent } from "./event";
+import { create as createActivity, update as updateActivity } from "./activity";
+import {
+  create as createEvent,
+  respond as respondEvent,
+  update as updateEvent,
+} from "./event";
+import { Priority } from "./priority";
 import { summarize } from "./summary";
 import { addAccount, syncCalendar } from "./sync";
-import { create as createActivity, update as updateActivity } from "./activity";
+
+export abstract class Agent extends WorkerEntrypoint {
+  abstract activate(priority: Priority): Promise<void>;
+}
 
 export type Bindings = {
   readonly SENTRY_DSN: string;
@@ -30,6 +40,7 @@ export type Bindings = {
 
   readonly SYNC_QUEUE: Queue<SyncRequest>;
   readonly AI: Ai;
+  readonly ONBOARDING: Service<Agent>;
 };
 
 declare module "hono" {
@@ -172,6 +183,22 @@ app.patch("/activity/:id", async (c) => {
   }
   const dbActivity = await updateActivity(c.var.supabase, activityId, activity);
   return c.json(dbActivity);
+});
+
+app.post("/agent", async (c) => {
+  const body = await c.req.json();
+  const priorityId = (body as any)?.priorityId;
+  if (!priorityId) {
+    return new Response("Bad request (missing priorityId)", { status: 400 });
+  }
+
+  // Create Priority instance
+  const priority = new Priority(c.var.supabase, priorityId);
+
+  // Call onboarding worker's activate method
+  await c.env.ONBOARDING.activate(priority);
+
+  return c.json({});
 });
 
 export default withSentry(

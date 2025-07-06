@@ -1,0 +1,13 @@
+name = "onboarding"
+main = "src/index.ts"
+compatibility_date = "2025-07-01"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
+
+[define]
+  ENV = '"development"'
+  RELEASE = '"dev"'
+  PACKAGE = '"onboarding"'
+
+[observability.logs]
+  enabled = true
