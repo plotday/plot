@@ -2,11 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
 import 'package:super_editor/super_editor.dart' show LogNames;
 
 import 'app.dart';
+import 'env.dart';
 import 'base.dart';
 import 'logging.dart';
 
@@ -34,7 +34,7 @@ Future<void> run() async {
         print(record.stackTrace);
       }
     });
-    await dotenv.load(fileName: ".env");
+    await Env.init();
     await Base.init();
     usePathUrlStrategy();
     return runApp(const App());

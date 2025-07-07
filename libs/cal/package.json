@@ -9,10 +9,10 @@
     "env_vars": "GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET TEST_GOOGLE_ACCOUNT_ACCESS_TOKEN TEST_GOOGLE_ACCOUNT_REFRESH_TOKEN TEST_OUTLOOK_ACCOUNT_ACCESS_TOKEN TEST_OUTLOOK_ACCOUNT_REFRESH_TOKEN"
   },
   "scripts": {
-    "gen-env": "../../scripts/gen-env $npm_package_config_env_vars",
+    "env": "../../scripts/gen-env development $npm_package_config_env_vars > .env",
     "lint": "tsc && eslint .",
-    "test": "export $(pnpm --silent gen-env) && vitest run",
-    "test:watch": "export $(pnpm --silent gen-env) && vitest watch"
+    "test": "export $(cat .env) && vitest run",
+    "test:watch": "export $(cat .env) && vitest watch"
   },
   "dependencies": {
     "@azure/identity": "^3.2.4",

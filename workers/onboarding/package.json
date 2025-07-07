@@ -5,9 +5,9 @@
   "sideEffects": false,
   "version": "0.0.1",
   "private": true,
-  "deploy_vars": "",
   "scripts": {
     "deploy": "../../scripts/deploy-worker",
+    "deploy:vars": "../../scripts/deploy-worker-vars",
     "types": "wrangler types",
     "lint": "tsc && eslint ."
   },

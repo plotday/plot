@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# Given .env templates (.env*.1p), generate an .env file:
-# 1. replacing vars specified in workspace-level .env files
-# 2. replacing 1Password secret references
+# Output a combined .env file by:
+# 1. Taking root .env, .env.local, .env.<ENV>, and .env.<ENV>.local files
+# 2. Replacing 1Password secret references
 
 export ENV=$1
 case $ENV in

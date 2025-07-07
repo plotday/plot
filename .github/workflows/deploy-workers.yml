@@ -1,0 +1,58 @@
+name: Deploy Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        worker:
+          - api
+          - calendar-webhook
+          - contact-sync
+          - event
+          - mailer
+          - onboarding
+          - sync
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Load secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
+          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Deploy ${{ matrix.worker }}
+        run: pnpm exec nx deploy @plotday/${{ matrix.worker }}
+
+      - name: Deploy ${{ matrix.worker }}
+        run: npx wrangler deploy
+        working-directory: workers/${{ matrix.worker }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+

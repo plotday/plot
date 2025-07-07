@@ -4,8 +4,11 @@
   "types": "src/index.ts",
   "sideEffects": false,
   "private": true,
-  "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET CALENDAR_WEBHOOK_URL AUTH_CALLBACK_URL",
+  "config": {
+    "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY GOOGLE_CLIENT_ID GOOGLE_OAUTH_SECRET MICROSOFT_CLIENT_ID MICROSOFT_OAUTH_SECRET CALENDAR_WEBHOOK_URL AUTH_CALLBACK_URL"
+  },
   "scripts": {
+    "env": "../../scripts/gen-env development $npm_package_config_deploy_vars > .dev.vars",
     "deploy": "../../scripts/deploy-worker",
     "deploy:vars": "../../scripts/deploy-worker-vars",
     "types": "wrangler types",

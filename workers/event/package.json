@@ -5,8 +5,11 @@
   "sideEffects": false,
   "version": "0.0.2",
   "private": true,
-  "deploy_vars": "SENTY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL SUPABASE_SERVICE_KEY",
+  "config": {
+    "deploy_vars": "SENTY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL SUPABASE_SERVICE_KEY"
+  },
   "scripts": {
+    "env": "../../scripts/gen-env development $npm_package_config_deploy_vars > .dev.vars",
     "deploy": "../../scripts/deploy-worker",
     "deploy:vars": "../../scripts/deploy-worker-vars",
     "types": "wrangler types",

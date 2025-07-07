@@ -9,11 +9,10 @@
 1. [Install the 1Password CLI](https://developer.1password.com/docs/cli/get-started/): `brew install 1password-cli`
 1. [Install pgFormatter](https://github.com/darold/pgFormatter): `brew install pgformatter`
 1. `brew install postgresql`
+1. `brew install cocoapods`
 1. `pnpm install`
 1. Add `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_KEY` from the `pnpm start` output to `.env.development.local`.
-1. `brew install cocoapods`
-1. `dart pub global activate derry`
-1. `derry env dev default`
+1. `pnpm run env`
 
 ## Local dev
 
