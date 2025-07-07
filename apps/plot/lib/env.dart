@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 abstract class Env {
   static Future<void> init() async {
@@ -30,7 +31,7 @@ abstract class Env {
   }
 
   static Future<bool> _inAndroidEmuilator() async {
-    if (!Platform.isAndroid) return false;
+    if (kIsWeb || !Platform.isAndroid) return false;
     final DeviceInfoPlugin deviceInfoPlugin = DeviceInfoPlugin();
     final AndroidDeviceInfo androidInfo = await deviceInfoPlugin.androidInfo;
     return !androidInfo.isPhysicalDevice;

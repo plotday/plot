@@ -50,71 +50,65 @@ class AppState extends State<App> with WidgetsBindingObserver {
       textDirection: TextDirection.ltr,
       child: ColourScheme(
         child: Builder(
-          builder:
-              (context) => Window(
-                child: CommandProvider(
-                  child: FTheme(
-                    data: buildTheme(context.colour),
-                    child: FutureBuilder(
-                      future: layout,
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          log.severe(snapshot.error);
-                          log.warning(snapshot.stackTrace);
-                          return const Center(
-                            child: Text("Something went wrong"),
-                          );
-                        }
-                        if (!snapshot.hasData) {
-                          return const LoadingPage();
-                        }
-                        return RootProvider(
-                          child: PlatformBuilder(
-                            builder:
-                                (context) => AdaptiveTheme(
-                                  light: material.ThemeData(
-                                    colorScheme: material.ColorScheme.fromSeed(
-                                      seedColor: const Color(0x002BDD66),
-                                      brightness: material.Brightness.light,
-                                    ),
-                                  ),
-                                  dark: material.ThemeData(
-                                    colorScheme: material.ColorScheme.fromSeed(
-                                      seedColor: const Color(0x002BDD66),
-                                      brightness: material.Brightness.dark,
-                                    ),
-                                  ),
-                                  debugShowFloatingThemeButton: true,
-                                  initial: AdaptiveThemeMode.system,
-                                  builder:
-                                      (theme, darkTheme) =>
-                                          material.MaterialApp.router(
-                                            title: 'Plot',
-                                            theme: theme,
-                                            darkTheme: darkTheme,
-                                            routerConfig: router.config(),
-                                          ),
-                                ),
-                            macOSBuilder:
-                                (context) => macos.MacosApp.router(
-                                  title: 'Plot',
-                                  theme: (context.colour.brightness ==
-                                              Brightness.light
-                                          ? macos.MacosThemeData.light()
-                                          : macos.MacosThemeData.dark())
-                                      .copyWith(
-                                        primaryColor: context.colour.accent,
-                                      ),
-                                  debugShowCheckedModeBanner: false,
-                                  routerConfig: router.config(),
-                                ),
+          builder: (context) => Window(
+            child: CommandProvider(
+              child: FTheme(
+                data: buildTheme(context.colour),
+                child: FutureBuilder(
+                  future: layout,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      log.severe(snapshot.error);
+                      log.warning(snapshot.stackTrace);
+                      return const Center(child: Text("Something went wrong"));
+                    }
+                    if (!snapshot.hasData) {
+                      return const LoadingPage();
+                    }
+                    return RootProvider(
+                      child: PlatformBuilder(
+                        builder: (context) => AdaptiveTheme(
+                          light: material.ThemeData(
+                            colorScheme: material.ColorScheme.fromSeed(
+                              seedColor: const Color(0x002BDD66),
+                              brightness: material.Brightness.light,
+                            ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
+                          dark: material.ThemeData(
+                            colorScheme: material.ColorScheme.fromSeed(
+                              seedColor: const Color(0x002BDD66),
+                              brightness: material.Brightness.dark,
+                            ),
+                          ),
+                          debugShowFloatingThemeButton: true,
+                          initial: AdaptiveThemeMode.system,
+                          builder: (theme, darkTheme) =>
+                              material.MaterialApp.router(
+                                title: 'Plot',
+                                theme: theme,
+                                darkTheme: darkTheme,
+                                routerConfig: router.config(),
+                              ),
+                        ),
+                        macOSBuilder: (context) => macos.MacosApp.router(
+                          title: 'Plot',
+                          theme:
+                              (context.colour.brightness == Brightness.light
+                                      ? macos.MacosThemeData.light()
+                                      : macos.MacosThemeData.dark())
+                                  .copyWith(
+                                    primaryColor: context.colour.accent,
+                                  ),
+                          debugShowCheckedModeBanner: false,
+                          routerConfig: router.config(),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
+            ),
+          ),
         ),
       ),
     );
@@ -129,24 +123,25 @@ class ErrorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
-      builder:
-          (context) => material.MaterialApp(
-            home: material.Scaffold(
-              body: Directionality(
-                textDirection: TextDirection.ltr,
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('Failed to start Plot.'),
-                      Text('Error: $error'),
-                      Button(SignOut()),
-                    ],
-                  ),
+      builder: (context) => material.MaterialApp(
+        home: ColourScheme(
+          child: material.Scaffold(
+            body: Directionality(
+              textDirection: TextDirection.ltr,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Failed to start Plot.'),
+                    Text('Error: $error'),
+                    Button(SignOut()),
+                  ],
                 ),
               ),
             ),
           ),
+        ),
+      ),
     );
   }
 }
