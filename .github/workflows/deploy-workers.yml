@@ -6,18 +6,39 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  check-changes:
     runs-on: ubuntu-latest
+    outputs:
+      workers: ${{ steps.filter.outputs.workers }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for changes
+        id: filter
+        run: |
+          WORKERS=()
+
+          # Check each worker for changes
+          for worker in api calendar-webhook contact-sync event-sync mailer onboarding sync; do
+            # Use nx to check if the worker project has changes
+            if pnpm dlx nx show projects --affected --base=HEAD~1 --head=HEAD --json | jq -r '.[]' | grep -q "^@plotday/$worker$"; then
+              WORKERS+=("\"$worker\"")
+            fi
+          done
+
+          # Convert array to JSON array
+          WORKERS_JSON=$(printf '%s\n' "${WORKERS[@]}" | jq -s .)
+          echo "workers=$WORKERS_JSON" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: check-changes
+    runs-on: ubuntu-latest
+    if: needs.check-changes.outputs.workers != '[]'
     strategy:
       matrix:
-        worker:
-          - api
-          - calendar-webhook
-          - contact-sync
-          - event-sync
-          - mailer
-          - onboarding
-          - sync
+        worker: ${{ fromJson(needs.check-changes.outputs.workers) }}
 
     env:
       SKIP_PYTHON: 1
