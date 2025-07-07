@@ -50,7 +50,7 @@ jobs:
         run: pnpm install
 
       - name: Deploy ${{ matrix.worker }}
-        run: pnpm exec nx deploy --verbose @plotday/${{ matrix.worker }}
+        run: pnpm exec nx deploy @plotday/${{ matrix.worker }}
 
       - name: Deploy ${{ matrix.worker }}
         run: npx wrangler deploy

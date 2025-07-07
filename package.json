@@ -1,5 +1,5 @@
 {
-  "name": "@plotday/plot",
+  "name": "plot",
   "private": true,
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.6.5",
