@@ -4,9 +4,16 @@ compatibility_date = "2025-07-01"
 compatibility_flags = ["nodejs_compat"]
 upload_source_maps = true
 
-[define]
+[env.development]
+[env.development.define]
   ENV = '"development"'
   RELEASE = '"dev"'
+  PACKAGE = '"onboarding"'
+
+[env.production]
+[env.production.define]
+  ENV = '"production"'
+  RELEASE = '"prod"'
   PACKAGE = '"onboarding"'
 
 [observability.logs]
