@@ -47,10 +47,10 @@ jobs:
 
           # Convert array to JSON array
           if [ ${#WORKERS[@]} -eq 0 ]; then
-            echo "[]" >> $GITHUB_OUTPUT
+          echo '{"workers": []}' >> $GITHUB_OUTPUT
             echo "No workers have changes"
           else
-            WORKERS_JSON=$(printf '%s\n' "${WORKERS[@]}" | jq -s .)
+            WORKERS_JSON=$(printf '%s\n' "${WORKERS[@]}" | jq -s '{workers: .}')
             echo "$WORKERS_JSON" >> $GITHUB_OUTPUT
             echo "Changed workers: ${WORKERS[*]}"
           fi
@@ -61,7 +61,7 @@ jobs:
     if: needs.check-changes.outputs.workers != '[]'
     strategy:
       matrix:
-        worker: ${{ fromJson(needs.check-changes.outputs) }}
+        worker: ${{ fromJson(needs.check-changes.outputs.workers) }}
 
     env:
       SKIP_PYTHON: 1
