@@ -7,7 +7,6 @@
   "private": true,
   "scripts": {
     "deploy": "../../scripts/deploy-worker",
-    "deploy:vars": "../../scripts/deploy-worker-vars",
     "types": "wrangler types",
     "lint": "tsc && eslint ."
   },

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ENV=${ENV:-production}
-ALL=$($(dirname "$0")/gen-env $ENV)
+ALL=$($(dirname "$0")/gen-env $ENV $npm_package_config_deploy_vars)
 SECRETS=$(echo "$ALL" | grep -E 'SECRET|KEY|TOKEN' || true)
 SECRETS=$(echo "$SECRETS" | $(dirname "$0")/env-to-json)
 VARS=$(echo "$ALL" | grep -Ev 'SECRET|KEY|TOKEN' || true)
