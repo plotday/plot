@@ -49,6 +49,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: NX reset
+        run: pnpm exec nx reset
+
       - name: Deploy ${{ matrix.worker }}
         run: pnpm exec nx deploy @plotday/${{ matrix.worker }}
 
