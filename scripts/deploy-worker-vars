@@ -9,6 +9,6 @@ SECRETS=$(echo "$SECRETS" | $(dirname "$0")/env-to-json)
 VARS=$(echo "$ALL" | grep -Ev 'SECRET|KEY|TOKEN' || true)
 VARS=$(echo "$VARS" | sed 's/=\([^=]*\)$/:\1/')
 
-echo "$SECRETS" | wrangler secret bulk
+echo "$SECRETS" | wrangler secret bulk --env $ENV
 export DEPLOY_VARS="$VARS"
 $(dirname "$0")/deploy-worker

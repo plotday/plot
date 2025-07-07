@@ -18,6 +18,9 @@ upload_source_maps = true
   binding = "ONBOARDING"
   service = "onboarding"
 
+[env.development.ai]
+  binding = "AI"
+
 [env.production]
 routes = [
   { pattern = "sync-api.plot.day", custom_domain = true }
@@ -35,7 +38,7 @@ routes = [
   binding = "ONBOARDING"
   service = "onboarding-production"
 
-[ai]
+[env.production.ai]
   binding = "AI"
 
 [observability.logs]

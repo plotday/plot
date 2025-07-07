@@ -16,6 +16,9 @@ upload_source_maps = true
   max_batch_timeout = 3
   max_retries = 3
 
+[env.development.ai]
+  binding = "AI"
+
 [env.production]
 [env.production.define]
   ENV = '"production"'
@@ -28,11 +31,11 @@ upload_source_maps = true
   max_batch_timeout = 3
   max_retries = 3
 
+[env.production.ai]
+  binding = "AI"
+
 [placement]
   mode = "smart"
-
-[ai]
-  binding = "AI"
 
 [observability.logs]
   enabled = true
