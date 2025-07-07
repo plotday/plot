@@ -7,7 +7,7 @@ upload_source_maps = true
 [define]
   ENV = '"development"'
   RELEASE = '"dev"'
-  PACKAGE = '"event"'
+  PACKAGE = '"event-sync"'
 
 [placement]
   mode = "smart"
