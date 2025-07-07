@@ -42,7 +42,8 @@ jobs:
             WORKERS_JSON=$(printf '%s\n' "${WORKERS[@]}" | jq -s .)
             echo "workers=$WORKERS_JSON" >> $GITHUB_OUTPUT
           fi
-          echo Changed workers: $WORKERS ($WORKERS_JSON)
+
+          echo Changed workers: $WORKERS $WORKERS_JSON
 
   deploy:
     needs: check-changes
