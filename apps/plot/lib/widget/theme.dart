@@ -11,7 +11,7 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
     colors: colorScheme,
     typography: FTypography.inherit(
       colors: colorScheme,
-    ).transform((t) => t.copyWith(base: t.base.copyWith(fontSize: 12))),
+    ).copyWith(base: FTypography.inherit(colors: colorScheme).base.copyWith(fontSize: 12)),
   );
   theme = theme.copyWith(
     headerStyles: theme.headerStyles.copyWith(

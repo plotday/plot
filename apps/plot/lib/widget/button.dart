@@ -55,28 +55,30 @@ class Button extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    FBaseButtonStyle fStyle;
+    FBaseButtonStyle Function(FButtonStyle) fStyle;
     if (selected) {
-      final baseStyle = switch (style) {
-        ButtonStyle.primary => context.theme.buttonStyles.primary,
-        ButtonStyle.secondary => context.theme.buttonStyles.outline,
-        ButtonStyle.ghost => context.theme.buttonStyles.ghost,
+      fStyle = (baseStyle) {
+        final selectedStyle = switch (style) {
+          ButtonStyle.primary => context.theme.buttonStyles.primary,
+          ButtonStyle.secondary => context.theme.buttonStyles.outline,
+          ButtonStyle.ghost => context.theme.buttonStyles.ghost,
+        };
+        return selectedStyle.copyWith(
+          contentStyle: selectedStyle.contentStyle.copyWith(
+            textStyle: selectedStyle.contentStyle.textStyle.map(
+              (style) => style.copyWith(color: context.colour.accent),
+            ),
+            iconStyle: selectedStyle.iconContentStyle.iconStyle.map(
+              (style) => style.copyWith(color: context.colour.accent),
+            ),
+          ),
+        );
       };
-      fStyle = baseStyle.copyWith(
-        contentStyle: baseStyle.contentStyle.copyWith(
-          textStyle: baseStyle.contentStyle.textStyle.map(
-            (style) => style.copyWith(color: context.colour.accent),
-          ),
-          iconStyle: baseStyle.iconContentStyle.iconStyle.map(
-            (style) => style.copyWith(color: context.colour.accent),
-          ),
-        ),
-      );
     } else {
       fStyle = switch (style) {
-        ButtonStyle.primary => FButtonStyle.primary,
-        ButtonStyle.secondary => FButtonStyle.outline,
-        ButtonStyle.ghost => FButtonStyle.ghost,
+        ButtonStyle.primary => FButtonStyle.primary(),
+        ButtonStyle.secondary => FButtonStyle.outline(),
+        ButtonStyle.ghost => FButtonStyle.ghost(),
       };
     }
 

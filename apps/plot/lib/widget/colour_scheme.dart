@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:equatable/equatable.dart';
 import 'package:forui/forui.dart';
@@ -91,6 +92,9 @@ class ColourSchemeData extends Equatable {
       border: border,
       enabledHoveredOpacity: 0.9,
       disabledOpacity: 0.5,
+      systemOverlayStyle: brightness == Brightness.light
+          ? SystemUiOverlayStyle.dark
+          : SystemUiOverlayStyle.light,
     );
   }
 

@@ -619,18 +619,18 @@ packages:
     dependency: "direct main"
     description:
       name: forui
-      sha256: e77b5774aef52883d148dba1d7b6ce7a723c5e1901b13142aea1bb61b9e68d9e
+      sha256: "3b8d1b7529e8aefd2a1427aef788efefb93b5589ee66afb8c597c5ba0530fdb2"
       url: "https://pub.dev"
     source: hosted
-    version: "0.12.0"
+    version: "0.13.1"
   forui_assets:
     dependency: transitive
     description:
       name: forui_assets
-      sha256: "795b47478ddf7cafb72e943f97ae004a4aa01f1ae40f0b2d68768c35ee680da4"
+      sha256: e0b5aa5d93d250fe51898bd502507aad2ea9f1a7d1745307103efe9ea13a5b4e
       url: "https://pub.dev"
     source: hosted
-    version: "0.12.0"
+    version: "0.13.0"
   freezed_annotation:
     dependency: transitive
     description:
