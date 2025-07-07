@@ -19,6 +19,9 @@ jobs:
           - onboarding
           - sync
 
+    env:
+      SKIP_PYTHON: 1
+
     steps:
       - uses: actions/checkout@v4
         with:
