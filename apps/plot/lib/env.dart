@@ -22,7 +22,7 @@ abstract class Env {
 
   static late final bool inAndroidEmulator;
 
-  String _translateUrl(String url) {
+  static String _translateUrl(String url) {
     if (inAndroidEmulator) {
       return url.replaceAll('localhost', '10.0.2.2');
     }
@@ -31,6 +31,7 @@ abstract class Env {
 
   static Future<bool> _inAndroidEmuilator() async {
     if (!Platform.isAndroid) return false;
+    final DeviceInfoPlugin deviceInfoPlugin = DeviceInfoPlugin();
     final AndroidDeviceInfo androidInfo = await deviceInfoPlugin.androidInfo;
     return !androidInfo.isPhysicalDevice;
   }
