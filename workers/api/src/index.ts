@@ -192,7 +192,7 @@ app.post("/agent", async (c) => {
     return new Response("Bad request (missing priorityId)", { status: 400 });
   }
 
-  // Create Priority instance
+  // Create Priority instance for agent
   const priority = new Priority(c.var.supabase, priorityId);
 
   // Call onboarding worker's activate method
