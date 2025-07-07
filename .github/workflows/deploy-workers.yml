@@ -48,12 +48,12 @@ jobs:
           # Convert array to JSON array
           if [ ${#WORKERS[@]} -eq 0 ]; then
             echo "workers=[]" >> $GITHUB_OUTPUT
+            echo "No workers have changes"
           else
             WORKERS_JSON=$(printf '%s\n' "${WORKERS[@]}" | jq -s .)
             echo "workers=$WORKERS_JSON" >> $GITHUB_OUTPUT
+            echo "Changed workers: ${WORKERS[*]}"
           fi
-
-          echo Changed workers: $WORKERS $WORKERS_JSON
 
   deploy:
     needs: check-changes
