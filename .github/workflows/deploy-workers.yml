@@ -52,9 +52,3 @@ jobs:
 
       - name: Deploy ${{ matrix.worker }}
         run: pnpm exec nx deploy @plotday/${{ matrix.worker }}
-
-      - name: Deploy ${{ matrix.worker }}
-        run: npx wrangler deploy
-        working-directory: workers/${{ matrix.worker }}
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
