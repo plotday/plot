@@ -47,11 +47,11 @@ jobs:
 
           # Convert array to JSON array
           if [ ${#WORKERS[@]} -eq 0 ]; then
-          echo '{"workers": []}' >> $GITHUB_OUTPUT
+            echo "workers=[]" >> $GITHUB_OUTPUT
             echo "No workers have changes"
           else
-            WORKERS_JSON=$(printf '%s\n' "${WORKERS[@]}" | jq -s '{workers: .}')
-            echo "$WORKERS_JSON" >> $GITHUB_OUTPUT
+            WORKERS_JSON=$(printf '%s\n' "${WORKERS[@]}" | jq -s . | tr -d '\n')
+            echo "workers=$WORKERS_JSON" >> $GITHUB_OUTPUT
             echo "Changed workers: ${WORKERS[*]}"
           fi
 
