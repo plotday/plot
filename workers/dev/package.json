@@ -4,7 +4,7 @@
   "sideEffects": false,
   "private": true,
   "config": {
-    "workers": "../api ../calendar-webhook ../contact-sync ../event-sync ../mailer ../sync ../onboarding"
+    "workers": "../api ../contact-sync ../event-sync ../mailer ../sync ../onboarding"
   },
   "scripts": {
     "dev": "wrangler dev --env development --test-scheduled $(for dir in $npm_package_config_workers; do echo -c \"$dir/wrangler.toml\"; done)"

@@ -10,14 +10,20 @@ upload_source_maps = true
   RELEASE = '"dev"'
   PACKAGE = '"mailer"'
 
+[[env.development.queues.consumers]]
+  queue = "mail-development"
+  max_batch_size = 20
+  max_batch_timeout = 3
+  max_retries = 3
+
 [env.production]
 [env.production.define]
   ENV = '"production"'
   RELEASE = '"prod"'
   PACKAGE = '"mailer"'
 
-[[queues.consumers]]
-  queue = "mail"
+[[env.production.queues.consumers]]
+  queue = "mail-production"
   max_batch_size = 20
   max_batch_timeout = 3
   max_retries = 3

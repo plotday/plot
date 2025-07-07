@@ -10,6 +10,14 @@ upload_source_maps = true
   RELEASE = '"dev"'
   PACKAGE = '"api"'
 
+[[env.development.queues.producers]]
+  queue = "sync-development"
+  binding = "SYNC_QUEUE"
+
+[[env.development.services]]
+  binding = "ONBOARDING"
+  service = "onboarding"
+
 [env.production]
 routes = [
   { pattern = "sync-api.plot.day", custom_domain = true }
@@ -19,16 +27,16 @@ routes = [
   RELEASE = '"prod"'
   PACKAGE = '"api"'
 
-[ai]
-  binding = "AI"
-
-[[queues.producers]]
-  queue = "sync"
+[[env.production.queues.producers]]
+  queue = "sync-production"
   binding = "SYNC_QUEUE"
 
-[[services]]
+[[env.production.services]]
   binding = "ONBOARDING"
-  service = "onboarding"
+  service = "onboarding-production"
+
+[ai]
+  binding = "AI"
 
 [observability.logs]
   enabled = true

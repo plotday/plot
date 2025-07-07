@@ -10,6 +10,10 @@ upload_source_maps = true
   RELEASE = '"dev"'
   PACKAGE = '"calendar-webhook"'
 
+[[env.development.queues.producers]]
+  queue = "sync-development"
+  binding = "SYNC_QUEUE"
+
 [env.production]
 [env.production.define]
   ENV = '"production"'
@@ -20,8 +24,8 @@ upload_source_maps = true
   # every 5 minutes
   crons = ["*/5 * * * *"]
 
-[[queues.producers]]
-  queue = "sync"
+[[env.production.queues.producers]]
+  queue = "sync-production"
   binding = "SYNC_QUEUE"
 
 

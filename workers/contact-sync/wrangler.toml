@@ -10,14 +10,19 @@ upload_source_maps = true
   RELEASE = '"dev"'
   PACKAGE = '"contact-sync"'
 
+[[env.development.queues.consumers]]
+  queue = "contact-sync-development"
+  max_batch_size = 1
+  max_retries = 5
+
 [env.production]
 [env.production.define]
   ENV = '"production"'
   RELEASE = '"prod"'
   PACKAGE = '"contact-sync"'
 
-[[queues.consumers]]
-  queue = "contact-sync"
+[[env.production.queues.consumers]]
+  queue = "contact-sync-production"
   max_batch_size = 1
   max_retries = 5
 

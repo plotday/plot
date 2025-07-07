@@ -25,8 +25,6 @@ export interface Env {
   readonly SYNC_QUEUE: Queue<SyncRequest>;
 }
 
-console.log(ENV, RELEASE, PACKAGE);
-
 function handleException(e: any, extra?: Record<string, any>) {
   if (e instanceof Response) throw e;
 

@@ -10,6 +10,19 @@ upload_source_maps = true
   RELEASE = '"dev"'
   PACKAGE = '"sync"'
 
+[[env.development.queues.producers]]
+  queue = "event-sync-development"
+  binding = "EVENT_QUEUE"
+
+[[env.development.queues.producers]]
+  queue = "contact-sync-development"
+  binding = "CONTACT_SYNC_QUEUE"
+
+[[env.development.queues.consumers]]
+  queue = "sync-development"
+  max_batch_size = 1
+  max_retries = 5
+
 [env.production]
 [env.production.define]
   ENV = '"production"'
@@ -19,16 +32,16 @@ upload_source_maps = true
 [env.production.triggers]
   crons = ["*/47 * * * *"]
 
-[[queues.producers]]
-  queue = "event-sync"
+[[env.production.queues.producers]]
+  queue = "event-sync-production"
   binding = "EVENT_QUEUE"
 
-[[queues.producers]]
-  queue = "contact-sync"
+[[env.production.queues.producers]]
+  queue = "contact-sync-production"
   binding = "CONTACT_SYNC_QUEUE"
 
-[[queues.consumers]]
-  queue = "sync"
+[[env.production.queues.consumers]]
+  queue = "sync-production"
   max_batch_size = 1
   max_retries = 5
 
