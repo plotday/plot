@@ -22,6 +22,15 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install root dependencies only
+        run: pnpm install --ignore-scripts --frozen-lockfile --filter="."
+
       - name: Check for changes
         id: filter
         run: |
@@ -30,7 +39,7 @@ jobs:
           # Check each worker for changes
           for worker in api calendar-webhook contact-sync event-sync mailer onboarding sync; do
             # Check if worker has changes by looking at affected projects
-            AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=HEAD~1 --head=HEAD --json 2>/dev/null || echo "[]")
+            AFFECTED_OUTPUT=$(pnpm exec nx show projects --affected --base=HEAD~1 --head=HEAD --json 2>/dev/null || echo "[]")
             if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/$worker$"; then
               WORKERS+=("\"$worker\"")
             fi
