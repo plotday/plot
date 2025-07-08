@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:platform_builder/platform_builder.dart';
 import 'package:drift/drift.dart' show Value;
 
@@ -28,6 +27,14 @@ class Dialog extends StatelessWidget {
 
   Future<Value<T>> show<T>(BuildContext context) {
     return DialogProvider.of(context).push<T>(context, this);
+  }
+
+  static void pop<T>(BuildContext context, Value<T> result) {
+    DialogProvider.of(context).pop<T>(context, result);
+  }
+
+  static void popAll(BuildContext context) {
+    DialogProvider.of(context).popAll(context);
   }
 
   @override
@@ -80,56 +87,65 @@ class Dialog extends StatelessWidget {
 }
 
 class DialogProvider extends InheritedWidget {
-  DialogProvider({required super.child, super.key});
+  DialogProvider({required super.child, super.key})
+    : _dialogStack = <_DialogStackItem<dynamic>>[];
 
-  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final List<_DialogStackItem<dynamic>> _dialogStack;
 
   Future<Value<T>> push<T>(BuildContext context, Widget dialog) async {
-    final child = NoTransitionRoute<Value<T>>(
-      builder: (context) => _InnerDialogProvider(
-        this,
-        child: CallbackShortcuts(
+    final stackItem = _DialogStackItem<T>(dialog);
+
+    _dialogStack.add(stackItem);
+    _notifyStackChanged();
+
+    if (_dialogStack.length == 1) {
+      final result = await showFDialog<Value<T>>(
+        context: context,
+        builder: (context, _, _) => CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.escape): () {
               pop(context, Value<T>.absent());
             },
           },
-          child: dialog,
+          child: _InnerDialogProvider(
+            this,
+            child: _DialogStackDisplay(provider: this),
+          ),
         ),
-      ),
-    );
-
-    if (_navigatorKey.currentState == null) {
-      final result = await material.showDialog<Value<T>>(
-        context: context,
-        requestFocus: true,
-        builder: (context) {
-          return Navigator(key: _navigatorKey, onGenerateRoute: (_) => child);
-        },
       );
+      _dialogStack.clear();
       return result ?? Value.absent();
     } else {
-      final result = await _navigatorKey.currentState!.push(child);
-      return result ?? Value.absent();
+      return stackItem.completer.future;
     }
   }
 
   void pop<T>(BuildContext context, Value<T> result) {
-    var navigator = _navigatorKey.currentState;
-    if (navigator?.canPop() == false) {
-      navigator = Navigator.of(context, rootNavigator: true);
+    if (_dialogStack.isNotEmpty) {
+      final stackItem = _dialogStack.removeLast();
+      stackItem.completer.complete(result);
     }
-    navigator?.maybePop(result);
+
+    if (_dialogStack.isEmpty) {
+      Navigator.of(context).maybePop(result);
+    } else {
+      _notifyStackChanged();
+    }
   }
 
   void popAll(BuildContext context) {
-    var navigator = _navigatorKey.currentState;
-    while (navigator?.canPop() == true) {
-      navigator!.pop();
+    while (_dialogStack.isNotEmpty) {
+      final stackItem = _dialogStack.removeLast();
+      stackItem.completeAbsent();
     }
-    navigator = Navigator.of(context, rootNavigator: true);
-    navigator.maybePop();
+    Navigator.of(context).maybePop();
   }
+
+  void _notifyStackChanged() {
+    _dialogStackNotifier.value = _dialogStack.length;
+  }
+
+  final ValueNotifier<int> _dialogStackNotifier = ValueNotifier<int>(0);
 
   static DialogProvider of(BuildContext context) {
     final DialogProvider? provider =
@@ -145,48 +161,56 @@ class DialogProvider extends InheritedWidget {
   bool updateShouldNotify(DialogProvider oldWidget) => false;
 }
 
+class _DialogStackItem<T> {
+  _DialogStackItem(this.dialog);
+
+  final Widget dialog;
+  final Completer<Value<T>> completer = Completer<Value<T>>();
+
+  void completeAbsent() => completer.complete(Value.absent());
+}
+
+class _DialogStackDisplay extends StatefulWidget {
+  const _DialogStackDisplay({required this.provider});
+
+  final DialogProvider provider;
+
+  @override
+  State<_DialogStackDisplay> createState() => _DialogStackDisplayState();
+}
+
+class _DialogStackDisplayState extends State<_DialogStackDisplay> {
+  @override
+  void initState() {
+    super.initState();
+    widget.provider._dialogStackNotifier.addListener(_onStackChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.provider._dialogStackNotifier.removeListener(_onStackChanged);
+    super.dispose();
+  }
+
+  void _onStackChanged() {
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.provider._dialogStack.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return widget.provider._dialogStack.last.dialog;
+  }
+}
+
 class _InnerDialogProvider extends InheritedWidget {
   const _InnerDialogProvider(this.provider, {required super.child});
 
   final DialogProvider provider;
 
   @override
-  bool updateShouldNotify(_InnerDialogProvider oldWidget) => false;
-}
-
-class NoTransitionRoute<T> extends PageRoute<T> {
-  NoTransitionRoute({required this.builder, super.settings});
-
-  final WidgetBuilder builder;
-
-  @override
-  Color get barrierColor => Color(0x80000000);
-
-  @override
-  String get barrierLabel => "Dialog";
-
-  @override
-  bool get maintainState => true;
-
-  @override
-  Duration get transitionDuration => Duration.zero;
-
-  @override
-  Widget buildPage(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-  ) {
-    return builder(context);
-  }
-
-  @override
-  Widget buildTransitions(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  ) {
-    return child; // No transition
-  }
+  bool updateShouldNotify(_InnerDialogProvider oldWidget) =>
+      child != oldWidget.child;
 }

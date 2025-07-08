@@ -13,11 +13,11 @@ class CommandBar extends Dialog {
   CommandBar(
     Commands commands, {
     Command? Function(String promptValue)? secondaryCommand,
-    super.key,
   }) : super(
          padding: const EdgeInsets.all(0),
          builder: (_) =>
              _CommandBar(commands, secondaryCommand: secondaryCommand),
+         key: ObjectKey(commands),
        );
 
   Future<CommandReturn> run(BuildContext context) {
@@ -110,7 +110,7 @@ class CommandBarState extends State<_CommandBar> {
         });
         return const CommandDone();
       }
-      DialogProvider.of(context).popAll(context);
+      Dialog.popAll(context);
       if (result is CommandRoute) {
         result.go(context);
       }

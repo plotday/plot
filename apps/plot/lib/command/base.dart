@@ -108,9 +108,9 @@ class ShowCommands extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final commandReturn = CommandBar(await commands(context));
+      final commandsInstance = await commands(context);
       if (!context.mounted) return const CommandSkipped();
-      return await commandReturn.run(context);
+      return await CommandBar(commandsInstance).run(context);
     } on Error catch (e) {
       log.warning(e, e.stackTrace);
       rethrow;

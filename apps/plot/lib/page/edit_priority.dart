@@ -45,7 +45,7 @@ class EditPriorityPage extends HookWidget {
       }
 
       if (context.mounted) {
-        DialogProvider.of(context).pop(context, Value(result));
+        Dialog.pop(context, Value(result));
       }
     }
 

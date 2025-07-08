@@ -219,16 +219,11 @@ class PickScheduleActivity extends ShowPage {
                 when: date.toDate(),
               ).run(context);
               if (!context.mounted) return;
-              DialogProvider.of(context).pop(context, Value(commandReturn));
+              Dialog.pop(context, Value(commandReturn));
             },
           ),
         ),
       );
-
-  // @override
-  // void onSelect(BuildContext context, Date value) async {
-  //   ScheduleActivity(activity, when: value).run(context);
-  // }
 }
 
 class MarkActivityIncomplete extends _UpdateActivityCommand {
