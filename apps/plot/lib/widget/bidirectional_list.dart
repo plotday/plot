@@ -300,7 +300,7 @@ class BidirectionalListState extends State<BidirectionalList> {
     super.initState();
     _setCounts();
     _scrollController = widget.scrollController ?? ScrollController();
-    
+
     // Call _loadIfNecessary on the first frame after initial render
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadIfNecessary();
@@ -372,12 +372,14 @@ class BidirectionalListState extends State<BidirectionalList> {
         final onReorder = widget.onReorder?.call(
           itemIndexCalculator(oldIndex)!,
         );
-        final index = itemIndexCalculator(newIndex);
+        final index = itemIndexCalculator(
+          newIndex > oldIndex ? newIndex - 1 : newIndex,
+        );
         assert(
           index != null,
           'Item index calculator returned null for new index: $newIndex',
         );
-        onReorder?.call(itemIndexCalculator(newIndex)!);
+        onReorder?.call(index!);
       },
     );
   }

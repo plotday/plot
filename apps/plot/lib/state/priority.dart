@@ -312,6 +312,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
+  void moveAgendaItem(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    
+    final items = List<AgendaItem>.from(state.agendaItems);
+    final item = items.removeAt(oldIndex);
+    items.insert(newIndex, item);
+    
+    emit(state.copyWith(agendaItems: items));
+  }
+
   void fetchMoreAgendaItems(int first, int count) async {
     if (state.range == null) return;
 

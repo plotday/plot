@@ -255,9 +255,21 @@ class PriorityPage extends StatelessWidget {
                                       return null;
                                     }
                                     return (int newIndex) {
-                                      newIndex -= state.first;
-                                      var prevIndex = newIndex;
-                                      var nextIndex = newIndex - 1;
+                                      final oldListIndex = index - state.first;
+                                      final newListIndex = newIndex - state.first;
+                                      
+                                      // Update state immediately to prevent jank
+                                      context.read<PriorityBloc>().moveAgendaItem(
+                                        oldListIndex, 
+                                        newListIndex,
+                                      );
+                                      
+                                      // Then update the database asynchronously
+                                      var prevIndex =
+                                          newListIndex -
+                                          1 +
+                                          (oldListIndex < newListIndex ? 1 : 0);
+                                      var nextIndex = prevIndex + 1;
                                       AgendaItem? prev;
                                       if (prevIndex >= 0) {
                                         prev = state.agendaItems[prevIndex];
@@ -338,7 +350,7 @@ class PriorityPage extends StatelessWidget {
     );
     log.info(
       'Reordering ${activity.title} between '
-      '${prevActivity?.title} and ${nextActivity?.title}',
+      '${prevActivity?.title} and ${nextActivity?.title} ($priorityId, $eventSeries)',
     );
     activity
         .copyWith(
