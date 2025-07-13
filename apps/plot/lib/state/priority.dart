@@ -17,25 +17,133 @@ class PriorityBloc extends Cubit<PriorityState> {
       super(
         PriorityState(context: priority, activity: activity, event: event),
       ) {
-    _loadPriority(priority);
-    if (activity != null) {
-      _loadActivity(activity);
+    _loadPriority();
+  }
+
+  void toggleShowArchived() {
+    final newShowArchived = !state.showArchived;
+    log.info('Toggling showArchived to $newShowArchived');
+    emit(state.copyWith(showArchived: newShowArchived));
+
+    // Reload pinned activities and agenda items with new archived filter
+    _loadPriority();
+    if (state.range != null) {
+      _loadAgendaItems(state.range!);
     }
-    if (event != null) {
-      _loadEvent(event);
+  }
+
+  void moveAgendaItem(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+
+    final items = List<AgendaItem>.from(state.agendaItems);
+    final item = items.removeAt(oldIndex);
+    items.insert(newIndex, item);
+
+    emit(state.copyWith(agendaItems: items));
+  }
+
+  void fetchMoreAgendaItems(int first, int count) async {
+    if (state.range == null) return;
+
+    // Determine if we need items before start, after end, or both
+    final moveStart = first - state.first;
+    final moveEnd = first - state.first + count - state.agendaItems.length;
+
+    final needsBefore = moveStart < 0;
+    final needsAfter = moveEnd > 0;
+
+    log.info(
+      'Fetching more agenda items: first=$first, count=$count, moveStart=$moveStart, moveEnd=$moveEnd, needsBefore=$needsBefore, needsAfter=$needsAfter',
+    );
+
+    Date newStart = state.range!.start;
+    Date newEnd = state.range!.end;
+
+    // Handle range expansion and internal range movement
+    Date? prevDate, nextDate;
+    if (needsBefore || needsAfter) {
+      // Run both queries in parallel when both are needed
+      final results = await Future.wait([
+        if (needsBefore)
+          ScheduledDay.previous(
+            state.range!.start,
+            context: state.context,
+            deleted: state.showArchived,
+            minimum: moveStart.abs(),
+          ),
+        if (needsAfter)
+          ScheduledDay.next(
+            state.range!.end,
+            context: state.context,
+            deleted: state.showArchived,
+            minimum: moveEnd,
+          ),
+      ]);
+
+      if (needsAfter) {
+        nextDate = results.removeLast();
+      }
+      if (needsBefore) {
+        prevDate = results.removeLast();
+      }
     }
 
-    final today = Date.today();
-    final initialStartDate = today
-        .toDateTime()
-        .subtract(const Duration(days: 14))
-        .toDate();
-    final initialEndDate = today
-        .toDateTime()
-        .add(const Duration(days: 14))
-        .toDate();
-    DateRange range = DateRangeCustom(initialStartDate, initialEndDate);
-    _loadAgendaItems(range);
+    // Handle expanding before the current range
+    if (needsBefore) {
+      if (prevDate != null) {
+        newStart = prevDate;
+      } else {
+        // No more items before - go arbitrarily far back
+        newStart = Date.earliest;
+      }
+    } else if (moveStart > 0) {
+      for (int i = moveStart; i >= 0; i--) {
+        final item = state.agendaItems[i];
+        final date = item.when(
+          activity: (activity) => null,
+          event: (event) => null,
+          header: (header) => header.date,
+        );
+        if (date != null) {
+          newStart = date;
+          break;
+        }
+      }
+    }
+
+    // Handle expanding after the current range
+    if (needsAfter) {
+      if (nextDate != null) {
+        newEnd = nextDate.addDays(1); // Make end exclusive
+      } else {
+        // No more items after - go arbitrarily far ahead
+        newEnd = Date.latest;
+      }
+    } else if (moveEnd < 0) {
+      // Moving backward within the current range - find the date at the new last position
+      for (
+        int i = state.agendaItems.length - 1 + moveEnd;
+        i < state.agendaItems.length;
+        i++
+      ) {
+        final item = state.agendaItems[i];
+        final date = item.when(
+          activity: (_) => null,
+          event: (_) => null,
+          header: (header) => header.date,
+        );
+        if (date != null) {
+          newEnd = date;
+          break;
+        }
+      }
+    }
+
+    final newRange = DateRangeCustom(newStart, newEnd);
+    log.info(
+      'Expanding range from ${state.range!.start}-${state.range!.end} to ${newRange.start}-${newRange.end}',
+    );
+    _loadAgendaItems(newRange);
   }
 
   @override
@@ -49,19 +157,34 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   PriorityId get currentId => state.context.id;
 
-  void _loadPriority(Priority priority) {
-    // Watch the current priority (context) - only add if not already watching
-    if (_subscriptions.isEmpty) {
-      _subscriptions.add(
-        Priority.watchOne(priority.id).listen((priority) {
-          log.info('Priority updated');
-          emit(state.copyWith(context: priority));
-        }),
-      );
-
-      // Load pinned activities
-      _loadPinnedActivities();
+  void _loadPriority() {
+    for (final subscription in _subscriptions) {
+      subscription.cancel();
     }
+    _subscriptions.add(
+      Priority.watchOne(state.context.id).listen((priority) {
+        log.info('Priority updated');
+        emit(state.copyWith(context: priority));
+      }),
+    );
+    _loadPinnedActivities();
+    if (state.activity != null) {
+      _loadActivity(state.activity!);
+    }
+    if (state.event != null) {
+      _loadEvent(state.event!);
+    }
+
+    _loadAgendaItems(
+      state.range ??
+          DateRangeCustom(
+            Date.today()
+                .toDateTime()
+                .subtract(const Duration(days: 14))
+                .toDate(),
+            Date.today().toDateTime().add(const Duration(days: 14)).toDate(),
+          ),
+    );
   }
 
   void _loadActivity(Activity activity) {
@@ -105,46 +228,39 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
-  void toggleShowArchived() {
-    final newShowArchived = !state.showArchived;
-    log.info('Toggling showArchived to $newShowArchived');
-    emit(state.copyWith(showArchived: newShowArchived));
-
-    // Reload pinned activities and agenda items with new archived filter
-    _loadPinnedActivities();
-    if (state.range != null) {
-      _loadAgendaItems(state.range!);
-    }
-  }
-
   void _loadPinnedActivities() {
-    // Cancel existing pinned subscription if it exists
-    if (_subscriptions.length > 1) {
-      _subscriptions[1].cancel();
-      _subscriptions.removeAt(1);
-    }
+    final stream = state.activity == null && state.event == null
+        ? Activity.watch(
+            priorityId: state.context.id,
+            path: state.activity?.path ?? state.event?.path,
+            pinned: true,
+            deleted: state.showArchived,
+          )
+        : Rx.combineLatest2(
+            Activity.watch(
+              priorityId: state.context.id,
+              path: state.activity?.path ?? state.event?.path,
+              pinned: true,
+              deleted: state.showArchived,
+            ),
+            Activity.watch(
+              priorityId: state.context.id,
+              path: state.activity?.path ?? state.event?.path,
+              active: true,
+              deleted: state.showArchived,
+            ),
+            (pinnedActivities, activeActivities) {
+              final combined = {
+                ...pinnedActivities,
+                ...activeActivities,
+              }.toList();
+              combined.sort((a, b) => a.order.compareTo(b.order));
+              return combined;
+            },
+          );
 
-    // Combine pinned activities and active activities streams
     _subscriptions.add(
-      Rx.combineLatest2(
-        Activity.watch(
-          priorityId: state.context.id,
-          path: state.activity?.path ?? state.event?.path,
-          pinned: true,
-          deleted: state.showArchived,
-        ),
-        Activity.watch(
-          priorityId: state.context.id,
-          path: state.activity?.path ?? state.event?.path,
-          active: true,
-          deleted: state.showArchived,
-        ),
-        (pinnedActivities, activeActivities) {
-          final combined = {...pinnedActivities, ...activeActivities}.toList();
-          combined.sort((a, b) => a.order.compareTo(b.order));
-          return combined;
-        },
-      ).listen((activities) {
+      stream.listen((activities) {
         log.info('Pinned activities updated');
         emit(
           state.copyWith(
@@ -310,120 +426,6 @@ class PriorityBloc extends Cubit<PriorityState> {
             );
           });
     }
-  }
-
-  void moveAgendaItem(int oldIndex, int newIndex) {
-    if (oldIndex == newIndex) return;
-    
-    final items = List<AgendaItem>.from(state.agendaItems);
-    final item = items.removeAt(oldIndex);
-    items.insert(newIndex, item);
-    
-    emit(state.copyWith(agendaItems: items));
-  }
-
-  void fetchMoreAgendaItems(int first, int count) async {
-    if (state.range == null) return;
-
-    // Determine if we need items before start, after end, or both
-    final moveStart = first - state.first;
-    final moveEnd = first - state.first + count - state.agendaItems.length;
-
-    final needsBefore = moveStart < 0;
-    final needsAfter = moveEnd > 0;
-
-    log.info(
-      'Fetching more agenda items: first=$first, count=$count, moveStart=$moveStart, moveEnd=$moveEnd, needsBefore=$needsBefore, needsAfter=$needsAfter',
-    );
-
-    Date newStart = state.range!.start;
-    Date newEnd = state.range!.end;
-
-    // Handle range expansion and internal range movement
-    Date? prevDate, nextDate;
-    if (needsBefore || needsAfter) {
-      // Run both queries in parallel when both are needed
-      final results = await Future.wait([
-        if (needsBefore)
-          ScheduledDay.previous(
-            state.range!.start,
-            context: state.context,
-            deleted: state.showArchived,
-            minimum: moveStart.abs(),
-          ),
-        if (needsAfter)
-          ScheduledDay.next(
-            state.range!.end,
-            context: state.context,
-            deleted: state.showArchived,
-            minimum: moveEnd,
-          ),
-      ]);
-
-      if (needsAfter) {
-        nextDate = results.removeLast();
-      }
-      if (needsBefore) {
-        prevDate = results.removeLast();
-      }
-    }
-
-    // Handle expanding before the current range
-    if (needsBefore) {
-      if (prevDate != null) {
-        newStart = prevDate;
-      } else {
-        // No more items before - go arbitrarily far back
-        newStart = Date.earliest;
-      }
-    } else if (moveStart > 0) {
-      for (int i = moveStart; i >= 0; i--) {
-        final item = state.agendaItems[i];
-        final date = item.when(
-          activity: (activity) => null,
-          event: (event) => null,
-          header: (header) => header.date,
-        );
-        if (date != null) {
-          newStart = date;
-          break;
-        }
-      }
-    }
-
-    // Handle expanding after the current range
-    if (needsAfter) {
-      if (nextDate != null) {
-        newEnd = nextDate.addDays(1); // Make end exclusive
-      } else {
-        // No more items after - go arbitrarily far ahead
-        newEnd = Date.latest;
-      }
-    } else if (moveEnd < 0) {
-      // Moving backward within the current range - find the date at the new last position
-      for (
-        int i = state.agendaItems.length - 1 + moveEnd;
-        i < state.agendaItems.length;
-        i++
-      ) {
-        final item = state.agendaItems[i];
-        final date = item.when(
-          activity: (_) => null,
-          event: (_) => null,
-          header: (header) => header.date,
-        );
-        if (date != null) {
-          newEnd = date;
-          break;
-        }
-      }
-    }
-
-    final newRange = DateRangeCustom(newStart, newEnd);
-    log.info(
-      'Expanding range from ${state.range!.start}-${state.range!.end} to ${newRange.start}-${newRange.end}',
-    );
-    _loadAgendaItems(newRange);
   }
 
   final List<StreamSubscription<void>> _subscriptions;
