@@ -5,6 +5,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_list.dart';
+import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/agenda_item.dart';
 import 'package:plot/state/now.dart';
@@ -288,29 +289,7 @@ class PriorityPage extends StatelessWidget {
                                   },
                                 ),
                               ),
-                              EditableArea(
-                                position: EditableAreaPosition.bottom,
-                                builder: (context, focusNode) => Editor(
-                                  hint: 'Add activity',
-                                  autofocus: true,
-                                  focusNode: focusNode,
-                                  onSubmitted: (body, {bool alt = false}) async {
-                                    log.info(
-                                      'Adding new priority with body: $body ($alt)',
-                                    );
-                                    final priority = state.draft.copyWith(
-                                      note: Value(body),
-                                      draft: false,
-                                      doAt: alt
-                                          ? Value(Date.today())
-                                          : const Value.absent(),
-                                    );
-                                    await context.read<PriorityBloc>().add(
-                                      priority,
-                                    );
-                                  },
-                                ),
-                              ),
+                              const ActivityEditor(),
                             ],
                           );
                         },

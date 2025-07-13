@@ -10,39 +10,6 @@ import 'sliver.dart';
 import 'colour_scheme.dart';
 import 'bidirectional_list.dart';
 
-const baseTextStyle = TextStyle(
-  color: Color(0xFF000000),
-  fontSize: 12,
-  height: 1.4,
-);
-
-final _styles = Stylesheet(
-  rules: [
-    StyleRule(BlockSelector.all, (doc, docNode) {
-      return {
-        Styles.textStyle: baseTextStyle,
-        Styles.padding: const CascadingPadding.only(bottom: 14),
-      };
-    }),
-    StyleRule(BlockSelector.all.last(), (doc, docNode) {
-      return {Styles.padding: const CascadingPadding.only(bottom: 0)};
-    }),
-    StyleRule(const BlockSelector("listItem"), (doc, docNode) {
-      return {Styles.padding: const CascadingPadding.only(bottom: 0)};
-    }),
-  ],
-  inlineTextStyler: defaultInlineTextStyler,
-  inlineWidgetBuilders: defaultInlineWidgetBuilderChain,
-);
-
-final _darkStyles = _styles.copyWith(
-  addRulesAfter: [
-    StyleRule(BlockSelector.all, (doc, docNode) {
-      return {Styles.textStyle: const TextStyle(color: Color(0xFFFFFFFF))};
-    }),
-  ],
-);
-
 class Editor extends StatefulWidget {
   const Editor({
     this.hint,
@@ -187,6 +154,11 @@ class EditorState extends State<Editor> {
               TaskComponentBuilder(_editor),
               ...defaultComponentBuilders,
             ],
+            // TODO use defaultImeKeyboardActions on mobile
+            keyboardActions: [
+              _shiftEnterToInsertBlockNewline,
+              ...defaultKeyboardActions,
+            ],
             // ),
           ),
         ),
@@ -262,6 +234,39 @@ class ViewerState extends State<Viewer> {
   }
 }
 
+const baseTextStyle = TextStyle(
+  color: Color(0xFF000000),
+  fontSize: 12,
+  height: 1.4,
+);
+
+final _styles = Stylesheet(
+  rules: [
+    StyleRule(BlockSelector.all, (doc, docNode) {
+      return {
+        Styles.textStyle: baseTextStyle,
+        Styles.padding: const CascadingPadding.only(bottom: 14),
+      };
+    }),
+    StyleRule(BlockSelector.all.last(), (doc, docNode) {
+      return {Styles.padding: const CascadingPadding.only(bottom: 0)};
+    }),
+    StyleRule(const BlockSelector("listItem"), (doc, docNode) {
+      return {Styles.padding: const CascadingPadding.only(bottom: 0)};
+    }),
+  ],
+  inlineTextStyler: defaultInlineTextStyler,
+  inlineWidgetBuilders: defaultInlineWidgetBuilderChain,
+);
+
+final _darkStyles = _styles.copyWith(
+  addRulesAfter: [
+    StyleRule(BlockSelector.all, (doc, docNode) {
+      return {Styles.textStyle: const TextStyle(color: Color(0xFFFFFFFF))};
+    }),
+  ],
+);
+
 class HintComponentBuilder implements ComponentBuilder {
   const HintComponentBuilder({
     required this.hint,
@@ -334,4 +339,28 @@ class ViewerTapHandler extends SuperReaderLaunchLinkTapHandler {
     }
     return instructions;
   }
+}
+
+ExecutionInstruction _shiftEnterToInsertBlockNewline({
+  required SuperEditorContext editContext,
+  required KeyEvent keyEvent,
+}) {
+  if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  if (keyEvent.logicalKey != LogicalKeyboardKey.enter &&
+      keyEvent.logicalKey != LogicalKeyboardKey.numpadEnter) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  if (!HardwareKeyboard.instance.isShiftPressed) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  editContext.editor.execute([
+    InsertNewlineAtCaretRequest(super_editor.Editor.createNodeId()),
+  ]);
+
+  return ExecutionInstruction.haltExecution;
 }
