@@ -6,7 +6,6 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_list.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/state/agenda_item.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/command/command.dart';
 import 'loading.dart';
@@ -177,15 +176,9 @@ class ActivityPage extends StatelessWidget {
                 translucent: true,
                 header: Header(
                   title: state.activity?.title ?? state.event?.name,
-                  main: state.activity == null && state.event == null
-                      ? PrioritySelector(
-                          selected: state.context,
-                          onSelect: (p) =>
-                              context.run(ChangeCurrentPriority(p)),
-                        )
-                      : null,
                   commands: [
-                    ...activityCommands(state.activity!),
+                    if (state.activity != null)
+                      ...activityCommands(state.activity!),
                     ToggleShowArchived(showArchived: state.showArchived),
                   ],
                 ),
@@ -235,8 +228,6 @@ class ActivityPage extends StatelessWidget {
                         scrollController: ScrollControllerContext.of(context),
                         first: state.first,
                         count: state.agendaItems.length,
-                        anchor: state.anchorIndex,
-                        anchorOffset: 0.0,
                         reverse: true,
                         doneStart: state.doneStart,
                         doneEnd: state.doneEnd,

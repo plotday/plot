@@ -24,13 +24,16 @@ Future<void> run() async {
           record.level < Level.WARNING) {
         return;
       }
+      // ignore: avoid_print
       print(
         '${record.level.name}: ${record.loggerName.isEmpty ? 'plot' : record.loggerName}: ${record.message}',
       );
       if (record.error != null) {
+        // ignore: avoid_print
         print(record.error);
       }
       if (record.stackTrace != null) {
+        // ignore: avoid_print
         print(record.stackTrace);
       }
     });

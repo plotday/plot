@@ -5,10 +5,10 @@ packages:
     dependency: transitive
     description:
       name: _fe_analyzer_shared
-      sha256: e55636ed79578b9abca5fecf9437947798f5ef7456308b5cb85720b793eac92f
+      sha256: da0d9209ca76bde579f2da330aeb9df62b6319c834fa7baae052021b0462401f
       url: "https://pub.dev"
     source: hosted
-    version: "82.0.0"
+    version: "85.0.0"
   adaptive_theme:
     dependency: "direct main"
     description:
@@ -21,10 +21,10 @@ packages:
     dependency: "direct dev"
     description:
       name: analyzer
-      sha256: "904ae5bb474d32c38fb9482e2d925d5454cda04ddd0e55d2e6826bc72f6ba8c0"
+      sha256: abf63d42450c7ad6d8188887d16eeba2f1ff92ea8d8dc673213e99fb3c02b194
       url: "https://pub.dev"
     source: hosted
-    version: "7.4.5"
+    version: "7.5.7"
   ansicolor:
     dependency: transitive
     description:
@@ -117,10 +117,10 @@ packages:
     dependency: "direct dev"
     description:
       name: auto_route_generator
-      sha256: "2a5b5bf9c55d4a2098931037dac90921a4663808aed494bb4f134d82d46cb8ec"
+      sha256: "9e3846fcbeacba5c362557328dd8c8fbc953b6a0cbc3395365e8d8f92eea29c4"
       url: "https://pub.dev"
     source: hosted
-    version: "10.2.3"
+    version: "10.1.0"
   b:
     dependency: "direct main"
     description:
@@ -619,18 +619,18 @@ packages:
     dependency: "direct main"
     description:
       name: forui
-      sha256: "3b8d1b7529e8aefd2a1427aef788efefb93b5589ee66afb8c597c5ba0530fdb2"
+      sha256: "828c355aaf9bf78deef9ab7ce751768504bd24b8a7b2b26749d7beb70e38a918"
       url: "https://pub.dev"
     source: hosted
-    version: "0.13.1"
+    version: "0.14.0"
   forui_assets:
     dependency: transitive
     description:
       name: forui_assets
-      sha256: e0b5aa5d93d250fe51898bd502507aad2ea9f1a7d1745307103efe9ea13a5b4e
+      sha256: "207df3d1baf3a4d5d898fbc3e0272b44758e48bfd13f3b654f24a0bfdbfa6698"
       url: "https://pub.dev"
     source: hosted
-    version: "0.13.0"
+    version: "0.14.0"
   freezed_annotation:
     dependency: transitive
     description:
@@ -759,14 +759,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.0"
-  hotreloader:
-    dependency: transitive
-    description:
-      name: hotreloader
-      sha256: bc167a1163807b03bada490bfe2df25b0d744df359227880220a5cbd04e5734b
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.3.0"
   http:
     dependency: "direct main"
     description:
@@ -879,14 +871,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.1"
-  lean_builder:
-    dependency: transitive
-    description:
-      name: lean_builder
-      sha256: "8efb801a43b8454f214e70b173c5d81cb57795f70564c728eda352b396d8f8f6"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.0-alpha.11"
   linkify:
     dependency: transitive
     description:
@@ -1764,14 +1748,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.5.0"
-  xxh3:
-    dependency: transitive
-    description:
-      name: xxh3
-      sha256: "399a0438f5d426785723c99da6b16e136f4953fb1e9db0bf270bd41dd4619916"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.2.0"
   yaml:
     dependency: transitive
     description:

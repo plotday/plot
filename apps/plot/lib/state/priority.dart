@@ -140,10 +140,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           deleted: state.showArchived,
         ),
         (pinnedActivities, activeActivities) {
-          final combined = {
-            ...pinnedActivities,
-            ...activeActivities,
-          }.toList();
+          final combined = {...pinnedActivities, ...activeActivities}.toList();
           combined.sort((a, b) => a.order.compareTo(b.order));
           return combined;
         },
@@ -179,20 +176,25 @@ class PriorityBloc extends Cubit<PriorityState> {
       overlappingDate =
           (state.agendaItems[overlappingIndex] as HeaderAgendaItem).date!;
       if (!range.includes(overlappingDate)) {
-        log.info('$overlappingDate is not in range $range');
-        overlappingIndex = state.agendaItems.lastIndexWhere(
-          (item) => item.when(
-            activity: (_) => false,
-            event: (_) => false,
-            header: (header) => header.date != null,
-          ),
-        );
-        overlappingDate =
-            (state.agendaItems[overlappingIndex] as HeaderAgendaItem).date!;
-        if (!range.includes(overlappingDate)) {
-          log.info('$overlappingDate is not in range $range, adding it');
-          // If the new range starts after the old range, extend it to overlap by one day
-          range = DateRangeCustom(overlappingDate, range.end);
+        if (overlappingDate >= range.end) {
+          log.info('Extending $range to include $overlappingDate');
+          // If the new range ends before the old range, extend it to overlap by one day
+          range = DateRangeCustom(range.start, overlappingDate.addDays(1));
+        } else {
+          overlappingIndex = state.agendaItems.lastIndexWhere(
+            (item) => item.when(
+              activity: (_) => false,
+              event: (_) => false,
+              header: (header) => header.date != null,
+            ),
+          );
+          overlappingDate =
+              (state.agendaItems[overlappingIndex] as HeaderAgendaItem).date!;
+          if (!range.includes(overlappingDate)) {
+            log.info('Extending $range to include $overlappingDate');
+            // If the new range starts after the old range, extend it to overlap by one day
+            range = DateRangeCustom(overlappingDate, range.end);
+          }
         }
       }
     }
@@ -200,6 +202,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       'Range: ${range.start} to ${range.end}, overlappingIndex: $overlappingIndex, overlappingDate: $overlappingDate',
     );
 
+    // PriorityPage
     if (state.activity == null && state.event == null) {
       _agendaSubscription =
           Rx.combineLatest3(
@@ -247,6 +250,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               first += overlappingIndex - newIndex;
               // The listener may trigger multiple times, but we only want to adjust first once
               overlappingIndex = -1;
+            } else if (agenda.anchorIndex != null) {
+              first = -agenda.anchorIndex!;
             }
 
             // Determine done states based on comparison with total available range
@@ -270,18 +275,13 @@ class PriorityBloc extends Cubit<PriorityState> {
             }
 
             log.info(
-              'Agenda updated (${range.start} to ${range.end}, first=$first, count=${agenda.items.length}, totalRange=$totalRange, doneStart=$doneStart, doneEnd=$doneEnd)',
+              'Agenda updated (${range.start} to ${range.end}, first=$first, count=${agenda.items.length}, totalRange=$totalRange, doneStart=$doneStart, doneEnd=$doneEnd), anchorIndex=${agenda.anchorIndex}',
             );
             emit(
               state.copyWith(
                 range: range,
                 agendaItems: agenda.items,
                 first: first,
-                anchorIndex:
-                    agenda.anchorIndex ==
-                        null //|| state.anchorIndex != 0
-                    ? null
-                    : first + agenda.anchorIndex!,
                 moreAgendaItems: true,
                 doneStart: doneStart,
                 doneEnd: doneEnd,
@@ -289,6 +289,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             );
           });
     } else {
+      // ActivityPage
       _agendaSubscription =
           Activity.watch(
             // range: range,
@@ -298,12 +299,10 @@ class PriorityBloc extends Cubit<PriorityState> {
           ).listen((activities) {
             emit(
               state.copyWith(
-                // range: range,
                 agendaItems: activities
                     .map((activity) => ActivityAgendaItem(activity))
                     .toList(),
                 first: 0,
-                anchorIndex: 0,
                 moreAgendaItems: false,
                 doneStart: true,
                 doneEnd: true,
@@ -313,18 +312,106 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
-  void fetchMoreAgendaItems(int first, int count) {
+  void fetchMoreAgendaItems(int first, int count) async {
     if (state.range == null) return;
-    final itemsPerDay = state.agendaItems.length / state.range!.duration.inDays;
-    // Calculate how many days to move backwards from current first
+
+    // Determine if we need items before start, after end, or both
     final moveStart = first - state.first;
     final moveEnd = first - state.first + count - state.agendaItems.length;
+
+    final needsBefore = moveStart < 0;
+    final needsAfter = moveEnd > 0;
+
     log.info(
-      'Fetching more agenda items: first=$first, count=$count, moveStart=$moveStart, moveEnd=$moveEnd',
+      'Fetching more agenda items: first=$first, count=$count, moveStart=$moveStart, moveEnd=$moveEnd, needsBefore=$needsBefore, needsAfter=$needsAfter',
     );
-    final newRange = DateRangeCustom(
-      state.range!.start.addDays((moveStart / itemsPerDay).ceil()),
-      state.range!.end.addDays((moveEnd / itemsPerDay).ceil()),
+
+    Date newStart = state.range!.start;
+    Date newEnd = state.range!.end;
+
+    // Handle range expansion and internal range movement
+    Date? prevDate, nextDate;
+    if (needsBefore || needsAfter) {
+      // Run both queries in parallel when both are needed
+      final results = await Future.wait([
+        if (needsBefore)
+          ScheduledDay.previous(
+            state.range!.start,
+            context: state.context,
+            deleted: state.showArchived,
+            minimum: moveStart.abs(),
+          ),
+        if (needsAfter)
+          ScheduledDay.next(
+            state.range!.end,
+            context: state.context,
+            deleted: state.showArchived,
+            minimum: moveEnd,
+          ),
+      ]);
+
+      if (needsAfter) {
+        nextDate = results.removeLast();
+      }
+      if (needsBefore) {
+        prevDate = results.removeLast();
+      }
+    }
+
+    // Handle expanding before the current range
+    if (needsBefore) {
+      if (prevDate != null) {
+        newStart = prevDate;
+      } else {
+        // No more items before - go arbitrarily far back
+        newStart = Date.earliest;
+      }
+    } else if (moveStart > 0) {
+      for (int i = moveStart; i >= 0; i--) {
+        final item = state.agendaItems[i];
+        final date = item.when(
+          activity: (activity) => null,
+          event: (event) => null,
+          header: (header) => header.date,
+        );
+        if (date != null) {
+          newStart = date;
+          break;
+        }
+      }
+    }
+
+    // Handle expanding after the current range
+    if (needsAfter) {
+      if (nextDate != null) {
+        newEnd = nextDate.addDays(1); // Make end exclusive
+      } else {
+        // No more items after - go arbitrarily far ahead
+        newEnd = Date.latest;
+      }
+    } else if (moveEnd < 0) {
+      // Moving backward within the current range - find the date at the new last position
+      for (
+        int i = state.agendaItems.length - 1 + moveEnd;
+        i < state.agendaItems.length;
+        i++
+      ) {
+        final item = state.agendaItems[i];
+        final date = item.when(
+          activity: (_) => null,
+          event: (_) => null,
+          header: (header) => header.date,
+        );
+        if (date != null) {
+          newEnd = date;
+          break;
+        }
+      }
+    }
+
+    final newRange = DateRangeCustom(newStart, newEnd);
+    log.info(
+      'Expanding range from ${state.range!.start}-${state.range!.end} to ${newRange.start}-${newRange.end}',
     );
     _loadAgendaItems(newRange);
   }

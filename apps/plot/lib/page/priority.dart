@@ -81,212 +81,231 @@ class PriorityPage extends StatelessWidget {
               commands: priorityCommands(state.context),
             ),
           ],
-          child: BidirectionalListSelector(
-            onActivate: (index) {
-              state.agendaItems[index].when(
-                activity: (activity) =>
-                    context.run(ChangeCurrentActivity(activity)),
-                event: (event) => <void>{}, // TODO: Handle event activation
-                header: (header) => <void>{}, // TODO: Handle header activation
-              );
-            },
-            builder: (context, listController) => SelectionCommandScope(
-              commandBuilder: (index) =>
-                  state
-                      .atIndex(index)
-                      ?.when(
-                        activity: (activity) => [
-                          StaticCommandGroup(
-                            title: activity.title,
-                            commands: [
-                              ChangeCurrentActivity(activity),
-                              ...activityCommands(activity),
-                            ],
-                          ),
+          child:
+              state.agendaItems.isEmpty && !(state.doneStart && state.doneEnd)
+              ? const Center(child: Spinner())
+              : BidirectionalListSelector(
+                  onActivate: (index) {
+                    state.agendaItems[index].when(
+                      activity: (activity) =>
+                          context.run(ChangeCurrentActivity(activity)),
+                      event: (event) =>
+                          <void>{}, // TODO: Handle event activation
+                      header: (header) =>
+                          <void>{}, // TODO: Handle header activation
+                    );
+                  },
+                  builder: (context, listController) => SelectionCommandScope(
+                    commandBuilder: (index) =>
+                        state
+                            .atIndex(index)
+                            ?.when(
+                              activity: (activity) => [
+                                StaticCommandGroup(
+                                  title: activity.title,
+                                  commands: [
+                                    ChangeCurrentActivity(activity),
+                                    ...activityCommands(activity),
+                                  ],
+                                ),
+                              ],
+                              event: (event) => [],
+                              header: (header) => [],
+                            ) ??
+                        [],
+                    listController: listController,
+                    child: Scaffold(
+                      translucent: true,
+                      header: Header(
+                        title: state.activity?.title,
+                        main: state.activity == null
+                            ? PrioritySelector(
+                                selected: state.context,
+                                onSelect: (p) =>
+                                    context.run(ChangeCurrentPriority(p)),
+                              )
+                            : null,
+                        commands: [
+                          ...currentPriorityCommands(state.context),
+                          ToggleShowArchived(showArchived: state.showArchived),
                         ],
-                        event: (event) => [],
-                        header: (header) => [],
-                      ) ??
-                  [],
-              listController: listController,
-              child: Scaffold(
-                translucent: true,
-                header: Header(
-                  title: state.activity?.title,
-                  main: state.activity == null
-                      ? PrioritySelector(
-                          selected: state.context,
-                          onSelect: (p) =>
-                              context.run(ChangeCurrentPriority(p)),
-                        )
-                      : null,
-                  commands: [
-                    ...currentPriorityCommands(state.context),
-                    ToggleShowArchived(showArchived: state.showArchived),
-                  ],
-                ),
-                sidebar: PrioritiesSidebar(),
-                body: Column(
-                  children: [
-                    Flexible(
-                      flex: 0,
-                      fit: FlexFit.loose,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(
-                              width: 1.0,
-                              color: context.colour.border,
-                            ),
-                          ),
-                        ),
-                        child: ActivityList(
-                          activities: state.pinned
-                              .where(
-                                (item) => item.when(
-                                  activity: (_) => true,
-                                  event: (_) => false,
-                                  header: (_) => false,
-                                ),
-                              )
-                              .map(
-                                (item) => item.when(
-                                  activity: (activity) => activity,
-                                  event: (_) =>
-                                      throw StateError('Not an activity'),
-                                  header: (_) =>
-                                      throw StateError('Not an activity'),
-                                ),
-                              )
-                              .toList(),
-                          priority: state.context,
-                        ),
                       ),
-                    ),
-                    Flexible(
-                      flex: 1,
-                      fit: FlexFit.tight,
-                      child: BidirectionalList(
-                        controller: listController,
-                        scrollController: ScrollControllerContext.of(context),
-                        first: state.first,
-                        count: state.agendaItems.length,
-                        anchor: state.anchorIndex,
-                        anchorOffset: 0.8,
-                        doneStart: state.doneStart,
-                        doneEnd: state.doneEnd,
-                        fetcher: (first, count) => context
-                            .read<PriorityBloc>()
-                            .fetchMoreAgendaItems(first, count),
-                        builder: (context, index, selected) {
-                          final current =
-                              state.agendaItems[index - state.first];
-                          log.fine('Building $index: $current');
-                          void onHover(bool hovered) {
-                            if (hovered) {
-                              listController.selected = index;
-                            } else if (listController.selected == index) {
-                              listController.selected = null;
-                            }
-                          }
-
+                      sidebar: PrioritiesSidebar(),
+                      body: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final maxActivityListHeight =
+                              constraints.maxHeight * 0.4;
                           return Column(
-                            mainAxisSize: MainAxisSize.min,
-                            key: ValueKey(
-                              current.when(
-                                activity: (a) => a.id,
-                                event: (e) => e.id,
-                                header: (h) => 'header_${h.hashCode}',
-                              ),
-                            ),
                             children: [
-                              ...current.when(
-                                activity: (activity) => [
-                                  ActivityWidget(
-                                    activity: activity,
-                                    selected: selected,
-                                    onHover: onHover,
-                                  ),
-                                ],
-                                event: (event) => [
-                                  if (event.name?.isNotEmpty == true)
-                                    EventWidget(
-                                      event: event,
-                                      selected: selected,
-                                      onHover: onHover,
+                              Container(
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      width: 1.0,
+                                      color: context.colour.border,
                                     ),
-                                ],
-                                header: (header) => [
-                                  AgendaHeader(
-                                    event: header.event,
-                                    date: header.date,
-                                    now: header.now,
-                                    priority: header.priority,
-                                    context: state.context,
-                                    selected: selected,
-                                    onHover: onHover,
                                   ),
-                                ],
+                                ),
+                                constraints: BoxConstraints(
+                                  maxHeight: maxActivityListHeight,
+                                ),
+                                child: SingleChildScrollView(
+                                  child: ActivityList(
+                                    activities: state.pinned
+                                        .where(
+                                          (item) => item.when(
+                                            activity: (_) => true,
+                                            event: (_) => false,
+                                            header: (_) => false,
+                                          ),
+                                        )
+                                        .map(
+                                          (item) => item.when(
+                                            activity: (activity) => activity,
+                                            event: (_) => throw StateError(
+                                              'Not an activity',
+                                            ),
+                                            header: (_) => throw StateError(
+                                              'Not an activity',
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
+                                    priority: state.context,
+                                  ),
+                                ),
+                              ),
+                              Flexible(
+                                flex: 1,
+                                fit: FlexFit.tight,
+                                child: BidirectionalList(
+                                  controller: listController,
+                                  scrollController: ScrollControllerContext.of(
+                                    context,
+                                  ),
+                                  first: state.first,
+                                  count: state.agendaItems.length,
+                                  doneStart: state.doneStart,
+                                  doneEnd: state.doneEnd,
+                                  fetcher: (first, count) => context
+                                      .read<PriorityBloc>()
+                                      .fetchMoreAgendaItems(first, count),
+                                  builder: (context, index, selected) {
+                                    final current =
+                                        state.agendaItems[index - state.first];
+                                    log.fine('Building $index: $current');
+                                    void onHover(bool hovered) {
+                                      if (hovered) {
+                                        listController.selected = index;
+                                      } else if (listController.selected ==
+                                          index) {
+                                        listController.selected = null;
+                                      }
+                                    }
+
+                                    return Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      key: ValueKey(
+                                        current.when(
+                                          activity: (a) => a.id,
+                                          event: (e) => e.id,
+                                          header: (h) => 'header_${h.hashCode}',
+                                        ),
+                                      ),
+                                      children: [
+                                        ...current.when(
+                                          activity: (activity) => [
+                                            ActivityWidget(
+                                              activity: activity,
+                                              selected: selected,
+                                              onHover: onHover,
+                                            ),
+                                          ],
+                                          event: (event) => [
+                                            if (event.name?.isNotEmpty == true)
+                                              EventWidget(
+                                                event: event,
+                                                selected: selected,
+                                                onHover: onHover,
+                                              ),
+                                          ],
+                                          header: (header) => [
+                                            AgendaHeader(
+                                              event: header.event,
+                                              date: header.date,
+                                              now: header.now,
+                                              priority: header.priority,
+                                              context: state.context,
+                                              selected: selected,
+                                              onHover: onHover,
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                  onReorder: (index) {
+                                    final item =
+                                        state.agendaItems[index - state.first];
+                                    if (!item.when(
+                                      activity: (activity) => true,
+                                      event: (_) => false,
+                                      header: (_) => false,
+                                    )) {
+                                      return null;
+                                    }
+                                    return (int newIndex) {
+                                      newIndex -= state.first;
+                                      var prevIndex = newIndex;
+                                      var nextIndex = newIndex - 1;
+                                      AgendaItem? prev;
+                                      if (prevIndex >= 0) {
+                                        prev = state.agendaItems[prevIndex];
+                                      }
+                                      AgendaItem? next;
+                                      if (nextIndex <
+                                          state.agendaItems.length) {
+                                        next = state.agendaItems[nextIndex];
+                                      }
+                                      onReorderActivity(
+                                        (item as ActivityAgendaItem).activity,
+                                        prev,
+                                        next,
+                                      );
+                                    };
+                                  },
+                                ),
+                              ),
+                              EditableArea(
+                                position: EditableAreaPosition.bottom,
+                                builder: (context, focusNode) => Editor(
+                                  hint: 'Add activity',
+                                  autofocus: true,
+                                  focusNode: focusNode,
+                                  onSubmitted: (body, {bool alt = false}) async {
+                                    log.info(
+                                      'Adding new priority with body: $body ($alt)',
+                                    );
+                                    final priority = state.draft.copyWith(
+                                      note: Value(body),
+                                      draft: false,
+                                      doAt: alt
+                                          ? Value(Date.today())
+                                          : const Value.absent(),
+                                    );
+                                    await context.read<PriorityBloc>().add(
+                                      priority,
+                                    );
+                                  },
+                                ),
                               ),
                             ],
                           );
                         },
-                        onReorder: (index) {
-                          final item = state.agendaItems[index - state.first];
-                          if (!item.when(
-                            activity: (activity) => true,
-                            event: (_) => false,
-                            header: (_) => false,
-                          )) {
-                            return null;
-                          }
-                          return (int newIndex) {
-                            newIndex -= state.first;
-                            var prevIndex = newIndex;
-                            var nextIndex = newIndex - 1;
-                            AgendaItem? prev;
-                            if (prevIndex >= 0) {
-                              prev = state.agendaItems[prevIndex];
-                            }
-                            AgendaItem? next;
-                            if (nextIndex < state.agendaItems.length) {
-                              next = state.agendaItems[nextIndex];
-                            }
-                            onReorderActivity(
-                              (item as ActivityAgendaItem).activity,
-                              prev,
-                              next,
-                            );
-                          };
-                        },
                       ),
                     ),
-                    EditableArea(
-                      position: EditableAreaPosition.bottom,
-                      builder: (context, focusNode) => Editor(
-                        hint: 'Add activity',
-                        autofocus: true,
-                        focusNode: focusNode,
-                        onSubmitted: (body, {bool alt = false}) async {
-                          log.info(
-                            'Adding new priority with body: $body ($alt)',
-                          );
-                          final priority = state.draft.copyWith(
-                            note: Value(body),
-                            draft: false,
-                            doAt: alt
-                                ? Value(Date.today())
-                                : const Value.absent(),
-                          );
-                          await context.read<PriorityBloc>().add(priority);
-                        },
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ),
         );
       },
     );

@@ -5,8 +5,6 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/hooks.dart';
 
-import 'logging.dart';
-
 class EditPriorityPage extends HookWidget {
   const EditPriorityPage({Priority? parent, Priority? priority, super.key})
     : _initialParent = parent,

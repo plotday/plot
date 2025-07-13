@@ -239,7 +239,6 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: itemCount,
-              anchor: anchorIndex,
               anchorOffset: 0.5, // Middle of viewport
               builder: (context, index, selected) {
                 return SizedBox(
@@ -413,7 +412,7 @@ void main() {
               height: 300,
               child: BidirectionalList(
                 count: itemCount,
-                anchor: 5, // Start in middle
+                // Start in middle
                 overflow: 1.0,
                 doneStart: false,
                 doneEnd: false,
@@ -472,7 +471,7 @@ void main() {
             body: BidirectionalList(
               count: 10,
               first: 0,
-              anchor: 0, // Anchor at start
+              // Anchor at start
               anchorOffset: 0.0,
               builder: (context, index, selected) {
                 return SizedBox(
@@ -502,7 +501,7 @@ void main() {
             body: BidirectionalList(
               count: 10,
               first: 0,
-              anchor: 9, // Anchor at end
+              // Anchor at end
               anchorOffset: 1.0,
               builder: (context, index, selected) {
                 return SizedBox(
@@ -533,7 +532,7 @@ void main() {
             body: BidirectionalList(
               count: 10,
               first: 0,
-              anchor: 15, // Invalid anchor - outside range, should be clamped
+              // Invalid anchor - outside range, should be clamped
               anchorOffset: 0.5,
               builder: (context, index, selected) {
                 return SizedBox(
@@ -562,7 +561,7 @@ void main() {
             body: BidirectionalList(
               count: 10,
               first: -5, // Negative start index
-              anchor: -3,
+              // Negative anchor
               anchorOffset: 0.5,
               builder: (context, index, selected) {
                 return SizedBox(
@@ -590,7 +589,7 @@ void main() {
             body: BidirectionalList(
               count: 0,
               first: 10, // Non-zero first with zero count
-              anchor: 10,
+              // Anchor beyond range
               anchorOffset: 0.5,
               builder: (context, index, selected) {
                 return SizedBox(
@@ -882,7 +881,7 @@ void main() {
             body: BidirectionalList(
               count: 10,
               first: 5,
-              anchor: 8,
+              // Anchor in middle
               anchorOffset: 0.75,
               reverse: true, // Reverse list
               builder: (context, index, selected) {

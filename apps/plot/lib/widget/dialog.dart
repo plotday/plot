@@ -55,6 +55,7 @@ class Dialog extends StatelessWidget {
 
     return PlatformBuilder(
       builder: (_) => FDialog.raw(
+        // ignore: unused_result
         style: context.theme.dialogStyle.copyWith(
           decoration: BoxDecoration(
             color: context.colour.modalBackground,

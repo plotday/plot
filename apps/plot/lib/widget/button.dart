@@ -64,6 +64,7 @@ class Button extends StatelessWidget {
           ButtonStyle.ghost => context.theme.buttonStyles.ghost,
         };
         return selectedStyle.copyWith(
+          // ignore: unused_result
           contentStyle: selectedStyle.contentStyle.copyWith(
             textStyle: selectedStyle.contentStyle.textStyle.map(
               (style) => style.copyWith(color: context.colour.accent),

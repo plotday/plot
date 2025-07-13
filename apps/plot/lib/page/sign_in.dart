@@ -6,6 +6,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
+import 'logging.dart';
 
 @RoutePage()
 class SignInPage extends StatefulWidget {
@@ -39,30 +40,28 @@ class _SignInPageState extends State<SignInPage> {
   @override
   Widget build(BuildContext context) {
     if (_signedIn == null) {
-      return const Scaffold(
-        body: Center(
-          child: Spinner(),
-        ),
-      );
+      return const Scaffold(body: Center(child: Spinner()));
     }
 
-    return Scaffold(body: Center(
-      child: AuthButton(
-        onSignIn: (auth) async {
-          if (auth.idToken == null) throw Exception('No idToken');
-          try {
-            await Base.client.auth.signInWithIdToken(
-              provider: OAuthProvider.google,
-              idToken: auth.idToken!,
-              accessToken: auth.accessToken,
-            );
-          } on AuthException catch (e) {
-            print(e);
-            if (!context.mounted) return;
-            Alert.show(context, e.message);
-          }
-        },
+    return Scaffold(
+      body: Center(
+        child: AuthButton(
+          onSignIn: (auth) async {
+            if (auth.idToken == null) throw Exception('No idToken');
+            try {
+              await Base.client.auth.signInWithIdToken(
+                provider: OAuthProvider.google,
+                idToken: auth.idToken!,
+                accessToken: auth.accessToken,
+              );
+            } on AuthException catch (e, t) {
+              log.warning('Error signing into Google', e, t);
+              if (!context.mounted) return;
+              Alert.show(context, e.message);
+            }
+          },
+        ),
       ),
-    ));
+    );
   }
 }

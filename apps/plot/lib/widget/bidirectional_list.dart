@@ -160,7 +160,6 @@ class BidirectionalList extends StatefulWidget {
   final int first;
 
   /// the item at this index is at the anchorOffset position in the initial view
-  final int anchor;
   final double anchorOffset;
   final bool doneStart;
   final bool doneEnd;
@@ -178,7 +177,6 @@ class BidirectionalList extends StatefulWidget {
     required this.count,
     this.fetcher,
     this.first = 0,
-    this.anchor = 0,
     this.anchorOffset = 0,
     bool? doneStart,
     bool? doneEnd,
@@ -207,82 +205,61 @@ class BidirectionalListState extends State<BidirectionalList> {
 
   late int _upCount;
   late int _downCount;
-  late double _averageItemExtent = widget.estimatedItemExtent.toDouble();
 
   void _setCounts() {
-    _upCount = max(widget.anchor - widget.first, 0);
-    _downCount = max(widget.first + widget.count - widget.anchor, 0);
+    _upCount = max(-widget.first, 0);
+    _downCount = max(widget.first + widget.count, 0);
     log.info(
-      'BidirectionalList counts set: upCount=$_upCount, downCount=$_downCount, first=${widget.first}, count=${widget.count}, anchor=${widget.anchor}',
+      'BidirectionalList counts set: upCount=$_upCount, downCount=$_downCount, first=${widget.first}, count=${widget.count}',
     );
   }
 
-  (double?, double?) get _listExtents => (
-    (_upListKey.currentContext?.findRenderObject() as RenderSliverList?)
-        ?.geometry
-        ?.scrollExtent,
-    (_downListKey.currentContext?.findRenderObject() as RenderSliverList?)
-        ?.geometry
-        ?.scrollExtent,
-  );
-
-  // Only call in a post-frame callback when the lists are rendered for the
-  // given counts.
-  void _updateAverageItemExtent() {
-    final (upExtent, downExtent) = _listExtents;
-    var count = 0;
-    double extent = 0;
-    if (_downCount > 0 && (downExtent ?? 0) > 0) {
-      extent += downExtent!;
-      count += _downCount;
-    }
-    if (_upCount > 0 && (upExtent ?? 0) > 0) {
-      extent += upExtent!;
-      count += _upCount;
-    }
-    if (count > 0 && extent > 0) {
-      final newAverage = extent / count;
-      // Ensure we don't set an extremely small or zero average that could cause issues
-      if (newAverage > 0.1) {
-        _averageItemExtent = newAverage;
-      }
-    }
-  }
-
-  double averageItemsPerPage() {
-    // Prevent division by zero and ensure scroll controller is ready
-    if (!_scrollController.hasClients || _averageItemExtent <= 0) {
-      return 1.0; // Fallback to 1 item per page
-    }
-    return _scrollController.position.viewportDimension / _averageItemExtent;
-  }
-
-  double pagesBefore() {
+  (int, int) estimateVisibleIndexes() {
     if (!_scrollController.hasClients ||
         _scrollController.position.viewportDimension <= 0) {
-      return 0.0;
+      return (0, 0);
     }
-    return (_scrollController.position.pixels -
-            _scrollController.position.minScrollExtent) /
-        _scrollController.position.viewportDimension;
-  }
-
-  double pagesAfter() {
-    if (!_scrollController.hasClients ||
-        _scrollController.position.viewportDimension <= 0) {
-      return 0.0;
+    final totalItems =
+        max(-widget.first, 0) + max(widget.first + widget.count, 0);
+    final averageItemExtent =
+        _scrollController.position.extentTotal / totalItems;
+    var first = (_scrollController.offset / averageItemExtent).floor();
+    var last =
+        ((_scrollController.offset +
+                    _scrollController.position.viewportDimension) /
+                averageItemExtent)
+            .floor();
+    if (first < widget.first) {
+      last += (widget.first - first);
+      first = widget.first;
     }
-    return (_scrollController.position.maxScrollExtent -
-            _scrollController.position.pixels) /
-        _scrollController.position.viewportDimension;
+    if (last >= widget.first + widget.count) {
+      first = max(
+        first - (last - (widget.first + widget.count - 1)),
+        widget.first,
+      );
+      last = widget.first + widget.count - 1;
+    }
+    return (first, last);
   }
 
   Future<void> _loadIfNecessary() async {
-    if (_fetching) return;
+    if (_fetching) {
+      return;
+    }
     if (!_scrollController.hasClients) return;
 
+    final (firstVisible, lastVisible) = estimateVisibleIndexes();
+    final pageSize = lastVisible - firstVisible + 1;
+
     // Check if we have enough buffer
-    if (pagesBefore() >= widget.overflow && pagesAfter() >= widget.overflow) {
+    final pagesBefore = (firstVisible - widget.first) / pageSize;
+    final pagesAfter =
+        (widget.first + widget.count - 1 - lastVisible) / pageSize;
+
+    if ((widget.doneStart || pagesBefore >= widget.overflow) &&
+        (widget.doneEnd || pagesAfter >= widget.overflow)) {
+      // We have all or enough
       return;
     }
 
@@ -294,37 +271,18 @@ class BidirectionalListState extends State<BidirectionalList> {
         _scrollController.position.userScrollDirection ==
         ScrollDirection.reverse;
 
-    // Calculate how many items we need to fetch
-    final itemsPerPage = averageItemsPerPage();
-    log.info(
-      'Pages before: ${pagesBefore()}, Pages after: ${pagesAfter()}, Scrolling: $scrollingUp/$scrollingDown, Items per page: $itemsPerPage, Average item extent: $_averageItemExtent',
-    );
-    final itemsToFetchBefore = widget.doneStart
-        ? 0
-        : ((widget.overflow * (scrollingUp ? 1.5 : 1) - pagesBefore()) *
-                  itemsPerPage)
-              .ceil();
-    final itemsToFetchAfter = widget.doneEnd
-        ? 0
-        : ((widget.overflow * (scrollingDown ? 1.5 : 1) - pagesAfter()) *
-                  itemsPerPage)
-              .ceil();
+    final newFirst =
+        (firstVisible - pageSize * widget.overflow * (scrollingUp ? 1.5 : 1))
+            .floor();
+    final newCount =
+        (pageSize *
+                (widget.overflow * (scrollingUp || scrollingDown ? 2.5 : 2) +
+                    1))
+            .ceil();
 
-    if (itemsToFetchBefore > 0 || itemsToFetchAfter > 0) {
-      _loadMoreItems(itemsToFetchBefore, itemsToFetchAfter);
-    }
-  }
-
-  Future<void> _loadMoreItems(int itemsBefore, int itemsAfter) async {
-    if (widget.fetcher == null || _fetching) return;
-
-    // Calculate the new range
-    final newFirst = widget.first - itemsBefore;
-    final newCount = max(widget.count + itemsBefore + itemsAfter, 0);
     log.info(
       'BidirectionalList loading more items: '
-      'newFirst=$newFirst, newCount=$newCount, '
-      'itemsBefore=$itemsBefore, itemsAfter=$itemsAfter',
+      'newFirst=$newFirst, newCount=$newCount, pageSize=$pageSize',
     );
 
     try {
@@ -342,6 +300,11 @@ class BidirectionalListState extends State<BidirectionalList> {
     super.initState();
     _setCounts();
     _scrollController = widget.scrollController ?? ScrollController();
+    
+    // Call _loadIfNecessary on the first frame after initial render
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadIfNecessary();
+    });
   }
 
   @override
@@ -358,8 +321,7 @@ class BidirectionalListState extends State<BidirectionalList> {
     if (oldWidget.first == widget.first &&
         oldWidget.count == widget.count &&
         oldWidget.doneStart == widget.doneStart &&
-        oldWidget.doneEnd == widget.doneEnd &&
-        oldWidget.anchor == widget.anchor) {
+        oldWidget.doneEnd == widget.doneEnd) {
       return;
     }
 
@@ -370,12 +332,9 @@ class BidirectionalListState extends State<BidirectionalList> {
       if (oldWidget.first != widget.first) {
         log.info('First moved ${oldWidget.first} to ${widget.first}');
       }
-      if (oldWidget.anchor != widget.anchor) {
-        log.info('Anchor changed ${oldWidget.anchor} to ${widget.anchor}');
-      }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateAverageItemExtent();
+      _loadIfNecessary();
     });
   }
 
@@ -454,7 +413,7 @@ class BidirectionalListState extends State<BidirectionalList> {
               // itemIndexCalculator: (index) =>
               //     widget.first + _upCount - index - 1,
               itemIndexCalculator: (index) {
-                index = widget.anchor - index - 1;
+                index = -index - 1;
                 if (index >= widget.first &&
                     index < widget.first + widget.count) {
                   return index;
@@ -466,7 +425,6 @@ class BidirectionalListState extends State<BidirectionalList> {
               key: _downListKey,
               itemCount: _downCount,
               itemIndexCalculator: (index) {
-                index += widget.anchor;
                 if (index >= widget.first &&
                     index < widget.first + widget.count) {
                   return index;

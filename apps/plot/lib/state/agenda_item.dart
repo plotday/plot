@@ -132,6 +132,9 @@ class Agenda extends Equatable {
 
       // Date header
       agendaItems.add(HeaderAgendaItem(date: scheduledDay.date, now: isToday));
+      if (anchor == scheduledDay.date) {
+        anchorIndex = agendaItems.length - 1;
+      }
 
       // Iterate through each time block in the day
       Event? previous;
@@ -174,10 +177,6 @@ class Agenda extends Equatable {
           ),
           event: null,
         );
-      }
-
-      if (anchor == scheduledDay.date) {
-        anchorIndex = agendaItems.length - 1;
       }
     }
 

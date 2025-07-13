@@ -9,12 +9,15 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();
   var theme = FThemeData(
     colors: colorScheme,
-    typography: FTypography.inherit(
-      colors: colorScheme,
-    ).copyWith(base: FTypography.inherit(colors: colorScheme).base.copyWith(fontSize: 12)),
+    typography: FTypography.inherit(colors: colorScheme).copyWith(
+      base: FTypography.inherit(
+        colors: colorScheme,
+      ).base.copyWith(fontSize: 12),
+    ),
   );
   theme = theme.copyWith(
     headerStyles: theme.headerStyles.copyWith(
+      // ignore: unused_result
       rootStyle: theme.headerStyles.rootStyle.copyWith(
         titleTextStyle: theme.typography.xl.copyWith(
           color: colourScheme.foreground,
@@ -30,7 +33,9 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
       ),
     ),
     buttonStyles: theme.buttonStyles.copyWith(
+      // ignore: unused_result
       primary: theme.buttonStyles.primary.copyWith(
+        // ignore: unused_result
         contentStyle: theme.buttonStyles.primary.contentStyle.copyWith(
           padding: widgetPadding,
           // textStyle: theme.buttonStyles.primary.contentStyle.textStyle.map(
@@ -38,6 +43,7 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
           // ),
         ),
       ),
+      // ignore: unused_result
       outline: theme.buttonStyles.outline.copyWith(
         // enabledBoxDecoration: theme.buttonStyles.outline.enabledBoxDecoration
         //     .copyWith(border: Border.all(color: theme.colorScheme.border)),
@@ -48,6 +54,7 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
         //     .outline
         //     .enabledHoverBoxDecoration
         //     .copyWith(border: Border.all(color: theme.colorScheme.border)),
+        // ignore: unused_result
         contentStyle: theme.buttonStyles.outline.contentStyle.copyWith(
           // enabledTextStyle: theme
           //     .buttonStyles
@@ -59,7 +66,9 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
           padding: widgetPadding,
         ),
       ),
+      // ignore: unused_result
       ghost: theme.buttonStyles.ghost.copyWith(
+        // ignore: unused_result
         contentStyle: theme.buttonStyles.ghost.contentStyle.copyWith(
           // enabledTextStyle: theme
           //     .buttonStyles

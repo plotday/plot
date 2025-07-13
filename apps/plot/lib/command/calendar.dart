@@ -4,6 +4,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/page/page.dart';
 import 'command.dart';
+import 'logging.dart';
 
 class ShowAllCalendarSettings extends ShowCommands {
   ShowAllCalendarSettings()
@@ -29,8 +30,8 @@ class ChangeCalendarDefaultPriority extends PriorityCommand {
       await calendar
           .copyWith(priorityId: Value(priority?.id), enabled: true)
           .save();
-    } catch (e) {
-      print('Error enabling calendar: $e');
+    } catch (e, t) {
+      log.warning('Error enabling calendar', e, t);
     }
     return const CommandDone();
   }

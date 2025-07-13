@@ -12,6 +12,12 @@ enum TimeDirection { descending, ascending }
 class Date extends Equatable implements Comparable<Date> {
   static Date today() => DateTime.now().toLocal().toDate();
 
+  /// The earliest supported date for range queries
+  static const Date earliest = Date(1970, 1, 1);
+
+  /// The latest supported date for range queries
+  static const Date latest = Date(2999, 12, 31);
+
   static Stream<Date> current() async* {
     while (true) {
       DateTime now = DateTime.now().toLocal();

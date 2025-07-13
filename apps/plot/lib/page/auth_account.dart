@@ -6,6 +6,8 @@ import 'package:plot/state/accounts.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/auth_button.dart';
 
+import 'logging.dart';
+
 class AuthAccountPage extends StatefulWidget {
   const AuthAccountPage({super.key});
 
@@ -29,7 +31,7 @@ class AuthAccountPageState extends State<AuthAccountPage> {
               AuthButton(
                 onSignIn: (providerAuth) async {
                   if (providerAuth.code == null) {
-                    print("Missing auth code");
+                    log.warning("Missing auth code");
                     setState(() {
                       _error = 'Authorization failed.';
                     });
@@ -44,8 +46,8 @@ class AuthAccountPageState extends State<AuthAccountPage> {
                       AccountProvider.google,
                       providerAuth.code!,
                     );
-                  } on Exception catch (e) {
-                    print(e);
+                  } on Exception catch (e, t) {
+                    log.warning('Error adding account', e, t);
                     setState(() {
                       _error = 'Failed to sync.';
                     });

@@ -7,8 +7,7 @@ class SyncStates extends Table {
   DateTimeColumn get pushedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   // Value of the updated_at field of the latest item pulled
-  DateTimeColumn get pulledAt =>
-      dateTime().nullable().map(const LocalDateTimeConverter())();
+  DateTimeColumn get pulledAt => dateTime().nullable()();
   // Range synced
   TextColumn get from => text().nullable()();
   TextColumn get to => text().nullable()();

@@ -9,7 +9,6 @@ class PriorityState extends Equatable {
     this.pinned = const [],
     this.agendaItems = const [],
     this.first = 0,
-    this.anchorIndex = 0,
     this.moreAgendaItems = true,
     this.doneStart = false,
     this.doneEnd = false,
@@ -30,7 +29,6 @@ class PriorityState extends Equatable {
   final Activity draft;
   final List<AgendaItem> pinned;
   final List<AgendaItem> agendaItems;
-  final int anchorIndex;
   final bool moreAgendaItems;
   final bool doneStart;
   final bool doneEnd;
@@ -54,7 +52,6 @@ class PriorityState extends Equatable {
     List<AgendaItem>? pinned,
     List<AgendaItem>? agendaItems,
     int? first,
-    int? anchorIndex,
     bool? moreAgendaItems,
     bool? doneStart,
     bool? doneEnd,
@@ -68,7 +65,6 @@ class PriorityState extends Equatable {
       draft: draft ?? this.draft,
       pinned: pinned ?? this.pinned,
       agendaItems: agendaItems ?? this.agendaItems,
-      anchorIndex: anchorIndex ?? this.anchorIndex,
       first: first ?? this.first,
       moreAgendaItems: moreAgendaItems ?? this.moreAgendaItems,
       doneStart: doneStart ?? this.doneStart,
@@ -86,7 +82,6 @@ class PriorityState extends Equatable {
     draft,
     pinned,
     agendaItems,
-    anchorIndex,
     moreAgendaItems,
     doneStart,
     doneEnd,

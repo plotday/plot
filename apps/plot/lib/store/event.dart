@@ -96,62 +96,35 @@ class Event extends EventRow {
     bool? deleted = false,
     Priority? context,
   }) {
-    pullRange(range);
-    final order = range.start <= range.end
-        ? OrderingMode.asc
-        : OrderingMode.desc;
-
-    final query = Store.get.select(table)
-      ..where((t) => t.start.isBiggerOrEqualValue(range.start.toDateTime()))
-      ..where((t) => t.start.isSmallerThanValue(range.end.toDateTime()));
-    if (deleted != null) {
-      query.where(
-        (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
-      );
-    }
+    final ascending = range.start <= range.end;
 
     if (withPriority || context != null) {
-      final joinedQuery = query.join([
-        leftOuterJoin(
-          Store.get.priorities,
-          Store.get.priorities.id.equalsExp(Store.get.events.priorityId),
-        ),
-      ]);
-
-      // Add context filter if provided
-      if (context != null) {
-        joinedQuery.where(
-          Store.get.priorities.path.equalsValue(context.path) |
-              Store.get.priorities.path.likeExp(Constant('${context.path}%')),
-        );
-      }
-
       return Rx.combineLatest2(
-        (joinedQuery..orderBy([
-              OrderingTerm(expression: Store.get.events.start, mode: order),
-              OrderingTerm(expression: Store.get.events.end, mode: order),
-            ]))
-            .watch(),
+        _get(
+          range: range,
+          context: context,
+          deleted: deleted,
+          withPriority: true,
+          ascending: ascending,
+        ).watch(),
         Priority.watchDefault(),
         (events, defaultPriority) => events
             .map(
-              (row) => Event.fromStore(
-                row.readTable(Store.get.events),
-                priority: Priority.fromStore(
-                  row.readTableOrNull(Store.get.priorities) ?? defaultPriority,
-                ),
-              ),
+              (event) => event.priority != null
+                  ? event
+                  : Event.fromStore(event, priority: defaultPriority),
             )
             .toList(),
       );
     }
 
-    return (query..orderBy([
-          (t) => OrderingTerm(expression: t.start, mode: order),
-          (t) => OrderingTerm(expression: t.end, mode: order),
-        ]))
-        .watch()
-        .map((rows) => rows.map((row) => Event.fromStore(row)).toList());
+    return _get(
+      range: range,
+      context: context,
+      deleted: deleted,
+      withPriority: false,
+      ascending: ascending,
+    ).watch();
   }
 
   static Future<Event> getOne(EventId id, {bool withPriority = false}) async {
@@ -185,41 +158,251 @@ class Event extends EventRow {
     bool? deleted = false,
     Priority? context,
   }) {
-    // Use the existing watch method to leverage its filtering logic
-    // Create a very wide date range to capture all events
-    final today = Date.today();
-    final wideRange = DateRangeCustom(
-      today.subDays(365 * 10), // 10 years ago
-      today.addDays(365 * 10), // 10 years from now
-    );
+    return Stream.fromFuture(
+      _getRange(deleted: deleted, context: context),
+    ).asyncExpand((range) async* {
+      yield range;
 
-    final eventsStream = watch(
-      wideRange,
-      withPriority: context != null,
-      deleted: deleted,
-      context: context,
-    );
+      // Watch for changes by monitoring the underlying tables
+      await for (final _ in Store.get.select(table).watch()) {
+        yield await _getRange(deleted: deleted, context: context);
+      }
+    });
+  }
 
-    return eventsStream.map((events) {
-      if (events.isEmpty) {
+  static Future<(Date?, Date?)?> _getRange({
+    bool? deleted = false,
+    Priority? context,
+  }) async {
+    // Build base query with filters
+    var firstQuery = Store.get.select(table);
+    var lastQuery = Store.get.select(table);
+
+    // Apply deleted filter
+    if (deleted != null) {
+      final deletedFilter = deleted
+          ? (Events t) => t.deletedAt.isNotNull()
+          : (Events t) => t.deletedAt.isNull();
+      firstQuery = firstQuery..where(deletedFilter);
+      lastQuery = lastQuery..where(deletedFilter);
+    }
+
+    // Apply context filter if provided
+    if (context != null) {
+      final contextJoin = [
+        leftOuterJoin(
+          Store.get.priorities,
+          Store.get.priorities.id.equalsExp(Store.get.events.priorityId),
+        ),
+      ];
+
+      final firstJoinedQuery = firstQuery.join(contextJoin)
+        ..where(
+          Store.get.priorities.path.equalsValue(context.path) |
+              Store.get.priorities.path.likeExp(Constant('${context.path}%')),
+        );
+
+      final lastJoinedQuery = lastQuery.join(contextJoin)
+        ..where(
+          Store.get.priorities.path.equalsValue(context.path) |
+              Store.get.priorities.path.likeExp(Constant('${context.path}%')),
+        );
+
+      // Execute parallel queries for first and last events with context filter
+      final results = await Future.wait([
+        (firstJoinedQuery
+              ..orderBy([
+                OrderingTerm(
+                  expression: Store.get.events.start,
+                  mode: OrderingMode.asc,
+                ),
+              ])
+              ..limit(1))
+            .get(),
+        (lastJoinedQuery
+              ..orderBy([
+                OrderingTerm(
+                  expression: Store.get.events.start,
+                  mode: OrderingMode.desc,
+                ),
+              ])
+              ..limit(1))
+            .get(),
+      ]);
+
+      final firstEvents = results[0];
+      final lastEvents = results[1];
+
+      if (firstEvents.isEmpty && lastEvents.isEmpty) {
         return null;
       }
 
-      Date? earliest;
-      Date? latest;
-
-      for (final event in events) {
-        final eventDate = event.start.toDate();
-        if (earliest == null || eventDate.isBefore(earliest)) {
-          earliest = eventDate;
-        }
-        if (latest == null || eventDate.isAfter(latest)) {
-          latest = eventDate;
-        }
-      }
+      final earliest = firstEvents.isNotEmpty
+          ? firstEvents.first.readTable(table).start.toDate()
+          : null;
+      final latest = lastEvents.isNotEmpty
+          ? lastEvents.first.readTable(table).start.toDate()
+          : null;
 
       return (earliest, latest);
-    });
+    }
+
+    // Execute parallel queries for first and last events
+    final results = await Future.wait([
+      (firstQuery
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.start, mode: OrderingMode.asc),
+            ])
+            ..limit(1))
+          .get(),
+      (lastQuery
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc),
+            ])
+            ..limit(1))
+          .get(),
+    ]);
+
+    final firstEvents = results[0];
+    final lastEvents = results[1];
+
+    if (firstEvents.isEmpty && lastEvents.isEmpty) {
+      return null;
+    }
+
+    final earliest = firstEvents.isNotEmpty
+        ? firstEvents.first.start.toDate()
+        : null;
+    final latest = lastEvents.isNotEmpty
+        ? lastEvents.first.start.toDate()
+        : null;
+
+    return (earliest, latest);
+  }
+
+  /// Find the next event after [fromDate]
+  /// [offset] specifies how many events to skip (0 = first, 1 = second, etc.)
+  static Future<Event?> next(
+    Date fromDate, {
+    Priority? context,
+    bool? deleted = false,
+    int offset = 0,
+  }) async {
+    if (fromDate == Date.latest) {
+      // If fromDate is the latest date, there are no more events
+      return null;
+    }
+    // Use a range from the day after fromDate to far in the future
+    final startDate = fromDate.addDays(1);
+    final endDate = Date.latest;
+    final range = DateRangeCustom(startDate, endDate);
+
+    // Get events in this range using the existing _get method
+    return (await _get(
+      range: range,
+      context: context,
+      deleted: deleted,
+      withPriority: context != null,
+      ascending: true,
+      limit: 1,
+      offset: offset,
+    ).get()).firstOrNull;
+  }
+
+  /// Find the previous event before [fromDate]
+  /// [offset] specifies how many events to skip (0 = first, 1 = second, etc.)
+  static Future<Event?> previous(
+    Date fromDate, {
+    Priority? context,
+    bool? deleted = false,
+    int offset = 0,
+  }) async {
+    if (fromDate == Date.earliest) {
+      // If fromDate is the earliest date, there are no previous events
+      return null;
+    }
+    // Use a range from far in the past to the day before fromDate
+    final startDate = Date.earliest;
+    final endDate = fromDate;
+    final range = DateRangeCustom(startDate, endDate);
+
+    // Get events in reverse order (latest first) using the existing _get method
+    return (await _get(
+      range: range,
+      context: context,
+      deleted: deleted,
+      withPriority: context != null,
+      ascending: false, // descending for "previous"
+      limit: 1,
+      offset: offset,
+    ).get()).firstOrNull;
+  }
+
+  /// Internal method for querying events with comprehensive filtering
+  static MultiSelectable<Event> _get({
+    required DateRange range,
+    Priority? context,
+    bool? deleted = false,
+    bool withPriority = false,
+    bool ascending = true,
+    int? limit,
+    int? offset,
+  }) {
+    pullRange(range);
+    final order = ascending ? OrderingMode.asc : OrderingMode.desc;
+
+    final query = Store.get.select(table)
+      ..where((t) => t.start.isBiggerOrEqualValue(range.start.toDateTime()))
+      ..where((t) => t.start.isSmallerThanValue(range.end.toDateTime()));
+
+    if (deleted != null) {
+      query.where(
+        (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
+      );
+    }
+
+    // Apply pagination before any joins
+    if (limit != null) {
+      query.limit(limit, offset: offset ?? 0);
+    }
+
+    if (withPriority || context != null) {
+      final joinedQuery = query.join([
+        leftOuterJoin(
+          Store.get.priorities,
+          Store.get.priorities.id.equalsExp(Store.get.events.priorityId),
+        ),
+      ]);
+
+      // Add context filter if provided
+      if (context != null) {
+        joinedQuery.where(
+          Store.get.priorities.path.equalsValue(context.path) |
+              Store.get.priorities.path.likeExp(Constant('${context.path}%')),
+        );
+      }
+
+      joinedQuery.orderBy([
+        OrderingTerm(expression: Store.get.events.start, mode: order),
+        OrderingTerm(expression: Store.get.events.end, mode: order),
+      ]);
+
+      return joinedQuery.map(
+        (TypedResult row) => Event.fromStore(
+          row.readTable(Store.get.events),
+          priority: row.readTableOrNull(Store.get.priorities) != null
+              ? Priority.fromStore(row.readTableOrNull(Store.get.priorities)!)
+              : null,
+        ),
+      );
+    }
+
+    query.orderBy([
+      (t) => OrderingTerm(expression: t.start, mode: order),
+      (t) => OrderingTerm(expression: t.end, mode: order),
+    ]);
+
+    return query.map((EventRow row) => Event.fromStore(row));
   }
 
   Event({

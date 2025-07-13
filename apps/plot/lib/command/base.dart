@@ -223,9 +223,8 @@ class Commands {
         this,
         secondaryCommand: secondaryCommand,
       ).run(context);
-    } on Error catch (e) {
-      print(e);
-      print(e.stackTrace);
+    } on Error catch (e, t) {
+      log.warning('Error running command bar', e, t);
       rethrow;
     }
   }
@@ -285,8 +284,8 @@ class CommandScopeState extends State<CommandScope> {
                 command.shortcut!: () {
                   try {
                     context.run(command);
-                  } catch (e) {
-                    print('Error running command: $e');
+                  } catch (e, t) {
+                    log.warning('Error running command', e, t);
                     rethrow;
                   }
                 },

@@ -29,7 +29,7 @@ linter:
   # `// ignore_for_file: name_of_lint` syntax on the line or in the file
   # producing the lint.
   rules:
-    avoid_print: false
+    avoid_print: true
     always_declare_return_types: true
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

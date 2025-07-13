@@ -34,7 +34,7 @@ class ActivitiesBase extends BaseTable {
       ActivityRow.fromJson(json);
 }
 
-enum ActivityOrder { sorted, nested, recent }
+enum ActivityOrder { sorted, nested, recent, reverse }
 
 class Activity extends ActivityRow implements Comparable<Activity> {
   static $ActivitiesTable get table => Store.get.activities;
@@ -144,46 +144,182 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Priority? context,
     bool? deleted = false,
   }) {
-    // Use the existing _get method to leverage its filtering logic
-    final activities = _get(
-      priorityPath: context?.path,
-      deleted: deleted,
-      order: ActivityOrder.sorted,
-    ).watch();
+    return Stream.fromFuture(
+      _getRange(context: context, deleted: deleted),
+    ).asyncExpand((range) async* {
+      yield range;
 
-    return activities.map((activityList) {
-      if (activityList.isEmpty) {
+      // Watch for changes by monitoring the underlying tables
+      await for (final _ in Store.get.select(table).watch()) {
+        yield await _getRange(context: context, deleted: deleted);
+      }
+    });
+  }
+
+  static Future<(Date?, Date?)?> _getRange({
+    Priority? context,
+    bool? deleted = false,
+  }) async {
+    // Build base query with filters (same as used in Activity._get)
+    final base = Store.get.alias(Store.get.activities, 'base');
+    var firstQuery = Store.get.select(base);
+    var lastQuery = Store.get.select(base);
+
+    // Apply deleted filter
+    if (deleted != null) {
+      final deletedFilter = deleted
+          ? (Activities t) => t.deletedAt.isNotNull()
+          : (Activities t) => t.deletedAt.isNull();
+      firstQuery = firstQuery..where(deletedFilter);
+      lastQuery = lastQuery..where(deletedFilter);
+    }
+
+    // Apply context filter if provided
+    if (context != null) {
+      final contextJoin = [
+        innerJoin(
+          Store.get.priorities,
+          Store.get.priorities.id.equalsExp(base.priorityId) &
+              (Store.get.priorities.path.equalsValue(context.path) |
+                  Store.get.priorities.path.likeExp(
+                    Constant('${context.path}%'),
+                  )),
+        ),
+      ];
+
+      final firstJoinedQuery = firstQuery.join(contextJoin);
+      final lastJoinedQuery = lastQuery.join(contextJoin);
+
+      // Execute parallel queries for earliest and latest activities with context filter
+      final results = await Future.wait([
+        (firstJoinedQuery
+              ..orderBy([
+                OrderingTerm(
+                  expression: base.createdAt,
+                  mode: OrderingMode.asc,
+                ),
+              ])
+              ..limit(1))
+            .get(),
+        (lastJoinedQuery
+              ..orderBy([
+                OrderingTerm(
+                  expression: base.createdAt,
+                  mode: OrderingMode.desc,
+                ),
+              ])
+              ..limit(1))
+            .get(),
+      ]);
+
+      final firstActivities = results[0];
+      final lastActivities = results[1];
+
+      if (firstActivities.isEmpty && lastActivities.isEmpty) {
         return null;
       }
 
-      Date? earliest;
-      Date? latest;
-      final today = Date.today();
-
-      for (final activity in activityList) {
-        // Determine the effective date for this activity
-        Date effectiveDate;
-        if (activity.doneAt != null) {
-          effectiveDate = activity.doneAt!.toDate();
-        } else if (activity.doAt != null) {
-          final doAtDate = activity.doAt!;
-          // Treat past doAt dates as today
-          effectiveDate = doAtDate.isBefore(today) ? today : doAtDate;
-        } else {
-          effectiveDate = activity.createdAt.toDate();
-        }
-
-        // Update earliest and latest
-        if (earliest == null || effectiveDate.isBefore(earliest)) {
-          earliest = effectiveDate;
-        }
-        if (latest == null || effectiveDate.isAfter(latest)) {
-          latest = effectiveDate;
-        }
-      }
+      final earliest = firstActivities.isNotEmpty
+          ? firstActivities.first.readTable(base).createdAt.toDate()
+          : null;
+      final latest = lastActivities.isNotEmpty
+          ? lastActivities.first.readTable(base).createdAt.toDate()
+          : null;
 
       return (earliest, latest);
-    });
+    }
+
+    // Execute parallel queries for earliest and latest activities by createdAt
+    final results = await Future.wait([
+      (firstQuery
+            ..orderBy([
+              (t) =>
+                  OrderingTerm(expression: t.createdAt, mode: OrderingMode.asc),
+            ])
+            ..limit(1))
+          .get(),
+      (lastQuery
+            ..orderBy([
+              (t) => OrderingTerm(
+                expression: t.createdAt,
+                mode: OrderingMode.desc,
+              ),
+            ])
+            ..limit(1))
+          .get(),
+    ]);
+
+    final firstActivities = results[0];
+    final lastActivities = results[1];
+
+    if (firstActivities.isEmpty && lastActivities.isEmpty) {
+      return null;
+    }
+
+    final earliest = firstActivities.isNotEmpty
+        ? firstActivities.first.createdAt.toDate()
+        : null;
+    final latest = lastActivities.isNotEmpty
+        ? lastActivities.first.createdAt.toDate()
+        : null;
+
+    return (earliest, latest);
+  }
+
+  /// Find the next activity after [fromDate]
+  /// [offset] specifies how many activities to skip (0 = first, 1 = second, etc.)
+  static Future<Activity?> next(
+    Date fromDate, {
+    Priority? context,
+    bool? deleted = false,
+    int offset = 0,
+  }) async {
+    if (fromDate == Date.latest) {
+      // If fromDate is the latest date, there are no more activities
+      return null;
+    }
+    // Use a range from the day after fromDate to far in the future
+    final startDate = fromDate.addDays(1);
+    final endDate = Date.latest;
+    final range = DateRangeCustom(startDate, endDate);
+
+    // Get activities in this range using the existing _get method
+    return (await _get(
+      range: range,
+      priorityPath: context?.path,
+      deleted: deleted,
+      order: ActivityOrder.sorted,
+      limit: 1,
+      offset: offset,
+    ).get()).firstOrNull;
+  }
+
+  /// Find the previous activity before [fromDate]
+  /// [offset] specifies how many activities to skip (0 = first, 1 = second, etc.)
+  static Future<Activity?> previous(
+    Date fromDate, {
+    Priority? context,
+    bool? deleted = false,
+    int offset = 0,
+  }) async {
+    if (fromDate == Date.earliest) {
+      // If fromDate is the earliest date, there are no previous activities
+      return null;
+    }
+    // Use a range from far in the past to the day before fromDate
+    final startDate = Date.earliest;
+    final endDate = fromDate;
+    final range = DateRangeCustom(startDate, endDate);
+
+    // Get activities in reverse order (latest first) using the existing _get method
+    return (await _get(
+      range: range,
+      priorityPath: context?.path,
+      deleted: deleted,
+      order: ActivityOrder.reverse,
+      limit: 1,
+      offset: offset,
+    ).get()).firstOrNull;
   }
 
   static MultiSelectable<Activity> _get({
@@ -205,6 +341,10 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
     /* Sorting */
     ActivityOrder order = ActivityOrder.sorted,
+
+    /* Pagination */
+    int? limit,
+    int? offset,
 
     /* Augmentation */
     bool getParent = true,
@@ -332,13 +472,17 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       );
     }
 
+    if (limit != null) {
+      query.limit(limit, offset: offset);
+    }
+
     switch (order) {
       case ActivityOrder.sorted:
         query.orderBy([
           // Pinned
           OrderingTerm(expression: a.pinned, mode: OrderingMode.desc),
           // Active
-          OrderingTerm.desc(
+          OrderingTerm.asc(
             CaseWhenExpression(
               cases: [
                 CaseWhen(
@@ -384,6 +528,42 @@ class Activity extends ActivityRow implements Comparable<Activity> {
             expression: Store.get.sessions.end,
             mode: OrderingMode.desc,
           ),
+        ]);
+        break;
+      case ActivityOrder.reverse:
+        // reverse order of sorted - latest items first
+        query.orderBy([
+          // Pinned
+          OrderingTerm(expression: a.pinned, mode: OrderingMode.desc),
+          // Active (reverse order)
+          OrderingTerm.asc(
+            CaseWhenExpression(
+              cases: [
+                CaseWhen(
+                  a.doAt.isSmallerOrEqual(Constant(Date.today().toString())) &
+                      a.doneAt.isNull(),
+                  then: a.doAt,
+                ),
+              ],
+              orElse: const Constant(null),
+            ),
+          ),
+          OrderingTerm.desc(
+            CaseWhenExpression(
+              cases: [
+                CaseWhen(
+                  a.pinned |
+                      (a.doAt.isSmallerOrEqual(
+                            Constant(Date.today().toString()),
+                          ) &
+                          a.doneAt.isNull()),
+                  then: a.order,
+                ),
+              ],
+              orElse: const Constant(null),
+            ),
+          ),
+          OrderingTerm.desc(a.order),
         ]);
         break;
     }

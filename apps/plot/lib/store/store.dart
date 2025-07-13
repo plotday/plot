@@ -252,9 +252,8 @@ class Store extends _$Store {
       return await Store.get
           .into(table)
           .insertReturning(data, onConflict: DoUpdate((old) => data));
-    } catch (e) {
-      print("Error saving ${toString()}");
-      print(e);
+    } catch (e, t) {
+      log.warning("Error saving ${toString()}", e, t);
       rethrow;
     }
   }
@@ -267,9 +266,8 @@ class Store extends _$Store {
       await batch((batch) {
         batch.insertAllOnConflictUpdate(table, data);
       });
-    } catch (e) {
-      print("Error saving ${toString()}");
-      print(e);
+    } catch (e, t) {
+      log.warning("Error saving ${toString()}", e, t);
       rethrow;
     }
   }
@@ -282,9 +280,8 @@ class Store extends _$Store {
     log.info("Saving", data);
     try {
       await add(table, data);
-    } catch (e) {
-      print("Error saving ${toString()}");
-      print(e);
+    } catch (e, t) {
+      log.warning("Error saving ${toString()}", e, t);
       rethrow;
     }
     push(table, baseTable);
@@ -384,7 +381,9 @@ class Store extends _$Store {
     ));
     final (from, to) = newRange ?? (null, null);
 
-    log.info("Pulling ${baseRows.length} rows from ${baseTable.table}");
+    log.info(
+      "Pulling ${baseRows.length} rows from ${baseTable.table} (since ${type == PullType.more ? null : syncState?.pulledAt}, include ${range ?? ([PullType.updates, PullType.more].contains(type) ? (syncState?.from, syncState?.to) : null)}, exclude ${type == PullType.more ? (syncState?.from, syncState?.to) : null})",
+    );
     final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
       try {
         return [baseTable.fromBase(r)];
@@ -591,7 +590,9 @@ class Store extends _$Store {
         for (final entity in allSchemaEntities) {
           try {
             await m.drop(entity);
-          } catch (e) {}
+          } catch (e) {
+            // ignore
+          }
         }
         await m.createAll();
       },
