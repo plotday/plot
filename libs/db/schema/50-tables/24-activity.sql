@@ -2,7 +2,7 @@ CREATE TABLE "public"."activity" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+    "created_by" uuid NOT NULL, -- References either auth.users or priority_agent (if it starts with 0xab07ab07)
     "deleted_at" timestamp with time zone,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "path" ltree NOT NULL DEFAULT generate_path (NULL),

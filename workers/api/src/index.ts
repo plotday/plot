@@ -9,7 +9,10 @@ import type { SupabaseClient } from "@plotday/db";
 import { createClient } from "@plotday/db";
 import type { SyncRequest } from "@plotday/sync";
 
-import { create as createActivity, update as updateActivity } from "./activity";
+import { 
+  create as createActivity, 
+  update as updateActivity 
+} from "./activity";
 import {
   create as createEvent,
   respond as respondEvent,
@@ -18,6 +21,14 @@ import {
 import type { Priority } from "./priority";
 import { summarize } from "./summary";
 import { addAccount, syncCalendar } from "./sync";
+import { 
+  add as addAgent,
+  getAll as getAllAgents, 
+  getById as getAgentById, 
+  getByPriority as getAgentsByPriority, 
+  update as updateAgent,
+  deleteAgent
+} from "./agent";
 
 export abstract class AgentRunner extends WorkerEntrypoint {
   abstract activate(agentId: string, priority: Priority): Promise<void>;
@@ -185,6 +196,46 @@ app.patch("/activity/:id", async (c) => {
   return c.json(dbActivity);
 });
 
+app.get("/agents", async (c) => {
+  const agents = await getAllAgents(c.var.supabase);
+  return c.json(agents);
+});
+
+app.get("/agent/:id", async (c) => {
+  const agentId = c.req.param("id");
+  const agents = await getAgentById(c.var.supabase, agentId);
+  return c.json(agents);
+});
+
+app.get("/agent", async (c) => {
+  const priorityId = c.req.query("priorityId");
+  if (!priorityId) {
+    return new Response("Bad request (missing priorityId)", { status: 400 });
+  }
+  const agents = await getAgentsByPriority(c.var.supabase, priorityId);
+  return c.json(agents);
+});
+
+app.get("/agents", async (c) => {
+  const agents = await getAllAgents(c.var.supabase);
+  return c.json(agents);
+});
+
+app.get("/agent/:id", async (c) => {
+  const agentId = c.req.param("id");
+  const agents = await getAgentById(c.var.supabase, agentId);
+  return c.json(agents);
+});
+
+app.get("/agent", async (c) => {
+  const priorityId = c.req.query("priorityId");
+  if (!priorityId) {
+    return new Response("Bad request (missing priorityId)", { status: 400 });
+  }
+  const agents = await getAgentsByPriority(c.var.supabase, priorityId);
+  return c.json(agents);
+});
+
 app.post("/agent", async (c) => {
   const body = await c.req.json();
   const priorityId = (body as any)?.priorityId;
@@ -196,10 +247,38 @@ app.post("/agent", async (c) => {
   if (!agentId) {
     return new Response("Bad request (missing agentId)", { status: 400 });
   }
-
+  const name = (body as any)?.name;
+  const config = (body as any)?.config;
+  try {
+    const dbPriorityAgent = await addAgent(c.var.supabase, priorityId, agentId, name, config);
   await c.env.AGENT_RUNNER.activate(agentId, priorityId);
+    return c.json(dbPriorityAgent.id);
+  } catch (error) {
+    if (error instanceof Error) {
+      return new Response(`Error adding agent: ${error.message}`, { status: 400 });
+    } throw error;
+  }
+});
 
-  return c.json({});
+app.patch("/agent/:id", async (c) => {
+  const agentId = c.req.param("id");
+  const body = await c.req.json();
+  const agent = (body as any)?.agent;
+  try {
+    const dbAgent = await updateAgent(c.var.supabase, agentId, agent);
+    return c.json(dbAgent);
+  } catch (error) {
+    if (error instanceof Error) {
+      return new Response(`Error updating agent: ${error.message}`, { status: 400 });
+    }
+    throw error;
+  }
+});
+
+app.delete("/agent/:id", async (c) => {
+  const agentId = c.req.param("id");
+  await deleteAgent(c.var.supabase, agentId);
+  return c.json({ success: true });
 });
 
 export default withSentry(
@@ -211,4 +290,4 @@ export default withSentry(
     enabled: ENV !== "development",
   }),
   app as any
-);
+)

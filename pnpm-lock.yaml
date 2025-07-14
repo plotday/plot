@@ -391,6 +391,13 @@ importers:
       '@plotday/sync':
         specifier: workspace:^
         version: link:../sync
+    devDependencies:
+      '@plotday/eslint-config-custom':
+        specifier: workspace:*
+        version: link:../../libs/eslint-config-custom
+      '@plotday/tsconfig':
+        specifier: workspace:*
+        version: link:../../libs/tsconfig
 
   workers/event-sync:
     dependencies:

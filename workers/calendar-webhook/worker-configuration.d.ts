@@ -10,6 +10,7 @@ declare namespace Cloudflare {
 		GOOGLE_OAUTH_SECRET: string;
 		MICROSOFT_CLIENT_ID: string;
 		MICROSOFT_OAUTH_SECRET: string;
+		AUTH_CALLBACK_URL: string;
 	}
 }
 interface Env extends Cloudflare.Env {}
