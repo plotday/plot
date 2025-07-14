@@ -1,22 +1,11 @@
 import { RpcTarget } from "cloudflare:workers";
 
 import type { Database, SupabaseClient } from "@plotday/db";
+import type { Priority as IPriority, NewActivity } from "@plotday/agents";
 
 import { create as createActivity } from "./activity";
 
-export type Activity = {
-  id: string;
-  doOn?: string; // date string (e.g. '2025-07-10')
-  doneAt?: Date;
-  note?: string;
-  parentId?: string;
-  pinned: boolean;
-};
-
-export type NewActivity = Omit<Activity, "id" | "pinned"> &
-  Partial<Pick<Activity, "pinned">>;
-
-export class Priority extends RpcTarget {
+export class Priority extends RpcTarget implements IPriority {
   private supabase: SupabaseClient;
   private priorityId: string;
 

@@ -15,6 +15,7 @@
     "lint": "tsc && eslint ."
   },
   "dependencies": {
+    "@plotday/agents": "workspace:^",
     "@plotday/cal": "workspace:^",
     "@plotday/db": "workspace:^",
     "@sentry/cloudflare": "^8.47.0",

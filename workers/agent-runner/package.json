@@ -1,5 +1,5 @@
 {
-  "name": "@plotday/onboarding",
+  "name": "@plotday/agent-runner",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "sideEffects": false,
@@ -11,6 +11,8 @@
     "lint": "tsc && eslint ."
   },
   "dependencies": {
+    "@plotday/agents": "workspace:^",
+    "@plotday/db": "workspace:^",
     "@worker-tools/json-fetch": "2.1.0-pre.6"
   },
   "devDependencies": {

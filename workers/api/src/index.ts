@@ -15,12 +15,12 @@ import {
   respond as respondEvent,
   update as updateEvent,
 } from "./event";
-import { Priority } from "./priority";
+import type { Priority } from "./priority";
 import { summarize } from "./summary";
 import { addAccount, syncCalendar } from "./sync";
 
-export abstract class Agent extends WorkerEntrypoint {
-  abstract activate(priority: Priority): Promise<void>;
+export abstract class AgentRunner extends WorkerEntrypoint {
+  abstract activate(agentId: string, priority: Priority): Promise<void>;
 }
 
 export type Bindings = {
@@ -40,7 +40,7 @@ export type Bindings = {
 
   readonly SYNC_QUEUE: Queue<SyncRequest>;
   readonly AI: Ai;
-  readonly ONBOARDING: Service<Agent>;
+  readonly AGENT_RUNNER: Service<AgentRunner>;
 };
 
 declare module "hono" {
@@ -192,11 +192,12 @@ app.post("/agent", async (c) => {
     return new Response("Bad request (missing priorityId)", { status: 400 });
   }
 
-  // Create Priority instance
-  const priority = new Priority(c.var.supabase, priorityId);
+  const agentId = (body as any)?.agentId;
+  if (!agentId) {
+    return new Response("Bad request (missing agentId)", { status: 400 });
+  }
 
-  // Call onboarding worker's activate method
-  await c.env.ONBOARDING.activate(priority);
+  await c.env.AGENT_RUNNER.activate(agentId, priorityId);
 
   return c.json({});
 });

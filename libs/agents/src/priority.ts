@@ -1,0 +1,15 @@
+export type Activity = {
+  id: string;
+  doOn?: string; // date string (e.g. '2025-07-10')
+  doneAt?: Date;
+  note?: string;
+  parentId?: string;
+  pinned: boolean;
+};
+
+export type NewActivity = Omit<Activity, "id" | "pinned"> &
+  Partial<Pick<Activity, "pinned">>;
+
+export interface Priority {
+  createActivity(activity: NewActivity): Promise<any>;
+}

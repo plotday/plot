@@ -1,4 +1,4 @@
-name = "onboarding"
+name = "agent-runner"
 main = "src/index.ts"
 compatibility_date = "2025-07-01"
 compatibility_flags = ["nodejs_compat"]
@@ -8,13 +8,13 @@ upload_source_maps = true
 [env.development.define]
   ENV = '"development"'
   RELEASE = '"dev"'
-  PACKAGE = '"onboarding"'
+  PACKAGE = '"agent-runner"'
 
 [env.production]
 [env.production.define]
   ENV = '"production"'
   RELEASE = '"prod"'
-  PACKAGE = '"onboarding"'
+  PACKAGE = '"agent-runner"'
 
 [observability.logs]
   enabled = true

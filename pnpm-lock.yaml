@@ -123,6 +123,15 @@ importers:
         specifier: ^5.1.4
         version: 5.1.4(typescript@5.7.2)(vite@5.4.11(@types/node@20.14.2)(sugarss@4.0.1(postcss@8.4.49))(terser@5.37.0))
 
+  libs/agents:
+    devDependencies:
+      '@plotday/eslint-config-custom':
+        specifier: workspace:*
+        version: link:../eslint-config-custom
+      '@plotday/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+
   libs/cal:
     dependencies:
       '@azure/identity':
@@ -253,8 +262,33 @@ importers:
         specifier: workspace:*
         version: link:../tsconfig
 
+  workers/agent-runner:
+    dependencies:
+      '@plotday/agents':
+        specifier: workspace:^
+        version: link:../../libs/agents
+      '@plotday/db':
+        specifier: workspace:^
+        version: link:../../libs/db
+      '@worker-tools/json-fetch':
+        specifier: 2.1.0-pre.6
+        version: 2.1.0-pre.6
+    devDependencies:
+      '@plotday/eslint-config-custom':
+        specifier: workspace:*
+        version: link:../../libs/eslint-config-custom
+      '@plotday/tsconfig':
+        specifier: workspace:*
+        version: link:../../libs/tsconfig
+      '@types/node':
+        specifier: ^22.15.19
+        version: 22.15.19
+
   workers/api:
     dependencies:
+      '@plotday/agents':
+        specifier: workspace:^
+        version: link:../../libs/agents
       '@plotday/cal':
         specifier: workspace:^
         version: link:../../libs/cal
@@ -342,6 +376,9 @@ importers:
 
   workers/dev:
     dependencies:
+      '@plotday/agent-runner':
+        specifier: workspace:^
+        version: link:../agent-runner
       '@plotday/api':
         specifier: workspace:^
         version: link:../api
@@ -351,9 +388,6 @@ importers:
       '@plotday/event-sync':
         specifier: workspace:^
         version: link:../event-sync
-      '@plotday/onboarding':
-        specifier: workspace:^
-        version: link:../onboarding
       '@plotday/sync':
         specifier: workspace:^
         version: link:../sync
@@ -407,22 +441,6 @@ importers:
       '@types/node':
         specifier: ^20.14.2
         version: 20.14.2
-
-  workers/onboarding:
-    dependencies:
-      '@worker-tools/json-fetch':
-        specifier: 2.1.0-pre.6
-        version: 2.1.0-pre.6
-    devDependencies:
-      '@plotday/eslint-config-custom':
-        specifier: workspace:*
-        version: link:../../libs/eslint-config-custom
-      '@plotday/tsconfig':
-        specifier: workspace:*
-        version: link:../../libs/tsconfig
-      '@types/node':
-        specifier: ^22.15.19
-        version: 22.15.19
 
   workers/sync:
     dependencies:

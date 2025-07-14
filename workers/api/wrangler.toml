@@ -15,8 +15,8 @@ upload_source_maps = true
   binding = "SYNC_QUEUE"
 
 [[env.development.services]]
-  binding = "ONBOARDING"
-  service = "onboarding"
+  binding = "AGENT_RUNNER"
+  service = "agent-runner"
 
 [env.development.ai]
   binding = "AI"
@@ -35,8 +35,8 @@ routes = [
   binding = "SYNC_QUEUE"
 
 [[env.production.services]]
-  binding = "ONBOARDING"
-  service = "onboarding-production"
+  binding = "AGENT_RUNNER"
+  service = "agent-runner-production"
 
 [env.production.ai]
   binding = "AI"

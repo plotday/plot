@@ -4,14 +4,14 @@
   "sideEffects": false,
   "private": true,
   "config": {
-    "workers": "../api ../contact-sync ../event-sync ../mailer ../sync ../onboarding"
+    "workers": "../api ../contact-sync ../event-sync ../mailer ../sync ../agent-runner"
   },
   "scripts": {
     "dev": "wrangler dev --env development --test-scheduled $(for dir in $npm_package_config_workers; do echo -c \"$dir/wrangler.toml\"; done)"
   },
   "dependencies": {
     "@plotday/api": "workspace:^",
-    "@plotday/onboarding": "workspace:^",
+    "@plotday/agent-runner": "workspace:^",
     "@plotday/contact-sync": "workspace:^",
     "@plotday/event-sync": "workspace:^",
     "@plotday/sync": "workspace:^"
