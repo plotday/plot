@@ -44,6 +44,7 @@ class TextField extends StatefulWidget {
 
 class TextFieldState extends State<TextField> {
   late final TextEditingController _controller;
+  VoidCallback? _listener;
 
   @override
   void initState() {
@@ -51,9 +52,10 @@ class TextFieldState extends State<TextField> {
     _controller =
         widget.controller ?? TextEditingController(text: widget.value);
     if (widget.onChanged != null) {
-      _controller.addListener(() {
+      _listener = () {
         widget.onChanged?.call(_controller.text);
-      });
+      };
+      _controller.addListener(_listener!);
     }
   }
 
@@ -67,10 +69,8 @@ class TextFieldState extends State<TextField> {
 
   @override
   void dispose() {
-    if (widget.onChanged != null) {
-      _controller.removeListener(() {
-        widget.onChanged?.call(_controller.text);
-      });
+    if (_listener != null) {
+      _controller.removeListener(_listener!);
     }
     if (widget.controller == null) {
       _controller.dispose();

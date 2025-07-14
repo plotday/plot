@@ -70,6 +70,7 @@ class ListTile extends StatefulWidget {
 class _ListTileState extends State<ListTile> {
   final _focusNode = FocusNode();
   Offset? lastMousePosition;
+  bool _isHovered = false;
 
   @override
   void dispose() {
@@ -104,9 +105,20 @@ class _ListTileState extends State<ListTile> {
             }
           : null,
       child: MouseRegion(
+        onEnter: (_) {
+          setState(() {
+            _isHovered = true;
+          });
+          widget.onHover?.call(true);
+        },
+        onExit: (_) {
+          setState(() {
+            _isHovered = false;
+          });
+          widget.onHover?.call(false);
+        },
         onHover: (PointerHoverEvent event) {
           if (event.position != lastMousePosition) {
-            widget.onHover?.call(true);
             lastMousePosition = event.position;
           }
         },
@@ -115,7 +127,11 @@ class _ListTileState extends State<ListTile> {
           onShowFocusHighlight: (focused) => widget.onHover?.call(focused),
           onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
           child: Container(
-            color: widget.selected ? context.colour.highlight : null,
+            color: widget.selected 
+                ? context.colour.accentBackground 
+                : _isHovered 
+                    ? context.colour.highlight 
+                    : null,
             padding: EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               crossAxisAlignment: widget.body == null

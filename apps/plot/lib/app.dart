@@ -28,6 +28,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     final layoutCompleter = Completer<bool>();
     layout = layoutCompleter.future;
@@ -42,6 +43,12 @@ class AppState extends State<App> with WidgetsBindingObserver {
         layoutCompleter.completeError(error);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   @override

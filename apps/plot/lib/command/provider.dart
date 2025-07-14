@@ -60,6 +60,12 @@ class _CommandProviderState extends State<CommandProvider> {
   final CommandRegistry _registry = CommandRegistry();
 
   @override
+  void dispose() {
+    _registry.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return CommandRegistryInheritedNotifier(
       notifier: _registry,

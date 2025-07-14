@@ -87,14 +87,16 @@ class PriorityPage extends StatelessWidget {
               ? const Center(child: Spinner())
               : BidirectionalListSelector(
                   onActivate: (index) {
-                    state.agendaItems[index].when(
-                      activity: (activity) =>
-                          context.run(ChangeCurrentActivity(activity)),
-                      event: (event) =>
-                          <void>{}, // TODO: Handle event activation
-                      header: (header) =>
-                          <void>{}, // TODO: Handle header activation
-                    );
+                    state
+                        .atIndex(index)
+                        ?.when(
+                          activity: (activity) =>
+                              context.run(ChangeCurrentActivity(activity)),
+                          event: (event) =>
+                              context.run(ChangeCurrentEvent(event)),
+                          header: (header) =>
+                              <void>{}, // TODO: Handle header activation
+                        );
                   },
                   builder: (context, listController) => SelectionCommandScope(
                     commandBuilder: (index) =>
@@ -197,14 +199,6 @@ class PriorityPage extends StatelessWidget {
                                     final current =
                                         state.agendaItems[index - state.first];
                                     log.fine('Building $index: $current');
-                                    void onHover(bool hovered) {
-                                      if (hovered) {
-                                        listController.selected = index;
-                                      } else if (listController.selected ==
-                                          index) {
-                                        listController.selected = null;
-                                      }
-                                    }
 
                                     return Column(
                                       mainAxisSize: MainAxisSize.min,
@@ -221,7 +215,6 @@ class PriorityPage extends StatelessWidget {
                                             ActivityWidget(
                                               activity: activity,
                                               selected: selected,
-                                              onHover: onHover,
                                             ),
                                           ],
                                           event: (event) => [
@@ -229,7 +222,6 @@ class PriorityPage extends StatelessWidget {
                                               EventWidget(
                                                 event: event,
                                                 selected: selected,
-                                                onHover: onHover,
                                               ),
                                           ],
                                           header: (header) => [
@@ -240,7 +232,6 @@ class PriorityPage extends StatelessWidget {
                                               priority: header.priority,
                                               context: state.context,
                                               selected: selected,
-                                              onHover: onHover,
                                             ),
                                           ],
                                         ),

@@ -495,12 +495,15 @@ class SelectionCommandScope extends StatefulWidget {
 class SelectionCommandScopeState extends State<SelectionCommandScope> {
   @override
   Widget build(BuildContext context) {
-    return CommandScope(
-      commands: [
-        if (widget.listController.selected != null)
-          ...widget.commandBuilder(widget.listController.selected!),
-      ],
-      child: widget.child,
+    return ListenableBuilder(
+      listenable: widget.listController,
+      builder: (context, child) => CommandScope(
+        commands: [
+          if (widget.listController.selected != null)
+            ...widget.commandBuilder(widget.listController.selected!),
+        ],
+        child: widget.child,
+      ),
     );
   }
 }

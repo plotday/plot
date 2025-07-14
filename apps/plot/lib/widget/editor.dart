@@ -155,6 +155,8 @@ class EditorState extends State<Editor> {
             ],
             // TODO use defaultImeKeyboardActions on mobile
             keyboardActions: [
+              _bubbleSpecialKeys,
+              if (_isEmpty) _bubbleArrowKeys,
               _shiftEnterToInsertBlockNewline,
               ...defaultKeyboardActions,
             ],
@@ -320,4 +322,35 @@ ExecutionInstruction _shiftEnterToInsertBlockNewline({
   ]);
 
   return ExecutionInstruction.haltExecution;
+}
+
+ExecutionInstruction _bubbleArrowKeys({
+  required SuperEditorContext editContext,
+  required KeyEvent keyEvent,
+}) {
+  if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  if (keyEvent.logicalKey != LogicalKeyboardKey.arrowUp &&
+      keyEvent.logicalKey != LogicalKeyboardKey.arrowDown) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  return ExecutionInstruction.blocked;
+}
+
+ExecutionInstruction _bubbleSpecialKeys({
+  required SuperEditorContext editContext,
+  required KeyEvent keyEvent,
+}) {
+  if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  if (keyEvent.logicalKey != LogicalKeyboardKey.escape) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  return ExecutionInstruction.blocked;
 }

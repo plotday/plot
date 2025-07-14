@@ -37,7 +37,7 @@ class PriorityState extends Equatable {
   final bool showArchived;
 
   AgendaItem? atIndex(int index) {
-    index += first;
+    index -= first;
     if (index < 0 || index >= agendaItems.length) {
       return null;
     }
