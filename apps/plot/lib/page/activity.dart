@@ -184,113 +184,127 @@ class ActivityPage extends StatelessWidget {
                   ],
                 ),
                 sidebar: PrioritiesSidebar(),
-                body: Column(
-                  children: [
-                    Flexible(
-                      flex: 0,
-                      fit: FlexFit.loose,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(
-                              width: 1.0,
-                              color: context.colour.border,
+                body: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final maxActivityListHeight = constraints.maxHeight * 0.4;
+                    final maxActivityEditorHeight = constraints.maxHeight * 0.4;
+                    return Column(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                width: 1.0,
+                                color: context.colour.border,
+                              ),
+                            ),
+                          ),
+                          constraints: BoxConstraints(
+                            maxHeight: maxActivityListHeight,
+                          ),
+                          child: SingleChildScrollView(
+                            child: ActivityList(
+                              activities: state.pinned
+                                  .where(
+                                    (item) => item.when(
+                                      activity: (_) => true,
+                                      event: (_) => false,
+                                      header: (_) => false,
+                                    ),
+                                  )
+                                  .map(
+                                    (item) => item.when(
+                                      activity: (activity) => activity,
+                                      event: (_) =>
+                                          throw StateError('Not an activity'),
+                                      header: (_) =>
+                                          throw StateError('Not an activity'),
+                                    ),
+                                  )
+                                  .toList(),
+                              priority: state.context,
                             ),
                           ),
                         ),
-                        child: ActivityList(
-                          activities: state.pinned
-                              .where(
-                                (item) => item.when(
-                                  activity: (_) => true,
-                                  event: (_) => false,
-                                  header: (_) => false,
-                                ),
-                              )
-                              .map(
-                                (item) => item.when(
-                                  activity: (activity) => activity,
-                                  event: (_) =>
-                                      throw StateError('Not an activity'),
-                                  header: (_) =>
-                                      throw StateError('Not an activity'),
-                                ),
-                              )
-                              .toList(),
-                          priority: state.context,
-                        ),
-                      ),
-                    ),
-                    Flexible(
-                      flex: 1,
-                      fit: FlexFit.tight,
-                      child: BidirectionalList(
-                        controller: listController,
-                        scrollController: ScrollControllerContext.of(context),
-                        first: state.first,
-                        count: state.agendaItems.length,
-                        reverse: true,
-                        doneStart: state.doneStart,
-                        doneEnd: state.doneEnd,
-                        fetcher: (first, count) => context
-                            .read<PriorityBloc>()
-                            .fetchMoreAgendaItems(first, count),
-                        builder: (context, index, selected) {
-                          final current = state.agendaItems[index];
-                          void onHover(bool hovered) {
-                            if (hovered) {
-                              listController.selected = index;
-                            } else if (listController.selected == index) {
-                              listController.selected = null;
-                            }
-                          }
-
-                          return Column(
-                            mainAxisSize: MainAxisSize.min,
-                            key: ValueKey(
-                              current.when(
-                                activity: (a) => a.id,
-                                event: (e) => e.id,
-                                header: (h) => 'header_${h.hashCode}',
-                              ),
+                        Flexible(
+                          flex: 1,
+                          fit: FlexFit.tight,
+                          child: BidirectionalList(
+                            controller: listController,
+                            scrollController: ScrollControllerContext.of(
+                              context,
                             ),
-                            children: [
-                              ...current.when(
-                                activity: (activity) => [
-                                  ActivityDetailWidget(
-                                    activity: activity,
-                                    context: null,
-                                    selected: selected,
-                                    onHover: onHover,
+                            first: state.first,
+                            count: state.agendaItems.length,
+                            reverse: true,
+                            doneStart: state.doneStart,
+                            doneEnd: state.doneEnd,
+                            fetcher: (first, count) => context
+                                .read<PriorityBloc>()
+                                .fetchMoreAgendaItems(first, count),
+                            builder: (context, index, selected) {
+                              final current = state.agendaItems[index];
+                              void onHover(bool hovered) {
+                                if (hovered) {
+                                  listController.selected = index;
+                                } else if (listController.selected == index) {
+                                  listController.selected = null;
+                                }
+                              }
+
+                              return Column(
+                                mainAxisSize: MainAxisSize.min,
+                                key: ValueKey(
+                                  current.when(
+                                    activity: (a) => a.id,
+                                    event: (e) => e.id,
+                                    header: (h) => 'header_${h.hashCode}',
+                                  ),
+                                ),
+                                children: [
+                                  ...current.when(
+                                    activity: (activity) => [
+                                      ActivityDetailWidget(
+                                        activity: activity,
+                                        context: null,
+                                        selected: selected,
+                                        onHover: onHover,
+                                      ),
+                                    ],
+                                    event: (event) => [
+                                      if (event.name?.isNotEmpty == true)
+                                        EventWidget(
+                                          event: event,
+                                          selected: selected,
+                                          onHover: onHover,
+                                        ),
+                                    ],
+                                    header: (header) => [
+                                      AgendaHeader(
+                                        event: header.event,
+                                        date: header.date,
+                                        now: header.now,
+                                        priority: header.priority,
+                                        context: state.context,
+                                        selected: selected,
+                                        onHover: onHover,
+                                      ),
+                                    ],
                                   ),
                                 ],
-                                event: (event) => [
-                                  if (event.name?.isNotEmpty == true)
-                                    EventWidget(
-                                      event: event,
-                                      selected: selected,
-                                      onHover: onHover,
-                                    ),
-                                ],
-                                header: (header) => [
-                                  AgendaHeader(
-                                    event: header.event,
-                                    date: header.date,
-                                    now: header.now,
-                                    priority: header.priority,
-                                    context: state.context,
-                                    selected: selected,
-                                    onHover: onHover,
-                                  ),
-                                ],
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                    const ActivityEditor(),
-                  ],
+                              );
+                            },
+                          ),
+                        ),
+                        Container(
+                          constraints: BoxConstraints(
+                            maxHeight: maxActivityEditorHeight,
+                          ),
+                          child: const ActivityEditor(),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

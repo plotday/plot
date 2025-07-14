@@ -136,6 +136,8 @@ class PriorityPage extends StatelessWidget {
                         builder: (context, constraints) {
                           final maxActivityListHeight =
                               constraints.maxHeight * 0.4;
+                          final maxActivityEditorHeight =
+                              constraints.maxHeight * 0.4;
                           return Column(
                             children: [
                               Container(
@@ -257,14 +259,17 @@ class PriorityPage extends StatelessWidget {
                                     }
                                     return (int newIndex) {
                                       final oldListIndex = index - state.first;
-                                      final newListIndex = newIndex - state.first;
-                                      
+                                      final newListIndex =
+                                          newIndex - state.first;
+
                                       // Update state immediately to prevent jank
-                                      context.read<PriorityBloc>().moveAgendaItem(
-                                        oldListIndex, 
-                                        newListIndex,
-                                      );
-                                      
+                                      context
+                                          .read<PriorityBloc>()
+                                          .moveAgendaItem(
+                                            oldListIndex,
+                                            newListIndex,
+                                          );
+
                                       // Then update the database asynchronously
                                       var prevIndex =
                                           newListIndex -
@@ -289,7 +294,12 @@ class PriorityPage extends StatelessWidget {
                                   },
                                 ),
                               ),
-                              const ActivityEditor(),
+                              Container(
+                                constraints: BoxConstraints(
+                                  maxHeight: maxActivityEditorHeight,
+                                ),
+                                child: ActivityEditor(),
+                              ),
                             ],
                           );
                         },

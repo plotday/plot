@@ -140,16 +140,15 @@ class EditorState extends State<Editor> {
               ),
             ],
             stylesheet: isDark ? _darkStyles : _styles,
+            selectionStyle: SelectionStyles(
+              selectionColor: context.colour.accentBackground,
+            ),
             componentBuilders: [
               if (widget.hint != null)
                 HintComponentBuilder(
-                  hint: widget.hint!,
-                  textStyle: baseTextStyle.copyWith(
-                    color: context.colour.foreground,
-                  ),
-                  hintStyle: baseTextStyle.copyWith(
-                    color: context.colour.muted,
-                  ),
+                  widget.hint!,
+                  (context) =>
+                      baseTextStyle.copyWith(color: context.colour.muted),
                 ),
               TaskComponentBuilder(_editor),
               ...defaultComponentBuilders,
@@ -266,52 +265,6 @@ final _darkStyles = _styles.copyWith(
     }),
   ],
 );
-
-class HintComponentBuilder implements ComponentBuilder {
-  const HintComponentBuilder({
-    required this.hint,
-    required this.textStyle,
-    required this.hintStyle,
-  });
-
-  final String hint;
-  final TextStyle textStyle;
-  final TextStyle hintStyle;
-
-  @override
-  SingleColumnLayoutComponentViewModel? createViewModel(
-    Document document,
-    DocumentNode node,
-  ) {
-    // This component builder can work with the standard paragraph view model.
-    // We'll defer to the standard paragraph component builder to create it.
-    return null;
-  }
-
-  @override
-  Widget? createComponent(
-    SingleColumnDocumentComponentContext componentContext,
-    SingleColumnLayoutComponentViewModel componentViewModel,
-  ) {
-    if (componentViewModel is! ParagraphComponentViewModel) {
-      return null;
-    }
-
-    final textSelection = componentViewModel.selection;
-
-    return TextWithHintComponent(
-      key: componentContext.componentKey,
-      text: componentViewModel.text,
-      textStyleBuilder: (_) => textStyle,
-      hintText: AttributedText(hint),
-      // This is the function that selects styles for the hint text.
-      hintStyleBuilder: (Set<Attribution> attributions) => hintStyle,
-      textSelection: textSelection,
-      selectionColor: componentViewModel.selectionColor,
-      underlines: componentViewModel.createUnderlines(),
-    );
-  }
-}
 
 class SubmitIntent extends Intent {
   const SubmitIntent({this.alt = false});
