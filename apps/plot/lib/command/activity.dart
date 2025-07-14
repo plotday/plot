@@ -210,18 +210,16 @@ class PickScheduleActivity extends ShowPage {
     : super(
         title: 'Schedule',
         icon: PlotIcon.scheduled,
-        builder: (context) => Dialog(
-          builder: (context) => FCalendar(
-            controller: FCalendarController.date(),
-            onPress: (date) async {
-              final commandReturn = await ScheduleActivity(
-                activity,
-                when: date.toDate(),
-              ).run(context);
-              if (!context.mounted) return;
-              Dialog.pop(context, Value(commandReturn));
-            },
-          ),
+        builder: (context) => FCalendar(
+          controller: FCalendarController.date(),
+          onPress: (date) async {
+            final commandReturn = await ScheduleActivity(
+              activity,
+              when: date.toDate(),
+            ).run(context);
+            if (!context.mounted) return;
+            Dialog.pop(context, Value(commandReturn));
+          },
         ),
       );
 }

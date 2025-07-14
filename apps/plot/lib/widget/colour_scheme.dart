@@ -56,7 +56,7 @@ class ColourSchemeData extends Equatable {
       barrier: barrier,
       background: background,
       foreground: foreground,
-      primary: accentBackground,
+      primary: accent,
       primaryForeground: foreground,
       secondary: highlight,
       secondaryForeground: foreground,
