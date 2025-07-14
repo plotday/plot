@@ -47,18 +47,24 @@ class ActivityDetailWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     bool isContext = activity == this.context;
-    bool expanded =
-        isContext || (!activity.doNow && !activity.done && !activity.pinned);
     return ListTile(
       command: !isContext ? ChangeCurrentActivity(activity) : null,
-      leadingCommand: activityPrimaryCommand(activity),
-      leadingWidth: 60,
       trailingCommands: [ShowActivityCommands(activity)],
-      body: Viewer(
-        markdown: (expanded ? activity.note : null) ?? activity.title,
-        onTap: () {
-          context.run(ChangeCurrentActivity(activity));
-        },
+      body: Column(
+        children: [
+          Text(
+            activity.createdAt.toTimeAgo(),
+            style: context.theme.typography.xs.copyWith(
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+          Viewer(
+            markdown: activity.note ?? activity.title,
+            onTap: () {
+              context.run(ChangeCurrentActivity(activity));
+            },
+          ),
+        ],
       ),
       selected: selected,
       onHover: onHover,

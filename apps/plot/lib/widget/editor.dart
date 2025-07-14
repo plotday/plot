@@ -226,6 +226,9 @@ class ViewerState extends State<Viewer> {
         stylesheet: isDark ? _darkStyles : _styles,
         selection: _selection,
         selectionLayerLinks: _selectionLayerLinks,
+        selectionStyle: SelectionStyles(
+          selectionColor: context.colour.accentBackground,
+        ),
         contentTapDelegateFactory: (context) =>
             ViewerTapHandler(context.document, onTap: widget.onTap),
       ),
@@ -308,7 +311,8 @@ ExecutionInstruction _shiftEnterToInsertBlockNewline({
   }
 
   if (!HardwareKeyboard.instance.isShiftPressed) {
-    return ExecutionInstruction.continueExecution;
+    // Ignore in SuperEditor, but allow Shortcuts to handle it.
+    return ExecutionInstruction.blocked;
   }
 
   editContext.editor.execute([
