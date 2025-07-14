@@ -107,7 +107,7 @@ class PriorityPage extends StatelessWidget {
                                 StaticCommandGroup(
                                   title: activity.displayTitle,
                                   commands: [
-                                    ChangeCurrentActivity(activity),
+                                    OpenActivity(activity),
                                     ...activityCommands(activity),
                                   ],
                                 ),
