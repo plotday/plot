@@ -18,6 +18,7 @@ class Activities extends Table
       dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get note => text().nullable()();
   TextColumn get eventSeries => text().nullable()();
+  TextColumn get title => text().nullable()();
 }
 
 class ActivitiesBase extends BaseTable {
@@ -429,7 +430,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       query.where(deleted ? a.deletedAt.isNotNull() : a.deletedAt.isNull());
     }
     if (search?.isNotEmpty == true) {
-      query.where(a.note.like('%$search%'));
+      query.where(a.title.like('%$search%') | a.note.like('%$search%'));
     }
     if (self == false) {
       if (id != null) {
@@ -617,6 +618,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     this.parentEvent,
     required super.priorityId,
     super.note,
+    super.title,
     super.draft = false,
     super.private = false,
     super.pinned = false,
@@ -647,6 +649,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
          deletedAt: row.deletedAt,
          draft: row.draft,
          note: row.note,
+         title: row.title,
          order: row.order,
          path: row.path,
          private: row.private,
@@ -659,8 +662,9 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     parent?._addChild(this);
   }
 
-  String get title =>
-      note?.split("\n").first.removeMarkdown().trim() ?? 'Untitled';
+  // Update the title getter to use the stored title or fall back to deriving from note
+  String get displayTitle =>
+      title ?? note?.split("\n").first.removeMarkdown().trim() ?? 'Untitled';
 
   static String noteToTitle(String markdown) {
     final firstLine = markdown.split("\n").first.removeMarkdown().trim();
@@ -700,6 +704,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       pinned: pinned || other.pinned,
       private: private || other.private,
       eventSeries: Value(eventSeries ?? other.eventSeries),
+      title: Value(title ?? other.title),
     );
   }
 
@@ -719,6 +724,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Value<Date?> doAt = const Value.absent(),
     Value<DateTime?> doneAt = const Value.absent(),
     Value<String?> note = const Value.absent(),
+    Value<String?> title = const Value.absent(),
     Activity? parent,
     Event? parentEvent,
     Value<String?> eventSeries = const Value.absent(),
@@ -740,6 +746,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         (pinned != null && pinned != this.pinned)) {
       order ??= Order.first();
     }
+
     return Activity.fromStore(
       super.copyWith(
         id: id,
@@ -756,6 +763,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         doAt: doAt,
         doneAt: doneAt,
         note: note,
+        title: title,
         eventSeries: eventSeries,
       ),
       parent: parent ?? this.parent,
@@ -796,8 +804,19 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
   bool get done => doneAt != null;
 
-  Future<void> save() =>
-      Store.get.save(table, toCompanion(false), ActivitiesBase());
+  Future<void> save() async {
+    await Store.get.save(table, toCompanion(false), ActivitiesBase());
+    // Generate a title on the first non-draft save
+    if (title == null && !draft) {
+      try {
+        final generatedTitle = await generateTitle();
+        log.info("Generated title: $generatedTitle");
+        await copyWith(title: Value(generatedTitle)).save();
+      } catch (e, st) {
+        log.warning("Failed to save generated title", e, st);
+      }
+    }
+  }
 
   @override
   int compareTo(Activity other) {
@@ -847,3 +866,4 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     return Object.hash(super.hashCode, children.hashCode);
   }
 }
+

@@ -12,6 +12,7 @@ CREATE TABLE "public"."activity" (
     "pinned" boolean NOT NULL DEFAULT FALSE,
     "do_at" date,
     "done_at" timestamp with time zone,
+    "title" text,
     "note" text,
     "event_series" text
 );

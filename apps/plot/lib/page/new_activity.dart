@@ -27,7 +27,7 @@ class NewActivityPage extends HookWidget {
             Text('New activity'),
             if (parent.value != null) ...[
               Text(' in '),
-              Text(parent.value!.title),
+              Text(parent.value!.displayTitle),
             ],
           ],
         ),

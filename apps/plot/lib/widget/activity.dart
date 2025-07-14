@@ -20,7 +20,7 @@ class ActivityWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       command: ChangeCurrentActivity(activity),
-      title: activity.title,
+      title: activity.displayTitle,
       leadingCommand: activityPrimaryCommand(activity),
       leadingWidth: 60,
       trailingCommands: [ShowActivityCommands(activity)],
@@ -59,7 +59,7 @@ class ActivityDetailWidget extends StatelessWidget {
             ),
           ),
           Viewer(
-            markdown: activity.note ?? activity.title,
+            markdown: activity.note ?? activity.displayTitle,
             onTap: () {
               context.run(ChangeCurrentActivity(activity));
             },

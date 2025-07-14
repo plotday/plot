@@ -105,7 +105,7 @@ class PriorityPage extends StatelessWidget {
                             ?.when(
                               activity: (activity) => [
                                 StaticCommandGroup(
-                                  title: activity.title,
+                                  title: activity.displayTitle,
                                   commands: [
                                     ChangeCurrentActivity(activity),
                                     ...activityCommands(activity),
@@ -120,7 +120,7 @@ class PriorityPage extends StatelessWidget {
                     child: Scaffold(
                       translucent: true,
                       header: Header(
-                        title: state.activity?.title,
+                        title: state.activity?.displayTitle,
                         main: state.activity == null
                             ? PrioritySelector(
                                 selected: state.context,
@@ -329,8 +329,8 @@ class PriorityPage extends StatelessWidget {
       header: (h) => h.event?.series,
     );
     log.info(
-      'Reordering ${activity.title} between '
-      '${prevActivity?.title} and ${nextActivity?.title} ($priorityId, $eventSeries)',
+      'Reordering ${activity.displayTitle} between '
+      '${prevActivity?.displayTitle} and ${nextActivity?.displayTitle} ($priorityId, $eventSeries)',
     );
     activity
         .copyWith(

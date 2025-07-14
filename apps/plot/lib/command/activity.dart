@@ -9,8 +9,8 @@ import 'package:plot/router.dart';
 abstract class ActivityCommand extends Command {
   ActivityCommand(this.activity)
     : super(
-        title: activity?.title ?? 'None',
-        subtitle: activity?.parent?.title ?? '',
+        title: activity?.displayTitle ?? 'None',
+        subtitle: activity?.parent?.displayTitle ?? '',
       );
 
   final Activity? activity;
@@ -19,10 +19,10 @@ abstract class ActivityCommand extends Command {
   Widget buildBody(BuildContext context) {
     return Row(
       children: [
-        if (activity?.parent?.title.isNotEmpty == true) ...[
+        if (activity?.parent?.displayTitle.isNotEmpty == true) ...[
           Flexible(
             child: Text(
-              activity!.parent?.title ?? '',
+              activity!.parent?.displayTitle ?? '',
               overflow: TextOverflow.ellipsis,
               style: context.theme.typography.xs.copyWith(
                 color: context.colour.muted,
@@ -38,7 +38,7 @@ abstract class ActivityCommand extends Command {
         ],
         Flexible(
           child: Text(
-            activity?.title ?? 'None',
+            activity?.displayTitle ?? 'None',
             overflow: TextOverflow.ellipsis,
             style: context.theme.typography.xs.copyWith(
               color: context.colour.foreground,
@@ -261,7 +261,7 @@ class ShowActivityCommands extends ShowCommands {
           Commands(
             groups: [
               StaticCommandGroup(
-                title: activity.title,
+                title: activity.displayTitle,
                 commands: activityCommands(activity),
               ),
             ],

@@ -212,12 +212,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   Future<void> add(Activity activity) async {
-    activity = activity.copyWith(draft: false);
-    await activity.save();
-    // Create a new draft
-    log.info('New draft');
     emit(
       state.copyWith(
+        // Create a new draft
         draft: Activity(
           priorityId: state.context.id,
           parent: state.activity,
@@ -226,6 +223,8 @@ class PriorityBloc extends Cubit<PriorityState> {
         ),
       ),
     );
+    activity = activity.copyWith(draft: false);
+    await activity.save();
   }
 
   void _loadPinnedActivities() {

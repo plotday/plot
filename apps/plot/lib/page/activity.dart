@@ -114,7 +114,7 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
         // Set the current priority in NowBloc when entering this route
         WidgetsBinding.instance.addPostFrameCallback((_) {
           log.info(
-            'Setting current priority to ${priority.title} (from activity ${activity.title})',
+            'Setting current priority to ${priority.title} (from activity ${activity.displayTitle})',
           );
           context.read<NowBloc>().setPriority(priority);
         });
@@ -164,7 +164,7 @@ class ActivityPage extends StatelessWidget {
                       ?.when(
                         activity: (activity) => [
                           StaticCommandGroup(
-                            title: activity.title,
+                            title: activity.displayTitle,
                             commands: [
                               ChangeCurrentActivity(activity),
                               ...activityCommands(activity),
@@ -179,7 +179,7 @@ class ActivityPage extends StatelessWidget {
               child: Scaffold(
                 translucent: true,
                 header: Header(
-                  title: state.activity?.title ?? state.event?.name,
+                  title: state.activity?.displayTitle ?? state.event?.name,
                   commands: [
                     if (state.activity != null)
                       ...activityCommands(state.activity!),

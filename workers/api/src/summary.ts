@@ -9,20 +9,35 @@ export async function summarize(ai: Ai, body: string) {
   if (body.length < 40) {
     return {
       // TODO remove Markdown formatting
-      title: body.replaceAll(/\s+/, " ").trim(),
+      title: body.replaceAll(/\s+/g, " ").trim(),
     };
   }
   try {
-    const response = await ai.run("@cf/facebook/bart-large-cnn", {
-      input_text: body,
-      max_length: 80,
+    const messages = [
+      {
+        role: "system",
+        content:
+          "You name items in a productivity app. Create a short title for the user-provided action or note. Respond only with the title.",
+      },
+      {
+        role: "user",
+        content: body,
+      },
+    ];
+    const response = await ai.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
+      messages,
+      max_tokens: 64,
     });
-    const json = {
-      title: response.summary
+    if (response instanceof ReadableStream) {
+      throw new Error("Response is a stream");
     }
+    const json = {
+      title: response.response,
+    };
     return json;
   } catch (e) {
-    console.error(e);
+    console.error("Error summarizing text:", e);
+
     throw e;
   }
 }
