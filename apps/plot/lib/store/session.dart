@@ -60,7 +60,7 @@ class SessionsBase extends BaseTable {
 class Session extends SessionRow {
   static TableInfo<Sessions, SessionRow> get table => Store.get.sessions;
 
-  static Future<void> push() => Store.get.push(table, SessionsBase());
+  static Future<bool> push() => Store.get.push(table, SessionsBase());
   static Future<bool> pull() =>
       Store.get.pull(PullType.updates, table, SessionsBase());
 

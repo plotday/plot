@@ -39,7 +39,7 @@ class Account extends AccountRow {
     return Account.fromStore(row);
   }
 
-  static Future<void> push() => Store.get.push(table, AccountsBase());
+  static Future<bool> push() => Store.get.push(table, AccountsBase());
   static Future<bool> pull() =>
       Store.get.pull(PullType.all, table, AccountsBase());
 

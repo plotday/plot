@@ -80,7 +80,7 @@ class EventsBase extends BaseTable {
 class Event extends EventRow {
   static TableInfo<Events, EventRow> get table => Store.get.events;
 
-  static Future<void> push() => Store.get.push(table, EventsBase());
+  static Future<bool> push() => Store.get.push(table, EventsBase());
   static Future<bool> pull() =>
       Store.get.pull(PullType.updates, table, EventsBase());
   static Future<bool> pullRange(DateRange range) => Store.get.pull(

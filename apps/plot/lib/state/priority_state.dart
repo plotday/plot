@@ -89,4 +89,9 @@ class PriorityState extends Equatable {
     range,
     showArchived,
   ];
+
+  @override
+  String toString() {
+    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, event: ${event?.name}, draft: $draft, pinned: $pinned, moreAgendaItems: $moreAgendaItems, doneStart: $doneStart, doneEnd: $doneEnd, first: $first, range: $range, showArchived: $showArchived)';
+  }
 }

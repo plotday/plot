@@ -40,7 +40,7 @@ enum ActivityOrder { sorted, nested, recent, reverse }
 class Activity extends ActivityRow implements Comparable<Activity> {
   static $ActivitiesTable get table => Store.get.activities;
 
-  static Future<void> push() => Store.get.push(table, ActivitiesBase());
+  static Future<bool> push() => Store.get.push(table, ActivitiesBase());
   static Future<bool> pull() async {
     return await Store.get.pull(PullType.all, table, ActivitiesBase());
   }

@@ -61,7 +61,7 @@ class PriorityAncestor {
 class Priority extends PriorityRow implements Comparable<Priority> {
   static $PrioritiesTable get table => Store.get.priorities;
 
-  static Future<void> push() => Store.get.push(table, PrioritiesBase());
+  static Future<bool> push() => Store.get.push(table, PrioritiesBase());
   static Future<bool> pull() async {
     return await Store.get.pull(PullType.all, table, PrioritiesBase());
   }

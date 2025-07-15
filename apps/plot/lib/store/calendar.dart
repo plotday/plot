@@ -24,7 +24,7 @@ class CalendarsBase extends BaseTable {
 class Calendar extends CalendarRow {
   static TableInfo<Calendars, CalendarRow> get table => Store.get.calendars;
 
-  static Future<void> push() => Store.get.push(table, CalendarsBase());
+  static Future<bool> push() => Store.get.push(table, CalendarsBase());
   static Future<bool> pull() =>
       Store.get.pull(PullType.all, table, CalendarsBase());
 

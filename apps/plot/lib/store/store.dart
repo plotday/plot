@@ -227,6 +227,9 @@ abstract class BaseTable {
 class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
 
+  // Track ongoing push operations per table to prevent concurrent pushes
+  static final Map<String, Completer<bool>> _pushCompleters = {};
+
   static Future<void> init(User user) async {
     driftRuntimeOptions.defaultSerializer = const CustomSerializer();
     if (Injector.appInstance.exists<Store>()) {
@@ -284,64 +287,95 @@ class Store extends _$Store {
       log.warning("Error saving ${toString()}", e, t);
       rethrow;
     }
+    // Fire and forget push
     push(table, baseTable);
   }
 
-  Future<void> push<TABLE extends SyncableTable, DATA extends DataClass>(
+  Future<bool> push<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable,
   ) async {
     final entity = baseTable.fullName;
-    final syncState = await (select(
-      syncStates,
-    )..where((row) => row.entity.equals(entity))).getSingleOrNull();
 
-    final storeQuery = select(table);
-    if (syncState?.pushedAt != null) {
-      storeQuery.where((row) {
-        return row.updatedAt.isBiggerThanValue(syncState!.pushedAt!);
-      });
+    // Check if push already in progress for this table
+    if (_pushCompleters.containsKey(entity)) {
+      // Wait for existing push to complete
+      final existingResult = await _pushCompleters[entity]!.future;
+
+      if (existingResult) {
+        // Previous push succeeded, retry this push
+        return push(table, baseTable);
+      } else {
+        // Previous push failed, return false
+        return false;
+      }
     }
-    storeQuery.orderBy([(t) => OrderingTerm(expression: t.updatedAt)]);
-    final storeRows = await storeQuery.get();
-    var success = false;
-    if (storeRows.isEmpty) {
-      success = true;
-    } else {
-      log.info("Pushing ${storeRows.length} rows to ${baseTable.table}");
-      try {
-        await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
+
+    // Start new push
+    final completer = Completer<bool>();
+    _pushCompleters[entity] = completer;
+
+    try {
+      final syncState = await (select(
+        syncStates,
+      )..where((row) => row.entity.equals(entity))).getSingleOrNull();
+
+      final storeQuery = select(table);
+      if (syncState?.pushedAt != null) {
+        storeQuery.where((row) {
+          return row.updatedAt.isBiggerThanValue(syncState!.pushedAt!);
+        });
+      }
+      storeQuery.orderBy([(t) => OrderingTerm(expression: t.updatedAt)]);
+      final storeRows = await storeQuery.get();
+      var success = false;
+      if (storeRows.isEmpty) {
         success = true;
-      } catch (e, trace) {
-        log.warning("Batch push failed", e, trace);
-        for (final row in storeRows) {
-          try {
-            await baseTable.put([baseTable.toBase(row)]);
-          } catch (e, stackTrace) {
-            log.warning(
-              "Error pushing ${row.toJsonString()} to ${baseTable.table}",
-              e,
-              stackTrace,
-            );
+      } else {
+        log.info("Pushing ${storeRows.length} rows to ${baseTable.table}");
+        try {
+          await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
+          success = true;
+        } catch (e, trace) {
+          log.warning("Batch push failed", e, trace);
+          for (final row in storeRows) {
+            try {
+              await baseTable.put([baseTable.toBase(row)]);
+            } catch (e, stackTrace) {
+              log.warning(
+                "Error pushing ${row.toJsonString()} to ${baseTable.table}",
+                e,
+                stackTrace,
+              );
+            }
           }
         }
       }
-    }
-    if (success) {
-      try {
-        final now = DateTime.now();
-        await into(syncStates).insert(
-          SyncStatesCompanion.insert(entity: entity, pushedAt: Value(now)),
-          onConflict: DoUpdate(
-            (old) => SyncStatesCompanion(
-              entity: Value(entity),
-              pushedAt: Value(now),
+      if (success) {
+        try {
+          final now = DateTime.now();
+          await into(syncStates).insert(
+            SyncStatesCompanion.insert(entity: entity, pushedAt: Value(now)),
+            onConflict: DoUpdate(
+              (old) => SyncStatesCompanion(
+                entity: Value(entity),
+                pushedAt: Value(now),
+              ),
             ),
-          ),
-        );
-      } catch (e, trace) {
-        log.warning("Updating sync state failed", e, trace);
+          );
+        } catch (e, trace) {
+          log.warning("Updating sync state failed", e, trace);
+        }
       }
+
+      completer.complete(success);
+      return success;
+    } catch (e, trace) {
+      log.warning("Push failed for ${baseTable.table}", e, trace);
+      completer.complete(false);
+      return false;
+    } finally {
+      _pushCompleters.remove(entity);
     }
   }
 
@@ -447,17 +481,29 @@ class Store extends _$Store {
   }
 
   Future<void> _syncAll() async {
-    await Account.push();
+    if (!await Account.push()) {
+      log.warning("Account push failed during _syncAll");
+    }
     await Account.pull();
-    await Calendar.push();
+    if (!await Calendar.push()) {
+      log.warning("Calendar push failed during _syncAll");
+    }
     await Calendar.pull();
-    await Priority.push();
+    if (!await Priority.push()) {
+      log.warning("Priority push failed during _syncAll");
+    }
     await Priority.pull();
-    await Event.push();
+    if (!await Event.push()) {
+      log.warning("Event push failed during _syncAll");
+    }
     await Event.pull();
-    await Activity.push();
+    if (!await Activity.push()) {
+      log.warning("Activity push failed during _syncAll");
+    }
     await Activity.pull();
-    await Session.push();
+    if (!await Session.push()) {
+      log.warning("Session push failed during _syncAll");
+    }
     await Session.pull();
     await Balance.pull();
   }
@@ -467,27 +513,39 @@ class Store extends _$Store {
     try {
       switch (table) {
         case 'account':
-          await Account.push();
+          if (!await Account.push()) {
+            log.warning("Account push failed during table sync");
+          }
           await Account.pull();
           break;
         case 'calendar':
-          await Calendar.push();
+          if (!await Calendar.push()) {
+            log.warning("Calendar push failed during table sync");
+          }
           await Calendar.pull();
           break;
         case 'priority':
-          await Priority.push();
+          if (!await Priority.push()) {
+            log.warning("Priority push failed during table sync");
+          }
           await Priority.pull();
           break;
         case 'activity':
-          await Activity.push();
+          if (!await Activity.push()) {
+            log.warning("Activity push failed during table sync");
+          }
           await Activity.pull();
           break;
         case 'event':
-          await Event.push();
+          if (!await Event.push()) {
+            log.warning("Event push failed during table sync");
+          }
           await Event.pull();
           break;
         case 'session':
-          await Session.push();
+          if (!await Session.push()) {
+            log.warning("Session push failed during table sync");
+          }
           await Session.pull();
           break;
         case 'balance':
@@ -501,36 +559,37 @@ class Store extends _$Store {
     }
   }
 
-  RealtimeChannel _createChannel() {
-    final userId = Base.userId.toString();
-    final channel = Base.client.channel('user:$userId');
+  void _subscribedToRealtime() {
+    _unsubscribeFromRealtime();
 
-    channel.onBroadcast(
-      event: 'sync',
-      callback: (message) async {
-        final payload = message['payload'];
-        final table = payload['table'] as String;
-        await _handleTableSync(table);
-      },
-    );
-    channel.subscribe((status, error) {
-      switch (status) {
-        case RealtimeSubscribeStatus.channelError:
-          log.warning("Broadcast channel error: $error");
-          _startSync();
-          break;
-        case RealtimeSubscribeStatus.timedOut:
-          log.warning("Broadcast channel timed out");
-          _startSync();
-          break;
-        case RealtimeSubscribeStatus.closed:
-          log.info("Broadcast channel closed");
-          break;
-        case RealtimeSubscribeStatus.subscribed:
-          break;
-      }
-    });
-    return channel;
+    final userId = Base.userId.toString();
+    _realtimeChannel = Base.client
+        .channel('user:$userId')
+        .onBroadcast(
+          event: 'sync',
+          callback: (message) async {
+            final payload = message['payload'];
+            final table = payload['table'] as String;
+            await _handleTableSync(table);
+          },
+        )
+        .subscribe((status, error) {
+          switch (status) {
+            case RealtimeSubscribeStatus.channelError:
+              log.warning("Broadcast channel error: $error");
+              _startSync();
+              break;
+            case RealtimeSubscribeStatus.timedOut:
+              log.warning("Broadcast channel timed out");
+              _startSync();
+              break;
+            case RealtimeSubscribeStatus.closed:
+              log.info("Broadcast channel closed");
+              break;
+            case RealtimeSubscribeStatus.subscribed:
+              break;
+          }
+        });
   }
 
   Future<bool> _hasNetworkConnectivity() async {
@@ -564,9 +623,10 @@ class Store extends _$Store {
   }
 
   Future<void> _startSync() async {
+    _unsubscribeFromRealtime();
     await _waitForNetworkConnectivity();
     await _syncAll();
-    _realtimeChannel = _createChannel();
+    _subscribedToRealtime();
   }
 
   Store._(User user)
