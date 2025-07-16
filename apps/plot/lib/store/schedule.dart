@@ -5,6 +5,7 @@ import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/util/async.dart';
 import 'store.dart';
+import 'logging.dart';
 
 class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> watch(
@@ -245,7 +246,12 @@ class ScheduledDay extends Equatable {
         Priority defaultPriority,
         List<Activity> allActivities,
         List<Event> events,
-      ) {
+      ) => (defaultPriority, allActivities, events),
+    ).transform(
+      ExpiringStreamTransformer((result) {
+        final defaultPriority = result.$1;
+        final allActivities = result.$2;
+        final events = result.$3;
         final now = DateTime.now();
         final currentEvent = events.any((event) => event.at.includes(now));
         DateTime? expiry;
@@ -283,8 +289,8 @@ class ScheduledDay extends Equatable {
           ),
           expiry: expiry,
         );
-      },
-    ).transform(ExpiringStreamTransformer((result) => result));
+      }),
+    );
   }
 
   ScheduledDay({
