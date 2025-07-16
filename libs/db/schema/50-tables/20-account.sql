@@ -7,6 +7,7 @@ CREATE TABLE "public"."account" (
     "email" text NOT NULL CHECK (is_lower ("email")),
     "credentials" jsonb,
     "contact_sync_state" jsonb,
+    "updated_by" integer NOT NULL DEFAULT 0,
     CONSTRAINT account_user_id_email_key UNIQUE (user_id, email)
 );
 
@@ -26,9 +27,9 @@ CREATE OR REPLACE FUNCTION public.notify_user_for_account ()
     AS $$
 BEGIN
     PERFORM
-        realtime.send (jsonb_build_object('table', 'account'), -- JSONB Payload
+        realtime.send (jsonb_build_object('table', 'account', 'updated_by', COALESCE(NEW.updated_by, OLD.updated_by)), -- JSONB Payload
             'sync', -- Event name
-            'user:' || OLD.user_id::text, -- Topic
+            'user:' || COALESCE(NEW.user_id, OLD.user_id)::text, -- Topic
             FALSE -- Public / Private flag
 );
     RETURN NULL;

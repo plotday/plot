@@ -25,6 +25,7 @@ CREATE TABLE "public"."event" (
     "sequence" integer NOT NULL DEFAULT 1,
     "optional" boolean NOT NULL DEFAULT FALSE,
     "invitees_hidden" boolean NOT NULL DEFAULT FALSE,
+    "updated_by" integer NOT NULL DEFAULT 0,
     CONSTRAINT event_calendar_provider_id_unique UNIQUE (calendar_id, provider_id),
     CONSTRAINT event_user_or_calendar CHECK ((user_id IS NOT NULL AND calendar_id IS NULL) OR (user_id IS NULL AND calendar_id IS NOT NULL)),
     CONSTRAINT event_provider_id_only_with_calendar CHECK ((calendar_id IS NULL AND provider_id IS NULL) OR (calendar_id IS NOT NULL AND provider_id IS NOT NULL))
@@ -46,9 +47,9 @@ CREATE OR REPLACE FUNCTION public.notify_user_for_event ()
     AS $$
 BEGIN
     PERFORM
-        realtime.send (jsonb_build_object('table', 'event'), -- JSONB Payload
+        realtime.send (jsonb_build_object('table', 'event', 'updated_by', COALESCE(NEW.updated_by, OLD.updated_by)), -- JSONB Payload
             'sync', -- Event name
-            'user:' || OLD.user_id::text, -- Topic
+            'user:' || COALESCE(NEW.user_id, OLD.user_id)::text, -- Topic
             FALSE -- Public / Private flag
 );
     RETURN NULL;

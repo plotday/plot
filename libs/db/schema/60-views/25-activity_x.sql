@@ -6,6 +6,7 @@ SELECT
     pu.user_id,
     a.created_at,
     a.updated_at,
+    a.updated_by,
     a.deleted_at,
     a.created_by,
     a.priority_id,
@@ -46,10 +47,11 @@ DECLARE
 BEGIN
     _activity_id := NEW.id;
     -- Insert or update the activity
-    INSERT INTO activity (id, deleted_at, priority_id, path, draft, private, pinned, do_at, done_at, "order", title, note, event_series)
-        VALUES (NEW.id, NEW.deleted_at, NEW.priority_id, NEW.path, NEW.draft, NEW.private, NEW.pinned, NEW.do_at, NEW.done_at, NEW.order, NEW.title, NEW.note, NEW.event_series)
+    INSERT INTO activity (id, updated_by, deleted_at, priority_id, path, draft, private, pinned, do_at, done_at, "order", title, note, event_series)
+        VALUES (NEW.id, NEW.updated_by, NEW.deleted_at, NEW.priority_id, NEW.path, NEW.draft, NEW.private, NEW.pinned, NEW.do_at, NEW.done_at, NEW.order, NEW.title, NEW.note, NEW.event_series)
     ON CONFLICT (id)
         DO UPDATE SET
+            updated_by = NEW.updated_by,
             deleted_at = NEW.deleted_at,
             priority_id = NEW.priority_id,
             path = NEW.path,

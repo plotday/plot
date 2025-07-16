@@ -17,8 +17,10 @@ class CalendarsBase extends BaseTable {
     : super(name: 'calendar', table: 'calendar_x', writeTable: 'calendar');
 
   @override
-  Insertable<CalendarRow> fromBase(Map<String, dynamic> json) =>
-      CalendarRow.fromJson(json);
+  Insertable<CalendarRow> fromBase(Map<String, dynamic> json) {
+    json.remove('created_by');
+    return CalendarRow.fromJson(json);
+  }
 }
 
 class Calendar extends CalendarRow {

@@ -19,6 +19,7 @@ CREATE TABLE "public"."calendar" (
     "name" text,
     "enabled" boolean NOT NULL DEFAULT FALSE,
     "ready" boolean NOT NULL DEFAULT FALSE,
+    "updated_by" integer NOT NULL DEFAULT 0,
     CONSTRAINT calendar_account_provider_id_unique UNIQUE (account_id, provider_id),
     CONSTRAINT calendar_priority_required_when_enabled CHECK (NOT enabled OR priority_id IS NOT NULL)
 );
@@ -52,12 +53,12 @@ CREATE OR REPLACE FUNCTION public.notify_user_for_calendar ()
     AS $$
 BEGIN
     PERFORM
-        realtime.send (jsonb_build_object('table', 'calendar'), 'sync', 'user:' || (
+        realtime.send (jsonb_build_object('table', 'calendar', 'updated_by', COALESCE(NEW.updated_by, OLD.updated_by)), 'sync', 'user:' || (
                 SELECT
                     user_id
                 FROM account
                 WHERE
-                    id = OLD.account_id)::text, FALSE);
+                    id = COALESCE(NEW.account_id, OLD.account_id))::text, FALSE);
     RETURN NULL;
 END;
 $$;

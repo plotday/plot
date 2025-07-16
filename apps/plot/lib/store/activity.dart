@@ -31,8 +31,10 @@ class ActivitiesBase extends BaseTable {
       );
 
   @override
-  Insertable<ActivityRow> fromBase(Map<String, dynamic> json) =>
-      ActivityRow.fromJson(json);
+  Insertable<ActivityRow> fromBase(Map<String, dynamic> json) {
+    json.remove('updated_by');
+    return ActivityRow.fromJson(json);
+  }
 }
 
 enum ActivityOrder { sorted, nested, recent, reverse }
@@ -866,4 +868,3 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     return Object.hash(super.hashCode, children.hashCode);
   }
 }
-

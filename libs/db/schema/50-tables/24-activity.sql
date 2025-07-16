@@ -14,7 +14,8 @@ CREATE TABLE "public"."activity" (
     "done_at" timestamp with time zone,
     "title" text,
     "note" text,
-    "event_series" text
+    "event_series" text,
+    "updated_by" integer NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_activity_priority_id ON "public"."activity" ("priority_id");
@@ -44,9 +45,9 @@ CREATE OR REPLACE FUNCTION public.notify_user_for_activity ()
     AS $$
 BEGIN
     PERFORM
-        realtime.send (jsonb_build_object('table', 'activity'), -- JSONB Payload
+        realtime.send (jsonb_build_object('table', 'activity', 'updated_by', COALESCE(NEW.updated_by, OLD.updated_by)), -- JSONB Payload
             'sync', -- Event name
-            'user:' || OLD.created_by::text, -- Topic
+            'user:' || COALESCE(NEW.created_by, OLD.created_by)::text, -- Topic
             FALSE -- Public / Private flag
 );
     RETURN NULL;

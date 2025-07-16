@@ -19,7 +19,8 @@ CREATE TABLE "public"."session" (
     "at" tstzrange NOT NULL CHECK (is_finite (at)),
     "precedence" smallint NOT NULL DEFAULT 0,
     "pomodoro" smallint CHECK (pomodoro IS NULL OR pomodoro > 0),
-    "pomodoro_at" timestamp with time zone
+    "pomodoro_at" timestamp with time zone,
+    "updated_by" integer NOT NULL DEFAULT 0
 );
 
 ALTER TABLE "public"."session" ENABLE ROW LEVEL SECURITY;
@@ -38,9 +39,9 @@ CREATE OR REPLACE FUNCTION public.notify_user_for_session ()
     AS $$
 BEGIN
     PERFORM
-        realtime.send (jsonb_build_object('table', 'session'), -- JSONB Payload
+        realtime.send (jsonb_build_object('table', 'session', 'updated_by', COALESCE(NEW.updated_by, OLD.updated_by)), -- JSONB Payload
             'sync', -- Event name
-            'user:' || OLD.user_id::text, -- Topic
+            'user:' || COALESCE(NEW.user_id, OLD.user_id)::text, -- Topic
             FALSE -- Public / Private flag
 );
     RETURN NULL;

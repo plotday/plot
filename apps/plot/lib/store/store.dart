@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'dart:convert';
 import 'package:drift/drift.dart';
@@ -9,6 +10,7 @@ import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:remove_markdown/remove_markdown.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:b/b.dart';
 
 import 'package:plot/util/uuid.dart';
@@ -109,8 +111,13 @@ abstract class BaseTable {
   final int? limit;
   final bool upsertAsUpdate;
 
+  Map<String, dynamic> toBase(DataClass row) {
+    final json = row.toJson();
+    json['updated_by'] = Store.clientId;
+    return json;
+  }
+
   Insertable<DataClass> fromBase(Map<String, dynamic> json);
-  Map<String, dynamic> toBase(DataClass row) => row.toJson();
 
   Future<
     (
@@ -230,8 +237,41 @@ class Store extends _$Store {
   // Track ongoing push operations per table to prevent concurrent pushes
   static final Map<String, Completer<bool>> _pushCompleters = {};
 
+  // Client ID for tracking updates to prevent sync loops
+  static int? _clientId;
+  static int get clientId {
+    _clientId ??= 0; // Fallback if not loaded yet
+    return _clientId!;
+  }
+
+  static int _generateClientId() {
+    // Generate random 32-bit integer
+    final Random random = Random();
+    return random.nextInt(2147483647); // Max int value
+  }
+
+  static Future<void> _loadClientId() async {
+    final prefs = await SharedPreferences.getInstance();
+    _clientId = prefs.getInt('client_id');
+    if (_clientId == null) {
+      _clientId = _generateClientId();
+      await prefs.setInt('client_id', _clientId!);
+      log.info("Generated new client ID: $_clientId");
+    } else {
+      log.info("Loaded client ID: $_clientId");
+    }
+  }
+
+  static Future<void> _regenerateClientId() async {
+    _clientId = _generateClientId();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('client_id', _clientId!);
+    log.info("Regenerated client ID: $_clientId");
+  }
+
   static Future<void> init(User user) async {
     driftRuntimeOptions.defaultSerializer = const CustomSerializer();
+    await _loadClientId();
     if (Injector.appInstance.exists<Store>()) {
       await get.close();
     }
@@ -570,6 +610,16 @@ class Store extends _$Store {
           callback: (message) async {
             final payload = message['payload'];
             final table = payload['table'] as String;
+            final updatedBy = payload['updated_by'] as int?;
+
+            // Ignore updates from this client to prevent sync loops
+            if (updatedBy != null && updatedBy == clientId) {
+              log.info(
+                "Ignoring own update for table $table (client $updatedBy)",
+              );
+              return;
+            }
+
             await _handleTableSync(table);
           },
         )
@@ -646,7 +696,14 @@ class Store extends _$Store {
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
+      onCreate: (Migrator m) async {
+        // Regenerate client ID on database creation to ensure clean sync state
+        await _regenerateClientId();
+        await m.createAll();
+      },
       onUpgrade: (Migrator m, int from, int to) async {
+        // Regenerate client ID on database upgrade to avoid issues with old sync state
+        await _regenerateClientId();
         for (final entity in allSchemaEntities) {
           try {
             await m.drop(entity);

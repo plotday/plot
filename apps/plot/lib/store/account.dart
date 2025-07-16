@@ -21,6 +21,7 @@ class AccountsBase extends BaseTable {
 
   @override
   Insertable<AccountRow> fromBase(Map<String, dynamic> json) {
+    json.remove('updated_by');
     json['provider'] = json['credentials']['provider'];
     return AccountRow.fromJson(json);
   }

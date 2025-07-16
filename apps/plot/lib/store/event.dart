@@ -64,6 +64,7 @@ class EventsBase extends BaseTable {
 
   @override
   EventRow fromBase(Map<String, dynamic> json) {
+    json.remove('updated_by');
     final range = DateTimeRange.fromString(json['at'] as String);
     json['start'] = range.start.toDb();
     json['end'] = range.end.toDb();

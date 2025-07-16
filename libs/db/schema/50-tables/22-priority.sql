@@ -8,7 +8,8 @@ CREATE TABLE "public"."priority" (
     "deleted_at" timestamp with time zone,
     "title" text NOT NULL,
     "path" ltree NOT NULL UNIQUE,
-    "order" double precision NOT NULL DEFAULT public.order_first ()
+    "order" double precision NOT NULL DEFAULT public.order_first (),
+    "updated_by" integer NOT NULL DEFAULT 0
 );
 
 CREATE UNIQUE INDEX idx_priority_created_by_root_true ON "public"."priority" ("created_by")
@@ -97,9 +98,9 @@ CREATE OR REPLACE FUNCTION public.notify_user_for_priority ()
     AS $$
 BEGIN
     PERFORM
-        realtime.send (jsonb_build_object('table', 'priority'), -- JSONB Payload
+        realtime.send (jsonb_build_object('table', 'priority', 'updated_by', COALESCE(NEW.updated_by, OLD.updated_by)), -- JSONB Payload
             'sync', -- Event name
-            'user:' || OLD.created_by::text, -- Topic
+            'user:' || COALESCE(NEW.created_by, OLD.created_by)::text, -- Topic
             FALSE -- Public / Private flag
 );
     RETURN NULL;

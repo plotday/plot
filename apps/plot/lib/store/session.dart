@@ -14,11 +14,10 @@ enum SessionPriority implements Comparable<SessionPriority> {
 @DataClassName('SessionRow')
 class Sessions extends Table
     with SyncableTable, CreatedTable, UuidTable, DeletableTable {
-  BlobColumn get priorityId =>
-      blob()
-          .nullable()
-          .map(const UuidConverter())
-          .references(Priorities, #id)();
+  BlobColumn get priorityId => blob()
+      .nullable()
+      .map(const UuidConverter())
+      .references(Priorities, #id)();
 
   DateTimeColumn get start => dateTime().map(const LocalDateTimeConverter())();
   DateTimeColumn get end => dateTime().map(const LocalDateTimeConverter())();
@@ -50,6 +49,7 @@ class SessionsBase extends BaseTable {
 
   @override
   SessionRow fromBase(Map<String, dynamic> json) {
+    json.remove('updated_by');
     final range = DateTimeRange.fromString(json['at'] as String);
     json['start'] = range.start.toDb();
     json['end'] = range.end.toDb();
@@ -143,17 +143,16 @@ class Session extends SessionRow {
         ),
       ]);
       sessionStream = joinedQuery.watch().map(
-        (rows) =>
-            rows
-                .map(
-                  (row) => Session.fromStore(
-                    row.readTable(Store.get.sessions),
-                    priority: Priority.fromStore(
-                      row.readTable(Store.get.priorities),
-                    ),
-                  ),
-                )
-                .toList(),
+        (rows) => rows
+            .map(
+              (row) => Session.fromStore(
+                row.readTable(Store.get.sessions),
+                priority: Priority.fromStore(
+                  row.readTable(Store.get.priorities),
+                ),
+              ),
+            )
+            .toList(),
       );
     } else {
       sessionStream = query.watch().map(
@@ -165,19 +164,18 @@ class Session extends SessionRow {
       return sessionStream.transform(
         ExpiringStreamTransformer((sessions) {
           final now = DateTime.now();
-          final expiry =
-              sessions.isEmpty || sessions.first.at.end.isBefore(now)
-                  ? null
-                  : (now +
-                          Duration(
-                            seconds:
-                                sessions.first.at.start.second +
-                                (now.second < sessions.first.at.start.second
-                                    ? 0
-                                    : 60) -
-                                now.second,
-                          ))
-                      .max(sessions.first.at.end);
+          final expiry = sessions.isEmpty || sessions.first.at.end.isBefore(now)
+              ? null
+              : (now +
+                        Duration(
+                          seconds:
+                              sessions.first.at.start.second +
+                              (now.second < sessions.first.at.start.second
+                                  ? 0
+                                  : 60) -
+                              now.second,
+                        ))
+                    .max(sessions.first.at.end);
           return ExpiringResult(value: sessions, expiry: expiry);
         }),
       );

@@ -32,8 +32,10 @@ class PrioritiesBase extends BaseTable {
       );
 
   @override
-  Insertable<PriorityRow> fromBase(Map<String, dynamic> json) =>
-      PriorityRow.fromJson(json);
+  Insertable<PriorityRow> fromBase(Map<String, dynamic> json) {
+    json.remove('updated_by');
+    return PriorityRow.fromJson(json);
+  }
 }
 
 enum PriorityOrder { sorted, nested, recent }
