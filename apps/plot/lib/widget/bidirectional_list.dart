@@ -232,7 +232,7 @@ class BidirectionalListState extends State<BidirectionalList> {
               .floor(),
     );
     var last =
-        max(((_scrollController.offset +
+        ((_scrollController.offset +
                     _scrollController.position.viewportDimension) /
                 averageItemExtent)
             .floor();
