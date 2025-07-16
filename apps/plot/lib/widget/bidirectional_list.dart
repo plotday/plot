@@ -223,9 +223,16 @@ class BidirectionalListState extends State<BidirectionalList> {
         max(-widget.first, 0) + max(widget.first + widget.count, 0);
     final averageItemExtent =
         _scrollController.position.extentTotal / totalItems;
-    var first = (_scrollController.offset / averageItemExtent).floor();
+    var first = min(
+      (_scrollController.offset / averageItemExtent).floor(),
+      widget.first +
+          ((_scrollController.position.pixels -
+                      _scrollController.position.minScrollExtent) /
+                  averageItemExtent)
+              .floor(),
+    );
     var last =
-        ((_scrollController.offset +
+        max(((_scrollController.offset +
                     _scrollController.position.viewportDimension) /
                 averageItemExtent)
             .floor();
@@ -328,12 +335,12 @@ class BidirectionalListState extends State<BidirectionalList> {
     setState(() {
       _fetching = false;
       _setCounts();
-      widget.controller.clamp(widget.first, widget.first + widget.count - 1);
       if (oldWidget.first != widget.first) {
         log.info('First moved ${oldWidget.first} to ${widget.first}');
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.controller.clamp(widget.first, widget.first + widget.count - 1);
       _loadIfNecessary();
     });
   }
