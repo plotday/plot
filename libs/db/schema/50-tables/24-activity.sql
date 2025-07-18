@@ -58,4 +58,8 @@ CREATE TRIGGER handle_activity_changes
     AFTER INSERT OR UPDATE ON public.activity
     FOR EACH ROW
     EXECUTE FUNCTION notify_user_for_activity ();
-
+    
+CREATE TRIGGER activity_change_api_call
+    AFTER INSERT ON public.activity
+    FOR EACH ROW
+    EXECUTE FUNCTION public.notify_internal_api_for_activity ();

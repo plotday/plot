@@ -8,17 +8,19 @@ import { create as createActivity } from "./activity";
 export class Priority extends RpcTarget implements IPriority {
   private supabase: SupabaseClient;
   private priorityId: string;
+  private id: string;
 
-  constructor(supabase: SupabaseClient, priorityId: string) {
+  constructor(supabase: SupabaseClient, priorityId: string, id: string) {
     super();
     this.supabase = supabase;
     this.priorityId = priorityId;
+    this.id = id;
   }
 
   async createActivity(activity: NewActivity) {
     // Convert NewActivity to database format
     const dbActivity: Database["public"]["Tables"]["activity"]["Insert"] = {
-      created_by: "7a047099-052d-4e01-aad5-5adc25a83507", // TODO: Replace with priority_agent.id
+      created_by: this.id,
       priority_id: this.priorityId,
       do_at: activity.doOn || null,
       done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
@@ -40,7 +42,6 @@ export class Priority extends RpcTarget implements IPriority {
           `Parent activity not found: ${parentResult.error.message}`
         );
       }
-
       // Generate child path using database function
       const pathResult = await this.supabase.rpc("generate_path", {
         parent: parentResult.data.path,

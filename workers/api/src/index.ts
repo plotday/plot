@@ -1,3 +1,5 @@
+import * as Sentry from "@sentry/cloudflare";
+
 import type { User } from "@supabase/supabase-js";
 
 import { withSentry } from "@sentry/cloudflare";
@@ -9,6 +11,8 @@ import type { SupabaseClient } from "@plotday/db";
 import { createClient } from "@plotday/db";
 import type { SyncRequest } from "@plotday/sync";
 
+import type { Activity } from "@plotday/agents/src/priority";
+
 import { 
   create as createActivity, 
   update as updateActivity 
@@ -18,7 +22,7 @@ import {
   respond as respondEvent,
   update as updateEvent,
 } from "./event";
-import type { Priority } from "./priority";
+import { Priority } from "./priority";
 import { summarize } from "./summary";
 import { addAccount, syncCalendar } from "./sync";
 import { 
@@ -31,7 +35,9 @@ import {
 } from "./agent";
 
 export abstract class AgentRunner extends WorkerEntrypoint {
-  abstract activate(agentId: string, priority: Priority): Promise<void>;
+  abstract activate(agentId: string, priority: Priority, config: any): Promise<void>;
+
+  abstract activity(agentId: string, activity: Activity, config: any, priority: Priority): Promise<void>;
 }
 
 export type Bindings = {
@@ -75,6 +81,11 @@ app.use(
   })
 );
 app.use("*", async (c, next) => {
+  if (new URL(c.req.url).pathname.startsWith("/_/")) {
+    const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+    c.set("supabase", supabase);
+    return await next();
+  }
   if (c.req.method === "OPTIONS") {
     return await next();
   }
@@ -252,7 +263,8 @@ app.post("/agent", async (c) => {
   const config = (body as any)?.config;
   try {
     const dbPriorityAgent = await addAgent(c.var.supabase, priorityId, agentId, name, config);
-  await c.env.AGENT_RUNNER.activate(agentId, priorityId);
+    const priority = new Priority(c.var.supabase, priorityId, dbPriorityAgent.id);
+    await c.env.AGENT_RUNNER.activate(agentId, priority, config);
     return c.json(dbPriorityAgent.id);
   } catch (error) {
     if (error instanceof Error) {
@@ -279,6 +291,32 @@ app.patch("/agent/:id", async (c) => {
 app.delete("/agent/:id", async (c) => {
   const agentId = c.req.param("id");
   await deleteAgent(c.var.supabase, agentId);
+  return c.json({ success: true });
+});
+
+app.post("/_/update", async (c) => {
+  const body = await c.req.json();
+  const activity = (body as any)?.item;
+  const agents = (body as any)?.agents;
+  if (!agents || !Array.isArray(agents)) {
+    return new Response("Bad request (missing or invalid agents)", { status: 400 });
+  }
+  for (const agent of agents) {
+    Sentry.withScope((scope) => {
+      scope.setExtra("agent-public-id", agent.public_id);
+      Sentry.captureMessage(agent.public_id, "error");
+    });
+    try {
+      const priority = new Priority(c.var.supabase, activity.priority_id, agent.priority_agent_id);
+      await c.env.AGENT_RUNNER.activity(agent.public_id, activity, priority, agent.config);
+    } 
+    catch (error) {
+      if (error instanceof Error) {
+        return new Response(`Error processing activity for agent ${agent.public_id}: ${error.message}`, { status: 400 });
+      }
+      throw error;
+    }
+  }
   return c.json({ success: true });
 });
 

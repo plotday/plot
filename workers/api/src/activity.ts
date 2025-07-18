@@ -13,9 +13,6 @@ export async function create(
     return new Response("Bad request (missing activity)", { status: 400 });
   }
 
-  const user = (await supabase.auth.getSession())?.data.session?.user;
-  if (!user) throw new Response("Unauthorized", { status: 401 });
-  activity.created_by = user.id;
 
   return safeQuery(
     await supabase.from("activity").insert(activity).select().single()

@@ -131,6 +131,13 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["priority_id"]
           },
@@ -163,6 +170,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      agent: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          public_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          public_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          public_id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       calendar: {
         Row: {
@@ -239,6 +273,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "account"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
           },
           {
             foreignKeyName: "calendar_priority_id_fkey"
@@ -556,6 +597,89 @@ export type Database = {
         }
         Relationships: []
       }
+      priority_agent: {
+        Row: {
+          agent_id: string
+          config: Json
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          priority_id: string
+          updated_at: string
+        }
+        Insert: {
+          agent_id: string
+          config?: Json
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          priority_id: string
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string
+          config?: Json
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          priority_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_agent_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agent"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       priority_settings: {
         Row: {
           color: number | null
@@ -579,6 +703,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "priority_settings_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
+          },
           {
             foreignKeyName: "priority_settings_priority_id_fkey"
             columns: ["priority_id"]
@@ -645,6 +776,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "priority_user_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
+          },
           {
             foreignKeyName: "priority_user_priority_id_fkey"
             columns: ["priority_id"]
@@ -757,6 +895,13 @@ export type Database = {
             foreignKeyName: "series_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "series_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["priority_id"]
           },
@@ -832,6 +977,13 @@ export type Database = {
             foreignKeyName: "session_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "session_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["priority_id"]
           },
@@ -888,6 +1040,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "tag_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
+          },
           {
             foreignKeyName: "tag_priority_id_fkey"
             columns: ["priority_id"]
@@ -960,6 +1119,13 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["priority_id"]
           },
@@ -986,6 +1152,71 @@ export type Database = {
           },
           {
             foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_x: {
+        Row: {
+          agent_id: string | null
+          config: Json | null
+          created_at: string | null
+          deleted_at: string | null
+          id: string | null
+          name: string | null
+          priority_child_id: string | null
+          priority_id: string | null
+          public_id: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_agent_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agent"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "event_x"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_x"
@@ -1048,6 +1279,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "account"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
           },
           {
             foreignKeyName: "calendar_priority_id_fkey"
@@ -1242,6 +1480,13 @@ export type Database = {
             foreignKeyName: "tag_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "agent_x"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "tag_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["priority_id"]
           },
@@ -1307,6 +1552,10 @@ export type Database = {
           updated_at: string
           user_id: string
         }[]
+      }
+      agent_uuid: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
       all_views_secure: {
         Args: Record<PropertyKey, never>
@@ -1423,6 +1672,10 @@ export type Database = {
       generate_path: {
         Args: { parent?: unknown }
         Returns: unknown
+      }
+      get_api_root: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
       get_domain: {
         Args: { email: string }

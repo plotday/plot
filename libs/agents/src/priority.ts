@@ -3,6 +3,7 @@ export type Activity = {
   doOn?: string; // date string (e.g. '2025-07-10')
   doneAt?: Date;
   note?: string;
+  title?: string;
   parentId?: string;
   pinned: boolean;
 };

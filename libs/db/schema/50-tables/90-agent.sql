@@ -1,5 +1,6 @@
 CREATE TABLE "public"."agent" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
+    "public_id" TEXT NOT NULL,
     "name" text NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
