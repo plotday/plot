@@ -6,7 +6,7 @@
   "version": "0.0.1",
   "private": true,
   "config": {
-    "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY"
+    "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN"
   },
   "scripts": {
     "env": "../../scripts/gen-env development $npm_package_config_deploy_vars > .dev.vars",
