@@ -27,6 +27,7 @@ SELECT
     GREATEST (settings.updated_at, pu.updated_at, p.updated_at) AS updated_at,
     GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
     p.created_by,
+    p.updated_by,
     root.root
     AND p.id = root.id AS root,
     p.title,
@@ -67,15 +68,16 @@ DECLARE
     _priority_id uuid;
 BEGIN
     _priority_id := NEW.id;
-    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.order IS DISTINCT FROM OLD.order) THEN
-        INSERT INTO priority (id, deleted_at, title, path, "order")
-            VALUES (NEW.id, NEW.deleted_at, NEW.title, NEW.path, NEW.order)
+    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.order IS DISTINCT FROM OLD.order OR NEW.updated_by IS DISTINCT FROM OLD.updated_by) THEN
+        INSERT INTO priority (id, deleted_at, title, path, "order", updated_by)
+            VALUES (NEW.id, NEW.deleted_at, NEW.title, NEW.path, NEW.order, NEW.updated_by)
         ON CONFLICT (id)
             DO UPDATE SET
                 deleted_at = NEW.deleted_at,
                 title = NEW.title,
                 path = NEW.path,
-                "order" = NEW.order
+                "order" = NEW.order,
+                updated_by = NEW.updated_by
             RETURNING
                 id INTO _priority_id;
     END IF;

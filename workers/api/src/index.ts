@@ -320,6 +320,28 @@ app.post("/_/update", async (c) => {
   return c.json({ success: true });
 });
 
+app.post("/_/activate", async (c) => {
+  const body = await c.req.json();
+  const agentId = (body as any)?.public_id;
+  const priorityAgentId = (body as any)?.priority_agent_id;
+  const priorityId = (body as any)?.priority_id;
+  if (!agentId || !priorityId) {
+    return new Response("Bad request (missing agentId or priorityId)", { status: 400 });
+  }
+  const config = (body as any)?.config || {};
+  try {
+    const priority = new Priority(c.var.supabase, priorityId, priorityAgentId);
+    await c.env.AGENT_RUNNER.activate(agentId, priority, config);
+    return c.json({ success: true });
+  }
+  catch (error) {
+    if (error instanceof Error) {
+      return new Response(`Error activating agent ${agentId}: ${error.message}`, { status: 400 });
+    }
+    throw error;
+  }
+});
+
 export default withSentry(
   (env) => ({
     dsn: (env as Bindings).SENTRY_DSN,

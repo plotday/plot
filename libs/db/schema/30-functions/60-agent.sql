@@ -4,7 +4,7 @@ CREATE OR REPLACE FUNCTION agent_uuid()
         random_bytes bytea;
         uuid_text text;
     BEGIN
-        SELECT encode(gen_random_bytes(12), 'hex') INTO uuid_text;
+        SELECT encode(extensions.gen_random_bytes(12), 'hex') INTO uuid_text;
         RETURN (
             uuid('ab07ab07' || '-' ||
             substring(uuid_text FROM 1 FOR 4) || '-' ||

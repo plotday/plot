@@ -39,7 +39,7 @@ BEGIN
         END,
         'agents', (
             SELECT jsonb_agg(
-                jsonb_build_object('public_id', public_id, 'id', id, 'config', config)
+                jsonb_build_object('public_id', public_id, 'priority_agent_id', id, 'config', config)
                 ) AS agents_jsonb
             FROM agent_x
             WHERE priority_child_id = COALESCE(NEW.priority_id, OLD.priority_id)

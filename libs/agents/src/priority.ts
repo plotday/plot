@@ -9,8 +9,14 @@ export type Activity = {
 };
 
 export type NewActivity = Omit<Activity, "id" | "pinned"> &
-  Partial<Pick<Activity, "pinned">>;
+  Partial<Pick<Activity, "pinned">> & {priorityId?: string;};
+
+export type NewPriority = {
+  title: string;
+  parentId?: string;
+}
 
 export interface Priority {
   createActivity(activity: NewActivity): Promise<any>;
+  createPriority(priority: NewPriority): Promise<any>;
 }
