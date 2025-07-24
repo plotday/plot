@@ -7,22 +7,23 @@ import 'package:plot/command/command.dart';
 class ActivityWidget extends StatelessWidget {
   const ActivityWidget({
     required this.activity,
+    this.context,
     this.selected = false,
     this.onHover,
     super.key,
   });
 
   final Activity activity;
+  final Priority? context;
   final bool selected;
   final void Function(bool hovered)? onHover;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext _) {
     return ListTile(
       command: ChangeCurrentActivity(activity),
       title: activity.displayTitle,
       leadingCommand: activityPrimaryCommand(activity),
-      leadingWidth: 60,
       trailingCommands: [ShowActivityCommands(activity)],
       selected: selected,
       onHover: onHover,
@@ -52,12 +53,6 @@ class ActivityDetailWidget extends StatelessWidget {
       trailingCommands: [ShowActivityCommands(activity)],
       body: Column(
         children: [
-          Text(
-            activity.createdAt.toTimeAgo(),
-            style: context.theme.typography.xs.copyWith(
-              color: context.theme.colors.mutedForeground,
-            ),
-          ),
           Viewer(
             markdown: activity.note ?? activity.displayTitle,
             onTap: () {

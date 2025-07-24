@@ -4,102 +4,58 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
-class AgendaHeader extends StatelessWidget {
-  const AgendaHeader({
-    this.priority,
-    this.context,
-    this.event,
+class DayHeader extends StatelessWidget {
+  const DayHeader({
     this.date,
     this.now = false,
     this.selected = false,
-    this.onHover,
     super.key,
   });
 
-  final Event? event;
   final Date? date;
   final bool now;
-  final Priority? priority;
-  final Priority? context;
-
   final bool selected;
-  final void Function(bool hovered)? onHover;
 
   @override
   Widget build(BuildContext context) {
-    // Handle date header case
-    if (date != null && event == null) {
-      return ListTile(
-        leading: Text(
-          date!.format(format: 'EEE'),
-          textAlign: TextAlign.end,
-          style: TextStyle(fontSize: context.theme.typography.xs.fontSize),
-        ),
-        leadingPadding: true,
-        body: Text(
-          date!.format(format: 'MMM d, yyyy'),
-          textAlign: TextAlign.start,
+    return ListTile(
+      body: Align(
+        alignment: Alignment.center,
+        child: Text(
+          date!.format(format: 'EEEE, MMMM d, yyyy'),
+          textAlign: TextAlign.center,
           style: TextStyle(
             color: context.theme.colors.mutedForeground,
             fontSize: context.theme.typography.xs.fontSize,
           ),
         ),
-        leadingWidth: 60,
-        selected: selected,
-        onHover: onHover,
-      );
-    }
+      ),
+      selected: selected,
+    );
+  }
+}
 
+class AgendaHeader extends StatelessWidget {
+  const AgendaHeader({
+    this.priority,
+    this.context,
+    this.event,
+    this.now = false,
+    this.selected = false,
+    super.key,
+  });
+
+  final Event? event;
+  final bool now;
+  final Priority? priority;
+  final Priority? context;
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
     // Compute priority ancestry from the priority or event
     final currentPriority = priority ?? event?.priority;
-
-    // Handle special case where priorityContext equals priority (display "Other")
-    final currentPriorityId = currentPriority?.id;
-    final priorityContextId = this.context?.id;
-    if (currentPriorityId != null &&
-        priorityContextId != null &&
-        currentPriorityId == priorityContextId) {
-      return ListTile(
-        leading: event == null
-            ? SizedBox()
-            : Text(
-                event!.start.toTimeOfDay().isMidnight
-                    ? ''
-                    : event!.start.toTimeOfDay().format(context),
-                textAlign: TextAlign.end,
-                style: TextStyle(
-                  color: context.theme.colors.mutedForeground,
-                  fontSize: context.theme.typography.xs.fontSize,
-                ),
-              ),
-        leadingWidth: 60.0,
-        leadingPadding: true,
-        selected: selected,
-        onHover: onHover,
-        body: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          spacing: 8.0,
-          children: [
-            Expanded(
-              child: Text(
-                'Other',
-                style: context.theme.typography.xs.copyWith(
-                  color: context.theme.colors.mutedForeground,
-                ),
-              ),
-            ),
-            if (event != null && event!.duration.inSeconds > 0)
-              Text(
-                event!.duration.format(),
-                style: TextStyle(
-                  color: context.theme.colors.mutedForeground,
-                  fontSize: context.theme.typography.xs.fontSize,
-                ),
-              ),
-          ],
-        ),
-      );
-    }
 
     // Compute ancestry relative to priorityContext
     final priorityAncestry = currentPriority?.ancestors(
@@ -107,75 +63,74 @@ class AgendaHeader extends StatelessWidget {
       includeSelf: true,
     );
 
-    // Handle event header case
     return ListTile(
-      // icon: PlotIcon.event,
-      leading: event == null
-          ? SizedBox()
-          : Text(
-              event!.start.toTimeOfDay().isMidnight
-                  ? ''
-                  : event!.start.toTimeOfDay().format(context),
-              textAlign: TextAlign.end,
-              style: TextStyle(
-                color: context.theme.colors.mutedForeground,
-                fontSize: context.theme.typography.xs.fontSize,
-              ),
-            ),
-      leadingWidth: 60.0,
-      leadingPadding: true,
-      command: priorityAncestry?.isNotEmpty == true
+      leading: SizedBox(),
+      command: event?.draft == false
+          ? ChangeCurrentEvent(event!)
+          : priorityAncestry?.isNotEmpty == true
           ? OpenPriority.byId(priorityAncestry!.last.id)
           : null,
       selected: selected,
-      onHover: onHover,
-      body: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         spacing: 8.0,
         children: [
-          Expanded(child: PriorityLabel(ancestors: priorityAncestry)),
-          if (event != null && event!.duration.inSeconds > 0)
-            Text(
-              event!.duration.format(),
-              style: TextStyle(
-                color: context.theme.colors.mutedForeground,
-                fontSize: context.theme.typography.xs.fontSize,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            spacing: 8.0,
+            children: [
+              if (event != null) ...[
+                Text(
+                  event!.start.toTimeOfDay().isMidnight
+                      ? ''
+                      : event!.start.toTimeOfDay().format(context),
+                  textAlign: TextAlign.end,
+                  style: TextStyle(
+                    color: context.theme.colors.mutedForeground,
+                    fontSize: context.theme.typography.xs.fontSize,
+                  ),
+                ),
+                if (event!.duration.inSeconds > 0 &&
+                    !(event!.draft &&
+                        event!.end == event!.start.startOfDay.addDays(1)))
+                  Text(
+                    event!.duration.format(),
+                    style: TextStyle(
+                      color: context.theme.colors.mutedForeground,
+                      fontSize: context.theme.typography.xs.fontSize,
+                    ),
+                  ),
+              ],
+              Expanded(
+                child: currentPriority?.id == this.context?.id
+                    ? Text(
+                        'Other',
+                        style: DefaultTextStyle.of(context).style.copyWith(
+                          color: context.theme.colors.mutedForeground,
+                          fontSize: context.theme.typography.xs.fontSize,
+                        ),
+                      )
+                    : PriorityLabel(ancestors: priorityAncestry),
               ),
+            ],
+          ),
+          if (event?.name != null)
+            Row(
+              spacing: 4.0,
+              children: [
+                Icon(PlotIcon.event, size: 12, color: context.colour.muted),
+                Text(
+                  event!.name ?? 'Untitled Event',
+                  textAlign: TextAlign.start,
+                  style: DefaultTextStyle.of(context).style.copyWith(
+                    color: context.theme.colors.foreground,
+                    fontSize: context.theme.typography.xs.fontSize,
+                  ),
+                ),
+              ],
             ),
         ],
       ),
-    );
-  }
-}
-
-class EventWidget extends StatelessWidget {
-  const EventWidget({
-    required this.event,
-    this.context,
-    this.selected = false,
-    this.onHover,
-    super.key,
-  });
-
-  final Event event;
-
-  /// Display priority relative to this priority.
-  final Priority? context;
-
-  final bool selected;
-  final void Function(bool hovered)? onHover;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      icon: PlotIcon.event,
-      leadingWidth: 60.0,
-      leadingPadding: true,
-      command: ChangeCurrentEvent(event),
-      trailingCommands: [PickEventPriority(event), PickEventResponse(event)],
-      selected: selected,
-      onHover: onHover,
-      title: event.name ?? 'Untitled Event',
     );
   }
 }

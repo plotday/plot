@@ -16,8 +16,8 @@ final class NowLoadedState extends NowState {
     required this.defaultPriority,
     required ScheduledDay day,
     this.session,
-  })  : now = DateTime.now(),
-        _day = day;
+  }) : now = DateTime.now(),
+       _day = day;
 
   final DateTime now;
   final Session? session;
@@ -72,15 +72,19 @@ final class NowLoadedState extends NowState {
   Event get current =>
       scheduled.firstOrNull ??
       Event(
-        at: DateTimeRange(previous.firstOrNull?.at.end ?? now.round(),
-            next.firstOrNull?.at.start ?? now.round(down: false)),
+        at: DateTimeRange(
+          previous.firstOrNull?.at.end ?? now.round(),
+          next.firstOrNull?.at.start ?? now.round(down: false),
+        ),
         priority: priority,
       );
 
   DateTimeRange? get pomodoro {
     if (session?.pomodoro == null || session?.pomodoroAt == null) return null;
     return DateTimeRange(
-        session!.pomodoroAt!, session!.pomodoroAt!.add(session!.pomodoro!));
+      session!.pomodoroAt!,
+      session!.pomodoroAt!.add(session!.pomodoro!),
+    );
   }
 
   // TODO change to range
@@ -111,8 +115,8 @@ final class NowLoadedState extends NowState {
   Duration? get duration => finite ? end!.difference(start!) : null;
   double? get progress => finite
       ? now.isBefore(end!)
-          ? elapsed!.inSeconds / duration!.inSeconds
-          : 1
+            ? elapsed!.inSeconds / duration!.inSeconds
+            : 1
       : null;
 
   NowState copyWith({

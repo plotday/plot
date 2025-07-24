@@ -47,6 +47,28 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     return await Store.get.pull(PullType.all, table, ActivitiesBase());
   }
 
+  static Map<Priority, List<Activity>> prioritize(List<Activity> activities) {
+    final Map<Priority, List<Activity>> activitiesByPriority = {};
+    for (final activity in activities) {
+      activitiesByPriority
+          .putIfAbsent(activity.priority, () => [])
+          .add(activity);
+    }
+
+    // Create list of priority groups ordered by priority order property
+    final Map<Priority, List<Activity>> sortedActivitiesByPriority = {};
+    final priorities = activitiesByPriority.keys.toList()
+      ..sort((a, b) => a.order.compareTo(b.order));
+    for (final priority in priorities) {
+      final priorityActivities = activitiesByPriority[priority]!;
+      // Sort activities within each priority group (by order property)
+      priorityActivities.sort();
+      sortedActivitiesByPriority[priority] = priorityActivities;
+    }
+
+    return sortedActivitiesByPriority;
+  }
+
   static Future<List<Activity>> get({
     DateRange? range,
     ActivityId? id,
@@ -61,7 +83,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     bool self = true,
     ActivityOrder order = ActivityOrder.sorted,
   }) async {
-    return _get(
+    final activities = await _get(
       range: range,
       id: id,
       priorityId: priorityId,
@@ -75,6 +97,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       search: search,
       self: self,
     ).get();
+
+    return _mapAll(activities, deleted: deleted);
   }
 
   static Stream<List<Activity>> watch({
@@ -104,7 +128,38 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       order: order,
       search: search,
       self: self,
-    ).watch();
+    ).watch().asyncMap(_mapAll);
+  }
+
+  static Future<List<Activity>> _mapAll(
+    List<ActivityRow> activities, {
+    bool? deleted = false,
+  }) async {
+    final priorities = await Priority.get(
+      // If we're getting deleted activities, the priorities might be deleted, too
+      deleted: deleted == false ? false : null,
+    );
+    final priorityMap = Priority.asMap(priorities);
+
+    return activities
+        .map((activity) => (activity, priorityMap[activity.priorityId]))
+        .where((values) => values.$2 != null)
+        .map((values) => Activity.fromStore(values.$1, priority: values.$2!))
+        .toList();
+  }
+
+  static Future<Activity> _mapOne(
+    List<ActivityRow> activityRows, {
+    Uuid? id,
+  }) async {
+    final priority = await Priority.getOne(activityRows.first.priorityId);
+    final activities = activityRows
+        .map((row) => Activity.fromStore(row, priority: priority))
+        .toList();
+    if (activities.length == 1 && id == null) {
+      return activities.first;
+    }
+    return _asNested(activities, id: id).first;
   }
 
   static Future<Activity> getOne(
@@ -113,8 +168,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     bool? pinned,
     bool? active,
     bool getParent = true,
-  }) {
-    return _get(
+  }) async {
+    final activityRows = await _get(
       id: id,
       depth: depth,
       pinned: pinned,
@@ -122,7 +177,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       deleted: null,
       getParent: getParent,
       order: ActivityOrder.nested,
-    ).get().then((activities) => _asNested(activities, id: id).first);
+    ).get();
+    return await _mapOne(activityRows, id: id);
   }
 
   static Stream<Activity> watchOne(
@@ -140,7 +196,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       deleted: null,
       getParent: getParent,
       order: ActivityOrder.nested,
-    ).watch().map((activities) => _asNested(activities, id: id).first);
+    ).watch().asyncMap(_mapOne);
   }
 
   static Stream<(Date?, Date?)?> watchRange({
@@ -287,14 +343,18 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     final range = DateRangeCustom(startDate, endDate);
 
     // Get activities in this range using the existing _get method
-    return (await _get(
+    final rows = await _get(
       range: range,
       priorityPath: context?.path,
       deleted: deleted,
       order: ActivityOrder.sorted,
       limit: 1,
       offset: offset,
-    ).get()).firstOrNull;
+    ).get();
+    if (rows.isEmpty) {
+      return null;
+    }
+    return _mapOne(rows);
   }
 
   /// Find the previous activity before [fromDate]
@@ -315,17 +375,21 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     final range = DateRangeCustom(startDate, endDate);
 
     // Get activities in reverse order (latest first) using the existing _get method
-    return (await _get(
+    final rows = await _get(
       range: range,
       priorityPath: context?.path,
       deleted: deleted,
       order: ActivityOrder.reverse,
       limit: 1,
       offset: offset,
-    ).get()).firstOrNull;
+    ).get();
+    if (rows.isEmpty) {
+      return null;
+    }
+    return _mapOne(rows);
   }
 
-  static MultiSelectable<Activity> _get({
+  static MultiSelectable<ActivityRow> _get({
     DateRange? range,
 
     /* Selectors */
@@ -571,7 +635,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         break;
     }
 
-    return query.map((row) => Activity.fromStore(row.readTable(a)));
+    return query.map((row) => row.readTable(a));
   }
 
   /// Transform a flat list in ActivityOrder.nested order to a list of the top-level items with descendants.
@@ -618,7 +682,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Order? order,
     this.parent,
     this.parentEvent,
-    required super.priorityId,
+    required this.priority,
     super.note,
     super.title,
     super.draft = false,
@@ -631,6 +695,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
          createdBy: Base.userId,
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
+         priorityId: priority.id,
          order: order ?? Order.first(),
          path: Path.generate(parent: parent?.path ?? parentEvent?.path),
        ) {
@@ -641,6 +706,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     ActivityRow row, {
     this.parent,
     this.parentEvent,
+    required this.priority,
     List<Activity>? children,
   }) : children = children ?? [],
        super(
@@ -680,6 +746,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
   final Activity? parent;
   final Event? parentEvent;
+  final Priority priority;
   List<Activity> children;
 
   List<Activity> descendants() {
@@ -729,6 +796,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Value<String?> title = const Value.absent(),
     Activity? parent,
     Event? parentEvent,
+    Priority? priority,
     Value<String?> eventSeries = const Value.absent(),
   }) {
     final publish = this.draft && draft == false;
@@ -770,6 +838,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       ),
       parent: parent ?? this.parent,
       parentEvent: parentEvent ?? this.parentEvent,
+      priority: priority ?? this.priority,
       children: children,
     );
   }
@@ -801,7 +870,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   }
 
   bool get scheduled {
-    return _doAt != null;
+    return _doAt != null && doneAt == null;
   }
 
   bool get done => doneAt != null;
@@ -822,23 +891,23 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
   @override
   int compareTo(Activity other) {
-    if (pinned && other.pinned) {
-      return -order.compareTo(other.order);
-    }
-    if (pinned || other.pinned) {
-      return pinned ? -1 : 1;
-    }
-    if (doNow && other.doNow) {
-      final doAtComp = _doAt!.compareTo(other._doAt!);
-      if (doAtComp != 0) {
-        return doAtComp;
+    // If scheduled is true, compare order
+    if (scheduled) {
+      if (other.scheduled) {
+        return order.compareTo(other.order);
+      } else {
+        // Scheduled activities come after
+        return 1;
       }
-      return -order.compareTo(other.order);
+    } else if (other.scheduled) {
+      // Other activity is scheduled, this one is not
+      return -1;
     }
-    if (doNow || other.doNow) {
-      return doNow ? -1 : 1;
-    }
-    return order.compareTo(other.order);
+
+    // Otherwise, compare doneAt ?? createdAt
+    final thisTime = doneAt ?? createdAt;
+    final otherTime = other.doneAt ?? other.createdAt;
+    return thisTime.compareTo(otherTime);
   }
 
   T fold<T>(

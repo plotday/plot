@@ -6,7 +6,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_list.dart';
 import 'package:plot/widget/activity_editor.dart';
-import 'package:plot/state/priority.dart';
+import 'package:plot/state/activity.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/command/command.dart';
 import 'loading.dart';
@@ -61,7 +61,7 @@ class EventWrapper extends AutoRouter implements AutoRouteWrapper {
         });
 
         return BlocProvider(
-          create: (_) => PriorityBloc(priority: priority, event: event),
+          create: (_) => ActivityBloc(priority: priority, event: event),
           key: ValueKey(event.id),
           child: this,
         );
@@ -120,7 +120,7 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
         });
 
         return BlocProvider(
-          create: (_) => PriorityBloc(priority: priority, activity: activity),
+          create: (_) => ActivityBloc(priority: priority, activity: activity),
           key: ValueKey(activity.id),
           child: this,
         );
@@ -135,7 +135,7 @@ class ActivityPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<PriorityBloc, PriorityState>(
+    return BlocBuilder<ActivityBloc, ActivityState>(
       builder: (context, state) {
         return CommandScope(
           commands: [
@@ -147,34 +147,26 @@ class ActivityPage extends StatelessWidget {
           child: BidirectionalListSelector(
             reverse: true,
             onActivate: (index) {
-              state
-                  .atIndex(index)
-                  ?.when(
-                    activity: (activity) =>
-                        context.run(ChangeCurrentActivity(activity)),
-                    event: (event) => context.run(ChangeCurrentEvent(event)),
-                    header: (header) =>
-                        <void>{}, // TODO: Handle header activation
-                  );
+              final activity = _getActivityAtIndex(state, index);
+              if (activity != null) {
+                context.run(ChangeCurrentActivity(activity));
+              }
             },
             builder: (context, listController) => SelectionCommandScope(
-              commandBuilder: (index) =>
-                  state
-                      .atIndex(index)
-                      ?.when(
-                        activity: (activity) => [
-                          StaticCommandGroup(
-                            title: activity.displayTitle,
-                            commands: [
-                              ChangeCurrentActivity(activity),
-                              ...activityCommands(activity),
-                            ],
-                          ),
-                        ],
-                        event: (event) => [],
-                        header: (header) => [],
-                      ) ??
-                  [],
+              commandBuilder: (index) {
+                final activity = _getActivityAtIndex(state, index);
+                return activity != null
+                    ? [
+                        StaticCommandGroup(
+                          title: activity.displayTitle,
+                          commands: [
+                            ChangeCurrentActivity(activity),
+                            ...activityCommands(activity),
+                          ],
+                        ),
+                      ]
+                    : <StaticCommandGroup>[];
+              },
               listController: listController,
               child: Scaffold(
                 translucent: true,
@@ -186,7 +178,7 @@ class ActivityPage extends StatelessWidget {
                     ToggleShowArchived(showArchived: state.showArchived),
                   ],
                 ),
-                sidebar: PrioritiesSidebar(),
+                sidebar: PrioritiesSidebar(selected: state.context),
                 body: LayoutBuilder(
                   builder: (context, constraints) {
                     final maxActivityListHeight = constraints.maxHeight * 0.4;
@@ -207,24 +199,7 @@ class ActivityPage extends StatelessWidget {
                           ),
                           child: SingleChildScrollView(
                             child: ActivityList(
-                              activities: state.pinned
-                                  .where(
-                                    (item) => item.when(
-                                      activity: (_) => true,
-                                      event: (_) => false,
-                                      header: (_) => false,
-                                    ),
-                                  )
-                                  .map(
-                                    (item) => item.when(
-                                      activity: (activity) => activity,
-                                      event: (_) =>
-                                          throw StateError('Not an activity'),
-                                      header: (_) =>
-                                          throw StateError('Not an activity'),
-                                    ),
-                                  )
-                                  .toList(),
+                              activities: state.pinned,
                               priority: state.context,
                             ),
                           ),
@@ -232,67 +207,21 @@ class ActivityPage extends StatelessWidget {
                         Flexible(
                           flex: 1,
                           fit: FlexFit.tight,
-                          child: BidirectionalList(
-                            controller: listController,
-                            scrollController: ScrollControllerContext.of(
-                              context,
-                            ),
-                            first: state.first,
-                            count: state.agendaItems.length,
-                            reverse: true,
-                            doneStart: state.doneStart,
-                            doneEnd: state.doneEnd,
-                            fetcher: (first, count) => context
-                                .read<PriorityBloc>()
-                                .fetchMoreAgendaItems(first, count),
-                            builder: (context, index, selected) {
-                              final current = state.agendaItems[index];
-                              return Column(
-                                mainAxisSize: MainAxisSize.min,
-                                key: ValueKey(
-                                  current.when(
-                                    activity: (a) => a.id,
-                                    event: (e) => e.id,
-                                    header: (h) => 'header_${h.hashCode}',
-                                  ),
-                                ),
-                                children: [
-                                  ...current.when(
-                                    activity: (activity) => [
-                                      ActivityDetailWidget(
-                                        activity: activity,
-                                        context: null,
-                                        selected: selected,
-                                      ),
-                                    ],
-                                    event: (event) => [
-                                      if (event.name?.isNotEmpty == true)
-                                        EventWidget(
-                                          event: event,
-                                          selected: selected,
-                                        ),
-                                    ],
-                                    header: (header) => [
-                                      AgendaHeader(
-                                        event: header.event,
-                                        date: header.date,
-                                        now: header.now,
-                                        priority: header.priority,
-                                        context: state.context,
-                                        selected: selected,
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              );
-                            },
+                          child: _buildActivityList(
+                            state,
+                            listController,
+                            context,
                           ),
                         ),
                         Container(
                           constraints: BoxConstraints(
                             maxHeight: maxActivityEditorHeight,
                           ),
-                          child: const ActivityEditor(),
+                          child: ActivityEditor(
+                            onAdd: (activity) =>
+                                context.read<ActivityBloc>().add(activity),
+                            draft: state.draft,
+                          ),
                         ),
                       ],
                     );
@@ -304,5 +233,87 @@ class ActivityPage extends StatelessWidget {
         );
       },
     );
+  }
+
+  int _getTotalItemCount(ActivityState state) {
+    return state.activityGroups.fold(
+      0,
+      (count, group) => count + 1 + group.activities.length,
+    );
+  }
+
+  Activity? _getActivityAtIndex(ActivityState state, int index) {
+    int currentIndex = 0;
+
+    for (final group in state.activityGroups) {
+      // Skip date header
+      currentIndex++;
+
+      // Check activities in this group
+      for (final activity in group.activities) {
+        if (currentIndex == index) {
+          return activity;
+        }
+        currentIndex++;
+      }
+    }
+
+    return null;
+  }
+
+  Widget _buildActivityList(
+    ActivityState state,
+    BidirectionalListController listController,
+    BuildContext context,
+  ) {
+    final totalItems = _getTotalItemCount(state);
+
+    return BidirectionalList(
+      controller: listController,
+      scrollController: ScrollControllerContext.of(context),
+      first: 0,
+      count: totalItems,
+      reverse: true,
+      doneStart: true,
+      doneEnd: true,
+      fetcher: (first, count) =>
+          Future<void>.value(), // No pagination needed for ActivityPage
+      builder: (context, index, selected) {
+        return _buildItemAtIndex(state, index, selected);
+      },
+    );
+  }
+
+  Widget _buildItemAtIndex(ActivityState state, int index, bool selected) {
+    int currentIndex = 0;
+
+    for (final group in state.activityGroups) {
+      // Check activities in this group
+      for (final activity in group.activities) {
+        if (currentIndex == index) {
+          return ActivityDetailWidget(
+            activity: activity,
+            context: null,
+            selected: selected,
+            key: ValueKey(activity.id),
+          );
+        }
+        currentIndex++;
+      }
+
+      // Check if this is the date header
+      if (currentIndex == index) {
+        return DayHeader(
+          date: group.date,
+          now: group.date == Date.today(),
+          selected: selected,
+          key: ValueKey('date_${group.date.hashCode}'),
+        );
+      }
+      currentIndex++;
+    }
+
+    // Fallback - should not happen
+    return const SizedBox.shrink();
   }
 }

@@ -5,7 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/state/agenda_item.dart';
+import 'package:plot/util/list.dart';
 import 'logging.dart';
 
 part 'priority_state.dart';
@@ -27,9 +27,6 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Reload pinned activities and agenda items with new archived filter
     _loadPriority();
-    if (state.range != null) {
-      _loadAgendaItems(state.range!);
-    }
   }
 
   void moveAgendaItem(int oldIndex, int newIndex) {
@@ -99,11 +96,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     } else if (moveStart > 0) {
       for (int i = moveStart; i >= 0; i--) {
         final item = state.agendaItems[i];
-        final date = item.when(
-          activity: (activity) => null,
-          event: (event) => null,
-          header: (header) => header.date,
-        );
+        final date = item.iff(date: (date) => date);
         if (date != null) {
           newStart = date;
           break;
@@ -127,11 +120,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         i++
       ) {
         final item = state.agendaItems[i];
-        final date = item.when(
-          activity: (_) => null,
-          event: (_) => null,
-          header: (header) => header.date,
-        );
+        final date = item.iff(date: (date) => date);
         if (date != null) {
           newEnd = date;
           break;
@@ -143,7 +132,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     log.info(
       'Expanding range from ${state.range!.start}-${state.range!.end} to ${newRange.start}-${newRange.end}',
     );
-    _loadAgendaItems(newRange);
+    _loadSchedule(newRange);
   }
 
   @override
@@ -175,7 +164,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       _loadEvent(state.event!);
     }
 
-    _loadAgendaItems(
+    _loadSchedule(
       state.range ??
           DateRangeCustom(
             Date.today()
@@ -184,6 +173,7 @@ class PriorityBloc extends Cubit<PriorityState> {
                 .toDate(),
             Date.today().toDateTime().add(const Duration(days: 14)).toDate(),
           ),
+      firstDate: Date.today(),
     );
   }
 
@@ -216,7 +206,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       state.copyWith(
         // Create a new draft
         draft: Activity(
-          priorityId: state.context.id,
+          priority: state.context,
           parent: state.activity,
           parentEvent: state.event,
           draft: true,
@@ -261,51 +251,41 @@ class PriorityBloc extends Cubit<PriorityState> {
     _subscriptions.add(
       stream.listen((activities) {
         log.info('Pinned activities updated');
-        emit(
-          state.copyWith(
-            pinned: activities.map((a) => ActivityAgendaItem(a)).toList(),
-          ),
-        );
+        emit(state.copyWith(pinned: activities));
       }),
     );
   }
 
-  void _loadAgendaItems(DateRange range) {
-    log.info('Loading agenda items (${range.start} to ${range.end})');
+  void _loadSchedule(DateRange range, {Date? firstDate}) {
+    log.info('Loading schedule (${range.start} to ${range.end})');
     _agendaSubscription?.cancel();
 
     // Ensure the new range overlaps with the previous one by at least one day
-    // Find the first and last HeaderAgendaItem in the current agenda items
+    // Find the first and last DateAgendaItem in the current agenda items
     var overlappingIndex =
         state.range == null || range.start == state.range!.start
         ? -1
         : state.agendaItems.indexWhere(
-            (item) => item.when(
-              activity: (_) => false,
-              event: (_) => false,
-              header: (header) => header.date != null,
-            ),
+            (item) => item.iff(date: (date) => true) == true,
           );
     Date? overlappingDate;
     if (overlappingIndex != -1) {
-      overlappingDate =
-          (state.agendaItems[overlappingIndex] as HeaderAgendaItem).date!;
-      if (!range.includes(overlappingDate)) {
+      overlappingDate = state.agendaItems[overlappingIndex].iff(
+        date: (date) => date,
+      );
+      if (overlappingDate != null && !range.includes(overlappingDate)) {
         if (overlappingDate >= range.end) {
           log.info('Extending $range to include $overlappingDate');
           // If the new range ends before the old range, extend it to overlap by one day
           range = DateRangeCustom(range.start, overlappingDate.addDays(1));
         } else {
           overlappingIndex = state.agendaItems.lastIndexWhere(
-            (item) => item.when(
-              activity: (_) => false,
-              event: (_) => false,
-              header: (header) => header.date != null,
-            ),
+            (item) => item.iff(date: (date) => true) == true,
           );
-          overlappingDate =
-              (state.agendaItems[overlappingIndex] as HeaderAgendaItem).date!;
-          if (!range.includes(overlappingDate)) {
+          overlappingDate = state.agendaItems[overlappingIndex].iff(
+            date: (date) => date,
+          );
+          if (overlappingDate != null && !range.includes(overlappingDate)) {
             log.info('Extending $range to include $overlappingDate');
             // If the new range starts after the old range, extend it to overlap by one day
             range = DateRangeCustom(overlappingDate, range.end);
@@ -317,114 +297,83 @@ class PriorityBloc extends Cubit<PriorityState> {
       'Range: ${range.start} to ${range.end}, overlappingIndex: $overlappingIndex, overlappingDate: $overlappingDate',
     );
 
-    // PriorityPage
-    if (state.activity == null && state.event == null) {
-      _agendaSubscription =
-          Rx.combineLatest3(
-            ScheduledDay.watch(
-              range,
-              context: state.context,
-              deleted: state.showArchived,
-            ),
-            Priority.watch(order: PriorityOrder.sorted),
-            ScheduledDay.watchRange(
-              context: state.context,
-              deleted: state.showArchived,
-            ),
-            (scheduleMap, priorities, totalRange) =>
-                (scheduleMap, priorities, totalRange),
-          ).listen((data) {
-            final (scheduleMap, priorities, totalRange) = data;
-            final priorityMap = Priority.asMap(priorities);
-            final today = Date.today();
-
-            final agenda = Agenda.fromScheduledDays(
-              scheduleMap.values.toList(),
-              today: today,
-              priorities: priorityMap,
-              context: state.context,
-            );
-
-            // Calculate the new first index based on header overlap
-            int first = state.first;
-            if (overlappingIndex != -1) {
-              final newIndex = agenda.items.indexWhere(
-                (item) => item.when(
-                  activity: (_) => false,
-                  event: (_) => false,
-                  header: (header) => header.date == overlappingDate,
-                ),
-              );
-              log.info(
-                'First was $first, overlappingIndex is $overlappingIndex, newIndex is $newIndex newFirst = ${first + overlappingIndex - newIndex}',
-              );
-              assert(
-                newIndex != -1,
-                'Overlapping date should be found in new agenda items',
-              );
-              first += overlappingIndex - newIndex;
-              // The listener may trigger multiple times, but we only want to adjust first once
-              overlappingIndex = -1;
-            } else if (agenda.anchorIndex != null) {
-              first = -agenda.anchorIndex!;
-            }
-
-            // Determine done states based on comparison with total available range
-            bool doneStart = true;
-            bool doneEnd = true;
-
-            if (totalRange != null) {
-              final (totalEarliest, totalLatest) = totalRange;
-
-              if (totalEarliest != null && totalLatest != null) {
-                // We're done at start if our current range start is at or before the earliest available data
-                doneStart = range.start <= totalEarliest;
-
-                // We're done at end if our current range end is at or after the latest available data
-                doneEnd =
-                    range.end >=
-                    totalLatest.addDays(
-                      1,
-                    ); // Add 1 day since range.end is exclusive
-              }
-            }
-
-            log.info(
-              'Agenda updated (${range.start} to ${range.end}, first=$first, count=${agenda.items.length}, totalRange=$totalRange, doneStart=$doneStart, doneEnd=$doneEnd), anchorIndex=${agenda.anchorIndex}',
-            );
-            emit(
-              state.copyWith(
-                range: range,
-                agendaItems: agenda.items,
-                first: first,
-                moreAgendaItems: true,
-                doneStart: doneStart,
-                doneEnd: doneEnd,
-              ),
-            );
-          });
-    } else {
-      // ActivityPage
-      _agendaSubscription =
-          Activity.watch(
-            // range: range,
-            priorityPath: state.context.path,
-            path: state.activity?.path ?? state.event?.path,
+    log.info(
+      'Getting activities for priprity ${state.context.id} in range $range',
+    );
+    _agendaSubscription =
+        Rx.combineLatest2(
+          ScheduledDay.watch(
+            range,
+            context: state.context,
             deleted: state.showArchived,
-          ).listen((activities) {
-            emit(
-              state.copyWith(
-                agendaItems: activities
-                    .map((activity) => ActivityAgendaItem(activity))
-                    .toList(),
-                first: 0,
-                moreAgendaItems: false,
-                doneStart: true,
-                doneEnd: true,
+          ),
+          ScheduledDay.watchRange(
+            context: state.context,
+            deleted: state.showArchived,
+          ),
+          (scheduleMap, totalRange) => (scheduleMap, totalRange),
+        ).listen((data) {
+          final (scheduleMap, totalRange) = data;
+
+          // Calculate the new first index based on date overlap
+          int first = state.first;
+          if (overlappingIndex != -1) {
+            final newScheduleItems = PriorityState._makeAgenda(
+              scheduleMap,
+              context: state.context,
+            );
+            final newIndex = newScheduleItems.indexWhere(
+              (item) => item.when(
+                date: (date) => date == overlappingDate,
+                event: (event) => false,
+                priority: (priority) => false,
+                activity: (activity) => false,
               ),
             );
-          });
-    }
+            log.info(
+              'First was $first, overlappingIndex is $overlappingIndex, newIndex is $newIndex newFirst = ${first + overlappingIndex - newIndex}',
+            );
+            if (newIndex != -1) {
+              first += overlappingIndex - newIndex;
+            }
+            // The listener may trigger multiple times, but we only want to adjust first once
+            overlappingIndex = -1;
+          }
+
+          // Determine done states based on comparison with total available range
+          bool doneStart = true;
+          bool doneEnd = true;
+
+          if (totalRange != null) {
+            final (totalEarliest, totalLatest) = totalRange;
+
+            if (totalEarliest != null && totalLatest != null) {
+              // We're done at start if our current range start is at or before the earliest available data
+              doneStart = range.start <= totalEarliest;
+
+              // We're done at end if our current range end is at or after the latest available data
+              doneEnd =
+                  range.end >=
+                  totalLatest.addDays(
+                    1,
+                  ); // Add 1 day since range.end is exclusive
+            }
+          }
+
+          log.info(
+            'Schedule updated (${range.start} to ${range.end}, first=$first, count=${scheduleMap.length}, totalRange=$totalRange, doneStart=$doneStart, doneEnd=$doneEnd)',
+          );
+          emit(
+            state.copyWith(
+              range: range,
+              schedule: scheduleMap,
+              first: first,
+              firstDate: firstDate,
+              doneStart: doneStart,
+              doneEnd: doneEnd,
+            ),
+          );
+        });
   }
 
   final List<StreamSubscription<void>> _subscriptions;

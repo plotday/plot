@@ -21,3 +21,16 @@ extension ReplaceListItem<T> on List<T> {
     return this;
   }
 }
+
+extension PartitionList<T> on List<T> {
+  (List<T>, List<T>) partition(bool Function(T) predicate) {
+    var trueList = <T>[];
+    var falseList = <T>[];
+
+    for (var item in this) {
+      (predicate(item) ? trueList : falseList).add(item);
+    }
+
+    return (trueList, falseList);
+  }
+}

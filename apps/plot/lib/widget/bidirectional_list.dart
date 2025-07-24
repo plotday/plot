@@ -159,7 +159,7 @@ class BidirectionalList extends StatefulWidget {
   /// index of the first item
   final int first;
 
-  /// the item at this index is at the anchorOffset position in the initial view
+  /// the item at the 0 index is at the anchorOffset position in the initial view
   final double anchorOffset;
   final bool doneStart;
   final bool doneEnd;
@@ -446,40 +446,6 @@ class BidirectionalListState extends State<BidirectionalList> {
         ),
       ),
     );
-  }
-}
-
-// Apply the position adjustment after layout
-class BidirectionalListScrollPhysics extends ScrollPhysics {
-  final double Function() getScrollAdjustment;
-
-  const BidirectionalListScrollPhysics({
-    required this.getScrollAdjustment,
-    super.parent,
-  });
-
-  @override
-  BidirectionalListScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return BidirectionalListScrollPhysics(
-      getScrollAdjustment: getScrollAdjustment,
-      parent: buildParent(ancestor),
-    );
-  }
-
-  @override
-  double adjustPositionForNewDimensions({
-    required ScrollMetrics oldPosition,
-    required ScrollMetrics newPosition,
-    required bool isScrolling,
-    required double velocity,
-  }) {
-    final double unadjustedPosition = super.adjustPositionForNewDimensions(
-      oldPosition: oldPosition,
-      newPosition: newPosition,
-      isScrolling: isScrolling,
-      velocity: velocity,
-    );
-    return unadjustedPosition + getScrollAdjustment();
   }
 }
 

@@ -5,7 +5,6 @@ import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/util/async.dart';
 import 'store.dart';
-import 'logging.dart';
 
 class ScheduledDay extends Equatable {
   static Stream<Map<Date, ScheduledDay>> watch(
@@ -56,21 +55,20 @@ class ScheduledDay extends Equatable {
     Priority? context,
     bool? deleted = false,
   }) {
-    return Rx.combineLatest3(
+    return Rx.combineLatest2(
       Event.watch(
         range,
         withPriority: true,
         deleted: deleted,
         context: context,
       ),
-      Priority.watchDefault(),
       Activity.watch(
         range: range,
         priorityPath: context?.path,
         depth: 0,
         deleted: deleted,
       ),
-      (events, defaultPriority, allActivities) {
+      (events, allActivities) {
         Map<Date, ScheduledDay> days = {};
 
         // Group events by date
@@ -107,7 +105,6 @@ class ScheduledDay extends Equatable {
             date: date,
             events: dayEvents,
             activities: dayActivities,
-            defaultPriority: defaultPriority,
           );
         }
 
@@ -233,8 +230,7 @@ class ScheduledDay extends Equatable {
     Priority? context,
     bool? deleted = false,
   }) {
-    return Rx.combineLatest3(
-      Priority.watchDefault(),
+    return Rx.combineLatest2(
       Activity.watch(
         range: today.toDateRange(),
         priorityPath: context?.path,
@@ -242,16 +238,12 @@ class ScheduledDay extends Equatable {
         deleted: deleted,
       ),
       Event.watch(today.toDateRange(), context: context, deleted: deleted),
-      (
-        Priority defaultPriority,
-        List<Activity> allActivities,
-        List<Event> events,
-      ) => (defaultPriority, allActivities, events),
+      (List<Activity> allActivities, List<Event> events) =>
+          (allActivities, events),
     ).transform(
       ExpiringStreamTransformer((result) {
-        final defaultPriority = result.$1;
-        final allActivities = result.$2;
-        final events = result.$3;
+        final allActivities = result.$1;
+        final events = result.$2;
         final now = DateTime.now();
         final currentEvent = events.any((event) => event.at.includes(now));
         DateTime? expiry;
@@ -285,7 +277,6 @@ class ScheduledDay extends Equatable {
             date: today,
             events: events,
             activities: dayActivities,
-            defaultPriority: defaultPriority,
           ),
           expiry: expiry,
         );
@@ -297,35 +288,46 @@ class ScheduledDay extends Equatable {
     required this.date,
     required List<Event> events,
     this.activities = const [],
-    required this.defaultPriority,
-  }) : events = events.where((e) => !e.isAllDay).toList(),
-       allDayEvents = events.where((e) => e.isAllDay).toList();
+  }) : allDayEvents = events.where((e) => e.isAllDay).toList(),
+       events = _addGaps(date, events.where((e) => !e.isAllDay).toList());
+
+  static List<Event> _addGaps(Date date, List<Event> events) {
+    List<Event> eventsWithGaps = [];
+    Event? previous;
+    for (final event in events) {
+      // Handle gap between events
+      if (event.start.isAfter(previous?.end ?? date.toStart())) {
+        eventsWithGaps.add(
+          Event(
+            at: DateTimeRange(previous?.end ?? date.toStart(), event.start),
+            draft: true,
+          ),
+        );
+      }
+      eventsWithGaps.add(event);
+      previous = event;
+    }
+    // Handle gap after last event
+    if (previous == null || previous.end.isBefore(date.toEnd())) {
+      eventsWithGaps.add(
+        Event(
+          at: DateTimeRange(previous?.end ?? date.toStart(), date.toEnd()),
+          draft: true,
+        ),
+      );
+    }
+    return eventsWithGaps;
+  }
 
   final Date date;
   final List<Event> events;
   final List<Event> allDayEvents;
   final List<Activity> activities;
-  final Priority defaultPriority;
-
-  ScheduledDay copyWith(Event event) {
-    final list = events.where((e) => e.id != event.id).toList();
-    var index = list.indexWhere((i) => i.at < event.at);
-    if (index == -1) {
-      index = list.length;
-    }
-    list.insert(index, event);
-    return ScheduledDay(
-      date: date,
-      events: list,
-      activities: activities,
-      defaultPriority: defaultPriority,
-    );
-  }
 
   Event getAt(DateTime time) {
     return events.firstWhere((e) => e.at.includes(time));
   }
 
   @override
-  List<Object> get props => [date, events, activities];
+  List<Object> get props => [date, events, activities, allDayEvents];
 }

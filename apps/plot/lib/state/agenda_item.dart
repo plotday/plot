@@ -55,9 +55,6 @@ class Agenda extends Equatable {
         agendaItems.add(
           HeaderAgendaItem(event: event, priority: event.priority),
         );
-        if (event.name != null) {
-          agendaItems.add(EventAgendaItem(event));
-        }
       }
 
       var pastActivities = <Activity>[];
@@ -193,7 +190,6 @@ abstract class AgendaItem extends Equatable {
 
   T when<T>({
     required T Function(Activity) activity,
-    required T Function(Event) event,
     required T Function(HeaderAgendaItem) header,
   });
 }
@@ -205,7 +201,6 @@ class ActivityAgendaItem extends AgendaItem {
   @override
   T when<T>({
     required T Function(Activity) activity,
-    required T Function(Event) event,
     required T Function(HeaderAgendaItem) header,
   }) {
     return activity(this.activity);
@@ -213,23 +208,6 @@ class ActivityAgendaItem extends AgendaItem {
 
   @override
   List<Object?> get props => [activity];
-}
-
-class EventAgendaItem extends AgendaItem {
-  final Event event;
-  const EventAgendaItem(this.event);
-
-  @override
-  T when<T>({
-    required T Function(Activity) activity,
-    required T Function(Event) event,
-    required T Function(HeaderAgendaItem) header,
-  }) {
-    return event(this.event);
-  }
-
-  @override
-  List<Object?> get props => [event];
 }
 
 class HeaderAgendaItem extends AgendaItem {
@@ -248,7 +226,6 @@ class HeaderAgendaItem extends AgendaItem {
   @override
   T when<T>({
     required T Function(Activity) activity,
-    required T Function(Event) event,
     required T Function(HeaderAgendaItem) header,
   }) {
     return header(this);

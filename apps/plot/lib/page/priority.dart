@@ -7,7 +7,6 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_list.dart';
 import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/state/agenda_item.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/command/command.dart';
 import 'loading.dart';
@@ -87,35 +86,36 @@ class PriorityPage extends StatelessWidget {
               ? const Center(child: Spinner())
               : BidirectionalListSelector(
                   onActivate: (index) {
-                    state
-                        .atIndex(index)
-                        ?.when(
-                          activity: (activity) =>
-                              context.run(ChangeCurrentActivity(activity)),
-                          event: (event) =>
-                              context.run(ChangeCurrentEvent(event)),
-                          header: (header) =>
-                              <void>{}, // TODO: Handle header activation
-                        );
+                    final item =
+                        index >= state.first &&
+                            index - state.first < state.agendaItems.length
+                        ? state.agendaItems[index - state.first]
+                        : null;
+                    item?.iff(
+                      activity: (activity) =>
+                          context.run(ChangeCurrentActivity(activity)),
+                    );
                   },
                   builder: (context, listController) => SelectionCommandScope(
-                    commandBuilder: (index) =>
-                        state
-                            .atIndex(index)
-                            ?.when(
-                              activity: (activity) => [
-                                StaticCommandGroup(
-                                  title: activity.displayTitle,
-                                  commands: [
-                                    OpenActivity(activity),
-                                    ...activityCommands(activity),
-                                  ],
-                                ),
-                              ],
-                              event: (event) => [],
-                              header: (header) => [],
-                            ) ??
-                        [],
+                    commandBuilder: (index) {
+                      final item =
+                          index >= state.first &&
+                              index - state.first < state.agendaItems.length
+                          ? state.agendaItems[index - state.first]
+                          : null;
+                      return item?.iff(
+                            activity: (activity) => [
+                              StaticCommandGroup(
+                                title: activity.displayTitle,
+                                commands: [
+                                  OpenActivity(activity),
+                                  ...activityCommands(activity),
+                                ],
+                              ),
+                            ],
+                          ) ??
+                          <StaticCommandGroup>[];
+                    },
                     listController: listController,
                     child: Scaffold(
                       translucent: true,
@@ -133,7 +133,7 @@ class PriorityPage extends StatelessWidget {
                           ToggleShowArchived(showArchived: state.showArchived),
                         ],
                       ),
-                      sidebar: PrioritiesSidebar(),
+                      sidebar: PrioritiesSidebar(selected: state.context),
                       body: LayoutBuilder(
                         builder: (context, constraints) {
                           final maxActivityListHeight =
@@ -156,26 +156,7 @@ class PriorityPage extends StatelessWidget {
                                 ),
                                 child: SingleChildScrollView(
                                   child: ActivityList(
-                                    activities: state.pinned
-                                        .where(
-                                          (item) => item.when(
-                                            activity: (_) => true,
-                                            event: (_) => false,
-                                            header: (_) => false,
-                                          ),
-                                        )
-                                        .map(
-                                          (item) => item.when(
-                                            activity: (activity) => activity,
-                                            event: (_) => throw StateError(
-                                              'Not an activity',
-                                            ),
-                                            header: (_) => throw StateError(
-                                              'Not an activity',
-                                            ),
-                                          ),
-                                        )
-                                        .toList(),
+                                    activities: state.pinned,
                                     priority: state.context,
                                   ),
                                 ),
@@ -204,34 +185,41 @@ class PriorityPage extends StatelessWidget {
                                       mainAxisSize: MainAxisSize.min,
                                       key: ValueKey(
                                         current.when(
+                                          date: (d) => 'date_${d.hashCode}',
+                                          event: (e) => 'event_${e.id}',
+                                          priority: (p) => 'priority_${p.id}',
                                           activity: (a) => a.id,
-                                          event: (e) => e.id,
-                                          header: (h) => 'header_${h.hashCode}',
                                         ),
                                       ),
                                       children: [
                                         ...current.when(
-                                          activity: (activity) => [
-                                            ActivityWidget(
-                                              activity: activity,
+                                          date: (date) => [
+                                            DayHeader(
+                                              date: date,
+                                              now: date == Date.today(),
                                               selected: selected,
                                             ),
                                           ],
                                           event: (event) => [
-                                            if (event.name?.isNotEmpty == true)
-                                              EventWidget(
-                                                event: event,
-                                                selected: selected,
-                                              ),
-                                          ],
-                                          header: (header) => [
                                             AgendaHeader(
-                                              event: header.event,
-                                              date: header.date,
-                                              now: header.now,
-                                              priority: header.priority,
+                                              event: event,
+                                              priority: event.priority,
                                               context: state.context,
                                               selected: selected,
+                                            ),
+                                          ],
+                                          priority: (priority) => [
+                                            AgendaHeader(
+                                              priority: priority,
+                                              context: state.context,
+                                              selected: selected,
+                                            ),
+                                          ],
+                                          activity: (activity) => [
+                                            ActivityWidget(
+                                              activity: activity,
+                                              selected: selected,
+                                              context: state.context,
                                             ),
                                           ],
                                         ),
@@ -241,11 +229,10 @@ class PriorityPage extends StatelessWidget {
                                   onReorder: (index) {
                                     final item =
                                         state.agendaItems[index - state.first];
-                                    if (!item.when(
-                                      activity: (activity) => true,
-                                      event: (_) => false,
-                                      header: (_) => false,
-                                    )) {
+                                    final activity = item.iff(
+                                      activity: (activity) => activity,
+                                    );
+                                    if (activity == null) {
                                       return null;
                                     }
                                     return (int newIndex) {
@@ -276,11 +263,7 @@ class PriorityPage extends StatelessWidget {
                                           state.agendaItems.length) {
                                         next = state.agendaItems[nextIndex];
                                       }
-                                      onReorderActivity(
-                                        (item as ActivityAgendaItem).activity,
-                                        prev,
-                                        next,
-                                      );
+                                      onReorderActivity(activity, prev, next);
                                     };
                                   },
                                 ),
@@ -289,7 +272,10 @@ class PriorityPage extends StatelessWidget {
                                 constraints: BoxConstraints(
                                   maxHeight: maxActivityEditorHeight,
                                 ),
-                                child: ActivityEditor(),
+                                child: ActivityEditor(
+                                  onAdd: (activity) => context.read<PriorityBloc>().add(activity),
+                                  draft: state.draft,
+                                ),
                               ),
                             ],
                           );
@@ -308,25 +294,29 @@ class PriorityPage extends StatelessWidget {
     AgendaItem? prev,
     AgendaItem? next,
   ) async {
-    final prevActivity = prev?.when(
-      activity: (a) => a,
-      event: (_) => null,
-      header: (_) => null,
+    final prevActivity = prev?.when<Activity?>(
+      date: (Date date) => null,
+      event: (Event event) => null,
+      priority: (Priority priority) => null,
+      activity: (Activity a) => a,
     );
-    final nextActivity = next?.when(
-      activity: (a) => a,
-      event: (_) => null,
-      header: (_) => null,
+    final nextActivity = next?.when<Activity?>(
+      date: (Date date) => null,
+      event: (Event event) => null,
+      priority: (Priority priority) => null,
+      activity: (Activity a) => a,
     );
-    final priorityId = prev?.when(
-      activity: (a) => a.priorityId,
-      event: (e) => e.priorityId,
-      header: (h) => h.priority?.id,
+    final priorityId = prev?.when<PriorityId?>(
+      date: (Date date) => null,
+      event: (Event event) => event.priorityId,
+      priority: (Priority priority) => priority.id,
+      activity: (Activity a) => a.priorityId,
     );
-    final eventSeries = prev?.when(
-      activity: (a) => a.eventSeries,
-      event: (e) => e.series,
-      header: (h) => h.event?.series,
+    final eventSeries = prev?.when<String?>(
+      date: (Date date) => null,
+      event: (Event event) => event.series,
+      priority: (Priority priority) => null,
+      activity: (Activity a) => a.eventSeries,
     );
     log.info(
       'Reordering ${activity.displayTitle} between '

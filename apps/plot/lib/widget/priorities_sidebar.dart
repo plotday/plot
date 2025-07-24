@@ -3,10 +3,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/state/priorities.dart';
+import 'package:plot/store/store.dart';
 import 'priorities_list.dart';
 
 class PrioritiesSidebar extends StatelessWidget {
-  const PrioritiesSidebar({super.key});
+  const PrioritiesSidebar({this.selected, super.key});
+
+  final Priority? selected;
 
   @override
   Widget build(BuildContext context) {
@@ -17,6 +20,7 @@ class PrioritiesSidebar extends StatelessWidget {
             PrioritiesList(
               priorities: state.priorities,
               isCompact: true,
+              selected: selected,
             ),
           ],
         );
