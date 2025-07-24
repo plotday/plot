@@ -1,7 +1,7 @@
 import { RpcTarget } from "cloudflare:workers";
 
 import type { Database, SupabaseClient } from "@plotday/db";
-import type { Priority as IPriority, NewActivity, NewPriority } from "@plotday/agents";
+import type { Priority as IPriority, NewActivity, NewPriority, Activity } from "@plotday/agents";
 
 import { create as createActivity } from "./activity";
 import path from "path";
@@ -10,12 +10,14 @@ export class Priority extends RpcTarget implements IPriority {
   private supabase: SupabaseClient;
   private priorityId: string;
   private id: string;
+  private ai: Ai;
 
-  constructor(supabase: SupabaseClient, priorityId: string, id: string) {
+  constructor(supabase: SupabaseClient, priorityId: string, id: string, ai: Ai) {
     super();
     this.supabase = supabase;
     this.priorityId = priorityId;
     this.id = id;
+    this.ai = ai;
   }
 
   async createActivity(activity: NewActivity) {
@@ -58,6 +60,34 @@ export class Priority extends RpcTarget implements IPriority {
     return await createActivity(this.supabase, dbActivity);
   }
 
+  async getRelatedActivities (activity: Activity) {
+    try {
+      const {data, error} = await this.supabase
+        .from('activity')
+        .select()
+        .eq('priority_id', activity.priorityId)
+        .filter('path', 'cd', activity.path.split('.')[0])
+        .order('created_at');
+      if (error) {
+        console.error(error);
+        throw error;
+      }
+      return data;
+    } catch (err) {
+      console.error('Failed to get siblings and parents:', err);
+      throw err;
+    }
+  }
+  
+  async callAI(messages: any) {
+    const result = await this.ai.run("@hf/meta-llama/meta-llama-3-8b-instruct", {
+      messages,
+      stream: false,
+      max_tokens: 1024
+    }) as {response: string};
+    return result.response;
+  }
+  
   async createPriority(priority: NewPriority) {
     if (!priority.parentId) {
       priority.parentId = this.priorityId

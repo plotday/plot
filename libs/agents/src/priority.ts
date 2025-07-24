@@ -5,11 +5,13 @@ export type Activity = {
   note?: string;
   title?: string;
   parentId?: string;
+  priorityId: string;
+  path: string;
   pinned: boolean;
 };
 
-export type NewActivity = Omit<Activity, "id" | "pinned"> &
-  Partial<Pick<Activity, "pinned">> & {priorityId?: string;};
+export type NewActivity = Omit<Activity, "id" | "pinned" | "path"> &
+  Partial<Pick<Activity, "pinned">> & {priorityId?: string};
 
 export type NewPriority = {
   title: string;
@@ -19,4 +21,6 @@ export type NewPriority = {
 export interface Priority {
   createActivity(activity: NewActivity): Promise<any>;
   createPriority(priority: NewPriority): Promise<any>;
+  getRelatedActivities(activity: Activity): Promise<any>;
+  callAI(messages: any): Promise<string>;
 }

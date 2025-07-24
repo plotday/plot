@@ -37,7 +37,7 @@ import {
 export abstract class AgentRunner extends WorkerEntrypoint {
   abstract activate(agentId: string, priority: Priority, config: any): Promise<void>;
 
-  abstract activity(agentId: string, activity: Activity, config: any, priority: Priority): Promise<void>;
+  abstract activity(agentId: string, activity: Activity, priority: Priority, config: any): Promise<void>;
 }
 
 export type Bindings = {
@@ -263,7 +263,7 @@ app.post("/agent", async (c) => {
   const config = (body as any)?.config;
   try {
     const dbPriorityAgent = await addAgent(c.var.supabase, priorityId, agentId, name, config);
-    const priority = new Priority(c.var.supabase, priorityId, dbPriorityAgent.id);
+    const priority = new Priority(c.var.supabase, priorityId, dbPriorityAgent.id, c.env.AI);
     await c.env.AGENT_RUNNER.activate(agentId, priority, config);
     return c.json(dbPriorityAgent.id);
   } catch (error) {
@@ -307,11 +307,12 @@ app.post("/_/update", async (c) => {
       Sentry.captureMessage(agent.public_id, "error");
     });
     try {
-      const priority = new Priority(c.var.supabase, activity.priority_id, agent.priority_agent_id);
-      await c.env.AGENT_RUNNER.activity(agent.public_id, activity, priority, agent.config);
+      const priority = new Priority(c.var.supabase, activity.priority_id, agent.priority_agent_id, c.env.AI);
+      await c.env.AGENT_RUNNER.activity(agent.public_id, { priorityId: activity.priority_id, ...activity }, priority, agent.config);
     } 
     catch (error) {
       if (error instanceof Error) {
+        console.error(`Error processing activity for agent ${agent.public_id}: ${error.message}`)
         return new Response(`Error processing activity for agent ${agent.public_id}: ${error.message}`, { status: 400 });
       }
       throw error;
@@ -330,7 +331,7 @@ app.post("/_/activate", async (c) => {
   }
   const config = (body as any)?.config || {};
   try {
-    const priority = new Priority(c.var.supabase, priorityId, priorityAgentId);
+    const priority = new Priority(c.var.supabase, priorityId, priorityAgentId, c.env.AI);
     await c.env.AGENT_RUNNER.activate(agentId, priority, config);
     return c.json({ success: true });
   }
