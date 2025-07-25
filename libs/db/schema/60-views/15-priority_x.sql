@@ -61,9 +61,10 @@ FROM
         AND p.id = settings.priority_id
     LEFT JOIN priority_tags tags ON tags.priority_id = pu.priority_id;
 
-CREATE OR REPLACE FUNCTION handle_priority_x_upsert ()
+CREATE OR REPLACE FUNCTION public.handle_priority_x_upsert ()
     RETURNS TRIGGER
-    AS $$
+    LANGUAGE plpgsql
+    AS $function$
 DECLARE
     _priority_id uuid;
 BEGIN
@@ -101,8 +102,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 
 CREATE TRIGGER upsert_priority_x
     INSTEAD OF INSERT OR UPDATE ON priority_x

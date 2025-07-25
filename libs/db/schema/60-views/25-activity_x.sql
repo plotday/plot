@@ -39,9 +39,10 @@ WHERE
     pu.deleted_at IS NULL
     AND p.deleted_at IS NULL;
 
-CREATE OR REPLACE FUNCTION handle_activity_x_upsert ()
+CREATE OR REPLACE FUNCTION public.handle_activity_x_upsert ()
     RETURNS TRIGGER
-    AS $$
+    LANGUAGE plpgsql
+    AS $function$
 DECLARE
     _activity_id uuid;
 BEGIN
@@ -68,8 +69,7 @@ BEGIN
             id INTO _activity_id;
     RETURN NEW;
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 
 CREATE TRIGGER upsert_activity_x
     INSTEAD OF INSERT OR UPDATE ON activity_x

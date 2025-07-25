@@ -43,6 +43,7 @@ export type Database = {
           email: string
           id: number
           updated_at: string
+          updated_by: number
           user_id: string
           calendars: Database["public"]["Tables"]["calendar"]["Row"] | null
           organization:
@@ -57,6 +58,7 @@ export type Database = {
           email: string
           id?: never
           updated_at?: string
+          updated_by?: number
           user_id: string
         }
         Update: {
@@ -67,6 +69,7 @@ export type Database = {
           email?: string
           id?: never
           updated_at?: string
+          updated_by?: number
           user_id?: string
         }
         Relationships: []
@@ -89,6 +92,7 @@ export type Database = {
           private: boolean
           title: string | null
           updated_at: string
+          updated_by: number
         }
         Insert: {
           created_at?: string
@@ -107,6 +111,7 @@ export type Database = {
           private?: boolean
           title?: string | null
           updated_at?: string
+          updated_by?: number
         }
         Update: {
           created_at?: string
@@ -125,6 +130,7 @@ export type Database = {
           private?: boolean
           title?: string | null
           updated_at?: string
+          updated_by?: number
         }
         Relationships: [
           {
@@ -177,7 +183,6 @@ export type Database = {
           deleted_at: string | null
           id: string
           name: string
-          public_id: string
           updated_at: string
         }
         Insert: {
@@ -185,7 +190,6 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name: string
-          public_id: string
           updated_at?: string
         }
         Update: {
@@ -193,7 +197,6 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name?: string
-          public_id?: string
           updated_at?: string
         }
         Relationships: []
@@ -217,6 +220,7 @@ export type Database = {
           synced_at: string | null
           synced_dates: unknown | null
           updated_at: string
+          updated_by: number
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -240,6 +244,7 @@ export type Database = {
           synced_at?: string | null
           synced_dates?: unknown | null
           updated_at?: string
+          updated_by?: number
           watch_expires_at?: string | null
           watch_id?: string | null
           watch_secret?: string | null
@@ -262,6 +267,7 @@ export type Database = {
           synced_at?: string | null
           synced_dates?: unknown | null
           updated_at?: string
+          updated_by?: number
           watch_expires_at?: string | null
           watch_id?: string | null
           watch_secret?: string | null
@@ -406,6 +412,7 @@ export type Database = {
           status: Database["public"]["Enums"]["event_status"]
           summary: string | null
           updated_at: string
+          updated_by: number
           user_id: string | null
           visibility: Database["public"]["Enums"]["event_visibility"]
         }
@@ -431,6 +438,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["event_status"]
           summary?: string | null
           updated_at?: string
+          updated_by?: number
           user_id?: string | null
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
@@ -456,6 +464,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["event_status"]
           summary?: string | null
           updated_at?: string
+          updated_by?: number
           user_id?: string | null
           visibility?: Database["public"]["Enums"]["event_visibility"]
         }
@@ -572,6 +581,7 @@ export type Database = {
           root: boolean
           title: string
           updated_at: string
+          updated_by: number
         }
         Insert: {
           created_at?: string
@@ -583,6 +593,7 @@ export type Database = {
           root?: boolean
           title: string
           updated_at?: string
+          updated_by?: number
         }
         Update: {
           created_at?: string
@@ -594,6 +605,7 @@ export type Database = {
           root?: boolean
           title?: string
           updated_at?: string
+          updated_by?: number
         }
         Relationships: []
       }
@@ -946,6 +958,7 @@ export type Database = {
           precedence: number
           priority_id: string | null
           updated_at: string
+          updated_by: number
           user_id: string
         }
         Insert: {
@@ -958,6 +971,7 @@ export type Database = {
           precedence?: number
           priority_id?: string | null
           updated_at?: string
+          updated_by?: number
           user_id: string
         }
         Update: {
@@ -970,6 +984,7 @@ export type Database = {
           precedence?: number
           priority_id?: string | null
           updated_at?: string
+          updated_by?: number
           user_id?: string
         }
         Relationships: [
@@ -1112,6 +1127,7 @@ export type Database = {
           private: boolean | null
           title: string | null
           updated_at: string | null
+          updated_by: number | null
           user_id: string | null
         }
         Relationships: [
@@ -1169,7 +1185,6 @@ export type Database = {
           name: string | null
           priority_child_id: string | null
           priority_id: string | null
-          public_id: string | null
           updated_at: string | null
         }
         Relationships: [
@@ -1267,6 +1282,7 @@ export type Database = {
           synced_at: string | null
           synced_dates: unknown | null
           updated_at: string | null
+          updated_by: number | null
           user_id: string | null
           watch_expires_at: string | null
           watch_id: string | null
@@ -1550,8 +1566,13 @@ export type Database = {
           email: string
           id: number
           updated_at: string
+          updated_by: number
           user_id: string
         }[]
+      }
+      add_default_priority: {
+        Args: { user_id: string }
+        Returns: undefined
       }
       agent_uuid: {
         Args: Record<PropertyKey, never>
@@ -1618,6 +1639,7 @@ export type Database = {
           synced_at: string | null
           synced_dates: unknown | null
           updated_at: string
+          updated_by: number
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
@@ -1643,6 +1665,7 @@ export type Database = {
           synced_at: string | null
           synced_dates: unknown | null
           updated_at: string
+          updated_by: number
           watch_expires_at: string | null
           watch_id: string | null
           watch_secret: string | null
