@@ -1,3 +1,5 @@
+SET check_function_bodies = OFF;
+
 CREATE OR REPLACE FUNCTION public.add_default_priority (user_id uuid)
     RETURNS void
     LANGUAGE plpgsql
@@ -35,21 +37,21 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.add_default_priority_trigger ()
-    RETURNS TRIGGER
-    SECURITY DEFINER
-    SET search_path = public, auth
-    LANGUAGE plpgsql
-    AS $function$
-BEGIN
-    PERFORM
-        public.add_default_priority (NEW.id);
-    RETURN NEW;
-END;
-$function$;
-
-CREATE TRIGGER on_user_created_add_default_priority
-    AFTER INSERT ON auth.users
-    FOR EACH ROW
-    EXECUTE FUNCTION public.add_default_priority_trigger ();
-
+ALTER VIEW "public"."activity_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_children" SET ( security_invoker = TRUE);
+ALTER VIEW gap SET ( security_invoker = TRUE);
+ALTER VIEW gap_monthly SET ( security_invoker = TRUE);
+ALTER VIEW gap_daily SET ( security_invoker = TRUE);
+ALTER VIEW insight SET ( security_invoker = TRUE);
+ALTER VIEW "admin"."sync" SET ( security_invoker = FALSE);
+ALTER VIEW "admin"."invitation" SET ( security_invoker = FALSE);
+ALTER VIEW "public"."event_invitees" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."event_x" SET ( security_invoker = TRUE);
+ALTER VIEW public.calendar_x SET ( security_invoker = TRUE);
+ALTER VIEW "admin"."user" SET ( security_invoker = FALSE);
+ALTER VIEW balance_without_children SET ( security_invoker = TRUE);
+ALTER VIEW balance SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_x" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_children" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."agent_x" SET ( security_invoker = TRUE);

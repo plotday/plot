@@ -19,7 +19,7 @@
     "gen-migration": "{ pnpm --silent diff-schema-migrations && pnpm --silent gen-view-sec; } | supabase migration new",
     "gen-view-sec": "grep -rhi 'CREATE\\( OR REPLACE\\)\\? \\+VIEW ' ./schema/ | sed 's/OR REPLACE //' | sed 's/CREATE VIEW \\(.*\\) WITH (\\(.*\\))/ALTER VIEW \\1 SET (\\2);/'",
     "diff-db-schema": "DIFF_SOURCE=database DIFF_TARGET=schema pnpm --silent tusker:diff && pnpm --silent tusker:clean",
-    "diff-schema-migrations": "pnpm --silent tusker:copy && (DIFF_SOURCE=schema DIFF_TARGET=migrations pnpm --silent tusker:diff  | ./diff-functions.py schema/) && pnpm --silent tusker:clean",
+    "diff-schema-migrations": "pnpm --silent tusker:copy && DIFF_SOURCE=schema DIFF_TARGET=migrations pnpm --silent tusker:diff && pnpm --silent tusker:clean",
     "diff-schema-db": "DIFF_SOURCE=schema DIFF_TARGET=database pnpm --silent tusker:diff",
     "diff-remote": "supabase db diff --linked | supabase migration new init",
     "link": "export $(cat .env) && supabase link",

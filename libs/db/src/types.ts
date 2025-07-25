@@ -183,6 +183,7 @@ export type Database = {
           deleted_at: string | null
           id: string
           name: string
+          public_id: string
           updated_at: string
         }
         Insert: {
@@ -190,6 +191,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name: string
+          public_id: string
           updated_at?: string
         }
         Update: {
@@ -197,6 +199,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name?: string
+          public_id?: string
           updated_at?: string
         }
         Relationships: []
@@ -1185,6 +1188,7 @@ export type Database = {
           name: string | null
           priority_child_id: string | null
           priority_id: string | null
+          public_id: string | null
           updated_at: string | null
         }
         Relationships: [
@@ -1550,6 +1554,7 @@ export type Database = {
           tags: Json | null
           title: string | null
           updated_at: string | null
+          updated_by: number | null
           user_id: string | null
         }
         Relationships: []

@@ -2,8 +2,8 @@ import type { Agent } from "./agent";
 
 export async function createAgent(id: string): Promise<Agent> {
   switch (id) {
-    case "onboarding": {
-      const agent = await import("./onboarding");
+    case "plot": {
+      const agent = await import("./plot");
       return new agent.default();
     }
     case "chat": {
@@ -14,4 +14,3 @@ export async function createAgent(id: string): Promise<Agent> {
       throw new Error(`Unknown agent: ${id}`);
   }
 }
-

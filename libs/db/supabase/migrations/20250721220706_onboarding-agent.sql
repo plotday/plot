@@ -155,7 +155,7 @@ DECLARE
 BEGIN
     SELECT
         encode(extensions.gen_random_bytes(12), 'hex') INTO uuid_text;
-    RETURN (uuid ('ab07ab07' || '-' || substring(uuid_text FROM 1 FOR 4) || '-' || substring(uuid_text FROM 3 FOR 4) || '-' || substring(uuid_text FROM 5 FOR 4) || '-' || substring(uuid_text FROM 7 FOR 12)));
+    RETURN (uuid('ab07ab07' || '-' || substring(uuid_text FROM 1 FOR 4) || '-' || substring(uuid_text FROM 3 FOR 4) || '-' || substring(uuid_text FROM 5 FOR 4) || '-' || substring(uuid_text FROM 7 FOR 12)));
 END;
 $function$;
 
@@ -418,7 +418,19 @@ BEGIN
         VALUES (NEW.id, NEW.updated_by, NEW.deleted_at, NEW.priority_id, NEW.path, NEW.draft, NEW.private, NEW.pinned, NEW.do_at, NEW.done_at, NEW.order, NEW.title, NEW.note, NEW.event_series)
     ON CONFLICT (id)
         DO UPDATE SET
-            updated_by = NEW.updated_by, deleted_at = NEW.deleted_at, priority_id = NEW.priority_id, path = NEW.path, draft = NEW.draft, private = NEW.private, pinned = NEW.pinned, do_at = NEW.do_at, done_at = NEW.done_at, "order" = NEW.order, title = NEW.title, note = NEW.note, event_series = NEW.event_series
+            updated_by = NEW.updated_by,
+            deleted_at = NEW.deleted_at,
+            priority_id = NEW.priority_id,
+            path = NEW.path,
+            draft = NEW.draft,
+            private = NEW.private,
+            pinned = NEW.pinned,
+            do_at = NEW.do_at,
+            done_at = NEW.done_at,
+            "order" = NEW.order,
+            title = NEW.title,
+            note = NEW.note,
+            event_series = NEW.event_series
         RETURNING
             id INTO _activity_id;
     RETURN NEW;
@@ -438,7 +450,11 @@ BEGIN
             VALUES (NEW.id, NEW.deleted_at, NEW.title, NEW.path, NEW.order, NEW.updated_by)
         ON CONFLICT (id)
             DO UPDATE SET
-                deleted_at = NEW.deleted_at, title = NEW.title, path = NEW.path, "order" = NEW.order, updated_by = NEW.updated_by
+                deleted_at = NEW.deleted_at,
+                title = NEW.title,
+                path = NEW.path,
+                "order" = NEW.order,
+                updated_by = NEW.updated_by
             RETURNING
                 id INTO _priority_id;
     END IF;
@@ -457,7 +473,8 @@ BEGIN
             VALUES (COALESCE(auth.uid (), NEW.user_id), _priority_id, NEW.pomodoro, NEW.color)
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
-                pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro), color = COALESCE(NEW.color, priority_settings.color);
+                pomodoro = COALESCE(NEW.pomodoro, priority_settings.pomodoro),
+                color = COALESCE(NEW.color, priority_settings.color);
     END IF;
     RETURN NEW;
 END;
