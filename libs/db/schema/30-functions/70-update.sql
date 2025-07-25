@@ -10,13 +10,15 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.notify_internal_api_for_activity ()
     RETURNS TRIGGER
-    SECURITY DEFINER
     LANGUAGE plpgsql
+    SECURITY DEFINER
     AS $function$
 DECLARE
     event_type text;
     payload jsonb;
     api_url text;
+    hmac_secret text;
+    signature text;
 BEGIN
     IF TG_OP = 'INSERT' THEN
         event_type := 'created';
@@ -37,10 +39,11 @@ BEGIN
                 priority_child_id = COALESCE(NEW.priority_id, OLD.priority_id)
                 AND id != COALESCE(NEW.created_by, OLD.created_by)), 'timestamp', extract(epoch FROM now()), 'table', 'activity');
     api_url := get_api_root () || '/update';
+    hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
+    signature := encode(extensions.hmac(payload::text::bytea, hmac_secret::bytea, 'sha256'), 'hex');
     PERFORM
-        net.http_post (url := api_url, body := payload, headers := jsonb_build_object('Content-Type', 'application/json', 'User-Agent', 'PostgreSQL/pg_net'));
+        net.http_post (url := api_url, body := payload, headers := jsonb_build_object('Content-Type', 'application/json', 'User-Agent', 'PostgreSQL/pg_net', 'X-Plot-Signature', 'sha256=' || signature));
     RETURN COALESCE(NEW, OLD);
 END;
 $function$;
-
 

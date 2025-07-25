@@ -9,6 +9,8 @@ DECLARE
     payload jsonb;
     _plot_agent_id uuid;
     _priority_agent_id uuid;
+    hmac_secret text;
+    signature text;
 BEGIN
     INSERT INTO public.priority (created_by, title, path, root)
         VALUES (user_id, 'Everything', public.generate_path (NULL), TRUE)
@@ -29,9 +31,11 @@ BEGIN
         RETURNING
             id INTO _priority_agent_id;
     END IF;
-    payload := jsonb_build_object('public_id', 'plot', 'priority_agent_id', _priority_agent_id, 'priority_id', _priority_id);
+    payload := jsonb_build_object('public_id', 'onboarding', 'priority_agent_id', _priority_agent_id, 'priority_id', _priority_id);
+    hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
+    signature := encode(extensions.hmac(payload::text::bytea, hmac_secret::bytea, 'sha256'::text), 'hex');
     PERFORM
-        net.http_post (url := public.get_api_root () || '/activate', body := payload, headers := jsonb_build_object('Content-Type', 'application/json', 'User-Agent', 'PostgreSQL/pg_net'));
+        net.http_post (url := public.get_api_root () || '/activate', body := payload, headers := jsonb_build_object('Content-Type', 'application/json', 'User-Agent', 'PostgreSQL/pg_net', 'X-Plot-Signature', 'sha256=' || signature));
 END;
 $function$;
 

@@ -1,22 +1,25 @@
-import * as Sentry from "@sentry/cloudflare";
-
 import type { User } from "@supabase/supabase-js";
 
+import * as Sentry from "@sentry/cloudflare";
 import { withSentry } from "@sentry/cloudflare";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
+import type { Activity } from "@plotday/agents/src/priority";
 import type { SupabaseClient } from "@plotday/db";
 import { createClient } from "@plotday/db";
 import type { SyncRequest } from "@plotday/sync";
 
-import type { Activity } from "@plotday/agents/src/priority";
-
-import { 
-  create as createActivity, 
-  update as updateActivity 
-} from "./activity";
+import { create as createActivity, update as updateActivity } from "./activity";
+import {
+  add as addAgent,
+  deleteAgent,
+  getById as getAgentById,
+  getByPriority as getAgentsByPriority,
+  getAll as getAllAgents,
+  update as updateAgent,
+} from "./agent";
 import {
   create as createEvent,
   respond as respondEvent,
@@ -25,22 +28,24 @@ import {
 import { Priority } from "./priority";
 import { summarize } from "./summary";
 import { addAccount, syncCalendar } from "./sync";
-import { 
-  add as addAgent,
-  getAll as getAllAgents, 
-  getById as getAgentById, 
-  getByPriority as getAgentsByPriority, 
-  update as updateAgent,
-  deleteAgent
-} from "./agent";
 
 export abstract class AgentRunner extends WorkerEntrypoint {
-  abstract activate(agentId: string, priority: Priority, config: any): Promise<void>;
+  abstract activate(
+    agentId: string,
+    priority: Priority,
+    config: any
+  ): Promise<void>;
 
-  abstract activity(agentId: string, activity: Activity, priority: Priority, config: any): Promise<void>;
+  abstract activity(
+    agentId: string,
+    activity: Activity,
+    priority: Priority,
+    config: any
+  ): Promise<void>;
 }
 
 export type Bindings = {
+  readonly API_HMAC_SECRET?: string;
   readonly SENTRY_DSN: string;
 
   readonly SUPABASE_URL: string;
@@ -82,7 +87,52 @@ app.use(
 );
 app.use("*", async (c, next) => {
   if (new URL(c.req.url).pathname.startsWith("/_/")) {
-    const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+    // Authenticate requests from the DB using HMAC
+    const signature = c.req.header("X-Plot-Signature");
+    if (!signature || !signature.startsWith("sha256=")) {
+      return new Response("Unauthorized: Missing or invalid signature", {
+        status: 401,
+      });
+    }
+
+    let hmacSecret = c.env.API_HMAC_SECRET;
+    if (ENV === "development") {
+      hmacSecret ??= "dev-not-secret";
+    }
+    if (!hmacSecret) {
+      return new Response("Server configuration error", { status: 500 });
+    }
+
+    // Get the raw body for HMAC verification
+    const bodyText = await c.req.text();
+
+    // Generate expected signature
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(hmacSecret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+
+    const expectedSignature = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode(bodyText)
+    );
+
+    const expectedHex = Array.from(new Uint8Array(expectedSignature))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    const providedHex = signature.slice(7); // Remove "sha256=" prefix
+    if (expectedHex !== providedHex) {
+      return new Response("Unauthorized: Invalid signature", { status: 401 });
+    }
+    const supabase = createClient(
+      c.env.SUPABASE_URL,
+      c.env.SUPABASE_SERVICE_KEY
+    );
     c.set("supabase", supabase);
     return await next();
   }
@@ -262,14 +312,28 @@ app.post("/agent", async (c) => {
   const name = (body as any)?.name;
   const config = (body as any)?.config;
   try {
-    const dbPriorityAgent = await addAgent(c.var.supabase, priorityId, agentId, name, config);
-    const priority = new Priority(c.var.supabase, priorityId, dbPriorityAgent.id, c.env.AI);
+    const dbPriorityAgent = await addAgent(
+      c.var.supabase,
+      priorityId,
+      agentId,
+      name,
+      config
+    );
+    const priority = new Priority(
+      c.var.supabase,
+      priorityId,
+      dbPriorityAgent.id,
+      c.env.AI
+    );
     await c.env.AGENT_RUNNER.activate(agentId, priority, config);
     return c.json(dbPriorityAgent.id);
   } catch (error) {
     if (error instanceof Error) {
-      return new Response(`Error adding agent: ${error.message}`, { status: 400 });
-    } throw error;
+      return new Response(`Error adding agent: ${error.message}`, {
+        status: 400,
+      });
+    }
+    throw error;
   }
 });
 
@@ -282,7 +346,9 @@ app.patch("/agent/:id", async (c) => {
     return c.json(dbAgent);
   } catch (error) {
     if (error instanceof Error) {
-      return new Response(`Error updating agent: ${error.message}`, { status: 400 });
+      return new Response(`Error updating agent: ${error.message}`, {
+        status: 400,
+      });
     }
     throw error;
   }
@@ -299,7 +365,9 @@ app.post("/_/update", async (c) => {
   const activity = (body as any)?.item;
   const agents = (body as any)?.agents;
   if (!agents || !Array.isArray(agents)) {
-    return new Response("Bad request (missing or invalid agents)", { status: 400 });
+    return new Response("Bad request (missing or invalid agents)", {
+      status: 400,
+    });
   }
   for (const agent of agents) {
     Sentry.withScope((scope) => {
@@ -307,13 +375,27 @@ app.post("/_/update", async (c) => {
       Sentry.captureMessage(agent.public_id, "error");
     });
     try {
-      const priority = new Priority(c.var.supabase, activity.priority_id, agent.priority_agent_id, c.env.AI);
-      await c.env.AGENT_RUNNER.activity(agent.public_id, { priorityId: activity.priority_id, ...activity }, priority, agent.config);
-    } 
-    catch (error) {
+      const priority = new Priority(
+        c.var.supabase,
+        activity.priority_id,
+        agent.priority_agent_id,
+        c.env.AI
+      );
+      await c.env.AGENT_RUNNER.activity(
+        agent.public_id,
+        { priorityId: activity.priority_id, ...activity },
+        priority,
+        agent.config
+      );
+    } catch (error) {
       if (error instanceof Error) {
-        console.error(`Error processing activity for agent ${agent.public_id}: ${error.message}`)
-        return new Response(`Error processing activity for agent ${agent.public_id}: ${error.message}`, { status: 400 });
+        console.error(
+          `Error processing activity for agent ${agent.public_id}: ${error.message}`
+        );
+        return new Response(
+          `Error processing activity for agent ${agent.public_id}: ${error.message}`,
+          { status: 400 }
+        );
       }
       throw error;
     }
@@ -327,17 +409,26 @@ app.post("/_/activate", async (c) => {
   const priorityAgentId = (body as any)?.priority_agent_id;
   const priorityId = (body as any)?.priority_id;
   if (!agentId || !priorityId) {
-    return new Response("Bad request (missing agentId or priorityId)", { status: 400 });
+    return new Response("Bad request (missing agentId or priorityId)", {
+      status: 400,
+    });
   }
   const config = (body as any)?.config || {};
   try {
-    const priority = new Priority(c.var.supabase, priorityId, priorityAgentId, c.env.AI);
+    const priority = new Priority(
+      c.var.supabase,
+      priorityId,
+      priorityAgentId,
+      c.env.AI
+    );
     await c.env.AGENT_RUNNER.activate(agentId, priority, config);
     return c.json({ success: true });
-  }
-  catch (error) {
+  } catch (error) {
     if (error instanceof Error) {
-      return new Response(`Error activating agent ${agentId}: ${error.message}`, { status: 400 });
+      return new Response(
+        `Error activating agent ${agentId}: ${error.message}`,
+        { status: 400 }
+      );
     }
     throw error;
   }
@@ -352,4 +443,4 @@ export default withSentry(
     enabled: ENV !== "development",
   }),
   app as any
-)
+);
