@@ -20,7 +20,8 @@
     "@plotday/db": "workspace:^",
     "@sentry/cloudflare": "^8.47.0",
     "@supabase/supabase-js": "^2.38.4",
-    "hono": "^4.6.15"
+    "hono": "^4.6.15",
+    "zod": "^4.0.10"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",

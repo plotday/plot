@@ -1,9 +1,7 @@
-import type { Activity } from "@plotday/agents/src/priority";
-
 import { WorkerEntrypoint } from "cloudflare:workers";
-import { createClient } from "@plotday/db";
+
+import type { Activity, Plot } from "@plotday/agents";
 import { createAgent } from "@plotday/agents";
-import { Priority } from "../../api/src/priority";
 
 export type Bindings = {
   readonly SUPABASE_URL: string;
@@ -15,14 +13,18 @@ export default class extends WorkerEntrypoint<Bindings> {
     return new Response("OK", { status: 200 });
   }
 
-  async activate(agentId: string, priority: Priority, config: any = {}) {
-    const supabase = createClient(this.env.SUPABASE_URL, this.env.SUPABASE_SERVICE_KEY);
+  async activate(agentId: string, plot: Plot, config: any = {}) {
     const agent = await createAgent(agentId);
-    await agent.activate(priority, config);
+    await agent.activate(plot, config);
   }
 
-  async activity(agentId: string, activity: Activity, priority: Priority, config: any = {}) {
+  async activity(
+    agentId: string,
+    activity: Activity,
+    plot: Plot,
+    config: any = {}
+  ) {
     const agent = await createAgent(agentId);
-    return await agent.activity(activity, priority, config);
+    return await agent.activity(plot, config, activity);
   }
 }

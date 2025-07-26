@@ -1,4 +1,4 @@
-import type { Agent } from "./agent";
+import type { Agent } from "./types";
 
 export async function createAgent(id: string): Promise<Agent> {
   switch (id) {
