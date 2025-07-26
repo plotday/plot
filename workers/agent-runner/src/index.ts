@@ -13,18 +13,13 @@ export default class extends WorkerEntrypoint<Bindings> {
     return new Response("OK", { status: 200 });
   }
 
-  async activate(agentId: string, plot: Plot, config: any = {}) {
+  async activate(agentId: string, plot: Plot) {
     const agent = await createAgent(agentId);
-    await agent.activate(plot, config);
+    await agent.activate(plot);
   }
 
-  async activity(
-    agentId: string,
-    activity: Activity,
-    plot: Plot,
-    config: any = {}
-  ) {
+  async activity(agentId: string, plot: Plot, activity: Activity) {
     const agent = await createAgent(agentId);
-    return await agent.activity(plot, config, activity);
+    return await agent.activity(plot, activity);
   }
 }

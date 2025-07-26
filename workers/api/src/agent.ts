@@ -262,23 +262,27 @@ export class Plot extends RpcTarget implements IPlot {
   private priorityId: string;
   private priorityAgentId: string;
   private ai: Ai;
+  public config: Record<string, string>;
 
   constructor({
     supabase,
     priorityId,
     priorityAgentId,
     ai,
+    config,
   }: {
     supabase: SupabaseClient;
     priorityId: string;
     priorityAgentId: string;
     ai: Ai;
+    config?: Record<string, string>;
   }) {
     super();
     this.supabase = supabase;
     this.priorityId = priorityId;
     this.priorityAgentId = priorityAgentId;
     this.ai = ai;
+    this.config = config || {};
   }
 
   async createActivity(activity: NewActivity): Promise<Activity> {
@@ -408,4 +412,3 @@ export class Plot extends RpcTarget implements IPlot {
     return fromDbPriority(result.data);
   }
 }
-

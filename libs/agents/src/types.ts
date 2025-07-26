@@ -32,6 +32,7 @@ export type LlmMessage = {
 };
 
 export interface Plot {
+  config: any;
   createActivity(activity: NewActivity): Promise<Activity>;
   createPriority(priority: NewPriority): Promise<Priority>;
   getRelatedActivities(activity: Activity): Promise<Activity[]>;
@@ -42,8 +43,7 @@ export interface Plot {
 }
 
 export interface Agent {
-  activate(plot: Plot, config: any): Promise<void>;
+  activate(plot: Plot): Promise<void>;
 
-  activity(plot: Plot, config: any, activity: Activity): Promise<void>;
+  activity(plot: Plot, activity: Activity): Promise<void>;
 }
-

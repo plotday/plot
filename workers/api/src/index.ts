@@ -38,12 +38,11 @@ function handleValidationError(error: z.ZodError) {
 }
 
 export abstract class AgentRunner extends WorkerEntrypoint {
-  abstract activate(agentId: string, plot: Plot, config: any): Promise<void>;
+  abstract activate(agentId: string, plot: Plot): Promise<void>;
 
   abstract activity(
     agentId: string,
     plot: Plot,
-    config: any,
     activity: Activity
   ): Promise<void>;
 }
@@ -376,8 +375,9 @@ app.post("/agent", async (c) => {
       priorityId: body.priorityId,
       priorityAgentId: dbPriorityAgent.id,
       ai: c.env.AI,
+      config: body.config,
     });
-    await c.env.AGENT_RUNNER.activate(body.agentId, plot, body.config);
+    await c.env.AGENT_RUNNER.activate(body.agentId, plot);
     return c.json(dbPriorityAgent.id);
   } catch (error) {
     if (error instanceof Error) {
@@ -462,8 +462,9 @@ app.post("/_/update", async (c) => {
         priorityId: String(activity.priority_id),
         priorityAgentId: agent.priority_agent_id,
         ai: c.env.AI,
+        config: agent.config,
       });
-      await c.env.AGENT_RUNNER.activity(agent.public_id, plot, agent.config, {
+      await c.env.AGENT_RUNNER.activity(agent.public_id, plot, {
         id: String(activity.id || ""),
         createdBy: String(activity.created_by || ""),
         priorityId: String(activity.priority_id),
@@ -513,8 +514,9 @@ app.post("/_/activate", async (c) => {
       priorityId: body.priority_id,
       priorityAgentId: body.priority_agent_id,
       ai: c.env.AI,
+      config: body.config,
     });
-    await c.env.AGENT_RUNNER.activate(body.public_id, plot, body.config || {});
+    await c.env.AGENT_RUNNER.activate(body.public_id, plot);
     return c.json({ success: true });
   } catch (error) {
     if (error instanceof Error) {

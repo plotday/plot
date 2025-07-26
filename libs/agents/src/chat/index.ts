@@ -1,9 +1,9 @@
 import type { Activity, Agent, LlmMessage, Plot } from "../";
 
 export default class ChatAgent implements Agent {
-  async activate(_plot: Plot, _config: any = {}) {}
+  async activate(_plot: Plot) {}
 
-  async activity(plot: Plot, _config: any = {}, activity: Activity) {
+  async activity(plot: Plot, activity: Activity) {
     const previousActivities = await plot.getRelatedActivities(activity);
 
     if (

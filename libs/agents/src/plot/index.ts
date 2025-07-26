@@ -1,7 +1,7 @@
 import type { Activity, Agent, Plot } from "../";
 
 export default class PlotAgent implements Agent {
-  async activate(plot: Plot, _config: any = {}) {
+  async activate(plot: Plot) {
     const onboardingPriority = await plot.createPriority({
       title: "Getting Started",
     });
@@ -12,5 +12,5 @@ export default class PlotAgent implements Agent {
     });
   }
 
-  async activity(_plot: Plot, _config: any = {}, _activity: Activity) {}
+  async activity(_plot: Plot, _activity: Activity) {}
 }
