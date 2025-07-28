@@ -2,25 +2,25 @@ import type { User } from "@supabase/supabase-js";
 
 import * as Sentry from "@sentry/cloudflare";
 import { withSentry } from "@sentry/cloudflare";
-import { WorkerEntrypoint } from "cloudflare:workers";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
 
-import type { Activity } from "@plotday/agents";
+import type AgentRunner from "@plotday/agent-runner";
+import type { ToolDependency } from "@plotday/agents/framework";
 import type { SupabaseClient } from "@plotday/db";
 import { createClient } from "@plotday/db";
 import type { SyncRequest } from "@plotday/sync";
 
+import { createTools } from "./agent";
 import {
-  Plot,
   add as addAgent,
   deleteAgent,
   getById as getAgentById,
   getByPriority as getAgentsByPriority,
   getAll as getAllAgents,
   update as updateAgent,
-} from "./agent";
+} from "./agent/management";
 import {
   create as createEvent,
   respond as respondEvent,
@@ -35,16 +35,6 @@ function handleValidationError(error: z.ZodError) {
   return new Response(`Validation error: ${messages.join(", ")}`, {
     status: 400,
   });
-}
-
-export abstract class AgentRunner extends WorkerEntrypoint {
-  abstract activate(agentId: string, plot: Plot): Promise<void>;
-
-  abstract activity(
-    agentId: string,
-    plot: Plot,
-    activity: Activity
-  ): Promise<void>;
 }
 
 export type Bindings = {
@@ -370,14 +360,17 @@ app.post("/agent", async (c) => {
       body.name,
       body.config
     );
-    const plot = new Plot({
+    const tools = createTools({
+      dependencies: dbPriorityAgent.tools as ToolDependency[],
+      ai: c.env.AI,
       supabase: c.var.supabase,
       priorityId: body.priorityId,
       priorityAgentId: dbPriorityAgent.id,
-      ai: c.env.AI,
-      config: body.config,
+      config: body.config || {},
     });
-    await c.env.AGENT_RUNNER.activate(body.agentId, plot);
+    await c.env.AGENT_RUNNER.activate(body.agentId, tools, {
+      id: body.priorityId,
+    });
     return c.json(dbPriorityAgent.id);
   } catch (error) {
     if (error instanceof Error) {
@@ -435,9 +428,18 @@ const DatabaseUpdateRequestSchema = z.object({
   }),
   agents: z.array(
     z.object({
-      public_id: z.string(),
+      agent_id: z.string(),
       priority_agent_id: z.string(),
       config: z.record(z.string(), z.any()).optional(),
+      tools: z
+        .array(
+          z.object({
+            id: z.string(),
+            tool: z.string().optional(),
+            account: z.string().optional(),
+          })
+        )
+        .optional(),
     })
   ),
 });
@@ -453,18 +455,19 @@ app.post("/_/update", async (c) => {
 
   for (const agent of body.agents) {
     Sentry.withScope((scope) => {
-      scope.setExtra("agent-public-id", agent.public_id);
-      Sentry.captureMessage(agent.public_id, "error");
+      scope.setExtra("agent-id", agent.agent_id);
+      Sentry.captureMessage(agent.agent_id, "error");
     });
     try {
-      const plot = new Plot({
+      const tools = createTools({
+        dependencies: agent.tools || [],
+        ai: c.env.AI,
         supabase: c.var.supabase,
         priorityId: String(activity.priority_id),
         priorityAgentId: agent.priority_agent_id,
-        ai: c.env.AI,
-        config: agent.config,
+        config: agent.config || {},
       });
-      await c.env.AGENT_RUNNER.activity(agent.public_id, plot, {
+      await c.env.AGENT_RUNNER.activity(agent.agent_id, tools, {
         id: String(activity.id || ""),
         createdBy: String(activity.created_by || ""),
         priorityId: String(activity.priority_id),
@@ -481,10 +484,10 @@ app.post("/_/update", async (c) => {
     } catch (error) {
       if (error instanceof Error) {
         console.error(
-          `Error processing activity for agent ${agent.public_id}: ${error.message}`
+          `Error processing activity for agent ${agent.agent_id}: ${error.message}`
         );
         return new Response(
-          `Error processing activity for agent ${agent.public_id}: ${error.message}`,
+          `Error processing activity for agent ${agent.agent_id}: ${error.message}`,
           { status: 400 }
         );
       }
@@ -495,10 +498,19 @@ app.post("/_/update", async (c) => {
 });
 
 const DatabaseActivateRequestSchema = z.object({
-  public_id: z.string(),
+  agent_id: z.string(),
   priority_agent_id: z.string(),
   priority_id: z.string(),
   config: z.record(z.string(), z.any()).optional(),
+  tools: z
+    .array(
+      z.object({
+        id: z.string(),
+        tool: z.string().optional(),
+        account: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 app.post("/_/activate", async (c) => {
@@ -509,19 +521,22 @@ app.post("/_/activate", async (c) => {
   }
   const body = parseResult.data;
   try {
-    const plot = new Plot({
+    const tools = createTools({
+      dependencies: body.tools || [],
+      ai: c.env.AI,
       supabase: c.var.supabase,
       priorityId: body.priority_id,
       priorityAgentId: body.priority_agent_id,
-      ai: c.env.AI,
-      config: body.config,
+      config: body.config || {},
     });
-    await c.env.AGENT_RUNNER.activate(body.public_id, plot);
+    await c.env.AGENT_RUNNER.activate(body.agent_id, tools, {
+      id: body.priority_id,
+    });
     return c.json({ success: true });
   } catch (error) {
     if (error instanceof Error) {
       return new Response(
-        `Error activating agent ${body.public_id}: ${error.message}`,
+        `Error activating agent ${body.agent_id}: ${error.message}`,
         { status: 400 }
       );
     }

@@ -179,27 +179,39 @@ export type Database = {
       }
       agent: {
         Row: {
+          author_email: string | null
+          author_name: string | null
+          author_url: string | null
           created_at: string
           deleted_at: string | null
+          description: string | null
           id: string
           name: string
-          public_id: string
+          tools: Json
           updated_at: string
         }
         Insert: {
+          author_email?: string | null
+          author_name?: string | null
+          author_url?: string | null
           created_at?: string
           deleted_at?: string | null
-          id?: string
+          description?: string | null
+          id: string
           name: string
-          public_id: string
+          tools?: Json
           updated_at?: string
         }
         Update: {
+          author_email?: string | null
+          author_name?: string | null
+          author_url?: string | null
           created_at?: string
           deleted_at?: string | null
+          description?: string | null
           id?: string
           name?: string
-          public_id?: string
+          tools?: Json
           updated_at?: string
         }
         Relationships: []
@@ -1188,7 +1200,7 @@ export type Database = {
           name: string | null
           priority_child_id: string | null
           priority_id: string | null
-          public_id: string | null
+          tools: Json | null
           updated_at: string | null
         }
         Relationships: [
@@ -1709,6 +1721,12 @@ export type Database = {
         Args: { email: string }
         Returns: string
       }
+      get_users_with_priority_access: {
+        Args: { target_priority_id: string }
+        Returns: {
+          user_id: string
+        }[]
+      }
       insert_domain: {
         Args: { email: string }
         Returns: number
@@ -1771,6 +1789,10 @@ export type Database = {
           _invitees: Database["public"]["CompositeTypes"]["invitee_upsert"][]
         }
         Returns: undefined
+      }
+      user_has_priority_access: {
+        Args: { user_id: string; target_priority_id: string }
+        Returns: boolean
       }
       user_timezone: {
         Args: Record<PropertyKey, never>

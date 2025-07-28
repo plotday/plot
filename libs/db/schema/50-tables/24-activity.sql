@@ -40,26 +40,41 @@ CREATE TRIGGER set_activity_created_by
 
 CREATE OR REPLACE FUNCTION public.notify_user_for_activity ()
     RETURNS TRIGGER
-    SECURITY DEFINER
     LANGUAGE plpgsql
-    AS $$
+    SECURITY DEFINER
+    AS $function$
+DECLARE
+    target_priority_id uuid;
+    user_to_notify uuid;
 BEGIN
-    PERFORM
-        realtime.send (jsonb_build_object('table', 'activity', 'updated_by', COALESCE(NEW.updated_by, OLD.updated_by)), -- JSONB Payload
-            'sync', -- Event name
-            'user:' || COALESCE(NEW.created_by, OLD.created_by)::text, -- Topic
-            FALSE -- Public / Private flag
+    -- Get the priority_id from the activity
+    target_priority_id := COALESCE(NEW.priority_id, OLD.priority_id);
+    -- Notify all users who have access to this priority
+    FOR user_to_notify IN
+    SELECT
+        user_id
+    FROM
+        public.get_users_with_priority_access (target_priority_id)
+        LOOP
+            PERFORM
+                realtime.send (jsonb_build_object('table', 'activity', 'updated_by', COALESCE(NEW.updated_by, OLD.updated_by)), -- JSONB Payload
+                    'sync', -- Event name
+                    'user:' || user_to_notify::text, -- Topic
+                    FALSE -- Public / Private flag
 );
+        END LOOP;
     RETURN NULL;
 END;
-$$;
+$function$;
 
 CREATE TRIGGER handle_activity_changes
     AFTER INSERT OR UPDATE ON public.activity
     FOR EACH ROW
     EXECUTE FUNCTION notify_user_for_activity ();
-    
+
 CREATE TRIGGER activity_change_api_call
     AFTER INSERT ON public.activity
     FOR EACH ROW
     EXECUTE FUNCTION public.notify_internal_api_for_activity ();
+
+

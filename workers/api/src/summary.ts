@@ -1,6 +1,5 @@
 export async function summarize(ai: Ai, body: string) {
   body = body.trim();
-  console.log(`SUM: ${body} (${body.length})`);
   if (body.length === 0) {
     return {
       title: "Empty",

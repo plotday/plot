@@ -1,10 +1,12 @@
-import type { Activity, Agent, LlmMessage, Plot } from "../";
+import { type Activity, Agent } from "@plotday/sdk";
+import { type Ai, type LlmMessage } from "@plotday/tools/ai";
+import { type Plot } from "@plotday/tools/plot";
 
-export default class ChatAgent implements Agent {
-  async activate(_plot: Plot) {}
-
-  async activity(plot: Plot, activity: Activity) {
-    const previousActivities = await plot.getRelatedActivities(activity);
+export default class ChatAgent extends Agent {
+  async activity(activity: Activity) {
+    const plot = this.tools.get<Plot>("plot");
+    const ai = this.tools.get<Ai>("ai");
+    const previousActivities = await plot.getActivities(activity);
 
     if (
       activity.note?.includes("@chat") ||
@@ -76,7 +78,7 @@ Add any action items to the array action_items.`,
         required: ["message", "action_items"],
       };
 
-      const response = (await plot.promptLlm(messages, { schema })).response;
+      const response = (await ai.promptLlm(messages, { schema })).response;
 
       await Promise.all([
         plot.createActivity({

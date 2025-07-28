@@ -123,14 +123,7 @@ importers:
         specifier: ^5.1.4
         version: 5.1.4(typescript@5.7.2)(vite@5.4.11(@types/node@20.14.2)(sugarss@4.0.1(postcss@8.4.49))(terser@5.37.0))
 
-  libs/agents:
-    devDependencies:
-      '@plotday/eslint-config-custom':
-        specifier: workspace:*
-        version: link:../eslint-config-custom
-      '@plotday/tsconfig':
-        specifier: workspace:*
-        version: link:../tsconfig
+  libs/agents: {}
 
   libs/cal:
     dependencies:
@@ -274,9 +267,6 @@ importers:
         specifier: 2.1.0-pre.6
         version: 2.1.0-pre.6
     devDependencies:
-      '@plotday/eslint-config-custom':
-        specifier: workspace:*
-        version: link:../../libs/eslint-config-custom
       '@plotday/tsconfig':
         specifier: workspace:*
         version: link:../../libs/tsconfig
@@ -308,6 +298,9 @@ importers:
         specifier: ^4.0.10
         version: 4.0.10
     devDependencies:
+      '@plotday/agent-runner':
+        specifier: workspace:^
+        version: link:../agent-runner
       '@plotday/eslint-config-custom':
         specifier: workspace:*
         version: link:../../libs/eslint-config-custom

@@ -26,6 +26,7 @@
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/sync": "workspace:^",
+    "@plotday/agent-runner": "workspace:^",
     "@plotday/tsconfig": "workspace:*",
     "@types/node": "^20.14.2"
   },

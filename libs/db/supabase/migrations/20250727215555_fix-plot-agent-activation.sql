@@ -40,21 +40,3 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.add_default_priority_trigger ()
-    RETURNS TRIGGER
-    SECURITY DEFINER
-    SET search_path = public, auth
-    LANGUAGE plpgsql
-    AS $function$
-BEGIN
-    PERFORM
-        public.add_default_priority (NEW.id);
-    RETURN NEW;
-END;
-$function$;
-
-CREATE TRIGGER on_user_created_add_default_priority
-    AFTER INSERT ON auth.users
-    FOR EACH ROW
-    EXECUTE FUNCTION public.add_default_priority_trigger ();
-

@@ -13,7 +13,8 @@
     "deploy": "../../scripts/deploy-worker",
     "deploy:vars": "../../scripts/deploy-worker-vars",
     "types": "wrangler types",
-    "lint": "tsc && eslint ."
+    "lint": "tsc",
+    "gen-sql": "node scripts/gen-sql.js"
   },
   "dependencies": {
     "@plotday/agents": "workspace:^",
@@ -21,7 +22,6 @@
     "@worker-tools/json-fetch": "2.1.0-pre.6"
   },
   "devDependencies": {
-    "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
     "@types/node": "^22.15.19"
   },

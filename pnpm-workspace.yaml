@@ -3,7 +3,7 @@ packages:
   - workers/*
   - libs/*
 onlyBuiltDependencies:
-  - '@sentry/cli'
+  - "@sentry/cli"
   - bufferutil
   - es5-ext
   - esbuild

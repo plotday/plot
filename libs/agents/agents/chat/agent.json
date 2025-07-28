@@ -1,0 +1,15 @@
+{
+  "id": "chat",
+  "name": "AI Chat",
+  "description": "Chat with AI models",
+  "author": {
+    "name": "Plot",
+    "email": "team@plot.day",
+    "url": "https://plot.day"
+  },
+  "license": "MIT",
+  "tools": [
+    "plot",
+    "ai"
+  ]
+}

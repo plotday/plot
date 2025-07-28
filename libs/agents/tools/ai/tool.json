@@ -1,0 +1,7 @@
+{
+  "id": "ai",
+  "name": "AI",
+  "description": "Prompt AI models",
+  "license": "MIT",
+  "tools": []
+}
