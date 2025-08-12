@@ -53,9 +53,11 @@ jobs:
 
       - name: Print env
         run: |
-          'echo "SUPABASE_URL: ${{ env.SUPABASE_URL }}"'
-          'echo "API_ROOT: ${{ env.API_ROOT }}"'
-          'echo "SENTRY_PROJECT: ${{ env.SENTRY_PROJECT }}"'
+          cat << EOF
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          API_ROOT: ${{ env.API_ROOT }}
+          SENTRY_PROJECT: ${{ env.SENTRY_PROJECT }}
+          EOF
 
       - name: Write .env file
         run: |
