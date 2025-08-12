@@ -23,7 +23,7 @@ upload_source_maps = true
 
 [env.production]
 routes = [
-  { pattern = "sync-api.plot.day", custom_domain = true }
+  { pattern = "api.plot.day", custom_domain = true }
 ]
 [env.production.define]
   ENV = '"production"'
