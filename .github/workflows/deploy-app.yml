@@ -36,13 +36,10 @@ jobs:
         with:
           export-env: true
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
           CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
           SUPABASE_URL: op://Production/Supabase/API/url
           SUPABASE_ANON_KEY: op://Production/Supabase/API/public key
-          API_ROOT: https://sync-api.plot.day
-          SENTRY_PROJECT: app
           SENTRY_AUTH_TOKEN: op://Development/Sentry/credential
           SENTRY_ORG: op://Development/Sentry/org
           SENTRY_DSN: op://Development/Sentry/app/dsn
@@ -50,23 +47,14 @@ jobs:
           GOOGLE_IOS_CLIENT_ID: op://Production/Google OAuth/iOS/client ID
           GOOGLE_ANDROID_CLIENT_ID: op://Production/Google OAuth/Android/client ID
           MICROSOFT_CLIENT_ID: op://Production/Microsoft OAuth/username
-          AUTH_CALLBACK_URL: https://app.plot.day/auth.html
-
-      - name: Print env
-        run: |
-          cat << EOF
-          SUPABASE_URL: ${{ env.SUPABASE_URL }}
-          API_ROOT: ${{ env.API_ROOT }}
-          SENTRY_PROJECT: ${{ env.SENTRY_PROJECT }}
-          EOF
 
       - name: Write .env file
         run: |
           scripts/env-to-json > apps/plot/env.json << EOF
           SUPABASE_URL=${{ env.SUPABASE_URL }}
           SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }}
-          API_ROOT=${{ env.API_ROOT }}
-          SENTRY_PROJECT=${{ env.SENTRY_PROJECT }}
+          API_ROOT=https://sync-api.plot.day
+          SENTRY_PROJECT=app
           SENTRY_AUTH_TOKEN=${{ env.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG=${{ env.SENTRY_ORG }}
           SENTRY_DSN=${{ env.SENTRY_DSN }}
@@ -74,7 +62,7 @@ jobs:
           GOOGLE_IOS_CLIENT_ID=${{ env.GOOGLE_IOS_CLIENT_ID }}
           GOOGLE_ANDROID_CLIENT_ID=${{ env.GOOGLE_ANDROID_CLIENT_ID }}
           MICROSOFT_CLIENT_ID=${{ env.MICROSOFT_CLIENT_ID }}
-          AUTH_CALLBACK_URL=${{ env.AUTH_CALLBACK_URL }}
+          AUTH_CALLBACK_URL=https://app.plot.day/auth.html
           EOF
 
       - uses: subosito/flutter-action@v2
