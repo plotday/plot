@@ -8,6 +8,7 @@ class Alert {
     return PlatformResolver.current(
         macOSResolver: () => macos.showMacosAlertDialog<void>(
               context: context,
+              useRootNavigator: true,
               builder: (_) => macos.MacosAlertDialog(
                 appIcon: FlutterLogo(size: 64),
                 title: Text(

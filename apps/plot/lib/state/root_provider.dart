@@ -6,7 +6,6 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/accounts.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/page/loading.dart';
-import 'package:plot/page/sign_in.dart';
 import 'logging.dart';
 
 class RootProvider extends StatefulWidget {
@@ -33,7 +32,7 @@ class RootProviderState extends State<RootProvider> {
         builder: (context, state) {
           return switch (state) {
             UserLoading _ => const LoadingPage(),
-            UserSignedOut _ => SignInPage(),
+            UserSignedOut _ => widget.child,
             UserReady _ => MultiBlocProvider(
               providers: [
                 BlocProvider(create: (_) => AccountsBloc()),

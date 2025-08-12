@@ -10,7 +10,9 @@ import 'logging.dart';
 
 @RoutePage()
 class SignInPage extends StatefulWidget {
-  const SignInPage({super.key});
+  const SignInPage({this.returnTo, super.key});
+
+  final String? returnTo;
 
   @override
   State<SignInPage> createState() => _SignInPageState();
@@ -27,6 +29,11 @@ class _SignInPageState extends State<SignInPage> {
       setState(() {
         _signedIn = user != null;
       });
+      
+      // Redirect to return path or home after successful sign-in
+      if (user != null && mounted) {
+        context.router.navigatePath(widget.returnTo ?? '/');
+      }
     });
     super.initState();
   }

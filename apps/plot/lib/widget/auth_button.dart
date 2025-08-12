@@ -9,6 +9,7 @@ import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:plot/env.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/util/google_sign_in.dart';
+import 'logging.dart';
 
 class ProviderAuth {
   ProviderAuth({this.accessToken, this.idToken, this.code});
@@ -65,8 +66,9 @@ class _AuthButtonState extends State<AuthButton> {
       forceCodeForRefreshToken: widget.scopes != null,
     );
 
-    _googleSignIn.onCurrentUserChanged
-        .listen((GoogleSignInAccount? account) async {
+    _googleSignIn.onCurrentUserChanged.listen((
+      GoogleSignInAccount? account,
+    ) async {
       if (account == null) return;
 
       final googleAuth = await account.authentication;
@@ -74,11 +76,9 @@ class _AuthButtonState extends State<AuthButton> {
       final idToken = googleAuth.idToken;
       final code = account.serverAuthCode;
 
-      await widget.onSignIn(ProviderAuth(
-        accessToken: accessToken,
-        idToken: idToken,
-        code: code,
-      ));
+      await widget.onSignIn(
+        ProviderAuth(accessToken: accessToken, idToken: idToken, code: code),
+      );
       _googleSignIn.signOut();
     });
 
@@ -94,10 +94,12 @@ class _AuthButtonState extends State<AuthButton> {
       }
       await _googleSignIn.signIn();
     } on String catch (message) {
+      log.warning('Google sign-in failed: $message');
       if (mounted) {
         Alert.show(context, message);
       }
-    } on Exception catch (e) {
+    } on Exception catch (e, t) {
+      log.warning('Google sign-in failed', e, t);
       if (mounted) {
         Alert.show(context, e.toString());
       }

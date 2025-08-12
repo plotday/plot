@@ -7,6 +7,7 @@ import 'package:logging/logging.dart';
 
 import 'store/store.dart';
 import 'state/now.dart';
+import 'state/user.dart';
 import 'page/page.dart';
 import 'widget/global_menu.dart';
 import 'widget/dialog.dart';
@@ -55,6 +56,7 @@ class AppRouter extends RootStackRouter {
           page: EmptyShellRoute("Now"),
           path: '',
           guards: [
+            AuthGuard(),
             AutoRouteGuardCallback((resolver, router) async {
               final priorityId = resolver.context
                   .read<NowBloc>()
@@ -66,20 +68,27 @@ class AppRouter extends RootStackRouter {
           ],
         ),
         AutoRoute(page: SignInRoute.page, path: 'login'),
-        AutoRoute(page: PrioritiesRoute.page, path: 'priorities'),
+        AutoRoute(
+          page: PrioritiesRoute.page,
+          path: 'priorities',
+          guards: [AuthGuard()],
+        ),
         AutoRoute(
           page: PriorityRoute.page,
           path: 'p/:priorityId',
+          guards: [AuthGuard()],
           children: [AutoRoute(page: PriorityMainRoute.page, path: '')],
         ),
         AutoRoute(
           page: ActivityRoute.page,
           path: 'a/:activityId',
+          guards: [AuthGuard()],
           children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
         ),
         AutoRoute(
           page: EventRoute.page,
           path: 'e/:eventId',
+          guards: [AuthGuard()],
           children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
         ),
       ],
@@ -119,6 +128,29 @@ extension FocusedRouterExtension on BuildContext {
   StackRouter get focusedRouter {
     var focusContext = FocusManager.instance.primaryFocus?.context;
     return focusContext?.router ?? router;
+  }
+}
+
+class AuthGuard extends AutoRouteGuard {
+  @override
+  void onNavigation(NavigationResolver resolver, StackRouter router) {
+    final userBloc = resolver.context.read<UserBloc>();
+    final userState = userBloc.state;
+
+    if (userState is UserReady) {
+      // User is authenticated, proceed with navigation
+      resolver.next();
+    } else if (userState is UserSignedOut) {
+      // User is not authenticated, redirect to sign in with return path
+      final returnPath = resolver.route.path;
+      router.navigate(
+        SignInRoute(returnTo: returnPath != '/login' ? returnPath : null),
+      );
+    } else {
+      // User state is loading, wait for authentication to complete
+      // This will be handled by the UserBloc listener
+      resolver.next();
+    }
   }
 }
 
