@@ -307,10 +307,10 @@ class BidirectionalListState extends State<BidirectionalList> {
     super.initState();
     _setCounts();
     _scrollController = widget.scrollController ?? ScrollController();
-    widget.controller.clamp(widget.first, widget.first + widget.count - 1);
 
     // Call _loadIfNecessary on the first frame after initial render
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.controller.clamp(widget.first, widget.first + widget.count - 1);
       _loadIfNecessary();
     });
   }
