@@ -13,8 +13,8 @@ lib/store/store.g.dart
 .history
 .svn/
 
-# Build secrets
-.env
+# Build variables
+env.json
 
 # IntelliJ related
 *.iml

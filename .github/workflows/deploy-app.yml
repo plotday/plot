@@ -53,7 +53,7 @@ jobs:
 
       - name: Write .env file
         run: |
-          cat > apps/plot/.env << EOF
+          scripts/env-to-json > apps/plot/env.json << EOF
           SUPABASE_URL=${{ env.SUPABASE_URL }}
           SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }}
           API_ROOT=${{ env.API_ROOT }}
