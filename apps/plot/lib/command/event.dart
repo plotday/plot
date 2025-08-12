@@ -7,7 +7,7 @@ import 'command.dart';
 
 class ArchiveEventCommand extends Command {
   ArchiveEventCommand(this.event)
-    : super(title: 'Archive Event', icon: PlotIcon.archive);
+    : super(title: 'Archive Event', icon: PlotIcon.archived);
 
   final Event event;
 
@@ -94,7 +94,7 @@ class PickEventResponse extends ShowCommands {
                     EventResponse.declined,
                     title: 'Declined',
                     subtitle: 'Decline this event',
-                    icon: PlotIcon.archive,
+                    icon: PlotIcon.archived,
                   ),
                   ChangeEventResponse(
                     event,

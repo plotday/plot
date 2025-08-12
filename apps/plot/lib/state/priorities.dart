@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
@@ -9,7 +10,7 @@ import 'logging.dart';
 part 'priorities_state.dart';
 
 class PrioritiesBloc extends Cubit<PrioritiesState> {
-  PrioritiesBloc() : _subscription = null, super(const PrioritiesState()) {
+  PrioritiesBloc() : _subscription = null, super(PrioritiesState()) {
     _loadPriorities();
   }
 

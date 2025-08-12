@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:rxdart/rxdart.dart';
@@ -25,7 +26,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     log.info('Toggling showArchived to $newShowArchived');
     emit(state.copyWith(showArchived: newShowArchived));
 
-    // Reload pinned activities and agenda items with new archived filter
+    // Reload agenda items with new archived filter
+    _loadPriority();
+  }
+
+  void updateFilter(List<Tag> filter) {
+    log.info('Updating filter to $filter');
+    emit(state.copyWith(filter: filter));
+
+    // Reload agenda items with new filter
     _loadPriority();
   }
 
@@ -156,7 +165,6 @@ class PriorityBloc extends Cubit<PriorityState> {
         emit(state.copyWith(context: priority));
       }),
     );
-    _loadPinnedActivities();
     if (state.activity != null) {
       _loadActivity(state.activity!);
     }
@@ -217,45 +225,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     await activity.save();
   }
 
-  void _loadPinnedActivities() {
-    final stream = state.activity == null && state.event == null
-        ? Activity.watch(
-            priorityId: state.context.id,
-            path: state.activity?.path ?? state.event?.path,
-            pinned: true,
-            deleted: state.showArchived,
-          )
-        : Rx.combineLatest2(
-            Activity.watch(
-              priorityId: state.context.id,
-              path: state.activity?.path ?? state.event?.path,
-              pinned: true,
-              deleted: state.showArchived,
-            ),
-            Activity.watch(
-              priorityId: state.context.id,
-              path: state.activity?.path ?? state.event?.path,
-              active: true,
-              deleted: state.showArchived,
-            ),
-            (pinnedActivities, activeActivities) {
-              final combined = {
-                ...pinnedActivities,
-                ...activeActivities,
-              }.toList();
-              combined.sort((a, b) => a.order.compareTo(b.order));
-              return combined;
-            },
-          );
-
-    _subscriptions.add(
-      stream.listen((activities) {
-        log.info('Pinned activities updated');
-        emit(state.copyWith(pinned: activities));
-      }),
-    );
-  }
-
   void _loadSchedule(DateRange range, {Date? firstDate}) {
     log.info('Loading schedule (${range.start} to ${range.end})');
     _agendaSubscription?.cancel();
@@ -306,6 +275,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             range,
             context: state.context,
             deleted: state.showArchived,
+            filter: state.filter.isNotEmpty ? state.filter : null,
           ),
           ScheduledDay.watchRange(
             context: state.context,

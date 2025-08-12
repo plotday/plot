@@ -19,6 +19,7 @@ class NewActivityPage extends HookWidget {
   Widget build(BuildContext context) {
     final (noteController, note) = useTextEditingValue();
     final parent = useState<Activity?>(_initialParent);
+    final priority = Priority.getOne(priorityId);
 
     return Dialog(
       header: Header(
@@ -49,14 +50,12 @@ class NewActivityPage extends HookWidget {
               Button.primary(
                 CommandWrapper(
                   AddActivity(
-                    Future.value(
-                      Activity(
-                        priorityId: priorityId,
-                        note: note,
-                        parent: parent.value,
-                        order: Order.first(),
-                      ),
-                    ),
+                    priority.then((p) => Activity(
+                      priority: p,
+                      note: note,
+                      parent: parent.value,
+                      order: Order.first(),
+                    )),
                   ),
                   run: (command, context) async {
                     final ret = command.run(context);

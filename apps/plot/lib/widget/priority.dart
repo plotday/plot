@@ -28,9 +28,10 @@ class PriorityWidget extends StatelessWidget {
     bool isContext = priority == this.context;
     // bool contextChild = priority.parentId == this.context?.id;
     return ListTile(
-      command: !isContext ? ChangeCurrentPriority(priority) : null,
+      command: !isContext
+          ? CommandWrapper(ChangeCurrentPriority(priority), icon: Value(null))
+          : null,
       trailingCommands: [ShowPriorityCommands(priority)],
-      leadingWidth: 0,
       body: PriorityLabel(priority: priority),
       selected: selected,
       onHover: onHover,

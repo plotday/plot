@@ -5,7 +5,6 @@ import 'package:platform_builder/platform_builder.dart';
 import 'package:plot/widget/colour_scheme.dart';
 import 'package:plot/command/command.dart';
 import 'spinner.dart';
-import 'icon.dart';
 
 enum ButtonStyle { primary, secondary, ghost }
 
@@ -37,14 +36,14 @@ class Button extends StatelessWidget {
   }) : style = ButtonStyle.ghost,
        iconOnly = false;
 
-  Button.icon(
+  const Button.icon(
     this.command, {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
     super.key,
   }) : style = ButtonStyle.ghost,
-       iconOnly = command.icon != null;
+       iconOnly = true;
 
   final ButtonStyle style;
   final bool loading;
@@ -91,13 +90,16 @@ class Button extends StatelessWidget {
             ? FButton.icon(
                 style: fStyle,
                 onPress: onPress,
-                child: Icon(
-                  icon ?? PlotIcon.right,
-                  size: 12,
-                  color: icon != null
-                      ? context.colour.muted
-                      : Color(0x00000000),
-                ),
+                child: icon != null
+                    ? Icon(icon, size: 12, color: context.colour.muted)
+                    : Text(
+                        command.title,
+                        style: context.theme.typography.xs.copyWith(
+                          fontSize: 12,
+                          height: 1,
+                          textBaseline: TextBaseline.ideographic,
+                        ),
+                      ),
               )
             : FButton(
                 style: fStyle,
@@ -110,12 +112,23 @@ class Button extends StatelessWidget {
       },
     );
 
-    return Stack(
+    final stack = Stack(
       alignment: Alignment.center,
       children: [
         Opacity(opacity: loading ? 0.0 : 1.0, child: button),
         if (loading) Spinner(),
       ],
     );
+
+    Widget result = stack;
+
+    if (command.subtitle != null && command.subtitle!.isNotEmpty) {
+      result = FTooltip(
+        tipBuilder: (context, controller) => Text(command.subtitle!),
+        child: result,
+      );
+    }
+
+    return result;
   }
 }

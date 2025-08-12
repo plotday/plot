@@ -1,7 +1,9 @@
 part of 'accounts.dart';
 
+@immutable
 final class AccountsState extends Equatable {
-  const AccountsState(this.accounts);
+  AccountsState(List<Account> accounts) 
+    : accounts = accounts.isNotEmpty ? List.unmodifiable(accounts) : accounts;
 
   final List<Account> accounts;
 

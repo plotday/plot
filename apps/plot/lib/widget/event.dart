@@ -64,11 +64,13 @@ class AgendaHeader extends StatelessWidget {
     );
 
     return ListTile(
-      leading: SizedBox(),
       command: event?.draft == false
           ? ChangeCurrentEvent(event!)
           : priorityAncestry?.isNotEmpty == true
-          ? OpenPriority.byId(priorityAncestry!.last.id)
+          ? CommandWrapper(
+              OpenPriority.byId(priorityAncestry!.last.id),
+              icon: Value(null),
+            )
           : null,
       selected: selected,
       body: Column(

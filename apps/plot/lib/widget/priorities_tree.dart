@@ -10,13 +10,11 @@ import 'colour_scheme.dart';
 class PrioritiesTreeWidget extends StatefulWidget {
   final List<Priority> priorities;
   final void Function(Priority)? onPrioritySelected;
-  final bool isCompact;
 
   const PrioritiesTreeWidget({
     super.key,
     required this.priorities,
     this.onPrioritySelected,
-    this.isCompact = false,
   });
 
   @override
@@ -75,10 +73,7 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
               onTap: () => _handlePriorityTap(priority),
               borderRadius: BorderRadius.circular(8),
               child: Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: 8.0,
-                  vertical: widget.isCompact ? 4.0 : 8.0,
-                ),
+                padding: widgetPaddingSm, 
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
                   color: isCurrentPriority
@@ -118,9 +113,7 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
                     Expanded(
                       child: Text(
                         priority.title,
-                        style: widget.isCompact
-                            ? context.theme.typography.sm
-                            : context.theme.typography.base,
+                        style:  context.theme.typography.sm,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),

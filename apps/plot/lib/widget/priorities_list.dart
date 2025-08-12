@@ -9,14 +9,12 @@ class PrioritiesList extends StatelessWidget {
   final List<Priority> priorities;
   final Priority? selected;
   final void Function(Priority)? onPrioritySelected;
-  final bool isCompact;
   final ReorderCallback? onReorder;
 
   const PrioritiesList({
     super.key,
     required this.priorities,
     this.onPrioritySelected,
-    this.isCompact = false,
     this.onReorder,
     this.selected,
   });

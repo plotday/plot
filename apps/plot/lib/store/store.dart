@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'dart:convert';
+import 'package:flutter/widgets.dart' show IconData;
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:rxdart/rxdart.dart';
@@ -21,6 +22,7 @@ import 'package:plot/util/order.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/util/api.dart' as api;
 import 'package:plot/util/async.dart';
+import 'package:plot/widget/icon.dart';
 import 'package:plot/base.dart';
 import 'types.dart';
 import 'logging.dart';
@@ -30,6 +32,7 @@ export 'package:plot/util/time.dart';
 export 'package:plot/util/uuid.dart';
 export 'package:plot/util/order.dart';
 export 'schedule.dart';
+export 'types.dart' show TagType;
 
 part 'sync.dart';
 part 'account.dart';
@@ -39,6 +42,7 @@ part 'activity.dart';
 part 'event.dart';
 part 'session.dart';
 part 'balance.dart';
+part 'tag.dart';
 
 part 'store.g.dart';
 
@@ -132,10 +136,7 @@ abstract class BaseTable {
     (String?, String?)? exclude,
     DateTime? updatedSince,
   }) async {
-    var query = Base.client
-        .from(table)
-        .select()
-        .eq("user_id", Base.userId.toString());
+    var query = Base.client.from(table).select();
     if (exclude != null) {
       final (from, to) = exclude;
       if (from != null) {
@@ -194,7 +195,7 @@ abstract class BaseTable {
   }
 
   PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
-    return query;
+    return query.eq("user_id", Base.userId.toString());
   }
 
   PostgrestTransformBuilder<T2> sort<T2>(PostgrestTransformBuilder<T2> query) {
@@ -320,7 +321,7 @@ class Store extends _$Store {
     Insertable<DATA> data,
     BaseTable baseTable,
   ) async {
-    log.info("Saving", data);
+    log.info("Saving to ${table.actualTableName}:", data);
     try {
       await add(table, data);
     } catch (e, t) {
@@ -367,6 +368,7 @@ class Store extends _$Store {
         });
       }
       storeQuery.orderBy([(t) => OrderingTerm(expression: t.updatedAt)]);
+      final now = DateTime.now();
       final storeRows = await storeQuery.get();
       var success = false;
       if (storeRows.isEmpty) {
@@ -393,7 +395,6 @@ class Store extends _$Store {
       }
       if (success) {
         try {
-          final now = DateTime.now();
           await into(syncStates).insert(
             SyncStatesCompanion.insert(entity: entity, pushedAt: Value(now)),
             onConflict: DoUpdate(
@@ -691,7 +692,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 74;
+  int get schemaVersion => 79;
 
   @override
   MigrationStrategy get migration {

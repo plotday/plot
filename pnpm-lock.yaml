@@ -190,8 +190,8 @@ importers:
         specifier: workspace:^
         version: link:../tsconfig
       supabase:
-        specifier: ^2.23.4
-        version: 2.23.4
+        specifier: ^2.33.9
+        version: 2.33.9
 
   libs/email:
     dependencies:
@@ -6788,8 +6788,8 @@ packages:
     peerDependencies:
       postcss: ^8.3.3
 
-  supabase@2.23.4:
-    resolution: {integrity: sha512-zuGxvy9qQqZtbc3ehZ2pP6j0r/dcNOW0hU93XPBJ7zSWfLlmQ/erlQHa/o36R4f2zpfR0REVF6023yuNCUdpMA==}
+  supabase@2.33.9:
+    resolution: {integrity: sha512-bjCdzcAzbzmPn5B4FNjsAE32aHDgCHtHngj0eDZdZ1+tVbH1/4TwGeZWy41JeiraNx5VPMG+BUOG2VNBXXcXEA==}
     engines: {npm: '>=8'}
     hasBin: true
 
@@ -7645,7 +7645,7 @@ snapshots:
       '@babel/traverse': 7.26.4
       '@babel/types': 7.26.3
       convert-source-map: 2.0.0
-      debug: 4.4.0
+      debug: 4.4.1
       gensync: 1.0.0-beta.2
       json5: 2.2.3
       semver: 6.3.1
@@ -10422,7 +10422,7 @@ snapshots:
     dependencies:
       '@typescript-eslint/typescript-estree': 5.62.0(typescript@5.8.3)
       '@typescript-eslint/utils': 5.62.0(eslint@8.45.0)(typescript@5.8.3)
-      debug: 4.3.4
+      debug: 4.4.1
       eslint: 8.45.0
       tsutils: 3.21.0(typescript@5.8.3)
     optionalDependencies:
@@ -10434,7 +10434,7 @@ snapshots:
     dependencies:
       '@typescript-eslint/typescript-estree': 8.32.1(typescript@5.8.3)
       '@typescript-eslint/utils': 8.32.1(eslint@8.38.0)(typescript@5.8.3)
-      debug: 4.4.0
+      debug: 4.4.1
       eslint: 8.38.0
       ts-api-utils: 2.1.0(typescript@5.8.3)
       typescript: 5.8.3
@@ -10449,7 +10449,7 @@ snapshots:
     dependencies:
       '@typescript-eslint/types': 5.62.0
       '@typescript-eslint/visitor-keys': 5.62.0
-      debug: 4.3.4
+      debug: 4.4.1
       globby: 11.1.0
       is-glob: 4.0.3
       semver: 7.5.4
@@ -10463,7 +10463,7 @@ snapshots:
     dependencies:
       '@typescript-eslint/types': 8.32.1
       '@typescript-eslint/visitor-keys': 8.32.1
-      debug: 4.4.0
+      debug: 4.4.1
       fast-glob: 3.3.2
       is-glob: 4.0.3
       minimatch: 9.0.4
@@ -11338,7 +11338,7 @@ snapshots:
   detect-port@1.6.1:
     dependencies:
       address: 1.2.2
-      debug: 4.4.0
+      debug: 4.4.1
     transitivePeerDependencies:
       - supports-color
 
@@ -14571,7 +14571,7 @@ snapshots:
       postcss: 8.5.6
     optional: true
 
-  supabase@2.23.4:
+  supabase@2.33.9:
     dependencies:
       bin-links: 5.0.0
       https-proxy-agent: 7.0.6

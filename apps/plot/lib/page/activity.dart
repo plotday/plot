@@ -4,7 +4,6 @@ import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/widget/activity_list.dart';
 import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/state/now.dart';
@@ -175,35 +174,15 @@ class ActivityPage extends StatelessWidget {
                   commands: [
                     if (state.activity != null)
                       ...activityCommands(state.activity!),
-                    ToggleShowArchived(showArchived: state.showArchived),
+                    PickFilterCommand(),
                   ],
                 ),
                 sidebar: PrioritiesSidebar(selected: state.context),
                 body: LayoutBuilder(
                   builder: (context, constraints) {
-                    final maxActivityListHeight = constraints.maxHeight * 0.4;
                     final maxActivityEditorHeight = constraints.maxHeight * 0.4;
                     return Column(
                       children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                width: 1.0,
-                                color: context.colour.border,
-                              ),
-                            ),
-                          ),
-                          constraints: BoxConstraints(
-                            maxHeight: maxActivityListHeight,
-                          ),
-                          child: SingleChildScrollView(
-                            child: ActivityList(
-                              activities: state.pinned,
-                              priority: state.context,
-                            ),
-                          ),
-                        ),
                         Flexible(
                           flex: 1,
                           fit: FlexFit.tight,

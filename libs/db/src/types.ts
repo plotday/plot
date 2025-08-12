@@ -17,10 +17,10 @@ export type Database = {
     Functions: {
       graphql: {
         Args: {
+          extensions?: Json
           operationName?: string
           query?: string
           variables?: Json
-          extensions?: Json
         }
         Returns: Json
       }
@@ -87,7 +87,6 @@ export type Database = {
           note: string | null
           order: number
           path: unknown
-          pinned: boolean
           priority_id: string
           private: boolean
           title: string | null
@@ -106,7 +105,6 @@ export type Database = {
           note?: string | null
           order?: number
           path?: unknown
-          pinned?: boolean
           priority_id: string
           private?: boolean
           title?: string | null
@@ -125,7 +123,6 @@ export type Database = {
           note?: string | null
           order?: number
           path?: unknown
-          pinned?: boolean
           priority_id?: string
           private?: boolean
           title?: string | null
@@ -173,6 +170,62 @@ export type Database = {
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      activity_tag: {
+        Row: {
+          activity_id: string
+          deleted_at: string | null
+          tag_id: number
+          updated_at: string
+          updated_by: number
+          user_id: string
+        }
+        Insert: {
+          activity_id: string
+          deleted_at?: string | null
+          tag_id: number
+          updated_at?: string
+          updated_by?: number
+          user_id: string
+        }
+        Update: {
+          activity_id?: string
+          deleted_at?: string | null
+          tag_id?: number
+          updated_at?: string
+          updated_by?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
             referencedColumns: ["id"]
           },
         ]
@@ -1047,73 +1100,6 @@ export type Database = {
           },
         ]
       }
-      tag: {
-        Row: {
-          created_at: string
-          emoji: string
-          id: number
-          priority_id: string | null
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          emoji: string
-          id?: never
-          priority_id?: string | null
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          emoji?: string
-          id?: never
-          priority_id?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "tag_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "agent_x"
-            referencedColumns: ["priority_child_id"]
-          },
-          {
-            foreignKeyName: "tag_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "event_x"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "tag_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "tag_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_children"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "tag_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_children"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "tag_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_x"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
     }
     Views: {
       activity_children: {
@@ -1122,6 +1108,44 @@ export type Database = {
           id: string | null
         }
         Relationships: []
+      }
+      activity_tags: {
+        Row: {
+          activity_id: string | null
+          tags: Json | null
+          updated_at: string | null
+          updated_by: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activity_x"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       activity_x: {
         Row: {
@@ -1137,9 +1161,9 @@ export type Database = {
           note: string | null
           order: number | null
           path: unknown | null
-          pinned: boolean | null
           priority_id: string | null
           private: boolean | null
+          tags: Json | null
           title: string | null
           updated_at: string | null
           updated_by: number | null
@@ -1504,47 +1528,49 @@ export type Database = {
       }
       priority_tags: {
         Row: {
+          count: number | null
           priority_id: string | null
-          tags: Json | null
+          tag_id: number | null
+          updated_at: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "tag_priority_id_fkey"
+            foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "agent_x"
             referencedColumns: ["priority_child_id"]
           },
           {
-            foreignKeyName: "tag_priority_id_fkey"
+            foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "event_x"
             referencedColumns: ["priority_id"]
           },
           {
-            foreignKeyName: "tag_priority_id_fkey"
+            foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "tag_priority_id_fkey"
+            foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_children"
             referencedColumns: ["child_id"]
           },
           {
-            foreignKeyName: "tag_priority_id_fkey"
+            foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_children"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "tag_priority_id_fkey"
+            foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_x"
@@ -1563,7 +1589,6 @@ export type Database = {
           path: unknown | null
           pomodoro: number | null
           root: boolean | null
-          tags: Json | null
           title: string | null
           updated_at: string | null
           updated_by: number | null
@@ -1607,13 +1632,13 @@ export type Database = {
         Args: {
           at: unknown
           availability: Database["public"]["Enums"]["event_availability"]
-          response: Database["public"]["Enums"]["event_response"]
           has_invitees: boolean
+          response: Database["public"]["Enums"]["event_response"]
         }
         Returns: Database["public"]["Enums"]["event_type"]
       }
       calc_internal: {
-        Args: { invitee_count: number; user_domain: number; domains: number[] }
+        Args: { domains: number[]; invitee_count: number; user_domain: number }
         Returns: Database["public"]["Enums"]["event_internal"]
       }
       calc_meeting_size: {
@@ -1621,7 +1646,7 @@ export type Database = {
         Returns: string
       }
       calc_notice: {
-        Args: { created_at: string; at: unknown }
+        Args: { at: unknown; created_at: string }
         Returns: number
       }
       calc_rounded_length: {
@@ -1721,6 +1746,10 @@ export type Database = {
         Args: { email: string }
         Returns: string
       }
+      get_tag_type: {
+        Args: { tag_id: number }
+        Returns: Database["public"]["Enums"]["tag_type"]
+      }
       get_users_with_priority_access: {
         Args: { target_priority_id: string }
         Returns: {
@@ -1777,6 +1806,15 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string
       }
+      update_activity_tags: {
+        Args: {
+          p_activity_id: string
+          p_client_id: number
+          p_tag_updates: Json
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       upsert_contacts: {
         Args: {
           _contacts: Database["public"]["CompositeTypes"]["contact_upsert"][]
@@ -1791,7 +1829,7 @@ export type Database = {
         Returns: undefined
       }
       user_has_priority_access: {
-        Args: { user_id: string; target_priority_id: string }
+        Args: { target_priority_id: string; user_id: string }
         Returns: boolean
       }
       user_timezone: {
@@ -1826,6 +1864,7 @@ export type Database = {
       location_type: "room" | "address" | "other"
       meeting_size: "1:1" | "Small" | "Medium" | "Large" | "XL" | "XXL"
       provider: "google" | "outlook"
+      tag_type: "toggle" | "count" | "compute"
     }
     CompositeTypes: {
       contact_upsert: {
@@ -2104,7 +2143,7 @@ export type Database = {
         Returns: undefined
       }
       can_insert_object: {
-        Args: { bucketid: string; name: string; owner: string; metadata: Json }
+        Args: { bucketid: string; metadata: Json; name: string; owner: string }
         Returns: undefined
       }
       delete_prefix: {
@@ -2145,11 +2184,11 @@ export type Database = {
       list_multipart_uploads_with_delimiter: {
         Args: {
           bucket_id: string
-          prefix_param: string
           delimiter_param: string
           max_keys?: number
           next_key_token?: string
           next_upload_token?: string
+          prefix_param: string
         }
         Returns: {
           key: string
@@ -2160,11 +2199,11 @@ export type Database = {
       list_objects_with_delimiter: {
         Args: {
           bucket_id: string
-          prefix_param: string
           delimiter_param: string
           max_keys?: number
-          start_after?: string
           next_token?: string
+          prefix_param: string
+          start_after?: string
         }
         Returns: {
           name: string
@@ -2179,11 +2218,11 @@ export type Database = {
       }
       search: {
         Args: {
-          prefix: string
           bucketname: string
-          limits?: number
           levels?: number
+          limits?: number
           offsets?: number
+          prefix: string
           search?: string
           sortcolumn?: string
           sortorder?: string
@@ -2199,11 +2238,11 @@ export type Database = {
       }
       search_legacy_v1: {
         Args: {
-          prefix: string
           bucketname: string
-          limits?: number
           levels?: number
+          limits?: number
           offsets?: number
+          prefix: string
           search?: string
           sortcolumn?: string
           sortorder?: string
@@ -2219,11 +2258,11 @@ export type Database = {
       }
       search_v1_optimised: {
         Args: {
-          prefix: string
           bucketname: string
-          limits?: number
           levels?: number
+          limits?: number
           offsets?: number
+          prefix: string
           search?: string
           sortcolumn?: string
           sortorder?: string
@@ -2239,10 +2278,10 @@ export type Database = {
       }
       search_v2: {
         Args: {
-          prefix: string
           bucket_name: string
-          limits?: number
           levels?: number
+          limits?: number
+          prefix: string
           start_after?: string
         }
         Returns: {
@@ -2264,21 +2303,25 @@ export type Database = {
   }
 }
 
-type DefaultSchema = Database[Extract<keyof Database, "public">]
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-    | { schema: keyof Database },
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof Database
+    schema: keyof DatabaseWithoutInternals
   }
-    ? keyof (Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        Database[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
-  ? (Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      Database[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
@@ -2296,14 +2339,16 @@ export type Tables<
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
-    | { schema: keyof Database },
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof Database
+    schema: keyof DatabaseWithoutInternals
   }
-    ? keyof Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
-  ? Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
@@ -2319,14 +2364,16 @@ export type TablesInsert<
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
-    | { schema: keyof Database },
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof Database
+    schema: keyof DatabaseWithoutInternals
   }
-    ? keyof Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
-  ? Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
@@ -2342,14 +2389,16 @@ export type TablesUpdate<
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
-    | { schema: keyof Database },
+    | { schema: keyof DatabaseWithoutInternals },
   EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof Database
+    schema: keyof DatabaseWithoutInternals
   }
-    ? keyof Database[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = DefaultSchemaEnumNameOrOptions extends { schema: keyof Database }
-  ? Database[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
     ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never
@@ -2357,14 +2406,16 @@ export type Enums<
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof Database },
+    | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof Database
+    schema: keyof DatabaseWithoutInternals
   }
-    ? keyof Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
     : never = never,
-> = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
     ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
@@ -2390,6 +2441,7 @@ export const Constants = {
       location_type: ["room", "address", "other"],
       meeting_size: ["1:1", "Small", "Medium", "Large", "XL", "XXL"],
       provider: ["google", "outlook"],
+      tag_type: ["toggle", "count", "compute"],
     },
   },
   storage: {

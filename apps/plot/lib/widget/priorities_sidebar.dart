@@ -17,11 +17,7 @@ class PrioritiesSidebar extends StatelessWidget {
       builder: (context, state) {
         return FSidebar(
           children: [
-            PrioritiesList(
-              priorities: state.priorities,
-              isCompact: true,
-              selected: selected,
-            ),
+            PrioritiesList(priorities: state.priorities, selected: selected),
           ],
         );
       },

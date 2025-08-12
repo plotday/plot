@@ -12,13 +12,15 @@ class Activities extends Table
       .clientDefault(() => Order.first().value)
       .map(const OrderConverter())();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
-  BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   TextColumn get doAt => text().nullable().map(const DateConverter())();
   DateTimeColumn get doneAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get note => text().nullable()();
   TextColumn get eventSeries => text().nullable()();
   TextColumn get title => text().nullable()();
+  TextColumn get tags => text().nullable().map(const ActivityTagsConverter())();
+  TextColumn get tagsUpdated =>
+      text().nullable().map(const TagUpdatesConverter())();
 }
 
 class ActivitiesBase extends BaseTable {
@@ -35,6 +37,19 @@ class ActivitiesBase extends BaseTable {
     json.remove('updated_by');
     return ActivityRow.fromJson(json);
   }
+
+  @override
+  Map<String, dynamic> toBase(DataClass row) {
+    final json = super.toBase(row);
+    // The upsert trigger (handle_activity_x_upsert) handles our tags_updated format
+    if (json['tags_updated'] != null) {
+      json['tags'] = json['tags_updated'];
+    } else {
+      json.remove('tags');
+    }
+    json.remove('tags_updated');
+    return json;
+  }
 }
 
 enum ActivityOrder { sorted, nested, recent, reverse }
@@ -42,7 +57,32 @@ enum ActivityOrder { sorted, nested, recent, reverse }
 class Activity extends ActivityRow implements Comparable<Activity> {
   static $ActivitiesTable get table => Store.get.activities;
 
-  static Future<bool> push() => Store.get.push(table, ActivitiesBase());
+  static Future<bool> push() async {
+    // Record timestamp before starting push to avoid race conditions
+    final pushStartTime = DateTime.now();
+
+    // Perform the actual push
+    final success = await Store.get.push(table, ActivitiesBase());
+
+    // If push was successful, clear tagsUpdated for all activities that were pushed
+    if (success) {
+      await _clearTagsUpdatedAfterPush(pushStartTime);
+    }
+
+    return success;
+  }
+
+  static Future<void> _clearTagsUpdatedAfterPush(DateTime pushStartTime) async {
+    // Clear tagsUpdated for all activities that were part of the successful push
+    // Only clear for activities with non-null tagsUpdated and updatedAt <= pushStartTime
+    await (Store.get.update(table)..where(
+          (t) =>
+              t.tagsUpdated.isNotNull() &
+              t.updatedAt.isSmallerOrEqualValue(pushStartTime),
+        ))
+        .write(const ActivitiesCompanion(tagsUpdated: Value(null)));
+  }
+
   static Future<bool> pull() async {
     return await Store.get.pull(PullType.all, table, ActivitiesBase());
   }
@@ -76,12 +116,11 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Path? priorityPath,
     Path? path,
     int? depth,
-    bool? pinned,
-    bool? active,
     bool? deleted = false,
     String? search,
     bool self = true,
     ActivityOrder order = ActivityOrder.sorted,
+    List<Tag>? filter,
   }) async {
     final activities = await _get(
       range: range,
@@ -90,12 +129,11 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       priorityPath: priorityPath,
       path: path,
       depth: depth,
-      pinned: pinned,
-      active: active,
       deleted: deleted,
       order: order,
       search: search,
       self: self,
+      filter: filter,
     ).get();
 
     return _mapAll(activities, deleted: deleted);
@@ -108,12 +146,11 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Path? priorityPath,
     Path? path,
     int? depth,
-    bool? pinned,
-    bool? active,
     bool? deleted = false,
     String? search,
     bool self = true,
     ActivityOrder order = ActivityOrder.sorted,
+    List<Tag>? filter,
   }) {
     return _get(
       range: range,
@@ -122,12 +159,11 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       priorityPath: priorityPath,
       path: path,
       depth: depth,
-      pinned: pinned,
-      active: active,
       deleted: deleted,
       order: order,
       search: search,
       self: self,
+      filter: filter,
     ).watch().asyncMap(_mapAll);
   }
 
@@ -165,15 +201,11 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   static Future<Activity> getOne(
     ActivityId id, {
     int? depth = 0,
-    bool? pinned,
-    bool? active,
     bool getParent = true,
   }) async {
     final activityRows = await _get(
       id: id,
       depth: depth,
-      pinned: pinned,
-      active: active,
       deleted: null,
       getParent: getParent,
       order: ActivityOrder.nested,
@@ -184,15 +216,11 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   static Stream<Activity> watchOne(
     ActivityId id, {
     int? depth = 0,
-    bool? pinned,
-    bool? active,
     bool getParent = true,
   }) {
     return _get(
       id: id,
       depth: depth,
-      pinned: pinned,
-      active: active,
       deleted: null,
       getParent: getParent,
       order: ActivityOrder.nested,
@@ -401,10 +429,9 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     /* Filters */
     int? depth,
     bool self = true,
-    bool? pinned,
-    bool? active,
     bool? deleted = false,
     String? search,
+    List<Tag>? filter,
 
     /* Sorting */
     ActivityOrder order = ActivityOrder.sorted,
@@ -416,7 +443,22 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     /* Augmentation */
     bool getParent = true,
   }) {
-    final base = Store.get.alias(Store.get.activities, 'base');
+    // Create a copy of filter to avoid mutating the original
+    final mutableFilter = filter != null ? List<Tag>.from(filter) : null;
+
+    if (mutableFilter?.remove(Tag.archived) == true) {
+      deleted = true;
+    }
+    final doNow = mutableFilter?.remove(Tag.doNow) == true;
+    final scheduled = mutableFilter?.remove(Tag.doLater) == true;
+    final done = mutableFilter?.remove(Tag.done) == true;
+
+    final includeDescendants = path == null && (depth == null || depth > 0);
+
+    final base = Store.get.alias(
+      Store.get.activities,
+      includeDescendants ? 'base' : 'a',
+    );
     final startingQuery = Store.get.select(base);
     if (id != null) {
       startingQuery.where((t) => t.id.equalsValue(id));
@@ -435,7 +477,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       startingQuery.where((t) => t.path.likeExp(Constant('%.%')).not());
     }
 
-    final includeDescendants = path == null && (depth == null || depth > 0);
     var a = includeDescendants
         ? Store.get.alias(Store.get.activities, 'a')
         : base;
@@ -454,7 +495,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       query.where(
         CustomExpression<int>("""
             LENGTH(a.path) - LENGTH(REPLACE(a.path, '.', '')) -
-            (CASE WHEN base.path IS NULL THEN 0 ELSE LENGTH(base.path) - LENGTH(REPLACE(base.path, '.', '')) END)
+            (CASE WHEN a.path IS NULL THEN 0 ELSE LENGTH(a.path) - LENGTH(REPLACE(a.path, '.', '')) END)
           """).isSmallerOrEqualValue(depth),
       );
     }
@@ -472,6 +513,19 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       ]);
     }
 
+    // Add tag filtering if filter list is provided
+    if (mutableFilter != null && mutableFilter.isNotEmpty) {
+      // For each tag in the filter, we need to check if the tag exists in the JSON tags field
+      // Use JSON operators to check if each tag ID exists as a key in the tags JSON object
+      for (final tag in mutableFilter) {
+        query.where(
+          CustomExpression<bool>(
+            'JSON_EXTRACT(a.tags, \'\$.${tag.id}\') IS NOT NULL',
+          ),
+        );
+      }
+    }
+
     // Add activity path filtering if path is provided
     if (path != null) {
       query.where(
@@ -484,13 +538,19 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       leftOuterJoin(nextEvent, nextEvent.activityId.equalsExp(a.id)),
     ]);
 
-    if (active == true) {
-      query.where(a.doAt.isNotNull() & a.doneAt.isNull());
-    } else if (active == false) {
-      query.where(a.doAt.isNull() | a.doneAt.isNotNull());
+    if (doNow) {
+      query.where(
+        a.doAt.isSmallerOrEqualValue(Date.today().toString()) &
+            a.doneAt.isNull(),
+      );
     }
-    if (pinned != null) {
-      query.where(a.pinned.equals(pinned));
+    if (scheduled) {
+      query.where(
+        a.doAt.isBiggerThanValue(Date.today().toString()) & a.doneAt.isNull(),
+      );
+    }
+    if (done) {
+      query.where(a.doneAt.isNotNull());
     }
     if (deleted != null) {
       query.where(deleted ? a.deletedAt.isNotNull() : a.deletedAt.isNull());
@@ -546,8 +606,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     switch (order) {
       case ActivityOrder.sorted:
         query.orderBy([
-          // Pinned
-          OrderingTerm(expression: a.pinned, mode: OrderingMode.desc),
           // Active
           OrderingTerm.asc(
             CaseWhenExpression(
@@ -565,11 +623,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
             CaseWhenExpression(
               cases: [
                 CaseWhen(
-                  a.pinned |
-                      (a.doAt.isSmallerOrEqual(
-                            Constant(Date.today().toString()),
-                          ) &
-                          a.doneAt.isNull()),
+                  a.doAt.isSmallerOrEqual(Constant(Date.today().toString())) &
+                      a.doneAt.isNull(),
                   then: a.order,
                 ),
               ],
@@ -600,8 +655,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       case ActivityOrder.reverse:
         // reverse order of sorted - latest items first
         query.orderBy([
-          // Pinned
-          OrderingTerm(expression: a.pinned, mode: OrderingMode.desc),
           // Active (reverse order)
           OrderingTerm.asc(
             CaseWhenExpression(
@@ -619,11 +672,8 @@ class Activity extends ActivityRow implements Comparable<Activity> {
             CaseWhenExpression(
               cases: [
                 CaseWhen(
-                  a.pinned |
-                      (a.doAt.isSmallerOrEqual(
-                            Constant(Date.today().toString()),
-                          ) &
-                          a.doneAt.isNull()),
+                  a.doAt.isSmallerOrEqual(Constant(Date.today().toString())) &
+                      a.doneAt.isNull(),
                   then: a.order,
                 ),
               ],
@@ -687,7 +737,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     super.title,
     super.draft = false,
     super.private = false,
-    super.pinned = false,
     super.eventSeries,
   }) : children = [],
        super(
@@ -698,6 +747,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
          priorityId: priority.id,
          order: order ?? Order.first(),
          path: Path.generate(parent: parent?.path ?? parentEvent?.path),
+         tagsUpdated: null,
        ) {
     parent?._addChild(this);
   }
@@ -721,11 +771,12 @@ class Activity extends ActivityRow implements Comparable<Activity> {
          order: row.order,
          path: row.path,
          private: row.private,
-         pinned: row.pinned,
          createdBy: row.createdBy,
          doAt: row.doAt,
          doneAt: row.doneAt,
          eventSeries: row.eventSeries,
+         tags: row.tags,
+         tagsUpdated: row.tagsUpdated,
        ) {
     parent?._addChild(this);
   }
@@ -770,7 +821,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     return copyWith(
       doAt: Value(doAt ?? other.doAt),
       doneAt: Value(doneAt ?? other.doneAt),
-      pinned: pinned || other.pinned,
       private: private || other.private,
       eventSeries: Value(eventSeries ?? other.eventSeries),
       title: Value(title ?? other.title),
@@ -789,7 +839,6 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Uuid? createdBy,
     Order? order,
     bool? private,
-    bool? pinned,
     Value<Date?> doAt = const Value.absent(),
     Value<DateTime?> doneAt = const Value.absent(),
     Value<String?> note = const Value.absent(),
@@ -798,22 +847,18 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Event? parentEvent,
     Priority? priority,
     Value<String?> eventSeries = const Value.absent(),
+    Value<Map<Tag, List<Uuid>>?> tags = const Value.absent(),
+    Value<Map<int, bool>?> tagsUpdated = const Value.absent(),
   }) {
     final publish = this.draft && draft == false;
     if (doAt.present && doAt.value != null) {
       doneAt = const Value(null);
-      pinned = false;
-    } else if (pinned == true) {
-      doAt = const Value(null);
-      doneAt = const Value(null);
     } else if (doneAt.present) {
       doAt = const Value(null);
-      pinned = false;
     }
     if (publish ||
         (doAt.present && doAt.value != this.doAt) ||
-        (doneAt.present && doneAt.value != null) ||
-        (pinned != null && pinned != this.pinned)) {
+        (doneAt.present && doneAt.value != null)) {
       order ??= Order.first();
     }
 
@@ -829,12 +874,13 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         path: path,
         order: order,
         private: private,
-        pinned: pinned,
         doAt: doAt,
         doneAt: doneAt,
         note: note,
         title: title,
         eventSeries: eventSeries,
+        tags: tags,
+        tagsUpdated: tagsUpdated,
       ),
       parent: parent ?? this.parent,
       parentEvent: parentEvent ?? this.parentEvent,
@@ -875,8 +921,104 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
   bool get done => doneAt != null;
 
+  bool hasTag(Tag tag) {
+    switch (tag) {
+      case Tag.archived:
+        return deletedAt != null;
+      case Tag.doNow:
+        return doNow;
+      case Tag.done:
+        return done;
+      case Tag.doLater:
+        return doLater;
+      default:
+        final currentTags = tags ?? {};
+        final users = currentTags[tag];
+        return users != null && users.isNotEmpty;
+    }
+  }
+
+  Activity toggleTag(Tag tag) {
+    // Handle computed tags
+    switch (tag) {
+      case Tag.archived:
+        return copyWith(
+          deletedAt: Value(deletedAt == null ? DateTime.now() : null),
+        );
+      case Tag.doNow:
+        return copyWith(
+          doAt: Value(doNow ? null : Date.today()),
+          doneAt: const Value(null),
+        );
+      case Tag.done:
+        return copyWith(
+          doneAt: Value(done ? null : DateTime.now()),
+          doAt: const Value(null),
+        );
+      case Tag.doLater:
+        return copyWith(
+          doAt: Value(scheduled ? null : Date.today().addDays(1)),
+          doneAt: const Value(null),
+        );
+      default:
+        break;
+    }
+
+    final currentTags = Map<Tag, List<Uuid>>.from(tags ?? {});
+    final currentUser = Base.userId;
+
+    // Get current users for this tag
+    final currentUsers = List<Uuid>.from(currentTags[tag] ?? []);
+
+    bool isAdding = false;
+
+    if (tag.type == TagType.toggle) {
+      // Toggle behavior: add if not present, remove if present
+      if (currentUsers.isEmpty) {
+        // Add user to tag
+        currentUsers.add(currentUser);
+        currentTags[tag] = currentUsers;
+        isAdding = true; // Adding the tag
+      } else {
+        // Remove tag
+        currentTags.remove(tag);
+        isAdding = false; // Removing the tag
+      }
+    } else if (tag.type == TagType.count) {
+      // Count behavior: add/remove current user while preserving other users
+      if (currentUsers.contains(currentUser)) {
+        // Remove current user from tag
+        currentUsers.remove(currentUser);
+        if (currentUsers.isEmpty) {
+          currentTags.remove(tag);
+        } else {
+          currentTags[tag] = currentUsers;
+        }
+        isAdding = false; // Removing the user's count
+      } else {
+        // Add current user to tag (increment count)
+        currentUsers.add(currentUser);
+        currentTags[tag] = currentUsers;
+        isAdding = true; // Adding the user's count
+      }
+    }
+
+    // Update the tag updates map
+    final currentTagUpdates = Map<int, bool>.from(tagsUpdated ?? {});
+    currentTagUpdates[tag.id] = isAdding;
+    log.info(
+      "Toggling tag ${tag.name} (${tag.type}) to $isAdding ($currentTags)",
+    );
+
+    return copyWith(
+      tags: Value(currentTags.isEmpty ? null : currentTags),
+      tagsUpdated: Value(currentTagUpdates),
+    );
+  }
+
   Future<void> save() async {
     await Store.get.save(table, toCompanion(false), ActivitiesBase());
+
     // Generate a title on the first non-draft save
     if (title == null && !draft) {
       try {

@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/bidirectional_list.dart';
@@ -189,10 +190,21 @@ class CommandBarState extends State<_CommandBar> {
                         Widget? header;
                         if (index == 0 ||
                             group != _getGroupAtIndex(index - 1)) {
-                          header = Text(group.title);
+                          header = Padding(
+                            padding: widgetPaddingSm,
+                            child: Text(
+                              group.title,
+
+                              style: TextStyle(
+                                color: context.theme.colors.mutedForeground,
+                                fontSize: context.theme.typography.xs.fontSize,
+                              ),
+                            ),
+                          );
                         }
                         return Column(
                           key: ValueKey(index),
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (header != null) header,
                             ListTile(

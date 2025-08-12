@@ -1,5 +1,6 @@
 part of 'user.dart';
 
+@immutable
 sealed class UserState extends Equatable {
   const UserState();
 

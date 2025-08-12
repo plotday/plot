@@ -1,8 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/store/store.dart';
 import 'logging.dart';
@@ -23,7 +23,12 @@ class ActivityBloc extends Cubit<ActivityState> {
     log.info('Toggling showArchived to $newShowArchived');
     emit(state.copyWith(showArchived: newShowArchived));
     _loadActivities();
-    _loadPinnedActivities();
+  }
+
+  void updateFilter(List<Tag> filter) {
+    log.info('Updating filter to $filter');
+    emit(state.copyWith(filter: filter));
+    _loadActivities();
   }
 
   @override
@@ -86,48 +91,9 @@ class ActivityBloc extends Cubit<ActivityState> {
       );
     }
 
-    _loadPinnedActivities();
     _loadActivities();
   }
 
-  void _loadPinnedActivities() {
-    final stream = state.activity == null && state.event == null
-        ? Activity.watch(
-            priorityId: state.context.id,
-            path: state.activity?.path ?? state.event?.path,
-            pinned: true,
-            deleted: state.showArchived,
-          )
-        : Rx.combineLatest2(
-            Activity.watch(
-              priorityId: state.context.id,
-              path: state.activity?.path ?? state.event?.path,
-              pinned: true,
-              deleted: state.showArchived,
-            ),
-            Activity.watch(
-              priorityId: state.context.id,
-              path: state.activity?.path ?? state.event?.path,
-              active: true,
-              deleted: state.showArchived,
-            ),
-            (pinnedActivities, activeActivities) {
-              final combined = {
-                ...pinnedActivities,
-                ...activeActivities,
-              }.toList();
-              combined.sort((a, b) => a.order.compareTo(b.order));
-              return combined;
-            },
-          );
-
-    _subscriptions.add(
-      stream.listen((activities) {
-        log.info('Pinned activities updated');
-        emit(state.copyWith(pinned: activities));
-      }),
-    );
-  }
 
   void _loadActivities() {
     log.info(
@@ -139,6 +105,7 @@ class ActivityBloc extends Cubit<ActivityState> {
         priorityPath: state.context.path,
         path: state.activity?.path ?? state.event?.path,
         deleted: state.showArchived,
+        filter: state.filter.isNotEmpty ? state.filter : null,
       ).listen((activities) {
         log.info(
           'Got activities for ${state.activity?.path ?? state.event?.path}',

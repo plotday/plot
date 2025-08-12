@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/widget/colour_scheme.dart';
 
 const widgetPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 12);
+const widgetPaddingSm = EdgeInsets.symmetric(horizontal: 12, vertical: 8);
 
 FThemeData buildTheme(ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();

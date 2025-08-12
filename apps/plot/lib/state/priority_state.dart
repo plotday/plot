@@ -1,12 +1,12 @@
 part of 'priority.dart';
 
+@immutable
 class PriorityState extends Equatable {
   factory PriorityState({
     required Priority context,
     Activity? activity,
     Event? event,
     Activity? draft,
-    List<Activity> pinned = const [],
     Map<Date, ScheduledDay> schedule = const {},
     int first = 0,
     Date? firstDate,
@@ -15,6 +15,7 @@ class PriorityState extends Equatable {
     DateRange? range,
     bool showArchived = false,
     List<AgendaItem>? agendaItems,
+    List<Tag> filter = const [],
   }) {
     final agenda = agendaItems ?? _makeAgenda(schedule, context: context);
     return PriorityState._(
@@ -29,14 +30,14 @@ class PriorityState extends Equatable {
             parentEvent: event,
             draft: true,
           ),
-      pinned: pinned,
-      schedule: schedule,
-      agendaItems: agenda,
+      schedule: schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule,
+      agendaItems: agenda.isNotEmpty ? List.unmodifiable(agenda) : agenda,
       first: firstDate != null ? -_findDate(agenda, firstDate) : first,
       doneStart: doneStart,
       doneEnd: doneEnd,
       range: range,
       showArchived: showArchived,
+      filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
     );
   }
 
@@ -45,7 +46,6 @@ class PriorityState extends Equatable {
     this.activity,
     this.event,
     required this.draft,
-    this.pinned = const [],
     this.schedule = const {},
     this.first = 0,
     this.doneStart = false,
@@ -53,13 +53,13 @@ class PriorityState extends Equatable {
     this.range,
     this.showArchived = false,
     required this.agendaItems,
+    this.filter = const [],
   });
 
   final Priority context;
   final Activity? activity;
   final Event? event;
   final Activity draft;
-  final List<Activity> pinned;
   final Map<Date, ScheduledDay> schedule;
   final bool doneStart;
   final bool doneEnd;
@@ -67,6 +67,7 @@ class PriorityState extends Equatable {
   final DateRange? range;
   final bool showArchived;
   final List<AgendaItem> agendaItems;
+  final List<Tag> filter;
 
   static List<AgendaItem> _makeAgenda(
     Map<Date, ScheduledDay> schedule, {
@@ -138,7 +139,6 @@ class PriorityState extends Equatable {
     Activity? activity,
     Event? event,
     Activity? draft,
-    List<Activity>? pinned,
     Map<Date, ScheduledDay>? schedule,
     int? first,
     Date? firstDate,
@@ -147,21 +147,30 @@ class PriorityState extends Equatable {
     DateRange? range,
     bool? showArchived,
     List<AgendaItem>? agendaItems,
+    List<Tag>? filter,
   }) {
     return PriorityState(
       context: context ?? this.context,
       activity: activity ?? this.activity,
       event: event ?? this.event,
       draft: draft ?? this.draft,
-      pinned: pinned ?? this.pinned,
-      schedule: schedule ?? this.schedule,
+      schedule: schedule != null
+          ? (schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule)
+          : this.schedule,
       first: first ?? this.first,
       firstDate: firstDate,
       doneStart: doneStart ?? this.doneStart,
       doneEnd: doneEnd ?? this.doneEnd,
       range: range ?? this.range,
       showArchived: showArchived ?? this.showArchived,
-      agendaItems: agendaItems ?? (schedule == null ? this.agendaItems : null),
+      agendaItems: agendaItems != null
+          ? (agendaItems.isNotEmpty
+                ? List.unmodifiable(agendaItems)
+                : agendaItems)
+          : (schedule == null ? this.agendaItems : null),
+      filter: filter != null
+          ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
+          : this.filter,
     );
   }
 
@@ -171,7 +180,6 @@ class PriorityState extends Equatable {
     activity,
     event,
     draft,
-    pinned,
     schedule,
     doneStart,
     doneEnd,
@@ -179,11 +187,12 @@ class PriorityState extends Equatable {
     range,
     showArchived,
     agendaItems,
+    filter,
   ];
 
   @override
   String toString() {
-    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, event: ${event?.name}, draft: $draft, pinned: $pinned, doneStart: $doneStart, doneEnd: $doneEnd, first: $first, range: $range, showArchived: $showArchived)';
+    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, event: ${event?.name}, draft: $draft, doneStart: $doneStart, doneEnd: $doneEnd, first: $first, range: $range, showArchived: $showArchived, filter: $filter)';
   }
 
   /// Returns the index of the first DateAgendaItem on or after the given date.

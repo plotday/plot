@@ -115,13 +115,11 @@ class ArchiveActivity extends Command {
     : _activity = Future.value(activity),
       super(
         title: activity.deletedAt != null ? 'Un-archive' : 'Archive',
-        icon: activity.deletedAt != null
-            ? PlotIcon.unarchive
-            : PlotIcon.archive,
+        icon: PlotIcon.archived,
       );
 
   ArchiveActivity.future(this._activity)
-    : super(title: 'Archive', icon: PlotIcon.archive);
+    : super(title: 'Archive', icon: PlotIcon.archived);
 
   final Future<Activity> _activity;
 
@@ -188,7 +186,7 @@ class ScheduleActivity extends _UpdateActivityCommand {
   ScheduleActivity(super.activity, {required this.when, super.onUpdate})
     : super(
         title: activity.scheduled ? 'Reschedule' : 'Schedule',
-        icon: PlotIcon.scheduled,
+        icon: PlotIcon.doLater,
       );
 
   final Date when;
@@ -209,7 +207,7 @@ class PickScheduleActivity extends ShowPage {
   PickScheduleActivity(Activity activity)
     : super(
         title: 'Schedule',
-        icon: PlotIcon.scheduled,
+        icon: PlotIcon.doLater,
         builder: (context) => FCalendar(
           controller: FCalendarController.date(),
           onPress: (date) async {
@@ -238,13 +236,47 @@ class MarkActivityIncomplete extends _UpdateActivityCommand {
 
 class PinActivity extends _UpdateActivityCommand {
   PinActivity(super.activity, {super.onUpdate})
-    : super(title: activity.pinned ? 'Unpin' : 'Pin', icon: PlotIcon.pinned);
+    : super(
+        title: _isPinned(activity) ? 'Unpin' : 'Pin',
+        icon: PlotIcon.pinned,
+      );
+
+  static bool _isPinned(Activity activity) {
+    return activity.hasTag(Tag.pinned);
+  }
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await onUpdate(activity.copyWith(pinned: !activity.pinned));
+    final updatedActivity = activity.toggleTag(Tag.pinned);
+    await onUpdate(updatedActivity);
+
     Posthog().capture(
-      eventName: activity.pinned ? 'Activity Un-pinned' : 'Activity Pinned',
+      eventName: _isPinned(activity) ? 'Activity Un-pinned' : 'Activity Pinned',
+    );
+    return const CommandDone();
+  }
+}
+
+class ToggleActivityTag extends _UpdateActivityCommand {
+  ToggleActivityTag(super.activity, this.tag, {super.onUpdate})
+    : super(title: tag.name, icon: tag.icon);
+
+  final Tag tag;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (tag == Tag.doLater) {
+      await PickScheduleActivity(activity).run(context);
+      return const CommandDone();
+    }
+
+    final hadTag = activity.hasTag(tag);
+    final updatedActivity = activity.toggleTag(tag);
+    await onUpdate(updatedActivity);
+
+    Posthog().capture(
+      eventName: hadTag ? 'Activity Tag Removed' : 'Activity Tag Added',
+      properties: {'tag': tag.name},
     );
     return const CommandDone();
   }
@@ -255,41 +287,52 @@ class ShowActivityCommands extends ShowCommands {
     : super(
         title: 'More Commands',
         icon: PlotIcon.menu,
-        commands: (context) => Future.value(
-          Commands(
-            groups: [
-              StaticCommandGroup(
-                title: activity.displayTitle,
-                commands: activityCommands(activity),
-              ),
-            ],
-          ),
-        ),
+        commands: (context) =>
+            Future.value(Commands(groups: activityCommandGroups(activity))),
       );
 }
 
-Command activityPrimaryCommand(Activity activity) => CommandWrapper(
-  switch (activity) {
-    _ when activity.pinned => PinActivity(activity),
-    _ when activity.scheduled => FinishActivity(activity),
-    _ when activity.done => MarkActivityIncomplete(activity),
-    _ => StartActivity(activity),
-  },
-  icon: Value(switch (activity) {
-    _ when activity.pinned => PlotIcon.pinned,
-    _ when activity.scheduled => PlotIcon.todo,
-    _ when activity.done => PlotIcon.done,
-    _ => PlotIcon.doNow,
-  }),
-);
+Command activityPrimaryCommand(Activity activity) => switch (activity) {
+  _ when PinActivity._isPinned(activity) => PinActivity(activity),
+  _ when activity.scheduled => FinishActivity(activity),
+  _ when activity.done => MarkActivityIncomplete(activity),
+  _ => StartActivity(activity),
+};
 
 List<Command> activitySecondaryCommands(Activity activity) => [
   if (activity.path.isRoot) PickScheduleActivity(activity),
-  if (!activity.pinned) PinActivity(activity),
+  if (!PinActivity._isPinned(activity)) PinActivity(activity),
   ArchiveActivity(activity),
 ];
 
-List<Command> activityCommands(Activity activity) => [
-  activityPrimaryCommand(activity),
-  ...activitySecondaryCommands(activity),
-];
+List<CommandGroup> activityCommandGroups(Activity activity) {
+  final commands = Tag.getAll()
+      .map((tag) => ToggleActivityTag(activity, tag))
+      .toList();
+  final actions = activityCommands(activity);
+  final remove = commands
+      .where(
+        (cmd) => cmd.tag.type != TagType.compute && activity.hasTag(cmd.tag),
+      )
+      .toList();
+  final add = commands
+      .where(
+        (cmd) => cmd.tag.type != TagType.compute && !activity.hasTag(cmd.tag),
+      )
+      .toList();
+  return [
+    if (actions.isNotEmpty)
+      StaticCommandGroup(title: 'Actions', commands: actions),
+    if (remove.isNotEmpty)
+      StaticCommandGroup(title: 'Remove Tag', commands: remove),
+    if (add.isNotEmpty) StaticCommandGroup(title: 'Add Tag', commands: add),
+  ];
+}
+
+List<Command> activityCommands(Activity activity) {
+  final actions = Tag.getAll()
+      .where((tag) => tag.type == TagType.compute)
+      .map((tag) => ToggleActivityTag(activity, tag))
+      .toList();
+  return [OpenActivity(activity), ...actions];
+}

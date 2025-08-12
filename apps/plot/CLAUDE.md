@@ -13,6 +13,7 @@
 - **Naming**: Use camelCase for variables/methods, PascalCase for classes/types.
 - **Error handling**: Use nullable types and provide proper error states
 - **State management**: Use Flutter Bloc for state management. Use StatelessWidgets where possible, and StatefulWidgets only for local UI state. Use Bloc only in pages and commands, not widgets.
+- **UI**: Use flutter/widgets.dart and forui/forui.dart imports, but not flutter/material.dart.
 - **Commands**: Every user action affecting state is defined as a command in "apps/plot/libs/commands/".
 - **Documentation**: Include documentation comments for public APIs
 - **File structure**: Keep files focused on a single responsibility

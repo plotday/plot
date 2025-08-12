@@ -7,6 +7,15 @@ import 'package:plot/util/time.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:uuid/uuid.dart' as uuid;
 
+enum TagType {
+  toggle,
+  count,
+  compute;
+
+  @override
+  String toString() => name;
+}
+
 bool __isType<T, Y>() => T == Y;
 bool _isType<T, Y>() => __isType<T, Y>() || __isType<T, Y?>();
 
@@ -35,6 +44,9 @@ class CustomSerializer extends ValueSerializer {
     if (_isType<T, Date>()) {
       return Date.fromString(json as String) as T;
     }
+    if (_isType<T, TagType>()) {
+      return TagType.values.firstWhere((type) => type.name == json) as T;
+    }
 
     return _inner.fromJson<T>(json);
   }
@@ -52,6 +64,9 @@ class CustomSerializer extends ValueSerializer {
     }
     if (value is Date) {
       return (value as Date).toString();
+    }
+    if (value is TagType) {
+      return (value as TagType).name;
     }
 
     return _inner.toJson(value);
@@ -155,3 +170,18 @@ class DateConverter extends TypeConverter<Date, String> {
     return value.toString();
   }
 }
+
+class TagTypeConverter extends TypeConverter<TagType, String> {
+  const TagTypeConverter();
+
+  @override
+  TagType fromSql(String fromDb) {
+    return TagType.values.firstWhere((type) => type.name == fromDb);
+  }
+
+  @override
+  String toSql(TagType value) {
+    return value.name;
+  }
+}
+

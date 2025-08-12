@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
+import 'theme.dart';
 import 'button.dart';
 import 'colour_scheme.dart';
 import 'logging.dart';
@@ -16,9 +17,6 @@ class ListTile extends StatefulWidget {
 
     /// The command to run when the tile is double-tapped.
     this.doubleTapCommand,
-
-    /// Secondary commands visible on the left.
-    this.leadingCommand,
 
     /// Secondary commands visible on the right.
     this.trailingCommands = const [],
@@ -38,9 +36,6 @@ class ListTile extends StatefulWidget {
     this.body,
     this.header,
     this.icon,
-    this.leadingPadding = false,
-    this.leading,
-    this.leadingWidth,
 
     super.key,
   }) : title = title ?? command?.title ?? '';
@@ -50,16 +45,12 @@ class ListTile extends StatefulWidget {
   final Widget? details;
   final Command? command;
   final Command? doubleTapCommand;
-  final Command? leadingCommand;
   final List<Command> trailingCommands;
   final String title;
   final Widget? body;
   final Widget? header;
 
   final IconData? icon;
-  final bool leadingPadding;
-  final double? leadingWidth;
-  final Widget? leading;
 
   final void Function(bool hovered)? onHover;
 
@@ -127,94 +118,63 @@ class _ListTileState extends State<ListTile> {
           onShowFocusHighlight: (focused) => widget.onHover?.call(focused),
           onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
           child: Container(
-            color: widget.selected 
-                ? context.colour.accentBackground 
-                : _isHovered 
-                    ? context.colour.highlight 
-                    : null,
-            padding: EdgeInsets.symmetric(horizontal: 8),
+            color: widget.selected
+                ? context.colour.accentBackground
+                : _isHovered
+                ? context.colour.highlight
+                : null,
+            padding: widgetPaddingSm,
             child: Row(
-              crossAxisAlignment: widget.body == null
-                  ? CrossAxisAlignment.center
-                  : CrossAxisAlignment.start,
-              spacing: 8,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              spacing: 10,
               children: [
-                SizedBox(
-                  width: widget.leadingWidth,
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(
-                      vertical: widget.leadingPadding ? 6 : 0,
-                    ),
-                    child: switch ((
-                      widget.leading,
-                      widget.leadingCommand,
-                      (widget.leadingWidth == 0
-                          ? null
-                          : widget.icon ?? widget.command?.icon),
-                    )) {
-                      (var widget?, _, _) => widget,
-                      (null, var command?, _) => Align(
-                        alignment: Alignment.centerRight,
-                        child: Button.icon(command),
-                      ),
-                      (null, null, var icon?) => Align(
-                        alignment: Alignment.centerRight,
-                        child: Icon(
-                          icon,
-                          size: 16,
-                          color: context.colour.muted,
-                        ),
-                      ),
-                      _ => null,
-                    },
+                if (widget.icon != null || widget.command?.icon != null)
+                  Icon(
+                    widget.icon ?? widget.command?.icon,
+                    size: 16,
+                    color: context.colour.muted,
                   ),
-                ),
                 Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 6),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      spacing: 2,
-                      children: [
-                        if (widget.header != null) widget.header!,
-                        widget.body != null
-                            ? Row(children: [Expanded(child: widget.body!)])
-                            : Row(
-                                children: [
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 2,
+                    children: [
+                      if (widget.header != null) widget.header!,
+                      widget.body != null
+                          ? Row(children: [Expanded(child: widget.body!)])
+                          : Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    widget.style == ListTileStyle.header
+                                        ? widget.title.toUpperCase()
+                                        : widget.title,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: context.theme.typography.xs.copyWith(
+                                      color:
+                                          widget.style == ListTileStyle.header
+                                          ? context.colour.muted
+                                          : context.colour.foreground,
+                                    ),
+                                  ),
+                                ),
+                                if (widget.command?.subtitle != null)
                                   Flexible(
                                     child: Text(
-                                      widget.style == ListTileStyle.header
-                                          ? widget.title.toUpperCase()
-                                          : widget.title,
+                                      '  ${widget.command!.subtitle!}',
                                       overflow: TextOverflow.ellipsis,
                                       style: context.theme.typography.xs
                                           .copyWith(
-                                            color:
-                                                widget.style ==
-                                                    ListTileStyle.header
-                                                ? context.colour.muted
-                                                : context.colour.foreground,
+                                            color: context.colour.muted,
                                           ),
                                     ),
                                   ),
-                                  if (widget.command?.subtitle != null)
-                                    Flexible(
-                                      child: Text(
-                                        '  ${widget.command!.subtitle!}',
-                                        overflow: TextOverflow.ellipsis,
-                                        style: context.theme.typography.xs
-                                            .copyWith(
-                                              color: context.colour.muted,
-                                            ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                        if (widget.command?.description != null)
-                          Text(widget.command!.description!),
-                        if (widget.details != null) widget.details!,
-                      ],
-                    ),
+                              ],
+                            ),
+                      if (widget.command?.description != null)
+                        Text(widget.command!.description!),
+                      if (widget.details != null) widget.details!,
+                    ],
                   ),
                 ),
                 ...widget.trailingCommands.map((c) => Button.icon(c)),

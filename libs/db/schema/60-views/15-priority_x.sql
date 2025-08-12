@@ -2,20 +2,20 @@ CREATE OR REPLACE VIEW "public"."priority_tags" WITH ( security_invoker = TRUE)
 -- for formatting
 AS
 SELECT
-    priority_id,
-    jsonb_object_agg(emoji, user_ids) AS tags
-FROM (
-    SELECT
-        priority_id,
-        emoji,
-        jsonb_agg(user_id) AS user_ids
-    FROM
-        "public"."tag"
-    GROUP BY
-        priority_id,
-        emoji) subquery
+    a.priority_id,
+    at.tag_id,
+    COUNT(*) AS count,
+    MAX(COALESCE(at.deleted_at, at.updated_at)) AS updated_at
+FROM
+    "public"."activity_tag" at
+    JOIN "public"."activity" a ON at.activity_id = a.id
+WHERE
+    at.deleted_at IS NULL
+    AND a.deleted_at IS NULL
+    AND extensions.nlevel (a.path) = 1
 GROUP BY
-    priority_id;
+    a.priority_id,
+    at.tag_id;
 
 CREATE OR REPLACE VIEW "public"."priority_x" WITH ( security_invoker = TRUE)
 -- for formatting
@@ -44,8 +44,7 @@ SELECT
         p.order
     END AS "order",
     settings.pomodoro AS pomodoro,
-    settings.color AS color,
-    tags.tags AS tags
+    settings.color AS color
 FROM
     -- User config for the root of p
     priority_user pu
@@ -58,8 +57,7 @@ FROM
     JOIN priority p ON root.path @> p.path
     -- Optional settings for the priority
     LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id
-        AND p.id = settings.priority_id
-    LEFT JOIN priority_tags tags ON tags.priority_id = pu.priority_id;
+        AND p.id = settings.priority_id;
 
 CREATE OR REPLACE FUNCTION public.handle_priority_x_upsert ()
     RETURNS TRIGGER

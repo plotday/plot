@@ -1,7 +1,9 @@
 part of 'priorities.dart';
 
+@immutable
 class PrioritiesState extends Equatable {
-  const PrioritiesState({this.priorities = const [], this.root});
+  PrioritiesState({List<Priority> priorities = const [], this.root})
+    : priorities = priorities.isNotEmpty ? List.unmodifiable(priorities) : priorities;
 
   final Priority? root;
   final List<Priority> priorities;

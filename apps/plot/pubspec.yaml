@@ -85,6 +85,7 @@ dependencies:
   openai_dart: ^0.4.5
   remove_markdown: ^0.0.2
   connectivity_plus: ^6.1.4
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   analyzer: ^7.5.7

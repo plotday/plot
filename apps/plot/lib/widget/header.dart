@@ -4,6 +4,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart' show Icons;
 
 import 'package:plot/command/command.dart';
+import 'button.dart';
 
 class Header extends StatefulWidget {
   const Header({
@@ -100,14 +101,7 @@ class _HeaderState extends State<Header> with RouteAware {
         ],
       ),
       suffixes: [
-        ...widget.commands.map(
-          (command) => FHeaderAction(
-            icon: command.icon != null
-                ? Icon(command.icon!, size: 14)
-                : Text(command.title),
-            onPress: () => context.run(command),
-          ),
-        ),
+        ...widget.commands.map((command) => Button.icon(command)),
         if (widget.modal && _canPop)
           FTappable(
             onPress: () => context.router.maybePop(),

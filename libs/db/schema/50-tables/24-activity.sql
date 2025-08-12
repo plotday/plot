@@ -9,7 +9,6 @@ CREATE TABLE "public"."activity" (
     "order" double precision NOT NULL DEFAULT public.order_first (),
     "draft" boolean NOT NULL DEFAULT FALSE,
     "private" boolean NOT NULL DEFAULT FALSE,
-    "pinned" boolean NOT NULL DEFAULT FALSE,
     "do_at" date,
     "done_at" timestamp with time zone,
     "title" text,

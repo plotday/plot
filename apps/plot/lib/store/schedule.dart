@@ -11,6 +11,7 @@ class ScheduledDay extends Equatable {
     DateRange range, {
     Priority? context,
     bool? deleted = false,
+    List<Tag>? filter,
   }) {
     return Date.current().switchMap((today) {
       final includesCurrentDay = range.includes(today);
@@ -23,8 +24,9 @@ class ScheduledDay extends Equatable {
             today,
             context: context,
             deleted: deleted,
+            filter: filter,
           ),
-          _watchToday(today, context: context, deleted: deleted),
+          _watchToday(today, context: context, deleted: deleted, filter: filter),
           (rangeMap, todaySchedule) {
             final result = Map<Date, ScheduledDay>.from(rangeMap);
             // Only include today if it has events or activities
@@ -44,6 +46,7 @@ class ScheduledDay extends Equatable {
           today,
           context: context,
           deleted: deleted,
+          filter: filter,
         );
       }
     });
@@ -54,6 +57,7 @@ class ScheduledDay extends Equatable {
     Date today, {
     Priority? context,
     bool? deleted = false,
+    List<Tag>? filter,
   }) {
     return Rx.combineLatest2(
       Event.watch(
@@ -67,6 +71,7 @@ class ScheduledDay extends Equatable {
         priorityPath: context?.path,
         depth: 0,
         deleted: deleted,
+        filter: filter,
       ),
       (events, allActivities) {
         Map<Date, ScheduledDay> days = {};
@@ -229,6 +234,7 @@ class ScheduledDay extends Equatable {
     Date today, {
     Priority? context,
     bool? deleted = false,
+    List<Tag>? filter,
   }) {
     return Rx.combineLatest2(
       Activity.watch(
@@ -236,6 +242,7 @@ class ScheduledDay extends Equatable {
         priorityPath: context?.path,
         depth: 0,
         deleted: deleted,
+        filter: filter,
       ),
       Event.watch(today.toDateRange(), context: context, deleted: deleted),
       (List<Activity> allActivities, List<Event> events) =>

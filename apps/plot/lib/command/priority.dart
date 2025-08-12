@@ -149,7 +149,7 @@ class EditPriority extends Command {
 
 class ArchivePriority extends Command {
   ArchivePriority(this._priority)
-    : super(title: 'Archive', icon: PlotIcon.archive);
+    : super(title: 'Archive', icon: PlotIcon.archived);
 
   final Future<Priority> _priority;
 
@@ -224,7 +224,7 @@ class ToggleShowArchived extends Command {
     : super(
         title: showArchived ? 'Show Active Items' : 'Show Archived Items',
         subtitle: showArchived ? 'Hide archived items' : 'Show archived items',
-        icon: showArchived ? PlotIcon.hideArchived : PlotIcon.unarchive,
+        icon: PlotIcon.archived,
       );
 
   final bool showArchived;

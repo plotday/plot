@@ -50,6 +50,7 @@ abstract class Command {
     this.description,
     this.icon,
     this.shortcut,
+    this.on,
   });
 
   final String title;
@@ -57,6 +58,8 @@ abstract class Command {
   final String? description;
   final IconData? icon;
   final ShortcutActivator? shortcut;
+  // state for toggle commands
+  final bool? on;
 
   Future<CommandReturn> run(BuildContext context);
 

@@ -19,14 +19,47 @@ class ActivityWidget extends StatelessWidget {
   final void Function(bool hovered)? onHover;
 
   @override
-  Widget build(BuildContext _) {
+  Widget build(BuildContext buildContext) {
     return ListTile(
       command: ChangeCurrentActivity(activity),
       title: activity.displayTitle,
-      leadingCommand: activityPrimaryCommand(activity),
-      trailingCommands: [ShowActivityCommands(activity)],
+      body: Row(
+        children: [
+          Expanded(
+            child: Text(
+              activity.displayTitle,
+              overflow: TextOverflow.ellipsis,
+              style: buildContext.theme.typography.xs.copyWith(
+                color: buildContext.colour.foreground,
+              ),
+            ),
+          ),
+          ActivityTags(activity: activity),
+          Button.icon(ShowActivityCommands(activity)),
+        ],
+      ),
       selected: selected,
       onHover: onHover,
+    );
+  }
+}
+
+class ActivityTags extends StatelessWidget {
+  const ActivityTags({required this.activity, super.key});
+
+  final Activity activity;
+
+  @override
+  Widget build(BuildContext context) {
+    final relevantTags = Tag.getAll().where((tag) => activity.hasTag(tag));
+
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: relevantTags.map((tag) {
+        final hasTag = activity.hasTag(tag);
+        return Button.icon(ToggleActivityTag(activity, tag), selected: hasTag);
+      }).toList(),
     );
   }
 }
@@ -50,7 +83,6 @@ class ActivityDetailWidget extends StatelessWidget {
     bool isContext = activity == this.context;
     return ListTile(
       command: !isContext ? ChangeCurrentActivity(activity) : null,
-      trailingCommands: [ShowActivityCommands(activity)],
       body: Column(
         children: [
           Viewer(
@@ -58,6 +90,13 @@ class ActivityDetailWidget extends StatelessWidget {
             onTap: () {
               context.run(ChangeCurrentActivity(activity));
             },
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              ActivityTags(activity: activity),
+              Button.icon(ShowActivityCommands(activity)),
+            ],
           ),
         ],
       ),

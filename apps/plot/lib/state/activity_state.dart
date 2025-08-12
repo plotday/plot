@@ -1,15 +1,18 @@
 part of 'activity.dart';
 
+@immutable
 class ActivityState extends Equatable {
   ActivityState({
     required this.context,
     this.activity,
     this.event,
     Activity? draft,
-    this.pinned = const [],
-    this.activityGroups = const [],
+    List<ActivityDateGroup> activityGroups = const [],
     this.showArchived = false,
-  }) : draft =
+    List<Tag> filter = const [],
+  }) : activityGroups = activityGroups.isNotEmpty ? List.unmodifiable(activityGroups) : activityGroups,
+       filter = filter.isNotEmpty ? List.unmodifiable(filter) : filter,
+       draft =
            draft ??
            Activity(
              priority: context,
@@ -22,27 +25,27 @@ class ActivityState extends Equatable {
   final Activity? activity;
   final Event? event;
   final Activity draft;
-  final List<Activity> pinned;
   final List<ActivityDateGroup> activityGroups;
   final bool showArchived;
+  final List<Tag> filter;
 
   ActivityState copyWith({
     Priority? context,
     Activity? activity,
     Event? event,
     Activity? draft,
-    List<Activity>? pinned,
     List<ActivityDateGroup>? activityGroups,
     bool? showArchived,
+    List<Tag>? filter,
   }) {
     return ActivityState(
       context: context ?? this.context,
       activity: activity ?? this.activity,
       event: event ?? this.event,
       draft: draft ?? this.draft,
-      pinned: pinned ?? this.pinned,
-      activityGroups: activityGroups ?? this.activityGroups,
+      activityGroups: activityGroups != null ? (activityGroups.isNotEmpty ? List.unmodifiable(activityGroups) : activityGroups) : this.activityGroups,
       showArchived: showArchived ?? this.showArchived,
+      filter: filter != null ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter) : this.filter,
     );
   }
 
@@ -52,22 +55,22 @@ class ActivityState extends Equatable {
     activity,
     event,
     draft,
-    pinned,
     activityGroups,
     showArchived,
+    filter,
   ];
 
   @override
   String toString() {
-    return 'ActivityState(context: ${context.title}, activity: ${activity?.title}, event: ${event?.name}, draft: $draft, pinned: $pinned, activityGroups: ${activityGroups.length}, showArchived: $showArchived)';
+    return 'ActivityState(context: ${context.title}, activity: ${activity?.title}, event: ${event?.name}, draft: $draft, activityGroups: ${activityGroups.length}, showArchived: $showArchived, filter: $filter)';
   }
 }
 
 class ActivityDateGroup extends Equatable {
-  const ActivityDateGroup({
+  ActivityDateGroup({
     required this.date,
-    required this.activities,
-  });
+    required List<Activity> activities,
+  }) : activities = activities.isNotEmpty ? List.unmodifiable(activities) : activities;
 
   final Date date;
   final List<Activity> activities;
