@@ -7,6 +7,7 @@ on:
       - "apps/plot/**"
       - ".env"
       - ".env.production"
+      - ".github/workflows/deploy-app.yml"
 
 permissions:
   contents: read
