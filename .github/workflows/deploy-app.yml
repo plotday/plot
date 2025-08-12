@@ -51,6 +51,12 @@ jobs:
           MICROSOFT_CLIENT_ID: op://Production/Microsoft OAuth/username
           AUTH_CALLBACK_URL: https://app.plot.day/auth.html
 
+      - name: Print env
+        run: |
+          'echo "SUPABASE_URL: ${{ env.SUPABASE_URL }}"'
+          'echo "API_ROOT: ${{ env.API_ROOT }}"'
+          'echo "SENTRY_PROJECT: ${{ env.SENTRY_PROJECT }}"'
+
       - name: Write .env file
         run: |
           scripts/env-to-json > apps/plot/env.json << EOF
