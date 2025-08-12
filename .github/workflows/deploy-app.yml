@@ -40,7 +40,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
           SUPABASE_URL: op://Production/Supabase/API/url
           SUPABASE_ANON_KEY: op://Production/Supabase/API/public key
-          API_ROOT: https://api.plot.day
+          API_ROOT: https://sync-api.plot.day
           SENTRY_PROJECT: app
           SENTRY_AUTH_TOKEN: op://Development/Sentry/credential
           SENTRY_ORG: op://Development/Sentry/org
