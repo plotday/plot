@@ -9,7 +9,7 @@ CREATE TABLE "public"."activity" (
     "order" double precision NOT NULL DEFAULT public.order_first (),
     "draft" boolean NOT NULL DEFAULT FALSE,
     "private" boolean NOT NULL DEFAULT FALSE,
-    "do_at" date,
+    "do_on" date,
     "done_at" timestamp with time zone,
     "title" text,
     "note" text,
@@ -21,7 +21,7 @@ CREATE INDEX idx_activity_priority_id ON "public"."activity" ("priority_id");
 
 CREATE INDEX idx_activity_path ON "public"."activity" USING gist ("path");
 
-CREATE INDEX idx_activity_do_at ON "public"."activity" ("do_at");
+CREATE INDEX idx_activity_do_on ON "public"."activity" ("do_on");
 
 CREATE INDEX idx_activity_done_at ON "public"."activity" ("done_at");
 

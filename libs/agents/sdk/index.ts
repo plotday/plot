@@ -25,7 +25,7 @@ export type Priority = {
 export type Activity = {
   id: string;
   createdBy: string;
-  doAt?: string; // date string (e.g. '2025-07-10')
+  doOn?: string; // date string (e.g. '2025-07-10')
   doneAt?: Date;
   note?: string;
   title?: string;

@@ -161,7 +161,7 @@ class StartActivity extends _UpdateActivityCommand {
   Future<CommandReturn> run(BuildContext context) async {
     final start = !activity.doNow;
     await onUpdate(
-      activity.copyWith(doAt: start ? Value(Date.today()) : const Value(null)),
+      activity.copyWith(doOn: start ? Value(Date.today()) : const Value(null)),
     );
     Posthog().capture(
       eventName: start ? 'Activity Started' : 'Activity Finished',
@@ -193,7 +193,7 @@ class ScheduleActivity extends _UpdateActivityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await onUpdate(activity.copyWith(doAt: Value(when)));
+    await onUpdate(activity.copyWith(doOn: Value(when)));
     Posthog().capture(
       eventName: activity.scheduled
           ? 'Activity Rescheduled'

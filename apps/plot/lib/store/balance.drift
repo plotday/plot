@@ -53,39 +53,39 @@ GROUP BY
 UNION
 SELECT
     p.id AS priority_id,
-    DATE(p.do_at) AS day,
+    DATE(p.do_on) AS day,
     CASE WHEN p.done_at IS NULL THEN
         'todo'
     ELSE
         'done'
     END AS type,
     COUNT(
-        CASE WHEN p.do_at <= CURRENT_TIMESTAMP
+        CASE WHEN p.do_on <= CURRENT_TIMESTAMP
             AND p.done_at IS NULL THEN
             1
         END) AS past_count,
     COUNT(
-        CASE WHEN p.do_at > CURRENT_TIMESTAMP
+        CASE WHEN p.do_on > CURRENT_TIMESTAMP
             AND p.done_at IS NULL THEN
             1
         END) AS future_count,
     0 AS past_time,
     0 AS future_time,
     MIN(
-        CASE WHEN p.do_at > CURRENT_TIMESTAMP THEN
-            p.do_at
+        CASE WHEN p.do_on > CURRENT_TIMESTAMP THEN
+            p.do_on
         ELSE
             NULL
         END) AS next_at
 FROM
-    priorities p
+    activities p
 WHERE
     p.deleted_at IS NULL
-    AND (p.do_at IS NOT NULL
+    AND (p.do_on IS NOT NULL
         OR p.done_at IS NOT NULL)
 GROUP BY
     p.id,
-    DATE(p.do_at),
+    DATE(p.do_on),
     (p.done_at IS NULL)
 UNION
 SELECT

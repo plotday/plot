@@ -79,7 +79,7 @@ export type Database = {
           created_at: string
           created_by: string
           deleted_at: string | null
-          do_at: string | null
+          do_on: string | null
           done_at: string | null
           draft: boolean
           event_series: string | null
@@ -97,7 +97,7 @@ export type Database = {
           created_at?: string
           created_by: string
           deleted_at?: string | null
-          do_at?: string | null
+          do_on?: string | null
           done_at?: string | null
           draft?: boolean
           event_series?: string | null
@@ -115,7 +115,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           deleted_at?: string | null
-          do_at?: string | null
+          do_on?: string | null
           done_at?: string | null
           draft?: boolean
           event_series?: string | null
@@ -1153,7 +1153,7 @@ export type Database = {
           created_by: string | null
           day: string | null
           deleted_at: string | null
-          do_at: string | null
+          do_on: string | null
           done_at: string | null
           draft: boolean | null
           event_series: string | null

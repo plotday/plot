@@ -51,11 +51,11 @@ class ActivityList extends StatelessWidget {
                       previous?.order,
                         next?.order
                     ),
-                    doAt: currentActivity.doNow
+                    doOn: currentActivity.doNow
                         ? Value(
-                            previous?.doAt ??
-                                next?.doAt ??
-                                currentActivity.doAt,
+                            previous?.doOn ??
+                                next?.doOn ??
+                                currentActivity.doOn,
                           )
                         : const Value.absent(),
                   )

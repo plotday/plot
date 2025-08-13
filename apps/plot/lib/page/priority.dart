@@ -306,7 +306,7 @@ class PriorityPage extends StatelessWidget {
         .copyWith(
           priorityId: priorityId,
           order: Order.between(prevActivity?.order, nextActivity?.order),
-          doAt: Value((prevActivity ?? nextActivity)?.doAt),
+          doOn: Value((prevActivity ?? nextActivity)?.doOn),
           eventSeries: Value(eventSeries),
         )
         .save();

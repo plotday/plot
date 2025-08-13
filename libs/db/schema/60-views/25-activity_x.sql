@@ -44,13 +44,13 @@ SELECT
     a.path,
     a.draft,
     a.private,
-    a.do_at,
+    a.do_on,
     a.done_at,
     a.title,
     a.note,
     a.event_series,
     a.order,
-    COALESCE(a.done_at, a.do_at, a.created_at)::date AS day,
+    COALESCE(a.done_at, a.do_on, a.created_at)::date AS day,
     tags.tags AS tags
 FROM
     -- User access to priorities
@@ -80,8 +80,8 @@ DECLARE
 BEGIN
     _activity_id := NEW.id;
     -- Insert or update the activity
-    INSERT INTO activity (id, updated_by, deleted_at, priority_id, path, draft, private, do_at, done_at, "order", title, note, event_series)
-        VALUES (NEW.id, NEW.updated_by, NEW.deleted_at, NEW.priority_id, NEW.path, NEW.draft, NEW.private, NEW.do_at, NEW.done_at, NEW.order, NEW.title, NEW.note, NEW.event_series)
+    INSERT INTO activity (id, updated_by, deleted_at, priority_id, path, draft, private, do_on, done_at, "order", title, note, event_series)
+        VALUES (NEW.id, NEW.updated_by, NEW.deleted_at, NEW.priority_id, NEW.path, NEW.draft, NEW.private, NEW.do_on, NEW.done_at, NEW.order, NEW.title, NEW.note, NEW.event_series)
     ON CONFLICT (id)
         DO UPDATE SET
             updated_by = NEW.updated_by,
@@ -90,7 +90,7 @@ BEGIN
             path = NEW.path,
             draft = NEW.draft,
             private = NEW.private,
-            do_at = NEW.do_at,
+            do_on = NEW.do_on,
             done_at = NEW.done_at,
             "order" = NEW.order,
             title = NEW.title,

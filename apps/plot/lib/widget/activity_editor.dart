@@ -27,7 +27,7 @@ class ActivityEditor extends StatelessWidget {
           final activity = draft.copyWith(
             note: Value(body),
             draft: false,
-            doAt: alt ? Value(Date.today()) : const Value.absent(),
+            doOn: alt ? Value(Date.today()) : const Value.absent(),
           );
           await onAdd(activity);
         },

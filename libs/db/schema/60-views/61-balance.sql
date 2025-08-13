@@ -41,7 +41,7 @@ GROUP BY
 UNION ALL
 SELECT
     priority_user.user_id,
-    (COALESCE(activity.done_at, activity.do_at) at time zone user_timezone ())::date AS day,
+    (COALESCE(activity.done_at, activity.do_on) at time zone user_timezone ())::date AS day,
     activity.priority_id,
     CASE WHEN activity.done_at IS NULL THEN
         'todo'
@@ -56,7 +56,7 @@ FROM
     INNER JOIN "public"."priority_user" ON priority_user.priority_id = activity.priority_id
 WHERE
     activity.draft = FALSE
-    AND (activity.do_at IS NOT NULL
+    AND (activity.do_on IS NOT NULL
         OR activity.done_at IS NOT NULL)
 GROUP BY
     priority_user.user_id,

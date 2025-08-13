@@ -93,7 +93,7 @@ Add any action items to the array action_items.`,
             note: item.note,
             parentId: activity.id,
             priorityId: activity.priorityId,
-            doAt: new Date().toISOString().split("T")[0],
+            doOn: new Date().toISOString().split("T")[0],
           })
         ),
       ]);

@@ -16,7 +16,7 @@ function fromDbActivity(
   return {
     id: dbActivity.id,
     createdBy: dbActivity.created_by,
-    doAt: dbActivity.do_at || undefined,
+    doOn: dbActivity.do_on || undefined,
     doneAt: dbActivity.done_at ? new Date(dbActivity.done_at) : undefined,
     note: dbActivity.note || undefined,
     title: dbActivity.title || undefined,
@@ -64,7 +64,7 @@ export class Plot extends RpcTarget implements IPlot {
     const dbActivity: Database["public"]["Tables"]["activity"]["Insert"] = {
       created_by: this.priorityAgentId,
       priority_id: activity.priorityId || this.priorityId,
-      do_at: activity.doAt || null,
+      do_on: activity.doOn || null,
       done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
       title: activity.title || null,
       note: activity.note || null,

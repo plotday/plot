@@ -18,15 +18,15 @@ class Agenda extends Equatable {
   /// Converts a list of ScheduledDay objects into AgendaItems with appropriate headers.
   ///
   /// Each day has the following structure:
-  /// 1. Activities appear in the past based on their doneAt time (if set) or createdAt time, except on the current day if doAt is the current day.
-  /// 2. Activities with doAt set appear on that day as well as their doneAt/createdAt day.
-  /// 3. Use doNow to see if an event should be included in the current day. (This includes events with previous doAt that are not yet done.)
+  /// 1. Activities appear in the past based on their doneAt time (if set) or createdAt time, except on the current day if doOn is the current day.
+  /// 2. Activities with doOn set appear on that day as well as their doneAt/createdAt day.
+  /// 3. Use doNow to see if an event should be included in the current day. (This includes events with previous doOn that are not yet done.)
   /// 4. Events show at their scheduled time, preceded by a HeaderAgendaItem with the event's priority and date.
   /// 5. On current/future days, Activities with eventSeries equal to an event's series are shown below the event (with no intervening header).
   /// 6. When there's a time gap between events, add a HeaderAgendaItem for it (but not an event), with priority set to the default priority.
-  /// 7. On the current day, activities with doAt always appear after the now header, under the first header for which their priority matches or is a child.
-  /// 8. On future days, Activities with doAt set but without eventSeries are shown before the first (if any) event.
-  /// 9. All doNow/doAt activities are grouped and ordered by priority.order and preceeded by a HeaderAgendaItem.
+  /// 7. On the current day, activities with doOn always appear after the now header, under the first header for which their priority matches or is a child.
+  /// 8. On future days, Activities with doOn set but without eventSeries are shown before the first (if any) event.
+  /// 9. All doNow/doOn activities are grouped and ordered by priority.order and preceeded by a HeaderAgendaItem.
   ///
   /// nowIndex is the index of the current HeaderAgendaItem, either for a current event or gap between events, or the first priority if before/after all events.
   /// anchorIndex is the index of HeaderAgendaItem for the anchor date, which is today by default.

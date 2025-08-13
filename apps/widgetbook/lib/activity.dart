@@ -17,7 +17,7 @@ Widget buildActivityDoNow(BuildContext context) {
   return ActivityWidget(
     note: Note.draft(priorityId: null).copyWith(
       body: "I'm a note.",
-      doAt: Value(DateTime.now()),
+      doOn: Value(DateTime.now()),
     ),
     onChange: (activity) {},
   );

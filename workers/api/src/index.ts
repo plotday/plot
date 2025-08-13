@@ -471,7 +471,7 @@ app.post("/_/update", async (c) => {
         id: String(activity.id || ""),
         createdBy: String(activity.created_by || ""),
         priorityId: String(activity.priority_id),
-        doAt: activity.do_at ? String(activity.do_at) : undefined,
+        doOn: activity.do_on ? String(activity.do_on) : undefined,
         doneAt: activity.done_at
           ? new Date(String(activity.done_at))
           : undefined,

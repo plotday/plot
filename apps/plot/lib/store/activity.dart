@@ -12,7 +12,7 @@ class Activities extends Table
       .clientDefault(() => Order.first().value)
       .map(const OrderConverter())();
   BoolColumn get private => boolean().withDefault(const Constant(false))();
-  TextColumn get doAt => text().nullable().map(const DateConverter())();
+  TextColumn get doOn => text().nullable().map(const DateConverter())();
   DateTimeColumn get doneAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get note => text().nullable()();
@@ -540,13 +540,13 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
     if (doNow) {
       query.where(
-        a.doAt.isSmallerOrEqualValue(Date.today().toString()) &
+        a.doOn.isSmallerOrEqualValue(Date.today().toString()) &
             a.doneAt.isNull(),
       );
     }
     if (scheduled) {
       query.where(
-        a.doAt.isBiggerThanValue(Date.today().toString()) & a.doneAt.isNull(),
+        a.doOn.isBiggerThanValue(Date.today().toString()) & a.doneAt.isNull(),
       );
     }
     if (done) {
@@ -567,12 +567,12 @@ class Activity extends ActivityRow implements Comparable<Activity> {
       }
     }
 
-    // Add range filtering based on createdAt, doAt, and doneAt fields
+    // Add range filtering based on createdAt, doOn, and doneAt fields
     if (range != null) {
       // Filter activities that fall within the date range based on:
       // 1. createdAt - when the activity was created
-      // 2. doAt - when the activity is scheduled (if scheduled)
-      //    - Past doAt dates are treated as current date
+      // 2. doOn - when the activity is scheduled (if scheduled)
+      //    - Past doOn dates are treated as current date
       // 3. doneAt - when the activity was completed (if completed)
       final rangeStart = range.start.toDateTime();
       final rangeEnd = range.end.toDateTime();
@@ -583,13 +583,13 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         (a.createdAt.isBiggerOrEqualValue(rangeStart) &
                 a.createdAt.isSmallerThanValue(rangeEnd)) |
             // Activity is scheduled within the range (future dates)
-            (a.doAt.isNotNull() &
-                a.doAt.isBiggerOrEqualValue(today) &
-                a.doAt.isBiggerOrEqualValue(range.start.toString()) &
-                a.doAt.isSmallerThanValue(range.end.toString())) |
+            (a.doOn.isNotNull() &
+                a.doOn.isBiggerOrEqualValue(today) &
+                a.doOn.isBiggerOrEqualValue(range.start.toString()) &
+                a.doOn.isSmallerThanValue(range.end.toString())) |
             // Activity is scheduled in the past (treat as current date)
-            (a.doAt.isNotNull() &
-                a.doAt.isSmallerThanValue(today) &
+            (a.doOn.isNotNull() &
+                a.doOn.isSmallerThanValue(today) &
                 Constant(today).isBiggerOrEqualValue(range.start.toString()) &
                 Constant(today).isSmallerThanValue(range.end.toString())) |
             // Activity was completed within the range
@@ -611,9 +611,9 @@ class Activity extends ActivityRow implements Comparable<Activity> {
             CaseWhenExpression(
               cases: [
                 CaseWhen(
-                  a.doAt.isSmallerOrEqual(Constant(Date.today().toString())) &
+                  a.doOn.isSmallerOrEqual(Constant(Date.today().toString())) &
                       a.doneAt.isNull(),
-                  then: a.doAt,
+                  then: a.doOn,
                 ),
               ],
               orElse: const Constant(null),
@@ -623,7 +623,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
             CaseWhenExpression(
               cases: [
                 CaseWhen(
-                  a.doAt.isSmallerOrEqual(Constant(Date.today().toString())) &
+                  a.doOn.isSmallerOrEqual(Constant(Date.today().toString())) &
                       a.doneAt.isNull(),
                   then: a.order,
                 ),
@@ -660,9 +660,9 @@ class Activity extends ActivityRow implements Comparable<Activity> {
             CaseWhenExpression(
               cases: [
                 CaseWhen(
-                  a.doAt.isSmallerOrEqual(Constant(Date.today().toString())) &
+                  a.doOn.isSmallerOrEqual(Constant(Date.today().toString())) &
                       a.doneAt.isNull(),
-                  then: a.doAt,
+                  then: a.doOn,
                 ),
               ],
               orElse: const Constant(null),
@@ -672,7 +672,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
             CaseWhenExpression(
               cases: [
                 CaseWhen(
-                  a.doAt.isSmallerOrEqual(Constant(Date.today().toString())) &
+                  a.doOn.isSmallerOrEqual(Constant(Date.today().toString())) &
                       a.doneAt.isNull(),
                   then: a.order,
                 ),
@@ -772,7 +772,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
          path: row.path,
          private: row.private,
          createdBy: row.createdBy,
-         doAt: row.doAt,
+         doOn: row.doOn,
          doneAt: row.doneAt,
          eventSeries: row.eventSeries,
          tags: row.tags,
@@ -819,7 +819,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
 
   Activity merge(Activity other) {
     return copyWith(
-      doAt: Value(doAt ?? other.doAt),
+      doOn: Value(doOn ?? other.doOn),
       doneAt: Value(doneAt ?? other.doneAt),
       private: private || other.private,
       eventSeries: Value(eventSeries ?? other.eventSeries),
@@ -839,7 +839,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Uuid? createdBy,
     Order? order,
     bool? private,
-    Value<Date?> doAt = const Value.absent(),
+    Value<Date?> doOn = const Value.absent(),
     Value<DateTime?> doneAt = const Value.absent(),
     Value<String?> note = const Value.absent(),
     Value<String?> title = const Value.absent(),
@@ -851,13 +851,13 @@ class Activity extends ActivityRow implements Comparable<Activity> {
     Value<Map<int, bool>?> tagsUpdated = const Value.absent(),
   }) {
     final publish = this.draft && draft == false;
-    if (doAt.present && doAt.value != null) {
+    if (doOn.present && doOn.value != null) {
       doneAt = const Value(null);
     } else if (doneAt.present) {
-      doAt = const Value(null);
+      doOn = const Value(null);
     }
     if (publish ||
-        (doAt.present && doAt.value != this.doAt) ||
+        (doOn.present && doOn.value != this.doOn) ||
         (doneAt.present && doneAt.value != null)) {
       order ??= Order.first();
     }
@@ -874,7 +874,7 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         path: path,
         order: order,
         private: private,
-        doAt: doAt,
+        doOn: doOn,
         doneAt: doneAt,
         note: note,
         title: title,
@@ -898,25 +898,25 @@ class Activity extends ActivityRow implements Comparable<Activity> {
   bool isParent(Activity other) => path.isParent(other.path);
   List<Activity> get peers => parent?.children ?? [];
 
-  Date get at => doAt ?? doneAt?.toDate() ?? createdAt.toDate();
+  Date get at => doOn ?? doneAt?.toDate() ?? createdAt.toDate();
 
-  // For the user, doAt can never be in the past
+  // For the user, doOn can never be in the past
   @override
-  Date? get doAt =>
-      _doAt != null && _doAt! < Date.today() ? Date.today() : _doAt;
+  Date? get doOn =>
+      _doOn != null && _doOn! < Date.today() ? Date.today() : _doOn;
 
-  Date? get _doAt => super.doAt;
+  Date? get _doOn => super.doOn;
 
   bool get doNow {
-    return !done && _doAt != null && _doAt! <= Date.today();
+    return !done && _doOn != null && _doOn! <= Date.today();
   }
 
   bool get doLater {
-    return _doAt != null && _doAt! > Date.today();
+    return _doOn != null && _doOn! > Date.today();
   }
 
   bool get scheduled {
-    return _doAt != null && doneAt == null;
+    return _doOn != null && doneAt == null;
   }
 
   bool get done => doneAt != null;
@@ -947,17 +947,17 @@ class Activity extends ActivityRow implements Comparable<Activity> {
         );
       case Tag.doNow:
         return copyWith(
-          doAt: Value(doNow ? null : Date.today()),
+          doOn: Value(doNow ? null : Date.today()),
           doneAt: const Value(null),
         );
       case Tag.done:
         return copyWith(
           doneAt: Value(done ? null : DateTime.now()),
-          doAt: const Value(null),
+          doOn: const Value(null),
         );
       case Tag.doLater:
         return copyWith(
-          doAt: Value(scheduled ? null : Date.today().addDays(1)),
+          doOn: Value(scheduled ? null : Date.today().addDays(1)),
           doneAt: const Value(null),
         );
       default:
