@@ -12,11 +12,18 @@ require("flutter-tools").setup_project({
 		device = "emulator-5554",
 	},
 	{
-		name = "Web",
+		name = "Chrome",
 		target = "lib/main.dart",
 		cwd = "apps/plot",
 		device = "chrome",
 		web_port = "8788",
 		additional_args = { "--wasm" },
+	},
+	{
+		name = "Web Server",
+		target = "lib/main.dart",
+		cwd = "apps/plot",
+		device = "web-server",
+		web_port = "8788",
 	},
 })
