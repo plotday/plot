@@ -51,6 +51,7 @@ dependencies:
   rxdart: ^0.28.0
   collection: ^1.18.0
   macos_ui: ^2.0.7
+  flutter_dotenv: ^5.1.0
   url_launcher: ^6.2.6
   platform_builder: ^3.0.0
   sentry_flutter: ^8.14.2
@@ -114,6 +115,9 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  assets:
+    - .env
+
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware
 
@@ -141,15 +145,15 @@ flutter:
   # see https://flutter.dev/custom-fonts/#from-packages
 
 scripts:
-  env: ../../scripts/gen-env development SENTRY_PROJECT=app SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_DSN:SENTRY_APP_DSN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID AUTH_CALLBACK_URL | ../../scripts/env-to-json > env.json
+  env: ../../scripts/gen-env development SENTRY_PROJECT=app SUPABASE_URL SUPABASE_ANON_KEY API_ROOT SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_DSN:SENTRY_APP_DSN GOOGLE_CLIENT_ID GOOGLE_IOS_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID MICROSOFT_CLIENT_ID AUTH_CALLBACK_URL > .env
   build:
     watch: flutter pub run build_runner watch
-    macos: flutter pub run build_runner build && flutter build macos --dart-define-from-file=env.json
-    web: flutter pub run build_runner build && flutter build web --release --source-maps --base-href=/ --dart-define-from-file=env.json && flutter packages pub run sentry_dart_plugin
+    macos: flutter pub run build_runner build && flutter build macos
+    web: flutter pub run build_runner build && flutter build web --release --source-maps --base-href=/ && flutter packages pub run sentry_dart_plugin
   dev:
-    macos: flutter run -d macOS --dart-define-from-file=env.json
-    web: flutter run -d chrome --web-port 8788 --dart-define-from-file=env.json
-    android: flutter run -d emulator-5554 --dart-define-from-file=env.json
+    macos: flutter run -d macOS
+    web: flutter run -d chrome --web-port 8788
+    android: flutter run -d emulator-5554
     android-emulator:
       - flutter emulators -d android_medium | grep android_medium || flutter emulators --launch Medium_Phone_API_34 --name android_medium
       - flutter emulators --launch android_medium

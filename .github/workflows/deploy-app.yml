@@ -50,7 +50,7 @@ jobs:
 
       - name: Write .env file
         run: |
-          scripts/env-to-json > apps/plot/env.json << EOF
+          cat > apps/plot/.env << EOF
           SUPABASE_URL=${{ env.SUPABASE_URL }}
           SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }}
           API_ROOT=https://sync-api.plot.day
