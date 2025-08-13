@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "day.plot" "\0"
-            VALUE "FileDescription", "calendar" "\0"
+            VALUE "CompanyName", "Plot Technologies Inc." "\0"
+            VALUE "FileDescription", "Plot" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "calendar" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2024 day.plot. All rights reserved." "\0"
-            VALUE "OriginalFilename", "calendar.exe" "\0"
-            VALUE "ProductName", "calendar" "\0"
+            VALUE "InternalName", "plot" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2025 Plot Technologies Inc. All rights reserved." "\0"
+            VALUE "OriginalFilename", "plot.exe" "\0"
+            VALUE "ProductName", "Plot" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
