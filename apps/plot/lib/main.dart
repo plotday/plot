@@ -38,7 +38,6 @@ Future<void> run() async {
       }
     });
     await Env.init();
-    log.info('API_ROOT=${Env.apiRoot}');
     await Base.init();
     usePathUrlStrategy();
     return runApp(const App());

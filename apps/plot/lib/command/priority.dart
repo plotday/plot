@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'command.dart';
+import 'agent.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
@@ -112,7 +113,7 @@ class OpenPriority extends Command {
 class PickCurrentPriority extends ShowCommands {
   PickCurrentPriority()
     : super(
-        title: 'Pick Current Priority',
+        title: 'Switch Priorities',
         icon: PlotIcon.priority,
         shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
         commands: (context) => Future.value(ChangeCurrentPriorityCommands()),
@@ -206,6 +207,7 @@ class ShowPriorityCommands extends ShowCommands {
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
   EditPriorityCommand(priority),
+  ManageAgents(priority),
   if (!priority.root) ArchivePriority(Future.value(priority)),
 ];
 
@@ -217,6 +219,7 @@ List<Command> priorityCommands(Priority priority) => [
 List<Command> currentPriorityCommands(Priority priority) => [
   ...prioritySecondaryCommands(priority),
   NewPriority(parent: priority),
+  PickCurrentPriority(),
 ];
 
 class ToggleShowArchived extends Command {
@@ -235,8 +238,3 @@ class ToggleShowArchived extends Command {
     return const CommandDone();
   }
 }
-
-final prioritiesCommands = StaticCommandGroup(
-  title: 'Current Priority',
-  commands: [PickCurrentPriority()],
-);

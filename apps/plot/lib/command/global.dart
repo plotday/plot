@@ -8,10 +8,7 @@ class GlobalShortcuts extends StatelessWidget {
   GlobalShortcuts({required this.child, super.key});
 
   final Widget child;
-  final List<StaticCommandGroup> commands = [
-    prioritiesCommands,
-    settingsCommands,
-  ];
+  final List<StaticCommandGroup> commands = [settingsCommands];
 
   @override
   Widget build(BuildContext context) {

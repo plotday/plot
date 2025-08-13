@@ -114,8 +114,8 @@ class ShowCommands extends Command {
       final commandsInstance = await commands(context);
       if (!context.mounted) return const CommandSkipped();
       return await CommandBar(commandsInstance).run(context);
-    } on Error catch (e) {
-      log.warning(e, e.stackTrace);
+    } on Error catch (e, t) {
+      log.warning('Command "$title" failed', e, t);
       rethrow;
     }
   }

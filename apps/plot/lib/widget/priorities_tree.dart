@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/command/command.dart';
+import 'theme.dart';
 import 'colour_scheme.dart';
 
 class PrioritiesTreeWidget extends StatefulWidget {
@@ -43,7 +44,7 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
           _initializeExpansion(widget.priorities);
           _initializedExpansion = true;
         }
-        
+
         return SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,7 +74,7 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
               onTap: () => _handlePriorityTap(priority),
               borderRadius: BorderRadius.circular(8),
               child: Container(
-                padding: widgetPaddingSm, 
+                padding: widgetPaddingSm,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
                   color: isCurrentPriority
@@ -113,7 +114,7 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
                     Expanded(
                       child: Text(
                         priority.title,
-                        style:  context.theme.typography.sm,
+                        style: context.theme.typography.sm,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -159,4 +160,3 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
     }
   }
 }
-

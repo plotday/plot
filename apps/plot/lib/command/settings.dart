@@ -9,7 +9,7 @@ import 'command.dart';
 import 'logging.dart';
 
 final settingsCommands = StaticCommandGroup(
-  title: 'Settings',
+  title: 'Account',
   commands: [ShowAllCalendarSettings(), SignOut()],
 );
 
@@ -21,7 +21,6 @@ class ShowSettings extends ShowCommands {
         commands: (context) => Future.value(
           Commands(groups: [settingsCommands], prompt: 'Settings'),
         ),
-        // SettingsCommands(),
         shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
       );
 }

@@ -5,6 +5,7 @@ export 'filter.dart';
 export 'global.dart';
 export 'priority.dart';
 export 'activity.dart';
+export 'agent.dart';
 export 'provider.dart';
 export 'settings.dart';
 export 'package:plot/util/value.dart';

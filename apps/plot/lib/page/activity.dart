@@ -140,7 +140,7 @@ class ActivityPage extends StatelessWidget {
           commands: [
             StaticCommandGroup(
               title: state.context.title,
-              commands: priorityCommands(state.context),
+              commands: currentPriorityCommands(state.context),
             ),
           ],
           child: BidirectionalListSelector(

@@ -118,7 +118,8 @@ export async function getByPriority(
     const { data, error } = await supabase
       .from("agent_x")
       .select()
-      .eq("priority_child_id", priority_id);
+      .eq("priority_child_id", priority_id)
+      .is("deleted_at", null);
 
     if (error) {
       throw error;
