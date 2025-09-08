@@ -1,3 +1,5 @@
+name: Deploy Site
+
 on:
   push:
     branches: [main]
@@ -14,6 +16,19 @@ jobs:
       deployments: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install site dependencies
+        run: pnpm install --ignore-scripts --frozen-lockfile --filter="." --filter=apps/site
+
       - name: Load secrets
         uses: 1password/load-secrets-action@v2
         with:
@@ -22,6 +37,7 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
           CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
+
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
