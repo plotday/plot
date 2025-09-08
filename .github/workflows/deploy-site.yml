@@ -27,7 +27,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install site dependencies
-        run: pnpm install --ignore-scripts --frozen-lockfile --filter="." --filter=apps/site
+        run: pnpm install --frozen-lockfile --filter=./apps/site
 
       - name: Build
         run: pnpm exec nx build @plotday/site
