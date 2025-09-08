@@ -25,12 +25,12 @@ import classes from "./home.module.css";
 export function meta({}: Route.MetaArgs) {
   return [
     {
-      title: `Plot | A calendar for being better than busy`,
+      title: `Plot | Traction on Your Priorities`,
     },
     {
       name: "description",
       content:
-        "Plot is a calendar for making progress on your priorities while keeping on top of everything else.",
+        "Plot is a workspace that pulls in everything from all your apps, chats, and agents, and organizes them around your roles and goals. When you choose a focus, everything you need is in one place so you make steady progress on what matters to you.",
     },
     {
       "og:image": "https://plot.day/assets/p.png",
@@ -39,7 +39,7 @@ export function meta({}: Route.MetaArgs) {
       "twitter:title": "Plot",
     },
     {
-      "twitter:description": "Be better than busy",
+      "twitter:description": "Traction on Your Priorities",
     },
     {
       "twitter:image": "https://plot.day/assets/p.png",
@@ -62,7 +62,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             </Title>
 
             <Text fz={18}>
-              Plot is a calendar that{" "}
+              Plot is a focused workspace that{" "}
               <Text span variant="gradient" fw={600} fz={18}>
                 drives progress on your priorities
               </Text>{" "}
@@ -89,7 +89,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         <Container size="xs">
           <Stack gap="md">
             <Title order={3} size="h1">
-              A calendar that works for you
+              Productivity that works for you
             </Title>
             <Stack gap="xs">
               <List center spacing="sm">
