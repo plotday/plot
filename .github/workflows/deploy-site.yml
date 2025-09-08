@@ -29,6 +29,9 @@ jobs:
       - name: Install site dependencies
         run: pnpm install --ignore-scripts --frozen-lockfile --filter="." --filter=apps/site
 
+      - name: Build
+        run: pnpm exec nx build @plotday/site
+
       - name: Load secrets
         uses: 1password/load-secrets-action@v2
         with:
@@ -39,9 +42,4 @@ jobs:
           CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
 
       - name: Deploy
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec nx deploy:site
