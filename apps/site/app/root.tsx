@@ -38,35 +38,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+
         <link
           rel="icon"
           type="image/png"
-          sizes="32x32"
-          href="/assets/favicon-32x32.png?v=20230809b"
+          href="/assets/favicon-96x96.png?v=20250908"
+          sizes="96x96"
         />
         <link
           rel="icon"
-          type="image/png"
-          sizes="16x16"
-          href="/assets/favicon-16x16.png?v=20230809b"
+          type="image/svg+xml"
+          href="/assets/favicon.svg?v=20250908"
         />
-        <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
-        <link rel="manifest" href="/site.webmanifest" />
+        <link rel="shortcut icon" href="/assets/favicon.ico?v=20250908" />
         <link
           rel="apple-touch-icon"
           sizes="180x180"
-          href="/assets/apple-touch-icon.png?v=20230809b"
+          href="/assets/apple-touch-icon.png?v=20250908"
         />
-        <link
-          rel="mask-icon"
-          href="/assets/safari-pinned-tab.svg?v=20230809b"
-          color="#239870"
-        />
-        <link rel="shortcut icon" href="/favicon.ico?v=20230809b" />
         <meta name="apple-mobile-web-app-title" content="Plot" />
-        <meta name="application-name" content="Plot" />
-        <meta name="msapplication-TileColor" content="#239870" />
-        <meta name="theme-color" content="#239870" />
+        <link rel="manifest" href="/assets/site.webmanifest" />
 
         <Meta />
         <Links />

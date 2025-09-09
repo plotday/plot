@@ -1,18 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svgjs="http://svgjs.com/svgjs" width="242.14999" height="250"><svg xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" height="250" width="242.14999" id="SvgjsSvg1005" data-name="Layer 1" viewBox="0 0 242.14999 250" version="1.1" sodipodi:docname="p.svg" inkscape:version="1.0beta2 (2b71d25, 2019-12-03)">
-  <metadata id="SvgjsMetadata1004">
-    <rdf:rdf>
-      <cc:work rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
-        <dc:title></dc:title>
-      </cc:work>
-    </rdf:rdf>
-  </metadata>
-  <sodipodi:namedview showborder="true" fit-margin-bottom="0" fit-margin-right="0" fit-margin-left="0" fit-margin-top="0" pagecolor="#ffffff" bordercolor="#666666" inkscape:document-rotation="0" borderopacity="1" objecttolerance="10" gridtolerance="10" guidetolerance="10" inkscape:pageopacity="0" inkscape:pageshadow="2" inkscape:window-width="2558" inkscape:window-height="1360" id="SvgjsSodipodi:namedview1003" showgrid="false" inkscape:pagecheckerboard="true" inkscape:zoom="2" inkscape:cx="401.6631" inkscape:cy="118.28815" inkscape:window-x="0" inkscape:window-y="23" inkscape:window-maximized="0" inkscape:current-layer="Layer_1"></sodipodi:namedview>
-  <defs id="SvgjsDefs1002">
-    <style id="SvgjsStyle1001">.cls-1{fill:#231f20;}</style>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="268px" height="250px"><svg xmlns="http://www.w3.org/2000/svg" height="250px" width="268px" id="SvgjsSvg1007" data-name="Layer 1" viewBox="0 0 280 280" version="1.1">
+  <defs id="SvgjsDefs1006">
+    <style id="SvgjsStyle1005">.cls-1{fill:#231f20;}</style>
   </defs>
-  <path inkscape:connector-curvature="0" class="cls-1" d="M 150.47,77.890001 H 79 V 250 H 63.19 V 62.090002 h 87.28 a 30.59,30.59 0 0 1 30.58,30.589999 v 0 A 30.58,30.58 0 0 1 150.47,123.26 H 94.78 v -15.79 h 55.69 a 14.79,14.79 0 0 0 0,-29.579999 z m 45.53,14.79 A 45.42,45.42 0 0 1 150.63,138.05 H 94.78 v 15.8 h 55.81 a 61.17,61.17 0 0 0 61.17,-61.169999 v 0 A 61.17,61.17 0 0 0 150.59,31.510002 H 31.6 V 250 H 47.39 V 47.310002 h 103.2 A 45.42,45.42 0 0 1 196,92.680001 Z M 149.47,5.4007303e-7 H 0 V 250 H 15.8 V 15.800002 H 149.47 A 76.88,76.88 0 0 1 203.83,147 76.37,76.37 0 0 1 149.47,169.52 H 94.78 v 15.8 h 54.69 a 92.68,92.68 0 0 0 92.68,-92.679999 v 0 A 92.67,92.67 0 0 0 149.47,5.4007303e-7 Z" id="SvgjsPath1000" style="fill:#239870;fill-opacity:0.92"></path>
+  <path class="cls-1" d="M 173.036 92.046 L 101.566 92.046 L 101.566 264.156 L 85.756 264.156 L 85.756 76.246 L 173.036 76.246 C 189.926 76.252 203.616 89.946 203.616 106.836 C 203.616 114.947 200.394 122.725 194.659 128.46 C 188.924 134.194 181.146 137.416 173.036 137.416 L 117.346 137.416 L 117.346 121.626 L 173.036 121.626 C 181.204 121.626 187.826 115.004 187.826 106.836 C 187.826 98.668 181.204 92.046 173.036 92.046 Z M 218.566 106.836 C 218.538 131.882 198.241 152.179 173.196 152.206 L 117.346 152.206 L 117.346 168.006 L 173.156 168.006 C 206.939 168.006 234.326 140.619 234.326 106.836 C 234.326 90.613 227.881 75.054 216.409 63.582 C 204.938 52.111 189.379 45.666 173.156 45.666 L 54.166 45.666 L 54.166 264.156 L 69.956 264.156 L 69.956 61.466 L 173.156 61.466 C 198.217 61.472 218.538 81.775 218.566 106.836 Z M 172.036 14.156 L 22.566 14.156 L 22.566 264.156 L 38.366 264.156 L 38.366 29.956 L 172.036 29.956 C 203.112 29.974 231.121 48.699 243.016 77.408 C 254.911 106.118 248.353 139.165 226.396 161.156 C 212.011 175.622 192.436 183.731 172.036 183.676 L 117.346 183.676 L 117.346 199.476 L 172.036 199.476 C 223.221 199.476 264.716 157.982 264.716 106.796 C 264.699 55.624 223.208 14.151 172.036 14.156 Z" id="SvgjsPath1004" style="fill:#239870;fill-opacity:0.92"></path>
 </svg><style>@media (prefers-color-scheme: light) { :root { filter: contrast(1) brightness(0.9); } }
 @media (prefers-color-scheme: dark) { :root { filter: contrast(0.9090909090909091) brightness(1.5); } }
 </style></svg>
