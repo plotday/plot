@@ -2,10 +2,11 @@
 
 ## Overview
 
-Plot is multi-platform calendar and task management app that supports time budgeting and focused work on priorities.
+Plot is multi-platform app with everything from all your apps and messages, organized and prioritized by agents. When you choose a focus, you have the context and actions you need to make progress on what matters.
 
 Supported platforms:
 
+- Web
 - Desktop: macOS, Windows
 - Mobile: Android, iOS
 
