@@ -4,6 +4,14 @@ import { Stack, Text } from "@mantine/core";
 
 import type { Route } from "./+types/home";
 
+export function meta({}: Route.MetaArgs) {
+  return [
+    {
+      title: "Get Started | Plot",
+    },
+  ];
+}
+
 export default function GetStarted({ loaderData }: Route.ComponentProps) {
   // The code below will load the embed
   useEffect(() => {
