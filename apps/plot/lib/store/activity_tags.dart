@@ -1,0 +1,115 @@
+part of 'store.dart';
+
+@DataClassName('ActivityTagsRow')
+class ActivityTags extends Table with SyncableTable, UuidTable {
+  TextColumn get occurrence => text().nullable()();
+  TextColumn get tags => text().nullable().map(const ActivityTagsConverter())();
+  TextColumn get tagsUpdated =>
+      text().nullable().map(const TagUpdatesConverter())();
+
+  @override
+  Set<Column> get primaryKey => {id, occurrence};
+}
+
+class ActivityTagsBase extends BaseTable {
+  ActivityTagsBase()
+    : super(
+        table: 'user_activity_tags',
+        writeTable: 'activity_tag',
+        name: "activity_tags",
+        ascending:
+            false, // Get latest items first for reverse chronological sync
+      );
+
+  @override
+  PostgrestFilterBuilder<T2> filterRange<T2>(
+    PostgrestFilterBuilder<T2> query,
+    String? from,
+    String? to,
+  ) {
+    if (from != null && to != null) {
+      final dateRange = '[$from,$to)';
+      final dateTimeRange =
+          '[${Date.fromString(from).toDateTime().toDb()},${Date.fromString(to).toDateTime().toDb()})';
+      query = query.or('range_at.ov."$dateTimeRange",range_on.ov."$dateRange"');
+    }
+    return query;
+  }
+
+  @override
+  Insertable<ActivityTagsRow> fromBase(Map<String, dynamic> json) {
+    json.remove('updated_by');
+    json.remove('user_id'); // Remove user_id from function result
+
+    // Handle the 'at' field from user_activity_exception_tz function
+    final at = json['at'] != null
+        ? DateTimeRange.fromString(json['at'] as String)
+        : null;
+    json['at'] = at?.toDb();
+
+    // Handle the 'on' field from user_activity_exception_tz function
+    final on = json['on'] != null
+        ? DateTimeRange.fromString(json['on'] as String)
+        : null;
+    json['on'] = on?.toDb();
+
+    return ActivityTagsRow.fromJson(json);
+  }
+
+  @override
+  Map<String, dynamic> toBase(DataClass row) {
+    final json = super.toBase(row);
+
+    // Keep tags_updated for the put method - don't remove it like other base implementations
+    // The put method specifically needs this field to know which tags to update
+
+    // Convert 'at' field back to database format
+    if (json['at'] != null) {
+      final at = DateTimeRange.fromString(json['at'] as String);
+      json['at'] = at.toDb();
+    }
+
+    // Convert 'on' field back to database format
+    if (json['on'] != null) {
+      final on = DateTimeRange.fromString(json['on'] as String);
+      json['on'] = on.toDb();
+    }
+
+    return json;
+  }
+
+  @override
+  Future<void> put(Iterable<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+
+    for (final row in rows) {
+      final tagsUpdated = row['tags_updated'] as Map<String, dynamic>?;
+      if (tagsUpdated == null || tagsUpdated.isEmpty) continue;
+
+      final id = row['id'] as String;
+      final updatedBy = row['updated_by'] as int;
+
+      // Update the server
+      await Base.client.rpc<void>(
+        'update_activity_tags',
+        params: {
+          'p_activity_id': id,
+          'p_user_id': Base.userId.toString(),
+          'p_client_id': updatedBy,
+          'p_tag_updates': tagsUpdated,
+        },
+      );
+
+      // After successfully updating the server, clear tagsUpdated in the local database
+      await Store.get
+          .update(Store.get.activityTags)
+          .replace(
+            ActivityTagsCompanion(
+              id: Value(Uuid.fromString(id)),
+              tagsUpdated: const Value(null),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+    }
+  }
+}

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/activity_link.dart';
 import 'package:plot/command/command.dart';
 
 class ActivityWidget extends StatelessWidget {
@@ -20,22 +21,35 @@ class ActivityWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext buildContext) {
+    final hasVisibleLinks = activity.links.any((link) => 
+      link.type != LinkType.hidden
+    );
+
     return ListTile(
       command: ChangeCurrentActivity(activity),
       title: activity.displayTitle,
-      body: Row(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Text(
-              activity.displayTitle,
-              overflow: TextOverflow.ellipsis,
-              style: buildContext.theme.typography.xs.copyWith(
-                color: buildContext.colour.foreground,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  activity.displayTitle,
+                  overflow: TextOverflow.ellipsis,
+                  style: buildContext.theme.typography.xs.copyWith(
+                    color: buildContext.colour.foreground,
+                  ),
+                ),
               ),
-            ),
+              ActivityTags(activity: activity),
+              Button.icon(ShowActivityCommands(activity)),
+            ],
           ),
-          ActivityTags(activity: activity),
-          Button.icon(ShowActivityCommands(activity)),
+          if (hasVisibleLinks) ...[
+            const SizedBox(height: 8),
+            ActivityLinksList(activity: activity),
+          ],
         ],
       ),
       selected: selected,
@@ -81,9 +95,14 @@ class ActivityDetailWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     bool isContext = activity == this.context;
+    final hasVisibleLinks = activity.links.any((link) => 
+      link.type != LinkType.hidden
+    );
+    
     return ListTile(
       command: !isContext ? ChangeCurrentActivity(activity) : null,
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Viewer(
             markdown: activity.note ?? activity.displayTitle,
@@ -91,6 +110,11 @@ class ActivityDetailWidget extends StatelessWidget {
               context.run(ChangeCurrentActivity(activity));
             },
           ),
+          if (hasVisibleLinks) ...[
+            const SizedBox(height: 8),
+            ActivityLinksList(activity: activity),
+          ],
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

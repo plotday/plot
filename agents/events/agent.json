@@ -1,0 +1,18 @@
+{
+  "id": "events",
+  "name": "Events",
+  "description": "Sync calendar events",
+  "author": {
+    "name": "Plot",
+    "email": "team@plot.day",
+    "url": "https://plot.day"
+  },
+  "license": "MIT",
+  "tools": [
+    "plot",
+    "google-calendar",
+    "outlook-calendar",
+    "store",
+    "callback"
+  ]
+}

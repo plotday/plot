@@ -9,6 +9,7 @@ import 'app.dart';
 import 'env.dart';
 import 'base.dart';
 import 'logging.dart';
+import 'widget/auth_button.dart';
 
 Future<void> run() async {
   try {
@@ -39,6 +40,7 @@ Future<void> run() async {
     });
     await Env.init();
     await Base.init();
+    await AuthButton.init();
     usePathUrlStrategy();
     return runApp(const App());
   } catch (error, stackTrace) {

@@ -1,3 +1,12 @@
+CREATE OR REPLACE FUNCTION user_contact_id ()
+    RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN (auth.jwt () -> 'app_metadata' ->> 'contact_id')::uuid;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION user_timezone ()
     RETURNS text
     LANGUAGE plpgsql

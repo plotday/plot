@@ -1,0 +1,13 @@
+{
+  "id": "outlook-calendar",
+  "name": "Outlook Calendar",
+  "description": "Sync with Outlook Calendar",
+  "license": "MIT",
+  "tools": [
+    "auth",
+    "callback",
+    "run",
+    "store",
+    "webhook"
+  ]
+}

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:auto_route/auto_route.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
@@ -10,9 +11,10 @@ import 'logging.dart';
 
 @RoutePage()
 class SignInPage extends StatefulWidget {
-  const SignInPage({this.returnTo, super.key});
+  const SignInPage({this.returnTo, this.signOut = false, super.key});
 
   final String? returnTo;
+  final bool signOut;
 
   @override
   State<SignInPage> createState() => _SignInPageState();
@@ -20,27 +22,40 @@ class SignInPage extends StatefulWidget {
 
 class _SignInPageState extends State<SignInPage> {
   bool? _signedIn;
+  String? _errorMessage;
 
-  late final StreamSubscription<User?> _userSubscription;
+  StreamSubscription<User?>? _userSubscription;
 
   @override
   void initState() {
+    if (widget.signOut) {
+      Future.microtask(() async {
+        await Base.client.auth.signOut();
+        if (!mounted) return;
+        listen();
+      });
+    } else {
+      listen();
+    }
+    super.initState();
+  }
+
+  void listen() {
     _userSubscription = Base.user.listen((user) {
       setState(() {
         _signedIn = user != null;
       });
-      
+
       // Redirect to return path or home after successful sign-in
       if (user != null && mounted) {
         context.router.navigatePath(widget.returnTo ?? '/');
       }
     });
-    super.initState();
   }
 
   @override
   void dispose() {
-    _userSubscription.cancel();
+    _userSubscription?.cancel();
     super.dispose();
   }
 
@@ -52,21 +67,72 @@ class _SignInPageState extends State<SignInPage> {
 
     return Scaffold(
       body: Center(
-        child: AuthButton(
-          onSignIn: (auth) async {
-            if (auth.idToken == null) throw Exception('No idToken');
-            try {
-              await Base.client.auth.signInWithIdToken(
-                provider: OAuthProvider.google,
-                idToken: auth.idToken!,
-                accessToken: auth.accessToken,
-              );
-            } on AuthException catch (e, t) {
-              log.warning('Error signing into Google', e, t);
-              if (!context.mounted) return;
-              Alert.show(context, e.message);
-            }
-          },
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 400),
+          child: Column(
+            spacing: 16,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SvgPicture.asset("assets/p.svg", width: 120, height: 120),
+              Text(
+                'Sign in to make progress on your priorities',
+                textAlign: TextAlign.center,
+              ),
+              AuthButton.authenticate(
+                provider: AuthProvider.google,
+                autoSignIn: false,
+                onAuth: ({required idToken, accessToken}) async {
+                  // Clear any previous error when attempting new login
+                  if (mounted) {
+                    setState(() {
+                      _errorMessage = null;
+                    });
+                  }
+
+                  try {
+                    await Base.client.auth.signInWithIdToken(
+                      provider: OAuthProvider.google,
+                      idToken: idToken,
+                      accessToken: accessToken,
+                    );
+                  } on AuthException catch (e, t) {
+                    log.warning('Error signing into Google', e, t);
+                    if (!mounted) return;
+                    setState(() {
+                      _errorMessage = e.message;
+                    });
+                  }
+                },
+                onError: (error) {
+                  if (mounted) {
+                    setState(() {
+                      _errorMessage = error;
+                    });
+                  }
+                },
+              ),
+              if (_errorMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(
+                      color: Color(0xFFEF4444),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

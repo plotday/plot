@@ -46,7 +46,7 @@ class Agent {
   factory Agent.fromJson(Map<String, dynamic> json) {
     List<AgentTool> tools = [];
     final toolsRaw = json['tools'];
-    
+
     if (toolsRaw != null) {
       if (toolsRaw is Map<String, dynamic>) {
         // Handle tools as map format: {"tool-id": {}}
@@ -60,7 +60,7 @@ class Agent {
             .toList();
       }
     }
-    
+
     return Agent(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -112,7 +112,7 @@ class PriorityAgent {
             .toList();
       }
     }
-    
+
     return PriorityAgent(
       id: json['id'] as String,
       priorityId: json['priority_id'] as String,
@@ -136,8 +136,7 @@ class PriorityAgent {
 class AgentApi {
   /// Get all available agents
   static Future<List<Agent>> getAllAgents() async {
-    final response = await api.get('/agents');
-    final agentsData = response as List<dynamic>;
+    final agentsData = await api.get<List<dynamic>>('/agents');
     return agentsData
         .map((json) => Agent.fromJson(json as Map<String, dynamic>))
         .toList();
@@ -147,11 +146,10 @@ class AgentApi {
   static Future<List<PriorityAgent>> getAgentsForPriority(
     Priority priority,
   ) async {
-    final response = await api.get(
+    final agentsData = await api.get<List<dynamic>>(
       '/agent?priorityId=${priority.id.toString()}',
     );
-    log.info('Agents for priority: $response');
-    final agentsData = response as List<dynamic>;
+    log.info('Agents for priority: $agentsData ');
     final ret = agentsData
         .map((json) => PriorityAgent.fromJson(json as Map<String, dynamic>))
         .toList();
@@ -160,7 +158,7 @@ class AgentApi {
 
   /// Remove an agent from a priority
   static Future<void> removeAgent(String priorityAgentId) async {
-    await api.delete('/agent/$priorityAgentId');
+    await api.delete<Map<String, dynamic>>('/agent/$priorityAgentId');
   }
 
   /// Add an agent to a priority
@@ -181,11 +179,11 @@ class AgentApi {
         if (config != null) 'config': config,
       }),
     );
-    
+
     if (response.statusCode != 200) {
       throw Exception('${response.statusCode} /agent ${response.body}');
     }
-    
+
     // Server returns the priority agent ID as a JSON-encoded string
     final decodedResponse = jsonDecode(response.body);
     return decodedResponse.toString();
@@ -196,7 +194,7 @@ class AgentApi {
     String priorityAgentId,
     Map<String, dynamic> updates,
   ) async {
-    final response = await api.patch(
+    final response = await api.patch<Map<String, dynamic>>(
       '/agent/$priorityAgentId',
       body: {'agent': updates},
     );
@@ -205,7 +203,9 @@ class AgentApi {
 
   /// Get agent by priority agent ID
   static Future<PriorityAgent> getAgentById(String priorityAgentId) async {
-    final response = await api.get('/agent/$priorityAgentId');
-    return PriorityAgent.fromJson(response as Map<String, dynamic>);
+    final response = await api.get<Map<String, dynamic>>(
+      '/agent/$priorityAgentId',
+    );
+    return PriorityAgent.fromJson(response);
   }
 }

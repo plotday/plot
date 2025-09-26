@@ -5,7 +5,6 @@ class ActivityState extends Equatable {
   ActivityState({
     required this.context,
     this.activity,
-    this.event,
     Activity? draft,
     List<ActivityDateGroup> activityGroups = const [],
     this.showArchived = false,
@@ -17,13 +16,11 @@ class ActivityState extends Equatable {
            Activity(
              priority: context,
              parent: activity,
-             parentEvent: event,
              draft: true,
            );
 
   final Priority context;
   final Activity? activity;
-  final Event? event;
   final Activity draft;
   final List<ActivityDateGroup> activityGroups;
   final bool showArchived;
@@ -32,7 +29,6 @@ class ActivityState extends Equatable {
   ActivityState copyWith({
     Priority? context,
     Activity? activity,
-    Event? event,
     Activity? draft,
     List<ActivityDateGroup>? activityGroups,
     bool? showArchived,
@@ -41,7 +37,6 @@ class ActivityState extends Equatable {
     return ActivityState(
       context: context ?? this.context,
       activity: activity ?? this.activity,
-      event: event ?? this.event,
       draft: draft ?? this.draft,
       activityGroups: activityGroups != null ? (activityGroups.isNotEmpty ? List.unmodifiable(activityGroups) : activityGroups) : this.activityGroups,
       showArchived: showArchived ?? this.showArchived,
@@ -53,7 +48,6 @@ class ActivityState extends Equatable {
   List<Object?> get props => [
     context,
     activity,
-    event,
     draft,
     activityGroups,
     showArchived,
@@ -62,7 +56,7 @@ class ActivityState extends Equatable {
 
   @override
   String toString() {
-    return 'ActivityState(context: ${context.title}, activity: ${activity?.title}, event: ${event?.name}, draft: $draft, activityGroups: ${activityGroups.length}, showArchived: $showArchived, filter: $filter)';
+    return 'ActivityState(context: ${context.title}, activity: ${activity?.title}, draft: $draft, activityGroups: ${activityGroups.length}, showArchived: $showArchived, filter: $filter)';
   }
 }
 

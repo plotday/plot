@@ -1,6 +1,6 @@
-import 'dart:typed_data';
 import 'package:uuid/uuid.dart' as uuid;
 import 'package:b/b.dart';
+import 'package:drift/drift.dart';
 
 extension type Uuid(uuid.UuidValue value) {
   factory Uuid.generate() => Uuid(const uuid.Uuid().v7obj());
@@ -25,5 +25,30 @@ extension type Uuid(uuid.UuidValue value) {
   String toShortString() {
     return BaseConversion(from: base16, to: base58)(
         value.toString().replaceAll('-', '').toUpperCase());
+  }
+}
+
+class UuidConverter extends TypeConverter<Uuid, Uint8List>
+    with JsonTypeConverter2<Uuid, Uint8List, String> {
+  const UuidConverter();
+
+  @override
+  Uuid fromSql(Uint8List fromDb) {
+    return Uuid.fromBytes(fromDb);
+  }
+
+  @override
+  Uint8List toSql(Uuid value) {
+    return value.toBytes();
+  }
+
+  @override
+  Uuid fromJson(String json) {
+    return Uuid.fromString(json);
+  }
+
+  @override
+  String toJson(Uuid value) {
+    return value.toString();
   }
 }

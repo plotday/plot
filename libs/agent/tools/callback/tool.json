@@ -1,0 +1,7 @@
+{
+  "id": "callback",
+  "name": "Callback",
+  "description": "Create persistent callback references to parent tools that survive worker restarts and serialization.",
+  "license": "MIT",
+  "tools": []
+}

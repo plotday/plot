@@ -5,14 +5,14 @@ import 'dart:convert';
 import 'package:flutter/widgets.dart' show IconData;
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
-import 'package:rxdart/rxdart.dart';
 import 'package:collection/collection.dart';
 import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:remove_markdown/remove_markdown.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:b/b.dart';
+import 'package:equatable/equatable.dart';
+import 'package:rrule/rrule.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
@@ -21,9 +21,11 @@ import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/broadcast.dart';
 import 'package:plot/util/async.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/base.dart';
+import 'enums.dart';
 import 'types.dart';
 import 'logging.dart';
 
@@ -31,17 +33,18 @@ export 'package:plot/util/value.dart';
 export 'package:plot/util/time.dart';
 export 'package:plot/util/uuid.dart';
 export 'package:plot/util/order.dart';
+export 'package:plot/util/path.dart';
+export 'package:plot/base.dart';
 export 'schedule.dart';
-export 'types.dart' show TagType;
+export 'enums.dart';
 
 part 'sync.dart';
-part 'account.dart';
-part 'calendar.dart';
+part 'actor.dart';
 part 'priority.dart';
 part 'activity.dart';
-part 'event.dart';
+part 'activity_exception.dart';
+part 'activity_tags.dart';
 part 'session.dart';
-part 'balance.dart';
 part 'tag.dart';
 
 part 'store.g.dart';
@@ -50,6 +53,7 @@ mixin SyncableTable on Table {
   DateTimeColumn get updatedAt => dateTime()
       .withDefault(currentDateAndTime)
       .map(const LocalDateTimeConverter())();
+  IntColumn get pending => integer().nullable()();
 }
 
 mixin CreatedTable on Table {
@@ -118,6 +122,7 @@ abstract class BaseTable {
   Map<String, dynamic> toBase(DataClass row) {
     final json = row.toJson();
     json['updated_by'] = Store.clientId;
+    json.remove('pending');
     return json;
   }
 
@@ -131,46 +136,23 @@ abstract class BaseTable {
       bool more,
     )
   >
-  get({
-    (String?, String?)? include,
-    (String?, String?)? exclude,
-    DateTime? updatedSince,
-  }) async {
-    var query = Base.client.from(table).select();
-    if (exclude != null) {
-      final (from, to) = exclude;
-      if (from != null) {
-        if (to != null) {
-          query = query.or("$order.lt.$from,$order.gt.$to");
-        } else {
-          query = query.lt(order, from);
-        }
-      } else if (to != null) {
-        query = query.gt(order, to);
-      }
-    }
-    if (include != null) {
-      final (from, to) = include;
-      if (from != null) {
-        query = query.gte(order, from);
-      }
-      if (to != null) {
-        query = query.lte(order, to);
-      }
-    }
+  get({String? from, String? to, DateTime? updatedSince}) async {
+    var query = select();
+    query = filterRange(query, from, to);
     if (updatedSince != null) {
       query = query.gt("updated_at", updatedSince);
     }
     query = filter(query);
-    var query2 = sort(query);
+    PostgrestTransformBuilder<PostgrestList> query2 = query;
     if (limit != null) {
+      query2 = sort(query);
       query2 = query2.limit(limit!);
     }
     DateTime preQueryTimestamp = DateTime.now();
     final rows = await query2;
     (String?, String?)? range;
-    if (include != null && limit == null) {
-      range = include;
+    if (from != null || to != null) {
+      range = (from, to);
     } else if (rows.isNotEmpty) {
       range = (rows.first[order].toString(), rows.last[order].toString());
     }
@@ -190,8 +172,32 @@ abstract class BaseTable {
           })
           .reduce((value, last) => value.isAfter(last) ? value : last);
     }
-    final more = include != null || (limit != null && rows.length < limit!);
+    final more =
+        (from != null || to != null) || (limit != null && rows.length < limit!);
     return (rows, lastUpdated, range, more);
+  }
+
+  PostgrestFilterBuilder<PostgrestList> select() {
+    return Base.client.from(table).select();
+  }
+
+  PostgrestFilterBuilder<T2> filterRange<T2>(
+    PostgrestFilterBuilder<T2> query,
+    String? from,
+    String? to,
+  ) {
+    if (!ascending) {
+      final tmp = from;
+      from = to;
+      to = tmp;
+    }
+    if (from != null) {
+      query = query.gte(order, from);
+    }
+    if (to != null) {
+      query = query.lte(order, to);
+    }
+    return query;
   }
 
   PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
@@ -222,15 +228,14 @@ abstract class BaseTable {
 @DriftDatabase(
   tables: [
     SyncStates,
-    Accounts,
-    Calendars,
+    Actors,
     Priorities,
     Activities,
-    Events,
+    ActivityExceptions,
+    ActivityTags,
     Sessions,
-    Balances,
   ],
-  include: {'priority.drift', 'activity.drift', 'balance.drift'},
+  include: {'priority.drift'},
 )
 class Store extends _$Store {
   static Store get get => Injector.appInstance.get<Store>();
@@ -286,7 +291,7 @@ class Store extends _$Store {
     }
   }
 
-  RealtimeChannel? _realtimeChannel;
+  BroadcastClient? _broadcastClient;
 
   Future<DATA> add<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
@@ -340,6 +345,7 @@ class Store extends _$Store {
 
     // Check if push already in progress for this table
     if (_pushCompleters.containsKey(entity)) {
+      log.info("Waiting for existing push");
       // Wait for existing push to complete
       final existingResult = await _pushCompleters[entity]!.future;
 
@@ -357,55 +363,69 @@ class Store extends _$Store {
     _pushCompleters[entity] = completer;
 
     try {
-      final syncState = await (select(
-        syncStates,
-      )..where((row) => row.entity.equals(entity))).getSingleOrNull();
+      // First fetch rows with pending changes and mark them as sync-in-progress
+      final List<QueryRow> pendingRows = await customWriteReturning(
+        'UPDATE ${table.actualTableName} SET pending = pending | 1 WHERE pending IS NOT NULL RETURNING *',
+        updates: {table},
+      );
 
-      final storeQuery = select(table);
-      if (syncState?.pushedAt != null) {
-        storeQuery.where((row) {
-          return row.updatedAt.isBiggerThanValue(syncState!.pushedAt!);
-        });
-      }
-      storeQuery.orderBy([(t) => OrderingTerm(expression: t.updatedAt)]);
-      final now = DateTime.now();
-      final storeRows = await storeQuery.get();
       var success = false;
-      if (storeRows.isEmpty) {
+      if (pendingRows.isEmpty) {
         success = true;
       } else {
-        log.info("Pushing ${storeRows.length} rows to ${baseTable.table}");
+        log.info("Pushing ${pendingRows.length} ${baseTable.name} rows");
+
         try {
-          await baseTable.put(storeRows.map((row) => baseTable.toBase(row)));
+          // Try batch push first
+          await baseTable.put(
+            await Future.wait(
+              pendingRows.map(
+                (row) async => baseTable.toBase(await table.map(row.data)),
+              ),
+            ),
+          );
           success = true;
+
+          // On successful batch sync, clear pending for all rows with bit 1 set
+          await customUpdate(
+            'UPDATE ${table.actualTableName} SET pending = NULL WHERE (pending & 1) = 1',
+            updates: {table},
+          );
         } catch (e, trace) {
-          log.warning("Batch push failed", e, trace);
-          for (final row in storeRows) {
+          log.warning(
+            "Batch push failed, falling back to individual pushes",
+            e,
+            trace,
+          );
+
+          // Step 3b: On batch failure, try individual rows
+          for (final row in pendingRows) {
             try {
-              await baseTable.put([baseTable.toBase(row)]);
+              final data = await table.map(row.data);
+              try {
+                await baseTable.put([baseTable.toBase(data)]);
+                success = true;
+                // set pending = NULL for this row
+                await customUpdate(
+                  'UPDATE ${table.actualTableName} SET pending = NULL WHERE id = ?',
+                  variables: [Variable(row.data['id'])],
+                  updates: {table},
+                );
+              } catch (e, stackTrace) {
+                log.warning(
+                  "Error pushing ${baseTable.toBase(data)} to ${baseTable.table}",
+                  e,
+                  stackTrace,
+                );
+              }
             } catch (e, stackTrace) {
               log.warning(
-                "Error pushing ${row.toJsonString()} to ${baseTable.table}",
+                "Error parsing row ${jsonEncode(row.data)} from ${baseTable.table}",
                 e,
                 stackTrace,
               );
             }
           }
-        }
-      }
-      if (success) {
-        try {
-          await into(syncStates).insert(
-            SyncStatesCompanion.insert(entity: entity, pushedAt: Value(now)),
-            onConflict: DoUpdate(
-              (old) => SyncStatesCompanion(
-                entity: Value(entity),
-                pushedAt: Value(now),
-              ),
-            ),
-          );
-        } catch (e, trace) {
-          log.warning("Updating sync state failed", e, trace);
         }
       }
 
@@ -424,9 +444,10 @@ class Store extends _$Store {
     PullType type,
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable, {
-    (String, String)? range,
+    (String?, String?)? range,
   }) async {
-    final paged = [PullType.initial, PullType.more].contains(type);
+    final paged =
+        [PullType.initial, PullType.more].contains(type) && range == null;
     if (paged && !hasMore(baseTable)) {
       return false;
     }
@@ -434,11 +455,11 @@ class Store extends _$Store {
     final syncState = await (select(
       syncStates,
     )..where((row) => row.entity.equals(entity))).getSingleOrNull();
-    if (paged && syncState?.more == false) {
+    if (paged && syncState?.pulledAt != null && syncState?.last == null) {
       _noMore.add(entity);
       return false;
     }
-    if (type == PullType.initial && syncState?.to != null) {
+    if (type == PullType.initial && syncState?.last != null) {
       return true;
     }
     if (type == PullType.updates && syncState?.pulledAt == null) {
@@ -446,18 +467,26 @@ class Store extends _$Store {
     }
 
     var (baseRows, lastUpdated, newRange, more) = (await baseTable.get(
-      include:
-          range ??
-          ([PullType.updates, PullType.more].contains(type)
-              ? (syncState?.from, syncState?.to)
-              : null),
-      exclude: type == PullType.more ? (syncState?.from, syncState?.to) : null,
-      updatedSince: type == PullType.more ? null : syncState?.pulledAt,
+      from: range != null
+          ? range.$1
+          : ((baseTable.ascending
+                    ? type == PullType.more
+                    : type == PullType.updates)
+                ? syncState?.last
+                : null),
+      to: range != null
+          ? range.$2
+          : ((baseTable.ascending
+                    ? type == PullType.updates
+                    : type == PullType.more)
+                ? syncState?.last
+                : null),
+      updatedSince: type == PullType.updates ? syncState?.pulledAt : null,
     ));
     final (from, to) = newRange ?? (null, null);
 
     log.info(
-      "Pulling ${baseRows.length} rows from ${baseTable.table} (since ${type == PullType.more ? null : syncState?.pulledAt}, include ${range ?? ([PullType.updates, PullType.more].contains(type) ? (syncState?.from, syncState?.to) : null)}, exclude ${type == PullType.more ? (syncState?.from, syncState?.to) : null})",
+      "Pulling ${baseRows.length} rows from ${baseTable.table} (type: $type, from: ${newRange?.$1}, to: ${newRange?.$2})",
     );
     final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
       try {
@@ -482,21 +511,20 @@ class Store extends _$Store {
       SyncStatesCompanion.insert(
         entity: entity,
         pulledAt: Value(lastUpdated),
-        from: paged ? Value(from) : const Value.absent(),
-        to: paged ? Value(to) : const Value.absent(),
-        more: Value(paged ? more : false),
-        pushedAt: const Value(null),
+        last: range != null
+            ? Value(range.$2)
+            : paged
+            ? (more ? Value(to) : const Value(null))
+            : const Value.absent(),
       ),
       onConflict: DoUpdate(
         (old) => SyncStatesCompanion(
           entity: Value(entity),
           pulledAt: Value(lastUpdated),
-          from: paged ? Value(from) : const Value.absent(),
-          to: paged ? Value(to) : const Value.absent(),
-          more: paged
-              ? Value(more)
-              : type == PullType.all
-              ? const Value(false)
+          last: range != null
+              ? Value(range.$2)
+              : paged
+              ? (more ? Value(to) : const Value(null))
               : const Value.absent(),
         ),
       ),
@@ -508,7 +536,6 @@ class Store extends _$Store {
         SyncStatesCompanion.insert(
           entity: baseTable.name,
           pulledAt: Value(lastUpdated),
-          pushedAt: const Value(null),
         ),
         onConflict: DoNothing(),
       );
@@ -522,49 +549,29 @@ class Store extends _$Store {
   }
 
   Future<void> _syncAll() async {
-    if (!await Account.push()) {
-      log.warning("Account push failed during _syncAll");
+    try {
+      await Actor.pull();
+      if (!await Priority.push()) {
+        log.warning("Priority push failed during _syncAll");
+      }
+      await Priority.pull();
+      if (!await Activity.push()) {
+        log.warning("Activity push failed during _syncAll");
+      }
+      await Activity.pull();
+      if (!await Session.push()) {
+        log.warning("Session push failed during _syncAll");
+      }
+      await Session.pull();
+    } catch (e, stackTrace) {
+      log.warning("Error during _syncAll", e, stackTrace);
     }
-    await Account.pull();
-    if (!await Calendar.push()) {
-      log.warning("Calendar push failed during _syncAll");
-    }
-    await Calendar.pull();
-    if (!await Priority.push()) {
-      log.warning("Priority push failed during _syncAll");
-    }
-    await Priority.pull();
-    if (!await Event.push()) {
-      log.warning("Event push failed during _syncAll");
-    }
-    await Event.pull();
-    if (!await Activity.push()) {
-      log.warning("Activity push failed during _syncAll");
-    }
-    await Activity.pull();
-    if (!await Session.push()) {
-      log.warning("Session push failed during _syncAll");
-    }
-    await Session.pull();
-    await Balance.pull();
   }
 
   Future<void> _handleTableSync(String table) async {
     log.info("Syncing $table");
     try {
       switch (table) {
-        case 'account':
-          if (!await Account.push()) {
-            log.warning("Account push failed during table sync");
-          }
-          await Account.pull();
-          break;
-        case 'calendar':
-          if (!await Calendar.push()) {
-            log.warning("Calendar push failed during table sync");
-          }
-          await Calendar.pull();
-          break;
         case 'priority':
           if (!await Priority.push()) {
             log.warning("Priority push failed during table sync");
@@ -577,20 +584,11 @@ class Store extends _$Store {
           }
           await Activity.pull();
           break;
-        case 'event':
-          if (!await Event.push()) {
-            log.warning("Event push failed during table sync");
-          }
-          await Event.pull();
-          break;
         case 'session':
           if (!await Session.push()) {
             log.warning("Session push failed during table sync");
           }
           await Session.pull();
-          break;
-        case 'balance':
-          await Balance.pull();
           break;
         default:
           log.warning("Unknown table update for $table");
@@ -600,47 +598,23 @@ class Store extends _$Store {
     }
   }
 
-  void _subscribedToRealtime() {
-    _unsubscribeFromRealtime();
+  Future<void> _subscribeToUpdates() async {
+    _unsubscribeFromUpdates();
 
-    final userId = Base.userId.toString();
-    _realtimeChannel = Base.client
-        .channel('user:$userId')
-        .onBroadcast(
-          event: 'sync',
-          callback: (message) async {
-            final payload = message['payload'];
-            final table = payload['table'] as String;
-            final updatedBy = payload['updated_by'] as int?;
+    _broadcastClient = BroadcastClient.instance;
+    _broadcastClient!.init(_handleBroadcastMessage, clientId);
+    await _broadcastClient!.connect();
+  }
 
-            // Ignore updates from this client to prevent sync loops
-            if (updatedBy != null && updatedBy == clientId) {
-              log.info(
-                "Ignoring own update for table $table (client $updatedBy)",
-              );
-              return;
-            }
+  Future<void> _handleBroadcastMessage(Map<String, dynamic> message) async {
+    final table = message['table'] as String?;
 
-            await _handleTableSync(table);
-          },
-        )
-        .subscribe((status, error) {
-          switch (status) {
-            case RealtimeSubscribeStatus.channelError:
-              log.warning("Broadcast channel error: $error");
-              _startSync();
-              break;
-            case RealtimeSubscribeStatus.timedOut:
-              log.warning("Broadcast channel timed out");
-              _startSync();
-              break;
-            case RealtimeSubscribeStatus.closed:
-              log.info("Broadcast channel closed");
-              break;
-            case RealtimeSubscribeStatus.subscribed:
-              break;
-          }
-        });
+    if (table == null) {
+      log.warning("Received broadcast message without table field: $message");
+      return;
+    }
+
+    await _handleTableSync(table);
   }
 
   Future<bool> _hasNetworkConnectivity() async {
@@ -674,10 +648,12 @@ class Store extends _$Store {
   }
 
   Future<void> _startSync() async {
-    _unsubscribeFromRealtime();
+    _unsubscribeFromUpdates();
     await _waitForNetworkConnectivity();
     await _syncAll();
-    _subscribedToRealtime();
+    await _subscribeToUpdates();
+    // Sync one more time in case something change while we were syncing, before we subscribed
+    await _syncAll();
   }
 
   Store._(User user)
@@ -692,7 +668,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 80;
+  int get schemaVersion => 128;
 
   @override
   MigrationStrategy get migration {
@@ -719,12 +695,12 @@ class Store extends _$Store {
 
   @override
   Future<void> close() async {
-    _unsubscribeFromRealtime();
+    _unsubscribeFromUpdates();
     await super.close();
   }
 
-  void _unsubscribeFromRealtime() {
-    _realtimeChannel?.unsubscribe();
-    _realtimeChannel = null;
+  void _unsubscribeFromUpdates() {
+    _broadcastClient?.disconnect();
+    _broadcastClient = null;
   }
 }

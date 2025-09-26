@@ -1,0 +1,7 @@
+{
+  "id": "store",
+  "name": "Store",
+  "description": "Simple key-value storage for agents to persist data between runs.",
+  "license": "MIT",
+  "tools": []
+}

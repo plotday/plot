@@ -188,7 +188,7 @@ class Viewer extends StatefulWidget {
 }
 
 class ViewerState extends State<Viewer> {
-  late Document document;
+  late super_editor.Editor _editor;
 
   late final ValueNotifier<DocumentSelection?> _selection;
   final _selectionLayerLinks = SelectionLayerLinks();
@@ -196,8 +196,17 @@ class ViewerState extends State<Viewer> {
   @override
   void initState() {
     super.initState();
-    document = deserializeMarkdownToDocument(widget.markdown);
     _selection = ValueNotifier<DocumentSelection?>(null);
+    _updateDocument();
+  }
+
+  void _updateDocument() {
+    setState(() {
+      _editor = createDefaultDocumentEditor(
+        document: deserializeMarkdownToDocument(widget.markdown),
+        composer: MutableDocumentComposer(),
+      );
+    });
   }
 
   @override
@@ -206,9 +215,7 @@ class ViewerState extends State<Viewer> {
     // Check if markdown has changed
     if (oldWidget.markdown != widget.markdown) {
       // Update the document when the markdown changes
-      setState(() {
-        document = deserializeMarkdownToDocument(widget.markdown);
-      });
+      _updateDocument();
     }
   }
 
@@ -224,9 +231,9 @@ class ViewerState extends State<Viewer> {
         MediaQuery.of(context).platformBrightness == material.Brightness.dark;
     return BoxToSliverAdapter(
       child: SuperReader(
-        document: document,
+        editor: _editor,
         stylesheet: isDark ? _darkStyles : _styles,
-        selection: _selection,
+        // selection: _selection,
         selectionLayerLinks: _selectionLayerLinks,
         selectionStyle: SelectionStyles(
           selectionColor: context.colour.accentBackground,

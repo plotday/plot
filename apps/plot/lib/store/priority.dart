@@ -25,7 +25,7 @@ class Priorities extends Table
 class PrioritiesBase extends BaseTable {
   PrioritiesBase()
     : super(
-        table: 'priority_x',
+        table: 'user_priority',
         name: "priorities",
         order: 'order',
         upsertAsUpdate: true,
@@ -333,7 +333,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   Priority({
     Order? order,
     this.parent,
-    this.balance,
     required super.title,
     super.pomodoro = const Duration(minutes: 25),
     super.color = const ThemeColor.defaultColor(),
@@ -347,6 +346,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdBy: Base.userId,
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
+         pending: PriorityPendingSync.full.value,
          order: order ?? Order.first(),
          path: Path.generate(parent: parent?.path),
          root: false,
@@ -358,7 +358,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     PriorityRow row, {
     this.parent,
     List<Priority>? children,
-    this.balance,
     PriorityAncestryData? ancestry,
   }) : children = children ?? [],
        _ancestors = ancestry == null
@@ -423,7 +422,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   final Priority? parent;
   PriorityId? get parentId => parent?.id ?? _ancestors.lastOrNull?.id;
   List<Priority> children;
-  final Balance? balance;
   final List<PriorityAncestor> _ancestors;
 
   List<Priority> descendants() {
@@ -458,7 +456,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<ThemeColor?> color = const Value.absent(),
     bool? root,
     Priority? parent,
-    Balance? balance,
+    Value<int?> pending = const Value.absent(),
   }) {
     return Priority.fromStore(
       super.copyWith(
@@ -466,6 +464,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         createdBy: createdBy,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: DateTime.now(),
+        pending: pending.present
+            ? pending
+            : Value(PriorityPendingSync.full.value),
         deletedAt: deletedAt,
         title: title ?? this.title,
         path: path ?? this.path,
@@ -476,7 +477,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       ),
       parent: parent ?? this.parent,
       children: children,
-      balance: balance ?? this.balance,
     );
   }
 
@@ -496,25 +496,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   int compareTo(Priority other) {
     return order.compareTo(other.order);
   }
+}
 
-  T fold<T>(
-    T initialValue,
-    T Function(T previousValue, Priority priority, int depth) combine,
-  ) {
-    // Define a recursive function that applies the fold operation to this priority and its children
-    T foldRecursively(Priority priority, T acc, int depth) {
-      // Apply the combine function to the current priority
-      acc = combine(acc, priority, depth);
+enum PriorityPendingSync {
+  /// Full priority data changed
+  full(2);
 
-      // Apply the fold function recursively to each child, incrementing the depth
-      for (var child in priority.children) {
-        acc = foldRecursively(child, acc, depth + 1);
-      }
-
-      return acc;
-    }
-
-    // Start the recursive fold process with the initial value and starting from depth 0
-    return foldRecursively(this, initialValue, 0);
-  }
+  const PriorityPendingSync(this.value);
+  final int value;
 }

@@ -99,7 +99,7 @@ class ColourScheme extends StatelessWidget {
   Widget build(BuildContext context) {
     final brightness = MediaQuery.platformBrightnessOf(context);
     return ProxyProvider0(
-      update: (_, __) => ColourSchemeData(base, brightness),
+      update: (_, _) => ColourSchemeData(base, brightness),
       child: child,
     );
   }

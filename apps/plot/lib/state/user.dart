@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
-import 'package:plot/base.dart';
 import 'package:plot/store/store.dart';
 import 'logging.dart';
 

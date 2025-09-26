@@ -1,0 +1,58 @@
+import type { Store as IStore } from "@plotday/agent/tools/store";
+
+import { type Storage } from "../../storage";
+import { Tool } from "./tool";
+
+export class Store extends Tool implements IStore {
+  private storage: DurableObjectStub<Storage>;
+
+  constructor({
+    storage,
+    priorityAgentId,
+    path,
+  }: {
+    storage: DurableObjectNamespace<Storage>;
+    priorityAgentId: string;
+    path: string[];
+  }) {
+    super();
+    const storageId = storage.idFromName(
+      `${priorityAgentId}:${path.join(":")}`
+    );
+    this.storage = storage.get(storageId);
+  }
+
+  async get<T>(key: string) {
+    const value = await this.storage.get(key);
+    try {
+      if (value === null) return null;
+      return JSON.parse(value) as T;
+    } catch {
+      // If JSON parsing fails, return the raw string as T
+      return value as T;
+    }
+  }
+
+  async set<T>(key: string, value: T) {
+    const serializedValue = JSON.stringify(value);
+    return await this.storage.set(key, serializedValue);
+  }
+
+  async clear(key: string) {
+    try {
+      await this.storage.clear(key);
+    } catch (error) {
+      console.error("Store remove error:", error);
+      throw error;
+    }
+  }
+
+  async clearAll() {
+    try {
+      await this.storage.clearAll();
+    } catch (error) {
+      console.error("Store remove error:", error);
+      throw error;
+    }
+  }
+}

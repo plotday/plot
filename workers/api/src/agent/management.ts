@@ -42,6 +42,7 @@ export async function add(
       );
     }
 
+    console.log("!!! priority_id", priority_id);
     const agent: Database["public"]["Tables"]["priority_agent"]["Insert"] = {
       priority_id: priority_id,
       agent_id: agent_id,
@@ -61,6 +62,9 @@ export async function add(
     };
   } catch (error) {
     console.error("Error adding agent:", error);
+    if (error instanceof Error) {
+      console.log(error.stack);
+    }
     throw error;
   }
 }
@@ -116,7 +120,7 @@ export async function getByPriority(
     }
 
     const { data, error } = await supabase
-      .from("agent_x")
+      .from("priority_child_agent")
       .select()
       .eq("priority_child_id", priority_id)
       .is("deleted_at", null);

@@ -11,64 +11,6 @@ import 'package:plot/command/command.dart';
 import 'loading.dart';
 import 'logging.dart';
 
-@RoutePage(name: "EventRoute")
-class EventWrapper extends AutoRouter implements AutoRouteWrapper {
-  EventWrapper({
-    Event? event,
-    EventId? eventId,
-    @PathParam("eventId") String? eventIdString,
-    super.key,
-  }) {
-    final resolvedEventId =
-        event?.id ??
-        eventId ??
-        (eventIdString != null ? EventId.fromShortString(eventIdString) : null);
-    assert(resolvedEventId != null, 'An event must be provided.');
-    this.eventId = resolvedEventId!;
-  }
-
-  late final EventId eventId;
-
-  @override
-  Widget wrappedRoute(BuildContext context) {
-    return FutureBuilder<(Priority, Event)>(
-      future: Event.getOne(eventId, withPriority: true).then((event) async {
-        final priority =
-            event.priority ?? await Priority.getOne(event.priorityId!);
-        return (priority, event);
-      }),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          log.warning(
-            "Failed to load Priority and Event",
-            snapshot.error,
-            snapshot.stackTrace,
-          );
-        }
-        if (!snapshot.hasData) {
-          return const LoadingPage();
-        }
-
-        final (priority, event) = snapshot.data!;
-
-        // Set the current priority in NowBloc when entering this route
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          log.info(
-            'Setting current priority to ${priority.title} (from event ${event.name ?? "Untitled Event"})',
-          );
-          context.read<NowBloc>().setPriority(priority);
-        });
-
-        return BlocProvider(
-          create: (_) => ActivityBloc(priority: priority, event: event),
-          key: ValueKey(event.id),
-          child: this,
-        );
-      },
-    );
-  }
-}
-
 @RoutePage(name: "ActivityRoute")
 class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
   ActivityWrapper({
@@ -91,11 +33,8 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
 
   @override
   Widget wrappedRoute(BuildContext context) {
-    return FutureBuilder<(Priority, Activity)>(
-      future: Activity.getOne(activityId).then((activity) async {
-        final priority = await Priority.getOne(activity.priorityId);
-        return (priority, activity);
-      }),
+    return FutureBuilder<Activity>(
+      future: Activity.getOne(activityId),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           log.warning(
@@ -108,18 +47,19 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
           return const LoadingPage();
         }
 
-        final (priority, activity) = snapshot.data!;
+        final activity = snapshot.data!;
 
         // Set the current priority in NowBloc when entering this route
         WidgetsBinding.instance.addPostFrameCallback((_) {
           log.info(
-            'Setting current priority to ${priority.title} (from activity ${activity.displayTitle})',
+            'Setting current priority to ${activity.priority.title} (from activity ${activity.displayTitle})',
           );
-          context.read<NowBloc>().setPriority(priority);
+          context.read<NowBloc>().setPriority(activity.priority);
         });
 
         return BlocProvider(
-          create: (_) => ActivityBloc(priority: priority, activity: activity),
+          create: (_) =>
+              ActivityBloc(priority: activity.priority, activity: activity),
           key: ValueKey(activity.id),
           child: this,
         );
@@ -170,7 +110,7 @@ class ActivityPage extends StatelessWidget {
               child: Scaffold(
                 translucent: true,
                 header: Header(
-                  title: state.activity?.displayTitle ?? state.event?.name,
+                  title: state.activity?.displayTitle ?? "Activity",
                   commands: [
                     if (state.activity != null)
                       ...activityCommands(state.activity!),

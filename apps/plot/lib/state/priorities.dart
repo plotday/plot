@@ -10,17 +10,16 @@ import 'logging.dart';
 part 'priorities_state.dart';
 
 class PrioritiesBloc extends Cubit<PrioritiesState> {
-  PrioritiesBloc() : _subscription = null, super(PrioritiesState()) {
-    _loadPriorities();
-  }
+  PrioritiesBloc() : _subscription = null, super(PrioritiesState());
 
   @override
   Future<void> close() {
-    _subscription?.cancel();
+    stop();
     return super.close();
   }
 
-  void _loadPriorities() {
+  void start() {
+    stop();
     _subscription = Priority.watch().listen((priorities) {
       log.info('Root priorities updated: ${priorities.length} priorities');
       emit(
@@ -32,6 +31,9 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
     });
   }
 
+  void stop() {
+    _subscription?.cancel();
+  }
+
   StreamSubscription<List<Priority>>? _subscription;
 }
-

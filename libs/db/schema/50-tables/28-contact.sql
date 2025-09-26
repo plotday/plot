@@ -1,13 +1,14 @@
 CREATE TABLE "public"."contact" (
-    "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "deleted_at" timestamp with time zone,
-    "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "email" text NOT NULL CHECK (is_lower (email)),
     "name" text,
     "avatar_url" text,
-    CONSTRAINT contact_user_email_unique UNIQUE NULLS NOT DISTINCT (user_id, email)
+    "user_id" uuid REFERENCES "auth"."users" ("id") ON DELETE SET NULL,
+    CONSTRAINT contact_user_email_unique UNIQUE (email),
+    CONSTRAINT contact_user_id_unique UNIQUE (user_id)
 );
 
 ALTER TABLE "public"."contact" ENABLE ROW LEVEL SECURITY;

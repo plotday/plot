@@ -2,8 +2,24 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'package:plot/base.dart';
+import 'package:plot/env.dart';
 
-import '../env.dart';
+bool _isJsonContentType(String? contentType) {
+  if (contentType == null) return false;
+  return contentType.toLowerCase().contains('application/json');
+}
+
+T _parseResponse<T>(http.Response response) {
+  if (_isJsonContentType(response.headers['content-type'])) {
+    return jsonDecode(response.body) as T;
+  } else if (T is String) {
+    return response.body as T;
+  } else {
+    throw Exception(
+      'Unsupported content type: ${response.headers['content-type']}',
+    );
+  }
+}
 
 Map<String, String> getHeaders() {
   final auth =
@@ -14,8 +30,7 @@ Map<String, String> getHeaders() {
   };
 }
 
-Future<Map<String, dynamic>> post(String url,
-    {Map<String, dynamic> body = const {}}) async {
+Future<T> post<T>(String url, {Map<String, dynamic> body = const {}}) async {
   final response = await http.post(
     Uri.parse(Env.apiRoot + url),
     headers: getHeaders(),
@@ -24,11 +39,10 @@ Future<Map<String, dynamic>> post(String url,
   if (response.statusCode != 200) {
     throw Exception('${response.statusCode} $url ${response.body}');
   }
-  return jsonDecode(response.body) as Map<String, dynamic>;
+  return _parseResponse(response);
 }
 
-Future<Map<String, dynamic>> put(String url,
-    {Map<String, dynamic> body = const {}}) async {
+Future<T> put<T>(String url, {Map<String, dynamic> body = const {}}) async {
   final response = await http.put(
     Uri.parse(Env.apiRoot + url),
     headers: getHeaders(),
@@ -37,11 +51,10 @@ Future<Map<String, dynamic>> put(String url,
   if (response.statusCode != 200) {
     throw Exception('${response.statusCode} $url ${response.body}');
   }
-  return jsonDecode(response.body) as Map<String, dynamic>;
+  return _parseResponse(response);
 }
 
-Future<Map<String, dynamic>> patch(String url,
-    {Map<String, dynamic> body = const {}}) async {
+Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
   final response = await http.patch(
     Uri.parse(Env.apiRoot + url),
     headers: getHeaders(),
@@ -50,10 +63,10 @@ Future<Map<String, dynamic>> patch(String url,
   if (response.statusCode != 200) {
     throw Exception('${response.statusCode} $url ${response.body}');
   }
-  return jsonDecode(response.body) as Map<String, dynamic>;
+  return _parseResponse(response);
 }
 
-Future<dynamic> get(String url) async {
+Future<T> get<T>(String url) async {
   final response = await http.get(
     Uri.parse(Env.apiRoot + url),
     headers: getHeaders(),
@@ -61,10 +74,10 @@ Future<dynamic> get(String url) async {
   if (response.statusCode != 200) {
     throw Exception('${response.statusCode} $url ${response.body}');
   }
-  return jsonDecode(response.body);
+  return _parseResponse(response);
 }
 
-Future<dynamic> delete(String url) async {
+Future<T> delete<T>(String url) async {
   final response = await http.delete(
     Uri.parse(Env.apiRoot + url),
     headers: getHeaders(),
@@ -72,5 +85,5 @@ Future<dynamic> delete(String url) async {
   if (response.statusCode != 200) {
     throw Exception('${response.statusCode} $url ${response.body}');
   }
-  return jsonDecode(response.body);
+  return _parseResponse(response);
 }

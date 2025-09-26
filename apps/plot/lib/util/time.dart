@@ -3,6 +3,7 @@ import 'package:dart_date/dart_date.dart';
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:equatable/equatable.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:drift/drift.dart';
 
 export 'package:dart_date/dart_date.dart' hide Interval;
 export 'package:flutter/material.dart' show TimeOfDay;
@@ -11,12 +12,6 @@ enum TimeDirection { descending, ascending }
 
 class Date extends Equatable implements Comparable<Date> {
   static Date today() => DateTime.now().toLocal().toDate();
-
-  /// The earliest supported date for range queries
-  static const Date earliest = Date(1970, 1, 1);
-
-  /// The latest supported date for range queries
-  static const Date latest = Date(2999, 12, 31);
 
   static Stream<Date> current() async* {
     while (true) {
@@ -76,8 +71,8 @@ class Date extends Equatable implements Comparable<Date> {
   DateTime toUtc() => DateTime.utc(year, month, day);
   Day toDateRange() => Day(this);
   DateTimeRange toDateTimeRange() => toDateRange().toDateTimeRange();
-  DateTime toStart() => toDateTimeRange().start;
-  DateTime toEnd() => toDateTimeRange().end;
+  DateTime toStart() => toDateTimeRange().start!;
+  DateTime toEnd() => toDateTimeRange().end!;
 
   Date copyWith({int? year, int? month, int? day}) =>
       Date(year ?? this.year, month ?? this.month, day ?? this.day);
@@ -111,64 +106,126 @@ abstract class DateRange extends Equatable {
   static DateRange fromString(String db) {
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateStrings = stripped.split(',');
-    List<Date> dates = dateStrings
-        .map((timestamp) => Date.fromString(timestamp.trim()))
+    List<Date?> dates = dateStrings
+        .map(
+          (timestamp) =>
+              timestamp.trim() == '' ||
+                  timestamp.trim() == '-∞' ||
+                  timestamp.trim() == '+∞'
+              ? null
+              : Date.fromString(timestamp.trim()),
+        )
         .toList();
-    switch (dates[1].difference(dates[0]).inDays) {
+
+    // Handle unbounded ranges
+    if (dates[0] == null || dates[1] == null) {
+      return CustomDateRange(dates[0], dates[1]);
+    }
+
+    switch (dates[1]!.difference(dates[0]!).inDays) {
       case 1:
-        return Day(dates[0]);
+        return Day(dates[0]!);
       case 7:
-        return Week(dates[0]);
+        return Week(dates[0]!);
       case 28:
       case 30:
       case 31:
-        return Month(dates[0]);
+        return Month(dates[0]!);
       default:
-        throw RangeError("Invalid DateRange: $db");
+        return CustomBoundedDateRange(dates[0]!, dates[1]!);
     }
   }
 
   const DateRange();
 
-  Date get start;
-  Date get end;
-  Date get first => start;
-  Date get last => end.subDays(1);
+  bool get bounded => start != null && end != null;
+  Date? get start;
+  Date? get end;
+  Date? get first => start;
+  Date? get last => end?.subDays(1);
   DateRange previous();
   DateRange next();
 
-  Duration get duration => end.difference(start);
-  (Date, Date) get bounds => (start, end);
+  Duration? get duration =>
+      start != null && end != null ? end!.difference(start!) : null;
+  (Date?, Date?) get bounds => (start, end);
 
-  bool includes(Date date) => date >= start && date < end;
+  bool includes(Date date) =>
+      (start == null || date >= start!) && (end == null || date < end!);
   bool contains(DateRange interval) =>
-      includes(interval.start) && interval.end <= end;
+      (interval.start == null || includes(interval.start!)) &&
+      (interval.end == null || (end == null || interval.end! <= end!));
+
   bool overlaps(DateRange other) =>
-      includes(other.start) || other.includes(start);
+      (other.start != null && includes(other.start!)) ||
+      (start != null && other.includes(start!));
+
   bool cross(DateRange other) =>
       overlaps(other) || start == other.end || end == other.start;
 
-  bool operator <(DateRange other) =>
-      start < other.start || start == other.start && end < other.end;
+  bool operator <(DateRange other) {
+    if (start == other.start) {
+      if (end == other.end) return false;
+      if (end == null) return false;
+      if (other.end == null) return true;
+      return end!.isBefore(other.end!);
+    }
+    if (start == null) return true;
+    if (other.start == null) return false;
+    return start!.isBefore(other.start!);
+  }
+
   bool operator <=(DateRange other) => this < other || this == other;
-  bool operator >(DateRange other) =>
-      start > other.start || (start == other.start && end > other.end);
+  bool operator >(DateRange other) {
+    return this != other && !(this < other);
+  }
+
   bool operator >=(DateRange other) => this > other || this == other;
 
-  @override
-  String toString() => "[$start, $end)";
+  CustomBoundedDateRange toBounded() => CustomBoundedDateRange(start!, end!);
 
-  DateTimeRange toDateTimeRange() =>
-      DateTimeRange(start.toDateTime(), end.toDateTime());
+  @override
+  String toString() => "[${start ?? ''},${end ?? ''})";
+
+  String toDb() => toString();
 
   bool isNow() {
     return includes(Date.today());
   }
 
-  String format() => '${start.format()} - ${end.format()}';
+  String format() => '${start?.format() ?? '-∞'} - ${end?.format() ?? '+∞'}';
+
+  DateTimeRange toDateTimeRange() =>
+      DateTimeRange(start?.toDateTime(), end?.toDateTime());
 }
 
-class Day extends DateRange {
+abstract class BoundedDateRange extends DateRange {
+  const BoundedDateRange();
+
+  @override
+  Date get start;
+  @override
+  Date get end;
+  @override
+  Date get first => start;
+  @override
+  Date get last => end.subDays(1);
+
+  @override
+  Duration get duration => end.difference(start);
+
+  @override
+  (Date, Date) get bounds => (start, end);
+
+  @override
+  String toString() => "[$start, $end)";
+
+  @override
+  BoundedDateTimeRange toDateTimeRange() =>
+      BoundedDateTimeRange(start.toDateTime(), end.toDateTime());
+}
+
+class Day extends BoundedDateRange {
   const Day(this.start);
   Day.today() : start = Date.today();
 
@@ -204,7 +261,7 @@ class Day extends DateRange {
   }
 }
 
-class Week extends DateRange {
+class Week extends BoundedDateRange {
   static int startOfWeek = DateTime.monday;
 
   final Date _monday;
@@ -247,7 +304,7 @@ class Week extends DateRange {
   }
 }
 
-class Month extends DateRange {
+class Month extends BoundedDateRange {
   @override
   final Date start;
 
@@ -276,40 +333,112 @@ class Month extends DateRange {
   }
 }
 
-class DateRangeCustom extends DateRange {
-  DateRangeCustom(this.start, this.end) {
-    assert(start < end, 'Invalid DateRangeCustom: $start - $end');
+class CustomDateRange extends DateRange {
+  CustomDateRange(this.start, this.end) {
+    if (start != null &&
+        end != null &&
+        (start!.isAfter(end!) || start == end)) {
+      throw RangeError('Invalid CustomDateRange: $start - $end');
+    }
   }
 
   @override
-  final Date start;
+  final Date? start;
   @override
-  final Date end;
+  final Date? end;
 
   @override
-  DateRangeCustom previous() =>
-      DateRangeCustom(start - end.difference(start), end);
+  CustomDateRange previous() {
+    if (start != null && end != null) {
+      final duration = end!.difference(start!);
+      return CustomDateRange(start! - duration, start);
+    } else {
+      return CustomDateRange(null, start);
+    }
+  }
 
   @override
-  DateRangeCustom next() =>
-      DateRangeCustom(start + end.difference(start), start);
+  CustomDateRange next() {
+    if (start != null && end != null) {
+      final duration = end!.difference(start!);
+      return CustomDateRange(end, end! + duration);
+    } else {
+      return CustomDateRange(end, null);
+    }
+  }
 
   @override
-  List<Object> get props => [start, end];
+  List<Object?> get props => [start, end];
+}
+
+class CustomBoundedDateRange extends BoundedDateRange {
+  CustomBoundedDateRange(Date start, Date end) : _start = start, _end = end {
+    if (start.isAfter(end) || start == end) {
+      throw RangeError('Invalid CustomBoundedDateRange: $start - $end');
+    }
+  }
+
+  final Date _start;
+  final Date _end;
+
+  @override
+  Date get start => _start;
+
+  @override
+  Date get end => _end;
+
+  @override
+  CustomBoundedDateRange previous() =>
+      CustomBoundedDateRange(_start - end.difference(_start), _start);
+
+  @override
+  CustomBoundedDateRange next() =>
+      CustomBoundedDateRange(end, end + end.difference(_start));
+
+  @override
+  List<Object> get props => [_start, _end];
+
+  @override
+  String format() => '${start.format()} - ${end.format()}';
+
+  /// Creates a bounded date range from nullable dates
+  /// Returns null if either date is null
+  static CustomBoundedDateRange? fromNullable(Date? start, Date? end) {
+    if (start != null && end != null) {
+      return CustomBoundedDateRange(start, end);
+    }
+    return null;
+  }
+
+  /// Creates a bounded date range with validation
+  /// Throws ArgumentError if dates are invalid
+  static CustomBoundedDateRange validated(Date start, Date end) {
+    if (start.isAfter(end)) {
+      throw ArgumentError('Start date $start cannot be after end date $end');
+    }
+    if (start == end) {
+      throw ArgumentError('Start and end dates cannot be equal: $start');
+    }
+    return CustomBoundedDateRange(start, end);
+  }
 }
 
 class DateTimeRange extends Equatable {
   factory DateTimeRange.fromString(String db) {
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateTimeStrings = stripped.split(',');
-    List<DateTime> dateTimes = dateTimeStrings
-        .map((timestamp) => DateTime.parse(timestamp.trim()).toLocal())
+    List<DateTime?> dateTimes = dateTimeStrings
+        .map(
+          (timestamp) => timestamp.trim() == ''
+              ? null
+              : DateTime.parse(timestamp.trim()).toLocal(),
+        )
         .toList();
     return DateTimeRange(dateTimes[0], dateTimes[1]);
   }
 
   DateTimeRange(this.start, this.end) {
-    if (start.isAfter(end)) {
+    if (start != null && end != null && start!.isAfter(end!)) {
       throw RangeError('Invalid DateTimeRange: $start - $end');
     }
   }
@@ -324,48 +453,57 @@ class DateTimeRange extends Equatable {
   }
 
   DateTimeRange min(DateTime start) => DateTimeRange(
-    this.start.isBefore(start) ? start : this.start,
-    end.isBefore(start) ? start : end,
+    this.start == null
+        ? start
+        : (this.start!.isBefore(start) ? start : this.start),
+    end == null ? start : (end!.isBefore(start) ? start : end),
   );
 
   DateTimeRange max(DateTime end) => DateTimeRange(
-    start.isAfter(end) ? end : start,
-    this.end.isAfter(end) ? end : this.end,
+    start == null ? end : (start!.isAfter(end) ? end : start),
+    this.end == null ? end : (this.end!.isAfter(end) ? end : this.end),
   );
 
-  final DateTime start;
-  final DateTime end;
+  final DateTime? start;
+  final DateTime? end;
 
-  (DateTime, DateTime) get bounds => (start, end);
+  (DateTime?, DateTime?) get bounds => (start, end);
 
   @override
-  List<Object> get props => [start, end];
+  List<Object?> get props => [start, end];
 
-  Duration get duration => end.difference(start);
+  Duration? get duration =>
+      start != null && end != null ? end!.difference(start!) : null;
 
   bool includes(DateTime date) =>
-      (date.isAfter(start) || date.isAtSameMomentAs(start)) &&
-      (date.isBefore(end));
+      (start == null ||
+          date.isAfter(start!) ||
+          date.isAtSameMomentAs(start!)) &&
+      (end == null || date.isBefore(end!));
 
   bool contains(DateTimeRange interval) =>
-      includes(interval.start) && includes(interval.end);
+      (interval.start == null || includes(interval.start!)) &&
+      (interval.end == null || includes(interval.end!));
 
   bool overlaps(DateTimeRange other) =>
-      includes(other.start) || other.includes(start);
+      (other.start != null && includes(other.start!)) ||
+      (start != null && other.includes(start!));
 
   bool cross(DateTimeRange other) =>
-      overlaps(other) || start == other.end || end == other.start;
+      overlaps(other) ||
+      (start != null && start == other.end) ||
+      (end != null && end == other.start);
 
   DateTimeRange union(DateTimeRange other) {
     if (cross(other)) {
-      if (end.isAfter(other.start) || end.isAtSameMomentAs(other.start)) {
-        return DateTimeRange(start, other.end);
-      } else if (other.end.isAfter(start) ||
-          other.end.isAtSameMomentAs(start)) {
-        return DateTimeRange(other.start, end);
-      } else {
-        throw RangeError('Error this: $this; other: $other');
-      }
+      // Handle unbounded ranges - null means infinity
+      final DateTime? unionStart = start == null || other.start == null
+          ? null
+          : (start!.isBefore(other.start!) ? start : other.start);
+      final DateTime? unionEnd = end == null || other.end == null
+          ? null
+          : (end!.isAfter(other.end!) ? end : other.end);
+      return DateTimeRange(unionStart, unionEnd);
     } else {
       throw RangeError('DateTimeRanges don\'t cross');
     }
@@ -380,8 +518,17 @@ class DateTimeRange extends Equatable {
       throw RangeError('DateTimeRanges don\'t cross');
     }
 
-    final intersectionStart = DateTimeExtension.max(start, other.start);
-    final intersectionEnd = DateTimeExtension.min(end, other.end);
+    // For intersection, we take the later start and earlier end
+    final DateTime? intersectionStart = start == null
+        ? other.start
+        : (other.start == null
+              ? start
+              : (start!.isAfter(other.start!) ? start : other.start));
+    final DateTime? intersectionEnd = end == null
+        ? other.end
+        : (other.end == null
+              ? end
+              : (end!.isBefore(other.end!) ? end : other.end));
 
     return DateTimeRange(intersectionStart, intersectionEnd);
   }
@@ -391,14 +538,14 @@ class DateTimeRange extends Equatable {
       return null;
     } else if (this <= other) {
       // | this | | other |
-      if (end.isBefore(other.start)) {
+      if (end != null && other.start != null && end!.isBefore(other.start!)) {
         return this;
       } else {
         return DateTimeRange(start, other.start);
       }
     } else if (this >= other) {
       // | other | | this |
-      if (other.end.isBefore(start)) {
+      if (other.end != null && start != null && other.end!.isBefore(start!)) {
         return this;
       } else {
         return DateTimeRange(other.end, end);
@@ -423,26 +570,95 @@ class DateTimeRange extends Equatable {
     return list;
   }
 
-  bool operator <(DateTimeRange other) =>
-      start.isBefore(other.start) ||
-      (start.isAtSameMomentAs(other.start) && end.isBefore(other.end));
+  bool operator <(DateTimeRange other) {
+    if (start == other.start) {
+      if (end == other.end) return false;
+      if (end == null) return false;
+      if (other.end == null) return true;
+      return end!.isBefore(other.end!);
+    }
+    if (start == null) return true;
+    if (other.start == null) return false;
+    return start!.isBefore(other.start!);
+  }
+
   bool operator <=(DateTimeRange other) => this < other || this == other;
-  bool operator >(DateTimeRange other) =>
-      start.isAfter(other.start) ||
-      (start.isAtSameMomentAs(other.start) && end.isAfter(other.end));
+
+  bool operator >(DateTimeRange other) {
+    return this != other && !(this < other);
+  }
+
   bool operator >=(DateTimeRange other) => this > other || this == other;
 
-  bool isBefore(DateTimeRange other) => end.isSameOrBefore(other.start);
-  bool isAfter(DateTimeRange other) => start.isSameOrAfter(other.end);
+  bool isBefore(DateTimeRange other) =>
+      end != null && other.start != null && end!.isSameOrBefore(other.start!);
+  bool isAfter(DateTimeRange other) =>
+      start != null && other.end != null && start!.isSameOrAfter(other.end!);
 
   @override
   String toString() =>
-      "[${start.toUtc().toIso8601String()}, ${end.toUtc().toIso8601String()})";
-  String toDb() => toString();
+      "[${start?.toUtc().toIso8601String() ?? '-∞'}, ${end?.toUtc().toIso8601String() ?? '+∞'})";
+  String toDb() =>
+      "[${start?.toUtc().toIso8601String() ?? ''},${end?.toUtc().toIso8601String() ?? ''})";
 
   bool isNow() {
     return includes(DateTime.now());
   }
+}
+
+class BoundedDateTimeRange extends DateTimeRange {
+  BoundedDateTimeRange(DateTime start, DateTime end) : super(start, end) {
+    if (start.isAfter(end)) {
+      throw RangeError('Invalid BoundedDateTimeRange: $start - $end');
+    }
+  }
+
+  factory BoundedDateTimeRange.fromString(String db) {
+    String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
+    List<String> dateTimeStrings = stripped.split(',');
+    List<DateTime> dateTimes = dateTimeStrings
+        .map((timestamp) => DateTime.parse(timestamp.trim()).toLocal())
+        .toList();
+    return BoundedDateTimeRange(dateTimes[0], dateTimes[1]);
+  }
+
+  @override
+  DateTime get start => super.start!;
+
+  @override
+  DateTime get end => super.end!;
+
+  @override
+  Duration get duration => end.difference(start);
+
+  @override
+  (DateTime, DateTime) get bounds => (start, end);
+
+  @override
+  BoundedDateTimeRange copyWith({
+    DateTime? start,
+    DateTime? end,
+    Duration? duration,
+  }) {
+    if (start != null && end == null && duration != null) {
+      end = start.add(duration);
+    } else if (start == null && end != null && duration != null) {
+      start = end.subtract(duration);
+    }
+    return BoundedDateTimeRange(start ?? this.start, end ?? this.end);
+  }
+
+  @override
+  BoundedDateTimeRange min(DateTime start) => BoundedDateTimeRange(
+    this.start.isBefore(start) ? start : this.start,
+    end.isBefore(start) ? start : end,
+  );
+
+  @override
+  BoundedDateTimeRange max(DateTime end) => BoundedDateTimeRange(
+    start.isAfter(end) ? end : start,
+    this.end.isAfter(end) ? end : this.end,
+  );
 }
 
 extension PlotDateTimeExtension on DateTime {
@@ -469,7 +685,7 @@ extension PlotDateTimeExtension on DateTime {
 
 Duration durationFromString(String durationString) {
   final RegExp postgresDateTimeRangeRegExp = RegExp(
-    r'^(([0-9]+) days? )?([0-9]{2-3}):([0-9]{2}):([0-9]+(\.[0-9]+)?)?$',
+    r'^(([0-9]+) days? )?([0-9]{2,3}):([0-9]{2}):([0-9]+(\.[0-9]+)?)?$',
   );
   final RegExp iso8601RegExp = RegExp(
     r'^P(([0-9]+)D)?(T(([0-9]+)H)?(([0-9]+)M)?(([0-9]+(\.[0-9]+)?)S)?)?$',
@@ -589,4 +805,125 @@ TimeOfDay parseTimeOfDay(String str) {
     hour: int.parse(parts[0]) + (pm ? 12 : 0),
     minute: parts.length == 1 ? 0 : int.parse(parts[1]),
   );
+}
+
+class DateConverter extends TypeConverter<Date, String>
+    with JsonTypeConverter2<Date, String, String> {
+  const DateConverter();
+
+  @override
+  Date fromSql(String fromDb) {
+    return Date.fromString(fromDb);
+  }
+
+  @override
+  String toSql(Date value) {
+    return value.toString();
+  }
+
+  @override
+  Date fromJson(String json) {
+    return Date.fromString(json);
+  }
+
+  @override
+  String toJson(Date value) {
+    return value.toString();
+  }
+}
+
+class DateRangeConverter extends TypeConverter<DateRange, String> {
+  const DateRangeConverter();
+
+  @override
+  DateRange fromSql(String fromDb) {
+    return DateRange.fromString(fromDb);
+  }
+
+  @override
+  String toSql(DateRange value) {
+    return value.toDb();
+  }
+}
+
+class DateTimeRangeConverter extends TypeConverter<DateTimeRange, String> {
+  const DateTimeRangeConverter();
+
+  @override
+  DateTimeRange fromSql(String fromDb) {
+    return DateTimeRange.fromString(fromDb);
+  }
+
+  @override
+  String toSql(DateTimeRange value) {
+    return value.toDb();
+  }
+}
+
+class DurationConverter extends TypeConverter<Duration, int>
+    with JsonTypeConverter2<Duration, int, int> {
+  const DurationConverter();
+
+  @override
+  Duration fromSql(int fromDb) {
+    return Duration(seconds: fromDb);
+  }
+
+  @override
+  int toSql(Duration value) {
+    return value.inSeconds;
+  }
+
+  @override
+  Duration fromJson(int json) {
+    return Duration(seconds: json);
+  }
+
+  @override
+  int toJson(Duration value) {
+    return value.inSeconds;
+  }
+}
+
+class IntervalConverter extends TypeConverter<Duration, int>
+    with JsonTypeConverter2<Duration, int, String> {
+  const IntervalConverter();
+
+  @override
+  Duration fromSql(int fromDb) {
+    return Duration(seconds: fromDb);
+  }
+
+  @override
+  int toSql(Duration value) {
+    return value.inSeconds;
+  }
+
+  @override
+  Duration fromJson(String json) {
+    return durationFromString(json);
+  }
+
+  @override
+  String toJson(Duration value) {
+    return value.toDb();
+  }
+}
+
+class DateTimeListConverter extends TypeConverter<List<DateTime>, String> {
+  const DateTimeListConverter();
+
+  @override
+  List<DateTime> fromSql(String fromDb) {
+    if (fromDb.isEmpty) return [];
+    return fromDb
+        .split(',')
+        .map((dateStr) => DateTime.parse(dateStr.trim()))
+        .toList();
+  }
+
+  @override
+  String toSql(List<DateTime> value) {
+    return value.map((date) => date.toUtc().toIso8601String()).join(',');
+  }
 }

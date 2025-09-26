@@ -14,18 +14,8 @@ BEGIN
 END;
 $function$;
 
-CREATE TRIGGER on_account_created
-    AFTER INSERT ON public.account
-    FOR EACH ROW
-    EXECUTE FUNCTION insert_email_domain ();
-
 CREATE TRIGGER on_contact_created
     AFTER INSERT ON public.contact
-    FOR EACH ROW
-    EXECUTE FUNCTION insert_email_domain ();
-
-CREATE TRIGGER on_invitee_created
-    AFTER INSERT ON public.invitee
     FOR EACH ROW
     EXECUTE FUNCTION insert_email_domain ();
 

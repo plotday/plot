@@ -18,6 +18,7 @@
     "@sentry/cloudflare": "^9.19.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
     "@types/node": "^20.14.2"

@@ -5,11 +5,7 @@ import 'package:plot/widget/widget.dart';
 import 'logging.dart';
 
 class ActivityEditor extends StatelessWidget {
-  const ActivityEditor({
-    required this.onAdd,
-    required this.draft,
-    super.key,
-  });
+  const ActivityEditor({required this.onAdd, required this.draft, super.key});
 
   final Future<void> Function(Activity activity) onAdd;
   final Activity draft;
@@ -27,7 +23,10 @@ class ActivityEditor extends StatelessWidget {
           final activity = draft.copyWith(
             note: Value(body),
             draft: false,
-            doOn: alt ? Value(Date.today()) : const Value.absent(),
+            type: alt ? ActivityType.task : draft.type,
+            on: alt
+                ? Value(CustomDateRange(Date.today(), null))
+                : const Value.absent(),
           );
           await onAdd(activity);
         },
@@ -35,4 +34,3 @@ class ActivityEditor extends StatelessWidget {
     );
   }
 }
-

@@ -5,37 +5,48 @@ class PriorityState extends Equatable {
   factory PriorityState({
     required Priority context,
     Activity? activity,
-    Event? event,
     Activity? draft,
     Map<Date, ScheduledDay> schedule = const {},
     int first = 0,
     Date? firstDate,
-    bool doneStart = false,
-    bool doneEnd = false,
-    DateRange? range,
+    BoundedDateRange? range,
+    Date? previous,
+    Date? next,
     bool showArchived = false,
     List<AgendaItem>? agendaItems,
     List<Tag> filter = const [],
   }) {
     final agenda = agendaItems ?? _makeAgenda(schedule, context: context);
+
+    // Calculate range from agenda items if not provided
+    BoundedDateRange? calculatedRange = range;
+    if (calculatedRange == null && agenda.isNotEmpty) {
+      final dates = agenda
+          .map((item) => item.iff<Date>(date: (date) => date))
+          .where((date) => date != null)
+          .cast<Date>()
+          .toList();
+
+      if (dates.isNotEmpty) {
+        dates.sort();
+        calculatedRange = CustomBoundedDateRange(
+          dates.first,
+          dates.last.addDays(1),
+        );
+      }
+    }
+
     return PriorityState._(
       context: context,
       activity: activity,
-      event: event,
       draft:
-          draft ??
-          Activity(
-            priority: context,
-            parent: activity,
-            parentEvent: event,
-            draft: true,
-          ),
+          draft ?? Activity(priority: context, parent: activity, draft: true),
       schedule: schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule,
       agendaItems: agenda.isNotEmpty ? List.unmodifiable(agenda) : agenda,
       first: firstDate != null ? -_findDate(agenda, firstDate) : first,
-      doneStart: doneStart,
-      doneEnd: doneEnd,
-      range: range,
+      range: calculatedRange,
+      next: next,
+      previous: previous,
       showArchived: showArchived,
       filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
     );
@@ -44,30 +55,31 @@ class PriorityState extends Equatable {
   const PriorityState._({
     required this.context,
     this.activity,
-    this.event,
     required this.draft,
+    required this.range,
+    required this.previous,
+    required this.next,
+    required this.agendaItems,
     this.schedule = const {},
     this.first = 0,
-    this.doneStart = false,
-    this.doneEnd = false,
-    this.range,
     this.showArchived = false,
-    required this.agendaItems,
     this.filter = const [],
   });
 
   final Priority context;
   final Activity? activity;
-  final Event? event;
   final Activity draft;
   final Map<Date, ScheduledDay> schedule;
-  final bool doneStart;
-  final bool doneEnd;
   final int first;
-  final DateRange? range;
+  final BoundedDateRange? range;
+  final Date? previous;
+  final Date? next;
   final bool showArchived;
   final List<AgendaItem> agendaItems;
   final List<Tag> filter;
+
+  bool get doneStart => range != null && previous == null;
+  bool get doneEnd => range != null && next == null;
 
   static List<AgendaItem> _makeAgenda(
     Map<Date, ScheduledDay> schedule, {
@@ -77,24 +89,24 @@ class PriorityState extends Equatable {
 
     // Add items and return remaining activities
     List<Activity> makeBlock({
-      required Event event,
+      required Activity activity,
       required List<Activity> activities,
     }) {
-      if (!(event.draft && event.start == event.start.startOfDay)) {
-        items.add(EventAgendaItem(event));
+      if (!(activity.draft &&
+          activity.at?.start == activity.at?.start?.startOfDay)) {
+        items.add(ActivityAgendaItem(activity));
       }
 
-      final pastEvent = !event.end.isAfter(DateTime.now());
+      final pastEvent = activity.at?.end?.isAfter(DateTime.now()) == false;
       final (matchingActivities, remainingActivities) = activities.partition(
         (Activity a) =>
             // Priority match
-            (event.priority == null ||
-                event.priorityId == a.priorityId ||
-                event.priority!.isParent(a.priority)) &&
+            (activity.priority.id == a.priority.id ||
+                activity.priority.isParent(a.priority)) &&
             // Created or completed during this event
-            (event.at.includes(a.doneAt ?? a.createdAt) ||
+            (activity.at?.includes(a.doneAt ?? a.createdAt) == true ||
                 // Scheduled during this event
-                (!pastEvent && a.scheduled)),
+                (!pastEvent && a.todo)),
       );
 
       final prioritzedActivities = Activity.prioritize(matchingActivities);
@@ -102,7 +114,7 @@ class PriorityState extends Equatable {
       List<Activity>? otherActivities;
       bool otherPriorities = false;
       for (final entry in prioritzedActivities.entries) {
-        if (entry.key.id == (event.priorityId ?? context.id)) {
+        if (entry.key.id == (activity.priority.id ?? context.id)) {
           otherActivities = entry.value;
           continue;
         }
@@ -113,7 +125,7 @@ class PriorityState extends Equatable {
       if (otherActivities != null) {
         // Add the context priority last
         if (otherPriorities) {
-          items.add(PriorityAgendaItem(event.priority ?? context));
+          items.add(PriorityAgendaItem(activity.priority));
         }
         items.addAll(
           otherActivities.map((Activity a) => ActivityAgendaItem(a)),
@@ -128,7 +140,7 @@ class PriorityState extends Equatable {
       items.add(DateAgendaItem(day.date));
       var activities = day.activities;
       for (final event in day.events) {
-        activities = makeBlock(event: event, activities: activities);
+        activities = makeBlock(activity: event, activities: activities);
       }
     }
     return items;
@@ -137,14 +149,13 @@ class PriorityState extends Equatable {
   PriorityState copyWith({
     Priority? context,
     Activity? activity,
-    Event? event,
     Activity? draft,
     Map<Date, ScheduledDay>? schedule,
     int? first,
     Date? firstDate,
-    bool? doneStart,
-    bool? doneEnd,
-    DateRange? range,
+    BoundedDateRange? range,
+    Value<Date?> previous = const Value.absent(),
+    Value<Date?> next = const Value.absent(),
     bool? showArchived,
     List<AgendaItem>? agendaItems,
     List<Tag>? filter,
@@ -152,16 +163,15 @@ class PriorityState extends Equatable {
     return PriorityState(
       context: context ?? this.context,
       activity: activity ?? this.activity,
-      event: event ?? this.event,
       draft: draft ?? this.draft,
       schedule: schedule != null
           ? (schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule)
           : this.schedule,
       first: first ?? this.first,
       firstDate: firstDate,
-      doneStart: doneStart ?? this.doneStart,
-      doneEnd: doneEnd ?? this.doneEnd,
       range: range ?? this.range,
+      next: next.or(this.next),
+      previous: previous.or(this.previous),
       showArchived: showArchived ?? this.showArchived,
       agendaItems: agendaItems != null
           ? (agendaItems.isNotEmpty
@@ -178,13 +188,12 @@ class PriorityState extends Equatable {
   List<Object?> get props => [
     context,
     activity,
-    event,
     draft,
     schedule,
-    doneStart,
-    doneEnd,
     first,
     range,
+    doneStart,
+    doneEnd,
     showArchived,
     agendaItems,
     filter,
@@ -192,7 +201,7 @@ class PriorityState extends Equatable {
 
   @override
   String toString() {
-    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, event: ${event?.name}, draft: $draft, doneStart: $doneStart, doneEnd: $doneEnd, first: $first, range: $range, showArchived: $showArchived, filter: $filter)';
+    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, draft: $draft, first: $first, range: $range, showArchived: $showArchived, filter: $filter)';
   }
 
   /// Returns the index of the first DateAgendaItem on or after the given date.
@@ -212,19 +221,15 @@ class PriorityState extends Equatable {
 abstract class AgendaItem {
   T? iff<T>({
     T Function(Date)? date,
-    T Function(Event)? event,
     T Function(Priority)? priority,
     T Function(Activity)? activity,
   });
 
   T when<T>({
     required T Function(Date) date,
-    required T Function(Event) event,
     required T Function(Priority) priority,
     required T Function(Activity) activity,
-  }) =>
-      iff(date: date, event: event, priority: priority, activity: activity)
-          as T;
+  }) => iff(date: date, priority: priority, activity: activity) as T;
 }
 
 class DateAgendaItem extends AgendaItem {
@@ -235,7 +240,6 @@ class DateAgendaItem extends AgendaItem {
   @override
   T? iff<T>({
     T Function(Date)? date,
-    T Function(Event)? event,
     T Function(Priority)? priority,
     T Function(Activity)? activity,
   }) {
@@ -246,25 +250,6 @@ class DateAgendaItem extends AgendaItem {
   String toString() => 'DateAgendaItem(date: $date)';
 }
 
-class EventAgendaItem extends AgendaItem {
-  EventAgendaItem(this.event);
-
-  final Event event;
-
-  @override
-  T? iff<T>({
-    T Function(Date)? date,
-    T Function(Event)? event,
-    T Function(Priority)? priority,
-    T Function(Activity)? activity,
-  }) {
-    return event?.call(this.event);
-  }
-
-  @override
-  String toString() => 'EventAgendaItem(event: ${event.name})';
-}
-
 class ActivityAgendaItem extends AgendaItem {
   ActivityAgendaItem(this.activity);
 
@@ -273,7 +258,6 @@ class ActivityAgendaItem extends AgendaItem {
   @override
   T? iff<T>({
     T Function(Date)? date,
-    T Function(Event)? event,
     T Function(Priority)? priority,
     T Function(Activity)? activity,
   }) {
@@ -292,7 +276,6 @@ class PriorityAgendaItem extends AgendaItem {
   @override
   T? iff<T>({
     T Function(Date)? date,
-    T Function(Event)? event,
     T Function(Priority)? priority,
     T Function(Activity)? activity,
   }) {

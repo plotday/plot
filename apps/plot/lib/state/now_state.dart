@@ -4,15 +4,15 @@ sealed class NowState extends Equatable {
   const NowState();
 }
 
-final class NowLoadingState extends NowState {
-  const NowLoadingState();
+final class NowLoading extends NowState {
+  const NowLoading();
 
   @override
   List<Object?> get props => [];
 }
 
-final class NowLoadedState extends NowState {
-  NowLoadedState({
+final class NowLoaded extends NowState {
+  NowLoaded({
     required this.defaultPriority,
     required ScheduledDay day,
     this.session,
@@ -24,20 +24,26 @@ final class NowLoadedState extends NowState {
   final ScheduledDay _day;
   final Priority defaultPriority;
 
-  List<Event> get scheduled =>
-      _day.events.where((event) => event.at.includes(now)).toList();
+  List<Activity> get scheduled =>
+      _day.events.where((event) => event.at!.includes(now)).toList();
 
-  List<Event> get next {
+  List<Activity> get next {
     final events = _day.events;
     int first = -1;
     int last = events.length;
     for (int i = 0; i < events.length; i++) {
-      if (events[i].start.isAfter(now)) {
+      if (events[i].at?.start?.isAfter(now) == true) {
         if (first == -1) {
           first = i;
-        } else if (!events[i].start.isAtSameMomentAs(events[first].start)) {
-          last = i;
-          break;
+        } else {
+          final currentStart = events[i].at?.start;
+          final firstStart = events[first].at?.start;
+          if (currentStart != null &&
+              firstStart != null &&
+              !currentStart.isAtSameMomentAs(firstStart)) {
+            last = i;
+            break;
+          }
         }
       }
     }
@@ -47,13 +53,17 @@ final class NowLoadedState extends NowState {
     return events.sublist(first, last);
   }
 
-  List<Event> get previous {
+  List<Activity> get previous {
     final events = _day.events;
     int first = 0;
     int last = events.length;
     for (int i = events.length - 1; i >= 0; i--) {
-      if (events[i].start.isBefore(now)) {
-        if (!events[i].start.isAtSameMomentAs(events[first].start)) {
+      if (events[i].at?.start?.isBefore(now) == true) {
+        final currentStart = events[i].at?.start;
+        final firstStart = events[first].at?.start;
+        if (currentStart != null &&
+            firstStart != null &&
+            !currentStart.isAtSameMomentAs(firstStart)) {
           first = i;
         }
       } else {
@@ -69,12 +79,12 @@ final class NowLoadedState extends NowState {
 
   Priority get priority =>
       session?.priority ?? scheduled.firstOrNull?.priority ?? defaultPriority;
-  Event get current =>
+  Activity get current =>
       scheduled.firstOrNull ??
-      Event(
+      Activity(
         at: DateTimeRange(
-          previous.firstOrNull?.at.end ?? now.round(),
-          next.firstOrNull?.at.start ?? now.round(down: false),
+          previous.firstOrNull?.at?.end ?? now.round(),
+          next.firstOrNull?.at?.start ?? now.round(down: false),
         ),
         priority: priority,
       );
@@ -87,34 +97,41 @@ final class NowLoadedState extends NowState {
     );
   }
 
-  // TODO change to range
-  DateTime? get start =>
-      pomodoro?.start ??
-      session?.at.start ?? // TODO: follow back
-      scheduled.firstOrNull?.at.start ??
-      previous.firstOrNull?.at.end;
-  DateTime? get end =>
-      pomodoro?.end ??
-      (scheduled.firstOrNull?.priority == priority
-          ? scheduled.firstOrNull?.at.end
-          : null) ??
-      next.firstOrNull?.at.start;
+  DateTimeRange? get at {
+    final startTime =
+        pomodoro?.start ??
+        session?.at.start ??
+        scheduled.firstOrNull?.at?.start ??
+        previous.firstOrNull?.at?.end;
 
-  DateTime? endFor(Priority? priority) {
-    if (priority == this.priority && end != null) {
-      return end;
-    }
-    return next.firstOrNull?.at.start;
+    final endTime =
+        pomodoro?.end ??
+        (scheduled.firstOrNull?.priority == priority
+            ? scheduled.firstOrNull?.at?.end
+            : null) ??
+        next.firstOrNull?.at?.start;
+
+    if (startTime == null && endTime == null) return null;
+    return DateTimeRange(startTime, endTime);
   }
 
-  Duration? get elapsed => start != null ? now.difference(start!) : null;
-  Duration? get remaining =>
-      end != null && end!.isBefore(now) ? end!.difference(now) : null;
+  DateTime? endFor(Priority? priority) {
+    if (priority == this.priority && at?.end != null) {
+      return at!.end;
+    }
+    return next.firstOrNull?.at?.start;
+  }
 
-  bool get finite => start != null && end != null;
-  Duration? get duration => finite ? end!.difference(start!) : null;
+  Duration? get elapsed =>
+      at?.start != null ? now.difference(at!.start!) : null;
+  Duration? get remaining => at?.end != null && at!.end!.isBefore(now)
+      ? at!.end!.difference(now)
+      : null;
+
+  bool get finite => at?.start != null && at?.end != null;
+  Duration? get duration => at?.duration;
   double? get progress => finite
-      ? now.isBefore(end!)
+      ? now.isBefore(at!.end!)
             ? elapsed!.inSeconds / duration!.inSeconds
             : 1
       : null;
@@ -124,7 +141,7 @@ final class NowLoadedState extends NowState {
     ScheduledDay? day,
     Priority? defaultPriority,
   }) {
-    return NowLoadedState(
+    return NowLoaded(
       session: session ?? this.session,
       day: day ?? _day,
       defaultPriority: defaultPriority ?? this.defaultPriority,

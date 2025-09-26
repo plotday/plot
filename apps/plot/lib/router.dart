@@ -33,6 +33,9 @@ class AppShell extends StatelessWidget {
 
 @AutoRouterConfig(generateForDir: ['lib', 'lib/page'])
 class AppRouter extends RootStackRouter {
+  final UserBloc userBloc;
+
+  AppRouter(this.userBloc);
   @override
   RouteType get defaultRouteType => PlatformResolver.current(
     iOSResolver: () => RouteType.cupertino(),
@@ -56,7 +59,7 @@ class AppRouter extends RootStackRouter {
           page: EmptyShellRoute("Now"),
           path: '',
           guards: [
-            AuthGuard(),
+            AuthGuard(userBloc),
             AutoRouteGuardCallback((resolver, router) async {
               final priorityId = resolver.context
                   .read<NowBloc>()
@@ -71,24 +74,18 @@ class AppRouter extends RootStackRouter {
         AutoRoute(
           page: PrioritiesRoute.page,
           path: 'priorities',
-          guards: [AuthGuard()],
+          guards: [AuthGuard(userBloc)],
         ),
         AutoRoute(
           page: PriorityRoute.page,
           path: 'p/:priorityId',
-          guards: [AuthGuard()],
+          guards: [AuthGuard(userBloc)],
           children: [AutoRoute(page: PriorityMainRoute.page, path: '')],
         ),
         AutoRoute(
           page: ActivityRoute.page,
           path: 'a/:activityId',
-          guards: [AuthGuard()],
-          children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
-        ),
-        AutoRoute(
-          page: EventRoute.page,
-          path: 'e/:eventId',
-          guards: [AuthGuard()],
+          guards: [AuthGuard(userBloc)],
           children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
         ),
       ],
@@ -132,19 +129,25 @@ extension FocusedRouterExtension on BuildContext {
 }
 
 class AuthGuard extends AutoRouteGuard {
+  final UserBloc userBloc;
+
+  AuthGuard(this.userBloc);
+
   @override
   void onNavigation(NavigationResolver resolver, StackRouter router) {
-    final userBloc = resolver.context.read<UserBloc>();
     final userState = userBloc.state;
 
     if (userState is UserReady) {
       // User is authenticated, proceed with navigation
       resolver.next();
-    } else if (userState is UserSignedOut) {
+    } else if (userState is UserSignedOut && resolver.route.path != '/login') {
       // User is not authenticated, redirect to sign in with return path
       final returnPath = resolver.route.path;
       router.navigate(
-        SignInRoute(returnTo: returnPath != '/login' ? returnPath : null),
+        SignInRoute(
+          returnTo: returnPath != '/login' ? returnPath : null,
+          signOut: true,
+        ),
       );
     } else {
       // User state is loading, wait for authentication to complete

@@ -39,13 +39,13 @@ class AgendaHeader extends StatelessWidget {
   const AgendaHeader({
     this.priority,
     this.context,
-    this.event,
+    this.activity,
     this.now = false,
     this.selected = false,
     super.key,
   });
 
-  final Event? event;
+  final Activity? activity;
   final bool now;
   final Priority? priority;
   final Priority? context;
@@ -54,8 +54,8 @@ class AgendaHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Compute priority ancestry from the priority or event
-    final currentPriority = priority ?? event?.priority;
+    // Compute priority ancestry from the priority or activity
+    final currentPriority = priority ?? activity?.priority;
 
     // Compute ancestry relative to priorityContext
     final priorityAncestry = currentPriority?.ancestors(
@@ -64,8 +64,8 @@ class AgendaHeader extends StatelessWidget {
     );
 
     return ListTile(
-      command: event?.draft == false
-          ? ChangeCurrentEvent(event!)
+      command: activity?.draft == false
+          ? ChangeCurrentActivity(activity!)
           : priorityAncestry?.isNotEmpty == true
           ? CommandWrapper(
               OpenPriority.byId(priorityAncestry!.last.id),
@@ -81,22 +81,22 @@ class AgendaHeader extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             spacing: 8.0,
             children: [
-              if (event != null) ...[
+              if (activity != null) ...[
                 Text(
-                  event!.start.toTimeOfDay().isMidnight
+                  activity!.at?.start?.toTimeOfDay().isMidnight == true
                       ? ''
-                      : event!.start.toTimeOfDay().format(context),
+                      : activity!.at?.start?.toTimeOfDay().format(context) ?? '',
                   textAlign: TextAlign.end,
                   style: TextStyle(
                     color: context.theme.colors.mutedForeground,
                     fontSize: context.theme.typography.xs.fontSize,
                   ),
                 ),
-                if (event!.duration.inSeconds > 0 &&
-                    !(event!.draft &&
-                        event!.end == event!.start.startOfDay.addDays(1)))
+                if (activity!.duration?.inSeconds != null && activity!.duration!.inSeconds > 0 &&
+                    !(activity!.draft &&
+                        activity!.at?.end == activity!.at?.start?.startOfDay.addDays(1)))
                   Text(
-                    event!.duration.format(),
+                    activity!.duration!.format(),
                     style: TextStyle(
                       color: context.theme.colors.mutedForeground,
                       fontSize: context.theme.typography.xs.fontSize,
@@ -116,13 +116,13 @@ class AgendaHeader extends StatelessWidget {
               ),
             ],
           ),
-          if (event?.name != null)
+          if (activity?.title != null)
             Row(
               spacing: 4.0,
               children: [
                 Icon(PlotIcon.event, size: 12, color: context.colour.muted),
                 Text(
-                  event!.name ?? 'Untitled Event',
+                  activity!.title ?? 'Untitled Activity',
                   textAlign: TextAlign.start,
                   style: DefaultTextStyle.of(context).style.copyWith(
                     color: context.theme.colors.foreground,

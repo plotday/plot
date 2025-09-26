@@ -3,14 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 
-import 'package:plot/base.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/router.dart';
 import 'command.dart';
 import 'logging.dart';
 
 final settingsCommands = StaticCommandGroup(
   title: 'Account',
-  commands: [ShowAllCalendarSettings(), SignOut()],
+  commands: [SignOut()],
 );
 
 class ShowSettings extends ShowCommands {
@@ -31,8 +31,7 @@ class SignOut extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      await Base.client.auth.signOut();
-      return const CommandDone();
+      return CommandRoute(SignInRoute(signOut: true));
     } on supa.AuthException catch (e, t) {
       log.warning("Sign out failed", e, t);
       return CommandMessage('Sign out failed: ${e.message}', isError: true);

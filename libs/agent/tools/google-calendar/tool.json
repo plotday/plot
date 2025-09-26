@@ -1,0 +1,13 @@
+{
+  "id": "google-calendar",
+  "name": "Google Calendar",
+  "description": "Sync with Google Calendar",
+  "license": "MIT",
+  "tools": [
+    "auth",
+    "callback",
+    "run",
+    "store",
+    "webhook"
+  ]
+}

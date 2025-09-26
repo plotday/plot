@@ -57,8 +57,12 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
 
         return BlocProvider(
           create: (_) => PriorityBloc(priority: priority, activity: null),
-          key: ValueKey(priority.id),
-          child: this,
+          child: BlocBuilder<PriorityBloc, PriorityState>(
+            builder: (context, state) {
+              context.read<PriorityBloc>().setPriority(priority);
+              return this;
+            },
+          ),
         );
       },
     );
@@ -164,7 +168,6 @@ class PriorityPage extends StatelessWidget {
                                       key: ValueKey(
                                         current.when(
                                           date: (d) => 'date_${d.hashCode}',
-                                          event: (e) => 'event_${e.id}',
                                           priority: (p) => 'priority_${p.id}',
                                           activity: (a) => a.id,
                                         ),
@@ -178,14 +181,6 @@ class PriorityPage extends StatelessWidget {
                                               selected: selected,
                                             ),
                                           ],
-                                          event: (event) => [
-                                            AgendaHeader(
-                                              event: event,
-                                              priority: event.priority,
-                                              context: state.context,
-                                              selected: selected,
-                                            ),
-                                          ],
                                           priority: (priority) => [
                                             AgendaHeader(
                                               priority: priority,
@@ -194,11 +189,20 @@ class PriorityPage extends StatelessWidget {
                                             ),
                                           ],
                                           activity: (activity) => [
-                                            ActivityWidget(
-                                              activity: activity,
-                                              selected: selected,
-                                              context: state.context,
-                                            ),
+                                            if (activity.type ==
+                                                ActivityType.event)
+                                              AgendaHeader(
+                                                activity: activity,
+                                                context: state.context,
+                                                selected: selected,
+                                              ),
+                                            if (activity.type !=
+                                                ActivityType.event)
+                                              ActivityWidget(
+                                                activity: activity,
+                                                selected: selected,
+                                                context: state.context,
+                                              ),
                                           ],
                                         ),
                                       ],
@@ -276,38 +280,28 @@ class PriorityPage extends StatelessWidget {
   ) async {
     final prevActivity = prev?.when<Activity?>(
       date: (Date date) => null,
-      event: (Event event) => null,
       priority: (Priority priority) => null,
       activity: (Activity a) => a,
     );
     final nextActivity = next?.when<Activity?>(
       date: (Date date) => null,
-      event: (Event event) => null,
       priority: (Priority priority) => null,
       activity: (Activity a) => a,
     );
-    final priorityId = prev?.when<PriorityId?>(
+    final priority = prev?.when<Priority?>(
       date: (Date date) => null,
-      event: (Event event) => event.priorityId,
-      priority: (Priority priority) => priority.id,
-      activity: (Activity a) => a.priorityId,
-    );
-    final eventSeries = prev?.when<String?>(
-      date: (Date date) => null,
-      event: (Event event) => event.series,
-      priority: (Priority priority) => null,
-      activity: (Activity a) => a.eventSeries,
+      priority: (Priority priority) => priority,
+      activity: (Activity a) => a.priority,
     );
     log.info(
       'Reordering ${activity.displayTitle} between '
-      '${prevActivity?.displayTitle} and ${nextActivity?.displayTitle} ($priorityId, $eventSeries)',
+      '${prevActivity?.displayTitle} and ${nextActivity?.displayTitle} (${priority?.title})',
     );
     activity
         .copyWith(
-          priorityId: priorityId,
+          priority: priority,
           order: Order.between(prevActivity?.order, nextActivity?.order),
-          doOn: Value((prevActivity ?? nextActivity)?.doOn),
-          eventSeries: Value(eventSeries),
+          on: Value(prevActivity?.on ?? nextActivity?.on),
         )
         .save();
   }

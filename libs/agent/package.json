@@ -1,0 +1,15 @@
+{
+  "name": "@plotday/agent",
+  "main": "index.ts",
+  "types": "index.ts",
+  "sideEffects": false,
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint": "tsc"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0"
+  }
+}

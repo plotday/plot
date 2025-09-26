@@ -4,18 +4,11 @@
   "sideEffects": false,
   "private": true,
   "config": {
-    "workers": "../api ../contact-sync ../event-sync ../mailer ../sync ../agent-runner"
+    "workers": "../api ../mailer ../../agents/plot ../../agents/chat ../../agents/events ../../agents/contacts"
   },
   "scripts": {
     "dev": "wrangler dev --env development --test-scheduled $(for dir in $npm_package_config_workers; do echo -c \"$dir/wrangler.toml\"; done)"
   },
-  "dependencies": {
-    "@plotday/api": "workspace:^",
-    "@plotday/agent-runner": "workspace:^",
-    "@plotday/contact-sync": "workspace:^",
-    "@plotday/event-sync": "workspace:^",
-    "@plotday/sync": "workspace:^"
-  }, 
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*"

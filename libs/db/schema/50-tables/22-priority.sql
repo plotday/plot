@@ -4,7 +4,7 @@ CREATE TABLE "public"."priority" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "root" boolean NOT NULL DEFAULT FALSE,
-    -- All fields added below must be handled in handle_priority_x_upsert
+    -- All fields added below must be handled in handle_user_priority_upsert
     "deleted_at" timestamp with time zone,
     "title" text NOT NULL,
     "path" ltree NOT NULL UNIQUE,
@@ -35,7 +35,7 @@ CREATE TABLE "public"."priority_user" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "deleted_at" timestamp with time zone,
-    -- All fields added below must be handled in handle_priority_x_upsert
+    -- All fields added below must be handled in handle_user_priority_upsert
     "order" double precision NOT NULL DEFAULT public.order_first (),
     -- Optional per-user override allowing shared priorities to be nested under other priorities
     "path" ltree,
@@ -78,7 +78,7 @@ CREATE TABLE "public"."priority_settings" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
-    -- All fields added below must be handled in handle_priority_x_upsert
+    -- All fields added below must be handled in handle_user_priority_upsert
     "pomodoro" integer,
     "color" integer,
     CONSTRAINT priority_settings_unique UNIQUE (user_id, priority_id)
@@ -91,24 +91,9 @@ CREATE TRIGGER set_priority_user_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
-CREATE OR REPLACE FUNCTION public.notify_user_for_priority ()
-    RETURNS TRIGGER
-    SECURITY DEFINER
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM
-        realtime.send (jsonb_build_object('table', 'priority', 'updated_by', COALESCE(NEW.updated_by, OLD.updated_by)), -- JSONB Payload
-            'sync', -- Event name
-            'user:' || COALESCE(NEW.created_by, OLD.created_by)::text, -- Topic
-            FALSE -- Public / Private flag
-);
-    RETURN NULL;
-END;
-$$;
 
 CREATE TRIGGER handle_priority_changes
     AFTER INSERT OR UPDATE ON public.priority
     FOR EACH ROW
-    EXECUTE FUNCTION notify_user_for_priority ();
+    EXECUTE FUNCTION notify_internal_api_for_priority ();
 

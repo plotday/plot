@@ -1,5 +1,5 @@
 CREATE TABLE "public"."priority_agent" (
-    "id" uuid PRIMARY KEY DEFAULT agent_uuid () NOT NULL,
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "agent_id" text NOT NULL REFERENCES public.agent ON DELETE CASCADE,
     "name" text NOT NULL,
@@ -17,5 +17,4 @@ CREATE TRIGGER set_agent_updated_at
     BEFORE UPDATE ON "public"."priority_agent"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
-
 

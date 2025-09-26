@@ -31,5 +31,6 @@ linter:
   rules:
     avoid_print: true
     always_declare_return_types: true
+    implicit_call_tearoffs: false
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

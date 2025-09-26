@@ -4,7 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'command.dart';
-import 'agent.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';

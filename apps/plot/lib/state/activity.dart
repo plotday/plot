@@ -10,11 +10,9 @@ import 'logging.dart';
 part 'activity_state.dart';
 
 class ActivityBloc extends Cubit<ActivityState> {
-  ActivityBloc({required Priority priority, Activity? activity, Event? event})
+  ActivityBloc({required Priority priority, Activity? activity})
     : _subscriptions = [],
-      super(
-        ActivityState(context: priority, activity: activity, event: event),
-      ) {
+      super(ActivityState(context: priority, activity: activity)) {
     _loadActivity();
   }
 
@@ -52,7 +50,6 @@ class ActivityBloc extends Cubit<ActivityState> {
         draft: Activity(
           priority: state.context,
           parent: state.activity,
-          parentEvent: state.event,
           draft: true,
         ),
       ),
@@ -65,7 +62,7 @@ class ActivityBloc extends Cubit<ActivityState> {
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
-    
+
     _subscriptions.add(
       Priority.watchOne(state.context.id).listen((priority) {
         log.info('Priority updated');
@@ -82,35 +79,21 @@ class ActivityBloc extends Cubit<ActivityState> {
       );
     }
 
-    if (state.event != null) {
-      _subscriptions.add(
-        Event.watchOne(state.event!.id).listen((watchedEvent) {
-          log.info('Event updated');
-          emit(state.copyWith(event: watchedEvent));
-        }),
-      );
-    }
-
     _loadActivities();
   }
 
-
   void _loadActivities() {
-    log.info(
-      'Getting activities for ${state.activity?.path ?? state.event?.path}',
-    );
-    
+    log.info('Getting activities for ${state.activity?.path}');
+
     _subscriptions.add(
       Activity.watch(
         priorityPath: state.context.path,
-        path: state.activity?.path ?? state.event?.path,
+        path: state.activity?.path,
         deleted: state.showArchived,
         filter: state.filter.isNotEmpty ? state.filter : null,
       ).listen((activities) {
-        log.info(
-          'Got activities for ${state.activity?.path ?? state.event?.path}',
-        );
-        
+        log.info('Got activities for ${state.activity?.path}');
+
         // Sort activities by creation/completion date in reverse chronological order
         final sortedActivities = List<Activity>.from(activities);
         sortedActivities.sort((a, b) {
@@ -126,7 +109,7 @@ class ActivityBloc extends Cubit<ActivityState> {
 
         for (final activity in sortedActivities) {
           final activityDate = (activity.doneAt ?? activity.createdAt).toDate();
-          
+
           if (currentDate != activityDate) {
             // Save previous group if it exists
             if (currentDate != null && currentGroup.isNotEmpty) {
@@ -134,7 +117,7 @@ class ActivityBloc extends Cubit<ActivityState> {
                 ActivityDateGroup(date: currentDate, activities: currentGroup),
               );
             }
-            
+
             // Start new group
             currentDate = activityDate;
             currentGroup = [activity];
@@ -142,7 +125,7 @@ class ActivityBloc extends Cubit<ActivityState> {
             currentGroup.add(activity);
           }
         }
-        
+
         // Add the last group
         if (currentDate != null && currentGroup.isNotEmpty) {
           groupedActivities.add(
@@ -157,3 +140,4 @@ class ActivityBloc extends Cubit<ActivityState> {
 
   final List<StreamSubscription<void>> _subscriptions;
 }
+

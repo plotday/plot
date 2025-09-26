@@ -1,3 +1,5 @@
+import 'package:drift/drift.dart';
+
 extension type Order._(double value) {
   static const lowerBound = -10_000_536_000_000;
   static double _last() => -DateTime.now().millisecondsSinceEpoch.toDouble();
@@ -26,4 +28,18 @@ extension type Order._(double value) {
       );
 
   int compareTo(Order other) => value.compareTo(other.value);
+}
+
+class OrderConverter extends TypeConverter<Order, double> {
+  const OrderConverter();
+
+  @override
+  Order fromSql(double fromDb) {
+    return Order(fromDb);
+  }
+
+  @override
+  double toSql(Order value) {
+    return value.value;
+  }
 }

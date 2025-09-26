@@ -51,8 +51,8 @@ class SessionsBase extends BaseTable {
   SessionRow fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
     final range = DateTimeRange.fromString(json['at'] as String);
-    json['start'] = range.start.toDb();
-    json['end'] = range.end.toDb();
+    json['start'] = range.start?.toDb();
+    json['end'] = range.end?.toDb();
     return SessionRow.fromJson(json);
   }
 }
@@ -120,8 +120,12 @@ class Session extends SessionRow {
   }) {
     final query = Store.get.select(table);
     if (range != null) {
-      query.where((t) => t.start.isSmallerThanValue(range.end.toEnd()));
-      query.where((t) => t.end.isBiggerThanValue(range.start.toStart()));
+      if (range.end != null) {
+        query.where((t) => t.start.isSmallerThanValue(range.end!.toEnd()));
+      }
+      if (range.start != null) {
+        query.where((t) => t.end.isBiggerThanValue(range.start!.toStart()));
+      }
     }
     if (deleted != null) {
       query.where(
@@ -195,6 +199,7 @@ class Session extends SessionRow {
         id: Uuid.generate(),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
+        pending: SessionPendingSync.full.value,
         priorityId: priority?.id,
         start: DateTime.now(),
         pomodoro: null,
@@ -228,11 +233,13 @@ class Session extends SessionRow {
     int? precedence,
     Value<Duration?> pomodoro = const Value.absent(),
     Value<DateTime?> pomodoroAt = const Value.absent(),
+    Value<int?> pending = const Value.absent(),
   }) => Session.fromStore(
     super.copyWith(
       id: id,
       createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
+      pending: pending.present ? pending : Value(SessionPendingSync.full.value),
       deletedAt: deletedAt,
       priorityId: priorityId,
       start: start,
@@ -248,7 +255,7 @@ class Session extends SessionRow {
   Future<void> save() =>
       Store.get.save(table, toCompanion(false), SessionsBase());
 
-  DateTimeRange get at => DateTimeRange(start, end);
+  BoundedDateTimeRange get at => BoundedDateTimeRange(start, end);
 
   @override
   bool operator ==(Object other) {
@@ -259,4 +266,12 @@ class Session extends SessionRow {
   int get hashCode {
     return Object.hash(super.hashCode, priority.hashCode);
   }
+}
+
+enum SessionPendingSync {
+  /// Full session data changed
+  full(2);
+
+  const SessionPendingSync(this.value);
+  final int value;
 }

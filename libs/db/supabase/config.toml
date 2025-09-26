@@ -62,14 +62,14 @@ enable_signup = true
 
 [auth.external.google]
 enabled = true
-client_id = "env(GOOGLE_CLIENT_ID)"
-secret = "env(GOOGLE_OAUTH_SECRET)"
+client_id = "env(AUTH_GOOGLE_ID)"
+secret = "env(AUTH_GOOGLE_SECRET)"
 skip_nonce_check = true
 
 [auth.external.azure]
 enabled = true
-client_id = "env(MICROSOFT_CLIENT_ID)"
-secret = "env(MICROSOFT_OAUTH_SECRET)"
+client_id = "env(AUTH_MICROSOFT_ID)"
+secret = "env(AUTH_MICROSOFT_SECRET)"
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.

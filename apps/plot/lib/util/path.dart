@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:drift/drift.dart';
 
 extension type Path(String value) {
   factory Path.generate({Path? parent}) {
@@ -35,4 +36,18 @@ extension type Path(String value) {
   bool isParent(Path other) => other.value.startsWith("$value.");
   bool isChild(Path? other) =>
       other == null || value.startsWith("${other.value}.");
+}
+
+class PathConverter extends TypeConverter<Path, String> {
+  const PathConverter();
+
+  @override
+  Path fromSql(String fromDb) {
+    return Path(fromDb);
+  }
+
+  @override
+  String toSql(Path value) {
+    return value.value;
+  }
 }

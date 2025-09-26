@@ -32,24 +32,9 @@ CREATE TRIGGER set_session_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
-CREATE OR REPLACE FUNCTION public.notify_user_for_session ()
-    RETURNS TRIGGER
-    SECURITY DEFINER
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    PERFORM
-        realtime.send (jsonb_build_object('table', 'session', 'updated_by', COALESCE(NEW.updated_by, OLD.updated_by)), -- JSONB Payload
-            'sync', -- Event name
-            'user:' || COALESCE(NEW.user_id, OLD.user_id)::text, -- Topic
-            FALSE -- Public / Private flag
-);
-    RETURN NULL;
-END;
-$$;
 
 CREATE TRIGGER handle_session_changes
     AFTER INSERT OR UPDATE ON public.session
     FOR EACH ROW
-    EXECUTE FUNCTION notify_user_for_session ();
+    EXECUTE FUNCTION notify_internal_api_for_session ();
 

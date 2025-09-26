@@ -4,6 +4,10 @@ compatibility_date = "2025-07-05"
 compatibility_flags = ["nodejs_compat"]
 upload_source_maps = true
 
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = [ "Storage", "Callbacks", "Broadcast" ]
+
 [env.development]
 [env.development.define]
   ENV = '"development"'
@@ -11,19 +15,57 @@ upload_source_maps = true
   PACKAGE = '"api"'
 
 [[env.development.queues.producers]]
-  queue = "sync-development"
-  binding = "SYNC_QUEUE"
+  queue = "run-development"
+  binding = "RUN_QUEUE"
+
+[[env.development.queues.producers]]
+  queue = "updates-development"
+  binding = "UPDATES_QUEUE"
+
+[[env.development.queues.consumers]]
+  queue = "run-development"
+  max_batch_size = 20
+  max_batch_timeout = 5
+
+[[env.development.queues.consumers]]
+  queue = "updates-development"
+  max_batch_size = 50
+  max_batch_timeout = 0
 
 [[env.development.services]]
-  binding = "AGENT_RUNNER"
-  service = "agent-runner"
+  binding = "AGENT_PLOT"
+  service = "agent-plot"
+
+[[env.development.services]]
+  binding = "AGENT_CHAT"
+  service = "agent-chat"
+
+[[env.development.services]]
+  binding = "AGENT_EVENTS"
+  service = "agent-events"
+
+[[env.development.services]]
+  binding = "AGENT_GOOGLE_CONTACTS"
+  service = "agent-google-contacts"
 
 [env.development.ai]
   binding = "AI"
 
+[[env.development.durable_objects.bindings]]
+  name = "STORAGE"
+  class_name = "Storage"
+
+[[env.development.durable_objects.bindings]]
+  name = "CALLBACKS"
+  class_name = "Callbacks"
+
+[[env.development.durable_objects.bindings]]
+  name = "BROADCAST"
+  class_name = "Broadcast"
+
 [env.production]
 routes = [
-  { pattern = "sync-api.plot.day", custom_domain = true }
+  { pattern = "api.plot.day", custom_domain = true }
 ]
 [env.production.define]
   ENV = '"production"'
@@ -31,15 +73,41 @@ routes = [
   PACKAGE = '"api"'
 
 [[env.production.queues.producers]]
-  queue = "sync-production"
-  binding = "SYNC_QUEUE"
+  queue = "run-production"
+  binding = "RUN_QUEUE"
 
-[[env.production.services]]
-  binding = "AGENT_RUNNER"
-  service = "agent-runner-production"
+[[env.production.queues.producers]]
+  queue = "updates-production"
+  binding = "UPDATES_QUEUE"
+
+[[env.production.queues.consumers]]
+  queue = "run-production"
+  max_batch_size = 100
+  max_batch_timeout = 30
+
+[[env.production.queues.consumers]]
+  queue = "updates-production"
+  max_batch_size = 50
+  max_batch_timeout = 0
+
+[[env.production.dispatch_namespaces]]
+  binding = "AGENTS"
+  namespace = "public-agents"
 
 [env.production.ai]
   binding = "AI"
+
+[[env.production.durable_objects.bindings]]
+  name = "STORAGE"
+  class_name = "Storage"
+
+[[env.production.durable_objects.bindings]]
+  name = "CALLBACKS"
+  class_name = "Callbacks"
+
+[[env.production.durable_objects.bindings]]
+  name = "BROADCAST"
+  class_name = "Broadcast"
 
 [observability.logs]
   enabled = true

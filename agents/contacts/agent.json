@@ -1,0 +1,17 @@
+{
+  "id": "contacts",
+  "name": "Contacts",
+  "description": "Sync contacts",
+  "author": {
+    "name": "Plot",
+    "email": "team@plot.day",
+    "url": "https://plot.day"
+  },
+  "license": "MIT",
+  "tools": [
+    "plot",
+    "google-contacts",
+    "store",
+    "callback"
+  ]
+}

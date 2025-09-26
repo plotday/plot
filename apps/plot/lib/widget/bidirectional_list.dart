@@ -142,7 +142,7 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
 
 typedef ItemBuilder =
     Widget? Function(BuildContext context, int index, bool selected);
-typedef ItemFetcher = void Function(int first, int count);
+typedef ItemFetcher = Future<void> Function(int first, int count);
 
 class BidirectionalList extends StatefulWidget {
   static const Map<ShortcutActivator, Intent> shortcuts = {
@@ -294,11 +294,16 @@ class BidirectionalListState extends State<BidirectionalList> {
 
     try {
       _fetching = true;
-
-      // Call the fetcher with the new range
-      widget.fetcher!(newFirst, newCount);
+      await widget.fetcher!(newFirst, newCount);
     } catch (error, trace) {
       log.warning('BidirectionalList fetcher error', error, trace);
+    } finally {
+      // Always reset fetching state when fetch is complete, even if no state update occurs
+      if (mounted) {
+        setState(() {
+          _fetching = false;
+        });
+      }
     }
   }
 
@@ -334,7 +339,6 @@ class BidirectionalListState extends State<BidirectionalList> {
     }
 
     setState(() {
-      _fetching = false;
       _setCounts();
       if (oldWidget.first != widget.first) {
         log.info('First moved ${oldWidget.first} to ${widget.first}');

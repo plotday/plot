@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
 import 'package:platform_builder/platform_builder.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class Alert {
   static void show(BuildContext context, String message) {
@@ -10,7 +11,7 @@ class Alert {
               context: context,
               useRootNavigator: true,
               builder: (_) => macos.MacosAlertDialog(
-                appIcon: FlutterLogo(size: 64),
+                appIcon: SvgPicture.asset("assets/p.svg", width: 64, height: 64),
                 title: Text(
                   'Plot',
                   style: macos.MacosTheme.of(context).typography.headline,

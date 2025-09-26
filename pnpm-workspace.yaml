@@ -2,6 +2,7 @@ packages:
   - apps/*
   - workers/*
   - libs/*
+  - agents/*
 onlyBuiltDependencies:
   - "@sentry/cli"
   - bufferutil

@@ -1,18 +1,15 @@
 import type { User } from "@supabase/supabase-js";
 
-import * as Sentry from "@sentry/cloudflare";
 import { withSentry } from "@sentry/cloudflare";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
 
-import type AgentRunner from "@plotday/agent-runner";
-import type { ToolDependency } from "@plotday/agents/framework";
-import type { SupabaseClient } from "@plotday/db";
-import { createClient } from "@plotday/db";
-import type { SyncRequest } from "@plotday/sync";
+import type { AuthProvider } from "@plotday/agent/tools/auth";
+import type { Callback } from "@plotday/agent/tools/callback";
+import { type SupabaseClient, createClient } from "@plotday/db";
 
-import { createTools } from "./agent";
+import { type ToolDependencySpec, agentFactory, createTools } from "./agent";
 import {
   add as addAgent,
   deleteAgent,
@@ -21,42 +18,28 @@ import {
   getAll as getAllAgents,
   update as updateAgent,
 } from "./agent/management";
-import {
-  create as createEvent,
-  respond as respondEvent,
-  update as updateEvent,
-} from "./event";
+import { Auth } from "./agent/tools/auth";
+import { CallbackTool } from "./agent/tools/callback";
+import { Run, type RunMessage } from "./agent/tools/run";
+import { Webhook } from "./agent/tools/webhook";
+import { type Bindings, type QueueMessage, type UpdateMessage } from "./env";
 import { summarize } from "./summary";
-import { addAccount, syncCalendar } from "./sync";
+import { ItemSchema } from "./types";
+import { processUpdates } from "./updates";
+
+// Export Durable Objects
+export { Storage } from "./storage";
+export { Callbacks } from "./callbacks";
+export { Broadcast } from "./broadcast";
 
 // Helper function for handling validation errors
 function handleValidationError(error: z.ZodError) {
   const messages = error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
+  console.warn("Validation error:", messages);
   return new Response(`Validation error: ${messages.join(", ")}`, {
     status: 400,
   });
 }
-
-export type Bindings = {
-  readonly API_HMAC_SECRET?: string;
-  readonly SENTRY_DSN: string;
-
-  readonly SUPABASE_URL: string;
-  readonly SUPABASE_ANON_KEY: string;
-  readonly SUPABASE_SERVICE_KEY: string;
-
-  readonly GOOGLE_CLIENT_ID: string;
-  readonly GOOGLE_OAUTH_SECRET: string;
-  readonly MICROSOFT_CLIENT_ID: string;
-  readonly MICROSOFT_OAUTH_SECRET: string;
-
-  readonly AUTH_CALLBACK_URL: string;
-  readonly CALENDAR_WEBHOOK_URL: string;
-
-  readonly SYNC_QUEUE: Queue<SyncRequest>;
-  readonly AI: Ai;
-  readonly AGENT_RUNNER: Service<AgentRunner>;
-};
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -68,16 +51,18 @@ declare module "hono" {
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Auth middleware
-app.use(
-  "/*",
-  cors({
-    origin: [
-      "http://localhost:8788",
-      "https://preview.plot.day",
-      "https://app.plot.day",
-    ],
-  })
-);
+app.use((c, next) => {
+  if (c.req.path !== "/updates") {
+    return cors({
+      origin: [
+        "http://localhost:8788",
+        "https://preview.plot.day",
+        "https://app.plot.day",
+      ],
+    })(c, next);
+  }
+  return next();
+});
 app.use("*", async (c, next) => {
   if (new URL(c.req.url).pathname.startsWith("/_/")) {
     // Authenticate requests from the DB using HMAC
@@ -152,151 +137,16 @@ app.use("*", async (c, next) => {
   await next();
 });
 
-const SyncRequestSchema = z.object({
-  calendarId: z.number().optional(),
-  code: z.string().optional(),
-  provider: z.enum(["google", "outlook"]).optional(),
-});
+// WebSocket broadcast endpoint
+app.get("/updates", async (c) => {
+  const userId = c.var.user.id;
 
-app.post("/sync", async (c) => {
-  const supabaseAdmin = createClient(
-    c.env.SUPABASE_URL,
-    c.env.SUPABASE_SERVICE_KEY
-  );
+  // Get the Broadcast DurableObject for this user
+  const broadcastId = c.env.BROADCAST.idFromName(userId);
+  const broadcast = c.env.BROADCAST.get(broadcastId);
 
-  const rawBody = await c.req.json();
-  const parseResult = SyncRequestSchema.safeParse(rawBody);
-  if (!parseResult.success) {
-    return handleValidationError(parseResult.error);
-  }
-  const body = parseResult.data;
-
-  if (body.calendarId) {
-    const calendar = await supabaseAdmin
-      .from("calendar")
-      .select("account(user_id)")
-      .eq("id", body.calendarId)
-      .single();
-    if (calendar.data?.account?.user_id !== c.var.user.id) {
-      return new Response("Forbidden", { status: 403 });
-    }
-    await syncCalendar(c.env, body.calendarId);
-    return c.json({});
-  }
-
-  if (!body.code) {
-    return new Response("Bad request (missing code)", { status: 400 });
-  }
-  if (!body.provider) {
-    return new Response("Bad request (missing provider)", { status: 400 });
-  }
-  const account = await addAccount(
-    c.env,
-    supabaseAdmin,
-    c.var.user,
-    body.provider,
-    body.code
-  );
-  return c.json(account);
-});
-
-const EventRequestSchema = z.object({
-  event: z.object({
-    at: z.unknown(),
-    availability: z
-      .enum(["busy", "away", "focus", "free", "location"])
-      .optional(),
-    calendar_id: z.number().nullable().optional(),
-    conferencing_url: z.string().nullable().optional(),
-    created_at: z.string().optional(),
-    deleted_at: z.string().nullable().optional(),
-    description: z.string().nullable().optional(),
-    draft: z.boolean().optional(),
-    id: z.string().optional(),
-    invitees_hidden: z.boolean().optional(),
-    name: z.string().nullable().optional(),
-    optional: z.boolean().optional(),
-    organizer_email: z.string().nullable().optional(),
-    provider_id: z.string().nullable().optional(),
-    provider_link: z.string().nullable().optional(),
-    response: z
-      .enum(["accepted", "declined", "tentative"])
-      .nullable()
-      .optional(),
-    sequence: z.number().optional(),
-    series: z.string().nullable().optional(),
-    status: z.enum(["confirmed", "cancelled", "tentative"]).optional(),
-    summary: z.string().nullable().optional(),
-    updated_at: z.string().optional(),
-    updated_by: z.number().optional(),
-    user_id: z.string().nullable().optional(),
-    visibility: z
-      .enum(["normal", "private", "confidential", "public", "personal"])
-      .optional(),
-  }),
-});
-
-app.post("/event", async (c) => {
-  const rawBody = await c.req.json();
-  const parseResult = EventRequestSchema.safeParse(rawBody);
-  if (!parseResult.success) {
-    return handleValidationError(parseResult.error);
-  }
-  const body = parseResult.data;
-  const dbEvent = await createEvent(c.env, c.var.supabase, body.event);
-  return c.json(dbEvent);
-});
-
-const EventUpdateRequestSchema = z.object({
-  event: z.object({
-    at: z.unknown().optional(),
-    availability: z
-      .enum(["busy", "away", "focus", "free", "location"])
-      .optional(),
-    calendar_id: z.number().nullable().optional(),
-    conferencing_url: z.string().nullable().optional(),
-    created_at: z.string().optional(),
-    deleted_at: z.string().nullable().optional(),
-    description: z.string().nullable().optional(),
-    draft: z.boolean().optional(),
-    id: z.string().optional(),
-    invitees_hidden: z.boolean().optional(),
-    name: z.string().nullable().optional(),
-    optional: z.boolean().optional(),
-    organizer_email: z.string().nullable().optional(),
-    provider_id: z.string().nullable().optional(),
-    provider_link: z.string().nullable().optional(),
-    response: z
-      .enum(["accepted", "declined", "tentative"])
-      .nullable()
-      .optional(),
-    sequence: z.number().optional(),
-    series: z.string().nullable().optional(),
-    status: z.enum(["confirmed", "cancelled", "tentative"]).optional(),
-    summary: z.string().nullable().optional(),
-    updated_at: z.string().optional(),
-    updated_by: z.number().optional(),
-    user_id: z.string().nullable().optional(),
-    visibility: z
-      .enum(["normal", "private", "confidential", "public", "personal"])
-      .optional(),
-  }),
-  response: z.enum(["accepted", "declined", "tentative"]).nullable().optional(),
-});
-
-app.patch("/event/:id", async (c) => {
-  const eventId = parseInt(c.req.param("id"));
-  const rawBody = await c.req.json();
-  const parseResult = EventUpdateRequestSchema.safeParse(rawBody);
-  if (!parseResult.success) {
-    return handleValidationError(parseResult.error);
-  }
-  const body = parseResult.data;
-  const dbEvent = await updateEvent(c.env, c.var.supabase, eventId, body.event);
-  if (body.response) {
-    await respondEvent(c.env, c.var.supabase, eventId, body.response);
-  }
-  return c.json(dbEvent);
+  // Forward the request to the DurableObject
+  return broadcast.fetch(c.req.raw);
 });
 
 const SummaryRequestSchema = z.object({
@@ -360,20 +210,30 @@ app.post("/agent", async (c) => {
       body.name,
       body.config
     );
-    const tools = createTools({
-      dependencies: dbPriorityAgent.tools as ToolDependency[],
-      ai: c.env.AI,
-      supabase: c.var.supabase,
-      priorityId: body.priorityId,
-      priorityAgentId: dbPriorityAgent.id,
-      config: body.config || {},
-    });
-    await c.env.AGENT_RUNNER.activate(body.agentId, tools, {
+    const tools = createTools(
+      {
+        path: [body.agentId],
+        dependencies: dbPriorityAgent.tools as ToolDependencySpec[],
+      },
+      {
+        ai: c.env.AI,
+        supabase: c.var.supabase,
+        priorityId: body.priorityId,
+        priorityAgentId: dbPriorityAgent.id,
+        storage: c.env.STORAGE,
+        callbacks: c.env.CALLBACKS,
+        env: c.env,
+        agents: agentFactory(c.env),
+      }
+    );
+    await agentFactory(c.env)(body.agentId).activate(tools, {
       id: body.priorityId,
     });
     return c.json(dbPriorityAgent.id);
   } catch (error) {
+    console.error("Error adding agent:", error);
     if (error instanceof Error) {
+      console.warn(error.stack);
       return new Response(`Error adding agent: ${error.message}`, {
         status: 400,
       });
@@ -413,87 +273,239 @@ app.delete("/agent/:id", async (c) => {
   return c.json({ success: true });
 });
 
+// Webhook endpoint - handles all HTTP methods for webhook URLs
+app.all(Webhook.PATH, async (c) => {
+  try {
+    const token = c.req.param("token");
+    if (!token) {
+      return new Response("Bad request (missing token)", { status: 400 });
+    }
+
+    // Extract request data
+    const method = c.req.method;
+    const headers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(c.req.header())) {
+      headers[key] = value;
+    }
+
+    // Get URL parameters
+    const url = new URL(c.req.url);
+    const params: Record<string, string> = {};
+    url.searchParams.forEach((value, key) => {
+      params[key] = value;
+    });
+
+    // Parse body based on content type
+    let body: any = null;
+    const contentType = c.req.header("content-type");
+
+    if (method !== "GET" && method !== "HEAD") {
+      try {
+        if (contentType?.includes("application/json")) {
+          body = await c.req.json();
+        } else if (contentType?.includes("application/x-www-form-urlencoded")) {
+          body = await c.req.parseBody();
+        } else {
+          body = await c.req.text();
+        }
+      } catch (error) {
+        console.warn("Failed to parse callback request body:", error);
+        body = await c.req.text();
+      }
+    }
+
+    const result = await Webhook.Handle(c.env.CALLBACKS, token, {
+      method,
+      headers,
+      params,
+      body,
+    });
+
+    // Return the result from the callback function
+    if (result) {
+      // @ts-ignore
+      return c.json(result);
+    } else {
+      return new Response("OK", { status: 200 });
+    }
+  } catch (error) {
+    console.error("Error processing callback:", error);
+    return new Response("Internal server error", { status: 500 });
+  }
+});
+
+// Auth callback endpoint - handles OAuth redirects
+app.post("/auth/callback", async (c) => {
+  try {
+    return await Auth.HandleOauthCallback(
+      c.env.STORAGE,
+      c.env.CALLBACKS,
+      c.req.query(),
+      c.env
+    );
+  } catch (error) {
+    console.error("Error processing auth callback:", error);
+    return new Response("Internal server error", { status: 500 });
+  }
+});
+
+// Callback link endpoint - handles activity link callbacks
+app.post("/callback/link/:token", async (c) => {
+  try {
+    const token = c.req.param("token");
+    if (!token) {
+      return new Response("Bad request (missing token)", { status: 400 });
+    }
+
+    const link = await c.req.json();
+    if (!link) {
+      return new Response("Bad request (missing link data)", { status: 400 });
+    }
+
+    const result = await CallbackTool.HandleLinkCallback(
+      c.env.CALLBACKS,
+      token,
+      link
+    );
+
+    if (result) {
+      return c.json(result);
+    } else {
+      return c.json({ success: true });
+    }
+  } catch (error) {
+    console.error("Error processing link callback:", error);
+    return new Response("Internal server error", { status: 500 });
+  }
+});
+
+const AuthUrlRequestSchema = z.object({
+  provider: z.string(),
+  level: z.string(),
+  scopes: z.array(z.string()),
+  callback: z.string().optional(),
+  redirectUri: z.url(),
+  platform: z.enum(["ios", "android", "desktop"]).optional(),
+});
+
+// Auth URL generation endpoint - generates platform-specific auth URLs
+app.get("/auth/url", async (c) => {
+  try {
+    // Use queries() to handle array parameters like scopes correctly
+    const { scopes } = c.req.queries();
+    const parseResult = AuthUrlRequestSchema.safeParse({
+      ...c.req.query(),
+      ...(scopes ? { scopes } : {}),
+    });
+
+    if (!parseResult.success) {
+      return handleValidationError(parseResult.error);
+    }
+
+    const {
+      provider,
+      level,
+      scopes: requestScopes,
+      callback,
+      redirectUri,
+      platform,
+    } = parseResult.data;
+
+    // Use the scopes from the request or from query parameters
+    const scopesToUse = requestScopes?.length > 0 ? requestScopes : scopes;
+
+    const result = await Auth.GenerateAuthUrl({
+      provider: provider as AuthProvider,
+      level: level as any, // AuthLevel type
+      scopes: scopesToUse,
+      callback: callback as Callback | undefined,
+      redirectUri,
+      platform,
+      env: c.env,
+      storage: c.env.STORAGE, // DurableObject namespace for global storage
+    });
+
+    if (!result) {
+      return new Response("No client ID configured for this platform", {
+        status: 400,
+      });
+    }
+
+    return c.json(result);
+  } catch (error) {
+    console.error("Error generating auth URL:", error);
+    if (error instanceof Error) {
+      return new Response(`Error generating auth URL: ${error.message}`, {
+        status: 400,
+      });
+    }
+    return new Response("Internal server error", { status: 500 });
+  }
+});
+
+const ToolSchema: z.ZodType<{
+  id: string;
+  tools?: { id: string; tools?: any }[];
+}> = z.lazy(() =>
+  z.object({
+    id: z.string(),
+    tools: z.array(ToolSchema).optional(),
+  })
+);
+
+// Export types for external use
+export type {
+  ActivityItem,
+  PriorityItem,
+  SessionItem,
+  UpdateItem,
+} from "./types";
+
 const DatabaseUpdateRequestSchema = z.object({
-  item: z.object({
-    id: z.string().optional(),
-    created_by: z.string().optional(),
-    priority_id: z.unknown(),
-    do_at: z.unknown(),
-    done_at: z.string().nullable().optional(),
-    note: z.string().nullable().optional(),
-    title: z.string().nullable().optional(),
-    parent_id: z.string().nullable().optional(),
-    path: z.unknown().optional(),
-    pinned: z.boolean().optional(),
-  }),
+  type: z.enum(["activity", "priority", "session"]),
+  event: z.enum(["created", "updated", "deleted"]),
+  item: ItemSchema,
   agents: z.array(
     z.object({
       agent_id: z.string(),
       priority_agent_id: z.string(),
       config: z.record(z.string(), z.any()).optional(),
-      tools: z
-        .array(
-          z.object({
-            id: z.string(),
-            tool: z.string().optional(),
-            account: z.string().optional(),
-          })
-        )
-        .optional(),
+      tools: z.array(ToolSchema).optional(),
     })
   ),
+  users: z
+    .array(
+      z.object({
+        user_id: z.string(),
+      })
+    )
+    .optional(),
+  timestamp: z.number().optional(),
+  table: z.string().optional(),
 });
+
+export type DatabaseUpdateRequest = z.infer<typeof DatabaseUpdateRequestSchema>;
 
 app.post("/_/update", async (c) => {
   const rawBody = await c.req.json();
   const parseResult = DatabaseUpdateRequestSchema.safeParse(rawBody);
   if (!parseResult.success) {
+    console.warn("Validation error:", parseResult.error);
     return handleValidationError(parseResult.error);
   }
   const body = parseResult.data;
-  const activity = body.item;
 
-  for (const agent of body.agents) {
-    Sentry.withScope((scope) => {
-      scope.setExtra("agent-id", agent.agent_id);
-      Sentry.captureMessage(agent.agent_id, "error");
-    });
-    try {
-      const tools = createTools({
-        dependencies: agent.tools || [],
-        ai: c.env.AI,
-        supabase: c.var.supabase,
-        priorityId: String(activity.priority_id),
-        priorityAgentId: agent.priority_agent_id,
-        config: agent.config || {},
-      });
-      await c.env.AGENT_RUNNER.activity(agent.agent_id, tools, {
-        id: String(activity.id || ""),
-        createdBy: String(activity.created_by || ""),
-        priorityId: String(activity.priority_id),
-        doOn: activity.do_on ? String(activity.do_on) : undefined,
-        doneAt: activity.done_at
-          ? new Date(String(activity.done_at))
-          : undefined,
-        note: activity.note ? String(activity.note) : undefined,
-        title: activity.title ? String(activity.title) : undefined,
-        parentId: activity.parent_id ? String(activity.parent_id) : undefined,
-        path: String(activity.path || ""),
-        pinned: Boolean(activity.pinned),
-      });
-    } catch (error) {
-      if (error instanceof Error) {
-        console.error(
-          `Error processing activity for agent ${agent.agent_id}: ${error.message}`
-        );
-        return new Response(
-          `Error processing activity for agent ${agent.agent_id}: ${error.message}`,
-          { status: 400 }
-        );
-      }
-      throw error;
-    }
-  }
+  // Add message to the updates queue for processing
+  await c.env.UPDATES_QUEUE.send({
+    type: body.type,
+    event: body.event,
+    item: body.item,
+    agents: body.agents,
+    users: body.users,
+    timestamp: body.timestamp,
+    table: body.table,
+  });
+
   return c.json({ success: true });
 });
 
@@ -501,7 +513,6 @@ const DatabaseActivateRequestSchema = z.object({
   agent_id: z.string(),
   priority_agent_id: z.string(),
   priority_id: z.string(),
-  config: z.record(z.string(), z.any()).optional(),
   tools: z
     .array(
       z.object({
@@ -521,15 +532,23 @@ app.post("/_/activate", async (c) => {
   }
   const body = parseResult.data;
   try {
-    const tools = createTools({
-      dependencies: body.tools || [],
-      ai: c.env.AI,
-      supabase: c.var.supabase,
-      priorityId: body.priority_id,
-      priorityAgentId: body.priority_agent_id,
-      config: body.config || {},
-    });
-    await c.env.AGENT_RUNNER.activate(body.agent_id, tools, {
+    const tools = createTools(
+      {
+        path: [body.agent_id],
+        dependencies: body.tools || [],
+      },
+      {
+        ai: c.env.AI,
+        supabase: c.var.supabase,
+        priorityId: body.priority_id,
+        priorityAgentId: body.priority_agent_id,
+        storage: c.env.STORAGE,
+        callbacks: c.env.CALLBACKS,
+        env: c.env,
+        agents: agentFactory(c.env),
+      }
+    );
+    await agentFactory(c.env)(body.agent_id).activate(tools, {
       id: body.priority_id,
     });
     return c.json({ success: true });
@@ -544,6 +563,32 @@ app.post("/_/activate", async (c) => {
   }
 });
 
+// Queue consumer handler for run callbacks and updates
+export async function queue(
+  batch: MessageBatch<QueueMessage>,
+  env: Bindings,
+  _ctx: ExecutionContext
+): Promise<void> {
+  // Use batch.queue to distinguish between run and updates queues
+  switch (batch.queue) {
+    case "run-development":
+    case "run-production":
+      await Run.processQueue(env, batch as MessageBatch<RunMessage>);
+      break;
+
+    case "updates-development":
+    case "updates-production":
+      await processUpdates(batch as MessageBatch<UpdateMessage>, env);
+      break;
+
+    default:
+      console.error(`Unknown queue: ${batch.queue}`, {
+        queue: batch.queue,
+        messageCount: batch.messages.length,
+      });
+  }
+}
+
 export default withSentry(
   (env) => ({
     dsn: (env as Bindings).SENTRY_DSN,
@@ -552,5 +597,8 @@ export default withSentry(
     environment: ENV,
     enabled: ENV !== "development",
   }),
-  app as any
+  {
+    ...(app as any),
+    queue,
+  }
 );

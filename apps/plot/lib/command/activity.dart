@@ -59,23 +59,6 @@ class ChangeCurrentActivity extends ActivityCommand {
   }
 }
 
-class ActivityGroup extends CommandGroup {
-  ActivityGroup({required super.title, required this.builder, this.priorityId});
-
-  final Command Function(Activity activity) builder;
-  final PriorityId? priorityId;
-
-  @override
-  Future<List<Command>> list({String? search}) async {
-    final all = (await Activity.get(
-      priorityId: priorityId,
-      order: ActivityOrder.recent,
-      search: search,
-    )).map((activity) => builder(activity)).toList();
-    return CommandGroup.filter(all, search);
-  }
-}
-
 class OpenActivity extends Command {
   OpenActivity(Activity activity)
     // ignore: prefer_initializing_formals
@@ -160,9 +143,33 @@ class StartActivity extends _UpdateActivityCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final start = !activity.doNow;
-    await onUpdate(
-      activity.copyWith(doOn: start ? Value(Date.today()) : const Value(null)),
-    );
+    
+    if (start) {
+      // Starting the task - preserve existing scheduling type or default to date-based
+      final hasDateTime = activity.at != null;
+      
+      await onUpdate(
+        activity.copyWith(
+          type: ActivityType.task,
+          // If already has datetime scheduling, use current time; otherwise use date-based
+          at: hasDateTime 
+              ? Value(DateTimeRange(DateTime.now(), DateTime.now().add(Duration(hours: 1))))
+              : const Value.absent(),
+          on: !hasDateTime 
+              ? Value(CustomDateRange(Date.today(), null))
+              : const Value.absent(),
+        ),
+      );
+    } else {
+      // Stopping the task - clear scheduling
+      await onUpdate(
+        activity.copyWith(
+          on: const Value(null),
+          at: const Value(null),
+        ),
+      );
+    }
+    
     Posthog().capture(
       eventName: start ? 'Activity Started' : 'Activity Finished',
     );
@@ -185,7 +192,7 @@ class FinishActivity extends _UpdateActivityCommand {
 class ScheduleActivity extends _UpdateActivityCommand {
   ScheduleActivity(super.activity, {required this.when, super.onUpdate})
     : super(
-        title: activity.scheduled ? 'Reschedule' : 'Schedule',
+        title: activity.todo ? 'Reschedule' : 'Schedule',
         icon: PlotIcon.doLater,
       );
 
@@ -193,11 +200,15 @@ class ScheduleActivity extends _UpdateActivityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await onUpdate(activity.copyWith(doOn: Value(when)));
+    await onUpdate(
+      activity.copyWith(
+        type: ActivityType.task,
+        on: Value(CustomDateRange(when, null)),
+        at: const Value(null), // Clear any existing datetime scheduling
+      ),
+    );
     Posthog().capture(
-      eventName: activity.scheduled
-          ? 'Activity Rescheduled'
-          : 'Activity Scheduled',
+      eventName: activity.todo ? 'Activity Rescheduled' : 'Activity Scheduled',
     );
     return const CommandDone();
   }
@@ -294,7 +305,7 @@ class ShowActivityCommands extends ShowCommands {
 
 Command activityPrimaryCommand(Activity activity) => switch (activity) {
   _ when PinActivity._isPinned(activity) => PinActivity(activity),
-  _ when activity.scheduled => FinishActivity(activity),
+  _ when activity.todo => FinishActivity(activity),
   _ when activity.done => MarkActivityIncomplete(activity),
   _ => StartActivity(activity),
 };

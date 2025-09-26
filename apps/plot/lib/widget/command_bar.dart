@@ -106,10 +106,14 @@ class CommandBarState extends State<_CommandBar> {
       if (result is CommandSkipped) {
         return result;
       } else if (result is CommandMessage) {
-        setState(() {
-          _error = result.message;
-        });
-        return const CommandDone();
+        if (result.isError) {
+          setState(() {
+            _error = result.message;
+          });
+          return const CommandDone();
+        } else {
+          // TODO: Show success message in a non-intrusive way
+        }
       }
       Dialog.popAll(context);
       if (result is CommandRoute) {
@@ -171,7 +175,7 @@ class CommandBarState extends State<_CommandBar> {
                           Button.icon(
                             CommandWrapper(
                               secondaryCommand,
-                              run: (_, __) => _executeCommand(secondaryCommand),
+                              run: (_, _) => _executeCommand(secondaryCommand),
                             ),
                           ),
                       ],
@@ -241,7 +245,7 @@ class CommandBarState extends State<_CommandBar> {
         if (currentIndex == index) {
           return CommandWrapper(
             command,
-            run: (_, __) => _executeCommand(command),
+            run: (_, _) => _executeCommand(command),
           );
         }
         currentIndex++;

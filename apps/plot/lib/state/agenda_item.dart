@@ -46,14 +46,14 @@ class Agenda extends Equatable {
     List<Activity> buildBlock({
       required List<Activity> activities,
       required DateTimeRange at,
-      Event? event,
+      Activity? activity,
     }) {
       if (at.includes(DateTime.now())) {
         nowIndex = agendaItems.length;
       }
-      if (event != null) {
+      if (activity != null) {
         agendaItems.add(
-          HeaderAgendaItem(event: event, priority: event.priority),
+          HeaderAgendaItem(activity: activity, priority: activity.priority),
         );
       }
 
@@ -62,7 +62,7 @@ class Agenda extends Equatable {
       // Filter activities to include only those doneAt/createdAt within the range (unless also doAt for the same day)
       final remainingActivities = <Activity>[];
       for (final activity in activities) {
-        if (at.end.isAfter(DateTime.now()) && activity.scheduled) {
+        if (at.end?.isAfter(DateTime.now()) == true && activity.todo) {
           scheduledActivities.add(activity);
         } else if (at.includes(activity.doneAt ?? activity.createdAt)) {
           pastActivities.add(activity);
@@ -78,8 +78,7 @@ class Agenda extends Equatable {
         // Group activities by priority and add headers
         final priorityGroups = <Priority?, List<Activity>>{};
         for (final activity in activitiesInRange) {
-          final activityPriority = priorities[activity.priorityId];
-          priorityGroups.putIfAbsent(activityPriority, () => []).add(activity);
+          priorityGroups.putIfAbsent(activity.priority, () => []).add(activity);
         }
 
         // Sort priority groups with context priority last
@@ -134,45 +133,43 @@ class Agenda extends Equatable {
       }
 
       // Iterate through each time block in the day
-      Event? previous;
+      Activity? previous;
       var items = <AgendaItem>[];
       for (int i = 0; i < scheduledDay.events.length; i++) {
         var current = scheduledDay.events[i];
 
         // Handle gap between events
-        if (current.start.isAfter(
-          previous?.end ?? scheduledDay.date.toStart(),
-        )) {
+        final previousEnd = previous?.at?.end ?? scheduledDay.date.toStart();
+        if (current.at?.start?.isAfter(previousEnd) == true) {
           activities = buildBlock(
             activities: activities,
-            at: DateTimeRange(
-              previous?.end ?? scheduledDay.date.toStart(),
-              current.start,
-            ),
-            event: null,
+            at: DateTimeRange(previousEnd, current.at!.start),
+            activity: null,
           );
         }
 
         // Current event block
-        activities = buildBlock(
-          activities: activities,
-          at: current.at,
-          event: current,
-        );
+        if (current.at != null) {
+          activities = buildBlock(
+            activities: activities,
+            at: current.at!,
+            activity: current,
+          );
+        }
         agendaItems.addAll(items);
 
         previous = current;
       }
       // Handle gap after last event
       if (previous == null ||
-          previous.end.isBefore(scheduledDay.date.toEnd())) {
+          previous.at?.end?.isBefore(scheduledDay.date.toEnd()) == true) {
         activities = buildBlock(
           activities: activities,
           at: DateTimeRange(
-            previous?.end ?? scheduledDay.date.toStart(),
+            previous?.at?.end ?? scheduledDay.date.toStart(),
             scheduledDay.date.toEnd(),
           ),
-          event: null,
+          activity: null,
         );
       }
     }
@@ -211,13 +208,13 @@ class ActivityAgendaItem extends AgendaItem {
 }
 
 class HeaderAgendaItem extends AgendaItem {
-  final Event? event;
+  final Activity? activity;
   final Priority? priority;
   final Date? date;
   final bool now;
 
   const HeaderAgendaItem({
-    this.event,
+    this.activity,
     this.priority,
     this.date,
     this.now = false,
@@ -232,5 +229,5 @@ class HeaderAgendaItem extends AgendaItem {
   }
 
   @override
-  List<Object?> get props => [event, priority, date, now];
+  List<Object?> get props => [activity, priority, date, now];
 }

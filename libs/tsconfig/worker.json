@@ -11,15 +11,13 @@
     ],
     "module": "ESNext",
     "types": [
+      "@cloudflare/workers-types",
       "./worker-configuration.d.ts",
       "../../libs/tsconfig/workers.d.ts"
     ],
     "paths": {
-      "@plotday/sdk": [
-        "../../libs/agents/sdk"
-      ],
-      "@plotday/tools/*": [
-        "../../libs/agents/tools/*"
+      "@plotday/agent": [
+        "../../libs/agent"
       ]
     },
     "resolveJsonModule": true,

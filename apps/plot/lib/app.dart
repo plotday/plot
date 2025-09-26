@@ -8,7 +8,6 @@ import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'logging.dart';
-import 'router.dart';
 import 'widget/window.dart';
 import 'widget/widget.dart';
 import 'page/loading.dart';
@@ -23,7 +22,6 @@ class App extends StatefulWidget {
 
 class AppState extends State<App> with WidgetsBindingObserver {
   late Future<bool> layout;
-  AppRouter router = AppRouter();
 
   @override
   void initState() {
@@ -76,7 +74,7 @@ class AppState extends State<App> with WidgetsBindingObserver {
                           return const LoadingPage();
                         }
                         return RootProvider(
-                          child: PlatformBuilder(
+                          builder: (router) => PlatformBuilder(
                             builder: (context) => AdaptiveTheme(
                               light: material.ThemeData(
                                 colorScheme: material.ColorScheme.fromSeed(

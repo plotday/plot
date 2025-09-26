@@ -1,0 +1,7 @@
+{
+  "id": "run",
+  "name": "Run",
+  "description": "Execute callback functions immediately or at scheduled times using Cloudflare Queues for extended runtime capabilities.",
+  "license": "MIT",
+  "tools": []
+}

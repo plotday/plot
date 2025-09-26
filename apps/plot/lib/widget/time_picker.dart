@@ -234,7 +234,7 @@ class TimeRangePicker extends StatelessWidget {
           onChanged: (time) {
             onChanged(
               value.copyWith(
-                start: value.start.copyWith(
+                start: value.start?.copyWith(
                   hour: time.hour,
                   minute: time.minute,
                 ),
@@ -242,21 +242,21 @@ class TimeRangePicker extends StatelessWidget {
               ),
             );
           },
-          value: value.start.toTimeOfDay(),
+          value: value.start?.toTimeOfDay() ?? TimeOfDay.now(),
         ),
         const Text('→'),
         TimePicker(
           onChanged: (time) {
             onChanged(
               value.copyWith(
-                end: time > value.start.toTimeOfDay()
-                    ? value.start.at(time)
-                    : value.start.addDays(1).at(time),
+                end: value.start != null && time > value.start!.toTimeOfDay()
+                    ? value.start!.at(time)
+                    : value.start?.addDays(1).at(time),
               ),
             );
           },
-          value: value.end.toTimeOfDay(),
-          after: value.start.toTimeOfDay(),
+          value: value.end?.toTimeOfDay() ?? TimeOfDay.now(),
+          after: value.start?.toTimeOfDay(),
         ),
       ],
     );

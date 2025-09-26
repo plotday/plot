@@ -1,0 +1,20 @@
+name = "agent-chat"
+main = "src/index.ts"
+compatibility_date = "2025-07-05"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
+
+[env.development]
+[env.development.define]
+  ENV = '"development"'
+  RELEASE = '"dev"'
+  PACKAGE = '"agent-chat"'
+
+[env.production]
+[env.production.define]
+  ENV = '"production"'
+  RELEASE = '"prod"'
+  PACKAGE = '"agent-chat"'
+
+[observability.logs]
+  enabled = true

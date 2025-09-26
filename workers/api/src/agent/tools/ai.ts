@@ -1,8 +1,8 @@
-import { RpcTarget } from "cloudflare:workers";
+import type { Ai as IAi, LlmMessage } from "@plotday/agent/tools/ai";
 
-import type { Ai as IAi, LlmMessage } from "@plotday/agents/tools/ai";
+import { Tool } from "./tool";
 
-export class AiImpl extends RpcTarget implements IAi {
+export class AiTool extends Tool implements IAi {
   private ai: Ai;
 
   constructor({ ai }: { ai: Ai }) {
