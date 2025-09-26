@@ -11,8 +11,8 @@
     "lint": "tsc && eslint ."
   },
   "dependencies": {
-    "@react-email/components": "^0.0.31",
-    "@react-email/render": "^1.0.3",
+    "@react-email/components": "^0.5.5",
+    "@react-email/render": "^1.3.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -20,6 +20,6 @@
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
     "@types/react": "^19.0.1",
-    "react-email": "^3.0.4"
+    "react-email": "^4.2.11"
   }
 }
