@@ -137,6 +137,17 @@ class _AuthButtonState extends State<AuthButton> {
     super.initState();
     if (widget.provider == AuthProvider.google) {
       final GoogleSignIn signIn = GoogleSignIn.instance;
+
+      // On web, listen to the user stream to handle sign-in from the rendered button
+      if (kIsWeb && !signIn.supportsAuthenticate()) {
+        signIn.authenticationEvents.listen((event) {
+          log.info('Google sign-in event: $event');
+          if (event is GoogleSignInAuthenticationEventSignIn) {
+            _onGoogleSignIn(event.user);
+          }
+        });
+      }
+
       if (widget.autoSignIn) {
         unawaited(() async {
           final account = await signIn.attemptLightweightAuthentication();
