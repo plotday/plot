@@ -1,8 +1,8 @@
-DROP FUNCTION IF EXISTS "public"."user_has_priority_access" (user_id uuid, _priority_path ltree);
+DROP FUNCTION IF EXISTS "public"."user_has_priority_access" (user_id uuid, _priority_path extensions.ltree);
 
 SET check_function_bodies = OFF;
 
-CREATE OR REPLACE FUNCTION public.user_has_priority_access (user_id uuid, target_priority_path ltree)
+CREATE OR REPLACE FUNCTION public.user_has_priority_access (user_id uuid, target_priority_path extensions.ltree)
     RETURNS boolean
     LANGUAGE plpgsql
     STABLE
@@ -55,7 +55,7 @@ CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_id uuid)
                     cu.priority_id = _priority_id);
 $function$;
 
-CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_path ltree)
+CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_path extensions.ltree)
     RETURNS boolean
     LANGUAGE sql
     SECURITY DEFINER
@@ -78,14 +78,25 @@ CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_path ltree)
                         c2.path = _priority_path));
 $function$;
 
-ALTER VIEW "public"."activity_tags" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."activity_children" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."user_activity" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."user_activity_exception" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."user_activity_tags" SET ( security_invoker = TRUE);
-ALTER VIEW "admin"."invitation" SET ( security_invoker = FALSE);
-ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."priority_child" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."user_priority" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."priority_child_agent" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."activity_children" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity_exception" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "admin"."invitation" SET (security_invoker = FALSE);
+
+ALTER VIEW "public"."priority_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_child" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_priority" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_child_agent" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."actor" SET (security_invoker = TRUE);
+

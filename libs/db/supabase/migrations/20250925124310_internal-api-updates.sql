@@ -2,11 +2,11 @@ DROP TRIGGER IF EXISTS "activity_change_api_call" ON "public"."activity";
 
 DROP POLICY "Users can edit agents in their accessible priorities" ON "public"."priority_agent";
 
-DROP FUNCTION IF EXISTS "public"."notify_user_for_activity" ();
+DROP FUNCTION IF EXISTS "public"."notify_user_for_activity" () CASCADE;
 
-DROP FUNCTION IF EXISTS "public"."notify_user_for_priority" ();
+DROP FUNCTION IF EXISTS "public"."notify_user_for_priority" () CASCADE;
 
-DROP FUNCTION IF EXISTS "public"."notify_user_for_session" ();
+DROP FUNCTION IF EXISTS "public"."notify_user_for_session" () CASCADE;
 
 SET check_function_bodies = OFF;
 
@@ -109,7 +109,7 @@ CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_id uuid)
         user_has_priority_access (auth.uid (), _priority_id);
 $function$;
 
-CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_path ltree)
+CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_path extensions.ltree)
     RETURNS boolean
     LANGUAGE sql
     SECURITY DEFINER
@@ -207,14 +207,25 @@ CREATE TRIGGER activity_change_api_call
     FOR EACH ROW
     EXECUTE FUNCTION notify_internal_api_for_activity ();
 
-ALTER VIEW "public"."activity_tags" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."activity_children" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."user_activity" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."user_activity_exception" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."user_activity_tags" SET ( security_invoker = TRUE);
-ALTER VIEW "admin"."invitation" SET ( security_invoker = FALSE);
-ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."priority_child" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."user_priority" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."priority_child_agent" SET ( security_invoker = TRUE);
-ALTER VIEW "public"."actor" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."activity_children" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity_exception" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "admin"."invitation" SET (security_invoker = FALSE);
+
+ALTER VIEW "public"."priority_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_child" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_priority" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_child_agent" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."actor" SET (security_invoker = TRUE);
+

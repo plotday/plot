@@ -6,7 +6,7 @@ ALTER TABLE "public"."activity_exception" ENABLE ROW LEVEL SECURITY;
 
 SET check_function_bodies = OFF;
 
-CREATE OR REPLACE FUNCTION public.user_has_priority_access (user_id uuid, _priority_path ltree)
+CREATE OR REPLACE FUNCTION public.user_has_priority_access (user_id uuid, _priority_path extensions.ltree)
     RETURNS boolean
     LANGUAGE sql
     SECURITY DEFINER
@@ -20,7 +20,7 @@ CREATE OR REPLACE FUNCTION public.user_has_priority_access (user_id uuid, _prior
                     path = _priority_path LIMIT 1));
 $function$;
 
-CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_path ltree)
+CREATE OR REPLACE FUNCTION public.can_access_priority (_priority_path extensions.ltree)
     RETURNS boolean
     LANGUAGE sql
     AS $function$
@@ -129,6 +129,8 @@ BEGIN
 END;
 $function$;
 
+DROP POLICY "Users can delete activity exceptions for their own activities" ON "public"."activity_exception";
+
 CREATE POLICY "Users can delete activity exceptions for their own activities" ON "public"."activity_exception" AS permissive
     FOR DELETE TO public
         USING ((EXISTS (
@@ -137,6 +139,8 @@ CREATE POLICY "Users can delete activity exceptions for their own activities" ON
             FROM
                 activity
             WHERE ((activity.id = activity_exception.activity_id) AND (activity.author_id = user_contact_id ()) AND user_has_priority_access (auth.uid (), activity.priority_id)))));
+
+DROP POLICY "Users can insert activity exceptions for accessible activities" ON "public"."activity_exception";
 
 CREATE POLICY "Users can insert activity exceptions for accessible activities" ON "public"."activity_exception" AS permissive
     FOR INSERT TO public
@@ -147,6 +151,8 @@ CREATE POLICY "Users can insert activity exceptions for accessible activities" O
                 activity
             WHERE ((activity.id = activity_exception.activity_id) AND (activity.author_id = user_contact_id ()) AND user_has_priority_access (auth.uid (), activity.priority_id)))));
 
+DROP POLICY "Users can update activity exceptions for their own activities" ON "public"."activity_exception";
+
 CREATE POLICY "Users can update activity exceptions for their own activities" ON "public"."activity_exception" AS permissive
     FOR UPDATE TO public
         USING ((EXISTS (
@@ -155,6 +161,8 @@ CREATE POLICY "Users can update activity exceptions for their own activities" ON
             FROM
                 activity
             WHERE ((activity.id = activity_exception.activity_id) AND (activity.author_id = user_contact_id ()) AND user_has_priority_access (auth.uid (), activity.priority_id)))));
+
+DROP POLICY "Users can view activity exceptions for accessible activities" ON "public"."activity_exception";
 
 CREATE POLICY "Users can view activity exceptions for accessible activities" ON "public"."activity_exception" AS permissive
     FOR SELECT TO public
