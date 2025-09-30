@@ -40,14 +40,21 @@ export class Broadcast extends DurableObject<Bindings> {
       return new Response("Missing clientId parameter", { status: 400 });
     }
 
-    // Get JWT token from Authorization header or query parameter
-    let token = request.headers.get("Authorization");
-    if (token?.startsWith("Bearer ")) {
-      token = token.replace(/\s*Bearer\s+/, "");
-    } else {
-      token = url.searchParams.get("token");
+    // Extract token from Sec-WebSocket-Protocol header
+    const protocols = request.headers.get("Sec-WebSocket-Protocol");
+    if (!protocols) {
+      return new Response("Missing Sec-WebSocket-Protocol header", {
+        status: 401,
+      });
     }
 
+    // Parse protocols - format: "plot-v1, {access_token}/{refresh_token}"
+    const protocolList = protocols.split(",").map((p) => p.trim());
+    if (protocolList.length < 2 || protocolList[0] !== "plot-v1") {
+      return new Response("Invalid protocol format", { status: 401 });
+    }
+
+    const token = protocolList[1];
     if (!token) {
       return new Response("Missing authentication token", { status: 401 });
     }

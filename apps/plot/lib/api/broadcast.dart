@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:web_socket_channel/io.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'package:plot/base.dart';
 import 'package:plot/env.dart';
 import 'package:plot/logging.dart';
+import 'package:plot/api/broadcast_channel.dart';
 
 typedef MessageHandler = Future<void> Function(Map<String, dynamic> message);
 
@@ -94,9 +94,9 @@ class BroadcastClient {
 
       log.info("Connecting to WebSocket: $wsUri");
 
-      _channel = IOWebSocketChannel.connect(
+      _channel = createWebSocketChannel(
         wsUri,
-        headers: {'Authorization': 'Bearer $token'},
+        ['plot-v1', token],
       );
 
       // Listen for messages
