@@ -1,6 +1,7 @@
 {
   "name": "Plot",
   "short_name": "Plot",
+  "description": "A focused workspace for progress on your priorities",
   "icons": [
     {
       "src": "/assets/web-app-manifest-192x192.png?v=20250908",
