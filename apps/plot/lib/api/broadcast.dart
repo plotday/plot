@@ -85,19 +85,19 @@ class BroadcastClient {
         return;
       }
 
-      final token = '${session!.accessToken}/${session.refreshToken}';
+      final token = '${session!.accessToken}|${session.refreshToken}';
+      final userId = session.user.id;
 
       // Build WebSocket URL
-      final wsUri = Uri.parse(Env.apiRoot.replaceFirst('http', 'ws'))
-          .resolve('/updates')
+      //
+
+      final wsUri = Uri.parse(_wsScheme(Env.apiRoot))
+          .resolve('/updates/$userId')
           .replace(queryParameters: {'clientId': _clientId.toString()});
 
       log.info("Connecting to WebSocket: $wsUri");
 
-      _channel = createWebSocketChannel(
-        wsUri,
-        ['plot-v1', token],
-      );
+      _channel = createWebSocketChannel(wsUri, ['plot-v1', token]);
 
       // Listen for messages
       _messageSubscription = _channel!.stream.listen(
@@ -206,6 +206,17 @@ class BroadcastClient {
     });
   }
 
+  static String _wsScheme(String apiRoot) {
+    if (apiRoot.startsWith('https://')) {
+      return apiRoot.replaceFirst('https', 'wss');
+    } else if (apiRoot.startsWith('http://')) {
+      return apiRoot.replaceFirst('http', 'ws');
+    } else {
+      // Optionally, throw or handle unexpected input.
+      throw ArgumentError('API root must start with http:// or https://');
+    }
+  }
+
   /// Clean up resources
   void dispose() {
     disconnect();
@@ -216,4 +227,3 @@ class BroadcastClient {
     _instance = null;
   }
 }
-

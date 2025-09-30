@@ -36,8 +36,16 @@ export class Broadcast extends DurableObject<Bindings> {
     const url = new URL(request.url);
     const clientId = url.searchParams.get("clientId");
 
+    // Extract userId from the URL path
+    const pathParts = url.pathname.split("/");
+    const userIdFromPath = pathParts[pathParts.length - 1];
+
     if (!clientId) {
       return new Response("Missing clientId parameter", { status: 400 });
+    }
+
+    if (!userIdFromPath) {
+      return new Response("Missing userId in path", { status: 400 });
     }
 
     // Extract token from Sec-WebSocket-Protocol header
@@ -48,7 +56,7 @@ export class Broadcast extends DurableObject<Bindings> {
       });
     }
 
-    // Parse protocols - format: "plot-v1, {access_token}/{refresh_token}"
+    // Parse protocols - format: "plot-v1, {access_token}|{refresh_token}"
     const protocolList = protocols.split(",").map((p) => p.trim());
     if (protocolList.length < 2 || protocolList[0] !== "plot-v1") {
       return new Response("Invalid protocol format", { status: 401 });
@@ -59,8 +67,8 @@ export class Broadcast extends DurableObject<Bindings> {
       return new Response("Missing authentication token", { status: 401 });
     }
 
-    // Parse tokens (access_token/refresh_token format)
-    const [access_token, refresh_token] = token.split("/");
+    // Parse tokens (access_token|refresh_token format)
+    const [access_token, refresh_token] = token.split("|");
     if (!access_token || !refresh_token) {
       return new Response("Invalid token format", { status: 401 });
     }
@@ -77,11 +85,20 @@ export class Broadcast extends DurableObject<Bindings> {
         return new Response("Authentication failed", { status: 401 });
       }
 
+      // Validate that the authenticated user matches the userId in the path
+      if (user.id !== userIdFromPath) {
+        return new Response("Unauthorized: User ID mismatch with path", {
+          status: 403,
+        });
+      }
+
       // Set or validate the user ID for this Durable Object instance
       if (this.userId === null) {
         this.userId = user.id;
       } else if (user.id !== this.userId) {
-        return new Response("Unauthorized: User ID mismatch", { status: 403 });
+        return new Response("Unauthorized: User ID mismatch with DO", {
+          status: 403,
+        });
       }
     } catch (error) {
       console.error("Authentication error:", error);

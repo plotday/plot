@@ -50,20 +50,27 @@ declare module "hono" {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-// Auth middleware
+// CORS middleware
 app.use((c, next) => {
-  if (c.req.path !== "/updates") {
-    return cors({
-      origin: [
-        "http://localhost:8788",
-        "https://preview.plot.day",
-        "https://app.plot.day",
-      ],
-    })(c, next);
+  if (c.req.path.startsWith("/updates")) {
+    // Skip CORS for WebSocket endpoints
+    return next();
   }
-  return next();
+  return cors({
+    origin: [
+      "http://localhost:8788",
+      "https://preview.plot.day",
+      "https://app.plot.day",
+    ],
+  })(c, next);
 });
+// Auth middleware
 app.use("*", async (c, next) => {
+  if (c.req.path.startsWith("/updates")) {
+    // WebSocket protocol doesn't support custom headers, so we're using the
+    // Sec-WebSocket-Protocol method, checked in the handler.
+    return next();
+  }
   if (new URL(c.req.url).pathname.startsWith("/_/")) {
     // Authenticate requests from the DB using HMAC
     const signature = c.req.header("X-Plot-Signature");
@@ -138,8 +145,8 @@ app.use("*", async (c, next) => {
 });
 
 // WebSocket broadcast endpoint
-app.get("/updates", async (c) => {
-  const userId = c.var.user.id;
+app.get("/updates/:userId", async (c) => {
+  const userId = c.req.param("userId");
 
   // Get the Broadcast DurableObject for this user
   const broadcastId = c.env.BROADCAST.idFromName(userId);
