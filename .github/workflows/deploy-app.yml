@@ -54,7 +54,7 @@ jobs:
           cat > apps/plot/.env << EOF
           SUPABASE_URL=${{ env.SUPABASE_URL }}
           SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }}
-          API_ROOT=https://sync-api.plot.day
+          API_ROOT=https://api.plot.day
           SENTRY_PROJECT=app
           SENTRY_AUTH_TOKEN=${{ env.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG=${{ env.SENTRY_ORG }}
