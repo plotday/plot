@@ -1,10 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'command.dart';
+import 'logging.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
+import 'package:plot/state/layout.dart';
 
 abstract class ActivityCommand extends Command {
   ActivityCommand(this.activity)
@@ -55,7 +58,14 @@ class ChangeCurrentActivity extends ActivityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    return CommandRoute(ActivityRoute(activityId: activity?.id));
+    // HACK: We need to make the panel visible before navigating to it
+    log.info(
+      'ChangeCurrentActivity: ${activity!.priority.id.toShortString()} / ${activity!.id.toShortString()}',
+    );
+    context.read<LayoutBloc>().setRightPanelVisible(true);
+    return CommandRoute(
+      ActivityRoute(activityIdString: activity!.id.toShortString()),
+    );
   }
 }
 
@@ -63,19 +73,21 @@ class OpenActivity extends Command {
   OpenActivity(Activity activity)
     // ignore: prefer_initializing_formals
     : activity = activity,
-      activityId = activity.id,
       super(title: "Open", icon: PlotIcon.open);
 
-  OpenActivity.byId(this.activityId)
-    : activity = null,
-      super(title: "Open", icon: PlotIcon.open);
-
-  final Activity? activity;
-  final ActivityId activityId;
+  final Activity activity;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    return CommandRoute(ActivityRoute(activityId: activityId));
+    return CommandRoute(
+      PriorityRoute(
+        priorityIdString: activity.priority.id.toShortString(),
+        children: [
+          ActivityRoute(activityIdString: activity.id.toShortString()),
+        ],
+      ),
+      replace: true,
+    );
   }
 }
 
@@ -89,7 +101,15 @@ class AddActivity extends Command {
     final activity = await _activity;
     await activity.copyWith(draft: false).save();
     Posthog().capture(eventName: 'Activity Added');
-    return CommandRoute(ActivityRoute(activityId: activity.id), replace: true);
+    return CommandRoute(
+      PriorityRoute(
+        priorityIdString: activity.priority.id.toShortString(),
+        children: [
+          ActivityRoute(activityIdString: activity.id.toShortString()),
+        ],
+      ),
+      replace: true,
+    );
   }
 }
 
@@ -143,19 +163,24 @@ class StartActivity extends _UpdateActivityCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final start = !activity.doNow;
-    
+
     if (start) {
       // Starting the task - preserve existing scheduling type or default to date-based
       final hasDateTime = activity.at != null;
-      
+
       await onUpdate(
         activity.copyWith(
           type: ActivityType.task,
           // If already has datetime scheduling, use current time; otherwise use date-based
-          at: hasDateTime 
-              ? Value(DateTimeRange(DateTime.now(), DateTime.now().add(Duration(hours: 1))))
+          at: hasDateTime
+              ? Value(
+                  DateTimeRange(
+                    DateTime.now(),
+                    DateTime.now().add(Duration(hours: 1)),
+                  ),
+                )
               : const Value.absent(),
-          on: !hasDateTime 
+          on: !hasDateTime
               ? Value(CustomDateRange(Date.today(), null))
               : const Value.absent(),
         ),
@@ -163,13 +188,10 @@ class StartActivity extends _UpdateActivityCommand {
     } else {
       // Stopping the task - clear scheduling
       await onUpdate(
-        activity.copyWith(
-          on: const Value(null),
-          at: const Value(null),
-        ),
+        activity.copyWith(on: const Value(null), at: const Value(null)),
       );
     }
-    
+
     Posthog().capture(
       eventName: start ? 'Activity Started' : 'Activity Finished',
     );

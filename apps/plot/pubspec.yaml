@@ -45,7 +45,6 @@ dependencies:
   http: ^1.2.0
   sentry_dart_plugin: ^3.1.1
   flutter_web_auth_2: ^4.1.0
-  flutter_adaptive_scaffold: ^0.1.8
   rxdart: ^0.28.0
   collection: ^1.18.0
   macos_ui: ^2.0.7
@@ -60,6 +59,8 @@ dependencies:
   device_info_plus: ^12.1.0
   flutter_resizable_container: ^4.2.0
   macos_window_utils: ^1.6.1
+  window_manager: ^0.5.1
+  screen_retriever: ^0.2.0
   font_awesome_flutter:
     git:
       url: git@github.com:plotday/font_awesome_flutter.git
@@ -87,7 +88,7 @@ dependencies:
   rrule: ^0.2.17
   change_case: ^2.2.0
   flutter_svg: ^2.2.1
-  google_sign_in_web: ^1.0.0
+  google_sign_in_web: ^1.0.1
   web_socket_channel: ^3.0.1
 
 dev_dependencies:

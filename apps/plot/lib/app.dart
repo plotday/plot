@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:plot/state/root_provider.dart';
@@ -7,10 +6,8 @@ import 'package:adaptive_theme/adaptive_theme.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:macos_ui/macos_ui.dart' as macos;
 
-import 'logging.dart';
 import 'widget/window.dart';
 import 'widget/widget.dart';
-import 'page/loading.dart';
 import 'command/command.dart';
 
 class App extends StatefulWidget {
@@ -20,103 +17,56 @@ class App extends StatefulWidget {
   AppState createState() => AppState();
 }
 
-class AppState extends State<App> with WidgetsBindingObserver {
-  late Future<bool> layout;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-
-    final layoutCompleter = Completer<bool>();
-    layout = layoutCompleter.future;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        await Window.init();
-        if (!mounted) {
-          throw "Context is not mounted";
-        }
-        return layoutCompleter.complete(true);
-      } catch (error) {
-        layoutCompleter.completeError(error);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
+class AppState extends State<App> {
   @override
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.ltr,
       child: ColourScheme(
-        child: 
-        material.ScaffoldMessenger (
-          child: 
-            Builder(
-              builder: (context) => Window(
-                child: CommandProvider(
-                  child: FTheme(
-                    data: buildTheme(context.colour),
-                    child: FutureBuilder(
-                      future: layout,
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          log.severe(snapshot.error);
-                          log.warning(snapshot.stackTrace);
-                          return const Center(child: Text("Something went wrong"));
-                        }
-                        if (!snapshot.hasData) {
-                          return const LoadingPage();
-                        }
-                        return RootProvider(
-                          builder: (router) => PlatformBuilder(
-                            builder: (context) => AdaptiveTheme(
-                              light: material.ThemeData(
-                                colorScheme: material.ColorScheme.fromSeed(
-                                  seedColor: const Color(0x002BDD66),
-                                  brightness: material.Brightness.light,
-                                ),
-                              ),
-                              dark: material.ThemeData(
-                                colorScheme: material.ColorScheme.fromSeed(
-                                  seedColor: const Color(0x002BDD66),
-                                  brightness: material.Brightness.dark,
-                                ),
-                              ),
-                              debugShowFloatingThemeButton: true,
-                              initial: AdaptiveThemeMode.system,
-                              builder: (theme, darkTheme) =>
-                                  material.MaterialApp.router(
-                                    title: 'Plot',
-                                    theme: theme,
-                                    darkTheme: darkTheme,
-                                    routerConfig: router.config(),
-                                  ),
-                            ),
-                            macOSBuilder: (context) => macos.MacosApp.router(
-                              title: 'Plot',
-                              theme:
-                                  (context.colour.brightness == Brightness.light
-                                          ? macos.MacosThemeData.light()
-                                          : macos.MacosThemeData.dark())
-                                      .copyWith(
-                                        primaryColor: context.colour.accent,
-                                      ),
-                              debugShowCheckedModeBanner: false,
-                              routerConfig: router.config(),
-                            ),
+        child: Builder(
+          builder: (context) => Window(
+            child: CommandProvider(
+              child: FTheme(
+                data: buildTheme(context.colour),
+                child: RootProvider(
+                  builder: (router) => PlatformBuilder(
+                    builder: (context) => AdaptiveTheme(
+                      light: material.ThemeData(
+                        colorScheme: material.ColorScheme.fromSeed(
+                          seedColor: const Color(0x002BDD66),
+                          brightness: material.Brightness.light,
+                        ),
+                      ),
+                      dark: material.ThemeData(
+                        colorScheme: material.ColorScheme.fromSeed(
+                          seedColor: const Color(0x002BDD66),
+                          brightness: material.Brightness.dark,
+                        ),
+                      ),
+                      debugShowFloatingThemeButton: true,
+                      initial: AdaptiveThemeMode.system,
+                      builder: (theme, darkTheme) =>
+                          material.MaterialApp.router(
+                            title: 'Plot',
+                            theme: theme,
+                            darkTheme: darkTheme,
+                            routerConfig: router.config(),
                           ),
-                        );
-                      },
+                    ),
+                    macOSBuilder: (context) => macos.MacosApp.router(
+                      title: 'Plot',
+                      theme:
+                          (context.colour.brightness == Brightness.light
+                                  ? macos.MacosThemeData.light()
+                                  : macos.MacosThemeData.dark())
+                              .copyWith(primaryColor: context.colour.accent),
+                      debugShowCheckedModeBanner: false,
+                      routerConfig: router.config(),
                     ),
                   ),
                 ),
               ),
+            ),
           ),
         ),
       ),

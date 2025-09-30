@@ -187,7 +187,7 @@ class EditPriorityCommand extends ShowPage {
 }
 
 class ShowPriorityCommands extends ShowCommands {
-  ShowPriorityCommands(Priority priority)
+  ShowPriorityCommands(Priority priority, {bool current = false})
     : super(
         title: 'More Commands',
         icon: PlotIcon.menu,
@@ -196,7 +196,9 @@ class ShowPriorityCommands extends ShowCommands {
             groups: [
               StaticCommandGroup(
                 title: priority.title,
-                commands: priorityCommands(priority),
+                commands: current
+                    ? currentPriorityCommands(priority)
+                    : priorityCommands(priority),
               ),
             ],
           ),

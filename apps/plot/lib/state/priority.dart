@@ -6,6 +6,7 @@ import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/util/list.dart';
+import 'package:plot/page/loading.dart';
 import 'logging.dart';
 
 part 'priority_state.dart';
@@ -130,6 +131,11 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Reload with new priority
     _loadPriority();
+  }
+
+  void setActivity(Activity activity) {
+    if (state.activity == activity) return;
+    emit(state.copyWith(activity: activity));
   }
 
   void _loadPriority() {
@@ -295,4 +301,84 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   final List<StreamSubscription<void>> _subscriptions;
   StreamSubscription<void>? _agendaSubscription;
+}
+
+class PriorityBlocProvider extends StatefulWidget {
+  const PriorityBlocProvider({
+    this.priorityId,
+    this.activityId,
+    this.priority,
+    required this.child,
+    super.key,
+  });
+
+  final PriorityId? priorityId;
+  final ActivityId? activityId;
+  final Priority? priority;
+  final Widget child;
+
+  @override
+  PriorityBlocProviderState createState() => PriorityBlocProviderState();
+}
+
+class PriorityBlocProviderState extends State<PriorityBlocProvider> {
+  late Future<PriorityBloc> _bloc;
+
+  @override
+  void initState() {
+    super.initState();
+    _bloc =
+        (widget.priority != null
+                ? Future.value(widget.priority!)
+                : widget.priorityId != null
+                ? Priority.getOne(widget.priorityId!)
+                : widget.activityId != null
+                ? Activity.getOne(
+                    widget.activityId!,
+                  ).then((activity) => activity.priority)
+                : Future<Priority>.error(
+                    'Either priorityId or activityId must be provided',
+                  ))
+            .then((priority) {
+              return PriorityBloc(priority: priority);
+            });
+  }
+
+  @override
+  void didUpdateWidget(PriorityBlocProvider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.priority != null && widget.priority != oldWidget.priority) {
+      _bloc.then((bloc) {
+        final priority = widget.priority;
+        if (priority == null) return;
+        bloc.setPriority(priority);
+      });
+    } else if (widget.priorityId != null &&
+        widget.priorityId != oldWidget.priorityId) {
+      _bloc.then((bloc) async {
+        final priority = await Priority.getOne(widget.priorityId!);
+        bloc.setPriority(priority);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _bloc.then((bloc) => bloc.close());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: _bloc,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const LoadingPage();
+        }
+        return BlocProvider.value(value: snapshot.data!, child: widget.child);
+      },
+    );
+  }
 }

@@ -5,14 +5,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/page/loading.dart';
 import 'logging.dart';
 
 part 'activity_state.dart';
 
 class ActivityBloc extends Cubit<ActivityState> {
-  ActivityBloc({required Priority priority, Activity? activity})
+  ActivityBloc({required Activity activity})
     : _subscriptions = [],
-      super(ActivityState(context: priority, activity: activity)) {
+      super(ActivityState(activity: activity)) {
     _loadActivity();
   }
 
@@ -37,8 +38,6 @@ class ActivityBloc extends Cubit<ActivityState> {
     return super.close();
   }
 
-  PriorityId get currentId => state.context.id;
-
   Future<void> save(Activity activity) async {
     await activity.save();
   }
@@ -48,7 +47,7 @@ class ActivityBloc extends Cubit<ActivityState> {
       state.copyWith(
         // Create a new draft
         draft: Activity(
-          priority: state.context,
+          priority: state.activity.priority,
           parent: state.activity,
           draft: true,
         ),
@@ -64,35 +63,26 @@ class ActivityBloc extends Cubit<ActivityState> {
     }
 
     _subscriptions.add(
-      Priority.watchOne(state.context.id).listen((priority) {
-        log.info('Priority updated');
-        emit(state.copyWith(context: priority));
+      Activity.watchOne(state.activity.id).listen((watchedActivity) {
+        log.info('Activity updated');
+        emit(state.copyWith(activity: watchedActivity));
       }),
     );
-
-    if (state.activity != null) {
-      _subscriptions.add(
-        Activity.watchOne(state.activity!.id).listen((watchedActivity) {
-          log.info('Activity updated');
-          emit(state.copyWith(activity: watchedActivity));
-        }),
-      );
-    }
 
     _loadActivities();
   }
 
   void _loadActivities() {
-    log.info('Getting activities for ${state.activity?.path}');
+    log.info('Getting activities for ${state.activity.path}');
 
     _subscriptions.add(
       Activity.watch(
-        priorityPath: state.context.path,
-        path: state.activity?.path,
+        priorityId: state.activity.priority.id,
+        path: state.activity.path,
         deleted: state.showArchived,
         filter: state.filter.isNotEmpty ? state.filter : null,
       ).listen((activities) {
-        log.info('Got activities for ${state.activity?.path}');
+        log.info('Got activities for ${state.activity.path}');
 
         // Sort activities by creation/completion date in reverse chronological order
         final sortedActivities = List<Activity>.from(activities);
@@ -141,3 +131,80 @@ class ActivityBloc extends Cubit<ActivityState> {
   final List<StreamSubscription<void>> _subscriptions;
 }
 
+class ActivityBlocProvider extends StatefulWidget {
+  const ActivityBlocProvider({
+    required this.activityId,
+    this.activity,
+    required this.child,
+    super.key,
+  });
+
+  final ActivityId activityId;
+  final Activity? activity;
+  final Widget child;
+
+  @override
+  ActivityBlocProviderState createState() => ActivityBlocProviderState();
+}
+
+class ActivityBlocProviderState extends State<ActivityBlocProvider> {
+  late Future<ActivityBloc> _bloc;
+
+  @override
+  void initState() {
+    super.initState();
+    _bloc =
+        (widget.activity != null
+                ? Future.value(widget.activity!)
+                : Activity.getOne(widget.activityId))
+            .then((activity) {
+              return ActivityBloc(activity: activity);
+            });
+  }
+
+  @override
+  void didUpdateWidget(ActivityBlocProvider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.activity != null && widget.activity != oldWidget.activity) {
+      _bloc.then((bloc) async {
+        final activity = widget.activity;
+        if (activity == null) return;
+        // Create new bloc with updated activity
+        bloc.close();
+        final newBloc = ActivityBloc(activity: activity);
+        setState(() {
+          _bloc = Future.value(newBloc);
+        });
+      });
+    } else if (widget.activityId != oldWidget.activityId) {
+      _bloc.then((bloc) async {
+        bloc.close();
+        final activity = await Activity.getOne(widget.activityId);
+        final newBloc = ActivityBloc(activity: activity);
+        setState(() {
+          _bloc = Future.value(newBloc);
+        });
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _bloc.then((bloc) => bloc.close());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: _bloc,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const LoadingPage();
+        }
+        return BlocProvider.value(value: snapshot.data!, child: widget.child);
+      },
+    );
+  }
+}

@@ -21,7 +21,7 @@ class RootProviderState extends State<RootProvider> {
   final UserBloc userBloc = UserBloc();
   final NowBloc nowBloc = NowBloc();
   final PrioritiesBloc prioritiesBloc = PrioritiesBloc();
-  late final AppRouter router = AppRouter(userBloc);
+  final AppRouter router = AppRouter();
 
   @override
   void initState() {

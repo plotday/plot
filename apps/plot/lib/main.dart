@@ -9,6 +9,7 @@ import 'app.dart';
 import 'env.dart';
 import 'base.dart';
 import 'logging.dart';
+import 'widget/window.dart';
 import 'widget/auth_button.dart';
 
 Future<void> run() async {
@@ -38,10 +39,15 @@ Future<void> run() async {
         print(record.stackTrace);
       }
     });
+    WidgetsFlutterBinding.ensureInitialized();
+    log.info("Starting window init");
+    await Window.init();
+    log.info("Done window init");
     await Env.init();
     await Base.init();
     await AuthButton.init();
     usePathUrlStrategy();
+    log.info("Starting App");
     return runApp(const App());
   } catch (error, stackTrace) {
     log.warning('Startup failed', error, stackTrace);

@@ -5,11 +5,9 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
+import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
-import 'package:plot/state/now.dart';
 import 'package:plot/command/command.dart';
-import 'loading.dart';
-import 'logging.dart';
 
 @RoutePage(name: "ActivityRoute")
 class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
@@ -33,37 +31,17 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
 
   @override
   Widget wrappedRoute(BuildContext context) {
-    return FutureBuilder<Activity>(
-      future: Activity.getOne(activityId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          log.warning(
-            "Failed to load Priority and Activity",
-            snapshot.error,
-            snapshot.stackTrace,
-          );
-        }
-        if (!snapshot.hasData) {
-          return const LoadingPage();
-        }
-
-        final activity = snapshot.data!;
-
-        // Set the current priority in NowBloc when entering this route
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          log.info(
-            'Setting current priority to ${activity.priority.title} (from activity ${activity.displayTitle})',
-          );
-          context.read<NowBloc>().setPriority(activity.priority);
-        });
-
-        return BlocProvider(
-          create: (_) =>
-              ActivityBloc(priority: activity.priority, activity: activity),
-          key: ValueKey(activity.id),
-          child: this,
-        );
-      },
+    return ActivityBlocProvider(
+      activityId: activityId,
+      activity: null, // Let the bloc load the activity
+      child: BlocConsumer<ActivityBloc, ActivityState>(
+        listener: (context, state) {
+          context.read<PriorityBloc>().setActivity(state.activity);
+        },
+        builder: (context, state) {
+          return this;
+        },
+      ),
     );
   }
 }
@@ -79,8 +57,8 @@ class ActivityPage extends StatelessWidget {
         return CommandScope(
           commands: [
             StaticCommandGroup(
-              title: state.context.title,
-              commands: currentPriorityCommands(state.context),
+              title: state.activity.displayTitle,
+              commands: activityCommands(state.activity),
             ),
           ],
           child: BidirectionalListSelector(
@@ -110,14 +88,12 @@ class ActivityPage extends StatelessWidget {
               child: Scaffold(
                 translucent: true,
                 header: Header(
-                  title: state.activity?.displayTitle ?? "Activity",
+                  title: state.activity.displayTitle,
                   commands: [
-                    if (state.activity != null)
-                      ...activityCommands(state.activity!),
                     PickFilterCommand(),
+                    ShowActivityCommands(state.activity),
                   ],
                 ),
-                sidebar: PrioritiesSidebar(selected: state.context),
                 body: LayoutBuilder(
                   builder: (context, constraints) {
                     final maxActivityEditorHeight = constraints.maxHeight * 0.4;

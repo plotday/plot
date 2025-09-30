@@ -36,9 +36,9 @@ class CommandRoute extends CommandReturn {
 
   void go(BuildContext context) {
     if (replace) {
-      context.router.replace(route);
+      context.router.root.replace(route);
     } else {
-      context.router.navigate(route);
+      context.router.root.navigate(route);
     }
   }
 }

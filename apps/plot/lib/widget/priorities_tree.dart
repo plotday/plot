@@ -29,7 +29,7 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
-      builder: (context, state) {
+      builder: (context, blocState) {
         if (widget.priorities.isEmpty) {
           return Center(
             child: Text(
@@ -60,8 +60,8 @@ class _PrioritiesTreeWidgetState extends State<PrioritiesTreeWidget> {
   Widget _buildPriorityNode(Priority priority, int depth) {
     final hasChildren = priority.children.isNotEmpty;
     final isExpanded = _expandedNodes.contains(priority.id.toString());
-    final currentState = context.read<PriorityBloc>().state;
-    final isCurrentPriority = currentState.context.id == priority.id;
+    final currentPriorityState = context.read<PriorityBloc>().priorityState;
+    final isCurrentPriority = currentPriorityState?.context.id == priority.id;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -8,10 +8,11 @@ import 'package:logging/logging.dart';
 import 'store/store.dart';
 import 'state/now.dart';
 import 'state/user.dart';
+import 'state/layout.dart';
 import 'page/page.dart';
-import 'widget/global_menu.dart';
-import 'widget/dialog.dart';
-import 'command/global.dart';
+import 'widget/app_shell.dart';
+import 'widget/priorities_shell.dart';
+import 'logging.dart';
 
 export 'package:auto_route/auto_route.dart';
 
@@ -19,23 +20,9 @@ part 'router.gr.dart';
 
 final Logger _logger = Logger('plot.route');
 
-@RoutePage(name: 'AppShellRoute')
-class AppShell extends StatelessWidget {
-  const AppShell({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return DialogProvider(
-      child: GlobalMenu(child: GlobalShortcuts(child: AutoRouter())),
-    );
-  }
-}
-
 @AutoRouterConfig(generateForDir: ['lib', 'lib/page'])
 class AppRouter extends RootStackRouter {
-  final UserBloc userBloc;
-
-  AppRouter(this.userBloc);
+  AppRouter();
   @override
   RouteType get defaultRouteType => PlatformResolver.current(
     iOSResolver: () => RouteType.cupertino(),
@@ -55,11 +42,12 @@ class AppRouter extends RootStackRouter {
       page: AppShellRoute.page,
       path: '/',
       children: [
+        AutoRoute(page: SignInRoute.page, path: 'login'),
         AutoRoute(
           page: EmptyShellRoute("Now"),
           path: '',
           guards: [
-            AuthGuard(userBloc),
+            AuthGuard(),
             AutoRouteGuardCallback((resolver, router) async {
               final priorityId = resolver.context
                   .read<NowBloc>()
@@ -70,23 +58,44 @@ class AppRouter extends RootStackRouter {
             }),
           ],
         ),
-        AutoRoute(page: SignInRoute.page, path: 'login'),
         AutoRoute(
-          page: PrioritiesRoute.page,
-          path: 'priorities',
-          guards: [AuthGuard(userBloc)],
-        ),
-        AutoRoute(
-          page: PriorityRoute.page,
-          path: 'p/:priorityId',
-          guards: [AuthGuard(userBloc)],
-          children: [AutoRoute(page: PriorityMainRoute.page, path: '')],
-        ),
-        AutoRoute(
-          page: ActivityRoute.page,
-          path: 'a/:activityId',
-          guards: [AuthGuard(userBloc)],
-          children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
+          page: PrioritiesShellRoute.page,
+          guards: [AuthGuard()],
+          path: '~',
+          children: [
+            AutoRoute(
+              page: PrioritiesRoute.page,
+              path: '',
+              guards: [
+                // If we're in a multi-panel layout, redirect to the current priority
+                AutoRouteGuardCallback((resolver, router) async {
+                  final layout = resolver.context.read<LayoutBloc>().state;
+                  if (layout.multiPanel) {
+                    final priorityId = resolver.context
+                        .read<NowBloc>()
+                        .loadedState
+                        .priority
+                        .id;
+                    resolver.redirectUntil(
+                      PriorityRoute(priorityId: priorityId),
+                    );
+                  }
+                }),
+              ],
+            ),
+            AutoRoute(
+              page: PriorityRoute.page,
+              path: ':priorityId',
+              children: [
+                AutoRoute(page: PriorityMainRoute.page, path: ''),
+                AutoRoute(
+                  page: ActivityRoute.page,
+                  path: ':activityId',
+                  children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
+                ),
+              ],
+            ),
+          ],
         ),
       ],
     ),
@@ -111,7 +120,11 @@ class AppRouter extends RootStackRouter {
       deepLinkBuilder: deepLinkBuilder,
       navRestorationScopeId: navRestorationScopeId,
       placeholder: placeholder,
-      navigatorObservers: () => [RouteLogger(), ...navigatorObservers()],
+      navigatorObservers: () => [
+        RouteLogger(),
+        AutoRouteObserver(),
+        ...navigatorObservers(),
+      ],
       includePrefixMatches: includePrefixMatches,
       neglectWhen: neglectWhen,
       rebuildStackOnDeepLink: rebuildStackOnDeepLink,
@@ -129,23 +142,21 @@ extension FocusedRouterExtension on BuildContext {
 }
 
 class AuthGuard extends AutoRouteGuard {
-  final UserBloc userBloc;
-
-  AuthGuard(this.userBloc);
+  AuthGuard();
 
   @override
   void onNavigation(NavigationResolver resolver, StackRouter router) {
-    final userState = userBloc.state;
+    final userState = resolver.context.read<UserBloc>().state;
 
     if (userState is UserReady) {
       // User is authenticated, proceed with navigation
       resolver.next();
-    } else if (userState is UserSignedOut && resolver.route.path != '/login') {
+    } else if (userState is UserSignedOut && resolver.route is! SignInRoute) {
       // User is not authenticated, redirect to sign in with return path
       final returnPath = resolver.route.path;
       router.navigate(
         SignInRoute(
-          returnTo: returnPath != '/login' ? returnPath : null,
+          returnTo: returnPath is! SignInRoute ? returnPath : null,
           signOut: true,
         ),
       );

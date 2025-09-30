@@ -3,24 +3,20 @@ part of 'activity.dart';
 @immutable
 class ActivityState extends Equatable {
   ActivityState({
-    required this.context,
-    this.activity,
+    required this.activity,
     Activity? draft,
     List<ActivityDateGroup> activityGroups = const [],
     this.showArchived = false,
     List<Tag> filter = const [],
-  }) : activityGroups = activityGroups.isNotEmpty ? List.unmodifiable(activityGroups) : activityGroups,
+  }) : activityGroups = activityGroups.isNotEmpty
+           ? List.unmodifiable(activityGroups)
+           : activityGroups,
        filter = filter.isNotEmpty ? List.unmodifiable(filter) : filter,
        draft =
            draft ??
-           Activity(
-             priority: context,
-             parent: activity,
-             draft: true,
-           );
+           Activity(priority: activity.priority, parent: activity, draft: true);
 
-  final Priority context;
-  final Activity? activity;
+  final Activity activity;
   final Activity draft;
   final List<ActivityDateGroup> activityGroups;
   final bool showArchived;
@@ -35,18 +31,22 @@ class ActivityState extends Equatable {
     List<Tag>? filter,
   }) {
     return ActivityState(
-      context: context ?? this.context,
       activity: activity ?? this.activity,
       draft: draft ?? this.draft,
-      activityGroups: activityGroups != null ? (activityGroups.isNotEmpty ? List.unmodifiable(activityGroups) : activityGroups) : this.activityGroups,
+      activityGroups: activityGroups != null
+          ? (activityGroups.isNotEmpty
+                ? List.unmodifiable(activityGroups)
+                : activityGroups)
+          : this.activityGroups,
       showArchived: showArchived ?? this.showArchived,
-      filter: filter != null ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter) : this.filter,
+      filter: filter != null
+          ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
+          : this.filter,
     );
   }
 
   @override
   List<Object?> get props => [
-    context,
     activity,
     draft,
     activityGroups,
@@ -56,15 +56,15 @@ class ActivityState extends Equatable {
 
   @override
   String toString() {
-    return 'ActivityState(context: ${context.title}, activity: ${activity?.title}, draft: $draft, activityGroups: ${activityGroups.length}, showArchived: $showArchived, filter: $filter)';
+    return 'ActivityState(activity: ${activity.title}, draft: $draft, activityGroups: ${activityGroups.length}, showArchived: $showArchived, filter: $filter)';
   }
 }
 
 class ActivityDateGroup extends Equatable {
-  ActivityDateGroup({
-    required this.date,
-    required List<Activity> activities,
-  }) : activities = activities.isNotEmpty ? List.unmodifiable(activities) : activities;
+  ActivityDateGroup({required this.date, required List<Activity> activities})
+    : activities = activities.isNotEmpty
+          ? List.unmodifiable(activities)
+          : activities;
 
   final Date date;
   final List<Activity> activities;
@@ -77,3 +77,4 @@ class ActivityDateGroup extends Equatable {
     return 'ActivityDateGroup(date: $date, activities: ${activities.length})';
   }
 }
+

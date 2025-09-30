@@ -2,9 +2,36 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart' show Icons;
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/state/layout.dart';
 import 'button.dart';
+import 'window.dart';
+import 'logging.dart';
+
+enum HeaderPosition { left, middle, right }
+
+class PanelPositionProvider extends InheritedWidget {
+  const PanelPositionProvider({
+    super.key,
+    required this.position,
+    required super.child,
+  });
+
+  final HeaderPosition position;
+
+  static HeaderPosition? of(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<PanelPositionProvider>()
+        ?.position;
+  }
+
+  @override
+  bool updateShouldNotify(PanelPositionProvider oldWidget) {
+    return position != oldWidget.position;
+  }
+}
 
 class Header extends StatefulWidget {
   const Header({
@@ -12,6 +39,7 @@ class Header extends StatefulWidget {
     this.title,
     this.commands = const [],
     this.modal = false,
+    this.position,
     super.key,
   });
 
@@ -19,6 +47,7 @@ class Header extends StatefulWidget {
   final String? title;
   final List<Command> commands;
   final bool modal;
+  final HeaderPosition? position;
 
   @override
   State<Header> createState() => _HeaderState();
@@ -81,16 +110,38 @@ class _HeaderState extends State<Header> with RouteAware {
 
   @override
   Widget build(BuildContext context) {
-    return FHeader(
-      title: Row(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 8,
-        children: [
-          if (!widget.modal && _canPop)
+    return BlocBuilder<LayoutBloc, LayoutState>(
+      builder: (context, layoutState) {
+        final layoutBloc = context.read<LayoutBloc>();
+
+        // Auto-detect position if not provided
+        final position =
+            widget.position ??
+            PanelPositionProvider.of(context) ??
+            HeaderPosition.middle;
+
+        // Build title with position-specific left buttons
+        final titleChildren = <Widget>[
+          if (!layoutState.multiPanel ||
+              position == HeaderPosition.left ||
+              (!layoutState.leftPanelVisible &&
+                  position == HeaderPosition.middle))
+            SizedBox(width: Window.toolbarPadding.horizontal),
+          // Left sidebar toggle for middle position when left panel is hidden
+          if (layoutState.multiPanel &&
+              position == HeaderPosition.middle &&
+              !layoutState.leftPanelVisible)
+            FTappable(
+              onPress: () => layoutBloc.setLeftPanelVisible(true),
+              child: Icon(Icons.menu, size: 14),
+            ),
+          // Back button for modal/navigation
+          if (!widget.modal && _canPop && layoutState.showBackButton)
             FTappable(
               onPress: () => context.router.maybePop(),
               child: Icon(Icons.arrow_back, size: 14),
             ),
+          // Main content or title
           if ((widget.main ?? widget.title) != null)
             widget.main ??
                 Text(
@@ -98,16 +149,44 @@ class _HeaderState extends State<Header> with RouteAware {
                   overflow: TextOverflow.ellipsis,
                   style: context.theme.typography.xs,
                 ),
-        ],
-      ),
-      suffixes: [
-        ...widget.commands.map((command) => Button.icon(command)),
-        if (widget.modal && _canPop)
-          FTappable(
-            onPress: () => context.router.maybePop(),
-            child: Icon(Icons.close, size: 14),
+        ];
+
+        // Build suffixes with position-specific right buttons
+        final suffixes = <Widget>[
+          ...widget.commands.map((command) => Button.icon(command)),
+          // Left sidebar toggle for left position
+          if (position == HeaderPosition.left)
+            FTappable(
+              onPress: () => layoutBloc.setLeftPanelVisible(false),
+              child: Icon(Icons.close, size: 14),
+            ),
+          // Right sidebar toggle for right position
+          if (position == HeaderPosition.right)
+            FTappable(
+              onPress: () async {
+                context.read<LayoutBloc>().setRightPanelVisible(false);
+                // Navigate to the parent PriorityRoute by popping the current ActivityRoute
+                await context.router.maybePop();
+              },
+              child: Icon(Icons.close, size: 14),
+            ),
+          // Modal close button
+          if (widget.modal && _canPop)
+            FTappable(
+              onPress: () => context.router.maybePop(),
+              child: Icon(Icons.close, size: 14),
+            ),
+        ];
+
+        return FHeader(
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 8,
+            children: titleChildren,
           ),
-      ],
+          suffixes: suffixes,
+        );
+      },
     );
   }
 }

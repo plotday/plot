@@ -17,19 +17,16 @@ class PrioritiesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       header: Header(
-        title: 'Priorities',
         commands: [NewPriority()],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: BlocBuilder<PrioritiesBloc, PrioritiesState>(
-          builder: (builderContext, state) {
-            return PrioritiesList(
-              priorities: state.priorities,
-              onPrioritySelected: (priority) => _navigateToPriority(builderContext, priority),
-            );
-          },
-        ),
+      body: BlocBuilder<PrioritiesBloc, PrioritiesState>(
+        builder: (builderContext, state) {
+          return PrioritiesList(
+            priorities: state.priorities,
+            onPrioritySelected: (priority) =>
+                _navigateToPriority(builderContext, priority),
+          );
+        },
       ),
     );
   }
@@ -39,3 +36,4 @@ class PrioritiesPage extends StatelessWidget {
     ChangeCurrentPriority(priority).run(context);
   }
 }
+

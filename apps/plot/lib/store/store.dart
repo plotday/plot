@@ -345,7 +345,6 @@ class Store extends _$Store {
 
     // Check if push already in progress for this table
     if (_pushCompleters.containsKey(entity)) {
-      log.info("Waiting for existing push");
       // Wait for existing push to complete
       final existingResult = await _pushCompleters[entity]!.future;
 
