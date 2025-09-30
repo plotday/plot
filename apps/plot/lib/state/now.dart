@@ -13,7 +13,7 @@ class NowBloc extends Cubit<NowState> {
 
   NowLoaded get loadedState => super.state as NowLoaded;
 
-  late StreamSubscription<void> _subscription;
+  StreamSubscription<void>? _subscription;
 
   @override
   Future<void> close() {
@@ -40,7 +40,7 @@ class NowBloc extends Cubit<NowState> {
   }
 
   void stop() {
-    _subscription.cancel();
+    _subscription?.cancel();
   }
 
   void setPriority(Priority? priority) async {
