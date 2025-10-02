@@ -42,7 +42,6 @@ export const PriorityItemSchema = z.object({
   deleted_at: z.string().nullable(),
   title: z.string(),
   path: z.string(),
-  order: z.number(),
   updated_by: z.number(),
 });
 
@@ -73,4 +72,3 @@ export type ActivityItem = z.infer<typeof ActivityItemSchema>;
 export type PriorityItem = z.infer<typeof PriorityItemSchema>;
 export type SessionItem = z.infer<typeof SessionItemSchema>;
 export type UpdateItem = z.infer<typeof ItemSchema>;
-

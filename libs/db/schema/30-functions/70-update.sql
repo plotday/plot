@@ -106,7 +106,7 @@ BEGIN
         RETURN COALESCE(NEW, OLD);
     END IF;
     -- Build enriched item
-    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'created_by', current_item.created_by, 'root', current_item.root, 'deleted_at', current_item.deleted_at, 'title', current_item.title, 'path', current_item.path, 'order', current_item.order, 'updated_by', current_item.updated_by);
+    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'created_by', current_item.created_by, 'root', current_item.root, 'deleted_at', current_item.deleted_at, 'title', current_item.title, 'path', current_item.path, 'updated_by', current_item.updated_by);
     -- Build the payload (no agents for priority)
     payload := jsonb_build_object('type', 'priority', 'event', event_type, 'item', enriched_item, 'agents', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'priority');
     api_url := get_api_root () || '/update';

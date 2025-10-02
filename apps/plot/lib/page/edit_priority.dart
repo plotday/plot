@@ -1,9 +1,11 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/hooks.dart';
+import 'package:plot/state/priorities.dart';
 
 class EditPriorityPage extends HookWidget {
   const EditPriorityPage({Priority? parent, Priority? priority, super.key})
@@ -25,25 +27,26 @@ class EditPriorityPage extends HookWidget {
     Future<void> submitPriority() async {
       if (title.isEmpty) return;
 
+      final buildContext = context;
       CommandReturn? result;
       if (isEditing) {
         // Edit existing priority
         final command = EditPriority(
           Future.value(_priority!.copyWith(title: title)),
         );
-        result = await command.run(context);
+        result = await command.run(buildContext);
       } else {
         // Create new priority
+        final prioritiesBloc = buildContext.read<PrioritiesBloc>();
+        final effectiveParent = parent.value ?? prioritiesBloc.state.root!;
         final command = AddPriority(
-          Future.value(
-            Priority(title: title, parent: parent.value, order: Order.first()),
-          ),
+          Future.value(Priority(title: title, parent: effectiveParent)),
         );
-        result = await command.run(context);
+        result = await command.run(buildContext);
       }
 
-      if (context.mounted) {
-        Dialog.pop(context, Value(result));
+      if (buildContext.mounted) {
+        Dialog.pop(buildContext, Value(result));
       }
     }
 
@@ -63,27 +66,35 @@ class EditPriorityPage extends HookWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Button.primary(
-              CommandWrapper(
-                isEditing
-                    ? EditPriority(
-                        Future.value(_priority!.copyWith(title: title)),
-                      )
-                    : AddPriority(
-                        Future.value(
-                          Priority(
-                            title: title,
-                            parent: parent.value,
-                            order: Order.first(),
+            Builder(
+              builder: (context) {
+                final prioritiesBloc = context.read<PrioritiesBloc>();
+                return Button.primary(
+                  CommandWrapper(
+                    isEditing
+                        ? EditPriority(
+                            Future.value(_priority!.copyWith(title: title)),
+                          )
+                        : AddPriority(
+                            Future(() async {
+                              final effectiveParent =
+                                  parent.value ??
+                                  prioritiesBloc.state.root ??
+                                  await Priority.getDefault();
+                              return Priority(
+                                title: title,
+                                parent: effectiveParent,
+                              );
+                            }),
                           ),
-                        ),
-                      ),
-                run: (command, context) async {
-                  await submitPriority();
-                  return const CommandDone();
-                },
-              ),
-              enabled: title.isNotEmpty,
+                    run: (command, context) async {
+                      await submitPriority();
+                      return const CommandDone();
+                    },
+                  ),
+                  enabled: title.isNotEmpty,
+                );
+              },
             ),
           ],
         ),

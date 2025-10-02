@@ -27,14 +27,14 @@ abstract class ActivityCommand extends Command {
             child: Text(
               activity!.parent?.displayTitle ?? '',
               overflow: TextOverflow.ellipsis,
-              style: context.theme.typography.xs.copyWith(
+              style: context.theme.typography.sm.copyWith(
                 color: context.colour.muted,
               ),
             ),
           ),
           Text(
             Activity.separator,
-            style: context.theme.typography.xs.copyWith(
+            style: context.theme.typography.sm.copyWith(
               color: context.colour.muted,
             ),
           ),
@@ -43,7 +43,7 @@ abstract class ActivityCommand extends Command {
           child: Text(
             activity?.displayTitle ?? 'None',
             overflow: TextOverflow.ellipsis,
-            style: context.theme.typography.xs.copyWith(
+            style: context.theme.typography.sm.copyWith(
               color: context.colour.foreground,
             ),
           ),

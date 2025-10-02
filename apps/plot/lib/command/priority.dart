@@ -28,14 +28,14 @@ abstract class PriorityCommand extends Command {
             child: Text(
               priority!.ancestorsLabel(),
               overflow: TextOverflow.ellipsis,
-              style: context.theme.typography.xs.copyWith(
+              style: context.theme.typography.sm.copyWith(
                 color: context.colour.muted,
               ),
             ),
           ),
           Text(
             Priority.separator,
-            style: context.theme.typography.xs.copyWith(
+            style: context.theme.typography.sm.copyWith(
               color: context.colour.muted,
             ),
           ),
@@ -44,7 +44,7 @@ abstract class PriorityCommand extends Command {
           child: Text(
             priority?.title ?? 'None',
             overflow: TextOverflow.ellipsis,
-            style: context.theme.typography.xs.copyWith(
+            style: context.theme.typography.sm.copyWith(
               color: context.colour.foreground,
             ),
           ),
@@ -171,7 +171,7 @@ class ArchivePriority extends Command {
 class NewPriority extends ShowPage {
   NewPriority({Priority? parent})
     : super(
-        title: 'New Sub-priority',
+        title: parent == null ? 'Add a Priority' : 'Add a Sub-priority',
         icon: PlotIcon.add,
         builder: (context) => EditPriorityPage(parent: parent),
       );
@@ -209,7 +209,9 @@ class ShowPriorityCommands extends ShowCommands {
 List<Command> prioritySecondaryCommands(Priority priority) => [
   EditPriorityCommand(priority),
   ManageAgents(priority),
+  if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.root) ArchivePriority(Future.value(priority)),
+  NewPriority(parent: priority),
 ];
 
 List<Command> priorityCommands(Priority priority) => [
@@ -219,9 +221,27 @@ List<Command> priorityCommands(Priority priority) => [
 
 List<Command> currentPriorityCommands(Priority priority) => [
   ...prioritySecondaryCommands(priority),
-  NewPriority(parent: priority),
-  PickCurrentPriority(),
 ];
+
+class SetTopPriority extends Command {
+  SetTopPriority(this.priority, this.add)
+    : super(
+        title: add ? 'Add to Top Priorities' : 'Remove From Top Priorities',
+        icon: add ? PlotIcon.add : PlotIcon.remove,
+      );
+
+  final Priority priority;
+  final bool add;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await priority
+        .copyWith(topOrder: add ? Value(Order.first()) : const Value(null))
+        .save();
+    Posthog().capture(eventName: 'Priority Top ${add ? 'Added' : 'Removed'}');
+    return const CommandDone();
+  }
+}
 
 class ToggleShowArchived extends Command {
   ToggleShowArchived({required this.showArchived})

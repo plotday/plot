@@ -1095,10 +1095,10 @@ class Activity extends Equatable implements Comparable<Activity> {
           .add(activity);
     }
 
-    // Create list of priority groups ordered by priority order property
+    // Create list of priority groups ordered by priority path
     final Map<Priority, List<Activity>> sortedActivitiesByPriority = {};
     final priorities = activitiesByPriority.keys.toList()
-      ..sort((a, b) => a.order.compareTo(b.order));
+      ..sort((a, b) => a.compareTo(b));
     for (final priority in priorities) {
       final priorityActivities = activitiesByPriority[priority]!;
       // Sort activities within each priority group (by order property)

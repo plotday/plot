@@ -647,22 +647,31 @@ export type Database = {
       priority_settings: {
         Row: {
           color: number | null
+          order: number
+          path: unknown | null
           pomodoro: number | null
           priority_id: string
+          top: boolean
           updated_at: string
           user_id: string
         }
         Insert: {
           color?: number | null
+          order?: number
+          path?: unknown | null
           pomodoro?: number | null
           priority_id: string
+          top?: boolean
           updated_at?: string
           user_id: string
         }
         Update: {
           color?: number | null
+          order?: number
+          path?: unknown | null
           pomodoro?: number | null
           priority_id?: string
+          top?: boolean
           updated_at?: string
           user_id?: string
         }
@@ -708,8 +717,6 @@ export type Database = {
         Row: {
           created_at: string
           deleted_at: string | null
-          order: number
-          path: unknown | null
           priority_id: string
           updated_at: string
           user_id: string
@@ -717,8 +724,6 @@ export type Database = {
         Insert: {
           created_at?: string
           deleted_at?: string | null
-          order?: number
-          path?: unknown | null
           priority_id: string
           updated_at?: string
           user_id: string
@@ -726,8 +731,6 @@ export type Database = {
         Update: {
           created_at?: string
           deleted_at?: string | null
-          order?: number
-          path?: unknown | null
           priority_id?: string
           updated_at?: string
           user_id?: string
@@ -1208,6 +1211,7 @@ export type Database = {
           pomodoro: number | null
           root: boolean | null
           title: string | null
+          top: boolean | null
           updated_at: string | null
           updated_by: number | null
           user_id: string | null

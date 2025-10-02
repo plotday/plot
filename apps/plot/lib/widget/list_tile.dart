@@ -150,7 +150,7 @@ class _ListTileState extends State<ListTile> {
                                         ? widget.title.toUpperCase()
                                         : widget.title,
                                     overflow: TextOverflow.ellipsis,
-                                    style: context.theme.typography.xs.copyWith(
+                                    style: context.theme.typography.sm.copyWith(
                                       color:
                                           widget.style == ListTileStyle.header
                                           ? context.colour.muted
@@ -163,7 +163,7 @@ class _ListTileState extends State<ListTile> {
                                     child: Text(
                                       '  ${widget.command!.subtitle!}',
                                       overflow: TextOverflow.ellipsis,
-                                      style: context.theme.typography.xs
+                                      style: context.theme.typography.sm
                                           .copyWith(
                                             color: context.colour.muted,
                                           ),

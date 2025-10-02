@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/services.dart';
 import 'package:plot/state/root_provider.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:adaptive_theme/adaptive_theme.dart';

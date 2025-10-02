@@ -9,6 +9,7 @@ class PlotIcon {
   static const pipe = FontAwesomeIcons.pipe;
   static const today = FontAwesomeIcons.calendar;
   static const add = FontAwesomeIcons.plusLarge;
+  static const remove = FontAwesomeIcons.minus;
   static const startOfDay = FontAwesomeIcons.sunHaze;
   static const priority = FontAwesomeIcons.bullseyeArrow;
   static const activity = FontAwesomeIcons.listCheck;

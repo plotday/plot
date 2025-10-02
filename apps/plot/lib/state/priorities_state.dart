@@ -3,7 +3,9 @@ part of 'priorities.dart';
 @immutable
 class PrioritiesState extends Equatable {
   PrioritiesState({List<Priority> priorities = const [], this.root})
-    : priorities = priorities.isNotEmpty ? List.unmodifiable(priorities) : priorities;
+    : priorities = priorities.isNotEmpty
+          ? List.unmodifiable(priorities)
+          : priorities;
 
   final Priority? root;
   final List<Priority> priorities;
@@ -18,4 +20,3 @@ class PrioritiesState extends Equatable {
   @override
   List<Object?> get props => [priorities];
 }
-

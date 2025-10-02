@@ -7,10 +7,6 @@ CREATE POLICY "Users change sharing for their priorities" ON public.priority_use
     FOR ALL TO authenticated
         USING (can_access_priority (priority_id));
 
-CREATE POLICY "Users can create new root priorities" ON public.priority
-    FOR INSERT TO authenticated
-        WITH CHECK (extensions.nlevel (priority.path) = 1);
-
 CREATE POLICY "Users can create new priorities in their priorities" ON public.priority
     FOR INSERT TO authenticated
         WITH CHECK (can_access_priority (parent_path (priority.path)));

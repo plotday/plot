@@ -8,7 +8,6 @@ CREATE TABLE "public"."priority" (
     "deleted_at" timestamp with time zone,
     "title" text NOT NULL,
     "path" ltree NOT NULL UNIQUE,
-    "order" double precision NOT NULL DEFAULT public.order_first (),
     "updated_by" integer NOT NULL DEFAULT 0
 );
 
@@ -35,10 +34,6 @@ CREATE TABLE "public"."priority_user" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "deleted_at" timestamp with time zone,
-    -- All fields added below must be handled in handle_user_priority_upsert
-    "order" double precision NOT NULL DEFAULT public.order_first (),
-    -- Optional per-user override allowing shared priorities to be nested under other priorities
-    "path" ltree,
     CONSTRAINT priority_user_unique UNIQUE (user_id, priority_id)
 );
 
@@ -79,6 +74,10 @@ CREATE TABLE "public"."priority_settings" (
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     -- All fields added below must be handled in handle_user_priority_upsert
+    "top_order" double precision,
+    -- The fields below are inherited by sub-priorities
+    -- If path is set, it overrides the sub-path below the root
+    "path" ltree,
     "pomodoro" integer,
     "color" integer,
     CONSTRAINT priority_settings_unique UNIQUE (user_id, priority_id)
@@ -90,7 +89,6 @@ CREATE TRIGGER set_priority_user_updated_at
     BEFORE UPDATE ON "public"."priority_settings"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
-
 
 CREATE TRIGGER handle_priority_changes
     AFTER INSERT OR UPDATE ON public.priority

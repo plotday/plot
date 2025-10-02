@@ -30,7 +30,8 @@ extension type Order._(double value) {
   int compareTo(Order other) => value.compareTo(other.value);
 }
 
-class OrderConverter extends TypeConverter<Order, double> {
+class OrderConverter extends TypeConverter<Order, double>
+    with JsonTypeConverter2<Order, double, double> {
   const OrderConverter();
 
   @override
@@ -40,6 +41,16 @@ class OrderConverter extends TypeConverter<Order, double> {
 
   @override
   double toSql(Order value) {
+    return value.value;
+  }
+
+  @override
+  Order fromJson(double json) {
+    return Order(json);
+  }
+
+  @override
+  double toJson(Order value) {
     return value.value;
   }
 }

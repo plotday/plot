@@ -4,7 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/router.dart';
-import 'logging.dart';
 
 @RoutePage(name: "PrioritiesShellRoute")
 class PrioritiesShell extends AutoRouter implements AutoRouteWrapper {

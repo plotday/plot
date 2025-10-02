@@ -8,7 +8,6 @@ import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
 import 'button.dart';
 import 'window.dart';
-import 'logging.dart';
 
 enum HeaderPosition { left, middle, right }
 
@@ -147,7 +146,7 @@ class _HeaderState extends State<Header> with RouteAware {
                 Text(
                   widget.title!,
                   overflow: TextOverflow.ellipsis,
-                  style: context.theme.typography.xs,
+                  style: context.theme.typography.sm,
                 ),
         ];
 

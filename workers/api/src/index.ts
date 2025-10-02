@@ -497,7 +497,6 @@ app.post("/_/update", async (c) => {
   const rawBody = await c.req.json();
   const parseResult = DatabaseUpdateRequestSchema.safeParse(rawBody);
   if (!parseResult.success) {
-    console.warn("Validation error:", parseResult.error);
     return handleValidationError(parseResult.error);
   }
   const body = parseResult.data;

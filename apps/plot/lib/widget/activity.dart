@@ -21,8 +21,8 @@ class ActivityWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext buildContext) {
-    final hasVisibleLinks = activity.links.any((link) => 
-      link.type != LinkType.hidden
+    final hasVisibleLinks = activity.links.any(
+      (link) => link.type != LinkType.hidden,
     );
 
     return ListTile(
@@ -37,7 +37,7 @@ class ActivityWidget extends StatelessWidget {
                 child: Text(
                   activity.displayTitle,
                   overflow: TextOverflow.ellipsis,
-                  style: buildContext.theme.typography.xs.copyWith(
+                  style: buildContext.theme.typography.sm.copyWith(
                     color: buildContext.colour.foreground,
                   ),
                 ),
@@ -95,10 +95,10 @@ class ActivityDetailWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     bool isContext = activity == this.context;
-    final hasVisibleLinks = activity.links.any((link) => 
-      link.type != LinkType.hidden
+    final hasVisibleLinks = activity.links.any(
+      (link) => link.type != LinkType.hidden,
     );
-    
+
     return ListTile(
       command: !isContext ? ChangeCurrentActivity(activity) : null,
       body: Column(

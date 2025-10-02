@@ -26,7 +26,7 @@ class DayHeader extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(
             color: context.theme.colors.mutedForeground,
-            fontSize: context.theme.typography.xs.fontSize,
+            fontSize: context.theme.typography.sm.fontSize,
           ),
         ),
       ),
@@ -85,21 +85,24 @@ class AgendaHeader extends StatelessWidget {
                 Text(
                   activity!.at?.start?.toTimeOfDay().isMidnight == true
                       ? ''
-                      : activity!.at?.start?.toTimeOfDay().format(context) ?? '',
+                      : activity!.at?.start?.toTimeOfDay().format(context) ??
+                            '',
                   textAlign: TextAlign.end,
                   style: TextStyle(
                     color: context.theme.colors.mutedForeground,
-                    fontSize: context.theme.typography.xs.fontSize,
+                    fontSize: context.theme.typography.sm.fontSize,
                   ),
                 ),
-                if (activity!.duration?.inSeconds != null && activity!.duration!.inSeconds > 0 &&
+                if (activity!.duration?.inSeconds != null &&
+                    activity!.duration!.inSeconds > 0 &&
                     !(activity!.draft &&
-                        activity!.at?.end == activity!.at?.start?.startOfDay.addDays(1)))
+                        activity!.at?.end ==
+                            activity!.at?.start?.startOfDay.addDays(1)))
                   Text(
                     activity!.duration!.format(),
                     style: TextStyle(
                       color: context.theme.colors.mutedForeground,
-                      fontSize: context.theme.typography.xs.fontSize,
+                      fontSize: context.theme.typography.sm.fontSize,
                     ),
                   ),
               ],
@@ -109,7 +112,7 @@ class AgendaHeader extends StatelessWidget {
                         'Other',
                         style: DefaultTextStyle.of(context).style.copyWith(
                           color: context.theme.colors.mutedForeground,
-                          fontSize: context.theme.typography.xs.fontSize,
+                          fontSize: context.theme.typography.sm.fontSize,
                         ),
                       )
                     : PriorityLabel(ancestors: priorityAncestry),
@@ -126,7 +129,7 @@ class AgendaHeader extends StatelessWidget {
                   textAlign: TextAlign.start,
                   style: DefaultTextStyle.of(context).style.copyWith(
                     color: context.theme.colors.foreground,
-                    fontSize: context.theme.typography.xs.fontSize,
+                    fontSize: context.theme.typography.sm.fontSize,
                   ),
                 ),
               ],

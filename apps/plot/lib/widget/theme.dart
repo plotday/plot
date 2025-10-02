@@ -11,6 +11,10 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
   var theme = FThemeData(
     colors: colorScheme,
     typography: FTypography.inherit(colors: colorScheme).copyWith(
+      xs: FTypography.inherit(colors: colorScheme).base.copyWith(fontSize: 9),
+      sm: FTypography.inherit(
+        colors: colorScheme,
+      ).base.copyWith(fontSize: 10.5),
       base: FTypography.inherit(
         colors: colorScheme,
       ).base.copyWith(fontSize: 12),
@@ -79,6 +83,27 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
           //     .copyWith(color: theme.colorScheme.foreground),
           // enabledIconColor: theme.colorScheme.foreground,
           padding: widgetPadding,
+        ),
+      ),
+    ),
+    sidebarStyle: theme.sidebarStyle.copyWith(
+      groupStyle: (groupStyle) => groupStyle.copyWith(
+        childrenPadding: EdgeInsets.zero,
+        padding: EdgeInsets.only(bottom: 16),
+        headerSpacing: 0,
+        labelStyle: theme.typography.xs.copyWith(
+          color: colourScheme.foreground.withValues(alpha: 0.6),
+          fontWeight: FontWeight.w600,
+        ),
+        actionStyle: groupStyle.actionStyle.map(
+          (iconTheme) => iconTheme.copyWith(size: 12),
+        ),
+        itemStyle: (itemStyle) => itemStyle.copyWith(
+          borderRadius: BorderRadius.zero,
+          padding: widgetPaddingSm,
+          textStyle: itemStyle.textStyle.map(
+            (textStyle) => theme.typography.sm,
+          ),
         ),
       ),
     ),

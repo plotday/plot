@@ -12,7 +12,6 @@ import 'state/layout.dart';
 import 'page/page.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
-import 'logging.dart';
 
 export 'package:auto_route/auto_route.dart';
 

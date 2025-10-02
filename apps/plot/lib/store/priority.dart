@@ -8,9 +8,7 @@ class Priorities extends Table
   TextColumn get title => text()();
   TextColumn get path => text().map(const PathConverter())();
   BlobColumn get createdBy => blob().map(const UuidConverter())();
-  RealColumn get order => real()
-      .clientDefault(() => Order.first().value)
-      .map(const OrderConverter())();
+  RealColumn get topOrder => real().nullable().map(const OrderConverter())();
   IntColumn get pomodoro => integer()
       .nullable()
       .withDefault(const Constant(25 * 60))
@@ -27,7 +25,7 @@ class PrioritiesBase extends BaseTable {
     : super(
         table: 'user_priority',
         name: "priorities",
-        order: 'order',
+        order: 'created_at',
         upsertAsUpdate: true,
       );
 
@@ -229,7 +227,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     switch (order) {
       case PriorityOrder.sorted:
-        query.orderBy([OrderingTerm.asc(p.order)]);
+        query.orderBy([OrderingTerm.asc(p.path)]);
         break;
       case PriorityOrder.nested:
         // order by path so parents always precede children
@@ -247,7 +245,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
             expression: Store.get.latestPriorities.at,
             mode: OrderingMode.desc,
           ),
-          OrderingTerm.asc(p.order),
+          OrderingTerm.asc(p.path),
         ]);
         break;
     }
@@ -331,27 +329,25 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   Priority({
-    Order? order,
-    this.parent,
+    required this.parent,
     required super.title,
+    super.topOrder,
     super.pomodoro = const Duration(minutes: 25),
     super.color = const ThemeColor.defaultColor(),
   }) : children = [],
-       _ancestors = parent == null
-           ? const []
-           : parent._ancestors +
-                 [PriorityAncestor(id: parent.id, title: parent.title)],
+       _ancestors =
+           parent!._ancestors +
+           [PriorityAncestor(id: parent.id, title: parent.title)],
        super(
          id: Uuid.generate(),
          createdBy: Base.userId,
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
          pending: PriorityPendingSync.full.value,
-         order: order ?? Order.first(),
-         path: Path.generate(parent: parent?.path),
+         path: Path.generate(parent: parent.path),
          root: false,
        ) {
-    parent?._addChild(this);
+    parent!._addChild(this);
   }
 
   Priority.fromStore(
@@ -372,10 +368,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          updatedAt: row.updatedAt,
          deletedAt: row.deletedAt,
          title: row.title,
+         topOrder: row.topOrder,
          pomodoro: row.pomodoro,
          color: row.color,
          root: row.root,
-         order: row.order,
          path: row.path,
          createdBy: row.createdBy,
        ) {
@@ -451,7 +447,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     String? title,
     Path? path,
     Uuid? createdBy,
-    Order? order,
+    Value<Order?> topOrder = const Value.absent(),
     Value<Duration?> pomodoro = const Value.absent(),
     Value<ThemeColor?> color = const Value.absent(),
     bool? root,
@@ -470,7 +466,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         deletedAt: deletedAt,
         title: title ?? this.title,
         path: path ?? this.path,
-        order: order ?? this.order,
+        topOrder: topOrder,
         pomodoro: pomodoro,
         color: color,
         root: root ?? this.root,
@@ -494,7 +490,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   @override
   int compareTo(Priority other) {
-    return order.compareTo(other.order);
+    return path.value.compareTo(other.path.value);
   }
 }
 

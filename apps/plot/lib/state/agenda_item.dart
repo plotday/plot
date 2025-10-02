@@ -26,7 +26,7 @@ class Agenda extends Equatable {
   /// 6. When there's a time gap between events, add a HeaderAgendaItem for it (but not an event), with priority set to the default priority.
   /// 7. On the current day, activities with doOn always appear after the now header, under the first header for which their priority matches or is a child.
   /// 8. On future days, Activities with doOn set but without eventSeries are shown before the first (if any) event.
-  /// 9. All doNow/doOn activities are grouped and ordered by priority.order and preceeded by a HeaderAgendaItem.
+  /// 9. All doNow/doOn activities are grouped and ordered by priority path and preceeded by a HeaderAgendaItem.
   ///
   /// nowIndex is the index of the current HeaderAgendaItem, either for a current event or gap between events, or the first priority if before/after all events.
   /// anchorIndex is the index of HeaderAgendaItem for the anchor date, which is today by default.

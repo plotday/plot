@@ -40,9 +40,7 @@ Future<void> run() async {
       }
     });
     WidgetsFlutterBinding.ensureInitialized();
-    log.info("Starting window init");
     await Window.init();
-    log.info("Done window init");
     await Env.init();
     await Base.init();
     await AuthButton.init();

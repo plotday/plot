@@ -75,7 +75,6 @@ class ColourSchemeData extends Equatable {
           ? Color(0xFFFAFAFA)
           : Color(0xFFFAFAFA),
       border: border,
-      enabledHoveredOpacity: 0.9,
       disabledOpacity: 0.5,
       systemOverlayStyle: brightness == Brightness.light
           ? SystemUiOverlayStyle.dark
