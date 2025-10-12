@@ -96,7 +96,7 @@ class AuthButton extends StatefulWidget {
     }
     if (_link != null && code != null) {
       final callbackUri = Uri(
-        path: '/auth/callback',
+        path: '/auth',
         queryParameters: {
           'code': code,
           'clientId': clientId,
@@ -275,7 +275,7 @@ class _AuthButtonState extends State<AuthButton> {
 
     final link = widget._link!;
     final uri = Uri(
-      path: '/auth/url',
+      path: '/auth',
       queryParameters: {
         'provider': link.provider.name,
         'level': link.level,

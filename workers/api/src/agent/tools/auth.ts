@@ -1,18 +1,18 @@
-import { type ActivityLink, ActivityLinkType } from "@plotday/agent";
+import { type ActivityLink, ActivityLinkType } from "@plotday/sdk";
 import type {
   AuthLevel,
   AuthProvider,
   AuthToken,
   Authorization,
   Auth as IAuth,
-} from "@plotday/agent/tools/auth";
-import type { Callback } from "@plotday/agent/tools/callback";
-import type { Store } from "@plotday/agent/tools/store";
+} from "@plotday/sdk/tools/auth";
+import type { Callback } from "@plotday/sdk/tools/callback";
+import type { Store } from "@plotday/sdk/tools/store";
 
-import type { Callbacks } from "../../callbacks";
+import { Callbacks } from "../../state/callbacks";
 import type { Bindings } from "../../env";
 import { PROVIDER_CONFIGS } from "../../provider";
-import type { Storage } from "../../storage";
+import type { Storage } from "../../state/storage";
 import { CallbackTool } from "./callback";
 import { Tool } from "./tool";
 
@@ -38,8 +38,11 @@ export class Auth extends Tool implements IAuth {
   private callbacks: DurableObjectNamespace<Callbacks>;
   private path: string[];
 
-  private static GetStub(callbacks: DurableObjectNamespace<Callbacks>) {
-    const callbacksId = callbacks.idFromName("auth");
+  private static GetStub(
+    callbacks: DurableObjectNamespace<Callbacks>,
+    priorityAgentId: string
+  ) {
+    const callbacksId = callbacks.idFromName(priorityAgentId);
     return callbacks.get(callbacksId);
   }
 
@@ -61,7 +64,7 @@ export class Auth extends Tool implements IAuth {
     this.env = env;
     this.priorityAgentId = priorityAgentId;
     this.callbacks = callbacks;
-    this.authCallbacks = Auth.GetStub(callbacks);
+    this.authCallbacks = Auth.GetStub(callbacks, priorityAgentId);
     this.path = path;
   }
 
@@ -312,7 +315,9 @@ export class Auth extends Tool implements IAuth {
       // Call the wrapped callback (onAuth) with token info
       if (authState.callback) {
         try {
-          const callbacksStub = Auth.GetStub(callbacks);
+          const { shardKey } = Callbacks.parseToken(authState.callback);
+          const callbacksId = callbacks.idFromName(shardKey);
+          const callbacksStub = callbacks.get(callbacksId);
           // @ts-ignore type instantiation issue
           await callbacksStub.call(authState.callback, {
             access_token: tokenResponse.access_token,

@@ -1,4 +1,4 @@
-import { type AuthProvider } from "@plotday/agent/tools/auth";
+import { type AuthProvider } from "@plotday/sdk/tools/auth";
 
 type ProviderConfig = {
   name: string;

@@ -11,6 +11,7 @@ part 'now_state.dart';
 class NowBloc extends Cubit<NowState> {
   NowBloc() : super(const NowLoading());
 
+  bool get loading => super.state is NowLoading;
   NowLoaded get loadedState => super.state as NowLoaded;
 
   StreamSubscription<void>? _subscription;
@@ -21,7 +22,8 @@ class NowBloc extends Cubit<NowState> {
     return super.close();
   }
 
-  void start() {
+  Future<void> start() {
+    final completer = Completer<void>();
     _subscription =
         Rx.combineLatest3(
           Priority.watchDefault(),
@@ -36,7 +38,11 @@ class NowBloc extends Cubit<NowState> {
           },
         ).listen((state) {
           emit(state);
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
         });
+    return completer.future;
   }
 
   void stop() {

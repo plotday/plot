@@ -1,4 +1,4 @@
-import { type BuiltInTool } from "../../sdk";
+import { ITool, type Tools } from "../../sdk";
 
 /**
  * Built-in tool for executing functions in separate worker contexts.
@@ -28,8 +28,8 @@ import { type BuiltInTool } from "../../sdk";
  *
  *   constructor(tools: Tools) {
  *     super();
- *     this.run = tools.get<Run>("run");
- *     this.store = tools.get<Store>("store");
+ *     this.run = tools.get(Run);
+ *     this.store = tools.get(Store);
  *   }
  *
  *   async startBatchSync(totalItems: number) {
@@ -63,7 +63,17 @@ import { type BuiltInTool } from "../../sdk";
  * }
  * ```
  */
-export interface Run extends BuiltInTool {
+export class Run extends ITool {
+  static readonly id = "run";
+
+  constructor(_tools: Tools) {
+    super();
+  }
+
+  call(_name: string, _args: any, _context: any): Promise<any> {
+    throw new Error("Method not implemented.");
+  }
+
   /**
    * Queues a function to execute immediately in a separate worker context.
    *
@@ -75,7 +85,9 @@ export interface Run extends BuiltInTool {
    * @param context - Optional context data to pass to the function
    * @returns Promise that resolves when the execution is queued
    */
-  now(callbackName: string, context?: any): Promise<void>;
+  now(_callbackName: string, _context?: any): Promise<void> {
+    throw new Error("Method implemented remotely.");
+  }
 
   /**
    * Schedules a function to execute at a specific time in the future.
@@ -89,7 +101,13 @@ export interface Run extends BuiltInTool {
    * @param context - Optional context data to pass to the function
    * @returns Promise resolving to a cancellation token
    */
-  later(callbackName: string, executeAt: Date, context?: any): Promise<string>;
+  later(
+    _callbackName: string,
+    _executeAt: Date,
+    _context?: any
+  ): Promise<string> {
+    throw new Error("Method implemented remotely.");
+  }
 
   /**
    * Cancels a previously scheduled execution.
@@ -100,7 +118,9 @@ export interface Run extends BuiltInTool {
    * @param token - The cancellation token returned by later()
    * @returns Promise that resolves when the cancellation is processed
    */
-  cancel(token: string): Promise<void>;
+  cancel(_token: string): Promise<void> {
+    throw new Error("Method implemented remotely.");
+  }
 
   /**
    * Cancels all scheduled executions for this tool/agent.
@@ -110,6 +130,7 @@ export interface Run extends BuiltInTool {
    *
    * @returns Promise that resolves when all cancellations are processed
    */
-  cancelAll(): Promise<void>;
+  cancelAll(): Promise<void> {
+    throw new Error("Method implemented remotely.");
+  }
 }
-

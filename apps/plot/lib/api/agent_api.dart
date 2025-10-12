@@ -32,6 +32,7 @@ class Agent {
   final String? authorEmail;
   final String? authorUrl;
   final List<AgentTool> tools;
+  final String environment;
 
   const Agent({
     required this.id,
@@ -41,6 +42,7 @@ class Agent {
     this.authorEmail,
     this.authorUrl,
     required this.tools,
+    required this.environment,
   });
 
   factory Agent.fromJson(Map<String, dynamic> json) {
@@ -69,6 +71,7 @@ class Agent {
       authorEmail: json['author_email'] as String?,
       authorUrl: json['author_url'] as String?,
       tools: tools,
+      environment: json['environment'] as String? ?? 'public',
     );
   }
 }
@@ -77,6 +80,7 @@ class PriorityAgent {
   final String id;
   final String priorityId;
   final String agentId;
+  final String agentEnvironment;
   final String name;
   final Map<String, dynamic> config;
   final DateTime? createdAt;
@@ -88,6 +92,7 @@ class PriorityAgent {
     required this.id,
     required this.priorityId,
     required this.agentId,
+    required this.agentEnvironment,
     required this.name,
     required this.config,
     this.createdAt,
@@ -117,6 +122,7 @@ class PriorityAgent {
       id: json['id'] as String,
       priorityId: json['priority_id'] as String,
       agentId: json['agent_id'] as String,
+      agentEnvironment: json['agent_environment'] as String? ?? 'public',
       name: json['name'] as String,
       config: json['config'] as Map<String, dynamic>? ?? {},
       createdAt: json['created_at'] != null
@@ -134,9 +140,11 @@ class PriorityAgent {
 }
 
 class AgentApi {
-  /// Get all available agents
-  static Future<List<Agent>> getAllAgents() async {
-    final agentsData = await api.get<List<dynamic>>('/agents');
+  /// Get all available agents for a priority
+  static Future<List<Agent>> getAllAgents(Priority priority) async {
+    final agentsData = await api.get<List<dynamic>>(
+      '/agents?priorityId=${priority.id.toString()}',
+    );
     return agentsData
         .map((json) => Agent.fromJson(json as Map<String, dynamic>))
         .toList();
@@ -165,6 +173,7 @@ class AgentApi {
   static Future<String> addAgent({
     required String priorityId,
     required String agentId,
+    required String agentEnvironment,
     String? name,
     Map<String, dynamic>? config,
   }) async {
@@ -175,6 +184,7 @@ class AgentApi {
       body: jsonEncode({
         'priorityId': priorityId,
         'agentId': agentId,
+        'agentEnvironment': agentEnvironment,
         if (name != null) 'name': name,
         if (config != null) 'config': config,
       }),

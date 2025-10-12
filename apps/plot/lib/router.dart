@@ -43,11 +43,19 @@ class AppRouter extends RootStackRouter {
       children: [
         AutoRoute(page: SignInRoute.page, path: 'login'),
         AutoRoute(
+          page: InvitationRoute.page,
+          path: 'invitation',
+          guards: [AuthGuard()],
+        ),
+        AutoRoute(
           page: EmptyShellRoute("Now"),
           path: '',
           guards: [
             AuthGuard(),
             AutoRouteGuardCallback((resolver, router) async {
+              if (resolver.context.read<NowBloc>().loading) {
+                return;
+              }
               final priorityId = resolver.context
                   .read<NowBloc>()
                   .loadedState
@@ -86,7 +94,22 @@ class AppRouter extends RootStackRouter {
               page: PriorityRoute.page,
               path: ':priorityId',
               children: [
-                AutoRoute(page: PriorityMainRoute.page, path: ''),
+                AutoRoute(
+                  page: PriorityMainRoute.page,
+                  path: '',
+                  guards: [
+                    // In multi-panel mode, redirect to NewActivityRoute
+                    AutoRouteGuardCallback((resolver, router) async {
+                      final layout = resolver.context.read<LayoutBloc>().state;
+                      if (layout.multiPanel) {
+                        resolver.redirectUntil(const NewActivityRoute());
+                      } else {
+                        resolver.next();
+                      }
+                    }),
+                  ],
+                ),
+                AutoRoute(page: NewActivityRoute.page, path: 'new'),
                 AutoRoute(
                   page: ActivityRoute.page,
                   path: ':activityId',
@@ -148,8 +171,11 @@ class AuthGuard extends AutoRouteGuard {
     final userState = resolver.context.read<UserBloc>().state;
 
     if (userState is UserReady) {
-      // User is authenticated, proceed with navigation
+      // User is authenticated and active, proceed with navigation
       resolver.next();
+    } else if (userState is UserWaitlisted &&
+        resolver.route.name != 'InvitationRoute') {
+      resolver.redirectUntil(InvitationRoute());
     } else if (userState is UserSignedOut && resolver.route is! SignInRoute) {
       // User is not authenticated, redirect to sign in with return path
       final returnPath = resolver.route.path;

@@ -28,7 +28,7 @@ class AppState extends State<App> {
               child: FTheme(
                 data: buildTheme(context.colour),
                 child: RootProvider(
-                  builder: (router) => PlatformBuilder(
+                  builder: (routerConfig) => PlatformBuilder(
                     builder: (context) => AdaptiveTheme(
                       light: material.ThemeData(
                         colorScheme: material.ColorScheme.fromSeed(
@@ -49,7 +49,7 @@ class AppState extends State<App> {
                             title: 'Plot',
                             theme: theme,
                             darkTheme: darkTheme,
-                            routerConfig: router.config(),
+                            routerConfig: routerConfig,
                           ),
                     ),
                     macOSBuilder: (context) => macos.MacosApp.router(
@@ -60,7 +60,7 @@ class AppState extends State<App> {
                                   : macos.MacosThemeData.dark())
                               .copyWith(primaryColor: context.colour.accent),
                       debugShowCheckedModeBanner: false,
-                      routerConfig: router.config(),
+                      routerConfig: routerConfig,
                     ),
                   ),
                 ),

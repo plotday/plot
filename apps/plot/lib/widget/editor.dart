@@ -176,11 +176,11 @@ class EditorState extends State<Editor> {
 }
 
 class Viewer extends StatefulWidget {
-  Viewer({required this.markdown, this.onTap, super.key})
+  Viewer({required this.markdown, super.key})
     : document = deserializeMarkdownToDocument(markdown);
 
   final String markdown;
-  final void Function()? onTap;
+  // final void Function()? onTap;
   final Document document;
 
   @override
@@ -238,8 +238,8 @@ class ViewerState extends State<Viewer> {
         selectionStyle: SelectionStyles(
           selectionColor: context.colour.accentBackground,
         ),
-        contentTapDelegateFactory: (context) =>
-            ViewerTapHandler(context.document, onTap: widget.onTap),
+        // contentTapDelegateFactory: (context) =>
+        //     ViewerTapHandler(context.document, onTap: widget.onTap),
       ),
     );
   }

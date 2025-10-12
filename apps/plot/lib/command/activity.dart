@@ -69,6 +69,16 @@ class ChangeCurrentActivity extends ActivityCommand {
   }
 }
 
+class NewActivity extends Command {
+  NewActivity() : super(title: "New Activity", icon: PlotIcon.add);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    context.read<LayoutBloc>().setRightPanelVisible(true);
+    return CommandRoute(NewActivityRoute());
+  }
+}
+
 class OpenActivity extends Command {
   OpenActivity(Activity activity)
     // ignore: prefer_initializing_formals

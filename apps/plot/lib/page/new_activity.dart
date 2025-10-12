@@ -1,76 +1,33 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:auto_route/auto_route.dart';
 
-import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/activity_editor.dart';
+import 'package:plot/state/priority.dart';
 import 'package:plot/command/command.dart';
-import 'package:plot/util/hooks.dart';
 
-class NewActivityPage extends HookWidget {
-  const NewActivityPage({
-    required this.priorityId,
-    Activity? parent,
-    super.key,
-  }) : _initialParent = parent;
-
-  final PriorityId priorityId;
-  final Activity? _initialParent;
+@RoutePage(name: "NewActivityRoute")
+class NewActivityPage extends StatelessWidget {
+  const NewActivityPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final (noteController, note) = useTextEditingValue();
-    final parent = useState<Activity?>(_initialParent);
-    final priority = Priority.getOne(priorityId);
-
-    return Dialog(
-      header: Header(
-        main: Row(
-          children: [
-            Text('New activity'),
-            if (parent.value != null) ...[
-              Text(' in '),
-              Text(parent.value!.displayTitle),
-            ],
-          ],
-        ),
-        modal: true,
-      ),
-      builder: (context) => Column(
-        spacing: 16,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: noteController,
-            label: "Add an activity",
-            maxLines: 3,
-            autofocus: true,
+    return BlocBuilder<PriorityBloc, PriorityState>(
+      builder: (context, state) {
+        return Scaffold(
+          translucent: true,
+          header: Header(title: 'New Activity'),
+          body: ActivityEditor(
+            onAdd: (activity) async {
+              await context.read<PriorityBloc>().add(activity);
+              if (!context.mounted) return;
+              await context.run(ChangeCurrentActivity(activity));
+            },
+            draft: state.draft,
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Button.primary(
-                CommandWrapper(
-                  AddActivity(
-                    priority.then((p) => Activity(
-                      priority: p,
-                      note: note,
-                      parent: parent.value,
-                      order: Order.first(),
-                    )),
-                  ),
-                  run: (command, context) async {
-                    final ret = command.run(context);
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                    }
-                    return ret;
-                  },
-                ),
-                enabled: note.isNotEmpty,
-              ),
-            ],
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

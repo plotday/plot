@@ -8,6 +8,15 @@ import 'package:plot/api/agent_api.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
 
+/// Formats agent name with environment label if not public
+String _formatAgentName(String name, String environment) {
+  if (environment == 'public') {
+    return name;
+  }
+  final envLabel = environment[0].toUpperCase() + environment.substring(1);
+  return '$name ($envLabel)';
+}
+
 class ManageAgents extends ShowCommands {
   ManageAgents(Priority priority)
     : super(
@@ -19,7 +28,7 @@ class ManageAgents extends ShowCommands {
   static Future<Commands> _getAgentCommands(Priority priority) async {
     final results = await Future.wait([
       AgentApi.getAgentsForPriority(priority),
-      AgentApi.getAllAgents(),
+      AgentApi.getAllAgents(priority),
     ]);
     
     final priorityAgents = results[0] as List<PriorityAgent>;
@@ -45,7 +54,7 @@ class ManageAgents extends ShowCommands {
 class EditAgentCommand extends ShowCommands {
   EditAgentCommand(PriorityAgent agent)
     : super(
-        title: agent.name,
+        title: _formatAgentName(agent.name, agent.agentEnvironment),
         icon: PlotIcon.settings,
         commands: (context) => _getAgentCommands(agent),
       );
@@ -65,7 +74,7 @@ class EditAgentCommand extends ShowCommands {
 class AddAgent extends Command {
   AddAgent(this.priority, this.agent)
     : super(
-        title: 'Add ${agent.name}',
+        title: 'Add ${_formatAgentName(agent.name, agent.environment)}',
         subtitle: agent.description ?? 'Add this agent to priority',
         icon: PlotIcon.agent,
       );
@@ -79,9 +88,10 @@ class AddAgent extends Command {
       await AgentApi.addAgent(
         priorityId: priority.id.toString(),
         agentId: agent.id,
+        agentEnvironment: agent.environment,
       );
       Posthog().capture(eventName: 'Agent Added');
-      return CommandMessage('Agent "${agent.name}" added successfully');
+      return CommandMessage('Agent "${_formatAgentName(agent.name, agent.environment)}" added successfully');
     } catch (e, t) {
       log.warning('Failed to add agent', e, t);
       return CommandMessage(
@@ -96,7 +106,7 @@ class RemoveAgent extends Command {
   RemoveAgent(this.agent)
     : super(
         title: 'Remove Agent',
-        subtitle: 'Remove ${agent.name} from this priority',
+        subtitle: 'Remove ${_formatAgentName(agent.name, agent.agentEnvironment)} from this priority',
         icon: FontAwesomeIcons.trash,
       );
 
@@ -107,7 +117,7 @@ class RemoveAgent extends Command {
     try {
       await AgentApi.removeAgent(agent.id);
       Posthog().capture(eventName: 'Agent Removed');
-      return CommandMessage('Agent "${agent.name}" removed successfully');
+      return CommandMessage('Agent "${_formatAgentName(agent.name, agent.agentEnvironment)}" removed successfully');
     } catch (e) {
       return CommandMessage(
         'Failed to remove agent: ${e.toString()}',

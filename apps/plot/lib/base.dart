@@ -17,6 +17,8 @@ class User extends Equatable {
   String get id => _baseUser.id;
   String? get primaryEmail => _baseUser.email;
   String? get name => _baseUser.userMetadata?['full_name'] as String?;
+  String? get status => _baseUser.appMetadata['status'] as String?;
+  bool get isActive => status == 'active';
 
   /* private */
 
@@ -26,7 +28,6 @@ class User extends Equatable {
   List<Object> get props => [_baseUser.id];
 }
 
-// TODO store user and handle offline
 class Base {
   static supa.SupabaseClient get client =>
       Injector.appInstance.get<Base>()._client!;
@@ -49,32 +50,13 @@ class Base {
     }
   }
 
+  static Future<void> refreshSession() async {
+    await client.auth.refreshSession();
+  }
+
   Base() : _client = supa.Supabase.instance.client, _userId = null {
     _client!.auth.onAuthStateChange.listen((data) async {
-      User? user;
-      if (data.session?.user == null) {
-        await Sentry.configureScope((scope) => scope.setUser(null));
-        await Posthog().flush();
-        await Posthog().reset();
-      } else {
-        user = User(data.session!.user);
-        await Sentry.configureScope(
-          (scope) =>
-              scope.setUser(SentryUser(id: user!.id, email: user.primaryEmail)),
-        );
-        await Posthog().identify(
-          userId: user.id,
-          userProperties: {
-            ...(user.primaryEmail == null ? {} : {"email": user.primaryEmail!}),
-            ...(user.name == null ? {} : {"name": user.name!}),
-          },
-          userPropertiesSetOnce: {
-            "signed_up_time": DateTime.now().toUtc().toIso8601String(),
-          },
-        );
-      }
-      _userId = user == null ? null : Uuid.fromString(user.id);
-      _currentUserController.add(user);
+      await _updateUser(data.session?.user);
     });
   }
 
@@ -83,11 +65,49 @@ class Base {
   }
 
   final supa.SupabaseClient? _client;
+  bool _initialized = false;
   Uuid? _userId;
   final _currentUserController = BehaviorSubject<User?>();
 
   // Dispose of the StreamController
   void dispose() {
     _currentUserController.close();
+  }
+
+  Future<void> _updateUser(supa.User? supaUser) async {
+    final currentUser = _currentUserController.valueOrNull;
+    final newUser = supaUser == null ? null : User(supaUser);
+
+    // Skip if user hasn't changed (same ID and status)
+    if (_initialized &&
+        currentUser?.id == newUser?.id &&
+        currentUser?.status == newUser?.status) {
+      return;
+    }
+
+    User? user = supaUser == null ? null : User(supaUser);
+    _userId = user == null ? null : Uuid.fromString(user.id);
+    _initialized = true;
+    if (user == null) {
+      await Sentry.configureScope((scope) => scope.setUser(null));
+      await Posthog().flush();
+      await Posthog().reset();
+    } else {
+      await Sentry.configureScope(
+        (scope) =>
+            scope.setUser(SentryUser(id: user.id, email: user.primaryEmail)),
+      );
+      await Posthog().identify(
+        userId: user.id,
+        userProperties: {
+          ...(user.primaryEmail == null ? {} : {"email": user.primaryEmail!}),
+          ...(user.name == null ? {} : {"name": user.name!}),
+        },
+        userPropertiesSetOnce: {
+          "signed_up_time": DateTime.now().toUtc().toIso8601String(),
+        },
+      );
+    }
+    _currentUserController.add(user);
   }
 }

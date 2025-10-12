@@ -1,2 +1,1 @@
-export * from "./types";
-export { default } from "./outlook-calendar";
+export { default, OutlookCalendar } from "./outlook-calendar";

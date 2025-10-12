@@ -4,17 +4,17 @@ import {
   Tool,
   type Tools,
 } from "../../sdk";
+import { Auth, AuthLevel, AuthProvider, type Authorization } from "../auth";
 import {
-  type Auth,
-  AuthLevel,
-  AuthProvider,
-  type Authorization,
-} from "../auth";
-import type { Calendar, CalendarAuth, SyncOptions } from "../calendar";
-import type { Callback, CallbackTool } from "../callback";
-import type { Run } from "../run";
-import type { Store } from "../store";
-import type { Webhook, WebhookRequest } from "../webhook";
+  type Calendar,
+  type CalendarAuth,
+  type CalendarTool,
+  type SyncOptions,
+} from "../calendar";
+import { type Callback, CallbackTool } from "../callback";
+import { Run } from "../run";
+import { Store } from "../store";
+import { Webhook, type WebhookRequest } from "../webhook";
 import {
   GoogleApi,
   type GoogleEvent,
@@ -22,14 +22,82 @@ import {
   syncGoogleCalendar,
   transformGoogleEvent,
 } from "./google-api";
-import type { GoogleCalendar } from "./types";
 
 type AuthSuccessContext = {
   authToken: string;
   callbackToken: Callback;
 };
 
-export default class extends Tool implements GoogleCalendar {
+/**
+ * Google Calendar integration tool.
+ *
+ * Provides seamless integration with Google Calendar, supporting event
+ * synchronization, real-time updates via webhooks, and comprehensive
+ * recurrence pattern handling.
+ *
+ * **Features:**
+ * - OAuth 2.0 authentication with Google
+ * - Real-time event synchronization
+ * - Webhook-based change notifications
+ * - Support for recurring events and exceptions
+ * - Batch processing for large calendars
+ * - Automatic retry on failures
+ *
+ * **Required OAuth Scopes:**
+ * - `https://www.googleapis.com/auth/calendar.calendarlist.readonly` - Read calendar list
+ * - `https://www.googleapis.com/auth/calendar.events` - Read/write calendar events
+ *
+ * @example
+ * ```typescript
+ * class EventsAgent extends Agent {
+ *   private googleCalendar: GoogleCalendar;
+ *
+ *   constructor(tools: Tools) {
+ *     super();
+ *     this.googleCalendar = tools.get(GoogleCalendar);
+ *   }
+ *
+ *   async activate() {
+ *     const authLink = await this.googleCalendar.requestAuth("onGoogleAuth", {
+ *       provider: "google"
+ *     });
+ *
+ *     await this.plot.createActivity({
+ *       type: ActivityType.Task,
+ *       title: "Connect Google Calendar",
+ *       links: [authLink]
+ *     });
+ *   }
+ *
+ *   async onGoogleAuth(auth: CalendarAuth, context: any) {
+ *     const calendars = await this.googleCalendar.getCalendars(auth.authToken);
+ *
+ *     // Start syncing primary calendar
+ *     const primary = calendars.find(c => c.primary);
+ *     if (primary) {
+ *       await this.googleCalendar.startSync(
+ *         auth.authToken,
+ *         primary.id,
+ *         "onCalendarEvent",
+ *         {
+ *           options: {
+ *             timeMin: new Date(), // Only sync future events
+ *           }
+ *         }
+ *       );
+ *     }
+ *   }
+ *
+ *   async onCalendarEvent(activity: Activity, context: any) {
+ *     // Process Google Calendar events
+ *     await this.plot.createActivity(activity);
+ *   }
+ * }
+ * ```
+ */
+export class GoogleCalendar extends Tool implements CalendarTool {
+  static readonly id = "google-calendar";
+
   private auth: Auth;
   private store: Store;
   private webhook: Webhook;
@@ -38,11 +106,11 @@ export default class extends Tool implements GoogleCalendar {
 
   constructor(protected tools: Tools) {
     super();
-    this.auth = tools.get("auth");
-    this.store = tools.get("store");
-    this.webhook = tools.get("webhook");
-    this.run = tools.get("run");
-    this.callback = tools.get("callback");
+    this.auth = tools.get(Auth);
+    this.store = tools.get(Store);
+    this.webhook = tools.get(Webhook);
+    this.run = tools.get(Run);
+    this.callback = tools.get(CallbackTool);
   }
 
   async requestAuth(callback: Callback): Promise<ActivityLink> {
@@ -444,3 +512,5 @@ export default class extends Tool implements GoogleCalendar {
     await this.store.clear(`auth_callback_token:${context.authToken}`);
   }
 }
+
+export default GoogleCalendar;

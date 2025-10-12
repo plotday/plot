@@ -1,4 +1,4 @@
-import type { ActivityLink } from "../sdk";
+import type { ActivityLink, Tool } from "../sdk";
 import type { Callback } from "../tools/callback";
 
 /**
@@ -97,7 +97,7 @@ export interface SyncOptions {
  * }
  * ```
  */
-export interface CalendarTool {
+export interface CalendarTool extends Tool {
   /**
    * Initiates the authorization flow for the calendar service.
    *

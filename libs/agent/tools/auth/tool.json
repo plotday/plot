@@ -1,9 +1,0 @@
-{
-  "id": "auth",
-  "name": "Auth",
-  "description": "Integrate with other services that require authentication.",
-  "license": "MIT",
-  "tools": [
-    "store"
-  ]
-}

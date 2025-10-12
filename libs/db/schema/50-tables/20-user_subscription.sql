@@ -1,0 +1,24 @@
+CREATE TABLE "public"."user_subscription" (
+    "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
+    "created_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+    "stripe_customer_id" text UNIQUE,
+    "stripe_subscription_id" text UNIQUE,
+    "plan" subscription_plan NOT NULL DEFAULT 'free',
+    "status" subscription_status NOT NULL DEFAULT 'active',
+    "billing_cycle_start" timestamp with time zone NOT NULL,
+    "billing_cycle_end" timestamp with time zone NOT NULL,
+    UNIQUE(user_id)
+);
+
+CREATE INDEX idx_user_subscription_user_id ON "public"."user_subscription" ("user_id");
+CREATE INDEX idx_user_subscription_stripe_customer_id ON "public"."user_subscription" ("stripe_customer_id");
+CREATE INDEX idx_user_subscription_stripe_subscription_id ON "public"."user_subscription" ("stripe_subscription_id") WHERE "stripe_subscription_id" IS NOT NULL;
+
+ALTER TABLE "public"."user_subscription" ENABLE ROW LEVEL SECURITY;
+
+CREATE TRIGGER set_user_subscription_updated_at
+    BEFORE UPDATE ON "public"."user_subscription"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at ();

@@ -69,7 +69,7 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
 
     try {
       await api.post<Map<String, dynamic>>(
-        '/callback/link/$callbackToken',
+        '/callback/$callbackToken',
         body: widget.link.toJson(),
       );
 

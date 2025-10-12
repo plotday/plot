@@ -1,8 +1,8 @@
 import { Tool, type Tools } from "../../sdk";
-import { type Auth, AuthLevel, AuthProvider, type AuthToken } from "../auth";
-import type { CallbackTool, Callback } from "../callback";
-import type { Run } from "../run";
-import type { Store } from "../store";
+import { Auth, AuthLevel, AuthProvider, type AuthToken } from "../auth";
+import { type Callback, CallbackTool } from "../callback";
+import { Run } from "../run";
+import { Store } from "../store";
 import type { Contact, ContactAuth, GoogleContacts } from "./types";
 
 type ContactTokens = {
@@ -91,7 +91,8 @@ class GoogleApi {
 function parseContact(contact: GoogleContact) {
   const name = contact.names?.[0]?.displayName;
   const avatar = contact.photos?.filter(
-    (p: NonNullable<GoogleContact['photos']>[number]) => !p.default && p.metadata?.primary
+    (p: NonNullable<GoogleContact["photos"]>[number]) =>
+      !p.default && p.metadata?.primary
   )?.[0]?.url;
   return { name, avatar };
 }
@@ -239,6 +240,8 @@ async function getGoogleContacts(
 }
 
 export default class extends Tool implements GoogleContacts {
+  static readonly id = "google-contacts";
+
   private auth: Auth;
   private store: Store;
   private run: Run;
@@ -246,10 +249,10 @@ export default class extends Tool implements GoogleContacts {
 
   constructor(protected tools: Tools) {
     super();
-    this.auth = tools.get("auth");
-    this.store = tools.get("store");
-    this.run = tools.get("run");
-    this.callback = tools.get("callback");
+    this.auth = tools.get(Auth);
+    this.store = tools.get(Store);
+    this.run = tools.get(Run);
+    this.callback = tools.get(CallbackTool);
   }
 
   async requestAuth(
@@ -265,7 +268,10 @@ export default class extends Tool implements GoogleContacts {
     const opaqueToken = crypto.randomUUID();
 
     // Register the callback for auth completion with opaque token
-    const callbackToken = await this.callback.create(callbackFunctionName, callbackContext);
+    const callbackToken = await this.callback.create(
+      callbackFunctionName,
+      callbackContext
+    );
     await this.store.set(`auth_callback_token:${opaqueToken}`, callbackToken);
 
     // Create callback for auth completion
@@ -296,11 +302,9 @@ export default class extends Tool implements GoogleContacts {
     }
 
     const api = new GoogleApi(storedAuthToken.token);
-    const result = await getGoogleContacts(
-      api,
-      storedAuthToken.scopes,
-      { more: false }
-    );
+    const result = await getGoogleContacts(api, storedAuthToken.scopes, {
+      more: false,
+    });
 
     return result.contacts;
   }
@@ -322,7 +326,10 @@ export default class extends Tool implements GoogleContacts {
     }
 
     // Register the callback
-    const callbackToken = await this.callback.create(callbackFunctionName, options?.context);
+    const callbackToken = await this.callback.create(
+      callbackFunctionName,
+      options?.context
+    );
     await this.store.set(`contacts_callback_token:${authToken}`, callbackToken);
 
     // Start initial sync
@@ -350,9 +357,7 @@ export default class extends Tool implements GoogleContacts {
     authToken: string;
   }): Promise<void> {
     const { batchNumber, authToken } = context;
-    console.log(
-      `Starting Google Contacts sync batch ${batchNumber}`
-    );
+    console.log(`Starting Google Contacts sync batch ${batchNumber}`);
 
     try {
       const storedAuthToken = await this.store.get<AuthToken>(
@@ -364,13 +369,19 @@ export default class extends Tool implements GoogleContacts {
         );
       }
 
-      const state = await this.store.get<ContactSyncState>(`sync_state:${authToken}`);
+      const state = await this.store.get<ContactSyncState>(
+        `sync_state:${authToken}`
+      );
       if (!state) {
         throw new Error("No sync state found");
       }
 
       const api = new GoogleApi(storedAuthToken.token);
-      const result = await getGoogleContacts(api, storedAuthToken.scopes, state);
+      const result = await getGoogleContacts(
+        api,
+        storedAuthToken.scopes,
+        state
+      );
 
       if (result.contacts.length > 0) {
         await this.processContacts(result.contacts, authToken);
@@ -393,17 +404,19 @@ export default class extends Tool implements GoogleContacts {
         await this.store.clear(`sync_state:${authToken}`);
       }
     } catch (error) {
-      console.error(
-        `Error in sync batch ${batchNumber}:`,
-        error
-      );
+      console.error(`Error in sync batch ${batchNumber}:`, error);
 
       throw error;
     }
   }
 
-  private async processContacts(contacts: Contact[], authToken: string): Promise<void> {
-    const callbackToken = await this.store.get<Callback>(`contacts_callback_token:${authToken}`);
+  private async processContacts(
+    contacts: Contact[],
+    authToken: string
+  ): Promise<void> {
+    const callbackToken = await this.store.get<Callback>(
+      `contacts_callback_token:${authToken}`
+    );
     if (callbackToken) {
       await this.callback.call(callbackToken, contacts);
     }
@@ -438,3 +451,4 @@ export default class extends Tool implements GoogleContacts {
     }
   }
 }
+

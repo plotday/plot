@@ -16,8 +16,20 @@ final class UserSignedOut extends UserState {
   const UserSignedOut();
 }
 
+final class UserWaitlisted extends UserState {
+  const UserWaitlisted(this.user);
+
+  final User user;
+
+  @override
+  List<Object?> get props => [user];
+}
+
 final class UserReady extends UserState {
   const UserReady(this.user);
 
   final User user;
+
+  @override
+  List<Object?> get props => [user];
 }

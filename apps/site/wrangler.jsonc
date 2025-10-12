@@ -1,0 +1,13 @@
+{
+  "workers_dev": true,
+  "name": "site",
+  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2024-11-18",
+  "main": "./workers/app.ts",
+  "routes": [
+    {
+      "pattern": "plot.day",
+      "custom_domain": true
+    }
+  ]
+}

@@ -5,18 +5,17 @@ import {
   Tool,
   type Tools,
 } from "../../sdk";
-import {
-  type Auth,
-  AuthLevel,
-  AuthProvider,
-  type Authorization,
-} from "../auth";
-import type { Calendar, CalendarAuth, SyncOptions } from "../calendar";
-import type { CallbackTool, Callback } from "../callback";
-import type { Run } from "../run";
-import type { Store } from "../store";
-import type { Webhook, WebhookRequest } from "../webhook";
-import type { OutlookCalendar } from "./types";
+import { Auth, AuthLevel, AuthProvider, type Authorization } from "../auth";
+import type {
+  Calendar,
+  CalendarAuth,
+  CalendarTool,
+  SyncOptions,
+} from "../calendar";
+import { type Callback, CallbackTool } from "../callback";
+import { Run } from "../run";
+import { Store } from "../store";
+import { Webhook, type WebhookRequest } from "../webhook";
 
 type AuthSuccessContext = {
   token: string;
@@ -154,7 +153,75 @@ const outlookApi = {
   },
 };
 
-export default class extends Tool implements OutlookCalendar {
+/**
+ * Microsoft Outlook Calendar integration tool.
+ *
+ * Provides integration with Microsoft Outlook Calendar and Exchange Online,
+ * supporting event synchronization, webhook notifications, and Microsoft
+ * Graph API compatibility.
+ *
+ * **Features:**
+ * - OAuth 2.0 authentication with Microsoft
+ * - Real-time event synchronization via Microsoft Graph
+ * - Webhook-based change notifications
+ * - Support for recurring events and exceptions
+ * - Exchange Online and Outlook.com compatibility
+ * - Batch processing for large calendars
+ *
+ * **Required OAuth Scopes:**
+ * - `https://graph.microsoft.com/calendars.readwrite` - Read/write calendar access
+ *
+ * @example
+ * ```typescript
+ * class EventsAgent extends Agent {
+ *   private outlookCalendar: OutlookCalendar;
+ *
+ *   constructor(tools: Tools) {
+ *     super();
+ *     this.outlookCalendar = tools.get(OutlookCalendar);
+ *   }
+ *
+ *   async activate() {
+ *     const authLink = await this.outlookCalendar.requestAuth("onOutlookAuth", {
+ *       provider: "outlook"
+ *     });
+ *
+ *     await this.plot.createActivity({
+ *       type: ActivityType.Task,
+ *       title: "Connect Outlook Calendar",
+ *       links: [authLink]
+ *     });
+ *   }
+ *
+ *   async onOutlookAuth(auth: CalendarAuth, context: any) {
+ *     const calendars = await this.outlookCalendar.getCalendars(auth.authToken);
+ *
+ *     // Start syncing primary calendar
+ *     const primary = calendars.find(c => c.primary);
+ *     if (primary) {
+ *       await this.outlookCalendar.startSync(
+ *         auth.authToken,
+ *         primary.id,
+ *         "onCalendarEvent",
+ *         {
+ *           options: {
+ *             timeMin: new Date(), // Only sync future events
+ *           }
+ *         }
+ *       );
+ *     }
+ *   }
+ *
+ *   async onCalendarEvent(activity: Activity, context: any) {
+ *     // Process Outlook Calendar events
+ *     await this.plot.createActivity(activity);
+ *   }
+ * }
+ * ```
+ */
+export class OutlookCalendar extends Tool implements CalendarTool {
+  static readonly id = "outlook-calendar";
+
   private auth: Auth;
   private store: Store;
   private webhook: Webhook;
@@ -163,11 +230,11 @@ export default class extends Tool implements OutlookCalendar {
 
   constructor(protected tools: Tools) {
     super();
-    this.auth = tools.get("auth");
-    this.store = tools.get("store");
-    this.webhook = tools.get("webhook");
-    this.run = tools.get("run");
-    this.callback = tools.get("callback");
+    this.auth = tools.get(Auth);
+    this.store = tools.get(Store);
+    this.webhook = tools.get(Webhook);
+    this.run = tools.get(Run);
+    this.callback = tools.get(CallbackTool);
   }
 
   async requestAuth(callback: Callback): Promise<ActivityLink> {
@@ -596,3 +663,5 @@ export default class extends Tool implements OutlookCalendar {
     }
   }
 }
+
+export default OutlookCalendar;

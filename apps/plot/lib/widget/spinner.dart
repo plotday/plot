@@ -3,10 +3,11 @@ import 'package:platform_builder/platform_builder.dart';
 import 'package:macos_ui/macos_ui.dart' as macos;
 
 class Spinner extends StatelessWidget {
-  const Spinner({this.message, super.key});
-  const Spinner.message(this.message, {super.key});
+  const Spinner({this.message, this.size = 16, super.key});
+  const Spinner.message(this.message, {this.size = 16, super.key});
 
   final String? message;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -16,22 +17,24 @@ class Spinner extends StatelessWidget {
         spacing: 8,
         children: [
           if (message != null) Text(message!),
-          const macos.ProgressCircle(),
+          SizedBox(
+            width: size,
+            height: size,
+            child: const macos.ProgressCircle(),
+          ),
         ],
       ),
-      builder: (_) => message == null
-          ? const CircularProgressIndicator()
-          : Row(
-              spacing: 8,
-              children: [
-                Text(message!),
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ],
-            ),
+      builder: (_) => Row(
+        spacing: 8,
+        children: [
+          if (message != null) Text(message!),
+          SizedBox(
+            width: size,
+            height: size,
+            child: const CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ],
+      ),
     );
   }
 }

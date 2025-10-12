@@ -1,25 +1,28 @@
 import { createRequestHandler } from "react-router";
 
 declare global {
-  interface CloudflareEnvironment {}
+  interface CloudflareEnvironment {
+    SUPABASE_URL: string;
+    SUPABASE_ANON_KEY: string;
+    API_ROOT?: string;
+  }
 }
 
 declare module "react-router" {
   export interface AppLoadContext {
-    VALUE_FROM_CLOUDFLARE: string;
+    env: CloudflareEnvironment;
   }
 }
 
 const requestHandler = createRequestHandler(
-  // @ts-expect-error - virtual module provided by React Router at build time
   () => import("virtual:react-router/server-build"),
-  import.meta.env.MODE
+  import.meta.env.MODE,
 );
 
 export default {
   fetch(request, env) {
     return requestHandler(request, {
-      VALUE_FROM_CLOUDFLARE: "Hello from Cloudflare",
+      env,
     });
   },
 } satisfies ExportedHandler<CloudflareEnvironment>;

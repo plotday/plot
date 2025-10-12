@@ -13,7 +13,7 @@ abstract class Env {
     supabaseUrl = _translateUrl(dotenv.env['SUPABASE_URL']!);
     supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
 
-    apiRoot = dotenv.env['API_ROOT']!;
+    apiRoot = '${dotenv.env['API_ROOT']!}/app';
     authServerCallbackUrl = dotenv.env['AUTH_GOOGLE_URI']!;
     authCallbackUrl = kIsWeb
         ? Uri.base.resolve('/auth.html').toString()

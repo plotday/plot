@@ -13,14 +13,14 @@
  *
  *  constructor(tools: Tools) {
  *    super();
- *    this.plot = tools.get<Plot>("plot");
+ *    this.plot = tools.get(Plot);
  *  }
  *
  *   async activate(priority: Pick<Priority, "id">) {
  *     // Initialize agent for the given priority
  *     await this.plot.createActivity({
  *      type: ActivityType.Note,
- *      note: "Hello! looking!",
+ *      note: "Hello, good looking!",
  *    });
  *   }
  *
@@ -79,13 +79,13 @@ export abstract class Agent {
 }
 
 /**
- * Interface for built-in tools that are provided by the Plot runtime.
- *
- * Built-in tools have access to internal Plot infrastructure such as
- * database connections, authentication systems, and backend services.
- * Examples include the Plot tool, Auth tool, and Store tool.
+ * Interface for tools. Tools should extend Tool. Several built-in tools
+ * implement this interface directly since they're securely proxied
+ * outside the agent runtime.
  */
-export interface BuiltInTool {
+export abstract class ITool {
+  static readonly id: string;
+
   /**
    * Dynamically calls a method on this tool instance.
    *
@@ -94,11 +94,16 @@ export interface BuiltInTool {
    * @param context - Additional context data for the method call
    * @returns Promise resolving to the method's return value
    */
-  call(name: string, args: any, context: any): Promise<any>;
+  abstract call(name: string, args: any, context: any): Promise<any>;
 }
 
+export type IToolConstructor<T extends ITool> = {
+  new (tools: Tools): T;
+  readonly id: string;
+};
+
 /**
- * Abstract base class for regular tools.
+ * Base class for regular tools.
  *
  * Regular tools run in isolation and can only access other tools declared
  * in their tool.json dependencies. They are ideal for external API integrations
@@ -109,7 +114,7 @@ export interface BuiltInTool {
  * class GoogleCalendarTool extends Tool {
  *   constructor(protected tools: Tools) {
  *     super();
- *     this.auth = tools.get<Auth>("auth");
+ *     this.auth = tools.get(Auth);
  *   }
  *
  *   async getCalendars() {
@@ -118,7 +123,7 @@ export interface BuiltInTool {
  * }
  * ```
  */
-export abstract class Tool {
+export abstract class Tool implements ITool {
   /**
    * Dynamically calls a method on this tool instance.
    *
@@ -148,14 +153,14 @@ export abstract class Tool {
  */
 export interface Tools {
   /**
-   * Retrieves a tool instance by its ID.
+   * Retrieves a tool instance by its class reference.
    *
    * @template T - The expected type of the tool
-   * @param id - The tool ID as declared in the configuration
+   * @param ToolClass - The tool class reference with a static id property
    * @returns The tool instance
    * @throws When the tool is not found or not properly configured
    */
-  get<T>(id: string): T;
+  get<T extends ITool>(ToolClass: IToolConstructor<T>): T;
 }
 
 /**

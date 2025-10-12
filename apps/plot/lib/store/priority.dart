@@ -18,6 +18,7 @@ class Priorities extends Table
       .withDefault(const Constant(0))
       .map(const ThemeColorConverter())();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
+  BoolColumn get unread => boolean().withDefault(const Constant(false))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -33,6 +34,13 @@ class PrioritiesBase extends BaseTable {
   Insertable<PriorityRow> fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
     return PriorityRow.fromJson(json);
+  }
+
+  @override
+  Map<String, dynamic> toBase(DataClass row) {
+    final json = super.toBase(row);
+    json.remove('unread');
+    return json;
   }
 }
 
@@ -346,6 +354,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          pending: PriorityPendingSync.full.value,
          path: Path.generate(parent: parent.path),
          root: false,
+         unread: false,
        ) {
     parent!._addChild(this);
   }
@@ -374,6 +383,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          root: row.root,
          path: row.path,
          createdBy: row.createdBy,
+         unread: row.unread,
        ) {
     parent?._addChild(this);
   }
@@ -453,6 +463,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? root,
     Priority? parent,
     Value<int?> pending = const Value.absent(),
+    bool? unread,
   }) {
     return Priority.fromStore(
       super.copyWith(

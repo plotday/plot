@@ -4,12 +4,12 @@ import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/resizable_panel_layout.dart';
+import 'package:plot/router.dart' show PriorityMainRoute, NewActivityRoute;
 import 'priorities.dart';
 import 'logging.dart';
 
@@ -42,21 +42,59 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
           context.read<NowBloc>().setPriority(state.context);
         },
         builder: (context, state) {
-          return BlocBuilder<LayoutBloc, LayoutState>(
-            builder: (context, layoutState) {
-              if (layoutState.multiPanel) {
-                return ResizablePanelLayout(
-                  left: const PrioritiesPage(),
-                  middle: const PriorityPage(),
-                  child: AutoRouter(key: ValueKey("TheOne")),
-                );
-              } else {
-                return AutoRouter(key: ValueKey("TheOne"));
-              }
-            },
-          );
+          return _PriorityWrapperContent();
         },
       ),
+    );
+  }
+}
+
+class _PriorityWrapperContent extends StatelessWidget {
+  const _PriorityWrapperContent();
+
+  void _handleRouteNavigation(BuildContext context, bool isMultiPanel) {
+    final router = context.router;
+    final hasActivityRoute = router.stack.any(
+      (route) => route.name == 'ActivityRoute',
+    );
+    final hasNewActivityRoute = router.stack.any(
+      (route) => route.name == 'NewActivityRoute',
+    );
+
+    if (isMultiPanel) {
+      // When in multi-panel mode, ensure there's always a child route
+      // If no ActivityRoute or NewActivityRoute is active, navigate to NewActivityRoute
+      if (!hasActivityRoute && !hasNewActivityRoute) {
+        router.navigate(const NewActivityRoute());
+      }
+    } else {
+      // When transitioning from multi-panel to single-panel,
+      // ensure we're on PriorityMainRoute (not showing NewActivityPage)
+      // If we're showing NewActivityPage in right pane or on NewActivityRoute,
+      // navigate back to PriorityMainRoute
+      if (!hasActivityRoute && hasNewActivityRoute) {
+        router.replace(const PriorityMainRoute());
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<LayoutBloc, LayoutState>(
+      listener: (context, layoutState) {
+        _handleRouteNavigation(context, layoutState.multiPanel);
+      },
+      builder: (context, layoutState) {
+        if (layoutState.multiPanel) {
+          return ResizablePanelLayout(
+            left: const PrioritiesPage(),
+            middle: const PriorityPage(),
+            child: AutoRouter(key: ValueKey("TheOne")),
+          );
+        } else {
+          return AutoRouter(key: ValueKey("TheOne"));
+        }
+      },
     );
   }
 }
@@ -95,183 +133,151 @@ class PriorityPage extends StatelessWidget {
                               context.run(ChangeCurrentActivity(activity)),
                         );
                       },
-                      builder: (context, listController) => SelectionCommandScope(
-                        commandBuilder: (index) {
-                          final item =
-                              index >= state.first &&
-                                  index - state.first < state.agendaItems.length
-                              ? state.agendaItems[index - state.first]
-                              : null;
-                          return item?.iff(
-                                activity: (activity) => [
-                                  StaticCommandGroup(
-                                    title: activity.displayTitle,
-                                    commands: [
-                                      OpenActivity(activity),
-                                      ...activityCommands(activity),
+                      builder: (context, listController) =>
+                          SelectionCommandScope(
+                            commandBuilder: (index) {
+                              final item =
+                                  index >= state.first &&
+                                      index - state.first <
+                                          state.agendaItems.length
+                                  ? state.agendaItems[index - state.first]
+                                  : null;
+                              return item?.iff(
+                                    activity: (activity) => [
+                                      StaticCommandGroup(
+                                        title: activity.displayTitle,
+                                        commands: [
+                                          OpenActivity(activity),
+                                          ...activityCommands(activity),
+                                        ],
+                                      ),
                                     ],
-                                  ),
-                                ],
-                              ) ??
-                              <StaticCommandGroup>[];
-                        },
-                        listController: listController,
-                        child: Scaffold(
-                          translucent: true,
-                          header: Header(
-                            title: state.activity?.displayTitle,
-                            main: state.activity == null
-                                ? PrioritySelector(
-                                    selected: state.context,
-                                    onSelect: (p) =>
-                                        context.run(ChangeCurrentPriority(p)),
-                                  )
-                                : null,
-                            commands: [
-                              PickFilterCommand(),
-                              ShowPriorityCommands(
-                                state.context,
-                                current: true,
-                              ),
-                            ],
-                          ),
-                          body: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final maxActivityEditorHeight =
-                                  constraints.maxHeight * 0.4;
-                              return Column(
-                                children: [
-                                  Flexible(
-                                    flex: 1,
-                                    fit: FlexFit.tight,
-                                    child: BidirectionalList(
-                                      controller: listController,
-                                      scrollController:
-                                          ScrollControllerContext.of(context),
-                                      first: state.first,
-                                      count: state.agendaItems.length,
-                                      doneStart: state.doneStart,
-                                      doneEnd: state.doneEnd,
-                                      fetcher: (first, count) => context
-                                          .read<PriorityBloc>()
-                                          .fetchMoreAgendaItems(first, count),
-                                      builder: (context, index, selected) {
-                                        final current = state
-                                            .agendaItems[index - state.first];
-                                        log.fine('Building $index: $current');
-
-                                        return Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          key: ValueKey(
-                                            current.when(
-                                              date: (d) => 'date_${d.hashCode}',
-                                              priority: (p) =>
-                                                  'priority_${p.id}',
-                                              activity: (a) => a.id,
-                                            ),
-                                          ),
-                                          children: [
-                                            ...current.when(
-                                              date: (date) => [
-                                                DayHeader(
-                                                  date: date,
-                                                  now: date == Date.today(),
-                                                  selected: selected,
-                                                ),
-                                              ],
-                                              priority: (priority) => [
-                                                AgendaHeader(
-                                                  priority: priority,
-                                                  context: state.context,
-                                                  selected: selected,
-                                                ),
-                                              ],
-                                              activity: (activity) => [
-                                                if (activity.type ==
-                                                    ActivityType.event)
-                                                  AgendaHeader(
-                                                    activity: activity,
-                                                    context: state.context,
-                                                    selected: selected,
-                                                  ),
-                                                if (activity.type !=
-                                                    ActivityType.event)
-                                                  ActivityWidget(
-                                                    activity: activity,
-                                                    selected: selected,
-                                                    context: state.context,
-                                                  ),
-                                              ],
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                      onReorder: (index) {
-                                        final item = state
-                                            .agendaItems[index - state.first];
-                                        final activity = item.iff(
-                                          activity: (activity) => activity,
-                                        );
-                                        if (activity == null) {
-                                          return null;
-                                        }
-                                        return (int newIndex) {
-                                          final oldListIndex =
-                                              index - state.first;
-                                          final newListIndex =
-                                              newIndex - state.first;
-
-                                          // Update state immediately to prevent jank
-                                          context
-                                              .read<PriorityBloc>()
-                                              .moveAgendaItem(
-                                                oldListIndex,
-                                                newListIndex,
-                                              );
-
-                                          // Then update the database asynchronously
-                                          var prevIndex =
-                                              newListIndex -
-                                              1 +
-                                              (oldListIndex < newListIndex
-                                                  ? 1
-                                                  : 0);
-                                          var nextIndex = prevIndex + 1;
-                                          AgendaItem? prev;
-                                          if (prevIndex >= 0) {
-                                            prev = state.agendaItems[prevIndex];
-                                          }
-                                          AgendaItem? next;
-                                          if (nextIndex <
-                                              state.agendaItems.length) {
-                                            next = state.agendaItems[nextIndex];
-                                          }
-                                          onReorderActivity(
-                                            activity,
-                                            prev,
-                                            next,
-                                          );
-                                        };
-                                      },
-                                    ),
-                                  ),
-                                  Container(
-                                    constraints: BoxConstraints(
-                                      maxHeight: maxActivityEditorHeight,
-                                    ),
-                                    child: ActivityEditor(
-                                      onAdd: (activity) => context
-                                          .read<PriorityBloc>()
-                                          .add(activity),
-                                      draft: state.draft,
-                                    ),
-                                  ),
-                                ],
-                              );
+                                  ) ??
+                                  <StaticCommandGroup>[];
                             },
+                            listController: listController,
+                            child: Scaffold(
+                              translucent: true,
+                              header: Header(
+                                title: state.activity?.displayTitle,
+                                main: state.activity == null
+                                    ? PrioritySelector(
+                                        selected: state.context,
+                                        onSelect: (p) => context.run(
+                                          ChangeCurrentPriority(p),
+                                        ),
+                                      )
+                                    : null,
+                                commands: [
+                                  NewActivity(),
+                                  PickFilterCommand(),
+                                  ShowPriorityCommands(
+                                    state.context,
+                                    current: true,
+                                  ),
+                                ],
+                              ),
+                              body: BidirectionalList(
+                                controller: listController,
+                                scrollController: ScrollControllerContext.of(
+                                  context,
+                                ),
+                                first: state.first,
+                                count: state.agendaItems.length,
+                                doneStart: state.doneStart,
+                                doneEnd: state.doneEnd,
+                                fetcher: (first, count) => context
+                                    .read<PriorityBloc>()
+                                    .fetchMoreAgendaItems(first, count),
+                                builder: (context, index, selected) {
+                                  final current =
+                                      state.agendaItems[index - state.first];
+                                  log.fine('Building $index: $current');
+
+                                  return Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    key: ValueKey(
+                                      current.when(
+                                        date: (d) => 'date_${d.hashCode}',
+                                        priority: (p) => 'priority_${p.id}',
+                                        activity: (a) => a.id,
+                                      ),
+                                    ),
+                                    children: [
+                                      ...current.when(
+                                        date: (date) => [
+                                          DayHeader(
+                                            date: date,
+                                            now: date == Date.today(),
+                                            selected: selected,
+                                          ),
+                                        ],
+                                        priority: (priority) => [
+                                          AgendaHeader(
+                                            priority: priority,
+                                            context: state.context,
+                                            selected: selected,
+                                          ),
+                                        ],
+                                        activity: (activity) => [
+                                          if (activity.type ==
+                                              ActivityType.event)
+                                            AgendaHeader(
+                                              activity: activity,
+                                              context: state.context,
+                                              selected: selected,
+                                            ),
+                                          if (activity.type !=
+                                              ActivityType.event)
+                                            ActivityWidget(
+                                              activity: activity,
+                                              selected: selected,
+                                              context: state.context,
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  );
+                                },
+                                onReorder: (index) {
+                                  final item =
+                                      state.agendaItems[index - state.first];
+                                  final activity = item.iff(
+                                    activity: (activity) => activity,
+                                  );
+                                  if (activity == null) {
+                                    return null;
+                                  }
+                                  return (int newIndex) {
+                                    final oldListIndex = index - state.first;
+                                    final newListIndex = newIndex - state.first;
+
+                                    // Update state immediately to prevent jank
+                                    context.read<PriorityBloc>().moveAgendaItem(
+                                      oldListIndex,
+                                      newListIndex,
+                                    );
+
+                                    // Then update the database asynchronously
+                                    var prevIndex =
+                                        newListIndex -
+                                        1 +
+                                        (oldListIndex < newListIndex ? 1 : 0);
+                                    var nextIndex = prevIndex + 1;
+                                    AgendaItem? prev;
+                                    if (prevIndex >= 0) {
+                                      prev = state.agendaItems[prevIndex];
+                                    }
+                                    AgendaItem? next;
+                                    if (nextIndex < state.agendaItems.length) {
+                                      next = state.agendaItems[nextIndex];
+                                    }
+                                    onReorderActivity(activity, prev, next);
+                                  };
+                                },
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
                     ),
             );
           },

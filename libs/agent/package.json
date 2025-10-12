@@ -1,15 +1,112 @@
 {
-  "name": "@plotday/agent",
-  "main": "index.ts",
-  "types": "index.ts",
-  "sideEffects": false,
+  "name": "@plotday/sdk",
   "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "lint": "tsc"
+  "description": "SDK for building Plot agents - intelligent assistants that organize and prioritize your activities",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "plot": "./bin/plot.cjs"
   },
-  "dependencies": {},
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tools/agent": {
+      "types": "./dist/tools/agent/index.d.ts",
+      "default": "./dist/tools/agent/index.js"
+    },
+    "./tools/ai": {
+      "types": "./dist/tools/ai/index.d.ts",
+      "default": "./dist/tools/ai/index.js"
+    },
+    "./tools/auth": {
+      "types": "./dist/tools/auth/index.d.ts",
+      "default": "./dist/tools/auth/index.js"
+    },
+    "./tools/callback": {
+      "types": "./dist/tools/callback/index.d.ts",
+      "default": "./dist/tools/callback/index.js"
+    },
+    "./tools/google-calendar": {
+      "types": "./dist/tools/google-calendar/index.d.ts",
+      "default": "./dist/tools/google-calendar/index.js"
+    },
+    "./tools/google-contacts": {
+      "types": "./dist/tools/google-contacts/index.d.ts",
+      "default": "./dist/tools/google-contacts/index.js"
+    },
+    "./tools/outlook-calendar": {
+      "types": "./dist/tools/outlook-calendar/index.d.ts",
+      "default": "./dist/tools/outlook-calendar/index.js"
+    },
+    "./tools/plot": {
+      "types": "./dist/tools/plot/index.d.ts",
+      "default": "./dist/tools/plot/index.js"
+    },
+    "./tools/run": {
+      "types": "./dist/tools/run/index.d.ts",
+      "default": "./dist/tools/run/index.js"
+    },
+    "./tools/store": {
+      "types": "./dist/tools/store/index.d.ts",
+      "default": "./dist/tools/store/index.js"
+    },
+    "./tools/webhook": {
+      "types": "./dist/tools/webhook/index.d.ts",
+      "default": "./dist/tools/webhook/index.js"
+    },
+    "./tsconfig.base.json": "./tsconfig.base.json"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "tsconfig.base.json"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "lint": "tsc",
+    "build": "pnpm run build:sdk && pnpm run build:cli",
+    "build:sdk": "tsc --project tsconfig.build.json",
+    "build:cli": "tsc --project cli/tsconfig.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true});require('fs').rmSync('bin',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^12.0.0",
+    "dotenv": "^16.4.5",
+    "esbuild": "^0.24.0",
+    "prompts": "^2.4.2"
+  },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.0.0"
-  }
+    "@cloudflare/workers-types": "^4.0.0",
+    "@types/prompts": "^2.4.9"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "libs/agent"
+  },
+  "homepage": "https://plot.day",
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "agent",
+    "sdk",
+    "automation",
+    "productivity",
+    "calendar",
+    "tasks"
+  ],
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT"
 }

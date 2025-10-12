@@ -20,9 +20,10 @@ import 'package:plot/util/theme_color.dart';
 import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
 import 'package:plot/util/list.dart';
+import 'package:plot/util/async.dart';
+import 'package:plot/util/string.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/broadcast.dart';
-import 'package:plot/util/async.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/base.dart';
 import 'enums.dart';
@@ -272,7 +273,6 @@ class Store extends _$Store {
     _clientId = _generateClientId();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('client_id', _clientId!);
-    log.info("Regenerated client ID: $_clientId");
   }
 
   static Future<void> init(User user) async {
@@ -283,15 +283,26 @@ class Store extends _$Store {
     }
     final inst = Store._(user);
     Injector.appInstance.registerSingleton<Store>(() => inst, override: true);
+
     if (await Priority.hasDefault()) {
-      inst._startSync();
+      // User has existing local data, start sync in background (non-blocking)
+      inst._setupConnectivityListener();
     } else {
+      // New user or no local data - need to sync before app can be used
+      // Check if we're offline first to provide better error message
+      if (!(await inst._hasNetworkConnectivity())) {
+        throw Exception(
+          "No local data available. Please connect to the internet to set up your account.",
+        );
+      }
       await inst._startSync();
       assert(await Priority.hasDefault(), "No default priority");
     }
   }
 
   BroadcastClient? _broadcastClient;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  bool _isSyncing = false;
 
   Future<DATA> add<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
@@ -647,12 +658,44 @@ class Store extends _$Store {
   }
 
   Future<void> _startSync() async {
-    _unsubscribeFromUpdates();
-    await _waitForNetworkConnectivity();
-    await _syncAll();
-    await _subscribeToUpdates();
-    // Sync one more time in case something change while we were syncing, before we subscribed
-    await _syncAll();
+    // Prevent concurrent sync attempts
+    if (_isSyncing) {
+      log.info("Sync already in progress, skipping");
+      return;
+    }
+
+    _isSyncing = true;
+    try {
+      _unsubscribeFromUpdates();
+      await _waitForNetworkConnectivity();
+      await _syncAll();
+      await _subscribeToUpdates();
+      // Sync one more time in case something changed while we were syncing, before we subscribed
+      await _syncAll();
+    } finally {
+      _isSyncing = false;
+    }
+  }
+
+  void _setupConnectivityListener() {
+    // Monitor connectivity changes throughout app lifecycle
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      results,
+    ) async {
+      final isOnline = results.any(
+        (result) => result != ConnectivityResult.none,
+      );
+
+      if (isOnline && !_isSyncing) {
+        log.info("Connectivity restored, attempting to sync");
+        // Attempt sync when connectivity is restored (fire and forget)
+        _startSync().catchError((Object error, StackTrace stackTrace) {
+          log.warning("Connectivity-triggered sync failed", error, stackTrace);
+          return null;
+        });
+      }
+    });
   }
 
   Store._(User user)
@@ -667,7 +710,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 131;
+  int get schemaVersion => 132;
 
   @override
   MigrationStrategy get migration {
@@ -695,6 +738,8 @@ class Store extends _$Store {
   @override
   Future<void> close() async {
     _unsubscribeFromUpdates();
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
     await super.close();
   }
 

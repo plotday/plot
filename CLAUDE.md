@@ -22,7 +22,7 @@ The Supabase database schema is defined in "libs/db/schema/".
 - The main app, written in Flutter, is in "apps/plot/".
 - All other packages are wrritten in Typescript and use pnpm for package management.
 - APIs and server tasks are implemented using Clouflare Workers, located in "workers/".
-- The agent SDK is in "libs/agent/".
+- The agent SDK is in "libs/agent/". It includes the `plot` CLI tool.
 - Agents are in "agents/".
 
 ## SDK Entity Standards
@@ -65,11 +65,10 @@ There are two types of tools for agents:
 
 - Located in `libs/agent/tools/*`
 - Extend the base `Tool` class from the agent SDK
-- Run in isolation, with access only to other tools declared in their tool.json.
+- Run in isolation, with access only to other tools declared in their package.json.
 - Constructor must have this signature: `constructor(protected tools: Tools)`
-- All other tools required must be added to the agent.json/tool.json file,
-  and accessed via `tools.get<ToolClass>("tool-id")`
-- Examples: `GoogleCalendarTool`, `OutlookCalendarTool`
+- All other tools required must be added to the package.json file,
+  and accessed via `tools.get(ToolClass)` (e.g. `Plot`, `Store`)
 - Always prefer regular tools unless internal resources are required
 
 **Use Regular Tools when:**
@@ -84,7 +83,7 @@ There are two types of tools for agents:
 - Located in `workers/api/src/agent/tools/*`
 - Extend the `BuiltInTool` class
 - Have access to internal API resources, database connections, and backend services
-- Examples: `PlotTool`, `AuthTool`, `StoreTool`
+- Examples: `Plot`, `Auth`, `Store`
 - Use this pattern for tools that need direct access to the Plot backend infrastructure
 
 **Use BuiltInTools when:**
@@ -96,62 +95,62 @@ There are two types of tools for agents:
 
 ### Configuration Files
 
-#### agent.json
+#### package.json
 
-Every agent must have an `agent.json` file in its root directory that defines its metadata and dependencies:
+Every agent and tool must have a `package.json` file in its root directory that defines its metadata and dependencies:
+
+**Agent example:**
 
 ```json
 {
-  "id": "events",
-  "name": "Events",
+  "name": "@plotday/sdk-events",
+  "displayName": "Events",
   "description": "Sync calendar events",
-  "author": {
-    "name": "Plot",
-    "email": "team@plot.day",
-    "url": "https://plot.day"
-  },
+  "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
-  "tools": ["plot", "google-calendar", "outlook-calendar"]
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "dependencies": {
+    "@plotday/sdk": "workspace:^"
+  }
 }
 ```
 
-**Required fields:**
-
-- `id`: Unique identifier for the agent (kebab-case)
-- `name`: Human-readable display name
-- `description`: Brief description of the agent's purpose
-- `author`: Object with name, email, and url
-- `license`: License type (typically "MIT")
-- `tools`: Array of tool IDs this agent depends on
-
-#### tool.json
-
-Every tool must have a `tool.json` file in its root directory that defines its metadata and dependencies:
+**Tool example:**
 
 ```json
 {
-  "id": "google-calendar",
-  "name": "Google Calendar",
+  "name": "@plotday/tool-google-calendar",
+  "displayName": "Google Calendar",
   "description": "Sync with Google Calendar",
+  "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
-  "tools": ["auth", "run", "store", "webhook"]
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "dependencies": {
+    "@plotday/sdk": "workspace:^"
+  }
 }
 ```
 
 **Required fields:**
 
-- `id`: Unique identifier for the tool (kebab-case)
-- `name`: Human-readable display name
-- `description`: Brief description of the tool's functionality
+- `name`: NPM package name (should follow @plotday/sdk-_or @plotday/tool-_ convention)
+- `displayName`: Human-readable display name
+- `description`: Brief description of the agent/tool's purpose
+- `author`: Author in NPM format: "Name <email> (url)"
 - `license`: License type (typically "MIT")
-- `tools`: Array of tool IDs this tool depends on (empty array `[]` for no dependencies)
+- `plotAgent.id`: Unique identifier (kebab-case)
+- `plotAgent.tools`: Array of tool IDs this agent/tool depends on (empty array `[]` for no dependencies)
 
 **Creating New Agents/Tools:**
 
 1. Create the directory structure under `agents/` or `libs/agent/tools/`
-2. Add the appropriate JSON configuration file
+2. Add a `package.json` file with the required fields
 3. Implement the agent/tool class extending `Agent` or `Tool`
-4. Add tool dependencies to the `tools` array in the JSON file
+4. Add tool dependencies to the `plotAgent.tools` array in package.json
 
 ### Runtime Limitations
 
@@ -256,3 +255,4 @@ await this.callback.deleteAll();
 ## Hints
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
+- To generate a migration, use "pnpm gen-migration MIGRATION_NAME".

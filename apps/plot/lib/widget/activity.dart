@@ -34,8 +34,19 @@ class ActivityWidget extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  activity.displayTitle,
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: activity.displayTitle),
+                      if (activity.note != null &&
+                          activity.note!.isNotEmpty &&
+                          activity.noteText != activity.displayTitle)
+                        TextSpan(
+                          text: ' ${activity.noteText}',
+                          style: TextStyle(color: buildContext.colour.muted),
+                        ),
+                    ],
+                  ),
                   overflow: TextOverflow.ellipsis,
                   style: buildContext.theme.typography.sm.copyWith(
                     color: buildContext.colour.foreground,
@@ -104,12 +115,7 @@ class ActivityDetailWidget extends StatelessWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Viewer(
-            markdown: activity.note ?? activity.displayTitle,
-            onTap: () {
-              context.run(ChangeCurrentActivity(activity));
-            },
-          ),
+          Viewer(markdown: activity.note ?? activity.displayTitle),
           if (hasVisibleLinks) ...[
             const SizedBox(height: 8),
             ActivityLinksList(activity: activity),

@@ -1,7 +1,0 @@
-{
-  "id": "webhook",
-  "name": "Webhook",
-  "description": "Create webhook URLs for external services to call back into agent tools.",
-  "license": "MIT",
-  "tools": []
-}

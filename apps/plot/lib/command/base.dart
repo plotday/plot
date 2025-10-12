@@ -34,11 +34,11 @@ class CommandRoute extends CommandReturn {
   final PageRouteInfo route;
   final bool replace;
 
-  void go(BuildContext context) {
+  Future<void> go(BuildContext context) async {
     if (replace) {
-      context.router.root.replace(route);
+      await context.router.root.replace(route);
     } else {
-      context.router.root.navigate(route);
+      await context.router.root.navigate(route);
     }
   }
 }
@@ -147,7 +147,7 @@ extension BuildContextCommandExtension on BuildContext {
     final next = await command.run(this);
     // TODO show toast for CommandMessage
     if (next is CommandRoute) {
-      next.go(this);
+      await next.go(this);
     }
   }
 }

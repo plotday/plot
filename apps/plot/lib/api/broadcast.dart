@@ -91,9 +91,9 @@ class BroadcastClient {
       // Build WebSocket URL
       //
 
-      final wsUri = Uri.parse(_wsScheme(Env.apiRoot))
-          .resolve('/updates/$userId')
-          .replace(queryParameters: {'clientId': _clientId.toString()});
+      final wsUri = Uri.parse(
+        _wsScheme('${Env.apiRoot}/updates/$userId'),
+      ).replace(queryParameters: {'clientId': _clientId.toString()});
 
       log.info("Connecting to WebSocket: $wsUri");
 

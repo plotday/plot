@@ -2,9 +2,7 @@ import { Button, Container, Stack, Text, Title } from "@mantine/core";
 
 import { Link } from "react-router";
 
-import type { Route } from "./+types/home";
-
-export default function Soon({ loaderData }: Route.ComponentProps) {
+export default function Soon() {
   return (
     <Container size="xs">
       <Stack m={24} mt={0}>

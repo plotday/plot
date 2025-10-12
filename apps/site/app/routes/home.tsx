@@ -22,7 +22,7 @@ import { Balance } from "../components/balance";
 import type { Route } from "./+types/home";
 import classes from "./home.module.css";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [
     {
       title: `Plot | Traction on Your Priorities`,
@@ -47,7 +47,7 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-export default function Home({ loaderData }: Route.ComponentProps) {
+export default function Home() {
   const [target, setTarget] = useState(16);
 
   return (

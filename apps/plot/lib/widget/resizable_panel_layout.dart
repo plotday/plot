@@ -53,15 +53,27 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   }
 
   /// Calculate effective left panel width
-  double _getLeftPanelWidth(LayoutState layoutState) {
-    return (layoutState.multiPanel && layoutState.leftPanelVisible)
-        ? _leftPanelWidth
-        : 0.0;
+  double _getLeftPanelWidth(double totalWidth, LayoutState layoutState) {
+    if (!layoutState.multiPanel || !layoutState.leftPanelVisible) {
+      return 0.0;
+    }
+
+    // Determine minimum space needed for other panels
+    final minSpaceForOthers = layoutState.rightPanelVisible
+        ? LayoutState.centerPanelMinWidth + LayoutState.rightPanelMinWidth
+        : LayoutState.centerPanelMinWidth;
+
+    // Clamp left panel width to fit within available space
+    final maxLeftWidth = totalWidth - minSpaceForOthers;
+    return _leftPanelWidth.clamp(
+      LayoutState.leftPanelMinWidth,
+      maxLeftWidth.clamp(LayoutState.leftPanelMinWidth, double.infinity),
+    );
   }
 
   /// Calculate center panel width based on available space
   double _getCenterPanelWidth(double totalWidth, LayoutState layoutState) {
-    final leftWidth = _getLeftPanelWidth(layoutState);
+    final leftWidth = _getLeftPanelWidth(totalWidth, layoutState);
     final remainingWidth = totalWidth - leftWidth;
 
     if (!layoutState.multiPanel || !layoutState.rightPanelVisible) {
@@ -73,21 +85,21 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     }
 
     // Calculate based on ratio, ensuring minimum widths
-    final rightWidth = remainingWidth * _rightPanelRatio;
-    final centerWidth = remainingWidth * (1.0 - _rightPanelRatio);
+    final desiredRightWidth = remainingWidth * _rightPanelRatio;
+    final desiredCenterWidth = remainingWidth * (1.0 - _rightPanelRatio);
 
     // Ensure minimum widths are respected
-    if (centerWidth < LayoutState.centerPanelMinWidth) {
+    if (desiredCenterWidth < LayoutState.centerPanelMinWidth) {
       return LayoutState.centerPanelMinWidth;
     }
-    if (rightWidth < LayoutState.rightPanelMinWidth) {
+    if (desiredRightWidth < LayoutState.rightPanelMinWidth) {
       return (remainingWidth - LayoutState.rightPanelMinWidth).clamp(
         LayoutState.centerPanelMinWidth,
         double.infinity,
       );
     }
 
-    return centerWidth;
+    return desiredCenterWidth;
   }
 
   /// Calculate right panel width based on available space
@@ -96,25 +108,16 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
       return 0.0;
     }
 
-    final leftWidth = _getLeftPanelWidth(layoutState);
-    final remainingWidth = totalWidth - leftWidth;
+    final leftWidth = _getLeftPanelWidth(totalWidth, layoutState);
+    final centerWidth = _getCenterPanelWidth(totalWidth, layoutState);
 
-    // Calculate based on ratio, ensuring minimum widths
-    final rightWidth = remainingWidth * _rightPanelRatio;
-    final centerWidth = remainingWidth * (1.0 - _rightPanelRatio);
+    // Calculate right panel as remainder to avoid rounding errors
+    final rightWidth = totalWidth - leftWidth - centerWidth;
 
-    // Ensure minimum widths are respected
-    if (rightWidth < LayoutState.rightPanelMinWidth) {
-      return LayoutState.rightPanelMinWidth;
-    }
-    if (centerWidth < LayoutState.centerPanelMinWidth) {
-      return (remainingWidth - LayoutState.centerPanelMinWidth).clamp(
-        LayoutState.rightPanelMinWidth,
-        double.infinity,
-      );
-    }
-
-    return rightWidth;
+    return rightWidth.clamp(
+      LayoutState.rightPanelMinWidth,
+      double.infinity,
+    );
   }
 
   @override
@@ -129,10 +132,14 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
 
             final totalWidth = constraints.maxWidth;
 
+            final leftWidth = _getLeftPanelWidth(totalWidth, layoutState);
+            final centerWidth = _getCenterPanelWidth(totalWidth, layoutState);
+            final rightWidth = _getRightPanelWidth(totalWidth, layoutState);
+
             List<FResizableRegion> regions = [
               if (layoutState.leftPanelVisible)
                 FResizableRegion(
-                  initialExtent: _getLeftPanelWidth(layoutState),
+                  initialExtent: leftWidth,
                   minExtent: LayoutState.leftPanelMinWidth,
                   builder: (context, data, _) => PanelPositionProvider(
                     position: HeaderPosition.left,
@@ -141,7 +148,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                 ),
               if (layoutState.rightPanelPossible)
                 FResizableRegion(
-                  initialExtent: _getCenterPanelWidth(totalWidth, layoutState),
+                  initialExtent: centerWidth,
                   minExtent: LayoutState.centerPanelMinWidth,
                   builder: (context, data, _) => PanelPositionProvider(
                     position: HeaderPosition.middle,
@@ -152,8 +159,8 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                   !layoutState.rightPanelPossible)
                 FResizableRegion(
                   initialExtent: layoutState.rightPanelVisible
-                      ? _getRightPanelWidth(totalWidth, layoutState)
-                      : _getCenterPanelWidth(totalWidth, layoutState),
+                      ? rightWidth
+                      : centerWidth,
                   minExtent: layoutState.rightPanelVisible
                       ? LayoutState.rightPanelMinWidth
                       : LayoutState.centerPanelMinWidth,

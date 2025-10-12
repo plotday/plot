@@ -1,33 +1,18 @@
 {
   "name": "@plotday/agent-contacts",
+  "plotAgentId": "0199b6f4-d6e0-718a-83c6-16e849425cd3",
+  "displayName": "Contacts",
+  "description": "Sync contacts",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "sideEffects": false,
   "version": "0.1.0",
   "private": true,
-  "config": {
-    "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN AUTH_GOOGLE_ID AUTH_GOOGLE_SECRET"
-  },
   "scripts": {
-    "env": "../../scripts/gen-env development $npm_package_config_deploy_vars > .dev.vars",
-    "deploy": "../../scripts/deploy-worker",
-    "deploy:vars": "../../scripts/deploy-worker-vars",
-    "types": "wrangler types",
-    "lint": "tsc"
+    "deploy": "plot agent deploy",
+    "lint": "plot agent lint"
   },
   "dependencies": {
-    "@plotday/agent": "workspace:^",
-    "@tsndr/cloudflare-worker-jwt": "^2.3.2"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.0.0",
-    "@plotday/tsconfig": "workspace:*",
-    "@types/node": "^22.15.19"
-  },
-  "nx": {
-    "tags": [
-      "worker",
-      "agent"
-    ]
+    "@plotday/sdk": "workspace:^"
   }
 }

@@ -10,7 +10,7 @@ part 'layout_state.dart';
 class LayoutBloc extends Cubit<LayoutState> {
   LayoutBloc()
     : leftPanelRequested = true,
-      rightPanelAvailable = false,
+      rightPanelAvailable = true,
       super(
         const LayoutState(
           leftPanelVisible: false,

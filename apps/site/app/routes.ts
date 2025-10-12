@@ -12,5 +12,9 @@ export default [
     route("start-done", "routes/start-done.tsx"),
     route("terms", "routes/terms.tsx"),
     route("privacy", "routes/privacy.tsx"),
+    route("signin", "routes/signin.tsx"),
+    route("signout", "routes/signout.tsx"),
+    route("auth/callback", "routes/auth.callback.tsx"),
+    route("sdk/login", "routes/sdk.login.tsx"),
   ]),
 ] satisfies RouteConfig;

@@ -1,10 +1,12 @@
-import type { Tool, ToolDependencies } from "@plotday/agent";
+import type { Tool, ToolDependencies } from "@plotday/sdk";
 import type { SupabaseClient } from "@plotday/db";
 
 import type { AgentFactory } from "../../agent";
-import { type Callbacks } from "../../callbacks";
+import { type Callbacks } from "../../state/callbacks";
 import type { Bindings } from "../../env";
-import { type Storage } from "../../storage";
+import { type LogSubscriptions } from "../../state/log-subscriptions";
+import { type Storage } from "../../state/storage";
+import { Agent } from "./agent";
 import { AiTool } from "./ai";
 import { Auth } from "./auth";
 import { CallbackTool } from "./callback";
@@ -28,6 +30,7 @@ export function createTool(
     priorityAgentId,
     storage,
     callbacks,
+    logSubscriptions,
     env,
     agents,
   }: {
@@ -37,6 +40,7 @@ export function createTool(
     priorityAgentId: string;
     storage: DurableObjectNamespace<Storage>;
     callbacks: DurableObjectNamespace<Callbacks>;
+    logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
     env: Bindings;
     agents: AgentFactory;
   }
@@ -96,7 +100,15 @@ export function createTool(
         path,
       });
       break;
+    case "agent":
+      tool = new Agent({
+        supabase,
+        priorityAgentId,
+        logSubscriptions,
+      });
+      break;
   }
+  // @ts-ignore - Type instantiation issue with ToolDependencies recursion
   return {
     id: spec.id,
     tool: tool as Tool | undefined,
@@ -109,6 +121,7 @@ export function createTool(
         priorityAgentId,
         storage,
         callbacks,
+        logSubscriptions,
         env,
         agents,
       }
@@ -131,6 +144,7 @@ export function createTools(
     priorityAgentId,
     storage,
     callbacks,
+    logSubscriptions,
     env,
     agents,
   }: {
@@ -140,6 +154,7 @@ export function createTools(
     priorityAgentId: string;
     storage: DurableObjectNamespace<Storage>;
     callbacks: DurableObjectNamespace<Callbacks>;
+    logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
     env: Bindings;
     agents: AgentFactory;
   }
@@ -152,6 +167,7 @@ export function createTools(
       priorityAgentId,
       storage,
       callbacks,
+      logSubscriptions,
       env,
       agents,
     })

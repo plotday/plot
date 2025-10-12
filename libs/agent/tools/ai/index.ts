@@ -1,4 +1,4 @@
-import { type BuiltInTool } from "../../sdk";
+import { ITool, type Tools } from "../../sdk";
 
 /**
  * Built-in tool for interacting with Large Language Models (LLMs).
@@ -20,7 +20,7 @@ import { type BuiltInTool } from "../../sdk";
  *
  *   constructor(tools: Tools) {
  *     super();
- *     this.ai = tools.get<Ai>("ai");
+ *     this.ai = tools.get(Ai);
  *   }
  *
  *   async categorizeEmail(emailContent: string) {
@@ -66,7 +66,17 @@ import { type BuiltInTool } from "../../sdk";
  * }
  * ```
  */
-export interface Ai extends BuiltInTool {
+export class Ai extends ITool {
+  static readonly id = "ai";
+
+  constructor(_tools: Tools) {
+    super();
+  }
+
+  call(_name: string, _args: any, _context: any): Promise<any> {
+    throw new Error("Method not implemented.");
+  }
+
   /**
    * Sends a conversation to an LLM and returns the response.
    *
@@ -79,9 +89,11 @@ export interface Ai extends BuiltInTool {
    * @returns Promise resolving to the LLM response (parsed if schema provided)
    */
   promptLlm(
-    messages: LlmMessage[],
-    options?: { schema?: object }
-  ): Promise<any>;
+    _messages: LlmMessage[],
+    _options?: { schema?: object }
+  ): Promise<any> {
+    throw new Error("Method implemented remotely.");
+  }
 }
 
 /**

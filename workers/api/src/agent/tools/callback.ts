@@ -1,16 +1,24 @@
-import { type ActivityLink, ActivityLinkType } from "@plotday/agent";
+import { type ActivityLink, ActivityLinkType } from "@plotday/sdk";
 import type {
   Callback,
   CallbackTool as ICallbackTool,
-} from "@plotday/agent/tools/callback";
+} from "@plotday/sdk/tools/callback";
 
-import { type Callbacks } from "../../callbacks";
+import { Callbacks } from "../../state/callbacks";
 import { Tool } from "./tool";
 
 export class CallbackTool extends Tool implements ICallbackTool {
   private callbacks: DurableObjectStub<Callbacks>;
   private priorityAgentId: string;
   private path: string[];
+
+  private static GetStub(
+    callbacks: DurableObjectNamespace<Callbacks>,
+    priorityAgentId: string
+  ) {
+    const callbacksId = callbacks.idFromName(priorityAgentId);
+    return callbacks.get(callbacksId);
+  }
 
   constructor({
     callbacks,
@@ -22,8 +30,7 @@ export class CallbackTool extends Tool implements ICallbackTool {
     path: string[];
   }) {
     super();
-    const callbacksId = callbacks.idFromName("callbacks");
-    this.callbacks = callbacks.get(callbacksId);
+    this.callbacks = CallbackTool.GetStub(callbacks, priorityAgentId);
     this.priorityAgentId = priorityAgentId;
     // Remove this tool
     this.path = path.slice(0, -1);
@@ -46,9 +53,11 @@ export class CallbackTool extends Tool implements ICallbackTool {
     callback: Callback,
     args?: any
   ): Promise<any> {
-    const callbacksId = callbacks.idFromName("callbacks");
+    const { shardKey } = Callbacks.parseToken(callback);
+    const callbacksId = callbacks.idFromName(shardKey);
+    const callbacksStub = callbacks.get(callbacksId);
     // @ts-ignore nested type issue
-    return await callbacks.get(callbacksId).call(callback, args);
+    return await callbacksStub.call(callback, args);
   }
 
   async call(callback: Callback, args?: any): Promise<any> {
@@ -90,8 +99,9 @@ export class CallbackTool extends Tool implements ICallbackTool {
         throw new Error("Callback token mismatch");
       }
 
-      // Get callbacks DurableObject instance using the token as ID
-      const callbacksId = callbacks.idFromName("callbacks");
+      // Parse token to get shard key for routing
+      const { shardKey } = Callbacks.parseToken(callbackToken);
+      const callbacksId = callbacks.idFromName(shardKey);
       const callbacksStub = callbacks.get(callbacksId);
 
       // Execute the callback with the full activity link as argument

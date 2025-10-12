@@ -142,12 +142,15 @@ class _HeaderState extends State<Header> with RouteAware {
             ),
           // Main content or title
           if ((widget.main ?? widget.title) != null)
-            widget.main ??
-                Text(
-                  widget.title!,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.theme.typography.sm,
-                ),
+            Expanded(
+              child:
+                  widget.main ??
+                  Text(
+                    widget.title!,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.theme.typography.sm,
+                  ),
+            ),
         ];
 
         // Build suffixes with position-specific right buttons

@@ -1,8 +1,9 @@
-import { vitePluginViteNodeMiniflare } from "@hiogawa/vite-node-miniflare";
+import { cloudflare } from "@cloudflare/vite-plugin";
 import { reactRouter } from "@react-router/dev/vite";
 import autoprefixer from "autoprefixer";
 import postcssPresetMantine from "postcss-preset-mantine";
 import postcssSimpleVars from "postcss-simple-vars";
+import tailwindcss from "tailwindcss";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
@@ -17,6 +18,7 @@ export default defineConfig(({ isSsrBuild }) => ({
   css: {
     postcss: {
       plugins: [
+        tailwindcss,
         autoprefixer,
         postcssPresetMantine,
         postcssSimpleVars({
@@ -31,31 +33,26 @@ export default defineConfig(({ isSsrBuild }) => ({
       ],
     },
   },
+  optimizeDeps: {
+    include: [
+      "react",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
+      "react-dom",
+      "react-dom/client",
+      "react-router",
+    ],
+  },
   ssr: {
     target: "webworker",
     noExternal: true,
     resolve: {
-      conditions: ["worker", "workerd", "browser"],
-    },
-    optimizeDeps: {
-      include: [
-        "react",
-        "react/jsx-runtime",
-        "react/jsx-dev-runtime",
-        "react-dom",
-        "react-dom/server",
-        "react-router",
-      ],
+      conditions: ["workerd", "worker", "browser"],
+      externalConditions: ["workerd", "worker"],
     },
   },
   plugins: [
-    vitePluginViteNodeMiniflare({
-      entry: "./workers/app.ts",
-      miniflareOptions: (options) => {
-        options.compatibilityDate = "2024-11-18";
-        options.compatibilityFlags = ["nodejs_compat"];
-      },
-    }),
+    cloudflare(),
     reactRouter(),
     tsconfigPaths(),
   ],

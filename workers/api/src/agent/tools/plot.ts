@@ -1,3 +1,4 @@
+import { type Database, type SupabaseClient, safeQuery } from "@plotday/db";
 import {
   type Activity,
   type ActivityLink,
@@ -5,13 +6,12 @@ import {
   ActivityType,
   AuthorType,
   type Priority,
-} from "@plotday/agent";
+} from "@plotday/sdk";
 import type {
   Plot as IPlot,
   NewActivity,
   NewPriority,
-} from "@plotday/agent/tools/plot";
-import { type Database, type SupabaseClient, safeQuery } from "@plotday/db";
+} from "@plotday/sdk/tools/plot";
 
 import { truncateUuidForUpdatedBy } from "../../utils/uuid";
 import { Tool } from "./tool";
@@ -825,6 +825,188 @@ export class Plot extends Tool implements IPlot {
     }
 
     console.log(`Successfully upserted ${contacts.length} contacts`);
+  }
+
+  async createActivities(activities: NewActivity[]): Promise<Activity[]> {
+    if (activities.length === 0) {
+      return [];
+    }
+
+    // Convert all activities to database format
+    const dbActivities: Database["public"]["Tables"]["activity"]["Insert"][] =
+      [];
+
+    for (const activity of activities) {
+      // Skip activity exceptions for batch operations
+      if (activity.recurrence && activity.occurrence) {
+        throw new Error(
+          "Activity exceptions are not supported in batch creation"
+        );
+      }
+
+      // Validate priority access
+      const targetPriorityId = activity.priority?.id || this.priorityId;
+      await this.validatePriorityAccess(targetPriorityId);
+
+      // Map ActivityType enum to database activity_type
+      let dbActivityType: "note" | "task" | "event" = "note";
+      if (activity.type !== undefined) {
+        switch (activity.type) {
+          case ActivityType.Note:
+            dbActivityType = "note";
+            break;
+          case ActivityType.Task:
+            dbActivityType = "task";
+            break;
+          case ActivityType.Event:
+            dbActivityType = "event";
+            break;
+        }
+      }
+
+      // Calculate database end and duration from SDK format
+      const { dbEnd, duration } = calculateDbEndFromRecurrenceUntil(
+        activity.start ?? null,
+        activity.end ?? null,
+        activity.recurrenceUntil ?? null,
+        activity.recurrenceCount ?? undefined,
+        activity.recurrenceRule ?? null
+      );
+
+      // Convert NewActivity to database format
+      const dbActivity: Database["public"]["Tables"]["activity"]["Insert"] = {
+        author_id: this.priorityAgentId,
+        priority_id: targetPriorityId,
+        type: dbActivityType,
+        title: activity.title ?? null,
+        note: activity.note ?? null,
+        duration: duration ? formatInterval(duration) : null,
+        done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
+        links: activity.links ?? null,
+        recurrence_rule: activity.recurrenceRule ?? null,
+        recurrence_exdates:
+          activity.recurrenceExdates?.map((d) => d.toISOString()) ?? null,
+        recurrence_dates:
+          activity.recurrenceDates?.map((d) => d.toISOString()) ?? null,
+        source: activity.source ?? null,
+        updated_by: this.getUpdatedBy(),
+      };
+
+      // Handle scheduling fields using calculated dbEnd
+      if (
+        (activity.start !== undefined && activity.start !== null) ||
+        (dbEnd !== undefined && dbEnd !== null)
+      ) {
+        if (activity.start instanceof Date || dbEnd instanceof Date) {
+          // Timestamp range
+          const startStr =
+            activity.start instanceof Date
+              ? activity.start.toISOString()
+              : activity.start
+              ? `${activity.start}T00:00:00Z`
+              : null;
+          const endStr =
+            dbEnd instanceof Date
+              ? dbEnd.toISOString()
+              : dbEnd
+              ? `${dbEnd}T23:59:59Z`
+              : null;
+
+          if (startStr && endStr) {
+            dbActivity.at = `[${startStr},${endStr})`;
+          } else if (startStr) {
+            dbActivity.at = `[${startStr},)`;
+          } else if (endStr) {
+            dbActivity.at = `(,${endStr}]`;
+          }
+        } else {
+          // Date range
+          const startStr = activity.start;
+          const endStr = dbEnd;
+
+          if (startStr && endStr) {
+            dbActivity.on = `[${startStr},${endStr})`;
+          } else if (startStr) {
+            dbActivity.on = `[${startStr},)`;
+          } else if (endStr) {
+            dbActivity.on = `(,${endStr}]`;
+          }
+        }
+      }
+
+      // Handle path generation based on parentId
+      if (activity.parent) {
+        // Look up parent activity to get its path and priority
+        const parentResult = await this.supabase
+          .from("activity")
+          .select("path, priority_id")
+          .eq("id", activity.parent.id)
+          .single();
+
+        if (parentResult.error) {
+          throw new Error(
+            `Parent activity not found: ${parentResult.error.message}`
+          );
+        }
+
+        // Validate that parent activity is within allowed hierarchy
+        await this.validatePriorityAccess(parentResult.data.priority_id);
+        // Generate child path using database function
+        const pathResult = await this.supabase.rpc("generate_path", {
+          parent: parentResult.data.path,
+        });
+
+        if (pathResult.error) {
+          throw new Error(
+            `Path generation failed: ${pathResult.error.message}`
+          );
+        }
+
+        dbActivity.path = pathResult.data;
+      }
+
+      dbActivities.push(dbActivity);
+    }
+
+    // Batch insert all activities
+    const dbResult = safeQuery(
+      await this.supabase.from("activity").insert(dbActivities).select()
+    );
+
+    // Fetch all created activities with author information
+    const activityIds = dbResult.map((a: any) => a.id);
+    const { data: activitiesWithAuthor, error: fetchError } =
+      await this.supabase
+        .from("activity")
+        .select(
+          `
+        *,
+        author:actor!author_id(
+          id,
+          name,
+          type
+        )
+      `
+        )
+        .in("id", activityIds);
+
+    if (fetchError) {
+      throw new Error(
+        `Failed to fetch created activities: ${fetchError.message}`
+      );
+    }
+
+    return activitiesWithAuthor.map((activityWithAuthor) =>
+      fromDbActivity(
+        activityWithAuthor as any as Database["public"]["Tables"]["activity"]["Row"] & {
+          author: {
+            id: string;
+            name: string;
+            type: string;
+          };
+        }
+      )
+    );
   }
 
   private async createActivityException(

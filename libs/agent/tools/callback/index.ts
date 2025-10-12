@@ -1,4 +1,4 @@
-import { type BuiltInTool } from "../../sdk";
+import { ITool, type Tools } from "../../sdk";
 
 /**
  * Represents a callback token for persistent function references.
@@ -41,7 +41,7 @@ export type Callback = string & { readonly __brand: "Callback" };
  *
  *   constructor(tools: Tools) {
  *     super();
- *     this.callback = tools.get<CallbackTool>("callback");
+ *     this.callback = tools.get(CallbackTool);
  *   }
  *
  *   async setupWebhook() {
@@ -59,7 +59,13 @@ export type Callback = string & { readonly __brand: "Callback" };
  * }
  * ```
  */
-export interface CallbackTool extends BuiltInTool {
+export class CallbackTool extends ITool {
+  static readonly id = "callback";
+
+  constructor(_tools: Tools) {
+    super();
+  }
+
   /**
    * Creates a persistent callback to the tool's parent.
    * Returns a callback token that can be used to call the callback later.
@@ -68,7 +74,28 @@ export interface CallbackTool extends BuiltInTool {
    * @param context - Optional context data to pass to the callback function
    * @returns Promise resolving to a callback token
    */
-  create(functionName: string, context?: any): Promise<Callback>;
+  create(_functionName: string, _context?: any): Promise<Callback> {
+    throw new Error("Method implemented remotely.");
+  }
+
+  /**
+   * Deletes a specific callback by its token.
+   *
+   * @param callback - The callback token to delete
+   * @returns Promise that resolves when the callback is deleted
+   */
+  delete(_callback: Callback): Promise<void> {
+    throw new Error("Method implemented remotely.");
+  }
+
+  /**
+   * Deletes all callbacks for the tool's parent.
+   *
+   * @returns Promise that resolves when all callbacks are deleted
+   */
+  deleteAll(): Promise<void> {
+    throw new Error("Method implemented remotely.");
+  }
 
   /**
    * Executes a callback by its token.
@@ -77,20 +104,7 @@ export interface CallbackTool extends BuiltInTool {
    * @param args - Optional arguments to pass to the callback function
    * @returns Promise resolving to the callback result
    */
-  call(callback: Callback, args?: any): Promise<any>;
-
-  /**
-   * Deletes a specific callback by its token.
-   *
-   * @param callback - The callback token to delete
-   * @returns Promise that resolves when the callback is deleted
-   */
-  delete(callback: Callback): Promise<void>;
-
-  /**
-   * Deletes all callbacks for the tool's parent.
-   *
-   * @returns Promise that resolves when all callbacks are deleted
-   */
-  deleteAll(): Promise<void>;
+  call(_callback: Callback, _args?: any): Promise<any> {
+    throw new Error("Method implemented remotely.");
+  }
 }

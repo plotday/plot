@@ -1,4 +1,4 @@
-import { type BuiltInTool } from "../../sdk";
+import { ITool, type Tools } from "../../sdk";
 
 /**
  * Built-in tool for creating and managing webhook endpoints.
@@ -20,7 +20,7 @@ import { type BuiltInTool } from "../../sdk";
  *
  *   constructor(tools: Tools) {
  *     super();
- *     this.webhook = tools.get<Webhook>("webhook");
+ *     this.webhook = tools.get(Webhook);
  *   }
  *
  *   async setupCalendarWebhook(calendarId: string) {
@@ -53,7 +53,17 @@ import { type BuiltInTool } from "../../sdk";
  * }
  * ```
  */
-export interface Webhook extends BuiltInTool {
+export class Webhook extends ITool {
+  static readonly id = "webhook";
+
+  constructor(_tools: Tools) {
+    super();
+  }
+
+  call(_name: string, _args: any, _context: any): Promise<any> {
+    throw new Error("Method not implemented.");
+  }
+
   /**
    * Creates a new webhook endpoint.
    *
@@ -65,7 +75,9 @@ export interface Webhook extends BuiltInTool {
    * @param context - Optional context data to pass to the callback function
    * @returns Promise resolving to the webhook URL
    */
-  create(callbackName: string, context?: any): Promise<string>;
+  create(_callbackName: string, _context?: any): Promise<string> {
+    throw new Error("Method implemented remotely.");
+  }
 
   /**
    * Deletes an existing webhook endpoint.
@@ -76,7 +88,9 @@ export interface Webhook extends BuiltInTool {
    * @param url - The webhook URL to delete
    * @returns Promise that resolves when the webhook is deleted
    */
-  delete(url: string): Promise<void>;
+  delete(_url: string): Promise<void> {
+    throw new Error("Method implemented remotely.");
+  }
 }
 
 /**

@@ -16,7 +16,7 @@
       "../../libs/tsconfig/workers.d.ts"
     ],
     "paths": {
-      "@plotday/agent": [
+      "@plotday/sdk": [
         "../../libs/agent"
       ]
     },

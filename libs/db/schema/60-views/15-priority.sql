@@ -32,8 +32,8 @@ CREATE OR REPLACE VIEW "public"."priority_settings_inherited" WITH ( security_in
 AS SELECT DISTINCT ON (ps.user_id, p.id)
     ps.user_id,
     p.id AS priority_id,
-    -- Append subpath below the matched ancestor
-    CASE WHEN subpath (p.path, nlevel (parent.path)) != '' THEN
+    CASE WHEN nlevel (p.path) > nlevel (parent.path)
+        AND subpath (p.path, nlevel (parent.path)) != '' THEN
         ps.path || subpath (p.path, nlevel (parent.path))
     ELSE
         ps.path
@@ -64,7 +64,7 @@ SELECT
     pu.user_id,
     p.id,
     p.created_at,
-    GREATEST (settings.updated_at, pu.updated_at, p.updated_at) AS updated_at,
+    GREATEST (settings.updated_at, pu.updated_at, p.updated_at, coalesce(activity_max.updated_at, 'epoch'), coalesce(ar_max.updated_at, 'epoch')) AS updated_at,
     GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
     p.created_by,
     p.updated_by,
@@ -72,33 +72,62 @@ SELECT
     AND p.id = root.id AS root,
     p.title,
     CASE WHEN inherited_settings.path IS NOT NULL THEN
-        -- If there's an inherited path, use that
         inherited_settings.path
     WHEN user_root.path @> p.path THEN
-        -- If it's in a user's root, keep the path
         p.path
     ELSE
-        -- Otherwise, place the path under the user's root
         user_root.path || p.path
     END AS path,
     settings.top_order,
     inherited_settings.pomodoro,
-    inherited_settings.color
+    inherited_settings.color,
+    COALESCE(unread.unread, FALSE) AS unread
 FROM
-    -- User config for the root of p
     priority_user pu
-    -- Priority root of p
+    LEFT JOIN contact c ON c.user_id = pu.user_id
     JOIN priority root ON pu.priority_id = root.id
-    -- "Everything" priority for the user
     JOIN priority user_root ON pu.user_id = user_root.created_by
         AND user_root.root
-        -- Every priority the user can access
     JOIN priority p ON root.path @> p.path
-    -- Optional settings for the priority
     LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id
         AND p.id = settings.priority_id
     LEFT JOIN priority_settings_inherited inherited_settings ON inherited_settings.user_id = pu.user_id
         AND p.id = inherited_settings.priority_id
+        -- Latest updated_at in descendant activities
+    LEFT JOIN LATERAL (
+        SELECT
+            MAX(a.updated_at) AS updated_at
+        FROM
+            activity a
+            JOIN priority ap ON ap.id = a.priority_id
+        WHERE
+            ap.path <@ p.path
+            AND a.deleted_at IS NULL) activity_max ON TRUE
+    -- Latest updated_at in user's activity_reads
+    LEFT JOIN LATERAL (
+        SELECT
+            MAX(ar.updated_at) AS updated_at
+        FROM
+            activity_read ar
+        WHERE
+            ar.user_id = pu.user_id
+            AND ar.activity_path <@ p.path) ar_max ON TRUE
+    -- Unread exists for this user and priority tree
+    LEFT JOIN LATERAL (
+        SELECT
+            TRUE AS unread
+        FROM
+            activity a
+            JOIN priority ap ON ap.id = a.priority_id
+            LEFT JOIN activity_read ar ON ar.user_id = pu.user_id
+                AND ar.activity_path = subpath (a.path, 0, 1)
+        WHERE
+            ap.path <@ p.path
+            AND a.deleted_at IS NULL
+            AND a.author_id <> c.id
+            AND (ar.read_at IS NULL
+                OR a.created_at > ar.read_at)
+        LIMIT 1) unread ON TRUE
 WHERE
     pu.deleted_at IS NULL;
 
@@ -140,4 +169,46 @@ CREATE TRIGGER upsert_user_priority
     INSTEAD OF INSERT OR UPDATE ON user_priority
     FOR EACH ROW
     EXECUTE FUNCTION handle_user_priority_upsert ();
+
+SET check_function_bodies = OFF;
+
+CREATE OR REPLACE FUNCTION public.get_accessible_agents (p_priority_id uuid)
+    RETURNS SETOF agent
+    LANGUAGE sql
+    STABLE
+    SECURITY DEFINER
+    AS $function$
+    SELECT DISTINCT
+        agent.*
+    FROM
+        agent
+    LEFT JOIN agent_admin ON agent.id = agent_admin.id
+WHERE
+    agent.environment = 'public'
+    OR (agent.environment = 'personal'
+        AND agent.user_id = auth.uid ())
+    OR can_access_priority (agent_admin.priority_id)
+$function$;
+
+CREATE OR REPLACE FUNCTION public.is_accessible_agent (p_agent_id uuid, p_agent_environment agent_environment, p_priority_id uuid)
+    RETURNS boolean
+    LANGUAGE sql
+    STABLE
+    SECURITY DEFINER
+    AS $function$
+    SELECT
+        EXISTS (
+            SELECT
+                1
+            FROM
+                agent
+            LEFT JOIN agent_admin ON agent.id = agent_admin.id
+        WHERE
+            agent.id = p_agent_id
+            AND agent.environment = p_agent_environment
+            AND (agent.environment = 'public'
+                OR (agent.environment = 'personal'
+                    AND agent.user_id = auth.uid ())
+                OR can_access_priority (agent_admin.priority_id)))
+$function$;
 

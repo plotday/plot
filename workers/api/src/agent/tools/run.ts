@@ -1,6 +1,6 @@
-import type { Run as IRun } from "@plotday/agent/tools/run";
+import type { Run as IRun } from "@plotday/sdk/tools/run";
 
-import { type Callbacks } from "../../callbacks";
+import { type Callbacks } from "../../state/callbacks";
 import { type Bindings } from "../../env";
 import { Tool } from "./tool";
 

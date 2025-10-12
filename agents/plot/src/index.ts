@@ -4,27 +4,27 @@ import {
   type Priority,
   type Tools,
   createAgent,
-} from "@plotday/agent";
-import type { Plot } from "@plotday/agent/tools/plot";
+} from "@plotday/sdk";
+import { Plot } from "@plotday/sdk/tools/plot";
 
-export default createAgent(
-  class extends Agent {
-    private plot: Plot;
+class PlotAgent extends Agent {
+  private plot: Plot;
 
-    constructor(protected tools: Tools) {
-      super();
-      this.plot = tools.get<Plot>("plot");
-    }
-
-    async activate(_priority: Pick<Priority, "id">) {
-      const onboardingPriority = await this.plot.createPriority({
-        title: "Getting Started",
-      });
-      await this.plot.createActivity({
-        note: "Welcome to Plot!",
-        priority: onboardingPriority,
-        type: ActivityType.Note,
-      });
-    }
+  constructor(protected tools: Tools) {
+    super();
+    this.plot = tools.get(Plot);
   }
-);
+
+  async activate(_priority: Pick<Priority, "id">) {
+    const onboardingPriority = await this.plot.createPriority({
+      title: "Getting Started",
+    });
+    await this.plot.createActivity({
+      note: "Welcome to Plot!",
+      priority: onboardingPriority,
+      type: ActivityType.Note,
+    });
+  }
+}
+
+export default createAgent(PlotAgent);

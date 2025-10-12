@@ -1,7 +1,0 @@
-{
-  "id": "plot",
-  "name": "Plot",
-  "description": "Read and write Plot activities and events",
-  "license": "MIT",
-  "tools": []
-}

@@ -4,18 +4,24 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
+  "config": {
+    "deploy_vars": "API_ROOT SUPABASE_URL SUPABASE_ANON_KEY"
+  },
   "scripts": {
+    "env": "../../scripts/gen-env development $npm_package_config_deploy_vars > .env",
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "wrangler dev",
     "deploy": "wrangler deploy",
-    "types": "react-router typegen && tsc"
+    "types": "react-router typegen && tsc",
+    "lint": "tsc && eslint ."
   },
   "dependencies": {
     "@mantine/core": "8.3.0",
     "@mantine/hooks": "8.3.0",
     "@react-router/node": "^7.8.2",
     "@react-router/serve": "^7.8.2",
+    "@supabase/supabase-js": "^2.38.4",
     "@tabler/icons-react": "^3.34.1",
     "isbot": "^5.1.30",
     "react": "^19.1.1",
@@ -23,7 +29,7 @@
     "react-router": "^7.8.2"
   },
   "devDependencies": {
-    "@hiogawa/vite-node-miniflare": "0.1.1",
+    "@cloudflare/vite-plugin": "^1.13.10",
     "@react-router/dev": "^7.8.2",
     "@types/node": "^20.19.13",
     "@types/react": "^19.1.12",
@@ -32,8 +38,9 @@
     "postcss": "^8.5.6",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
+    "tailwindcss": "^3.4.1",
     "typescript": "^5.9.2",
-    "vite": "^5.4.20",
+    "vite": "^6.1.0",
     "vite-tsconfig-paths": "^5.1.4"
   },
   "engines": {

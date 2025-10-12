@@ -1,4 +1,4 @@
-import { type ActivityLink, type BuiltInTool } from "../../sdk";
+import { type ActivityLink, ITool, type Tools } from "../../sdk";
 import type { Callback } from "../callback";
 
 /**
@@ -15,7 +15,7 @@ import type { Callback } from "../callback";
  *
  *   constructor(tools: Tools) {
  *     super();
- *     this.auth = tools.get<Auth>("auth");
+ *     this.auth = tools.get(Auth);
  *   }
  *
  *   async requestAuth() {
@@ -35,7 +35,17 @@ import type { Callback } from "../callback";
  * }
  * ```
  */
-export interface Auth extends BuiltInTool {
+export class Auth extends ITool {
+  static readonly id = "auth";
+
+  constructor(_tools: Tools) {
+    super();
+  }
+
+  call(_name: string, _args: any, _context: any): Promise<any> {
+    throw new Error("Method not implemented.");
+  }
+
   /**
    * Initiates an OAuth authentication flow.
    *
@@ -51,13 +61,15 @@ export interface Auth extends BuiltInTool {
    * @returns Promise resolving to an ActivityLink for the auth flow
    */
   request(
-    auth: {
+    _auth: {
       provider: AuthProvider;
       level: AuthLevel;
       scopes: string[];
     },
-    callback: Callback
-  ): Promise<ActivityLink>;
+    _callback: Callback
+  ): Promise<ActivityLink> {
+    throw new Error("Method implemented remotely.");
+  }
 
   /**
    * Retrieves an access token (refreshing it first if necessary).
@@ -67,7 +79,9 @@ export interface Auth extends BuiltInTool {
    * @param authorization - The authorization from the request callback
    * @returns Promise resolving to the access token or null if no longer available
    */
-  get(authorization: Authorization): Promise<AuthToken | null>;
+  get(_authorization: Authorization): Promise<AuthToken | null> {
+    throw new Error("Method implemented remotely.");
+  }
 }
 
 /**

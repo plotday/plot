@@ -38,6 +38,8 @@ class Activities extends Table
   TextColumn get recurrenceDates =>
       text().nullable().map(const DateTimeListConverter())();
   TextColumn get links => text().nullable().map(const LinksConverter())();
+  BoolColumn get unread => boolean().withDefault(const Constant(false))();
+  BoolColumn get unreadUpdated => boolean().nullable()();
 }
 
 class RecurrenceRuleConverter extends TypeConverter<RecurrenceRule?, String?>
@@ -368,6 +370,13 @@ class ActivitiesBase extends BaseTable {
     json.remove('start_on');
     json.remove('end_on');
 
+    // Remove author_id - it's set by the database trigger
+    json.remove('author_id');
+
+    // Remove unread fields - they are managed separately
+    json.remove('unread');
+    json.remove('unread_updated');
+
     return json;
   }
 }
@@ -415,12 +424,53 @@ class Activity extends Equatable implements Comparable<Activity> {
   }
 
   static Future<bool> push() async {
-    return await Store.get.push(Store.get.activities, ActivitiesBase()) &&
+    final success =
+        await Store.get.push(Store.get.activities, ActivitiesBase()) &&
         await Store.get.push(
           Store.get.activityExceptions,
           ActivityExceptionsBase(),
         ) &&
         await Store.get.push(Store.get.activityTags, ActivityTagsBase());
+
+    // Batch push unread changes
+    final unreadActivities = await (Store.get.select(
+      Store.get.activities,
+    )..where((t) => t.unreadUpdated.equals(true))).get();
+
+    for (final activity in unreadActivities) {
+      // Get root activity path (first level only)
+      final pathParts = activity.path.value.split('.');
+      final rootPath = pathParts.first;
+
+      if (activity.unread) {
+        // Mark as unread - delete from activity_read table
+        await Base.client
+            .from('activity_read')
+            .delete()
+            .eq('user_id', Base.userId.toString())
+            .eq('activity_path', rootPath);
+      } else {
+        // Mark as read - upsert to activity_read table
+        await Base.client.from('activity_read').upsert({
+          'user_id': Base.userId.toString(),
+          'activity_path': rootPath,
+          'read_at': DateTime.now().toIso8601String(),
+        });
+      }
+
+      // Clear unreadUpdated flag in local database
+      await Store.get
+          .update(Store.get.activities)
+          .replace(
+            ActivitiesCompanion(
+              id: Value(activity.id),
+              unreadUpdated: const Value(null),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+    }
+
+    return success;
   }
 
   static Future<List<Activity>> get({
@@ -1140,6 +1190,8 @@ class Activity extends Equatable implements Comparable<Activity> {
          endAt: at?.end,
          startOn: on?.start,
          endOn: on?.end,
+         unread: false,
+         unreadUpdated: null,
        ),
        _exception = null,
        _tags = null {
@@ -1187,12 +1239,18 @@ class Activity extends Equatable implements Comparable<Activity> {
   List<DateTime>? get recurrenceDates => _activity.recurrenceDates;
   Map<Tag, List<Uuid>> get tags => _tags?.tags ?? const {};
   List<Link> get links => _activity.links ?? const [];
+  bool get unread => _activity.unread;
+  bool? get unreadUpdated => _activity.unreadUpdated;
 
   String? get title => _exception?.title ?? _activity.title;
   String? get note => _exception?.note ?? _activity.note;
+  String? get noteText => (_exception?.note ?? _activity.note)
+      ?.removeMarkdown()
+      .replaceAll('\n', ' ')
+      .trim();
   String get displayTitle =>
       title ??
-      note?.split("\n").first.removeMarkdown().trim() ??
+      note?.split("\n").first.removeMarkdown().trim().truncate(50) ??
       (draft ? '🤷' : 'Untitled');
 
   DateTimeRange? get at =>
@@ -1241,6 +1299,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     bool? private,
     Activity? parent,
     Uuid? assigneeId,
+    bool? unread,
 
     // These fields update the exception if this is a recurrence, or the root activity otherwise
     Value<DateTimeRange?> at = const Value.absent(),
@@ -1275,6 +1334,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         draft != null ||
         private != null ||
         assigneeId != null ||
+        unread != null ||
         recurrenceAt.present ||
         recurrenceOn.present ||
         recurrenceDoneAt.present ||
@@ -1362,6 +1422,8 @@ class Activity extends Equatable implements Comparable<Activity> {
         title: rootTitle,
         duration: rootDuration,
         links: links,
+        unread: unread,
+        unreadUpdated: unread != null ? Value(true) : const Value.absent(),
       );
     }
 
@@ -1539,22 +1601,26 @@ class Activity extends Equatable implements Comparable<Activity> {
 
     // Generate a title on the first non-draft save
     if (title == null && !draft) {
-      try {
-        final generatedTitle = await generateTitle();
-        log.info("Generated title: $generatedTitle");
-        await copyWith(title: Value(generatedTitle)).save();
-      } catch (e, st) {
-        log.warning("Failed to save generated title", e, st);
-      }
+      final generatedTitle = await generateTitle();
+      log.info("Generated title: $generatedTitle");
+      await copyWith(title: Value(generatedTitle)).save();
     }
   }
 
   Future<String> generateTitle() async {
-    final response = await api.post<Map<String, dynamic>>(
-      "/summary",
-      body: {'body': note},
-    );
-    return response['title'] as String;
+    try {
+      final response = await api.post<Map<String, dynamic>>(
+        "/summary",
+        body: {'body': note},
+      );
+      return response['title'] as String;
+    } catch (e, t) {
+      log.warning("Error generating title: $e\n$t");
+      // It might be better to leave title null and generate displayTitle,
+      // but for some reason, activities without titles are not appearing
+      // on PriorityPage.
+      return displayTitle;
+    }
   }
 
   Future<void> delete() => copyWith(deletedAt: Value(DateTime.now())).save();
@@ -1759,6 +1825,70 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   @override
   List<Object?> get props => [_activity, _exception, _tags, parent, priority];
+
+  @override
+  String toString() {
+    final buffer = StringBuffer('Activity(');
+
+    // ID and type
+    buffer.write('id: ${id.toString().substring(0, 8)}..., ');
+    buffer.write('type: ${type?.name ?? 'null'}, ');
+
+    // Title (truncated)
+    final titleStr = title;
+    if (titleStr != null) {
+      final truncatedTitle = titleStr.length > 50
+          ? '${titleStr.substring(0, 47)}...'
+          : titleStr;
+      buffer.write('title: "$truncatedTitle", ');
+    }
+
+    // Note (truncated and sanitized)
+    final noteStr = noteText;
+    if (noteStr != null && noteStr.isNotEmpty) {
+      final truncatedNote = noteStr.length > 50
+          ? '${noteStr.substring(0, 47)}...'
+          : noteStr;
+      buffer.write('note: "$truncatedNote", ');
+    }
+
+    // Priority
+    buffer.write('priority: ${priority.title}, ');
+
+    // Path (for nested activities)
+    if (!path.isRoot) {
+      buffer.write('path: $path, ');
+    }
+
+    // Scheduling info
+    if (at != null) {
+      buffer.write('at: ${at!.start}, ');
+    } else if (on != null) {
+      buffer.write('on: ${on!.start}, ');
+    }
+
+    // Status
+    if (done) {
+      buffer.write('done: $doneAt, ');
+    } else if (todo) {
+      buffer.write('todo: true, ');
+    }
+
+    if (deletedAt != null) {
+      buffer.write('deleted: $deletedAt, ');
+    }
+
+    if (draft) {
+      buffer.write('draft: true, ');
+    }
+
+    // Remove trailing comma and space
+    final result = buffer.toString();
+    if (result.endsWith(', ')) {
+      return '${result.substring(0, result.length - 2)})';
+    }
+    return '$result)';
+  }
 }
 
 /// Pending sync flags for different entity types.

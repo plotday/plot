@@ -4,7 +4,7 @@ CREATE OR REPLACE FUNCTION get_api_root ()
     STABLE
     AS $$
 BEGIN
-    RETURN COALESCE(current_setting('plot.api_root', TRUE), 'http://host.docker.internal:8787/_');
+    RETURN COALESCE(current_setting('plot.api_root', TRUE), 'http://host.docker.internal:8787/sync');
 END;
 $$;
 
@@ -36,7 +36,7 @@ BEGIN
     END IF;
     -- Extract agents query into a variable
     SELECT
-        jsonb_agg(jsonb_build_object('agent_id', agent_id, 'priority_agent_id', id, 'config', config, 'tools', tools)) INTO agents_data
+        jsonb_agg(jsonb_build_object('id', agent_id, 'environment', agent_environment, 'version', version, 'priority_agent_id', id, 'config', config)) INTO agents_data
     FROM
         priority_child_agent
     WHERE

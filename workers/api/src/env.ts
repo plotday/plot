@@ -1,18 +1,26 @@
 import { type RunMessage } from "./agent/tools/run";
-import { type Broadcast } from "./broadcast";
-import { type Callbacks } from "./callbacks";
-import { type Storage } from "./storage";
-import { type UpdateItem, type ActivityItem, type PriorityItem, type SessionItem } from "./types";
+import { type Broadcast } from "./state/broadcast";
+import { type Callbacks } from "./state/callbacks";
+import { type LogSubscriptions } from "./state/log-subscriptions";
+import { type Storage } from "./state/storage";
+import { type Usage } from "./state/usage";
+import {
+  type ActivityItem,
+  type PriorityItem,
+  type SessionItem,
+  type UpdateItem,
+} from "./types";
 
 export type UpdateMessage = {
   type: "activity" | "priority" | "session";
   event?: "created" | "updated" | "deleted";
   item: UpdateItem;
   agents: {
-    agent_id: string;
+    id: string;
+    environment: string;
     priority_agent_id: string;
     config?: any;
-    tools?: any;
+    version?: string;
   }[];
   users?: { user_id: string }[];
   timestamp?: number;
@@ -35,8 +43,16 @@ export type SessionUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
   item: SessionItem;
 };
 
+export type LogMessage = {
+  agentRootId: string;
+  environment: "test" | "private" | "review" | "public";
+  severity: "log" | "error" | "warn" | "info";
+  message: string;
+  timestamp: number;
+};
+
 // Queue message type union for proper type handling
-export type QueueMessage = RunMessage | UpdateMessage;
+export type QueueMessage = RunMessage | UpdateMessage | LogMessage;
 
 export type Bindings = {
   readonly API_HMAC_SECRET?: string;
@@ -53,13 +69,20 @@ export type Bindings = {
   readonly AUTH_MICROSOFT_ID: string;
   readonly AUTH_MICROSOFT_SECRET: string;
 
+  readonly STRIPE_SECRET_KEY: string;
+  readonly STRIPE_WEBHOOK_SECRET: string;
+
   readonly API_ROOT: string;
 
+  readonly LOADER: WorkerLoader;
   readonly RUN_QUEUE: Queue<RunMessage>;
   readonly UPDATES_QUEUE: Queue<UpdateMessage>;
+  readonly AGENT_LOGS_QUEUE: Queue<LogMessage>;
   readonly AI: Ai;
-  readonly AGENTS: DispatchNamespace;
   readonly STORAGE: DurableObjectNamespace<Storage>;
   readonly CALLBACKS: DurableObjectNamespace<Callbacks>;
   readonly BROADCAST: DurableObjectNamespace<Broadcast>;
+  readonly USAGE: DurableObjectNamespace<Usage>;
+  readonly LOG_SUBSCRIPTIONS: DurableObjectNamespace<LogSubscriptions>;
+  readonly AGENT_MODULES_BUCKET: R2Bucket;
 };

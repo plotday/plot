@@ -16,17 +16,25 @@ class UserBloc extends Cubit<UserState> {
         if (state is UserSignedOut) return;
         log.info('User signed out');
         emit(const UserSignedOut());
-      } else {
-        if (state is UserReady) return;
-        log.info('User signed in: ${user.primaryEmail}');
-        try {
-          await Store.init(user);
-          emit(UserReady(user));
-          Base.client.auth.refreshSession();
-        } catch (e, stackTrace) {
-          log.warning('User init failed', e, stackTrace);
-          emit(const UserSignedOut());
-        }
+        return;
+      } else if (!user.isActive) {
+        if (state is UserWaitlisted) return;
+        log.info('User signed in but waitlisted: ${user.primaryEmail}');
+        emit(UserWaitlisted(user));
+        return;
+      } else if (state is UserReady) {
+        return;
+      }
+
+      log.info('User signed in: ${user.primaryEmail}');
+      try {
+        await Store.init(user);
+        emit(UserReady(user));
+      } catch (e, stackTrace) {
+        log.warning('User init failed', e, stackTrace);
+        // If Store.init fails (e.g., offline with no local data), sign out
+        // The error message from Store.init will be logged above
+        emit(const UserSignedOut());
       }
     });
   }

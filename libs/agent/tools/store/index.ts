@@ -1,4 +1,4 @@
-import { type BuiltInTool } from "../../sdk";
+import { ITool, type Tools } from "../../sdk";
 
 /**
  * Built-in tool for persistent key-value storage.
@@ -27,7 +27,7 @@ import { type BuiltInTool } from "../../sdk";
  *
  *   constructor(tools: Tools) {
  *     super();
- *     this.store = tools.get<Store>("store");
+ *     this.store = tools.get(Store);
  *   }
  *
  *   async saveAuthToken(provider: string, token: string) {
@@ -44,7 +44,13 @@ import { type BuiltInTool } from "../../sdk";
  * }
  * ```
  */
-export interface Store extends BuiltInTool {
+export class Store extends ITool {
+  static readonly id = "store";
+
+  constructor(_tools: Tools) {
+    super();
+  }
+
   /**
    * Retrieves a value from storage by key.
    *
@@ -55,7 +61,9 @@ export interface Store extends BuiltInTool {
    * @param key - The storage key to retrieve
    * @returns Promise resolving to the stored value or null
    */
-  get<T>(key: string): Promise<T | null>;
+  get<T>(_key: string): Promise<T | null> {
+    throw new Error("Method implemented remotely.");
+  }
 
   /**
    * Stores a value in persistent storage.
@@ -68,7 +76,9 @@ export interface Store extends BuiltInTool {
    * @param value - The value to store (must be JSON-serializable)
    * @returns Promise that resolves when the value is stored
    */
-  set<T>(key: string, value: T): Promise<void>;
+  set<T>(_key: string, _value: T): Promise<void> {
+    throw new Error("Method implemented remotely.");
+  }
 
   /**
    * Removes a specific key from storage.
@@ -79,7 +89,9 @@ export interface Store extends BuiltInTool {
    * @param key - The storage key to remove
    * @returns Promise that resolves when the key is removed
    */
-  clear(key: string): Promise<void>;
+  clear(_key: string): Promise<void> {
+    throw new Error("Method implemented remotely.");
+  }
 
   /**
    * Removes all keys from this storage instance.
@@ -89,5 +101,11 @@ export interface Store extends BuiltInTool {
    *
    * @returns Promise that resolves when all keys are removed
    */
-  clearAll(): Promise<void>;
+  clearAll(): Promise<void> {
+    throw new Error("Method implemented remotely.");
+  }
+
+  call(_name: string, _args: any, _context: any): Promise<any> {
+    throw new Error("Method not implemented.");
+  }
 }

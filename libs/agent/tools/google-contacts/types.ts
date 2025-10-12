@@ -1,4 +1,4 @@
-import type { ActivityLink } from "../../sdk";
+import type { ActivityLink, Tool } from "../../sdk";
 
 export type Contact = {
   email: string;
@@ -10,7 +10,7 @@ export type ContactAuth = {
   authToken: string;
 };
 
-export interface GoogleContacts {
+export interface GoogleContacts extends Tool {
   requestAuth(
     callbackFunctionName: string,
     callbackContext?: any
@@ -28,3 +28,4 @@ export interface GoogleContacts {
 
   stopSync(authToken: string): Promise<void>;
 }
+

@@ -38,11 +38,12 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           )}
         </Group>
         <Group>
-          {!location.pathname.startsWith("/start") && (
-            <Button variant="outline" component={Link} to="/start">
-              Get Started
-            </Button>
-          )}
+          {!location.pathname.startsWith("/start") &&
+            !location.pathname.startsWith("/sdk") && (
+              <Button variant="outline" component={Link} to="/start">
+                Get Started
+              </Button>
+            )}
         </Group>
       </Group>
     </AppShell.Header>

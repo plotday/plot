@@ -1,11 +1,12 @@
-import type {
-  Activity,
-  ActivitySource,
-  BuiltInTool,
-  Contact,
-  NewActivity,
-  NewPriority,
-  Priority,
+import {
+  type Activity,
+  type ActivitySource,
+  type Contact,
+  ITool,
+  type NewActivity,
+  type NewPriority,
+  type Priority,
+  type Tools,
 } from "../../sdk";
 
 export { Activity, NewActivity, NewPriority, Priority };
@@ -24,7 +25,7 @@ export { Activity, NewActivity, NewPriority, Priority };
  *
  *   constructor(tools: Tools) {
  *     super();
- *     this.plot = tools.get<Plot>("plot");
+ *     this.plot = tools.get(Plot);
  *   }
  *
  *   async activate(priority: Pick<Priority, "id">) {
@@ -43,7 +44,17 @@ export { Activity, NewActivity, NewPriority, Priority };
  * }
  * ```
  */
-export interface Plot extends BuiltInTool {
+export class Plot extends ITool {
+  static readonly id = "plot";
+
+  constructor(_tools: Tools) {
+    super();
+  }
+
+  call(_name: string, _args: any, _context: any): Promise<any> {
+    throw new Error("Method not implemented.");
+  }
+
   /**
    * Creates a new activity in the Plot system.
    *
@@ -54,7 +65,9 @@ export interface Plot extends BuiltInTool {
    * @param activity - The activity data to create
    * @returns Promise resolving to the complete created activity
    */
-  createActivity(activity: NewActivity): Promise<Activity>;
+  createActivity(_activity: NewActivity): Promise<Activity> {
+    throw new Error("Method not implemented.");
+  }
 
   /**
    * Creates a new priority in the Plot system.
@@ -65,7 +78,9 @@ export interface Plot extends BuiltInTool {
    * @param priority - The priority data to create
    * @returns Promise resolving to the complete created priority
    */
-  createPriority(priority: NewPriority): Promise<Priority>;
+  createPriority(_priority: NewPriority): Promise<Priority> {
+    throw new Error("Method not implemented.");
+  }
 
   /**
    * Retrieves all activities in the same thread as the specified activity.
@@ -77,7 +92,9 @@ export interface Plot extends BuiltInTool {
    * @param activity - The activity whose thread to retrieve
    * @returns Promise resolving to array of activities in the thread
    */
-  getThread(activity: Activity): Promise<Activity[]>;
+  getThread(_activity: Activity): Promise<Activity[]> {
+    throw new Error("Method not implemented.");
+  }
 
   /**
    * Finds an activity by its external source reference.
@@ -89,7 +106,9 @@ export interface Plot extends BuiltInTool {
    * @param source - The external source reference to search for
    * @returns Promise resolving to the matching activity or null if not found
    */
-  getActivityBySource(source: ActivitySource): Promise<Activity | null>;
+  getActivityBySource(_source: ActivitySource): Promise<Activity | null> {
+    throw new Error("Method not implemented.");
+  }
 
   /**
    * Adds contacts to the Plot system.
@@ -101,5 +120,21 @@ export interface Plot extends BuiltInTool {
    * @param contacts - Array of contact information to add
    * @returns Promise that resolves when all contacts have been processed
    */
-  addContacts(contacts: Array<Contact>): Promise<void>;
+  addContacts(_contacts: Array<Contact>): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+
+  /**
+   * Creates multiple activities in a single batch operation.
+   *
+   * This method efficiently creates multiple activities at once, which is
+   * more performant than calling createActivity() multiple times individually.
+   * All activities are created with the same author and access control rules.
+   *
+   * @param activities - Array of activity data to create
+   * @returns Promise resolving to array of created activities
+   */
+  createActivities(_activities: NewActivity[]): Promise<Activity[]> {
+    throw new Error("Method not implemented.");
+  }
 }

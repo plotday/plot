@@ -36,6 +36,35 @@ FROM
     "public"."activity" a
     JOIN "public"."activity" c ON c.path <@ a.path;
 
+CREATE OR REPLACE VIEW "public"."user_activity_unread" WITH ( security_invoker = TRUE)
+--
+AS
+SELECT
+    up.user_id,
+    a.id AS activity_id,
+    unread.updated_at IS NOT NULL AS unread,
+    COALESCE(ar.updated_at, unread.updated_at) AS updated_at
+FROM
+    user_priority up
+    JOIN contact c ON c.user_id = up.user_id
+    JOIN activity a ON a.priority_id = up.id
+    LEFT JOIN activity_read ar ON ar.user_id = up.user_id
+        AND ar.activity_path = subpath (a.path, 0, 1)
+    LEFT JOIN LATERAL (
+        SELECT
+            MAX(a2.updated_at) AS updated_at
+        FROM
+            activity a2
+        WHERE
+            a2.deleted_at IS NULL
+            AND a2.path <@ a.path
+            AND a2.author_id <> c.id
+            AND (ar.read_at IS NULL
+                OR a2.created_at > ar.read_at)) unread ON TRUE
+WHERE
+    up.deleted_at IS NULL
+    AND nlevel (a.path) = 1;
+
 -- To filter on a date range, use both the `range_at` and `range_on` columns.
 -- They're separate because combining timestamps and dates requires knowing
 -- the user's timezone, which is client-specific.
@@ -44,7 +73,30 @@ CREATE OR REPLACE VIEW "public"."user_activity" WITH ( security_invoker = TRUE)
 AS
 SELECT
     up.user_id,
-    a.*,
+    a.id,
+    a.created_at,
+    COALESCE(uau.updated_at, a.updated_at) AS updated_at,
+    a.author_id,
+    a.assignee_id,
+    a.updated_by,
+    a.deleted_at,
+    a.priority_id,
+    a.type,
+    a.path,
+    a.order,
+    a.draft,
+    a.private,
+    a.title,
+    a.note,
+    a.links,
+    a.at,
+    a.on,
+    a.duration,
+    a.done_at,
+    a.recurrence_rule,
+    a.recurrence_exdates,
+    a.recurrence_dates,
+    a.source,
     CASE WHEN a.done_at IS NOT NULL THEN
         tstzrange(a.done_at, a.done_at, '[]')
     WHEN a.at IS NOT NULL THEN
@@ -62,10 +114,13 @@ SELECT
         a.on
     ELSE
         NULL
-    END AS range_on
+    END AS range_on,
+    COALESCE(uau.unread, FALSE) AS unread
 FROM
     activity a
     JOIN user_priority up ON a.priority_id = up.id
+    LEFT JOIN user_activity_unread uau ON uau.user_id = up.user_id
+        AND uau.activity_id = a.id
 WHERE
     up.deleted_at IS NULL;
 

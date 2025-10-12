@@ -1,0 +1,54 @@
+{
+  "name": "mail",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-11-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "upload_source_maps": true,
+  "env": {
+    "development": {
+      "define": {
+        "ENV": "\"development\"",
+        "RELEASE": "\"dev\"",
+        "PACKAGE": "\"mailer\""
+      },
+      "queues": {
+        "consumers": [
+          {
+            "queue": "mail-development",
+            "max_batch_size": 20,
+            "max_batch_timeout": 3,
+            "max_retries": 3
+          }
+        ]
+      }
+    },
+    "production": {
+      "define": {
+        "ENV": "\"production\"",
+        "RELEASE": "\"prod\"",
+        "PACKAGE": "\"mailer\""
+      },
+      "queues": {
+        "consumers": [
+          {
+            "queue": "mail-production",
+            "max_batch_size": 20,
+            "max_batch_timeout": 3,
+            "max_retries": 3
+          }
+        ]
+      }
+    }
+  },
+  "placement": {
+    "mode": "smart"
+  },
+  "dev": {
+    "port": 8784
+  },
+  "observability": {
+    "logs": {
+      "enabled": true
+    }
+  }
+}

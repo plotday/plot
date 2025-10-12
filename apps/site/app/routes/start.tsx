@@ -4,7 +4,7 @@ import { Stack, Text } from "@mantine/core";
 
 import type { Route } from "./+types/home";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [
     {
       title: "Get Started | Plot",
@@ -12,7 +12,7 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-export default function GetStarted({ loaderData }: Route.ComponentProps) {
+export default function GetStarted() {
   // The code below will load the embed
   useEffect(() => {
     const widgetScriptSrc = "https://tally.so/widgets/embed.js";

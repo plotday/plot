@@ -147,6 +147,13 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -244,7 +251,35 @@ export type Database = {
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "activity_exception_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_unread"
+            referencedColumns: ["activity_id"]
+          },
         ]
+      }
+      activity_read: {
+        Row: {
+          activity_path: unknown
+          read_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          activity_path: unknown
+          read_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          activity_path?: unknown
+          read_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       activity_tag: {
         Row: {
@@ -317,46 +352,132 @@ export type Database = {
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_unread"
+            referencedColumns: ["activity_id"]
+          },
         ]
       }
       agent: {
         Row: {
-          author_email: string | null
-          author_name: string | null
-          author_url: string | null
           created_at: string
           deleted_at: string | null
           description: string | null
+          environment: Database["public"]["Enums"]["agent_environment"]
           id: string
           name: string
-          tools: Json
+          updated_at: string
+          user_id: string | null
+          version: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          environment?: Database["public"]["Enums"]["agent_environment"]
+          id: string
+          name: string
+          updated_at?: string
+          user_id?: string | null
+          version: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          environment?: Database["public"]["Enums"]["agent_environment"]
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string | null
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_id_fkey"
+            columns: ["id"]
+            isOneToOne: false
+            referencedRelation: "agent_admin"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_admin: {
+        Row: {
+          created_at: string
+          id: string
+          priority_id: string | null
+          publisher_id: number | null
           updated_at: string
         }
         Insert: {
-          author_email?: string | null
-          author_name?: string | null
-          author_url?: string | null
           created_at?: string
-          deleted_at?: string | null
-          description?: string | null
-          id: string
-          name: string
-          tools?: Json
+          id?: string
+          priority_id?: string | null
+          publisher_id?: number | null
           updated_at?: string
         }
         Update: {
-          author_email?: string | null
-          author_name?: string | null
-          author_url?: string | null
           created_at?: string
-          deleted_at?: string | null
-          description?: string | null
           id?: string
-          name?: string
-          tools?: Json
+          priority_id?: string | null
+          publisher_id?: number | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "agent_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "agent_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "agent_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_agent"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "agent_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "agent_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_admin_publisher_id_fkey"
+            columns: ["publisher_id"]
+            isOneToOne: false
+            referencedRelation: "publisher"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       contact: {
         Row: {
@@ -391,6 +512,30 @@ export type Database = {
           name?: string | null
           updated_at?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      cost: {
+        Row: {
+          amount: number | null
+          created_at: string
+          id: number
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number | null
+          created_at?: string
+          id?: never
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number | null
+          created_at?: string
+          id?: never
+          name?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -468,7 +613,6 @@ export type Database = {
           created_by: string
           deleted_at: string | null
           id: string
-          order: number
           path: unknown
           root: boolean
           title: string
@@ -480,7 +624,6 @@ export type Database = {
           created_by: string
           deleted_at?: string | null
           id?: string
-          order?: number
           path: unknown
           root?: boolean
           title: string
@@ -492,7 +635,6 @@ export type Database = {
           created_by?: string
           deleted_at?: string | null
           id?: string
-          order?: number
           path?: unknown
           root?: boolean
           title?: string
@@ -503,42 +645,48 @@ export type Database = {
       }
       priority_agent: {
         Row: {
+          agent_environment: Database["public"]["Enums"]["agent_environment"]
           agent_id: string
           config: Json
           created_at: string
           deleted_at: string | null
           id: string
           name: string
+          owner_id: string
           priority_id: string
           updated_at: string
         }
         Insert: {
+          agent_environment: Database["public"]["Enums"]["agent_environment"]
           agent_id: string
           config?: Json
           created_at?: string
           deleted_at?: string | null
           id?: string
           name: string
+          owner_id: string
           priority_id: string
           updated_at?: string
         }
         Update: {
+          agent_environment?: Database["public"]["Enums"]["agent_environment"]
           agent_id?: string
           config?: Json
           created_at?: string
           deleted_at?: string | null
           id?: string
           name?: string
+          owner_id?: string
           priority_id?: string
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "priority_agent_agent_id_fkey"
-            columns: ["agent_id"]
+            foreignKeyName: "priority_agent_agent_id_agent_environment_fkey"
+            columns: ["agent_id", "agent_environment"]
             isOneToOne: false
             referencedRelation: "agent"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "environment"]
           },
           {
             foreignKeyName: "priority_agent_priority_id_fkey"
@@ -567,6 +715,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "priority_child_agent"
             referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_agent_priority_id_fkey"
@@ -639,6 +794,13 @@ export type Database = {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -647,31 +809,28 @@ export type Database = {
       priority_settings: {
         Row: {
           color: number | null
-          order: number
           path: unknown | null
           pomodoro: number | null
           priority_id: string
-          top: boolean
+          top_order: number | null
           updated_at: string
           user_id: string
         }
         Insert: {
           color?: number | null
-          order?: number
           path?: unknown | null
           pomodoro?: number | null
           priority_id: string
-          top?: boolean
+          top_order?: number | null
           updated_at?: string
           user_id: string
         }
         Update: {
           color?: number | null
-          order?: number
           path?: unknown | null
           pomodoro?: number | null
           priority_id?: string
-          top?: boolean
+          top_order?: number | null
           updated_at?: string
           user_id?: string
         }
@@ -703,6 +862,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "priority_child_agent"
             referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "priority_settings_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "priority_settings_priority_id_fkey"
@@ -768,10 +934,44 @@ export type Database = {
             foreignKeyName: "priority_user_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_user_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
         ]
+      }
+      publisher: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: number
+          name: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id?: never
+          name: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: never
+          name?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: []
       }
       series: {
         Row: {
@@ -832,6 +1032,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "priority_child_agent"
             referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "series_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
           },
           {
             foreignKeyName: "series_priority_id_fkey"
@@ -915,10 +1122,152 @@ export type Database = {
             foreignKeyName: "session_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "session_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
         ]
+      }
+      token: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          last_used_at: string | null
+          name: string | null
+          publisher_id: number | null
+          token: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          last_used_at?: string | null
+          name?: string | null
+          publisher_id?: number | null
+          token: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          last_used_at?: string | null
+          name?: string | null
+          publisher_id?: number | null
+          token?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "token_publisher_id_fkey"
+            columns: ["publisher_id"]
+            isOneToOne: false
+            referencedRelation: "publisher"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      usage: {
+        Row: {
+          amount: number
+          cost_id: number
+          created_at: string
+          date: string
+          id: number
+          priority_agent_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          cost_id: number
+          created_at?: string
+          date: string
+          id?: never
+          priority_agent_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          cost_id?: number
+          created_at?: string
+          date?: string
+          id?: never
+          priority_agent_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usage_cost_id_fkey"
+            columns: ["cost_id"]
+            isOneToOne: false
+            referencedRelation: "cost"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "usage_priority_agent_id_fkey"
+            columns: ["priority_agent_id"]
+            isOneToOne: false
+            referencedRelation: "priority_agent"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "usage_priority_agent_id_fkey"
+            columns: ["priority_agent_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_agent"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_subscription: {
+        Row: {
+          billing_cycle_end: string
+          billing_cycle_start: string
+          created_at: string
+          id: number
+          plan: Database["public"]["Enums"]["subscription_plan"]
+          status: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          billing_cycle_end: string
+          billing_cycle_start: string
+          created_at?: string
+          id?: never
+          plan?: Database["public"]["Enums"]["subscription_plan"]
+          status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          billing_cycle_end?: string
+          billing_cycle_start?: string
+          created_at?: string
+          id?: never
+          plan?: Database["public"]["Enums"]["subscription_plan"]
+          status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {
@@ -980,6 +1329,13 @@ export type Database = {
             referencedRelation: "user_activity_tags"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "activity_tag_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "user_activity_unread"
+            referencedColumns: ["activity_id"]
+          },
         ]
       }
       actor: {
@@ -1003,24 +1359,31 @@ export type Database = {
       }
       priority_child_agent: {
         Row: {
+          agent_environment:
+            | Database["public"]["Enums"]["agent_environment"]
+            | null
           agent_id: string | null
+          author_email: string | null
+          author_name: string | null
+          author_url: string | null
           config: Json | null
           created_at: string | null
           deleted_at: string | null
           id: string | null
           name: string | null
+          owner_id: string | null
           priority_child_id: string | null
           priority_id: string | null
-          tools: Json | null
           updated_at: string | null
+          version: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "priority_agent_agent_id_fkey"
-            columns: ["agent_id"]
+            foreignKeyName: "priority_agent_agent_id_agent_environment_fkey"
+            columns: ["agent_id", "agent_environment"]
             isOneToOne: false
             referencedRelation: "agent"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "environment"]
           },
           {
             foreignKeyName: "priority_agent_priority_id_fkey"
@@ -1054,10 +1417,27 @@ export type Database = {
             foreignKeyName: "priority_agent_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_agent_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
         ]
+      }
+      priority_settings_inherited: {
+        Row: {
+          color: number | null
+          path: unknown | null
+          pomodoro: number | null
+          priority_id: string | null
+          user_id: string | null
+        }
+        Relationships: []
       }
       priority_tags: {
         Row: {
@@ -1099,6 +1479,13 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -1130,6 +1517,7 @@ export type Database = {
           source: Json | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"] | null
+          unread: boolean | null
           updated_at: string | null
           updated_by: number | null
           user_id: string | null
@@ -1167,6 +1555,13 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "activity_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
           },
@@ -1199,6 +1594,15 @@ export type Database = {
         }
         Relationships: []
       }
+      user_activity_unread: {
+        Row: {
+          activity_id: string | null
+          unread: boolean | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       user_priority: {
         Row: {
           color: number | null
@@ -1206,12 +1610,12 @@ export type Database = {
           created_by: string | null
           deleted_at: string | null
           id: string | null
-          order: number | null
           path: unknown | null
           pomodoro: number | null
           root: boolean | null
           title: string | null
-          top: boolean | null
+          top_order: number | null
+          unread: boolean | null
           updated_at: string | null
           updated_by: number | null
           user_id: string | null
@@ -1261,10 +1665,6 @@ export type Database = {
           updated_at: string | null
         }[]
       }
-      add_default_priority: {
-        Args: { user_id: string }
-        Returns: undefined
-      }
       all_views_secure: {
         Args: Record<PropertyKey, never>
         Returns: boolean
@@ -1280,6 +1680,20 @@ export type Database = {
       generate_path: {
         Args: { parent?: unknown }
         Returns: unknown
+      }
+      get_accessible_agents: {
+        Args: { p_priority_id: string }
+        Returns: {
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          environment: Database["public"]["Enums"]["agent_environment"]
+          id: string
+          name: string
+          updated_at: string
+          user_id: string | null
+          version: string
+        }[]
       }
       get_api_root: {
         Args: Record<PropertyKey, never>
@@ -1302,6 +1716,14 @@ export type Database = {
       insert_domain: {
         Args: { email: string }
         Returns: number
+      }
+      is_accessible_agent: {
+        Args: {
+          p_agent_environment: string
+          p_agent_id: string
+          p_priority_id: string
+        }
+        Returns: boolean
       }
       is_finite: {
         Args: { test: unknown }
@@ -1331,9 +1753,17 @@ export type Database = {
         Args: { p: unknown }
         Returns: unknown
       }
+      redeem_invitation_code: {
+        Args: { invitation_code: string; user_id: string }
+        Returns: Json
+      }
       server_timestamp: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      set_user_status: {
+        Args: { status: string; user_id: string }
+        Returns: undefined
       }
       tstzrange_to_daterange: {
         Args: { p_range: unknown; p_timezone?: string }
@@ -1410,6 +1840,16 @@ export type Database = {
     }
     Enums: {
       activity_type: "task" | "event" | "note"
+      agent_environment: "personal" | "private" | "review" | "public"
+      subscription_plan: "free"
+      subscription_status:
+        | "active"
+        | "canceled"
+        | "past_due"
+        | "trialing"
+        | "incomplete"
+        | "incomplete_expired"
+        | "unpaid"
       tag_type: "toggle" | "count" | "compute"
     }
     CompositeTypes: {
@@ -2067,6 +2507,17 @@ export const Constants = {
   public: {
     Enums: {
       activity_type: ["task", "event", "note"],
+      agent_environment: ["personal", "private", "review", "public"],
+      subscription_plan: ["free"],
+      subscription_status: [
+        "active",
+        "canceled",
+        "past_due",
+        "trialing",
+        "incomplete",
+        "incomplete_expired",
+        "unpaid",
+      ],
       tag_type: ["toggle", "count", "compute"],
     },
   },

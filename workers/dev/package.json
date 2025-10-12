@@ -4,10 +4,10 @@
   "sideEffects": false,
   "private": true,
   "config": {
-    "workers": "../api ../mailer ../../agents/plot ../../agents/chat ../../agents/events ../../agents/contacts"
+    "workers": "../api ../mailer"
   },
   "scripts": {
-    "dev": "wrangler dev --env development --test-scheduled $(for dir in $npm_package_config_workers; do echo -c \"$dir/wrangler.toml\"; done)"
+    "dev": "wrangler dev --env development --test-scheduled $(for dir in $npm_package_config_workers; do echo -c \"$dir/wrangler.jsonc\"; done)"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",

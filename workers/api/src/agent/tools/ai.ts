@@ -1,4 +1,4 @@
-import type { Ai as IAi, LlmMessage } from "@plotday/agent/tools/ai";
+import type { Ai as IAi, LlmMessage } from "@plotday/sdk/tools/ai";
 
 import { Tool } from "./tool";
 
