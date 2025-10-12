@@ -12,6 +12,7 @@ export 'dropdown.dart';
 export 'editor.dart';
 export 'event.dart';
 export 'header.dart';
+export 'hoverable_link.dart';
 export 'icon.dart';
 export 'link.dart';
 export 'list_tile.dart';

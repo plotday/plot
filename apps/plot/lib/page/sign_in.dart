@@ -129,6 +129,7 @@ class _SignInPageState extends State<SignInPage> {
                   ),
                 ),
               ],
+              const SizedBox(height: 16),
               Text.rich(
                 TextSpan(
                   style: const TextStyle(
@@ -138,28 +139,20 @@ class _SignInPageState extends State<SignInPage> {
                   children: [
                     const TextSpan(text: 'By signing in, you agree to the '),
                     WidgetSpan(
-                      child: Link(
+                      alignment: PlaceholderAlignment.baseline,
+                      baseline: TextBaseline.alphabetic,
+                      child: HoverableLink(
+                        text: 'Terms of Service',
                         uri: Uri.parse('https://plot.day/terms'),
-                        child: const Text(
-                          'Terms of Service',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF3B82F6),
-                          ),
-                        ),
                       ),
                     ),
                     const TextSpan(text: ' and '),
                     WidgetSpan(
-                      child: Link(
+                      alignment: PlaceholderAlignment.baseline,
+                      baseline: TextBaseline.alphabetic,
+                      child: HoverableLink(
+                        text: 'Privacy Policy',
                         uri: Uri.parse('https://plot.day/privacy'),
-                        child: const Text(
-                          'Privacy Policy',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF3B82F6),
-                          ),
-                        ),
                       ),
                     ),
                     const TextSpan(text: '.'),
