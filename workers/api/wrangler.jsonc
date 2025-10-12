@@ -91,7 +91,7 @@
       "r2_buckets": [
         {
           "binding": "AGENT_MODULES_BUCKET",
-          "bucket_name": "agent-modules-dev"
+          "bucket_name": "agent-modules-development"
         }
       ]
     },
@@ -175,7 +175,7 @@
       "r2_buckets": [
         {
           "binding": "AGENT_MODULES_BUCKET",
-          "bucket_name": "agent-modules-prod"
+          "bucket_name": "agent-modules-production"
         }
       ]
     }
