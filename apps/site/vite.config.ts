@@ -7,14 +7,7 @@ import tailwindcss from "tailwindcss";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
-export default defineConfig(({ isSsrBuild }) => ({
-  build: {
-    rollupOptions: isSsrBuild
-      ? {
-          input: "./workers/app.ts",
-        }
-      : undefined,
-  },
+export default defineConfig(() => ({
   css: {
     postcss: {
       plugins: [
@@ -52,7 +45,7 @@ export default defineConfig(({ isSsrBuild }) => ({
     },
   },
   plugins: [
-    cloudflare(),
+    cloudflare({ viteEnvironment: { name: "ssr" } }),
     reactRouter(),
     tsconfigPaths(),
   ],
