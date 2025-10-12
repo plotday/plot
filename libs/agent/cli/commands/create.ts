@@ -141,6 +141,34 @@ export default createAgent(
 `;
   fs.writeFileSync(path.join(agentPath, "src", "index.ts"), agentTemplate);
 
+  // Detect and use appropriate package manager
+  const packageManager = detectPackageManager();
+  const packageManagerCommand = packageManager === "npm" ? "npm run" : packageManager;
+
+  // Copy README.md from template
+  const readmeTemplatePath = path.join(__dirname, "..", "templates", "README.template.md");
+  try {
+    let readmeContent = fs.readFileSync(readmeTemplatePath, "utf-8");
+    // Replace template variables
+    readmeContent = readmeContent.replace(/\{\{displayName\}\}/g, response.displayName);
+    readmeContent = readmeContent.replace(/\{\{name\}\}/g, response.name);
+    readmeContent = readmeContent.replace(/\{\{packageManager\}\}/g, packageManagerCommand);
+    fs.writeFileSync(path.join(agentPath, "README.md"), readmeContent);
+  } catch (error) {
+    console.warn("Warning: Could not copy README template");
+  }
+
+  // Copy AGENTS.md from template
+  const agentsTemplatePath = path.join(__dirname, "..", "templates", "AGENTS.template.md");
+  try {
+    let agentsContent = fs.readFileSync(agentsTemplatePath, "utf-8");
+    // Replace template variables
+    agentsContent = agentsContent.replace(/\{\{packageManager\}\}/g, packageManagerCommand);
+    fs.writeFileSync(path.join(agentPath, "AGENTS.md"), agentsContent);
+  } catch (error) {
+    console.warn("Warning: Could not copy AGENTS template");
+  }
+
   // Create .gitignore
   const gitignore = `node_modules/
 build/
@@ -155,8 +183,6 @@ build/
     // Silently fail - not critical
   }
 
-  // Detect and use appropriate package manager
-  const packageManager = detectPackageManager();
   const installCommand = packageManager === "yarn" ? "yarn" : `${packageManager} install`;
 
   // Install dependencies

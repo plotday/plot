@@ -142,8 +142,7 @@ Every agent and tool must have a `package.json` file in its root directory that 
 - `description`: Brief description of the agent/tool's purpose
 - `author`: Author in NPM format: "Name <email> (url)"
 - `license`: License type (typically "MIT")
-- `plotAgent.id`: Unique identifier (kebab-case)
-- `plotAgent.tools`: Array of tool IDs this agent/tool depends on (empty array `[]` for no dependencies)
+- `plotAgentId`: Unique identifier (kebab-case)
 
 **Creating New Agents/Tools:**
 
