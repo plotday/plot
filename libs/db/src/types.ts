@@ -1719,7 +1719,7 @@ export type Database = {
       }
       is_accessible_agent: {
         Args: {
-          p_agent_environment: string
+          p_agent_environment: Database["public"]["Enums"]["agent_environment"]
           p_agent_id: string
           p_priority_id: string
         }
