@@ -185,6 +185,76 @@ export default function Terms() {
           performance of any Software. You may not reproduce or redistribute any
           software except in accordance with the EULA or these Terms of Use.
         </p>
+        <h2 id="agents">AGENTS</h2>
+        <p>
+          Plot allows you to optionally install agents to extend functionality.
+          Agents come in three types: (1) agents provided by Plot, (2) agents
+          you create yourself, and (3) agents published by other users
+          ("Published Agents"). Installing an agent is always your choice and
+          requires your explicit action.
+        </p>
+        <p>
+          When you install an agent, it may access your data within Plot and
+          may synchronize information between Plot and external systems. For
+          example, a project management agent might create items in Plot for
+          each task in your project management app, and when you add a response
+          in Plot, it might add that response in the external app. You grant
+          these permissions when you install the agent.
+        </p>
+        <h3 id="published-agents">Published Agents</h3>
+        <p>
+          If you create and publish an agent for others to use, you agree that
+          your agent will not:
+        </p>
+        <ul>
+          <li>
+            <p>Engage in or facilitate illegal activity</p>
+          </li>
+          <li>
+            <p>
+              Cause harm to users, their data, or connected systems (including
+              excessive resource consumption, data loss, or system damage)
+            </p>
+          </li>
+          <li>
+            <p>
+              Behave deceptively or misleadingly (including misrepresenting its
+              purpose, permissions, or actions)
+            </p>
+          </li>
+          <li>
+            <p>
+              Violate the terms of service of any third-party systems it
+              connects to
+            </p>
+          </li>
+          <li>
+            <p>
+              Attempt to circumvent Plot's security measures, usage limits, rate
+              limits, or other protections
+            </p>
+          </li>
+        </ul>
+        <p>
+          As a publisher of an agent, you are responsible for its behavior and
+          any consequences of its use. As a user installing an agent, you
+          acknowledge that the agent will operate according to the permissions
+          you grant it, and you should review what an agent does before
+          installing it.
+        </p>
+        <p>
+          We reserve the right to review, disable, or remove any Published
+          Agent that violates these terms or poses risks to users or the
+          Service. We are not responsible for reviewing all Published Agents
+          before they are made available, and we make no guarantees about their
+          safety, functionality, or compliance with these terms. Published
+          Agents are provided "as is" and your use of them is at your own risk.
+        </p>
+        <p>
+          To the maximum extent permitted by law, Plot is not liable for any
+          damages, losses, or issues caused by agents created or published by
+          users, including Published Agents you install or create.
+        </p>
         <p>
           <strong>PROHIBITED ACTIVITIES</strong>
         </p>
@@ -218,6 +288,20 @@ export default function Terms() {
               features of the Service, including features that prevent or
               restrict the use or copying of any Content or enforce limitations
               on the use of the Service and/or the Content contained therein.
+            </p>
+          </li>
+          <li>
+            <p>
+              Attempt to circumvent or bypass any usage limits, rate limits,
+              quotas, or other restrictions we impose on the Service, whether
+              through technical means, creating multiple accounts, or otherwise.
+            </p>
+          </li>
+          <li>
+            <p>
+              Publish or distribute agents that engage in illegal activity,
+              cause harm to users or systems, behave deceptively, or violate
+              these Terms of Use or the terms of any third-party services.
             </p>
           </li>
           <li>
@@ -667,10 +751,13 @@ export default function Terms() {
           SITE, ANY HYPERLINKED WEBSITE, OR ANY WEBSITE OR MOBILE APPLICATION
           FEATURED IN ANY BANNER OR OTHER ADVERTISING, AND WE WILL NOT BE A
           PARTY TO OR IN ANY WAY BE RESPONSIBLE FOR MONITORING ANY TRANSACTION
-          BETWEEN YOU AND ANY THIRD-PARTY PROVIDERS OF PRODUCTS OR SERVICES. AS
-          WITH THE PURCHASE OF A PRODUCT OR SERVICE THROUGH ANY MEDIUM OR IN ANY
-          ENVIRONMENT, YOU SHOULD USE YOUR BEST JUDGMENT AND EXERCISE CAUTION
-          WHERE APPROPRIATE.
+          BETWEEN YOU AND ANY THIRD-PARTY PROVIDERS OF PRODUCTS OR SERVICES.
+          SIMILARLY, WE DO NOT WARRANT, ENDORSE, GUARANTEE, OR ASSUME
+          RESPONSIBILITY FOR ANY AGENTS CREATED OR PUBLISHED BY USERS, AND WE
+          ARE NOT RESPONSIBLE FOR THEIR BEHAVIOR, FUNCTIONALITY, SAFETY, OR ANY
+          DAMAGES OR LOSSES RESULTING FROM THEIR USE. AS WITH THE PURCHASE OF A
+          PRODUCT OR SERVICE THROUGH ANY MEDIUM OR IN ANY ENVIRONMENT, YOU
+          SHOULD USE YOUR BEST JUDGMENT AND EXERCISE CAUTION WHERE APPROPRIATE.
         </p>
         <h2 id="limitations-of-liability">LIMITATIONS OF LIABILITY</h2>
         <p>
@@ -694,14 +781,16 @@ export default function Terms() {
           You agree to defend, indemnify, and hold us harmless, including our
           subsidiaries, affiliates, and all of our respective officers, agents,
           partners, and employees, from and against any loss, damage, liability,
-          claim, or demand, including reasonable attorneys’ fees and expenses,
+          claim, or demand, including reasonable attorneys' fees and expenses,
           made by any third party due to or arising out of: (1) your
           Contributions; (2) use of the Service; (3) breach of these Terms of
           Use; (4) any breach of your representations and warranties set forth
           in these Terms of Use; (5) your violation of the rights of a third
-          party, including but not limited to intellectual property rights; or
-          (6) any overt harmful act toward any other user of the Service with
-          whom you connected via the Service. Notwithstanding the foregoing, we
+          party, including but not limited to intellectual property rights; (6)
+          any overt harmful act toward any other user of the Service with whom
+          you connected via the Service; or (7) any agents you create or
+          publish, including their behavior, functionality, and any consequences
+          of their use by you or others. Notwithstanding the foregoing, we
           reserve the right, at your expense, to assume the exclusive defense
           and control of any matter for which you are required to indemnify us,
           and you agree to cooperate, at your expense, with our defense of such
