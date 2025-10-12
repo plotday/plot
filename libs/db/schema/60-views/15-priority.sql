@@ -12,7 +12,7 @@ FROM
 WHERE
     at.deleted_at IS NULL
     AND a.deleted_at IS NULL
-    AND extensions.nlevel (a.path) = 1
+    AND nlevel (a.path) = 1
 GROUP BY
     a.priority_id,
     at.tag_id;
@@ -52,7 +52,7 @@ ORDER BY
     ps.user_id,
     p.id,
     -- Closest ancestor first (by path distance)
-    extensions.nlevel (p.path) - extensions.nlevel (parent.path) ASC;
+    nlevel (p.path) - nlevel (parent.path) ASC;
 
 -- While priority_user defines the priority roots for a user,
 -- user_priority has a row for every priority (including children)

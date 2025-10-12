@@ -49,7 +49,7 @@ CREATE OR REPLACE FUNCTION insert_priority_user ()
     AS $$
 BEGIN
     -- Only create entry for new, top-level priorities.
-    IF extensions.nlevel (NEW.path) = 1 THEN
+    IF nlevel (NEW.path) = 1 THEN
         INSERT INTO public.priority_user (user_id, priority_id)
             VALUES (NEW.created_by, NEW.id);
     END IF;

@@ -55,7 +55,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.user_has_priority_access (user_id uuid, target_priority_path extensions.ltree)
+CREATE OR REPLACE FUNCTION public.user_has_priority_access (user_id uuid, target_priority_path ltree)
     RETURNS boolean
     LANGUAGE plpgsql
     STABLE
@@ -108,7 +108,7 @@ $$
 LANGUAGE sql
 SECURITY DEFINER;
 
-CREATE FUNCTION can_access_priority (_priority_path extensions.ltree)
+CREATE FUNCTION can_access_priority (_priority_path ltree)
     RETURNS bool
     AS $$
     SELECT

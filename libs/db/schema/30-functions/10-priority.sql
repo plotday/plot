@@ -2,10 +2,10 @@ CREATE OR REPLACE FUNCTION parent_path (p ltree)
     RETURNS ltree
     AS $$
 BEGIN
-    IF extensions.nlevel (p) = 1 THEN
+    IF nlevel (p) = 1 THEN
         RETURN p;
     END IF;
-    RETURN subpath (p, 0, extensions.nlevel (p) - 1);
+    RETURN subpath (p, 0, nlevel (p) - 1);
 END;
 $$
 LANGUAGE plpgsql
@@ -22,7 +22,7 @@ DECLARE
     len integer;
 BEGIN
     IF parent IS NOT NULL THEN
-        prefix := extensions.ltree2text (parent) || '.';
+        prefix := ltree2text (parent) || '.';
         len := 4;
     ELSE
         len := 12;
@@ -31,7 +31,7 @@ BEGIN
         random_int := floor(random() * length(characters))::integer + 1;
         random_path := random_path || substr(characters, random_int, 1);
     END LOOP;
-    RETURN extensions.text2ltree (prefix || random_path);
+    RETURN text2ltree (prefix || random_path);
 END;
 $$
 LANGUAGE plpgsql;

@@ -2,52 +2,19 @@ CREATE SCHEMA IF NOT EXISTS "admin";
 
 CREATE SCHEMA IF NOT EXISTS "extensions";
 
-CREATE SCHEMA IF NOT EXISTS "pgtle";
+DROP EXTENSION IF EXISTS http;
 
 CREATE EXTENSION IF NOT EXISTS http WITH SCHEMA extensions;
 
 CREATE EXTENSION IF NOT EXISTS pg_tle;
 
-DROP EXTENSION IF EXISTS "supabase-dbdev";
-
-SELECT
-    pgtle.uninstall_extension_if_exists ('supabase-dbdev');
-
-SELECT
-    pgtle.install_extension ('supabase-dbdev', resp.contents ->> 'version', 'PostgreSQL package manager', resp.contents ->> 'sql')
-FROM
-    http (('GET', 'https://api.database.dev/rest/v1/' || 'package_versions?select=sql,version' || '&package_name=eq.supabase-dbdev' || '&order=version.desc' || '&limit=1', ARRAY[('apiKey', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhtdXB0cHBsZnZpaWZyYndtbXR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE2ODAxMDczNzIsImV4cCI6MTk5NTY4MzM3Mn0.z2CN0mvO2No8wSi46Gw59DFGCTJrzM0AQKsu_5k134s')::http_header], NULL, NULL)) x,
-    LATERAL (
-        SELECT
-            ((row_to_json(x) -> 'content') #>> '{}')::json -> 0) resp (contents);
-
-CREATE EXTENSION "supabase-dbdev";
-
-SELECT
-    dbdev.install ('supabase-dbdev');
-
-DROP EXTENSION IF EXISTS "supabase-dbdev";
-
-CREATE EXTENSION "supabase-dbdev";
-
 CREATE EXTENSION IF NOT EXISTS "btree_gist" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "http" WITH SCHEMA "extensions";
-
-SELECT
-    *
-FROM
-    dbdev.install ('kiwicopple-pg_idkit');
-
-CREATE EXTENSION IF NOT EXISTS "kiwicopple-pg_idkit" WITH SCHEMA "extensions";
-
-CREATE EXTENSION IF NOT EXISTS "ltree" WITH SCHEMA "extensions";
+CREATE EXTENSION IF NOT EXISTS "ltree";
 
 CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA "extensions";
 
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
-
-CREATE EXTENSION IF NOT EXISTS "pg_tle" WITH SCHEMA "pgtle";
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
 
@@ -57,9 +24,9 @@ CREATE EXTENSION IF NOT EXISTS "pgtap" WITH SCHEMA "extensions";
 
 CREATE EXTENSION IF NOT EXISTS "plpgsql_check" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA "extensions";
+CREATE EXTENSION IF NOT EXISTS "vector";
 
 DO $do$
 BEGIN
@@ -77,6 +44,41 @@ END
 $do$;
 
 GRANT ALL privileges ON ALL TABLES IN SCHEMA public TO internal_admin;
+
+CREATE OR REPLACE FUNCTION gen_random_uuid_v7 ()
+    RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_time timestamp with time zone := NULL;
+    v_secs bigint := NULL;
+    v_msec bigint := NULL;
+    v_usec bigint := NULL;
+    v_timestamp bigint := NULL;
+    v_timestamp_hex varchar := NULL;
+    v_random bigint := NULL;
+    v_random_hex varchar := NULL;
+    v_bytes bytea;
+    c_variant bit(64) := x'8000000000000000';
+    -- RFC-4122 variant: b'10xx...'
+BEGIN
+    -- Get seconds and micros
+    v_time := clock_timestamp();
+    v_secs := EXTRACT(EPOCH FROM v_time);
+    v_msec := mod(EXTRACT(MILLISECONDS FROM v_time)::numeric, 10 ^ 3::numeric);
+    v_usec := mod(EXTRACT(MICROSECONDS FROM v_time)::numeric, 10 ^ 3::numeric);
+    -- Generate timestamp hexadecimal (and set version 7)
+    v_timestamp := (((v_secs * 10 ^ 3) + v_msec)::bigint << 12) | (v_usec << 2);
+    v_timestamp_hex := lpad(to_hex(v_timestamp), 16, '0');
+    v_timestamp_hex := substr(v_timestamp_hex, 2, 12) || '7' || substr(v_timestamp_hex, 14, 3);
+    -- Generate the random hexadecimal (and set variant b'10xx')
+    v_random := ((random()::numeric * 2 ^ 62::numeric)::bigint::bit(64) | c_variant)::bigint;
+    v_random_hex := lpad(to_hex(v_random), 16, '0');
+    -- Concat timestemp and random hexadecimal
+    v_bytes := decode(v_timestamp_hex || v_random_hex, 'hex');
+    RETURN encode(v_bytes, 'hex')::uuid;
+END
+$$;
 
 CREATE TYPE "public"."activity_type" AS enum (
     'task',
@@ -109,7 +111,7 @@ DECLARE
     len integer;
 BEGIN
     IF parent IS NOT NULL THEN
-        prefix := extensions.ltree2text (parent) || '.';
+        prefix := ltree2text (parent) || '.';
         len := 4;
     ELSE
         len := 12;
@@ -118,7 +120,7 @@ BEGIN
         random_int := floor(random() * length(characters))::integer + 1;
         random_path := random_path || substr(characters, random_int, 1);
     END LOOP;
-    RETURN extensions.text2ltree (prefix || random_path);
+    RETURN text2ltree (prefix || random_path);
 END;
 $function$;
 
@@ -1077,7 +1079,7 @@ CREATE OR REPLACE FUNCTION public.insert_priority_user ()
     AS $function$
 BEGIN
     -- Only create entry for new, top-level priorities.
-    IF extensions.nlevel (NEW.path) = 1 THEN
+    IF nlevel (NEW.path) = 1 THEN
         INSERT INTO public.priority_user (user_id, priority_id)
             VALUES (NEW.created_by, NEW.id);
     END IF;
@@ -1306,10 +1308,10 @@ CREATE OR REPLACE FUNCTION public.parent_path (p ltree)
     IMMUTABLE
     AS $function$
 BEGIN
-    IF extensions.nlevel (p) = 1 THEN
+    IF nlevel (p) = 1 THEN
         RETURN p;
     END IF;
-    RETURN subpath (p, 0, extensions.nlevel (p) - 1);
+    RETURN subpath (p, 0, nlevel (p) - 1);
 END;
 $function$;
 

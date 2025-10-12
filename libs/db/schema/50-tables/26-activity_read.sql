@@ -5,7 +5,7 @@ CREATE TABLE "public"."activity_read" (
     "activity_path" ltree NOT NULL,
     "read_at" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT activity_read_unique UNIQUE (user_id, activity_path),
-    CONSTRAINT activity_read_single_level CHECK (extensions.nlevel (activity_path) = 1)
+    CONSTRAINT activity_read_single_level CHECK (nlevel (activity_path) = 1)
 );
 
 ALTER TABLE "public"."activity_read" ENABLE ROW LEVEL SECURITY;
@@ -16,3 +16,4 @@ CREATE TRIGGER set_activity_read_updated_at
     EXECUTE FUNCTION update_updated_at ();
 
 CREATE INDEX idx_activity_read_user_path ON "public"."activity_read" ("user_id", "activity_path");
+
