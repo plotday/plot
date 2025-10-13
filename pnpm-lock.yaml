@@ -223,8 +223,8 @@ importers:
         specifier: workspace:^
         version: link:../tsconfig
       supabase:
-        specifier: ^2.47.2
-        version: 2.47.2
+        specifier: ^2.48.3
+        version: 2.48.3
 
   libs/email:
     dependencies:
@@ -6296,8 +6296,8 @@ packages:
     peerDependencies:
       postcss: ^8.3.3
 
-  supabase@2.47.2:
-    resolution: {integrity: sha512-YvjjJXt21GsYvMBBJN3aKoGZf8QkCWU3hX5So/KsLRweY1YDu9mcEsrMdWp3ZYKQhoEMl9jDHG58SEQuFWGUfg==}
+  supabase@2.48.3:
+    resolution: {integrity: sha512-92vjrWqRUQPX9eYgTYlSSVXfpjzsAa++IX7IEM99BoYvNS3Pl6VrsqGN06QWi4VaX7FlPjjHLp+aIjoeWXcBug==}
     engines: {npm: '>=8'}
     hasBin: true
 
@@ -13668,7 +13668,7 @@ snapshots:
     dependencies:
       postcss: 8.5.6
 
-  supabase@2.47.2:
+  supabase@2.48.3:
     dependencies:
       bin-links: 5.0.0
       https-proxy-agent: 7.0.6

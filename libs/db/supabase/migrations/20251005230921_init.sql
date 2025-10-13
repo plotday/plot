@@ -18,8 +18,6 @@ CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
 
-CREATE EXTENSION IF NOT EXISTS "pgjwt" WITH SCHEMA "extensions";
-
 CREATE EXTENSION IF NOT EXISTS "pgtap" WITH SCHEMA "extensions";
 
 CREATE EXTENSION IF NOT EXISTS "plpgsql_check" WITH SCHEMA "extensions";
