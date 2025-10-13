@@ -13,7 +13,8 @@ CREATE TABLE "public"."agent_admin" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "publisher_id" bigint REFERENCES public.publisher ON DELETE CASCADE,
-    "priority_id" uuid REFERENCES public.priority ON DELETE CASCADE
+    "priority_id" uuid REFERENCES public.priority ON DELETE CASCADE,
+    "auto_approve" boolean NOT NULL DEFAULT FALSE
 );
 
 ALTER TABLE "public"."agent_admin" ENABLE ROW LEVEL SECURITY;

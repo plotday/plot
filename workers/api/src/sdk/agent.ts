@@ -249,6 +249,44 @@ agent.put("/agent/:id", async (c) => {
     });
   }
 
+  // If deploying to review and auto_approve is true, also deploy to public
+  if (environment === "review") {
+    const { data: agentAdmin, error: adminFetchError } = await supabase
+      .from("agent_admin")
+      .select("auto_approve")
+      .eq("id", adminId)
+      .single();
+
+    if (adminFetchError) {
+      console.error("Error fetching agent_admin for auto_approve check:", adminFetchError);
+    } else if (agentAdmin?.auto_approve) {
+      console.log(`Auto-approving agent ${adminId} to public environment`);
+
+      // Upsert public agent (compound key: id, environment)
+      const { error: upsertPublicError } = await supabase
+        .from("agent")
+        .upsert(
+          {
+            id: adminId,
+            environment: "public",
+            name,
+            description,
+            version,
+            user_id: null, // Public agents have no user_id
+          },
+          {
+            onConflict: "id,environment",
+          }
+        );
+
+      if (upsertPublicError) {
+        console.error("Error auto-deploying to public:", upsertPublicError);
+      } else {
+        console.log(`Successfully auto-deployed agent ${adminId} to public environment`);
+      }
+    }
+  }
+
   // Extract only direct dependencies (id only) for the response
   const directDependencies = dependencies.map((dep) => dep.id);
 

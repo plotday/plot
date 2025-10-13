@@ -407,6 +407,7 @@ export type Database = {
       }
       agent_admin: {
         Row: {
+          auto_approve: boolean
           created_at: string
           id: string
           priority_id: string | null
@@ -414,6 +415,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auto_approve?: boolean
           created_at?: string
           id?: string
           priority_id?: string | null
@@ -421,6 +423,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auto_approve?: boolean
           created_at?: string
           id?: string
           priority_id?: string | null
