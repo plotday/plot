@@ -29,7 +29,7 @@ export function success(message: string, details?: string[]) {
  * Print an error message with X mark
  */
 export function error(message: string, details?: string) {
-  console.log("\n" + colors.error("✗") + " " + message);
+  console.log(colors.error("✗") + " " + message);
   if (details) {
     console.log("  " + colors.dim(details));
   }
@@ -39,7 +39,7 @@ export function error(message: string, details?: string) {
  * Print an info message
  */
 export function info(message: string, details?: string[]) {
-  console.log("\n" + colors.info("ℹ") + " " + message);
+  console.log(colors.info("ℹ") + " " + message);
   if (details) {
     details.forEach((detail) => console.log("  " + colors.dim(detail)));
   }
@@ -49,7 +49,7 @@ export function info(message: string, details?: string[]) {
  * Print a warning message
  */
 export function warning(message: string, details?: string[]) {
-  console.log("\n" + colors.warning("⚠") + " " + message);
+  console.log(colors.warning("⚠") + " " + message);
   if (details) {
     details.forEach((detail) => console.log("  " + colors.dim(detail)));
   }

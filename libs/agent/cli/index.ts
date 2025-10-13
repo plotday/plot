@@ -69,7 +69,7 @@ agent
   .option("--name <name>", "Agent name")
   .option("--description <description>", "Agent description")
   .option(
-    "--environment <env>",
+    "-e, --environment <env>",
     "Deployment environment (personal, private, review)",
     "personal"
   )

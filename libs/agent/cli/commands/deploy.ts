@@ -84,9 +84,14 @@ export async function deployCommand(options: DeployOptions) {
   const deploymentName = options.name || agentName;
   const deploymentDescription = options.description || agentDescription;
 
-  // Load DEPLOY_TOKEN from multiple sources (CLI, .env, global config)
+  // Load DEPLOY_TOKEN from multiple sources (CLI, env var, .env, global config)
   let deployToken = options.deployToken;
   const envPath = path.join(agentPath, ".env");
+
+  if (!deployToken) {
+    // Try to load from PLOT_DEPLOY_TOKEN environment variable
+    deployToken = process.env.PLOT_DEPLOY_TOKEN;
+  }
 
   if (!deployToken) {
     // Try to load from .env file
@@ -113,7 +118,7 @@ export async function deployCommand(options: DeployOptions) {
     if (!deployToken) {
       out.info("Authentication required", [
         "Run 'plot login' for easiest setup",
-        "Or provide token via --deploy-token or DEPLOY_TOKEN in .env",
+        "Or provide token via --deploy-token, PLOT_DEPLOY_TOKEN env var, or DEPLOY_TOKEN in .env",
       ]);
 
       const response = await prompts({
