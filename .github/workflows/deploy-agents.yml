@@ -94,7 +94,7 @@ jobs:
       - name: Install dependencies for ${{ matrix.agent }}
         run: |
           cd agents/${{ matrix.agent }}
-          pnpm install
+          pnpm install --filter="."
 
       - name: Deploy ${{ matrix.agent }} agent
         run: |
