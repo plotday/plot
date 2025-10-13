@@ -45,7 +45,7 @@ export type SessionUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
 
 export type LogMessage = {
   agentRootId: string;
-  environment: "test" | "private" | "review" | "public";
+  environment: "personal" | "private" | "review" | "public";
   severity: "log" | "error" | "warn" | "info";
   message: string;
   timestamp: number;

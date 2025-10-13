@@ -189,10 +189,9 @@ account.post("/activate", async (c) => {
   try {
     const { data: plotAgent, error: plotAgentError } = await c.var.supabase
       .from("agent")
-      .select("id,version,agent_author!inner(email)")
-      .eq("name", "Plot")
+      .select("id,version")
+      .eq("id", "0199b6f4-ae64-7718-8a02-44716f30358f")
       .eq("environment", "public")
-      .eq("agent_author.email", "team@plot.day")
       .maybeSingle();
 
     if (plotAgentError) {

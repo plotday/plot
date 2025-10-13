@@ -11,7 +11,7 @@ export async function add(
   supabaseAdmin: SupabaseClient,
   priority_id: string,
   agent_id: string,
-  agent_environment: string,
+  agent_environment: "personal" | "private" | "review" | "public",
   name?: string,
   config?: any,
   activate?: {
@@ -110,7 +110,11 @@ export async function add(
     // Activate agent if requested
     if (activate) {
       const { agent: agentInstance, dependencies } =
-        await activate.agentFactory(agent_id, agent_environment, activate.version);
+        await activate.agentFactory(
+          agent_id,
+          agent_environment,
+          activate.version
+        );
 
       const tools = activate.createTools(
         {
