@@ -1,5 +1,8 @@
 name: Deploy Agents
 
+env:
+  AGENTS: "plot"
+
 on:
   push:
     branches: [main]
@@ -40,15 +43,16 @@ jobs:
       - name: Check for affected agents
         id: filter
         run: |
+          AGENT_LIST=(${AGENTS//,/ })
           if [ "${{ steps.workflow_changed.outputs.changed }}" = "true" ]; then
-            ALL_AGENTS=$(ls agents | jq -R -s -c 'split("\n")[:-1]')
-            echo "agents=$ALL_AGENTS" >> $GITHUB_OUTPUT
-            echo "Workflow file changed, deploying all agents: $ALL_AGENTS"
+            AGENTS_JSON=$(printf '%s\n' "${AGENT_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
+            echo "agents=$AGENTS_JSON" >> $GITHUB_OUTPUT
+            echo "Workflow file changed, deploying all agents: $AGENTS_JSON"
             exit 0
           fi
 
           AGENTS=()
-          for agent in plot; do
+          for agent in "${AGENT_LIST[@]}"; do
             AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=HEAD~1 --head=HEAD --json 2>/dev/null || echo "[]")
             if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/agent-$agent$"; then
               AGENTS+=("\"$agent\"")
@@ -96,3 +100,4 @@ jobs:
         run: |
           cd agents/${{ matrix.agent }}
           pnpm plot agent deploy -e review
+        continue-on-error: true
