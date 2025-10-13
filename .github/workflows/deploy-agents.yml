@@ -28,24 +28,33 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Install root dependencies only
-        run: pnpm install --ignore-scripts --frozen-lockfile --filter="."
+      - name: Detect if workflow file changed
+        id: workflow_changed
+        run: |
+          if git diff --name-only HEAD~1 | grep -q "^.github/workflows/deploy-agents.yml$"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Check for changes
+      - name: Check for affected agents
         id: filter
         run: |
-          AGENTS=()
+          if [ "${{ steps.workflow_changed.outputs.changed }}" = "true" ]; then
+            ALL_AGENTS=$(ls agents | jq -R -s -c 'split("\n")[:-1]')
+            echo "agents=$ALL_AGENTS" >> $GITHUB_OUTPUT
+            echo "Workflow file changed, deploying all agents: $ALL_AGENTS"
+            exit 0
+          fi
 
-          # Check each agent for changes
+          AGENTS=()
           for agent in plot; do
-            # Check if agent has changes by looking at affected projects
-            AFFECTED_OUTPUT=$(pnpm exec nx show projects --affected --base=HEAD~1 --head=HEAD --json 2>/dev/null || echo "[]")
+            AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=HEAD~1 --head=HEAD --json 2>/dev/null || echo "[]")
             if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/agent-$agent$"; then
               AGENTS+=("\"$agent\"")
             fi
           done
 
-          # Convert array to JSON array
           if [ ${#AGENTS[@]} -eq 0 ]; then
             echo "agents=[]" >> $GITHUB_OUTPUT
             echo "No agents have changes"
@@ -78,8 +87,10 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Install dependencies
-        run: pnpm install
+      - name: Install dependencies for ${{ matrix.agent }}
+        run: |
+          cd agents/${{ matrix.agent }}
+          pnpm install
 
       - name: Deploy ${{ matrix.agent }} agent
         run: |
