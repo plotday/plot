@@ -125,7 +125,6 @@ export async function storeAgentModule(
   });
   const agent = worker.getEntrypoint<AgentEntrypoint>();
   const dependencies = await agent.getDependencies();
-  console.log("Storing agent module with dependencies:", dependencies);
 
   // Store module and dependencies together as JSON in R2
   const r2Key = `agents/${id}/modules/${version}.js`;
