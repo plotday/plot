@@ -201,7 +201,7 @@ export class CachedTools implements Tools {
     const tool = this.constructTool(
       id,
       dep.dependencies ?? [],
-      dep.constructor,
+      dep.constructor
     );
     this.cache.set(id, tool);
     return tool as T;
@@ -210,11 +210,11 @@ export class CachedTools implements Tools {
   private constructTool(
     id: string,
     dependencies: ToolDependencies[],
-    constructor?: IToolConstructor<any>,
+    constructor?: IToolConstructor<any>
   ): Tool {
     if (!constructor) {
       throw new Error(
-        `No constructor available for tool: ${id}. Tool must be imported and used via tools.get() to be auto-discovered.`,
+        `No constructor available for tool: ${id}. Tool must be imported and used via tools.get() to be auto-discovered.`
       );
     }
 
@@ -279,29 +279,17 @@ class DependencyTracker implements Tools {
   }
 }
 
-abstract class AgentEntrypoint {
-  constructor(
-    public ctx: unknown,
-    public env: unknown,
-  ) {}
-}
+export class AgentWrapper {
+  constructor(private builder: (tools: Tools) => Agent) {}
 
-export class AgentWrapper extends AgentEntrypoint {
-  public builder: (tools: Tools) => Agent;
-
-  constructor(ctx: unknown, env: unknown, builder: (tools: Tools) => Agent) {
-    super(ctx, env);
-    this.builder = builder;
-  }
-
-  public buildAgent(dependencies: ToolDependencies[]) {
+  private buildAgent(dependencies: ToolDependencies[]) {
     const tools = new CachedTools(dependencies);
     return this.builder(tools);
   }
 
   async activate(
     dependencies: ToolDependencies[],
-    priority: Pick<Priority, "id">,
+    priority: Pick<Priority, "id">
   ) {
     const agent = this.buildAgent(dependencies);
     return agent.activate(priority);
@@ -316,7 +304,7 @@ export class AgentWrapper extends AgentEntrypoint {
     dependencies: ToolDependencies[],
     functionName: string,
     args: any,
-    context: any,
+    context: any
   ) {
     const target = this.buildAgent(dependencies);
     return await target.call(functionName, args, context);
@@ -326,7 +314,7 @@ export class AgentWrapper extends AgentEntrypoint {
     tool: ToolDependencies,
     functionName: string,
     args: any,
-    context: any,
+    context: any
   ) {
     // Use pre-built tool if available, otherwise construct lazily
     let target: Tool;
@@ -366,11 +354,11 @@ export class AgentWrapper extends AgentEntrypoint {
 }
 
 export function createAgent<T extends Agent>(
-  AgentClass: new (tools: Tools) => T,
+  AgentClass: new (tools: Tools) => T
 ) {
   return class extends AgentWrapper {
-    constructor(ctx: unknown, env: unknown) {
-      super(ctx, env, (tools) => new AgentClass(tools));
+    constructor() {
+      super((tools) => new AgentClass(tools));
     }
   };
 }
