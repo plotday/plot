@@ -1,54 +1,160 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
-import { type ToolDependencies } from "../agent/types/agent";
+import { type ToolDependencies } from ".";
 import { type Activity, type Priority } from "../agent/types/plot";
 
 const MODULE = `
 import { WorkerEntrypoint } from "cloudflare:workers";
 
-import Agent from "agent.js";
+import AgentConstructor from "agent.js";
+
+class CachedTools {
+  constructor(dependencies) {
+    this.dependencies = dependencies;
+    this.cache = new Map();
+  }
+
+  get(ToolClass) {
+    return this.getById(ToolClass.id);
+  }
+
+  getById(id) {
+    // Check cache first
+    if (this.cache.has(id)) {
+      return this.cache.get(id);
+    }
+
+    // Find the dependency
+    const dep = this.dependencies.find((d) => d.id === id);
+    if (!dep) {
+      throw new Error(\`Tool not found: \${id}\`);
+    }
+
+    // Use pre-built tool if available (for built-in tools)
+    if (dep.tool) {
+      this.cache.set(id, dep.tool);
+      return dep.tool;
+    }
+
+    // Otherwise construct it lazily using the constructor from the dependency
+    const tool = this.constructTool(
+      id,
+      dep.dependencies ?? [],
+      dep.constructor
+    );
+    this.cache.set(id, tool);
+    return tool;
+  }
+
+  constructTool(id, dependencies, constructor) {
+    if (!constructor) {
+      throw new Error(
+        \`No constructor available for tool: \${id}. Tool must be imported and used via tools.get() to be auto-discovered.\`
+      );
+    }
+
+    const tools = new CachedTools(dependencies);
+    return new constructor(tools);
+  }
+}
+
+class DependencyTracker {
+  constructor() {
+    this.toolRequests = new Map();
+  }
+
+  get(ToolClass) {
+    const toolId = ToolClass.id;
+
+    // Create nested tracker to capture this tool's dependencies
+    const nestedTracker = new DependencyTracker();
+
+    // Try to construct the tool to trigger its dependency requests
+    try {
+      new ToolClass(nestedTracker);
+    } catch (e) {
+      // Expected to fail - we're just capturing dependency requests
+    }
+
+    // Record this tool request and its nested dependencies
+    this.toolRequests.set(toolId, {
+      constructor: ToolClass,
+      nestedTracker,
+    });
+
+    // Return mock object (construction will likely fail later, but we don't care)
+    return {};
+  }
+
+  buildDependencyTree() {
+    const result = [];
+
+    for (const [id, { constructor, nestedTracker }] of this.toolRequests) {
+      result.push({
+        id,
+        constructor,
+        // Recursively build dependencies for this tool
+        dependencies: nestedTracker.buildDependencyTree(),
+      });
+    }
+
+    return result;
+  }
+}
+
+function buildAgent(dependencies) {
+  const tools = new CachedTools(dependencies);
+  return new AgentConstructor(tools);
+}
+
+function buildTool(tool) {
+  // Use pre-built tool if available, otherwise construct lazily
+  if (tool.tool) {
+    return tool.tool;
+  } else {
+    const tools = new CachedTools(tool.dependencies ?? []);
+    return tools.getById(tool.id);
+  }
+}
 
 export default class extends WorkerEntrypoint {
   async fetch() {
     return new Response("OK");
   }
 
-  async activate(
-    dependencies,
-    priority,
-  ) {
-    const agent = new Agent();
-    return agent.activate(dependencies, priority);
+  async activate(dependencies, priority) {
+    const agent = buildAgent(dependencies);
+    return agent.activate(priority);
   }
 
   async activity(dependencies, activity) {
-    const agent = new Agent();
-    return agent.activity(dependencies, activity);
+    const agent = buildAgent(dependencies);
+    return agent.activity(activity);
   }
 
-  async call(
-    dependencies,
-    functionName,
-    args,
-    context,
-  ) {
-    const agent = new Agent();
-    return agent.call(dependencies, functionName, args, context);
+  async call(dependencies, functionName, args, context) {
+    const agent = buildAgent(dependencies);
+    return agent.call(functionName, args, context);
   }
 
-  async callTool(
-    tool,
-    functionName,
-    args,
-    context,
-  ) {
-    const agent = new Agent();
-    return agent.callTools(tool, functionName, args, context);
+  async callTool(tool, functionName, args, context) {
+    const target = buildTool(tool);
+    return target.call(functionName, args, context);
   }
 
   getDependencies() {
-    const agent = new Agent();
-    return agent.getDependencies();
+    const tracker = new DependencyTracker();
+
+    try {
+      // Construct agent to trigger dependency requests
+      new AgentConstructor(tracker);
+    } catch (e) {
+      // Expected to fail since we're passing mock tools
+      // We only care about what was requested, not actual execution
+    }
+
+    // Build and return the complete dependency tree
+    return tracker.buildDependencyTree();
   }
 }
 `;

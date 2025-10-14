@@ -1,13 +1,7 @@
-import {
-  ActivityType,
-  Agent,
-  type Priority,
-  type Tools,
-  createAgent,
-} from "@plotday/sdk";
+import { ActivityType, Agent, type Priority, type Tools } from "@plotday/sdk";
 import { Plot } from "@plotday/sdk/tools/plot";
 
-class PlotAgent extends Agent {
+export default class extends Agent {
   private plot: Plot;
 
   constructor(protected tools: Tools) {
@@ -38,5 +32,3 @@ class PlotAgent extends Agent {
     });
   }
 }
-
-export default createAgent(PlotAgent);

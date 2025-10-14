@@ -5,7 +5,6 @@ import {
   Agent,
   type Priority,
   type Tools,
-  createAgent,
 } from "@plotday/sdk";
 import { CallbackTool } from "@plotday/sdk/tools/callback";
 import { Plot } from "@plotday/sdk/tools/plot";
@@ -29,7 +28,7 @@ type ContactSelectionContext = {
   authToken: string;
 };
 
-class ContactsAgent extends Agent {
+export default class extends Agent {
   private googleContacts: GoogleContacts;
   private plot: Plot;
   private store: Store;
@@ -244,5 +243,3 @@ class ContactsAgent extends Agent {
     }
   }
 }
-
-export default createAgent(ContactsAgent);

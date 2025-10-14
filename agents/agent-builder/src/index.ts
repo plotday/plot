@@ -1,16 +1,10 @@
-import {
-  ActivityType,
-  Agent,
-  type Priority,
-  type Tools,
-  createAgent,
-} from "@plotday/sdk";
+import { ActivityType, Agent, type Priority, type Tools } from "@plotday/sdk";
 import { AgentManager, type Log } from "@plotday/sdk/tools/agent";
 import { CallbackTool } from "@plotday/sdk/tools/callback";
 import { type NewActivity, Plot } from "@plotday/sdk/tools/plot";
 import { Store } from "@plotday/sdk/tools/store";
 
-class AgentBuilderAgent extends Agent {
+export default class extends Agent {
   private plot: Plot;
   private agent: AgentManager;
   private store: Store;
@@ -97,5 +91,3 @@ To get started:
     }
   }
 }
-
-export default createAgent(AgentBuilderAgent);
