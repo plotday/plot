@@ -11,8 +11,8 @@ import type { Route } from "./+types/auth.callback";
 
 export async function loader({ context }: Route.LoaderArgs) {
   return {
-    supabaseUrl: context.env.SUPABASE_URL,
-    supabaseAnonKey: context.env.SUPABASE_ANON_KEY,
+    supabaseUrl: context.cloudflare.env.SUPABASE_URL,
+    supabaseAnonKey: context.cloudflare.env.SUPABASE_ANON_KEY,
   };
 }
 

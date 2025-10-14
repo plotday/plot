@@ -25,19 +25,19 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { user } = await getUser(request, context.env);
+  const { user } = await getUser(request, context.cloudflare.env);
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("session");
 
   return {
     user,
     sessionId,
-    apiUrl: context.env.API_ROOT || "https://api.plot.day",
+    apiUrl: context.cloudflare.env.API_ROOT || "https://api.plot.day",
   };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
-  const { user } = await getUser(request, context.env);
+  const { user } = await getUser(request, context.cloudflare.env);
 
   if (!user) {
     return { error: "No active session" };
@@ -46,7 +46,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const formData = await request.formData();
   const sessionId = formData.get("sessionId") as string;
 
-  const apiUrl = context.env.API_ROOT || "https://api.plot.day";
+  const apiUrl = context.cloudflare.env.API_ROOT || "https://api.plot.day";
 
   // Get access token from cookies
   const cookieHeader = request.headers.get("Cookie") ?? "";

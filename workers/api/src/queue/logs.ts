@@ -1,7 +1,5 @@
-import type { Callback } from "@plotday/sdk/tools/callback";
-
+import { type Callback, CallbackTool } from "../agent/tools/callback";
 import { type Bindings, type LogMessage } from "../env";
-import { CallbackTool } from "../agent/tools/callback";
 
 export async function processLogs(
   batch: MessageBatch<LogMessage>,
@@ -49,17 +47,11 @@ export async function processLogs(
             formattedLogs
           );
         } catch (error) {
-          console.error(
-            `Failed to call log callback ${callbackToken}:`,
-            error
-          );
+          console.error(`Failed to call log callback ${callbackToken}:`, error);
         }
       }
     } catch (error) {
-      console.error(
-        `Error processing logs for agent ${agentRootId}:`,
-        error
-      );
+      console.error(`Error processing logs for agent ${agentRootId}:`, error);
     }
   }
 }

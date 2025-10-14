@@ -1,6 +1,5 @@
-import type { Webhook as IWebhook } from "@plotday/sdk/tools/webhook";
-
 import { Callbacks } from "../../state/callbacks";
+import type { Webhook as IWebhook } from "../types/tools/webhook";
 import { Tool } from "./tool";
 
 export type WebhookRequest = {

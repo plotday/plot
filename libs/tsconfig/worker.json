@@ -15,11 +15,6 @@
       "./worker-configuration.d.ts",
       "../../libs/tsconfig/workers.d.ts"
     ],
-    "paths": {
-      "@plotday/sdk": [
-        "../../libs/agent"
-      ]
-    },
     "resolveJsonModule": true,
     "allowJs": true,
     "checkJs": false,

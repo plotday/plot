@@ -1,6 +1,5 @@
-import type { Store as IStore } from "@plotday/sdk/tools/store";
-
 import { type Storage } from "../../state/storage";
+import type { Store as IStore } from "../types/tools/store";
 import { Tool } from "./tool";
 
 export class Store extends Tool implements IStore {

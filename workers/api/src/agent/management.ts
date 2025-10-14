@@ -130,7 +130,6 @@ export async function add(
           callbacks: activate.env.CALLBACKS,
           logSubscriptions: activate.env.LOG_SUBSCRIPTIONS,
           env: activate.env,
-          agents: activate.agentFactory,
         }
       );
 

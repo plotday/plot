@@ -8,14 +8,14 @@ import {
   createAgent,
 } from "@plotday/sdk";
 import { CallbackTool } from "@plotday/sdk/tools/callback";
-import GoogleContactsTool from "@plotday/sdk/tools/google-contacts";
+import { Plot } from "@plotday/sdk/tools/plot";
+import { Store } from "@plotday/sdk/tools/store";
+import GoogleContactsTool from "@plotday/tool-google-contacts";
 import type {
   Contact,
   ContactAuth,
   GoogleContacts,
-} from "@plotday/sdk/tools/google-contacts";
-import { Plot } from "@plotday/sdk/tools/plot";
-import { Store } from "@plotday/sdk/tools/store";
+} from "@plotday/tool-google-contacts";
 
 type ContactProvider = "google";
 

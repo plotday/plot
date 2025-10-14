@@ -103,7 +103,9 @@ export class Callbacks extends DurableObject<Bindings> {
 
       if (error || !data?.version) {
         throw new Error(
-          `Failed to fetch version for agent ${agentId} (${environment}): ${error?.message || "No version found"}`
+          `Failed to fetch version for agent ${agentId} (${environment}): ${
+            error?.message || "No version found"
+          }`
         );
       }
       version = data.version;
@@ -189,11 +191,8 @@ export class Callbacks extends DurableObject<Bindings> {
 
     // Get tools dynamically from the agent
     const agents = agentFactory(this.env);
-    const { agent: agentInstance, dependencies: agentDependencies } = await agents(
-      agentId,
-      environment,
-      callback.version
-    );
+    const { agent: agentInstance, dependencies: agentDependencies } =
+      await agents(agentId, environment, callback.version);
     let dependencies = agentDependencies;
     let tool: ToolDependencySpec | undefined;
     // navigate to the correct tool if a path is provided
@@ -220,7 +219,6 @@ export class Callbacks extends DurableObject<Bindings> {
             callbacks: this.env.CALLBACKS,
             logSubscriptions: this.env.LOG_SUBSCRIPTIONS,
             env: this.env,
-            agents,
           }),
           callback.functionName,
           args === undefined ? callback.context : args,
@@ -241,7 +239,6 @@ export class Callbacks extends DurableObject<Bindings> {
               callbacks: this.env.CALLBACKS,
               logSubscriptions: this.env.LOG_SUBSCRIPTIONS,
               env: this.env,
-              agents,
             }
           ),
           callback.functionName,
@@ -347,7 +344,10 @@ export class Callbacks extends DurableObject<Bindings> {
     const base64 = btoa(
       Array.from(randomBytes, (byte) => String.fromCharCode(byte)).join("")
     );
-    const randomToken = base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    const randomToken = base64
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
 
     // Encode shard key in token for routing
     return `${this.shardKey}:${randomToken}`;
@@ -358,19 +358,23 @@ export class Callbacks extends DurableObject<Bindings> {
    * For simple priorityAgentId sharding: returns just the priorityAgentId
    * For complex sharding (e.g. Run tool): returns the full shard key
    */
-  static parseToken(token: string): { shardKey: string; priorityAgentId: string; fullToken: string } {
-    const colonIndex = token.indexOf(':');
+  static parseToken(token: string): {
+    shardKey: string;
+    priorityAgentId: string;
+    fullToken: string;
+  } {
+    const colonIndex = token.indexOf(":");
     if (colonIndex === -1) {
-      throw new Error('Invalid token format');
+      throw new Error("Invalid token format");
     }
-    const shardKey = token.substring(0, token.lastIndexOf(':'));
+    const shardKey = token.substring(0, token.lastIndexOf(":"));
     // Extract priorityAgentId (first component of shard key)
-    const priorityAgentId = shardKey.split(':')[0];
+    const priorityAgentId = shardKey.split(":")[0];
 
     return {
       shardKey,
       priorityAgentId,
-      fullToken: token
+      fullToken: token,
     };
   }
 }

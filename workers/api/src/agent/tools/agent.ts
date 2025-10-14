@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@plotday/db";
-import type { AgentManager as IAgent } from "@plotday/sdk/tools/agent";
-import type { Callback } from "@plotday/sdk/tools/callback";
 
 import { type LogSubscriptions } from "../../state/log-subscriptions";
+import type { AgentManager as IAgent } from "../types/tools/agent";
+import type { Callback } from "../types/tools/callback";
 import { Tool } from "./tool";
 
 export class Agent extends Tool implements IAgent {

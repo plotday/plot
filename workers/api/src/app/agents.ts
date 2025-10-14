@@ -19,7 +19,10 @@ const agents = new Hono<{ Bindings: Bindings }>();
 const AgentRequestSchema = z.object({
   priorityId: z.string(),
   agentId: z.string(),
-  agentEnvironment: z.string(),
+  agentEnvironment: z
+    .enum(["personal", "private", "review"])
+    .optional()
+    .default("personal"),
   name: z.string().optional(),
   config: z.record(z.string(), z.any()).optional(),
 });

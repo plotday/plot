@@ -1,11 +1,10 @@
-import type { Tool, ToolDependencies } from "@plotday/sdk";
 import type { SupabaseClient } from "@plotday/db";
 
-import type { AgentFactory } from "../../agent";
-import { type Callbacks } from "../../state/callbacks";
 import type { Bindings } from "../../env";
+import { type Callbacks } from "../../state/callbacks";
 import { type LogSubscriptions } from "../../state/log-subscriptions";
 import { type Storage } from "../../state/storage";
+import type { Tool, ToolDependencies } from "../types/agent";
 import { Agent } from "./agent";
 import { AiTool } from "./ai";
 import { Auth } from "./auth";
@@ -32,7 +31,6 @@ export function createTool(
     callbacks,
     logSubscriptions,
     env,
-    agents,
   }: {
     supabase: SupabaseClient;
     ai: Ai;
@@ -42,7 +40,6 @@ export function createTool(
     callbacks: DurableObjectNamespace<Callbacks>;
     logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
     env: Bindings;
-    agents: AgentFactory;
   }
 ): ToolDependencies {
   let tool: unknown = undefined;
@@ -123,7 +120,6 @@ export function createTool(
         callbacks,
         logSubscriptions,
         env,
-        agents,
       }
     ),
   };
@@ -146,7 +142,6 @@ export function createTools(
     callbacks,
     logSubscriptions,
     env,
-    agents,
   }: {
     supabase: SupabaseClient;
     ai: Ai;
@@ -156,7 +151,6 @@ export function createTools(
     callbacks: DurableObjectNamespace<Callbacks>;
     logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
     env: Bindings;
-    agents: AgentFactory;
   }
 ): ToolDependencies[] {
   const ret = dependencies.map((dep) =>
@@ -169,7 +163,6 @@ export function createTools(
       callbacks,
       logSubscriptions,
       env,
-      agents,
     })
   );
   return ret;

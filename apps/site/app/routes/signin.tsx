@@ -16,7 +16,7 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { user } = await getUser(request, context.env);
+  const { user } = await getUser(request, context.cloudflare.env);
 
   // If already authenticated, redirect to returnTo or home
   if (user) {
@@ -26,8 +26,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   }
 
   return {
-    supabaseUrl: context.env.SUPABASE_URL,
-    supabaseAnonKey: context.env.SUPABASE_ANON_KEY,
+    supabaseUrl: context.cloudflare.env.SUPABASE_URL,
+    supabaseAnonKey: context.cloudflare.env.SUPABASE_ANON_KEY,
   };
 }
 

@@ -3,6 +3,7 @@ packages:
   - workers/*
   - libs/*
   - agents/*
+  - ../plot-sdk/sdk
 onlyBuiltDependencies:
   - "@sentry/cli"
   - bufferutil

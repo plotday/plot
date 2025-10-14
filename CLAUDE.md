@@ -61,95 +61,20 @@ This pattern allows functions to distinguish between:
 
 There are two types of tools for agents:
 
-#### Regular Tools (libs/agent/tools/\*)
-
-- Located in `libs/agent/tools/*`
-- Extend the base `Tool` class from the agent SDK
-- Run in isolation, with access only to other tools declared in their package.json.
-- Constructor must have this signature: `constructor(protected tools: Tools)`
-- All other tools required must be added to the package.json file,
-  and accessed via `tools.get(ToolClass)` (e.g. `Plot`, `Store`)
-- Always prefer regular tools unless internal resources are required
-
-**Use Regular Tools when:**
-
-- The tool primarily interacts with external APIs (Google, Microsoft, etc.)
-- The tool provides utility functions that don't require backend access
-- The tool can be reused across different agent implementations
-- The functionality is self-contained and doesn't need Plot's internal state
-
 #### BuiltInTools (workers/api/src/agent/tools/\*)
 
 - Located in `workers/api/src/agent/tools/*`
 - Extend the `BuiltInTool` class
-- Have access to internal API resources, database connections, and backend services
+- Have access to internal API resources, database connections, and backend services as they run inside the API worker
 - Examples: `Plot`, `Auth`, `Store`
 - Use this pattern for tools that need direct access to the Plot backend infrastructure
 
-**Use BuiltInTools when:**
+#### Regular Tools
 
-- The tool needs direct access to the Plot database
-- The tool requires authentication or authorization through Plot's systems
-- The tool needs to interact with internal Plot APIs or services
-- The functionality is tightly coupled to Plot's backend infrastructure
-
-### Configuration Files
-
-#### package.json
-
-Every agent and tool must have a `package.json` file in its root directory that defines its metadata and dependencies:
-
-**Agent example:**
-
-```json
-{
-  "name": "@plotday/sdk-events",
-  "displayName": "Events",
-  "description": "Sync calendar events",
-  "author": "Plot <team@plot.day> (https://plot.day)",
-  "license": "MIT",
-  "version": "0.1.0",
-  "private": true,
-  "main": "src/index.ts",
-  "dependencies": {
-    "@plotday/sdk": "workspace:^"
-  }
-}
-```
-
-**Tool example:**
-
-```json
-{
-  "name": "@plotday/tool-google-calendar",
-  "displayName": "Google Calendar",
-  "description": "Sync with Google Calendar",
-  "author": "Plot <team@plot.day> (https://plot.day)",
-  "license": "MIT",
-  "version": "0.1.0",
-  "private": true,
-  "main": "index.ts",
-  "dependencies": {
-    "@plotday/sdk": "workspace:^"
-  }
-}
-```
-
-**Required fields:**
-
-- `name`: NPM package name (should follow @plotday/sdk-_or @plotday/tool-_ convention)
-- `displayName`: Human-readable display name
-- `description`: Brief description of the agent/tool's purpose
-- `author`: Author in NPM format: "Name <email> (url)"
-- `license`: License type (typically "MIT")
-- `plotAgentId`: Unique identifier (kebab-case)
-
-**Creating New Agents/Tools:**
-
-1. Create the directory structure under `agents/` or `libs/agent/tools/`
-2. Add a `package.json` file with the required fields
-3. Implement the agent/tool class extending `Agent` or `Tool`
-4. Add tool dependencies to the `plotAgent.tools` array in package.json
+- Implemented in separate packages outside this monorepo
+- Extend the base `Tool` class from the agent SDK
+- Run in isolation, inside the agent worker, with access only to the other tools they request
+- These tools typically build on built-in tools and often implement integrations with external services
 
 ### Runtime Limitations
 

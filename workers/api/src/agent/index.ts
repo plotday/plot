@@ -1,18 +1,11 @@
 import { type SupabaseClient, createClient } from "@plotday/db";
-import { type AgentWrapper, type ToolDependencies } from "@plotday/sdk";
 
 import { type Bindings } from "../env";
+import AgentEntrypoint from "./entrypoint";
+import { type AgentWrapper, type ToolDependencies } from "./types/agent";
 
 export * from "./management";
 export * from "./tools";
-
-export type AgentFactory = (
-  id: string,
-  environment: string,
-  version?: string
-) =>
-  | { agent: Fetcher<AgentWrapper>; dependencies: ToolDependencies[] }
-  | Promise<{ agent: Fetcher<AgentWrapper>; dependencies: ToolDependencies[] }>;
 
 export async function getAgent(
   env: Bindings,
@@ -61,7 +54,8 @@ export async function getAgent(
       compatibilityDate: "2025-10-01",
       mainModule: "index.js",
       modules: {
-        "index.js": module,
+        "index.js": AgentEntrypoint.Module,
+        "agent.js": module,
       },
       // tails: [{
       //   async tail(events: any) {
@@ -98,8 +92,7 @@ export async function getAgent(
     };
   });
 
-  const agent = worker.getEntrypoint<AgentWrapper>();
-
+  const agent = worker.getEntrypoint<AgentEntrypoint>();
   return { agent, dependencies };
 }
 
@@ -125,12 +118,14 @@ export async function storeAgentModule(
       compatibilityDate: "2025-06-01",
       mainModule: "index.js",
       modules: {
-        "index.js": module,
+        "index.js": AgentEntrypoint.Module,
+        "agent.js": module,
       },
     };
   });
-  const agent = worker.getEntrypoint<AgentWrapper>();
+  const agent = worker.getEntrypoint<AgentEntrypoint>();
   const dependencies = await agent.getDependencies();
+  console.log("Storing agent module with dependencies:", dependencies);
 
   // Store module and dependencies together as JSON in R2
   const r2Key = `agents/${id}/modules/${version}.js`;

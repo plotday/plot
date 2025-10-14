@@ -1,11 +1,12 @@
-import { type ActivityLink, ActivityLinkType } from "@plotday/sdk";
+import { Callbacks } from "../../state/callbacks";
+import { type ActivityLink, ActivityLinkType } from "../types/plot";
 import type {
   Callback,
   CallbackTool as ICallbackTool,
-} from "@plotday/sdk/tools/callback";
-
-import { Callbacks } from "../../state/callbacks";
+} from "../types/tools/callback";
 import { Tool } from "./tool";
+
+export * from "../types/tools/callback";
 
 export class CallbackTool extends Tool implements ICallbackTool {
   private callbacks: DurableObjectStub<Callbacks>;

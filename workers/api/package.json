@@ -16,7 +16,6 @@
     "lint": "tsc && eslint ."
   },
   "dependencies": {
-    "@plotday/sdk": "workspace:^",
     "@plotday/db": "workspace:^",
     "@sentry/cloudflare": "^10.12.0",
     "@supabase/supabase-js": "^2.38.4",

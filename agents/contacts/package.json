@@ -13,6 +13,7 @@
     "lint": "plot agent lint"
   },
   "dependencies": {
-    "@plotday/sdk": "workspace:^"
+    "@plotday/sdk": "0.1.0-alpha.2",
+    "@plotday/tool-google-contacts": "0.1.0-alpha.0"
   }
 }

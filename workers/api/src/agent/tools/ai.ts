@@ -1,5 +1,4 @@
-import type { Ai as IAi, LlmMessage } from "@plotday/sdk/tools/ai";
-
+import type { Ai as IAi, LlmMessage } from "../types/tools/ai";
 import { Tool } from "./tool";
 
 export class AiTool extends Tool implements IAi {

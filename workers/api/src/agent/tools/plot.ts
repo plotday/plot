@@ -1,19 +1,17 @@
 import { type Database, type SupabaseClient, safeQuery } from "@plotday/db";
+
+import { truncateUuidForUpdatedBy } from "../../utils/uuid";
 import {
   type Activity,
   type ActivityLink,
   type ActivitySource,
   ActivityType,
   AuthorType,
+  type NewActivity,
+  type NewPriority,
   type Priority,
-} from "@plotday/sdk";
-import type {
-  Plot as IPlot,
-  NewActivity,
-  NewPriority,
-} from "@plotday/sdk/tools/plot";
-
-import { truncateUuidForUpdatedBy } from "../../utils/uuid";
+} from "../types/plot";
+import type { Plot as IPlot } from "../types/tools/plot";
 import { Tool } from "./tool";
 
 function parseRangeStart(

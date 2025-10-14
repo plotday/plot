@@ -1,14 +1,14 @@
 import * as Sentry from "@sentry/cloudflare";
 
 import { type SupabaseClient, createClient } from "@plotday/db";
+
+import { agentFactory, createTools } from "../agent";
 import {
   type ActivityLink,
   type ActivitySource,
   ActivityType,
   AuthorType,
-} from "@plotday/sdk";
-
-import { agentFactory, createTools } from "../agent";
+} from "../agent/types/plot";
 import { type Bindings, type UpdateMessage } from "../env";
 import { truncateUuidForUpdatedBy } from "../utils/uuid";
 
@@ -153,7 +153,6 @@ async function processUpdate(
             callbacks: env.CALLBACKS,
             logSubscriptions: env.LOG_SUBSCRIPTIONS,
             env,
-            agents: agentFactory(env),
           }
         );
 
