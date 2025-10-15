@@ -22,6 +22,7 @@ const DatabaseUpdateRequestSchema = z.object({
   type: z.enum(["activity", "priority", "session"]),
   event: z.enum(["created", "updated", "deleted"]),
   item: ItemSchema,
+  previous: ItemSchema.optional(),
   agents: z.array(
     z.object({
       id: z.string(),
@@ -39,7 +40,6 @@ const DatabaseUpdateRequestSchema = z.object({
     )
     .optional(),
   timestamp: z.number().optional(),
-  table: z.string().optional(),
 });
 
 export type DatabaseUpdateRequest = z.infer<typeof DatabaseUpdateRequestSchema>;
@@ -58,10 +58,10 @@ database.post("/update", async (c) => {
     type: body.type,
     event: body.event,
     item: body.item,
+    previous: body.previous,
     agents: body.agents,
     users: body.users,
     timestamp: body.timestamp,
-    table: body.table,
   });
 
   return c.json({ success: true });

@@ -249,8 +249,6 @@ async function processUpdate(
           }
         );
 
-        console.log(`Processing activity ${activity.id} for agent ${agent.id}`);
-
         // Build the current activity object
         const currentActivity = buildActivityFromDbRecord(activity);
 
@@ -259,7 +257,10 @@ async function processUpdate(
           previous && "priority_id" in previous && "author_id" in previous
             ? {
                 previous: buildActivityFromDbRecord(previous),
-                tagsAdded: calculateTagsAdded(activity.tags, (previous as any).tags),
+                tagsAdded: calculateTagsAdded(
+                  activity.tags,
+                  (previous as any).tags
+                ),
                 tagsRemoved: calculateTagsRemoved(
                   activity.tags,
                   (previous as any).tags
