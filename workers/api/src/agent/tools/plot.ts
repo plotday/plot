@@ -5,6 +5,7 @@ import {
   type Activity,
   type ActivityLink,
   type ActivitySource,
+  type ActivityUpdate,
   ActivityType,
   AuthorType,
   type NewActivity,
@@ -419,6 +420,7 @@ function fromDbActivity(
     recurrence: null,
     occurrence: null,
     source: dbActivity.source as { type: string; [key: string]: any } | null,
+    tags: (dbActivity as any).tags || null,
   };
 }
 
@@ -623,6 +625,21 @@ export class Plot extends Tool implements IPlot {
       await this.supabase.from("activity").insert(dbActivity).select().single()
     );
 
+    // Add tags if provided
+    if (activity.tags) {
+      const tagUpdates: Record<string, boolean> = {};
+      for (const tagId of Object.keys(activity.tags)) {
+        tagUpdates[tagId] = true; // true means adding the tag
+      }
+
+      await this.supabase.rpc("update_activity_tags", {
+        p_activity_id: dbResult.id,
+        p_user_id: this.priorityAgentId, // Use agent as the actor
+        p_client_id: this.getUpdatedBy(),
+        p_tag_updates: tagUpdates,
+      });
+    }
+
     // Fetch the created activity with author information
     const { data: activityWithAuthor, error: fetchError } = await this.supabase
       .from("activity")
@@ -645,15 +662,236 @@ export class Plot extends Tool implements IPlot {
       );
     }
 
-    return fromDbActivity(
-      activityWithAuthor as any as Database["public"]["Tables"]["activity"]["Row"] & {
-        author: {
-          id: string;
-          name: string;
-          type: string;
-        };
+    // Fetch tags for the activity
+    const { data: tagsData } = await this.supabase
+      .from("activity_tags")
+      .select("tags")
+      .eq("activity_id", dbResult.id)
+      .single();
+
+    return fromDbActivity({
+      ...activityWithAuthor,
+      tags: tagsData?.tags || null,
+    } as any as Database["public"]["Tables"]["activity"]["Row"] & {
+      author: {
+        id: string;
+        name: string;
+        type: string;
+      };
+    });
+  }
+
+  async updateActivity(activity: ActivityUpdate): Promise<void> {
+    // Fetch activity priority to validate access
+    const { data: existingActivity, error: fetchError } = await this.supabase
+      .from("activity")
+      .select("priority_id")
+      .eq("id", activity.id)
+      .single();
+
+    if (fetchError) {
+      throw new Error(
+        `Activity not found or access denied: ${fetchError.message}`
+      );
+    }
+
+    // Validate priority access
+    await this.validatePriorityAccess(existingActivity.priority_id);
+
+    // Build update object
+    const dbUpdate: Database["public"]["Tables"]["activity"]["Update"] = {
+      updated_by: this.getUpdatedBy(),
+    };
+
+    // Handle type mapping if provided
+    if (activity.type !== undefined) {
+      switch (activity.type) {
+        case ActivityType.Note:
+          dbUpdate.type = "note";
+          break;
+        case ActivityType.Task:
+          dbUpdate.type = "task";
+          break;
+        case ActivityType.Event:
+          dbUpdate.type = "event";
+          break;
       }
-    );
+    }
+
+    // Handle basic fields
+    if (activity.title !== undefined) {
+      dbUpdate.title = activity.title;
+    }
+    if (activity.note !== undefined) {
+      dbUpdate.note = activity.note;
+    }
+    if (activity.doneAt !== undefined) {
+      dbUpdate.done_at = activity.doneAt ? activity.doneAt.toISOString() : null;
+    }
+    if (activity.source !== undefined) {
+      dbUpdate.source = activity.source;
+    }
+    if (activity.links !== undefined) {
+      dbUpdate.links = activity.links;
+    }
+
+    // Handle recurrence fields
+    if (activity.recurrenceRule !== undefined) {
+      dbUpdate.recurrence_rule = activity.recurrenceRule;
+    }
+    if (activity.recurrenceExdates !== undefined) {
+      dbUpdate.recurrence_exdates = activity.recurrenceExdates?.map((d) =>
+        d.toISOString()
+      ) ?? null;
+    }
+    if (activity.recurrenceDates !== undefined) {
+      dbUpdate.recurrence_dates = activity.recurrenceDates?.map((d) =>
+        d.toISOString()
+      ) ?? null;
+    }
+
+    // Handle occurrence for recurring event exceptions
+    if (activity.occurrence !== undefined) {
+      const hasTimestamp =
+        activity.start instanceof Date || activity.end instanceof Date;
+      const occurrenceStr = activity.occurrence
+        ? hasTimestamp
+          ? activity.occurrence.toISOString().substring(0, 16) // YYYY-MM-DDTHH:MM
+          : activity.occurrence.toISOString().substring(0, 10) // YYYY-MM-DD
+        : null;
+      (dbUpdate as any).occurrence = occurrenceStr;
+    }
+
+    // Handle scheduling fields - need to calculate dbEnd and duration
+    const hasSchedulingUpdate =
+      activity.start !== undefined ||
+      activity.end !== undefined ||
+      activity.recurrenceUntil !== undefined ||
+      activity.recurrenceCount !== undefined;
+
+    if (hasSchedulingUpdate) {
+      // Calculate database end and duration from SDK format
+      const { dbEnd, duration } = calculateDbEndFromRecurrenceUntil(
+        activity.start ?? null,
+        activity.end ?? null,
+        activity.recurrenceUntil ?? null,
+        activity.recurrenceCount ?? undefined,
+        activity.recurrenceRule ?? null
+      );
+
+      // Set duration
+      if (duration !== null) {
+        dbUpdate.duration = formatInterval(duration);
+      }
+
+      // Handle scheduling range fields
+      if (activity.start instanceof Date || dbEnd instanceof Date) {
+        // Timestamp range
+        const startStr =
+          activity.start instanceof Date
+            ? activity.start.toISOString()
+            : activity.start
+            ? `${activity.start}T00:00:00Z`
+            : null;
+        const endStr =
+          dbEnd instanceof Date
+            ? dbEnd.toISOString()
+            : dbEnd
+            ? `${dbEnd}T23:59:59Z`
+            : null;
+
+        if (startStr && endStr) {
+          dbUpdate.at = `[${startStr},${endStr})`;
+        } else if (startStr) {
+          dbUpdate.at = `[${startStr},)`;
+        } else if (endStr) {
+          dbUpdate.at = `(,${endStr}]`;
+        }
+        // Clear the date range if we're using timestamp range
+        dbUpdate.on = null;
+      } else if (
+        activity.start !== undefined ||
+        dbEnd !== undefined ||
+        dbEnd !== null
+      ) {
+        // Date range
+        const startStr = activity.start;
+        const endStr = dbEnd;
+
+        if (startStr && endStr) {
+          dbUpdate.on = `[${startStr},${endStr})`;
+        } else if (startStr) {
+          dbUpdate.on = `[${startStr},)`;
+        } else if (endStr) {
+          dbUpdate.on = `(,${endStr}]`;
+        }
+        // Clear the timestamp range if we're using date range
+        dbUpdate.at = null;
+      }
+    }
+
+    // Handle parent path updates
+    if (activity.parent !== undefined) {
+      if (activity.parent) {
+        // Look up parent activity to get its path and priority
+        const parentResult = await this.supabase
+          .from("activity")
+          .select("path, priority_id")
+          .eq("id", activity.parent.id)
+          .single();
+
+        if (parentResult.error) {
+          throw new Error(
+            `Parent activity not found: ${parentResult.error.message}`
+          );
+        }
+
+        // Validate that parent activity is within allowed hierarchy
+        await this.validatePriorityAccess(parentResult.data.priority_id);
+
+        // Generate child path using database function
+        const pathResult = await this.supabase.rpc("generate_path", {
+          parent: parentResult.data.path,
+        });
+
+        if (pathResult.error) {
+          throw new Error(`Path generation failed: ${pathResult.error.message}`);
+        }
+
+        dbUpdate.path = pathResult.data;
+      } else {
+        // Setting parent to null - generate new root path
+        const pathResult = await this.supabase.rpc("generate_path", {
+          parent: null,
+        });
+
+        if (pathResult.error) {
+          throw new Error(`Path generation failed: ${pathResult.error.message}`);
+        }
+
+        dbUpdate.path = pathResult.data;
+      }
+    }
+
+    // Execute the update
+    const { error: updateError } = await this.supabase
+      .from("activity")
+      .update(dbUpdate)
+      .eq("id", activity.id);
+
+    if (updateError) {
+      throw new Error(`Activity update failed: ${updateError.message}`);
+    }
+
+    // Handle tags separately using RPC
+    if (activity.tags) {
+      await this.supabase.rpc("update_activity_tags", {
+        p_activity_id: activity.id,
+        p_user_id: this.priorityAgentId,
+        p_client_id: this.getUpdatedBy(),
+        p_tag_updates: activity.tags,
+      });
+    }
   }
 
   async getThread(activity: Activity): Promise<Activity[]> {
@@ -680,16 +918,33 @@ export class Plot extends Tool implements IPlot {
         console.error(error);
         throw error;
       }
+
+      // Fetch tags for all activities in the thread
+      const activityIds = data.map((row: any) => row.id);
+      const { data: tagsData } = await this.supabase
+        .from("activity_tags")
+        .select("activity_id, tags")
+        .in("activity_id", activityIds);
+
+      // Create a map of activity_id to tags
+      const tagsMap = new Map<string, any>();
+      if (tagsData) {
+        for (const tagRecord of tagsData) {
+          tagsMap.set(tagRecord.activity_id, tagRecord.tags);
+        }
+      }
+
       return data.map((row) =>
-        fromDbActivity(
-          row as any as Database["public"]["Tables"]["activity"]["Row"] & {
-            author: {
-              id: string;
-              name: string;
-              type: string;
-            };
-          }
-        )
+        fromDbActivity({
+          ...row,
+          tags: tagsMap.get(row.id) || null,
+        } as any as Database["public"]["Tables"]["activity"]["Row"] & {
+          author: {
+            id: string;
+            name: string;
+            type: string;
+          };
+        })
       );
     } catch (err) {
       console.error("Failed to get activities:", err);
@@ -726,15 +981,23 @@ export class Plot extends Tool implements IPlot {
         throw error;
       }
 
-      return fromDbActivity(
-        data as any as Database["public"]["Tables"]["activity"]["Row"] & {
-          author: {
-            id: string;
-            name: string;
-            type: string;
-          };
-        }
-      );
+      // Fetch tags for the activity
+      const { data: tagsData } = await this.supabase
+        .from("activity_tags")
+        .select("tags")
+        .eq("activity_id", data.id)
+        .single();
+
+      return fromDbActivity({
+        ...data,
+        tags: tagsData?.tags || null,
+      } as any as Database["public"]["Tables"]["activity"]["Row"] & {
+        author: {
+          id: string;
+          name: string;
+          type: string;
+        };
+      });
     } catch (err) {
       console.error("Failed to get activity by source:", err);
       throw err;
@@ -971,6 +1234,26 @@ export class Plot extends Tool implements IPlot {
       await this.supabase.from("activity").insert(dbActivities).select()
     );
 
+    // Add tags for activities that have them
+    for (let i = 0; i < activities.length; i++) {
+      const activity = activities[i];
+      const dbActivity = dbResult[i];
+
+      if (activity.tags) {
+        const tagUpdates: Record<string, boolean> = {};
+        for (const tagId of Object.keys(activity.tags)) {
+          tagUpdates[tagId] = true; // true means adding the tag
+        }
+
+        await this.supabase.rpc("update_activity_tags", {
+          p_activity_id: dbActivity.id,
+          p_user_id: this.priorityAgentId, // Use agent as the actor
+          p_client_id: this.getUpdatedBy(),
+          p_tag_updates: tagUpdates,
+        });
+      }
+    }
+
     // Fetch all created activities with author information
     const activityIds = dbResult.map((a: any) => a.id);
     const { data: activitiesWithAuthor, error: fetchError } =
@@ -994,16 +1277,31 @@ export class Plot extends Tool implements IPlot {
       );
     }
 
+    // Fetch tags for all activities
+    const { data: tagsData } = await this.supabase
+      .from("activity_tags")
+      .select("activity_id, tags")
+      .in("activity_id", activityIds);
+
+    // Create a map of activity_id to tags
+    const tagsMap = new Map<string, any>();
+    if (tagsData) {
+      for (const tagRecord of tagsData) {
+        tagsMap.set(tagRecord.activity_id, tagRecord.tags);
+      }
+    }
+
     return activitiesWithAuthor.map((activityWithAuthor) =>
-      fromDbActivity(
-        activityWithAuthor as any as Database["public"]["Tables"]["activity"]["Row"] & {
-          author: {
-            id: string;
-            name: string;
-            type: string;
-          };
-        }
-      )
+      fromDbActivity({
+        ...activityWithAuthor,
+        tags: tagsMap.get(activityWithAuthor.id) || null,
+      } as any as Database["public"]["Tables"]["activity"]["Row"] & {
+        author: {
+          id: string;
+          name: string;
+          type: string;
+        };
+      })
     );
   }
 

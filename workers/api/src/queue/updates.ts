@@ -70,6 +70,100 @@ function parseRangeEnd(
   return null;
 }
 
+function calculateTagsAdded(
+  currentTags: any,
+  previousTags: any
+): Record<number, string[]> {
+  if (!currentTags) return {};
+  if (!previousTags) return currentTags;
+
+  const added: Record<number, string[]> = {};
+  for (const [tagId, actorIds] of Object.entries(
+    currentTags as Record<string, string[]>
+  )) {
+    const prevActorIds = previousTags[tagId] || [];
+    const newActorIds = actorIds.filter((id) => !prevActorIds.includes(id));
+    if (newActorIds.length > 0) {
+      added[Number(tagId)] = newActorIds;
+    }
+  }
+  return added;
+}
+
+function calculateTagsRemoved(
+  currentTags: any,
+  previousTags: any
+): Record<number, string[]> {
+  if (!previousTags) return {};
+  if (!currentTags) return previousTags;
+
+  const removed: Record<number, string[]> = {};
+  for (const [tagId, actorIds] of Object.entries(
+    previousTags as Record<string, string[]>
+  )) {
+    const currActorIds = currentTags[tagId] || [];
+    const removedActorIds = actorIds.filter((id) => !currActorIds.includes(id));
+    if (removedActorIds.length > 0) {
+      removed[Number(tagId)] = removedActorIds;
+    }
+  }
+  return removed;
+}
+
+function buildActivityFromDbRecord(activityRecord: any): any {
+  // Convert string activity type to ActivityType enum
+  let activityType: ActivityType;
+  switch (activityRecord.type) {
+    case "task":
+      activityType = ActivityType.Task;
+      break;
+    case "event":
+      activityType = ActivityType.Event;
+      break;
+    default:
+      activityType = ActivityType.Note;
+  }
+
+  return {
+    id: activityRecord.id,
+    type: activityType,
+    author: {
+      id: activityRecord.author_id,
+      name: activityRecord.author_name,
+      type:
+        activityRecord.author_type === "user"
+          ? AuthorType.User
+          : activityRecord.author_type === "priority_agent"
+          ? AuthorType.Agent
+          : AuthorType.Contact,
+    },
+    priority: {
+      id: activityRecord.priority_id,
+      title: activityRecord.priority_title,
+    },
+    start: parseRangeStart(activityRecord.on, activityRecord.at),
+    end: parseRangeEnd(activityRecord.on, activityRecord.at),
+    recurrenceUntil: null,
+    recurrenceCount: null,
+    doneAt: activityRecord.done_at ? new Date(activityRecord.done_at) : null,
+    note: activityRecord.note,
+    title: activityRecord.title,
+    parent: null,
+    links: activityRecord.links as ActivityLink[] | null,
+    recurrenceRule: activityRecord.recurrence_rule,
+    recurrenceExdates: activityRecord.recurrence_exdates
+      ? activityRecord.recurrence_exdates.map((date: any) => new Date(date))
+      : null,
+    recurrenceDates: activityRecord.recurrence_dates
+      ? activityRecord.recurrence_dates.map((date: any) => new Date(date))
+      : null,
+    recurrence: null,
+    occurrence: null,
+    source: activityRecord.source as ActivitySource | null,
+    tags: activityRecord.tags || null,
+  };
+}
+
 export async function processUpdates(
   batch: MessageBatch<UpdateMessage>,
   env: Bindings
@@ -86,7 +180,7 @@ async function processUpdate(
   env: Bindings,
   supabase: SupabaseClient
 ): Promise<void> {
-  const { type, item, agents, users } = updateData;
+  const { type, item, previous, agents, users } = updateData;
 
   // Only activities have agents to process
   if (type === "activity") {
@@ -155,56 +249,25 @@ async function processUpdate(
           }
         );
 
-        // Convert string activity type to ActivityType enum
-        let activityType: ActivityType;
-        switch (activity.type) {
-          case "task":
-            activityType = ActivityType.Task;
-            break;
-          case "event":
-            activityType = ActivityType.Event;
-            break;
-          default:
-            activityType = ActivityType.Note;
-        }
+        console.log(`Processing activity ${activity.id} for agent ${agent.id}`);
 
-        await agentInstance.activity(tools, {
-          id: activity.id,
-          type: activityType,
-          author: {
-            id: activity.author_id,
-            name: activity.author_name,
-            type:
-              activity.author_type === "user"
-                ? AuthorType.User
-                : activity.author_type === "priority_agent"
-                ? AuthorType.Agent
-                : AuthorType.Contact, // Map author_type from database to AuthorType enum
-          },
-          priority: {
-            id: activity.priority_id,
-            title: activity.priority_title,
-          },
-          start: parseRangeStart(activity.on, activity.at),
-          end: parseRangeEnd(activity.on, activity.at),
-          recurrenceUntil: null,
-          recurrenceCount: null,
-          doneAt: activity.done_at ? new Date(activity.done_at) : null,
-          note: activity.note,
-          title: activity.title,
-          parent: null,
-          links: activity.links as ActivityLink[] | null,
-          recurrenceRule: activity.recurrence_rule,
-          recurrenceExdates: activity.recurrence_exdates
-            ? activity.recurrence_exdates.map((date: any) => new Date(date))
-            : null,
-          recurrenceDates: activity.recurrence_dates
-            ? activity.recurrence_dates.map((date: any) => new Date(date))
-            : null,
-          recurrence: null,
-          occurrence: null,
-          source: activity.source as ActivitySource | null,
-        });
+        // Build the current activity object
+        const currentActivity = buildActivityFromDbRecord(activity);
+
+        // Build the changes object if previous exists
+        const changes =
+          previous && "priority_id" in previous && "author_id" in previous
+            ? {
+                previous: buildActivityFromDbRecord(previous),
+                tagsAdded: calculateTagsAdded(activity.tags, (previous as any).tags),
+                tagsRemoved: calculateTagsRemoved(
+                  activity.tags,
+                  (previous as any).tags
+                ),
+              }
+            : undefined;
+
+        await agentInstance.activity(tools, currentActivity, changes);
       } catch (error) {
         console.error(
           `Error processing activity for agent ${agent.id}: ${

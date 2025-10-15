@@ -127,9 +127,9 @@ export default class extends WorkerEntrypoint {
     return agent.activate(priority);
   }
 
-  async activity(dependencies, activity) {
+  async activity(dependencies, activity, changes) {
     const agent = buildAgent(dependencies);
-    return agent.activity(activity);
+    return agent.activity(activity, changes);
   }
 
   async call(dependencies, functionName, args, context) {
@@ -171,7 +171,7 @@ export class AgentEntrypoint extends WorkerEntrypoint {
     _priority: Pick<Priority, "id">
   ) {}
 
-  async activity(_dependencies: ToolDependencies[], _activity: Activity) {}
+  async activity(_dependencies: ToolDependencies[], _activity: Activity, _changes?: { previous: Activity }) {}
 
   async call(
     _dependencies: ToolDependencies[],

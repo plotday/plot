@@ -82,8 +82,6 @@ class ActivityBloc extends Cubit<ActivityState> {
         deleted: state.showArchived,
         filter: state.filter.isNotEmpty ? state.filter : null,
       ).listen((activities) {
-        log.info('Got activities for ${state.activity.path}');
-
         // Sort activities by creation/completion date in reverse chronological order
         final sortedActivities = List<Activity>.from(activities);
         sortedActivities.sort((a, b) {

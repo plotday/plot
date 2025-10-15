@@ -1,6 +1,7 @@
 import {
   type Activity,
   type ActivitySource,
+  type ActivityUpdate,
   type Contact,
   ITool,
   type NewActivity,
@@ -50,7 +51,7 @@ export class Plot extends ITool {
   }
 
   call(_name: string, _args: any, _context: any): Promise<any> {
-    throw new Error("Method not implemented.");
+    throw new Error("Method implemented remotely.");
   }
 
   /**
@@ -64,7 +65,62 @@ export class Plot extends ITool {
    * @returns Promise resolving to the complete created activity
    */
   createActivity(_activity: NewActivity): Promise<Activity> {
-    throw new Error("Method not implemented.");
+    throw new Error("Method implemented remotely.");
+  }
+
+  /**
+   * Updates an existing activity in the Plot system.
+   *
+   * Only the fields provided in the update object will be modified - all other fields
+   * remain unchanged. This enables partial updates without needing to fetch and resend
+   * the entire activity object.
+   *
+   * For tags, provide a Record<number, boolean> where true adds a tag and false removes it.
+   * Tags not included in the update remain unchanged.
+   *
+   * When updating the parent, the activity's path will be automatically recalculated to
+   * maintain the correct hierarchical structure.
+   *
+   * When updating scheduling fields (start, end, recurrence*), the database will
+   * automatically recalculate duration and range values to maintain consistency.
+   *
+   * @param activity - The activity update containing the ID and fields to change
+   * @returns Promise that resolves when the update is complete
+   *
+   * @example
+   * ```typescript
+   * // Mark a task as complete
+   * await this.plot.updateActivity({
+   *   id: "task-123",
+   *   doneAt: new Date()
+   * });
+   *
+   * // Reschedule an event
+   * await this.plot.updateActivity({
+   *   id: "event-456",
+   *   start: new Date("2024-03-15T10:00:00Z"),
+   *   end: new Date("2024-03-15T11:00:00Z")
+   * });
+   *
+   * // Add and remove tags
+   * await this.plot.updateActivity({
+   *   id: "activity-789",
+   *   tags: {
+   *     1: true,  // Add tag with ID 1
+   *     2: false  // Remove tag with ID 2
+   *   }
+   * });
+   *
+   * // Update a recurring event exception
+   * await this.plot.updateActivity({
+   *   id: "exception-123",
+   *   occurrence: new Date("2024-03-20T09:00:00Z"),
+   *   title: "Rescheduled meeting"
+   * });
+   * ```
+   */
+  updateActivity(_activity: ActivityUpdate): Promise<void> {
+    throw new Error("Method implemented remotely.");
   }
 
   /**
@@ -77,7 +133,7 @@ export class Plot extends ITool {
    * @returns Promise resolving to the complete created priority
    */
   createPriority(_priority: NewPriority): Promise<Priority> {
-    throw new Error("Method not implemented.");
+    throw new Error("Method implemented remotely.");
   }
 
   /**
@@ -91,7 +147,7 @@ export class Plot extends ITool {
    * @returns Promise resolving to array of activities in the thread
    */
   getThread(_activity: Activity): Promise<Activity[]> {
-    throw new Error("Method not implemented.");
+    throw new Error("Method implemented remotely.");
   }
 
   /**
@@ -105,7 +161,7 @@ export class Plot extends ITool {
    * @returns Promise resolving to the matching activity or null if not found
    */
   getActivityBySource(_source: ActivitySource): Promise<Activity | null> {
-    throw new Error("Method not implemented.");
+    throw new Error("Method implemented remotely.");
   }
 
   /**
@@ -119,7 +175,7 @@ export class Plot extends ITool {
    * @returns Promise that resolves when all contacts have been processed
    */
   addContacts(_contacts: Array<Contact>): Promise<void> {
-    throw new Error("Method not implemented.");
+    throw new Error("Method implemented remotely.");
   }
 
   /**
@@ -133,6 +189,6 @@ export class Plot extends ITool {
    * @returns Promise resolving to array of created activities
    */
   createActivities(_activities: NewActivity[]): Promise<Activity[]> {
-    throw new Error("Method not implemented.");
+    throw new Error("Method implemented remotely.");
   }
 }

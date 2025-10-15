@@ -456,6 +456,7 @@ class Store extends _$Store {
     BaseTable baseTable, {
     (String?, String?)? range,
   }) async {
+    log.info("pull($type, ${baseTable.table}, range: $range)");
     final paged =
         [PullType.initial, PullType.more].contains(type) && range == null;
     if (paged && !hasMore(baseTable)) {
@@ -476,27 +477,30 @@ class Store extends _$Store {
       return true;
     }
 
+    final requestFrom = range != null
+        ? range.$1
+        : ((baseTable.ascending
+                  ? type == PullType.more
+                  : type == PullType.updates)
+              ? syncState?.last
+              : null);
+    final requestTo = range != null
+        ? range.$2
+        : ((baseTable.ascending
+                  ? type == PullType.updates
+                  : type == PullType.more)
+              ? syncState?.last
+              : null);
+    log.info("Requesting from $requestFrom to $requestTo");
     var (baseRows, lastUpdated, newRange, more) = (await baseTable.get(
-      from: range != null
-          ? range.$1
-          : ((baseTable.ascending
-                    ? type == PullType.more
-                    : type == PullType.updates)
-                ? syncState?.last
-                : null),
-      to: range != null
-          ? range.$2
-          : ((baseTable.ascending
-                    ? type == PullType.updates
-                    : type == PullType.more)
-                ? syncState?.last
-                : null),
+      from: requestFrom,
+      to: requestTo,
       updatedSince: type == PullType.updates ? syncState?.pulledAt : null,
     ));
     final (from, to) = newRange ?? (null, null);
 
     log.info(
-      "Pulling ${baseRows.length} rows from ${baseTable.table} (type: $type, from: ${newRange?.$1}, to: ${newRange?.$2})",
+      "Pulling ${baseRows.length} rows from ${baseTable.table} (type: $type, from: $from, to: $to, more: $more)",
     );
     final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
       try {
@@ -517,25 +521,23 @@ class Store extends _$Store {
     if (!more) {
       _noMore.add(entity);
     }
+    final last = range != null
+        ? Value(range.$2)
+        : paged
+        ? (more ? Value(to) : const Value(null))
+        : const Value<String?>.absent();
+    log.info("Last is $last");
     await into(syncStates).insert(
       SyncStatesCompanion.insert(
         entity: entity,
         pulledAt: Value(lastUpdated),
-        last: range != null
-            ? Value(range.$2)
-            : paged
-            ? (more ? Value(to) : const Value(null))
-            : const Value.absent(),
+        last: last,
       ),
       onConflict: DoUpdate(
         (old) => SyncStatesCompanion(
           entity: Value(entity),
           pulledAt: Value(lastUpdated),
-          last: range != null
-              ? Value(range.$2)
-              : paged
-              ? (more ? Value(to) : const Value(null))
-              : const Value.absent(),
+          last: last,
         ),
       ),
     );

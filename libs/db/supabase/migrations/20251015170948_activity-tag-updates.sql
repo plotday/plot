@@ -1,12 +1,4 @@
-CREATE OR REPLACE FUNCTION get_api_root ()
-    RETURNS text
-    LANGUAGE plpgsql
-    STABLE
-    AS $$
-BEGIN
-    RETURN COALESCE(current_setting('plot.api_root', TRUE), 'http://host.docker.internal:8787/sync');
-END;
-$$;
+SET check_function_bodies = OFF;
 
 CREATE OR REPLACE FUNCTION public.notify_internal_api_for_activity ()
     RETURNS TRIGGER
@@ -113,93 +105,80 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.notify_internal_api_for_priority ()
-    RETURNS TRIGGER
+CREATE OR REPLACE FUNCTION public.update_activity_tags (p_activity_id uuid, p_user_id uuid, p_client_id integer, p_tag_updates jsonb)
+    RETURNS void
     LANGUAGE plpgsql
     SECURITY DEFINER
     AS $function$
 DECLARE
-    event_type text;
-    users_data jsonb;
-    enriched_item jsonb;
-    payload jsonb;
-    api_url text;
-    hmac_secret text;
-    signature text;
-    current_item record;
+    tag_record record;
+    tag_id_int integer;
+    is_adding boolean;
+    current_tag_type tag_type;
 BEGIN
-    IF TG_OP = 'INSERT' THEN
-        event_type := 'created';
-        current_item := NEW;
-    ELSIF TG_OP = 'UPDATE' THEN
-        event_type := 'updated';
-        current_item := NEW;
-    ELSIF TG_OP = 'DELETE' THEN
-        event_type := 'deleted';
-        current_item := OLD;
-    END IF;
-    -- Get users who have access to this priority (just the creator for now)
+    -- Iterate through the tag updates JSON object
+    FOR tag_record IN
     SELECT
-        jsonb_agg(jsonb_build_object('user_id', current_item.created_by)) INTO users_data;
-    -- Exit early if no users found
-    IF users_data IS NULL OR jsonb_array_length(users_data) = 0 THEN
-        RETURN COALESCE(NEW, OLD);
-    END IF;
-    -- Build enriched item
-    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'created_by', current_item.created_by, 'root', current_item.root, 'deleted_at', current_item.deleted_at, 'title', current_item.title, 'path', current_item.path, 'updated_by', current_item.updated_by);
-    -- Build the payload (no agents for priority)
-    payload := jsonb_build_object('type', 'priority', 'event', event_type, 'item', enriched_item, 'agents', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'priority');
-    api_url := get_api_root () || '/update';
-    hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
-    signature := encode(extensions.hmac(convert_to(payload::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');
-    PERFORM
-        net.http_post (url := api_url, body := payload, headers := jsonb_build_object('Content-Type', 'application/json', 'User-Agent', 'PostgreSQL/pg_net', 'X-Plot-Signature', 'sha256=' || signature));
-    RETURN COALESCE(NEW, OLD);
+        key,
+        value
+    FROM
+        jsonb_each(p_tag_updates)
+        LOOP
+            -- Convert key to integer and value to boolean
+            tag_id_int := tag_record.key::integer;
+            is_adding := tag_record.value::boolean;
+            -- Get tag type using the get_tag_type function
+            current_tag_type := get_tag_type (tag_id_int);
+            IF is_adding THEN
+                -- Adding a tag - use upsert to create or reactivate
+                INSERT INTO activity_tag (actor_id, activity_id, tag_id, updated_at, deleted_at, updated_by)
+                    VALUES (p_user_id, p_activity_id, tag_id_int, now(), NULL, p_client_id)
+                ON CONFLICT (actor_id, activity_id, tag_id)
+                    DO UPDATE SET
+                        deleted_at = NULL,
+                        updated_at = now(),
+                        updated_by = p_client_id;
+            ELSE
+                -- Removing a tag - use update to soft delete existing records
+                IF current_tag_type = 'toggle' THEN
+                    -- For toggle tags, remove all users' tags
+                    UPDATE
+                        activity_tag
+                    SET
+                        deleted_at = now(),
+                        updated_by = p_client_id
+                    WHERE
+                        activity_id = p_activity_id
+                        AND tag_id = tag_id_int
+                        AND deleted_at IS NULL;
+                ELSE
+                    -- For count/compute tags, only remove current user's tag
+                    UPDATE
+                        activity_tag
+                    SET
+                        deleted_at = now(),
+                        updated_by = p_client_id
+                    WHERE
+                        activity_id = p_activity_id
+                        AND tag_id = tag_id_int
+                        AND actor_id = p_user_id
+                        AND deleted_at IS NULL;
+                END IF;
+            END IF;
+        END LOOP;
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.notify_internal_api_for_session ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    AS $function$
-DECLARE
-    event_type text;
-    users_data jsonb;
-    enriched_item jsonb;
-    payload jsonb;
-    api_url text;
-    hmac_secret text;
-    signature text;
-    current_item record;
-BEGIN
-    IF TG_OP = 'INSERT' THEN
-        event_type := 'created';
-        current_item := NEW;
-    ELSIF TG_OP = 'UPDATE' THEN
-        event_type := 'updated';
-        current_item := NEW;
-    ELSIF TG_OP = 'DELETE' THEN
-        event_type := 'deleted';
-        current_item := OLD;
-    END IF;
-    -- Get user for this session
-    SELECT
-        jsonb_agg(jsonb_build_object('user_id', current_item.user_id)) INTO users_data;
-    -- Exit early if no users found
-    IF users_data IS NULL OR jsonb_array_length(users_data) = 0 THEN
-        RETURN COALESCE(NEW, OLD);
-    END IF;
-    -- Build enriched item
-    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'deleted_at', current_item.deleted_at, 'user_id', current_item.user_id, 'priority_id', current_item.priority_id, 'at', current_item.at, 'precedence', current_item.precedence, 'pomodoro', current_item.pomodoro, 'pomodoro_at', current_item.pomodoro_at, 'updated_by', current_item.updated_by);
-    -- Build the payload (no agents for session)
-    payload := jsonb_build_object('type', 'session', 'event', event_type, 'item', enriched_item, 'agents', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'session');
-    api_url := get_api_root () || '/update';
-    hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
-    signature := encode(extensions.hmac(convert_to(payload::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');
-    PERFORM
-        net.http_post (url := api_url, body := payload, headers := jsonb_build_object('Content-Type', 'application/json', 'User-Agent', 'PostgreSQL/pg_net', 'X-Plot-Signature', 'sha256=' || signature));
-    RETURN COALESCE(NEW, OLD);
-END;
-$function$;
-
+ALTER VIEW "public"."activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."activity_children" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_unread" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_exception" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_activity_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "admin"."invitation" SET ( security_invoker = FALSE);
+ALTER VIEW "public"."priority_tags" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_settings_inherited" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."user_priority" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."priority_child_agent" SET ( security_invoker = TRUE);
+ALTER VIEW "public"."actor" SET ( security_invoker = TRUE);

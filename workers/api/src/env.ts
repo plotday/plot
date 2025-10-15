@@ -15,6 +15,7 @@ export type UpdateMessage = {
   type: "activity" | "priority" | "session";
   event?: "created" | "updated" | "deleted";
   item: UpdateItem;
+  previous?: UpdateItem;
   agents: {
     id: string;
     environment: string;

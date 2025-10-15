@@ -24,9 +24,9 @@ BEGIN
             current_tag_type := get_tag_type (tag_id_int);
             IF is_adding THEN
                 -- Adding a tag - use upsert to create or reactivate
-                INSERT INTO activity_tag (user_id, activity_id, tag_id, updated_at, deleted_at, updated_by)
+                INSERT INTO activity_tag (actor_id, activity_id, tag_id, updated_at, deleted_at, updated_by)
                     VALUES (p_user_id, p_activity_id, tag_id_int, now(), NULL, p_client_id)
-                ON CONFLICT (user_id, activity_id, tag_id)
+                ON CONFLICT (actor_id, activity_id, tag_id)
                     DO UPDATE SET
                         deleted_at = NULL,
                         updated_at = now(),
@@ -54,7 +54,7 @@ BEGIN
                     WHERE
                         activity_id = p_activity_id
                         AND tag_id = tag_id_int
-                        AND user_id = p_user_id
+                        AND actor_id = p_user_id
                         AND deleted_at IS NULL;
                 END IF;
             END IF;

@@ -53,9 +53,18 @@ export abstract class Agent {
    * either through explicit assignment or through filtering rules.
    *
    * @param _activity - The activity to process
+   * @param _changes - Optional changes object containing the previous version of the activity for updates,
+   *                   along with tags that were added or removed
    * @returns Promise that resolves when processing is complete
    */
-  activity(_activity: Activity): Promise<void> {
+  activity(
+    _activity: Activity,
+    _changes?: {
+      previous: Activity;
+      tagsAdded: Record<number, string[]>;
+      tagsRemoved: Record<number, string[]>;
+    }
+  ): Promise<void> {
     return Promise.resolve();
   }
 

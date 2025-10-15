@@ -272,6 +272,8 @@ export type Activity = {
   occurrence: Date | null;
   /** Reference to the external system that created this activity */
   source: ActivitySource | null;
+  /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
+  tags: Record<number, string[]> | null;
 };
 
 /**
@@ -301,6 +303,32 @@ export type NewActivity = Pick<Activity, "type"> &
       parent?: Pick<Activity, "id"> | null;
     }
   >;
+
+export type ActivityUpdate = Pick<Activity, "id"> &
+  Partial<
+    Pick<
+      Activity,
+      | "type"
+      | "start"
+      | "end"
+      | "doneAt"
+      | "note"
+      | "title"
+      | "source"
+      | "links"
+      | "recurrenceRule"
+      | "recurrenceDates"
+      | "recurrenceExdates"
+      | "recurrenceUntil"
+      | "recurrenceCount"
+      | "occurrence"
+    >
+  > & {
+    parent?: Pick<Activity, "id"> | null;
+  } & {
+    // Add or remove tags by ID (others are unchanged)
+    tags?: Record<number, boolean>;
+  };
 
 /**
  * Represents contact information for a person.
