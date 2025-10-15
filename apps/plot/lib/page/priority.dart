@@ -159,15 +159,12 @@ class PriorityPage extends StatelessWidget {
                             child: Scaffold(
                               translucent: true,
                               header: Header(
-                                title: state.activity?.displayTitle,
-                                main: state.activity == null
-                                    ? PrioritySelector(
-                                        selected: state.context,
-                                        onSelect: (p) => context.run(
-                                          ChangeCurrentPriority(p),
-                                        ),
-                                      )
-                                    : null,
+                                title: state.context.title,
+                                main: PrioritySelector(
+                                  selected: state.context,
+                                  onSelect: (p) =>
+                                      context.run(ChangeCurrentPriority(p)),
+                                ),
                                 commands: [
                                   NewActivity(),
                                   PickFilterCommand(),
