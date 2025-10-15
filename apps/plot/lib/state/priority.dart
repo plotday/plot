@@ -121,11 +121,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     emit(
       state.copyWith(
         context: newPriority,
-        draft: Activity(
-          priority: newPriority,
-          parent: state.activity,
-          draft: true,
-        ),
+        draft: Activity(priority: newPriority, draft: true),
       ),
     );
 
@@ -183,11 +179,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     emit(
       state.copyWith(
         // Create a new draft
-        draft: Activity(
-          priority: state.context,
-          parent: state.activity,
-          draft: true,
-        ),
+        draft: Activity(priority: state.context, draft: true),
       ),
     );
     activity = activity.copyWith(draft: false);
