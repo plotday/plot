@@ -21,23 +21,23 @@ export async function getAgent(
   environment: string,
   version?: string
 ) {
-  // Fetch agent metadata for logging
-  const { data: agentData, error: agentError } = await supabase
-    .from("agent")
-    .select("version")
-    .eq("id", id)
-    .eq("environment", environment)
-    .single();
+  if (!version) {
+    const { data, error: agentError } = await supabase
+      .from("agent")
+      .select("version")
+      .eq("id", id)
+      .eq("environment", environment)
+      .single();
 
-  if (agentError || !agentData) {
-    throw new Error(
-      `Failed to fetch agent metadata for ${id} (${environment}): ${
-        agentError?.message || "No data found"
-      }`
-    );
+    if (agentError || !data) {
+      throw new Error(
+        `Failed to fetch agent metadata for ${id} (${environment}): ${
+          agentError?.message || "No data found"
+        }`
+      );
+    }
+    version ??= data.version;
   }
-
-  version ??= agentData.version;
 
   let moduleId = `${id}-${environment}-${version}`;
 

@@ -122,7 +122,6 @@ export async function add(
           dependencies,
         },
         {
-          ai: activate.env.AI,
           supabase: supabaseAdmin,
           priorityId: priority_id,
           priorityAgentId: priorityAgent.id,

@@ -145,7 +145,6 @@ async function processUpdate(
             dependencies,
           },
           {
-            ai: env.AI,
             supabase,
             priorityId: String(activity.priority_id),
             priorityAgentId: agent.priority_agent_id,

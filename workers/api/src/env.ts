@@ -74,6 +74,9 @@ export type Bindings = {
 
   readonly API_ROOT: string;
 
+  readonly AI_GATEWAY_ACCOUNT_ID: string;
+  readonly AI_GATEWAY_ID: string;
+
   readonly LOADER: WorkerLoader;
   readonly RUN_QUEUE: Queue<RunMessage>;
   readonly UPDATES_QUEUE: Queue<UpdateMessage>;

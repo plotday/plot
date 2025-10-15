@@ -212,7 +212,6 @@ export class Callbacks extends DurableObject<Bindings> {
       ? await agentInstance.callTool(
           createTool(callback.path, tool, {
             supabase: this.supabase,
-            ai: this.env.AI,
             priorityId: agent.priority_id,
             priorityAgentId: callback.priorityAgentId,
             storage: this.env.STORAGE,
@@ -232,7 +231,6 @@ export class Callbacks extends DurableObject<Bindings> {
             },
             {
               supabase: this.supabase,
-              ai: this.env.AI,
               priorityId: agent.priority_id,
               priorityAgentId: callback.priorityAgentId,
               storage: this.env.STORAGE,

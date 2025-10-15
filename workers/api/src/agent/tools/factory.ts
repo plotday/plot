@@ -7,7 +7,7 @@ import { type LogSubscriptions } from "../../state/log-subscriptions";
 import { type Storage } from "../../state/storage";
 import type { Tool } from "../types/agent";
 import { Agent } from "./agent";
-import { AiTool } from "./ai";
+import { AI } from "./ai";
 import { Auth } from "./auth";
 import { CallbackTool } from "./callback";
 import { Plot } from "./plot";
@@ -25,7 +25,6 @@ export function createTool(
   spec: ToolDependencySpec,
   {
     supabase,
-    ai,
     priorityId,
     priorityAgentId,
     storage,
@@ -34,7 +33,6 @@ export function createTool(
     env,
   }: {
     supabase: SupabaseClient;
-    ai: Ai;
     priorityId: string;
     priorityAgentId: string;
     storage: DurableObjectNamespace<Storage>;
@@ -53,7 +51,11 @@ export function createTool(
       });
       break;
     case "ai":
-      tool = new AiTool({ ai });
+      tool = new AI({
+        accountId: env.AI_GATEWAY_ACCOUNT_ID,
+        gatewayId: env.AI_GATEWAY_ID,
+        ai: env.AI,
+      });
       break;
     case "auth":
       tool = new Auth({
@@ -114,7 +116,6 @@ export function createTool(
       { path, dependencies: spec.tools ?? [] },
       {
         supabase,
-        ai,
         priorityId,
         priorityAgentId,
         storage,
@@ -136,7 +137,6 @@ export function createTools(
   },
   {
     supabase,
-    ai,
     priorityId,
     priorityAgentId,
     storage,
@@ -145,7 +145,6 @@ export function createTools(
     env,
   }: {
     supabase: SupabaseClient;
-    ai: Ai;
     priorityId: string;
     priorityAgentId: string;
     storage: DurableObjectNamespace<Storage>;
@@ -157,7 +156,6 @@ export function createTools(
   const ret = dependencies.map((dep) =>
     createTool(path.concat([dep.id]), dep, {
       supabase,
-      ai,
       priorityId,
       priorityAgentId,
       storage,
