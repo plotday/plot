@@ -1,19 +1,17 @@
 /**
- * Tag enumeration matching the Flutter app tag definitions.
- *
- * Tag IDs are immutable and correspond to the Dart Tag enum in apps/plot/lib/store/tag.dart
- * - IDs 1-99: Compute tags (automatic system tags)
- * - IDs 100-999: Toggle tags (user-selectable toggles)
- * - IDs 1000+: Count tags (reaction counters)
+ * Activity tags. Three types:
+ * 1. Special tags, which trigger other behaviors
+ * 2. Toggle tags, which anyone can toggle a shared value on or off
+ * 3. Count tags, where everyone can add or remove their own
  */
 export enum Tag {
-  // Compute tags (1-99)
+  // Special tags
   Now = 1,
   Later = 2,
   Done = 3,
   Archived = 4,
 
-  // Toggle tags (100-999)
+  // Toggle tags
   Pinned = 100,
   Urgent = 101,
   Todo = 102,
@@ -23,12 +21,13 @@ export enum Tag {
   Blocked = 106,
   Warning = 107,
   Question = 108,
+  Agent = 109,
   Star = 110,
   Idea = 111,
   Attachment = 112,
   Link = 113,
 
-  // Count tags (1000+)
+  // Count tags
   Yes = 1000,
   No = 1001,
   Volunteer = 1002,

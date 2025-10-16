@@ -20,7 +20,6 @@ class PlotIcon {
   static const signOut = FontAwesomeIcons.rightFromBracket;
   static const sync = FontAwesomeIcons.arrowsRotate;
   static const filter = FontAwesomeIcons.filter;
-  static const agent = FontAwesomeIcons.robot;
 
   // Emoji icons using system font
   static const now = IconData(0x25B6, fontFamily: 'emoji'); // ▶︎
@@ -40,6 +39,7 @@ class PlotIcon {
   static const blocked = IconData(0x274C, fontFamily: 'emoji'); // ❌
   static const warning = IconData(0x26A0, fontFamily: 'emoji'); // ⚠️
   static const question = IconData(0x2753, fontFamily: 'emoji'); // ❓
+  static const agent = IconData(0x1F916, fontFamily: 'emoji'); // 🤖
   static const star = IconData(0x2B50, fontFamily: 'emoji'); // ⭐
   static const idea = IconData(0x1F4A1, fontFamily: 'emoji'); // 💡
   static const attachment = IconData(0x1F4CE, fontFamily: 'emoji'); // 📎

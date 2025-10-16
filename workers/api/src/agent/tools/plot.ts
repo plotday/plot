@@ -930,7 +930,9 @@ export class Plot extends Tool implements IPlot {
       const tagsMap = new Map<string, any>();
       if (tagsData) {
         for (const tagRecord of tagsData) {
-          tagsMap.set(tagRecord.activity_id, tagRecord.tags);
+          if (tagRecord.activity_id) {
+            tagsMap.set(tagRecord.activity_id, tagRecord.tags);
+          }
         }
       }
 
@@ -982,11 +984,13 @@ export class Plot extends Tool implements IPlot {
       }
 
       // Fetch tags for the activity
-      const { data: tagsData } = await this.supabase
-        .from("activity_tags")
-        .select("tags")
-        .eq("activity_id", data.id)
-        .single();
+      const { data: tagsData } = data.id
+        ? await this.supabase
+            .from("activity_tags")
+            .select("tags")
+            .eq("activity_id", data.id)
+            .single()
+        : { data: null };
 
       return fromDbActivity({
         ...data,
@@ -1287,7 +1291,9 @@ export class Plot extends Tool implements IPlot {
     const tagsMap = new Map<string, any>();
     if (tagsData) {
       for (const tagRecord of tagsData) {
-        tagsMap.set(tagRecord.activity_id, tagRecord.tags);
+        if (tagRecord.activity_id) {
+          tagsMap.set(tagRecord.activity_id, tagRecord.tags);
+        }
       }
     }
 

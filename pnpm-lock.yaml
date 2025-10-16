@@ -85,8 +85,8 @@ importers:
   agents/agent-builder:
     dependencies:
       '@plotday/sdk':
-        specifier: 0.1.0-alpha.7
-        version: 0.1.0-alpha.7(typescript@5.9.2)
+        specifier: 0.1.0-alpha.9
+        version: 0.1.0-alpha.9(typescript@5.9.2)
     devDependencies:
       typescript:
         specifier: ^5.6.3
@@ -95,8 +95,8 @@ importers:
   agents/contacts:
     dependencies:
       '@plotday/sdk':
-        specifier: 0.1.0-alpha.4
-        version: 0.1.0-alpha.4(typescript@5.9.3)
+        specifier: 0.1.0-alpha.9
+        version: 0.1.0-alpha.9(typescript@5.9.3)
       '@plotday/tool-google-contacts':
         specifier: 0.1.0-alpha.0
         version: 0.1.0-alpha.0(typescript@5.9.3)
@@ -104,8 +104,8 @@ importers:
   agents/plot:
     dependencies:
       '@plotday/sdk':
-        specifier: 0.1.0-alpha.7
-        version: 0.1.0-alpha.7(typescript@5.9.3)
+        specifier: 0.1.0-alpha.9
+        version: 0.1.0-alpha.9(typescript@5.9.3)
 
   apps/plot: {}
 
@@ -2430,15 +2430,8 @@ packages:
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
 
-  '@plotday/sdk@0.1.0-alpha.4':
-    resolution: {integrity: sha512-x24Dx0wcFVE4zoVV+ZO93o3QAu5N0cAQEYT26KEpp79vrAamen4AlyRn1RVcUeMRPusETyeEzdQ60zdqHm55BQ==}
-    engines: {node: '>=18.0.0'}
-    hasBin: true
-    peerDependencies:
-      typescript: ^5.0.0
-
-  '@plotday/sdk@0.1.0-alpha.7':
-    resolution: {integrity: sha512-9bveSP6HVYQIlkAToA+SyyCPRo/2P7yulg/jvc3zc8trQMCCJA8C7ZT4AXtcsFEJEdudmhKJsQ+O6Qya8Jrfng==}
+  '@plotday/sdk@0.1.0-alpha.9':
+    resolution: {integrity: sha512-WaIaOQgWICwe5yfN9PHWD7+xWtkGpn9hcx3LDSrVFAXvYyvSWQS2MdTb0ybly3CQa4DSx6YiTva9PpYJSP+F7w==}
     engines: {node: '>=18.0.0'}
     hasBin: true
     peerDependencies:
@@ -9237,16 +9230,7 @@ snapshots:
   '@pkgjs/parseargs@0.11.0':
     optional: true
 
-  '@plotday/sdk@0.1.0-alpha.4(typescript@5.9.3)':
-    dependencies:
-      chalk: 4.1.2
-      commander: 12.1.0
-      dotenv: 16.4.7
-      esbuild: 0.24.2
-      prompts: 2.4.2
-      typescript: 5.9.3
-
-  '@plotday/sdk@0.1.0-alpha.7(typescript@5.9.2)':
+  '@plotday/sdk@0.1.0-alpha.9(typescript@5.9.2)':
     dependencies:
       chalk: 4.1.2
       commander: 12.1.0
@@ -9256,7 +9240,7 @@ snapshots:
       typebox: 1.0.35
       typescript: 5.9.2
 
-  '@plotday/sdk@0.1.0-alpha.7(typescript@5.9.3)':
+  '@plotday/sdk@0.1.0-alpha.9(typescript@5.9.3)':
     dependencies:
       chalk: 4.1.2
       commander: 12.1.0
@@ -9268,7 +9252,7 @@ snapshots:
 
   '@plotday/tool-google-contacts@0.1.0-alpha.0(typescript@5.9.3)':
     dependencies:
-      '@plotday/sdk': 0.1.0-alpha.7(typescript@5.9.3)
+      '@plotday/sdk': 0.1.0-alpha.9(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 

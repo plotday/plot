@@ -57,6 +57,7 @@ enum Tag {
   blocked(106, PlotIcon.blocked, 'Blocked', shortcodes: ['blocked', 'x']),
   warning(107, PlotIcon.warning, 'Warning', shortcodes: ['warning']),
   question(108, PlotIcon.question, 'Question', shortcodes: ['question']),
+  agent(109, PlotIcon.agent, 'Agent', shortcodes: ['agent', 'robot_face']),
   star(110, PlotIcon.star, 'Star', shortcodes: ['star']),
   idea(111, PlotIcon.idea, 'Idea', shortcodes: ['idea', 'bulb', 'lightbulb']),
   attachment(

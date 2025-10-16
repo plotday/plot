@@ -277,7 +277,7 @@ export type Activity = {
   /** Reference to the external system that created this activity */
   source: ActivitySource | null;
   /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
-  tags: Record<Tag, string[]> | null;
+  tags: Partial<Record<Tag, string[]>> | null;
 };
 
 /**
@@ -331,7 +331,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
     parent?: Pick<Activity, "id"> | null;
   } & {
     // Add or remove tags by ID (others are unchanged)
-    tags?: Record<Tag, boolean>;
+    tags?: Partial<Record<Tag, boolean>>;
   };
 
 /**

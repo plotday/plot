@@ -679,6 +679,7 @@ type ToToolResultObject<TOOLS extends ToolSet> = ValueOf<{
     toolCallId: string;
     toolName: NAME & string;
     args: inferParameters<TOOLS[NAME]["parameters"]>;
+    // @ts-ignore - type instantiation is excessive deep
     result: Awaited<ReturnType<Exclude<TOOLS[NAME]["execute"], undefined>>>;
   };
 }>;
