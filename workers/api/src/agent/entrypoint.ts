@@ -117,6 +117,22 @@ function buildTool(tool) {
   }
 }
 
+function callAgent(agent, functionName, args, context) {
+  const fn = agent[functionName];
+  if (typeof fn !== "function") {
+    return Promise.reject(\`Callback function '\${functionName}' not found on agent.\`);
+  }
+  return fn.call(agent, args, context);
+}
+
+function callTool(tool, functionName, args, context) {
+  const fn = tool[functionName];
+  if (typeof fn !== "function") {
+    return Promise.reject(\`Callback function '\${functionName}' not found on tool.\`);
+  }
+  return fn.call(tool, args, context);
+}
+
 export default class extends WorkerEntrypoint {
   async fetch() {
     return new Response("OK");
@@ -134,12 +150,12 @@ export default class extends WorkerEntrypoint {
 
   async call(dependencies, functionName, args, context) {
     const agent = buildAgent(dependencies);
-    return agent.call(functionName, args, context);
+    return callAgent(agent, functionName, args, context);
   }
 
   async callTool(tool, functionName, args, context) {
     const target = buildTool(tool);
-    return target.call(functionName, args, context);
+    return callTool(target, functionName, args, context);
   }
 
   getDependencies() {
