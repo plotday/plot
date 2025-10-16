@@ -73,7 +73,7 @@ The SDK repository (`../plot-sdk/sdk/`) contains all type definitions and is the
 1. **Edit SDK files**: Make changes in `../plot-sdk/sdk/src/`
 2. **Rebuild SDK**: Run `cd ../plot-sdk/sdk && pnpm build && cd ../../plot`
 3. **Test locally**: Changes are immediately available via workspace link
-4. **Verify builds**: Run `pnpm lint` in affected packages (workers/api, agents/*)
+4. **Verify builds**: Run `pnpm lint` in affected packages (workers/api, agents/\*)
 
 ### Where SDK Types Are Used
 
@@ -143,8 +143,8 @@ All agent and tool functions are executed in a sandboxed, ephemeral environment 
 - Anything stored in memory (e.g. as a variable in the agent/tool object) is lost
   after the function completes. Use the store tool instead. Only use memory for
   temporary caching.
-- Each execution has limited CPU time (typically 10 seconds) and memory (128MB)
-- **Use the `run` tool** to queue separate chunks of work with `run.now(functionName, context)`
+- Each execution has limited CPU time
+- **Use the `run` tool** to queue separate chunks of work by passing a callback
 - **Break long operations** into smaller batches that can be processed independently
 - **Store intermediate state** using the `store` tool between batches
 - **Examples**: Syncing large datasets, processing many API calls, or performing batch operations
@@ -157,20 +157,22 @@ async startSync(calendarId: string): Promise<void> {
   // Setup initial state
   await this.store.set(`sync_state_${calendarId}`, initialState);
 
-  // Queue first batch using run tool
-  await this.run.now("syncBatch", { calendarId, batchNumber: 1 });
+  // Create callback and queue first batch using run tool
+  const callback = await this.callback("syncBatch", { calendarId, batchNumber: 1 });
+  await this.run.run(callback);
 }
 
-async syncBatch(context: { calendarId: string; batchNumber: number }): Promise<void> {
+async syncBatch(args: any, context: { calendarId: string; batchNumber: number }): Promise<void> {
   // Process one batch
   const result = await processBatch(context.calendarId);
 
   if (result.hasMore) {
     // Queue next batch
-    await this.run.now("syncBatch", {
+    const callback = await this.callback("syncBatch", {
       calendarId: context.calendarId,
       batchNumber: context.batchNumber + 1
     });
+    await this.run.run(callback);
   }
 }
 ```

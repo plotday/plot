@@ -1,6 +1,7 @@
 import { type Bindings } from "../../env";
 import { type Callbacks } from "../../state/callbacks";
 import type { Run as IRun } from "@plotday/sdk/tools/run";
+import type { Callback } from "@plotday/sdk/tools/callback";
 import { Tool } from "./tool";
 
 export type RunMessage = {
@@ -45,39 +46,20 @@ export class Run extends Tool implements IRun {
     this.queue = queue;
   }
 
-  async now(callbackName: string, context?: any): Promise<void> {
-    const token = await this.callbacks.create({
-      priorityAgentId: this.priorityAgentId,
-      path: this.path.slice(0, -1),
-      functionName: callbackName,
-      context,
-      callOnce: true,
-    });
-
-    // Send immediately to queue
-    await this.send(token);
-  }
-
-  async later(
-    callbackName: string,
-    executeAt: Date,
-    context?: any
-  ): Promise<string> {
-    const token = await this.callbacks.create({
-      priorityAgentId: this.priorityAgentId,
-      path: this.path.slice(0, -1),
-      functionName: callbackName,
-      context,
-      callOnce: true,
-    });
-
-    return await this.callbacks.create({
-      priorityAgentId: this.priorityAgentId,
-      path: this.path,
-      functionName: "scheduledSend",
-      context: token,
-      callAt: executeAt,
-    });
+  async run(callback: Callback, options?: { runAt?: Date }): Promise<string | void> {
+    if (options?.runAt) {
+      // Schedule for later execution
+      return await this.callbacks.create({
+        priorityAgentId: this.priorityAgentId,
+        path: this.path,
+        functionName: "scheduledSend",
+        context: callback,
+        callAt: options.runAt,
+      });
+    } else {
+      // Send immediately to queue
+      await this.send(callback);
+    }
   }
 
   async cancel(token: string): Promise<void> {
