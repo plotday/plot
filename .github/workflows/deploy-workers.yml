@@ -14,10 +14,24 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       workers: ${{ steps.filter.outputs.workers }}
+    defaults:
+      run:
+        working-directory: plot
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout plot
+        uses: actions/checkout@v4
         with:
+          path: plot
           fetch-depth: 2
+
+      - name: Checkout SDK
+        uses: actions/checkout@v4
+        with:
+          repository: plotday/plot-sdk
+          path: plot-sdk
+          sparse-checkout: |
+            sdk
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -27,6 +41,12 @@ jobs:
         with:
           node-version: 22
           cache: "pnpm"
+
+      - name: Build SDK
+        run: |
+          cd ../plot-sdk/sdk
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Install root dependencies only
         run: pnpm install --ignore-scripts --frozen-lockfile --filter="."
@@ -68,8 +88,24 @@ jobs:
       NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN}}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN}}
 
+    defaults:
+      run:
+        working-directory: plot
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout plot
+        uses: actions/checkout@v4
+        with:
+          path: plot
+
+      - name: Checkout SDK
+        uses: actions/checkout@v4
+        with:
+          repository: plotday/plot-sdk
+          path: plot-sdk
+          sparse-checkout: |
+            sdk
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Load secrets
         uses: 1password/load-secrets-action@v2
@@ -88,6 +124,12 @@ jobs:
         with:
           node-version: 22
           cache: "pnpm"
+
+      - name: Build SDK
+        run: |
+          cd ../plot-sdk/sdk
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Install dependencies
         run: pnpm install

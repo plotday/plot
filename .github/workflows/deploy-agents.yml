@@ -79,8 +79,24 @@ jobs:
     env:
       PLOT_DEPLOY_TOKEN: ${{ secrets.PLOT_DEPLOY_TOKEN }}
 
+    defaults:
+      run:
+        working-directory: plot
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout plot
+        uses: actions/checkout@v4
+        with:
+          path: plot
+
+      - name: Checkout SDK
+        uses: actions/checkout@v4
+        with:
+          repository: plotday/plot-sdk
+          path: plot-sdk
+          sparse-checkout: |
+            sdk
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -90,6 +106,12 @@ jobs:
         with:
           node-version: 22
           cache: "pnpm"
+
+      - name: Build SDK
+        run: |
+          cd ../plot-sdk/sdk
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Install dependencies for ${{ matrix.agent }}
         run: |
