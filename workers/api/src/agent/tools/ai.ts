@@ -8,7 +8,7 @@ import { createWorkersAI } from "workers-ai-provider";
 import type {
   AIRequest,
   AIResponse,
-  AITool,
+  AIToolSet,
   AI as IAI,
 } from "../types/tools/ai";
 import { Tool } from "./tool";
@@ -49,10 +49,9 @@ export class AI extends Tool implements IAI {
     this.workersai = createWorkersAI({ binding: ai });
   }
 
-  async prompt<
-    TOOLS extends Record<string, AITool>,
-    SCHEMA extends TSchema = never
-  >(request: AIRequest<TOOLS, SCHEMA>): Promise<AIResponse<TOOLS, SCHEMA>> {
+  async prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(
+    request: AIRequest<TOOLS, SCHEMA>
+  ): Promise<AIResponse<TOOLS, SCHEMA>> {
     const {
       model: modelEnum,
       system,
@@ -60,7 +59,7 @@ export class AI extends Tool implements IAI {
       messages,
       tools,
       outputSchema,
-      maxTokens,
+      maxOutputTokens,
       temperature,
       topP,
       toolChoice,
@@ -89,39 +88,58 @@ export class AI extends Tool implements IAI {
 
     // Prepare experimental_output if outputSchema is provided
     // Typebox schemas ARE JSON Schema, so we wrap them with jsonSchema() helper
-    let experimentalOutput;
+    let experimental_output;
     if (outputSchema) {
-      experimentalOutput = Output.object({
-        schema: jsonSchema<Static<SCHEMA>>(outputSchema as any),
+      experimental_output = Output.object({
+        schema: jsonSchema<Static<SCHEMA>>(outputSchema),
       });
     }
 
+    // Transform tools to AI SDK format
+    // Convert Typebox schemas to jsonSchema format expected by AI SDK
+    const transformedTools = tools
+      ? Object.fromEntries(
+          Object.entries(tools).map(([name, tool]) => [
+            name,
+            {
+              description: tool.description,
+              inputSchema: jsonSchema(tool.inputSchema),
+              execute: tool.execute,
+            },
+          ])
+        )
+      : undefined;
+
     // Call generateText with the configured model and parameters
+    // @ts-ignore - Type instantiation is excessively deep due to complex generic tool types
     const result = await generateText({
       model,
-      system,
-      prompt,
-      messages,
-      tools,
-      ...(experimentalOutput
-        ? { experimental_output: experimentalOutput }
-        : {}),
-      maxTokens,
+      maxOutputTokens,
       temperature,
       topP,
+      system,
+      ...(prompt ? { prompt: prompt! } : { messages: messages! }),
+      tools: transformedTools,
+      experimental_output,
       toolChoice,
     });
 
-    // Return response matching AIResponse interface
     return {
       text: result.text,
-      toolCalls: result.toolCalls as any,
-      toolResults: result.toolResults as any,
+      toolCalls: result.toolCalls,
+      toolResults: result.toolResults,
       finishReason: result.finishReason,
       usage: result.usage,
       sources: result.sources,
       output: result.experimental_output as Static<SCHEMA> | undefined,
-      response: result.response,
+      response: result.response
+        ? {
+            id: result.response.id,
+            timestamp: result.response.timestamp,
+            modelId: result.response.modelId,
+            messages: result.response.messages,
+          }
+        : undefined,
     };
   }
 }

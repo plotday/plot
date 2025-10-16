@@ -143,7 +143,7 @@ export class AI extends ITool {
    * console.log(response.toolCalls); // Array of tool calls made
    * ```
    */
-  prompt<TOOLS extends Record<string, AITool>, SCHEMA extends TSchema = never>(
+  prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(
     request: AIRequest<TOOLS, SCHEMA>
   ): Promise<AIResponse<TOOLS, SCHEMA>> {
     // Typebox schemas are already JSON Schema objects, so they serialize perfectly
@@ -186,7 +186,7 @@ export enum AIModel {
  * Request parameters for AI text generation, matching Vercel AI SDK's generateText() function.
  */
 export interface AIRequest<
-  TOOLS extends Record<string, AITool>,
+  TOOLS extends AIToolSet,
   SCHEMA extends TSchema = never
 > {
   /**
@@ -234,7 +234,7 @@ export interface AIRequest<
   /**
    * Maximum number of tokens to generate.
    */
-  maxTokens?: number;
+  maxOutputTokens?: number;
 
   /**
    * Temperature for controlling randomness (0-2).
@@ -253,7 +253,7 @@ export interface AIRequest<
  * Response from AI text generation, matching Vercel AI SDK's GenerateTextResult.
  */
 export interface AIResponse<
-  TOOLS extends Record<string, AITool>,
+  TOOLS extends AIToolSet,
   SCHEMA extends TSchema = never
 > {
   /**
@@ -342,11 +342,7 @@ export type AIAssistantMessage = {
   content:
     | string
     | Array<
-        | TextPart
-        | FilePart
-        | ReasoningPart
-        | RedactedReasoningPart
-        | ToolCallPart
+        TextPart | FilePart | ReasoningPart | ToolCallPart | ToolResultPart
       >;
 };
 
@@ -379,38 +375,67 @@ export type AIUsage = {
   /**
    * The number of tokens used in the prompt.
    */
-  promptTokens: number;
+  inputTokens?: number;
   /**
    * The number of tokens used in the completion.
    */
-  completionTokens: number;
+  outputTokens?: number;
   /**
    * The total number of tokens used (promptTokens + completionTokens).
    */
-  totalTokens: number;
+  totalTokens?: number;
+  /**
+   * The number of reasoning tokens used in the completion.
+   */
+  reasoningTokens?: number;
 };
 
 /**
  * A source that has been used as input to generate the response.
  */
-export type AISource = {
-  /**
-   * A URL source. This is returned by web search RAG models.
-   */
-  sourceType: "url";
-  /**
-   * The ID of the source.
-   */
-  id: string;
-  /**
-   * The URL of the source.
-   */
-  url: string;
-  /**
-   * The title of the source.
-   */
-  title?: string;
-};
+export type AISource =
+  | {
+      type: "source";
+      /**
+       * A URL source. This is returned by web search RAG models.
+       */
+      sourceType: "url";
+      /**
+       * The ID of the source.
+       */
+      id: string;
+      /**
+       * The URL of the source.
+       */
+      url: string;
+      /**
+       * The title of the source.
+       */
+      title?: string;
+    }
+  | {
+      type: "source";
+      /**
+       * The type of source - document sources reference files/documents.
+       */
+      sourceType: "document";
+      /**
+       * The ID of the source.
+       */
+      id: string;
+      /**
+       * IANA media type of the document (e.g., 'application/pdf').
+       */
+      mediaType: string;
+      /**
+       * The title of the document.
+       */
+      title: string;
+      /**
+       * Optional filename of the document.
+       */
+      filename?: string;
+    };
 
 // ============================================================================
 // Content Parts
@@ -467,9 +492,11 @@ export interface FilePart {
    */
   filename?: string;
   /**
-   * Mime type of the file.
+   * IANA media type of the file.
+   *
+   * @see https://www.iana.org/assignments/media-types/media-types.xhtml
    */
-  mimeType: string;
+  mediaType: string;
 }
 
 /**
@@ -514,8 +541,14 @@ export interface ToolCallPart {
   /**
    * Arguments of the tool call. This is a JSON-serializable object that matches the tool's input schema.
    */
-  args: unknown;
+  input: unknown;
 }
+
+type JSONValue = null | string | number | boolean | JSONObject | JSONArray;
+type JSONObject = {
+  [key: string]: JSONValue;
+};
+type JSONArray = JSONValue[];
 
 /**
  * Tool result content part of a prompt. It contains the result of the tool call with the matching ID.
@@ -533,11 +566,47 @@ export interface ToolResultPart {
   /**
    * Result of the tool call. This is a JSON-serializable object.
    */
-  result: unknown;
-  /**
-   * Optional flag if the result is an error or an error message.
-   */
-  isError?: boolean;
+  output:
+    | {
+        type: "text";
+        value: string;
+      }
+    | {
+        type: "json";
+        value: JSONValue;
+      }
+    | {
+        type: "error-text";
+        value: string;
+      }
+    | {
+        type: "error-json";
+        value: JSONValue;
+      }
+    | {
+        type: "content";
+        value: Array<
+          | {
+              type: "text";
+              /**
+Text content.
+*/
+              text: string;
+            }
+          | {
+              type: "media";
+              /**
+Base-64 encoded media data.
+*/
+              data: string;
+              /**
+IANA media type.
+@see https://www.iana.org/assignments/media-types/media-types.xhtml
+*/
+              mediaType: string;
+            }
+        >;
+      };
 }
 
 // ============================================================================
@@ -580,6 +649,12 @@ export type AITool<PARAMETERS extends ToolParameters = any, RESULT = any> = {
    * Use descriptions to make the input understandable for the language model.
    */
   parameters: PARAMETERS;
+  /**
+   * The schema of the input that the tool expects. The language model will use this to generate the input.
+   * It is also used to validate the output of the language model.
+   * Use descriptions to make the input understandable for the language model.
+   */
+  inputSchema: TSchema;
   /**
    * An optional description of what the tool does.
    * Will be used by the language model to decide whether to use the tool.
@@ -634,58 +709,39 @@ type ToolChoice<TOOLS extends Record<string, unknown>> =
   | "required"
   | {
       type: "tool";
-      toolName: keyof TOOLS;
+      toolName: Extract<keyof TOOLS, string>;
     };
 
-type ToolSet = Record<string, AITool>;
+export type AIToolSet = Record<
+  string,
+  (
+    | AITool<never, never>
+    | AITool<any, any>
+    | AITool<any, never>
+    | AITool<never, any>
+  ) &
+    Pick<AITool<any, any>, "execute">
+>;
 
 // ============================================================================
 // Internal Helper Types
 // ============================================================================
 
-type ValueOf<
-  ObjectType,
-  ValueType extends keyof ObjectType = keyof ObjectType
-> = ObjectType[ValueType];
-
-type ToolCallUnion<TOOLS extends ToolSet> = ValueOf<{
-  [NAME in keyof TOOLS]: {
-    type: "tool-call";
-    toolCallId: string;
-    toolName: NAME & string;
-    args: inferParameters<TOOLS[NAME]["parameters"]>;
-  };
-}>;
-
-type ToolCallArray<TOOLS extends ToolSet> = Array<ToolCallUnion<TOOLS>>;
-
-type ToToolsWithExecute<TOOLS extends ToolSet> = {
-  [K in keyof TOOLS as TOOLS[K] extends {
-    execute: any;
-  }
-    ? K
-    : never]: TOOLS[K];
+type ToolCallUnion<_TOOLS extends AIToolSet> = {
+  type: "tool-call";
+  toolCallId: string;
+  toolName: string;
+  args?: unknown;
 };
 
-type ToToolsWithDefinedExecute<TOOLS extends ToolSet> = {
-  [K in keyof TOOLS as TOOLS[K]["execute"] extends undefined
-    ? never
-    : K]: TOOLS[K];
+type ToolCallArray<TOOLS extends AIToolSet> = Array<ToolCallUnion<TOOLS>>;
+
+type ToolResultUnion<_TOOLS extends AIToolSet> = {
+  type: "tool-result";
+  toolCallId: string;
+  toolName: string;
+  args?: unknown;
+  result?: unknown;
 };
 
-type ToToolResultObject<TOOLS extends ToolSet> = ValueOf<{
-  [NAME in keyof TOOLS]: {
-    type: "tool-result";
-    toolCallId: string;
-    toolName: NAME & string;
-    args: inferParameters<TOOLS[NAME]["parameters"]>;
-    // @ts-ignore - type instantiation is excessive deep
-    result: Awaited<ReturnType<Exclude<TOOLS[NAME]["execute"], undefined>>>;
-  };
-}>;
-
-type ToolResultUnion<TOOLS extends ToolSet> = ToToolResultObject<
-  ToToolsWithDefinedExecute<ToToolsWithExecute<TOOLS>>
->;
-
-type ToolResultArray<TOOLS extends ToolSet> = Array<ToolResultUnion<TOOLS>>;
+type ToolResultArray<TOOLS extends AIToolSet> = Array<ToolResultUnion<TOOLS>>;
