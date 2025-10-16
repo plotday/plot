@@ -2,7 +2,7 @@
   "name": "plot",
   "private": true,
   "license": "UNLICENSED",
-  "packageManager": "pnpm@10.6.5",
+  "packageManager": "pnpm@10.18.3",
   "scripts": {
     "install": "[ \"$SKIP_PYTHON\" = \"1\" ] || npip install",
     "env": "nx run-many -t env --exclude plot --parallel=false",
