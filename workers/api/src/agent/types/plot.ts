@@ -1,3 +1,7 @@
+import { type Tag } from "./tag";
+
+export { Tag } from "./tag";
+
 /**
  * Represents a priority context within Plot.
  *
@@ -273,7 +277,7 @@ export type Activity = {
   /** Reference to the external system that created this activity */
   source: ActivitySource | null;
   /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
-  tags: Record<number, string[]> | null;
+  tags: Record<Tag, string[]> | null;
 };
 
 /**
@@ -327,7 +331,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
     parent?: Pick<Activity, "id"> | null;
   } & {
     // Add or remove tags by ID (others are unchanged)
-    tags?: Record<number, boolean>;
+    tags?: Record<Tag, boolean>;
   };
 
 /**

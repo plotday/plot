@@ -1421,6 +1421,7 @@ export class Plot extends Tool implements IPlot {
       recurrence: activity.recurrence ?? null,
       occurrence: activity.occurrence ?? null,
       source: activity.source ?? null,
+      tags: activity.tags ?? null,
     };
   }
 }

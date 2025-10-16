@@ -168,7 +168,7 @@ abstract class _UpdateActivityCommand extends Command {
 
 class StartActivity extends _UpdateActivityCommand {
   StartActivity(super.activity, {super.onUpdate})
-    : super(title: 'Do Now', icon: PlotIcon.doNow);
+    : super(title: 'Do Now', icon: PlotIcon.now);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -225,7 +225,7 @@ class ScheduleActivity extends _UpdateActivityCommand {
   ScheduleActivity(super.activity, {required this.when, super.onUpdate})
     : super(
         title: activity.todo ? 'Reschedule' : 'Schedule',
-        icon: PlotIcon.doLater,
+        icon: PlotIcon.later,
       );
 
   final Date when;
@@ -250,7 +250,7 @@ class PickScheduleActivity extends ShowPage {
   PickScheduleActivity(Activity activity)
     : super(
         title: 'Schedule',
-        icon: PlotIcon.doLater,
+        icon: PlotIcon.later,
         builder: (context) => FCalendar(
           controller: FCalendarController.date(),
           onPress: (date) async {
@@ -308,7 +308,7 @@ class ToggleActivityTag extends _UpdateActivityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    if (tag == Tag.doLater) {
+    if (tag == Tag.later) {
       await PickScheduleActivity(activity).run(context);
       return const CommandDone();
     }

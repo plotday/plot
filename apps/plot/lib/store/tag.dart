@@ -7,54 +7,204 @@ part of 'store.dart';
  * ids 1000+ are TagType.count
  */
 enum Tag {
-  doNow(1, PlotIcon.doNow, 'Do Now', type: TagType.compute),
-  doLater(2, PlotIcon.doLater, 'Do Later', type: TagType.compute),
-  done(3, PlotIcon.done, 'Done', type: TagType.compute),
-  archived(4, PlotIcon.archived, 'Archived', type: TagType.compute),
+  // Compute tags
+  now(
+    1,
+    PlotIcon.now,
+    'Do Now',
+    type: TagType.compute,
+    shortcodes: ['do', 'arrow_forward'],
+  ),
+  later(
+    2,
+    PlotIcon.later,
+    'Do Later',
+    type: TagType.compute,
+    shortcodes: ['later', 'alarm_clock'],
+  ),
+  done(
+    3,
+    PlotIcon.done,
+    'Done',
+    type: TagType.compute,
+    shortcodes: ['done', 'white_check_mark'],
+  ),
+  archived(
+    4,
+    PlotIcon.archived,
+    'Archived',
+    type: TagType.compute,
+    shortcodes: ['archive', 'file_cabinet'],
+  ),
 
-  pinned(100, PlotIcon.pinned, 'Pinned'),
-  urgent(101, PlotIcon.urgent, 'Urgent'),
-  todo(102, PlotIcon.todo, 'To-do'),
-  goal(103, PlotIcon.goal, 'Goal'),
-  decision(104, PlotIcon.decision, 'Decision'),
-  futureToggle1._hide(105),
-  futureToggle2._hide(106),
-  futureToggle3._hide(107),
-  futureToggle4._hide(108),
-  futureToggle5._hide(100),
-  futureToggle6._hide(110),
-  futureToggle7._hide(111),
-  futureToggle8._hide(112),
-  futureToggle9._hide(113),
+  // Toggle tags
+  pinned(100, PlotIcon.pinned, 'Pinned', shortcodes: ['pushpin']),
+  urgent(101, PlotIcon.urgent, 'Urgent', shortcodes: ['rotating_light']),
+  todo(102, PlotIcon.todo, 'To-do', shortcodes: ['todo', 'inbox_tray']),
+  goal(103, PlotIcon.goal, 'Goal', shortcodes: ['goal', 'dart']),
+  decision(
+    104,
+    PlotIcon.decision,
+    'Decision',
+    shortcodes: ['decision', 'thinking_face'],
+  ),
+  waiting(
+    105,
+    PlotIcon.waiting,
+    'Waiting',
+    shortcodes: ['waiting', 'hourglass'],
+  ),
+  blocked(106, PlotIcon.blocked, 'Blocked', shortcodes: ['blocked', 'x']),
+  warning(107, PlotIcon.warning, 'Warning', shortcodes: ['warning']),
+  question(108, PlotIcon.question, 'Question', shortcodes: ['question']),
+  star(110, PlotIcon.star, 'Star', shortcodes: ['star']),
+  idea(111, PlotIcon.idea, 'Idea', shortcodes: ['idea', 'bulb', 'lightbulb']),
+  attachment(
+    112,
+    PlotIcon.attachment,
+    'Attachment',
+    shortcodes: ['attachment', 'paperclip'],
+  ),
+  link(113, PlotIcon.link, 'Link', shortcodes: ['link']),
 
-  yes(1000, PlotIcon.yes, 'Yes', type: TagType.count),
-  no(1001, PlotIcon.no, 'No', type: TagType.count),
-  volunteer(1002, PlotIcon.volunteer, 'Volunteer', type: TagType.count),
-  tada(1003, PlotIcon.celebration, 'Celebration', type: TagType.count),
-  futureCount1._hide(1004),
-  futureCount2._hide(1005),
-  futureCount3._hide(1006),
-  futureCount4._hide(1007),
-  futureCount5._hide(1008),
-  futureCount6._hide(1009),
-  futureCount7._hide(1010),
-  futureCount8._hide(1011),
-  futureCount9._hide(1012);
+  // Count tags
+  yes(
+    1000,
+    PlotIcon.yes,
+    'Yes',
+    type: TagType.count,
+    shortcodes: ['yes', '+1', 'thumbsup'],
+  ),
+  no(
+    1001,
+    PlotIcon.no,
+    'No',
+    type: TagType.count,
+    shortcodes: ['no', '-1', 'thumbsdown'],
+  ),
+  volunteer(
+    1002,
+    PlotIcon.volunteer,
+    'Volunteer',
+    type: TagType.count,
+    shortcodes: ['volunteer', 'raised_hand'],
+  ),
+  tada(
+    1003,
+    PlotIcon.celebration,
+    'Celebration',
+    type: TagType.count,
+    shortcodes: ['tada'],
+  ),
+  fire(1004, PlotIcon.fire, 'Fire', type: TagType.count, shortcodes: ['fire']),
+  totally(
+    1005,
+    PlotIcon.totally,
+    '100',
+    type: TagType.count,
+    shortcodes: ['totally', '100'],
+  ),
+  looking(
+    1006,
+    PlotIcon.eyes,
+    'Looking',
+    type: TagType.count,
+    shortcodes: ['looking', 'eyes'],
+  ),
+  love(
+    1007,
+    PlotIcon.heart,
+    'Love',
+    type: TagType.count,
+    shortcodes: ['love', 'heart'],
+  ),
+  rocket(
+    1008,
+    PlotIcon.rocket,
+    'Rocket',
+    type: TagType.count,
+    shortcodes: ['rocket'],
+  ),
+  sparkles(
+    1009,
+    PlotIcon.sparkles,
+    'Sparkles',
+    type: TagType.count,
+    shortcodes: ['sparkles'],
+  ),
+  thanks(
+    1010,
+    PlotIcon.pray,
+    'Thanks',
+    type: TagType.count,
+    shortcodes: ['thanks', 'pray'],
+  ),
+  smile(
+    1011,
+    PlotIcon.smile,
+    'Smile',
+    type: TagType.count,
+    shortcodes: ['smiley'],
+  ),
+  wave(1012, PlotIcon.wave, 'Wave', type: TagType.count, shortcodes: ['wave']),
+  praise(
+    1013,
+    PlotIcon.raisedHands,
+    'Praise',
+    type: TagType.count,
+    shortcodes: ['praise', 'raised_hands'],
+  ),
+  joy(1014, PlotIcon.joy, 'Joy', type: TagType.count, shortcodes: ['joy']),
+  admiration(
+    1015,
+    PlotIcon.heartEyes,
+    'Admiration',
+    type: TagType.count,
+    shortcodes: ['admiration', 'heart_eyes'],
+  ),
+  applause(
+    1016,
+    PlotIcon.clap,
+    'Applause',
+    type: TagType.count,
+    shortcodes: ['applause', 'clap'],
+  ),
+  cool(
+    1017,
+    PlotIcon.sunglasses,
+    'Cool',
+    type: TagType.count,
+    shortcodes: ['cool', 'sunglasses'],
+  ),
+  sad(
+    1018,
+    PlotIcon.cry,
+    'Sad',
+    type: TagType.count,
+    shortcodes: ['sad', 'cry'],
+  );
 
   final int id;
   final IconData icon;
   final String name;
   final TagType type;
+  final List<String> shortcodes;
   final bool _hidden;
 
-  const Tag(this.id, this.icon, this.name, {this.type = TagType.toggle})
-    : _hidden = false;
+  const Tag(
+    this.id,
+    this.icon,
+    this.name, {
+    this.type = TagType.toggle,
+    this.shortcodes = const [],
+  }) : _hidden = false;
 
   const Tag._hide(this.id)
     : _hidden = true,
       icon = const IconData(0x003F, fontFamily: 'emoji'), // ?
       name = 'Unknown',
-      type = TagType.toggle;
+      type = TagType.toggle,
+      shortcodes = const [];
 
   // Get all tags
   static List<Tag> getAll() => Tag.values.where((tag) => !tag._hidden).toList();

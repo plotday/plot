@@ -796,8 +796,8 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (mutableFilter?.remove(Tag.archived) == true) {
       deleted = true;
     }
-    final doNow = mutableFilter?.remove(Tag.doNow) == true;
-    final doLater = mutableFilter?.remove(Tag.doLater) == true;
+    final doNow = mutableFilter?.remove(Tag.now) == true;
+    final doLater = mutableFilter?.remove(Tag.later) == true;
     final done = mutableFilter?.remove(Tag.done) == true;
 
     final includeDescendants = path == null && (depth == null || depth > 0);
@@ -1466,7 +1466,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         return copyWith(
           deletedAt: Value(deletedAt == null ? DateTime.now() : null),
         );
-      case Tag.doNow:
+      case Tag.now:
         if (doNow) {
           // Removing doNow - clear scheduling
           return copyWith(
@@ -1499,7 +1499,7 @@ class Activity extends Equatable implements Comparable<Activity> {
           on: const Value(null),
           at: const Value(null),
         );
-      case Tag.doLater:
+      case Tag.later:
         return copyWith(
           type: ActivityType.task,
           on: Value(
@@ -1629,11 +1629,11 @@ class Activity extends Equatable implements Comparable<Activity> {
     switch (tag) {
       case Tag.archived:
         return deletedAt != null;
-      case Tag.doNow:
+      case Tag.now:
         return doNow;
       case Tag.done:
         return done;
-      case Tag.doLater:
+      case Tag.later:
         return doLater;
       default:
         final currentTags = tags;
