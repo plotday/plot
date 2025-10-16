@@ -31,7 +31,6 @@ jobs:
           path: plot-sdk
           sparse-checkout: |
             sdk
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -105,7 +104,6 @@ jobs:
           path: plot-sdk
           sparse-checkout: |
             sdk
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Load secrets
         uses: 1password/load-secrets-action@v2

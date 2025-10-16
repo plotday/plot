@@ -96,7 +96,6 @@ jobs:
           path: plot-sdk
           sparse-checkout: |
             sdk
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
