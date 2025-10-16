@@ -6,22 +6,19 @@ import {
   type Tools,
 } from "@plotday/sdk";
 import { AgentManager, type Log } from "@plotday/sdk/tools/agent";
-import { CallbackTool } from "@plotday/sdk/tools/callback";
 import { Plot } from "@plotday/sdk/tools/plot";
 import { Store } from "@plotday/sdk/tools/store";
 
-export default class extends Agent {
+export default class AgentBuilderAgent extends Agent<AgentBuilderAgent> {
   private plot: Plot;
   private agent: AgentManager;
   private store: Store;
-  private callback: CallbackTool;
 
-  constructor(protected tools: Tools) {
-    super();
+  constructor(tools: Tools) {
+    super(tools);
     this.plot = tools.get(Plot);
     this.agent = tools.get(AgentManager);
     this.store = tools.get(Store);
-    this.callback = tools.get(CallbackTool);
   }
 
   async activate(_priority: Pick<Priority, "id">) {
@@ -44,8 +41,7 @@ To get started:
 4. Add your agent to a priority in the app to test it.`,
     });
 
-    // Set up log watching
-    const logsCallback = await this.callback.create("onLogs");
+    const logsCallback = await this.callback("onLogs");
     await this.agent.watchLogs(agentId, logsCallback);
   }
 

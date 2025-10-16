@@ -6,7 +6,6 @@ import {
   type Priority,
   type Tools,
 } from "@plotday/sdk";
-import { CallbackTool } from "@plotday/sdk/tools/callback";
 import { Plot } from "@plotday/sdk/tools/plot";
 import { Store } from "@plotday/sdk/tools/store";
 import GoogleContactsTool from "@plotday/tool-google-contacts";
@@ -28,18 +27,16 @@ type ContactSelectionContext = {
   authToken: string;
 };
 
-export default class extends Agent {
+export default class ContactsAgent extends Agent<ContactsAgent> {
   private googleContacts: GoogleContacts;
   private plot: Plot;
   private store: Store;
-  private callback: CallbackTool;
 
-  constructor(protected tools: Tools) {
-    super();
+  constructor(tools: Tools) {
+    super(tools);
     this.googleContacts = tools.get(GoogleContactsTool);
     this.plot = tools.get(Plot);
     this.store = tools.get(Store);
-    this.callback = tools.get(CallbackTool);
   }
 
   private getProviderTool(provider: ContactProvider): GoogleContacts {
@@ -183,11 +180,11 @@ export default class extends Agent {
     provider: ContactProvider,
     authToken: string
   ): Promise<void> {
-    // Create callback link for sync
-    const token = await this.callback.create("onSyncSelected", {
+    // Create callback link for sync using the cleaner API
+    const token = await this.callback("onSyncSelected", {
       provider,
       authToken,
-    } as ContactSelectionContext);
+    });
 
     const link: ActivityLink = {
       title: `🔄 Start syncing ${provider} contacts`,
@@ -207,7 +204,7 @@ export default class extends Agent {
 
   async onSyncSelected(
     link: ActivityLink,
-    context: ContactSelectionContext
+    context?: ContactSelectionContext
   ): Promise<void> {
     console.log("Sync selected:", link.title);
 

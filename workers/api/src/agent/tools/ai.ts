@@ -10,7 +10,7 @@ import type {
   AIResponse,
   AIToolSet,
   AI as IAI,
-} from "../types/tools/ai";
+} from "@plotday/sdk/tools/ai";
 import { Tool } from "./tool";
 
 export class AI extends Tool implements IAI {

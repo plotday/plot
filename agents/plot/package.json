@@ -13,6 +13,6 @@
     "lint": "plot agent lint"
   },
   "dependencies": {
-    "@plotday/sdk": "0.1.0-alpha.9"
+    "@plotday/sdk": "workspace:*"
   }
 }

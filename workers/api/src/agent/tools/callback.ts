@@ -1,14 +1,16 @@
 import { Callbacks } from "../../state/callbacks";
-import { type ActivityLink, ActivityLinkType } from "../types/plot";
+import { type ActivityLink, ActivityLinkType } from "@plotday/sdk/plot";
 import type {
   Callback,
+  CallbackContext,
+  CallbackMethods,
   CallbackTool as ICallbackTool,
-} from "../types/tools/callback";
+} from "@plotday/sdk/tools/callback";
 import { Tool } from "./tool";
 
-export * from "../types/tools/callback";
+export * from "@plotday/sdk/tools/callback";
 
-export class CallbackTool extends Tool implements ICallbackTool {
+export class CallbackTool<TParent = any> extends Tool implements ICallbackTool<TParent> {
   private callbacks: DurableObjectStub<Callbacks>;
   private priorityAgentId: string;
   private path: string[];
@@ -37,11 +39,14 @@ export class CallbackTool extends Tool implements ICallbackTool {
     this.path = path.slice(0, -1);
   }
 
-  async create(functionName: string, context?: any): Promise<Callback> {
+  async create<K extends CallbackMethods<TParent>>(
+    functionName: K,
+    context?: CallbackContext<TParent, K>
+  ): Promise<Callback> {
     const token = await this.callbacks.create({
       priorityAgentId: this.priorityAgentId,
       path: this.path,
-      functionName,
+      functionName: functionName as string,
       context,
     });
 

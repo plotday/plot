@@ -1,4 +1,5 @@
-import { type Callback, CallbackTool } from "../agent/tools/callback";
+import type { Callback } from "@plotday/sdk/tools/callback";
+import { CallbackTool } from "../agent/tools/callback";
 import { type Bindings, type LogMessage } from "../env";
 
 export async function processLogs(

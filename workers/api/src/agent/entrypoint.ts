@@ -1,7 +1,7 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 import { type ToolDependencies } from ".";
-import { type Activity, type Priority } from "../agent/types/plot";
+import { type Activity, type Priority } from "@plotday/sdk/plot";
 
 const MODULE = `
 import { WorkerEntrypoint } from "cloudflare:workers";

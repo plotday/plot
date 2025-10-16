@@ -5,7 +5,7 @@ import type { Bindings } from "../../env";
 import { type Callbacks } from "../../state/callbacks";
 import { type LogSubscriptions } from "../../state/log-subscriptions";
 import { type Storage } from "../../state/storage";
-import type { Tool } from "../types/agent";
+import type { Tool } from "@plotday/sdk";
 import { Agent } from "./agent";
 import { AI } from "./ai";
 import { Auth } from "./auth";

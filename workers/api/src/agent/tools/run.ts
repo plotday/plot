@@ -1,6 +1,6 @@
 import { type Bindings } from "../../env";
 import { type Callbacks } from "../../state/callbacks";
-import type { Run as IRun } from "../types/tools/run";
+import type { Run as IRun } from "@plotday/sdk/tools/run";
 import { Tool } from "./tool";
 
 export type RunMessage = {

@@ -85,8 +85,8 @@ importers:
   agents/agent-builder:
     dependencies:
       '@plotday/sdk':
-        specifier: 0.1.0-alpha.9
-        version: 0.1.0-alpha.9(typescript@5.9.2)
+        specifier: workspace:*
+        version: link:../../../plot-sdk/sdk
     devDependencies:
       typescript:
         specifier: ^5.6.3
@@ -95,8 +95,8 @@ importers:
   agents/contacts:
     dependencies:
       '@plotday/sdk':
-        specifier: 0.1.0-alpha.9
-        version: 0.1.0-alpha.9(typescript@5.9.3)
+        specifier: workspace:*
+        version: link:../../../plot-sdk/sdk
       '@plotday/tool-google-contacts':
         specifier: 0.1.0-alpha.0
         version: 0.1.0-alpha.0(typescript@5.9.3)
@@ -104,8 +104,8 @@ importers:
   agents/plot:
     dependencies:
       '@plotday/sdk':
-        specifier: 0.1.0-alpha.9
-        version: 0.1.0-alpha.9(typescript@5.9.3)
+        specifier: workspace:*
+        version: link:../../../plot-sdk/sdk
 
   apps/plot: {}
 
@@ -289,6 +289,9 @@ importers:
       '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db
+      '@plotday/sdk':
+        specifier: workspace:*
+        version: link:../../../plot-sdk/sdk
       '@sentry/cloudflare':
         specifier: ^10.12.0
         version: 10.12.0(@cloudflare/workers-types@4.20250415.0)
@@ -9229,16 +9232,6 @@ snapshots:
 
   '@pkgjs/parseargs@0.11.0':
     optional: true
-
-  '@plotday/sdk@0.1.0-alpha.9(typescript@5.9.2)':
-    dependencies:
-      chalk: 4.1.2
-      commander: 12.1.0
-      dotenv: 16.4.7
-      esbuild: 0.24.2
-      prompts: 2.4.2
-      typebox: 1.0.35
-      typescript: 5.9.2
 
   '@plotday/sdk@0.1.0-alpha.9(typescript@5.9.3)':
     dependencies:

@@ -2,16 +2,16 @@ import type { Bindings } from "../../env";
 import { PROVIDER_CONFIGS } from "../../provider";
 import { Callbacks } from "../../state/callbacks";
 import type { Storage } from "../../state/storage";
-import { type ActivityLink, ActivityLinkType } from "../types/plot";
+import { type ActivityLink, ActivityLinkType } from "@plotday/sdk/plot";
 import type {
   AuthLevel,
   AuthProvider,
   AuthToken,
   Authorization,
   Auth as IAuth,
-} from "../types/tools/auth";
-import type { Callback } from "../types/tools/callback";
-import type { Store } from "../types/tools/store";
+} from "@plotday/sdk/tools/auth";
+import type { Callback } from "@plotday/sdk/tools/callback";
+import type { Store } from "@plotday/sdk/tools/store";
 import { CallbackTool } from "./callback";
 import { Tool } from "./tool";
 

@@ -2,7 +2,7 @@ import { type SupabaseClient, createClient } from "@plotday/db";
 
 import { type Bindings } from "../env";
 import AgentEntrypoint from "./entrypoint";
-import { type IToolConstructor, type Tool } from "./types/agent";
+import { type IToolConstructor, type Tool } from "@plotday/sdk";
 
 export * from "./management";
 export * from "./tools";

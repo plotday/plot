@@ -8,7 +8,7 @@ import {
   type ActivitySource,
   ActivityType,
   AuthorType,
-} from "../agent/types/plot";
+} from "@plotday/sdk/plot";
 import { type Bindings, type UpdateMessage } from "../env";
 import { truncateUuidForUpdatedBy } from "../utils/uuid";
 

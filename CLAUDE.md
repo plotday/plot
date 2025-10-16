@@ -20,9 +20,9 @@ The Supabase database schema is defined in "libs/db/schema/".
 ## Code Structure
 
 - The main app, written in Flutter, is in "apps/plot/".
-- All other packages are wrritten in Typescript and use pnpm for package management.
-- APIs and server tasks are implemented using Clouflare Workers, located in "workers/".
-- The agent SDK is in "libs/agent/". It includes the `plot` CLI tool.
+- All other packages are written in Typescript and use pnpm for package management.
+- APIs and server tasks are implemented using Cloudflare Workers, located in "workers/".
+- The agent SDK is in a separate repository at `../plot-sdk/sdk/`. It includes the `plot` CLI tool and all SDK type definitions.
 - Agents are in "agents/".
 
 ## SDK Entity Standards
@@ -54,6 +54,66 @@ This pattern allows functions to distinguish between:
 - Omitted fields (undefined in Partial types)
 - Explicitly set to null (clearing a value)
 - Set to a value
+
+## SDK Development
+
+The SDK repository (`../plot-sdk/sdk/`) contains all type definitions and is the single source of truth for SDK types. This repo uses it via pnpm workspace links.
+
+### SDK Location and Structure
+
+- **SDK Repository**: `../plot-sdk/sdk/` (sibling directory)
+- **Type Definitions**: `../plot-sdk/sdk/src/` (agent.ts, plot.ts, tag.ts, tools/\*.ts, common/\*.ts)
+- **Workspace Link**: Configured in `pnpm-workspace.yaml` as `../plot-sdk/sdk`
+- **Import Pattern**: Use `@plotday/sdk`, `@plotday/sdk/plot`, `@plotday/sdk/tools/*`, etc.
+
+### Making Changes to SDK Types
+
+**IMPORTANT**: SDK types must be modified in the `plot-sdk` repository, never in this repo.
+
+1. **Edit SDK files**: Make changes in `../plot-sdk/sdk/src/`
+2. **Rebuild SDK**: Run `cd ../plot-sdk/sdk && pnpm build && cd ../../plot`
+3. **Test locally**: Changes are immediately available via workspace link
+4. **Verify builds**: Run `pnpm lint` in affected packages (workers/api, agents/*)
+
+### Where SDK Types Are Used
+
+- **API Worker** (`workers/api/src/`): Built-in tools import SDK types
+  - Example: `import type { Activity } from "@plotday/sdk/plot"`
+  - Built-in tools (`workers/api/src/agent/tools/*`) implement SDK interfaces
+- **Agents** (`agents/*/src/`): Import SDK types directly
+  - Example: `import { Agent, type Priority } from "@plotday/sdk"`
+
+### Adding New SDK Exports
+
+When adding new top-level type files to the SDK, update `plot-sdk/sdk/package.json` exports:
+
+```json
+{
+  "exports": {
+    "./your-new-file": {
+      "types": "./dist/your-new-file.d.ts",
+      "default": "./dist/your-new-file.js"
+    }
+  }
+}
+```
+
+Then rebuild the SDK and run `pnpm install` in this repo to update the workspace link.
+
+### Publishing SDK Updates
+
+Only publish after testing locally:
+
+1. Update version in `../plot-sdk/sdk/package.json`
+2. Build: `cd ../plot-sdk/sdk && pnpm build`
+3. Publish: `npm publish` (from `plot-sdk/sdk` directory)
+4. Commit changes in both repositories
+
+### Important Notes
+
+- **Never create or modify types in `workers/api/src/agent/types/`** - this directory no longer exists
+- **TypeScript Configuration**: Uses `moduleResolution: "bundler"` in `libs/tsconfig/base.json` to support SDK package exports
+- **Workspace Dependencies**: API and agents use `"@plotday/sdk": "workspace:*"` for local development
 
 ## Agents and Tools
 
@@ -180,3 +240,5 @@ await this.callback.deleteAll();
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
 - To generate a migration, use "pnpm gen-migration MIGRATION_NAME".
+- **After modifying SDK types** in `../plot-sdk/sdk/src/`, always rebuild the SDK with `cd ../plot-sdk/sdk && pnpm build && cd ../../plot` before running or testing code in this repo.
+- If you see import errors for `@plotday/sdk/*` after making SDK changes, ensure the SDK has been rebuilt and the package exports are configured correctly in `../plot-sdk/sdk/package.json`.

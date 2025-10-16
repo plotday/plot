@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import { Auth } from "../agent/tools/auth";
-import type { AuthProvider } from "../agent/types/tools/auth";
-import type { Callback } from "../agent/types/tools/callback";
+import type { AuthProvider } from "@plotday/sdk/tools/auth";
+import type { Callback } from "@plotday/sdk/tools/callback";
 import type { Bindings } from "../env";
 import { handleValidationError } from "../utils/validation";
 

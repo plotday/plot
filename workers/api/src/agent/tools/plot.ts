@@ -11,8 +11,8 @@ import {
   type NewActivity,
   type NewPriority,
   type Priority,
-} from "../types/plot";
-import type { Plot as IPlot } from "../types/tools/plot";
+} from "@plotday/sdk/plot";
+import type { Plot as IPlot } from "@plotday/sdk/tools/plot";
 import { Tool } from "./tool";
 
 function parseRangeStart(
