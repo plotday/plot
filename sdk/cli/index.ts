@@ -1,0 +1,118 @@
+#!/usr/bin/env node
+import { Command, Option } from "commander";
+import { readFileSync } from "fs";
+import { join } from "path";
+
+import { createCommand } from "./commands/create";
+import { deployCommand } from "./commands/deploy";
+import { lintCommand } from "./commands/lint";
+import { loginCommand } from "./commands/login";
+import { priorityCreateCommand } from "./commands/priority-create";
+import { priorityListCommand } from "./commands/priority-list";
+import { cliHeader } from "./utils/output";
+
+// Get the version from package.json
+const packageJsonPath = join(__dirname, "..", "package.json");
+const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+const version = packageJson.version;
+
+// Display CLI header
+cliHeader(version);
+
+const program = new Command();
+
+program
+  .name("plot")
+  .description("CLI tool for building and deploying Plot agents")
+  .version(version)
+  .addOption(
+    new Option("--api-url <url>", "API endpoint URL")
+      .default(process.env.PLOT_API_URL || "https://api.plot.day")
+      .hideHelp()
+  )
+  .addOption(
+    new Option("--site-url <url>", "Site endpoint URL")
+      .default(process.env.PLOT_SITE_URL || "https://plot.day")
+      .hideHelp()
+  );
+
+// Top-level login command
+program
+  .command("login")
+  .description("Authenticate with Plot to generate an API token")
+  .action(function (this: Command) {
+    const opts = this.optsWithGlobals() as { siteUrl: string; apiUrl: string };
+    return loginCommand(opts);
+  });
+
+// Agent subcommand group
+const agent = program.command("agent").description("Manage Plot agents");
+
+agent
+  .command("create")
+  .description("Create a new Plot agent")
+  .option("-d, --dir <directory>", "Directory to create the agent in")
+  .action(createCommand);
+
+agent
+  .command("lint")
+  .description("Check for build or lint errors")
+  .option("-d, --dir <directory>", "Agent directory to lint", process.cwd())
+  .action(lintCommand);
+
+agent
+  .command("deploy")
+  .description("Bundle and deploy the agent")
+  .option("-d, --dir <directory>", "Agent directory to deploy", process.cwd())
+  .option("--id <agentId>", "Agent ID for deployment")
+  .option("--deploy-token <token>", "Authentication token for deployment")
+  .option("--name <name>", "Agent name")
+  .option("--description <description>", "Agent description")
+  .option(
+    "-e, --environment <env>",
+    "Deployment environment (personal, private, review)",
+    "personal"
+  )
+  .action(function (this: Command) {
+    const opts = this.optsWithGlobals() as {
+      dir: string;
+      id?: string;
+      deployToken?: string;
+      apiUrl: string;
+      name?: string;
+      description?: string;
+      environment?: string;
+    };
+    return deployCommand(opts);
+  });
+
+// Priority subcommand group
+const priority = program
+  .command("priority")
+  .description("Manage Plot priorities");
+
+priority
+  .command("create")
+  .description("Create a new priority")
+  .option("--name <name>", "Priority name")
+  .option("--parent-id <parentId>", "Parent priority ID")
+  .action(function (this: Command) {
+    const opts = this.optsWithGlobals() as {
+      name?: string;
+      parentId?: string;
+      apiUrl: string;
+    };
+    return priorityCreateCommand(opts);
+  });
+
+priority
+  .command("list")
+  .description("List all your priorities")
+  .action(function (this: Command) {
+    const opts = this.optsWithGlobals() as {
+      apiUrl: string;
+    };
+    return priorityListCommand(opts);
+  });
+
+program.parse();

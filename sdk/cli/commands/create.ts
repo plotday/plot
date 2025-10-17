@@ -1,0 +1,206 @@
+import { execSync } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
+import prompts from "prompts";
+import * as out from "../utils/output";
+
+interface CreateOptions {
+  dir?: string;
+}
+
+/**
+ * Detects the package manager being used
+ * Checks for lock files and npm_config_user_agent
+ */
+function detectPackageManager(): string {
+  // Check npm_config_user_agent first (set by npm, yarn, pnpm)
+  const userAgent = process.env.npm_config_user_agent;
+  if (userAgent) {
+    if (userAgent.includes("yarn")) return "yarn";
+    if (userAgent.includes("pnpm")) return "pnpm";
+    if (userAgent.includes("npm")) return "npm";
+  }
+
+  // Check for lock files in current directory
+  const cwd = process.cwd();
+  if (fs.existsSync(path.join(cwd, "pnpm-lock.yaml"))) return "pnpm";
+  if (fs.existsSync(path.join(cwd, "yarn.lock"))) return "yarn";
+  if (fs.existsSync(path.join(cwd, "package-lock.json"))) return "npm";
+
+  // Default to npm
+  return "npm";
+}
+
+export async function createCommand(options: CreateOptions) {
+  out.header("Create a new Plot agent");
+
+  const response = await prompts([
+    {
+      type: "text",
+      name: "name",
+      message: "Package name:",
+      initial: options.dir || undefined,
+      validate: (value: string) =>
+        /^[a-z0-9-]+$/.test(value) ||
+        "Must be kebab-case (lowercase, hyphens only)",
+    },
+    {
+      type: "text",
+      name: "displayName",
+      message: "Display name:",
+      validate: (value: string) => value.length > 0 || "Name is required",
+    },
+  ]);
+
+  if (Object.keys(response).length === 0) {
+    out.plain("\nCancelled.");
+    process.exit(0);
+  }
+
+  const agentDir = options.dir || response.name;
+  const agentPath = path.resolve(process.cwd(), agentDir);
+
+  if (fs.existsSync(agentPath)) {
+    out.error(`Directory "${agentDir}" already exists`);
+    process.exit(1);
+  }
+
+  out.progress(`Creating ${response.displayName}...`);
+
+  // Create directory structure
+  fs.mkdirSync(agentPath, { recursive: true });
+  fs.mkdirSync(path.join(agentPath, "src"), { recursive: true });
+
+  // Read SDK version from package.json
+  const sdkPackagePath = path.join(__dirname, "..", "..", "package.json");
+  let sdkVersion = "^0.1.0"; // Fallback version
+  try {
+    const sdkPackage = JSON.parse(fs.readFileSync(sdkPackagePath, "utf-8"));
+    sdkVersion = `^${sdkPackage.version}`;
+  } catch (error) {
+    console.warn("Warning: Could not read SDK version, using fallback");
+  }
+
+  // Generate a unique agent ID
+  const plotAgentId = crypto.randomUUID();
+
+  // Create package.json
+  const packageJson: any = {
+    name: response.name,
+    displayName: response.displayName || response.name,
+    main: "src/index.ts",
+    types: "src/index.ts",
+    plotAgentId: plotAgentId,
+    scripts: {
+      lint: "plot agent lint",
+      deploy: "plot agent deploy",
+    },
+    dependencies: {
+      "@plotday/sdk": sdkVersion,
+    },
+    devDependencies: {
+      typescript: "^5.8.3",
+    },
+  };
+
+  fs.writeFileSync(
+    path.join(agentPath, "package.json"),
+    JSON.stringify(packageJson, null, 2) + "\n"
+  );
+
+  // Create tsconfig.json
+  const tsconfigJson = {
+    extends: "@plotday/sdk/tsconfig.base.json",
+    include: ["src/*.ts"],
+  };
+  fs.writeFileSync(
+    path.join(agentPath, "tsconfig.json"),
+    JSON.stringify(tsconfigJson, null, 2) + "\n"
+  );
+
+  const agentTemplate = `import {
+  type Activity,
+  Agent,
+  type Tools,
+  createAgent,
+} from "@plotday/sdk";
+
+export default createAgent(
+  class extends Agent {
+
+    constructor(tools: Tools) {
+      super();
+    }
+
+    async activity(activity: Activity) {
+      // Implement your agent logic here
+      console.log("Received activity:", activity);
+    }
+  }
+);
+`;
+  fs.writeFileSync(path.join(agentPath, "src", "index.ts"), agentTemplate);
+
+  // Detect and use appropriate package manager
+  const packageManager = detectPackageManager();
+  const packageManagerCommand = packageManager === "npm" ? "npm run" : packageManager;
+
+  // Copy README.md from template
+  const readmeTemplatePath = path.join(__dirname, "..", "templates", "README.template.md");
+  try {
+    let readmeContent = fs.readFileSync(readmeTemplatePath, "utf-8");
+    // Replace template variables
+    readmeContent = readmeContent.replace(/\{\{displayName\}\}/g, response.displayName);
+    readmeContent = readmeContent.replace(/\{\{name\}\}/g, response.name);
+    readmeContent = readmeContent.replace(/\{\{packageManager\}\}/g, packageManagerCommand);
+    fs.writeFileSync(path.join(agentPath, "README.md"), readmeContent);
+  } catch (error) {
+    console.warn("Warning: Could not copy README template");
+  }
+
+  // Copy AGENTS.md from template
+  const agentsTemplatePath = path.join(__dirname, "..", "templates", "AGENTS.template.md");
+  try {
+    let agentsContent = fs.readFileSync(agentsTemplatePath, "utf-8");
+    // Replace template variables
+    agentsContent = agentsContent.replace(/\{\{packageManager\}\}/g, packageManagerCommand);
+    fs.writeFileSync(path.join(agentPath, "AGENTS.md"), agentsContent);
+  } catch (error) {
+    console.warn("Warning: Could not copy AGENTS template");
+  }
+
+  // Create .gitignore
+  const gitignore = `node_modules/
+build/
+.env
+`;
+  fs.writeFileSync(path.join(agentPath, ".gitignore"), gitignore);
+
+  // Initialize git
+  try {
+    execSync("git init", { cwd: agentPath, stdio: "ignore" });
+  } catch (error) {
+    // Silently fail - not critical
+  }
+
+  const installCommand = packageManager === "yarn" ? "yarn" : `${packageManager} install`;
+
+  // Install dependencies
+  try {
+    execSync(installCommand, { cwd: agentPath, stdio: "ignore" });
+  } catch (error) {
+    out.warning(
+      "Couldn't install dependencies",
+      [`Run '${installCommand}' in ${agentDir}`]
+    );
+  }
+
+  out.success(`${response.displayName} created`);
+
+  out.nextSteps([
+    `cd ${agentDir}`,
+    `${packageManager === "npm" ? "npm run" : packageManager} lint`,
+    `${packageManager === "npm" ? "npm run" : packageManager} deploy`,
+  ]);
+  out.blank();
+}

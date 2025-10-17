@@ -1,0 +1,23 @@
+{
+  "name": "@plotday/agent-events",
+  "plotAgentId": "0199b6f4-85b8-7b21-aeb2-ac4169e351af",
+  "displayName": "Events",
+  "description": "Sync calendar events",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "deploy": "plot agent deploy",
+    "lint": "plot agent lint"
+  },
+  "dependencies": {
+    "@plotday/sdk": "workspace:^",
+    "@plotday/tool-google-calendar": "workspace:^",
+    "@plotday/tool-outlook-calendar": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
