@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { chmodSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, mkdirSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -22,5 +22,11 @@ require('./index.js');
 const binPath = join(__dirname, "bin", "plot.cjs");
 writeFileSync(binPath, wrapperContent);
 chmodSync(binPath, 0o755);
+
+// Copy templates directory to bin
+const templatesSource = join(__dirname, "cli", "templates");
+const templatesDestination = join(__dirname, "bin", "templates");
+mkdirSync(templatesDestination, { recursive: true });
+cpSync(templatesSource, templatesDestination, { recursive: true });
 
 console.log("✓ Built CLI");
