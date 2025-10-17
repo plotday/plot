@@ -25,11 +25,10 @@ import {
   Agent,
   type Priority,
   type Tools,
-  createAgent,
 } from "@plotday/sdk";
 import { Plot } from "@plotday/sdk/tools/plot";
 
-class MyAgent extends Agent {
+export default class MyAgent extends Agent {
   private plot: Plot;
 
   constructor(protected tools: Tools) {
@@ -48,8 +47,6 @@ class MyAgent extends Agent {
     // Common actions: process external events, update activities
   }
 }
-
-export default createAgent(MyAgent);
 ```
 
 ## Tool System
