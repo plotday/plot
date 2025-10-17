@@ -15,7 +15,7 @@ class CachedTools {
   }
 
   get(ToolClass) {
-    return this.getById(ToolClass.id);
+    return this.getById(ToolClass.name);
   }
 
   getById(id) {
@@ -64,7 +64,7 @@ class DependencyTracker {
   }
 
   get(ToolClass) {
-    const toolId = ToolClass.id;
+    const toolId = ToolClass.name;
 
     // Create nested tracker to capture this tool's dependencies
     const nestedTracker = new DependencyTracker();
