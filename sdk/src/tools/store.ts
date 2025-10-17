@@ -44,11 +44,7 @@ import { ITool, type Tools } from "..";
  * }
  * ```
  */
-export class Store extends ITool {
-  constructor(_tools: Tools) {
-    super();
-  }
-
+export abstract class Store extends ITool {
   /**
    * Retrieves a value from storage by key.
    *
@@ -59,9 +55,7 @@ export class Store extends ITool {
    * @param key - The storage key to retrieve
    * @returns Promise resolving to the stored value or null
    */
-  get<T>(_key: string): Promise<T | null> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract get<T>(_key: string): Promise<T | null>;
 
   /**
    * Stores a value in persistent storage.
@@ -74,9 +68,7 @@ export class Store extends ITool {
    * @param value - The value to store (must be JSON-serializable)
    * @returns Promise that resolves when the value is stored
    */
-  set<T>(_key: string, _value: T): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract set<T>(_key: string, _value: T): Promise<void>;
 
   /**
    * Removes a specific key from storage.
@@ -87,9 +79,7 @@ export class Store extends ITool {
    * @param key - The storage key to remove
    * @returns Promise that resolves when the key is removed
    */
-  clear(_key: string): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract clear(_key: string): Promise<void>;
 
   /**
    * Removes all keys from this storage instance.
@@ -99,7 +89,5 @@ export class Store extends ITool {
    *
    * @returns Promise that resolves when all keys are removed
    */
-  clearAll(): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract clearAll(): Promise<void>;
 }

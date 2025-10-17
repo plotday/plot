@@ -64,11 +64,7 @@ import { ITool, type Tools } from "..";
  * }
  * ```
  */
-export class AI extends ITool {
-  constructor(_tools: Tools) {
-    super();
-  }
-
+export abstract class AI extends ITool {
   /**
    * Sends a request to an AI model and returns the response using the Vercel AI SDK.
    *
@@ -137,11 +133,9 @@ export class AI extends ITool {
    * console.log(response.toolCalls); // Array of tool calls made
    * ```
    */
-  prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(
+  abstract prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(
     _request: AIRequest<TOOLS, SCHEMA>,
-  ): Promise<AIResponse<TOOLS, SCHEMA>> {
-    throw new Error("Method implemented remotely.");
-  }
+  ): Promise<AIResponse<TOOLS, SCHEMA>>;
 }
 
 /**

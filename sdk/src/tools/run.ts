@@ -55,11 +55,7 @@ import type { Callback } from "./callback";
  * }
  * ```
  */
-export class Run extends ITool {
-  constructor(_tools: Tools) {
-    super();
-  }
-
+export abstract class Run extends ITool {
   /**
    * Queues a callback to execute in a separate worker context.
    *
@@ -72,12 +68,10 @@ export class Run extends ITool {
    * @param options.runAt - If provided, schedules execution at this time; otherwise runs immediately
    * @returns Promise resolving to a cancellation token (only for scheduled executions)
    */
-  run(
+  abstract run(
     _callback: Callback,
     _options?: { runAt?: Date },
-  ): Promise<string | void> {
-    throw new Error("Method implemented remotely.");
-  }
+  ): Promise<string | void>;
 
   /**
    * Cancels a previously scheduled execution.
@@ -88,9 +82,7 @@ export class Run extends ITool {
    * @param token - The cancellation token returned by run() with runAt option
    * @returns Promise that resolves when the cancellation is processed
    */
-  cancel(_token: string): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract cancel(_token: string): Promise<void>;
 
   /**
    * Cancels all scheduled executions for this tool/agent.
@@ -100,7 +92,5 @@ export class Run extends ITool {
    *
    * @returns Promise that resolves when all cancellations are processed
    */
-  cancelAll(): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract cancelAll(): Promise<void>;
 }

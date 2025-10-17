@@ -84,11 +84,7 @@ export type CallbackContext<T, K extends keyof T> = T[K] extends (
  * }
  * ```
  */
-export class CallbackTool<TParent = any> extends ITool {
-  constructor(_tools: Tools) {
-    super();
-  }
-
+export abstract class CallbackTool<TParent = any> extends ITool {
   /**
    * Creates a persistent callback to the tool's parent.
    * Returns a callback token that can be used to call the callback later.
@@ -97,12 +93,10 @@ export class CallbackTool<TParent = any> extends ITool {
    * @param context - Optional context data to pass to the callback function (type-checked when TParent is specified)
    * @returns Promise resolving to a callback token
    */
-  create<K extends CallbackMethods<TParent>>(
+  abstract create<K extends CallbackMethods<TParent>>(
     _functionName: K,
     _context?: CallbackContext<TParent, K>,
-  ): Promise<Callback> {
-    throw new Error("Method implemented remotely.");
-  }
+  ): Promise<Callback>;
 
   /**
    * Deletes a specific callback by its token.
@@ -110,18 +104,14 @@ export class CallbackTool<TParent = any> extends ITool {
    * @param callback - The callback token to delete
    * @returns Promise that resolves when the callback is deleted
    */
-  delete(_callback: Callback): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract delete(_callback: Callback): Promise<void>;
 
   /**
    * Deletes all callbacks for the tool's parent.
    *
    * @returns Promise that resolves when all callbacks are deleted
    */
-  deleteAll(): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract deleteAll(): Promise<void>;
 
   /**
    * Executes a callback by its token.
@@ -130,7 +120,5 @@ export class CallbackTool<TParent = any> extends ITool {
    * @param args - Optional arguments to pass to the callback function
    * @returns Promise resolving to the callback result
    */
-  call(_callback: Callback, _args?: any): Promise<any> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract call(_callback: Callback, _args?: any): Promise<any>;
 }

@@ -34,11 +34,7 @@ import { type ActivityLink, type Callback, ITool, type Tools } from "..";
  * }
  * ```
  */
-export class Auth extends ITool {
-  constructor(_tools: Tools) {
-    super();
-  }
-
+export abstract class Auth extends ITool {
   /**
    * Initiates an OAuth authentication flow.
    *
@@ -53,16 +49,14 @@ export class Auth extends ITool {
    * @param callback - Callback receiving an Authorization
    * @returns Promise resolving to an ActivityLink for the auth flow
    */
-  request(
+  abstract request(
     _auth: {
       provider: AuthProvider;
       level: AuthLevel;
       scopes: string[];
     },
     _callback: Callback,
-  ): Promise<ActivityLink> {
-    throw new Error("Method implemented remotely.");
-  }
+  ): Promise<ActivityLink>;
 
   /**
    * Retrieves an access token (refreshing it first if necessary).
@@ -72,9 +66,7 @@ export class Auth extends ITool {
    * @param authorization - The authorization from the request callback
    * @returns Promise resolving to the access token or null if no longer available
    */
-  get(_authorization: Authorization): Promise<AuthToken | null> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract get(_authorization: Authorization): Promise<AuthToken | null>;
 }
 
 /**

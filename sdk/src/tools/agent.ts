@@ -33,7 +33,7 @@ export type Log = {
  * }
  * ```
  */
-export class AgentManager extends ITool {
+export abstract class AgentManager extends ITool {
   /**
    * Creates a new agent ID and grants access to people in the current priority.
    *
@@ -46,9 +46,7 @@ export class AgentManager extends ITool {
    * console.log(`Your agent ID: ${agentId}`);
    * ```
    */
-  create(): Promise<string> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract create(): Promise<string>;
 
   /**
    * Deploys an agent programmatically.
@@ -78,7 +76,7 @@ export class AgentManager extends ITool {
    * console.log(`Deployed version ${result.version}`);
    * ```
    */
-  deploy(_options: {
+  abstract deploy(_options: {
     agentId: string;
     module: string;
     environment?: "personal" | "private" | "review";
@@ -86,9 +84,7 @@ export class AgentManager extends ITool {
     description?: string;
   }): Promise<{
     version: string;
-  }> {
-    throw new Error("Method implemented remotely.");
-  }
+  }>;
 
   /**
    * Subscribes to logs from an agent.
@@ -119,7 +115,5 @@ export class AgentManager extends ITool {
    * }
    * ```
    */
-  watchLogs(_agentId: string, _callback: Callback): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract watchLogs(_agentId: string, _callback: Callback): Promise<void>;
 }

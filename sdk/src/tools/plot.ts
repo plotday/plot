@@ -43,11 +43,7 @@ import {
  * }
  * ```
  */
-export class Plot extends ITool {
-  constructor(_tools: Tools) {
-    super();
-  }
-
+export abstract class Plot extends ITool {
   /**
    * Creates a new activity in the Plot system.
    *
@@ -58,9 +54,7 @@ export class Plot extends ITool {
    * @param activity - The activity data to create
    * @returns Promise resolving to the complete created activity
    */
-  createActivity(_activity: NewActivity): Promise<Activity> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract createActivity(_activity: NewActivity): Promise<Activity>;
 
   /**
    * Updates an existing activity in the Plot system.
@@ -113,9 +107,7 @@ export class Plot extends ITool {
    * });
    * ```
    */
-  updateActivity(_activity: ActivityUpdate): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract updateActivity(_activity: ActivityUpdate): Promise<void>;
 
   /**
    * Creates a new priority in the Plot system.
@@ -126,9 +118,7 @@ export class Plot extends ITool {
    * @param priority - The priority data to create
    * @returns Promise resolving to the complete created priority
    */
-  createPriority(_priority: NewPriority): Promise<Priority> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract createPriority(_priority: NewPriority): Promise<Priority>;
 
   /**
    * Retrieves all activities in the same thread as the specified activity.
@@ -140,9 +130,7 @@ export class Plot extends ITool {
    * @param activity - The activity whose thread to retrieve
    * @returns Promise resolving to array of activities in the thread
    */
-  getThread(_activity: Activity): Promise<Activity[]> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract getThread(_activity: Activity): Promise<Activity[]>;
 
   /**
    * Finds an activity by its external source reference.
@@ -154,9 +142,7 @@ export class Plot extends ITool {
    * @param source - The external source reference to search for
    * @returns Promise resolving to the matching activity or null if not found
    */
-  getActivityBySource(_source: ActivitySource): Promise<Activity | null> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract getActivityBySource(_source: ActivitySource): Promise<Activity | null>;
 
   /**
    * Adds contacts to the Plot system.
@@ -168,9 +154,7 @@ export class Plot extends ITool {
    * @param contacts - Array of contact information to add
    * @returns Promise that resolves when all contacts have been processed
    */
-  addContacts(_contacts: Array<Contact>): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract addContacts(_contacts: Array<Contact>): Promise<void>;
 
   /**
    * Creates multiple activities in a single batch operation.
@@ -182,7 +166,5 @@ export class Plot extends ITool {
    * @param activities - Array of activity data to create
    * @returns Promise resolving to array of created activities
    */
-  createActivities(_activities: NewActivity[]): Promise<Activity[]> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract createActivities(_activities: NewActivity[]): Promise<Activity[]>;
 }

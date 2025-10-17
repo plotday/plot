@@ -53,11 +53,7 @@ import { ITool, type Tools } from "..";
  * }
  * ```
  */
-export class Webhook extends ITool {
-  constructor(_tools: Tools) {
-    super();
-  }
-
+export abstract class Webhook extends ITool {
   /**
    * Creates a new webhook endpoint.
    *
@@ -69,9 +65,7 @@ export class Webhook extends ITool {
    * @param context - Optional context data to pass to the callback function
    * @returns Promise resolving to the webhook URL
    */
-  create(_callbackName: string, _context?: any): Promise<string> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract create(_callbackName: string, _context?: any): Promise<string>;
 
   /**
    * Deletes an existing webhook endpoint.
@@ -82,9 +76,7 @@ export class Webhook extends ITool {
    * @param url - The webhook URL to delete
    * @returns Promise that resolves when the webhook is deleted
    */
-  delete(_url: string): Promise<void> {
-    throw new Error("Method implemented remotely.");
-  }
+  abstract delete(_url: string): Promise<void>;
 }
 
 /**

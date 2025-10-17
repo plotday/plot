@@ -229,9 +229,7 @@ export abstract class Agent<TSelf = any> {
  */
 export abstract class ITool {}
 
-export type ToolConstructor<T extends ITool> = {
-  new (tools: Tools): T;
-};
+export type ToolConstructor<T extends ITool> = (abstract new (tools: Tools) => T) | (new (tools: Tools) => T);
 
 /**
  * Base class for regular tools.
