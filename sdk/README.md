@@ -26,38 +26,30 @@ This will prompt you for:
 Edit `src/index.ts` to add your agent logic:
 
 ```typescript
-import {
-  type Activity,
-  ActivityType,
-  Agent,
-  type Tools,
-  createAgent,
-} from "@plotday/sdk";
+import { type Activity, ActivityType, Agent, type Tools } from "@plotday/sdk";
 import { Plot } from "@plotday/sdk/tools/plot";
 
-export default createAgent(
-  class extends Agent {
-    private plot: Plot;
+export default class extends Agent {
+  private plot: Plot;
 
-    constructor(tools: Tools) {
-      super();
-      this.plot = tools.get(Plot);
-    }
+  constructor(tools: Tools) {
+    super(tools);
+    this.plot = tools.get(Plot);
+  }
 
-    async activate(priority: { id: string }) {
-      // Called when the agent is activated for a priority
-      await this.plot.createActivity({
-        type: ActivityType.Note,
-        title: "Welcome! Your agent is now active.",
-      });
-    }
+  async activate(priority: { id: string }) {
+    // Called when the agent is activated for a priority
+    await this.plot.createActivity({
+      type: ActivityType.Note,
+      title: "Welcome! Your agent is now active.",
+    });
+  }
 
-    async activity(activity: Activity) {
-      // Called when an activity is routed to this agent
-      console.log("Processing activity:", activity.title);
-    }
-  },
-);
+  async activity(activity: Activity) {
+    // Called when an activity is routed to this agent
+    console.log("Processing activity:", activity.title);
+  }
+}
 ```
 
 ### 3. Deploy Your Agent
@@ -75,7 +67,7 @@ Agents implement integrations and automations in Plot. They are added to priorit
 **Key Methods:**
 
 - `activate(priority)` - Called when the agent is activated for a priority
-- `activity(activity)` - Called when an activity is routed to the agent
+- `activity(activity, changes)` - Called when an activity is routed to the agent
 
 ### Priorities and Activities
 
@@ -105,14 +97,15 @@ Tools provide functionality to agents. They can be:
 - **Built-in Tools** - Core Plot functionality (Plot, Store, Auth, etc.).
 - **Custom Tools** - Extra packages that add capabilities using the built-in tools. They often implement integrations with external services (Google Calendar, Outlook, etc.).
 
-Access built-in tools directly via `this` or external tools via the `tools.get()` method in your agent constructor:
+Access tools via the `tools.get()` method in your agent constructor. Store, Run, and Callback methods are available directly on the Agent class:
 
 ```typescript
 constructor(tools: Tools) {
   super(tools);
   this.plot = tools.get(Plot);
-  // Store, Run, and Callback methods are available directly via this.get(), this.set(), etc.
   this.googleCalendar = tools.get(GoogleCalendar);
+  // Store, Run, and Callback methods are available directly:
+  // this.get(), this.set(), this.callback(), this.run(), etc.
 }
 ```
 
@@ -164,23 +157,25 @@ await this.clearAll();
 OAuth authentication for external services.
 
 ```typescript
-import { Auth, AuthLevel, AuthProvider } from "@plotday/sdk/tools/auth";
+import { Auth, AuthLevel, AuthProvider, type Authorization } from "@plotday/sdk/tools/auth";
 
 // Request authentication
+const authCallback = await this.callback("onAuthComplete", { provider: "google" });
 const authLink = await this.auth.request(
   {
     provider: AuthProvider.Google,
     level: AuthLevel.User,
     scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
   },
-  {
-    functionName: "onAuthComplete",
-    context: { provider: "google" },
-  },
+  authCallback,
 );
 
-// Get access token
-const authToken = await this.auth.get(authorization);
+// Handle auth completion
+async onAuthComplete(authorization: Authorization, context: any) {
+  // Get access token
+  const authToken = await this.auth.get(authorization);
+  console.log("Access token:", authToken.token);
+}
 ```
 
 ### Run
@@ -199,25 +194,25 @@ await this.run(reminderCallback, { runAt: new Date("2025-01-15T10:00:00Z") });
 
 ### Webhook
 
-Register webhooks for real-time notifications.
+Create webhook endpoints for real-time notifications from external services.
 
 ```typescript
-import { Webhook } from "@plotday/sdk/tools/webhook";
+import { Webhook, type WebhookRequest } from "@plotday/sdk/tools/webhook";
 
-// Register webhook
-const webhookUrl = await this.webhook.register(
+// Create webhook endpoint
+const webhookUrl = await this.webhook.create(
   "onCalendarUpdate",
   { calendarId: "primary" }
 );
 
-// Handle webhook
+// Handle webhook requests
 async onCalendarUpdate(request: WebhookRequest, context: any) {
-  const payload = await request.json();
+  console.log("Webhook received:", request.method, request.body);
   // Process webhook
 }
 
-// Unregister webhook
-await this.webhook.unregister(webhookUrl);
+// Delete webhook endpoint
+await this.webhook.delete(webhookUrl);
 ```
 
 ### Callback
