@@ -10,10 +10,10 @@
 1. [Install pgFormatter](https://github.com/darold/pgFormatter): `brew install pgformatter`
 1. `brew install postgresql`
 1. `brew install cocoapods`
-1. **Clone and set up the SDK repository**
-   1. Clone the SDK repo as a sibling directory: `cd .. && git clone https://github.com/plotday/plot.git plot-sdk`
-   1. Build the SDK: `cd plot-sdk/sdk && pnpm install && pnpm build && cd ../../plot`
-   1. Note: The SDK repo is linked as a workspace dependency in `pnpm-workspace.yaml`, allowing local development of SDK types before publishing
+1. **Initialize the SDK submodule**
+   1. Initialize and update submodules: `git submodule update --init --recursive`
+   1. Build the SDK: `cd public/sdk && pnpm install && pnpm build && cd ../..`
+   1. Note: The SDK repo is included as a git submodule in `public/` and linked as a workspace dependency in `pnpm-workspace.yaml`, allowing local development of SDK types before publishing
 1. `pnpm install`
 1. Add `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_KEY` from the `pnpm start` output to `.env.development.local`.
 1. `pnpm run env`
@@ -34,23 +34,23 @@ gen-migration MIGRATION_NAME` and include it with the relevant change.
 
 ### Working with SDK types
 
-SDK type definitions (Activity, Priority, Agent, Tool interfaces, etc.) are maintained in the `plot-sdk/sdk/src/` directory as the single source of truth. The API worker and agents in this repo use these types via workspace links.
+SDK type definitions (Activity, Priority, Agent, Tool interfaces, etc.) are maintained in the `public/sdk/src/` directory as the single source of truth. The API worker and agents in this repo use these types via workspace links.
 
 **To modify SDK types:**
 
-1. Edit files in `plot-sdk/sdk/src/` (e.g., `agent.ts`, `plot.ts`, `tools/*.ts`)
-2. Rebuild the SDK: `cd plot-sdk/sdk && pnpm build`
+1. Edit files in `public/sdk/src/` (e.g., `agent.ts`, `plot.ts`, `tools/*.ts`)
+2. Rebuild the SDK: `cd public/sdk && pnpm build && cd ../..`
 3. Changes are immediately available to the API and agents in this repo
 4. Test your changes locally before publishing
 
 **To publish SDK changes:**
 
-1. Update version in `plot-sdk/sdk/package.json`
-2. Build: `cd plot-sdk/sdk && pnpm build`
-3. Publish: `npm publish` (from the `plot-sdk/sdk` directory)
-4. Commit and push changes to both repos
+1. Update version in `public/sdk/package.json`
+2. Build: `cd public/sdk && pnpm build`
+3. Publish: `npm publish` (from the `public/sdk` directory)
+4. Commit and push changes to the SDK submodule, then commit the submodule reference update in this repo
 
-**Note:** The SDK repo (`plot-sdk`) is linked in `pnpm-workspace.yaml`, allowing you to develop and test SDK changes locally without publishing to npm first.
+**Note:** The SDK repo is included as a git submodule in `public/` and linked in `pnpm-workspace.yaml`, allowing you to develop and test SDK changes locally without publishing to npm first.
 
 ## Accounts
 

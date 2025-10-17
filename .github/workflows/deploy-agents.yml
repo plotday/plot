@@ -18,14 +18,14 @@ jobs:
     outputs:
       agents: ${{ steps.filter.outputs.agents }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 2
+          submodules: true
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.18.3
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -81,28 +81,14 @@ jobs:
     env:
       PLOT_DEPLOY_TOKEN: ${{ secrets.PLOT_DEPLOY_TOKEN }}
 
-    defaults:
-      run:
-        working-directory: plot
-
     steps:
-      - name: Checkout plot
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          path: plot
-
-      - name: Checkout SDK
-        uses: actions/checkout@v4
-        with:
-          repository: plotday/plot
-          path: plot-sdk
-          sparse-checkout: |
-            sdk
+          submodules: true
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.18.3
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -112,7 +98,7 @@ jobs:
 
       - name: Build SDK
         run: |
-          cd ../plot-sdk/sdk
+          cd public/sdk
           pnpm install --frozen-lockfile
           pnpm build
 

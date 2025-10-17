@@ -22,7 +22,7 @@ The Supabase database schema is defined in "libs/db/schema/".
 - The main app, written in Flutter, is in "apps/plot/".
 - All other packages are written in Typescript and use pnpm for package management.
 - APIs and server tasks are implemented using Cloudflare Workers, located in "workers/".
-- The agent SDK is in a separate repository at `../plot-sdk/sdk/`. It includes the `plot` CLI tool and all SDK type definitions.
+- The agent SDK is in a git submodule at `public/sdk/`. It includes the `plot` CLI tool and all SDK type definitions.
 - Agents are in "agents/".
 
 ## SDK Entity Standards
@@ -57,21 +57,21 @@ This pattern allows functions to distinguish between:
 
 ## SDK Development
 
-The SDK repository (`../plot-sdk/sdk/`) contains all type definitions and is the single source of truth for SDK types. This repo uses it via pnpm workspace links.
+The SDK repository (`public/sdk/`) contains all type definitions and is the single source of truth for SDK types. This repo uses it via pnpm workspace links.
 
 ### SDK Location and Structure
 
-- **SDK Repository**: `../plot-sdk/sdk/` (sibling directory)
-- **Type Definitions**: `../plot-sdk/sdk/src/` (agent.ts, plot.ts, tag.ts, tools/\*.ts, common/\*.ts)
-- **Workspace Link**: Configured in `pnpm-workspace.yaml` as `../plot-sdk/sdk`
+- **SDK Repository**: `public/sdk/` (git submodule)
+- **Type Definitions**: `public/sdk/src/` (agent.ts, plot.ts, tag.ts, tools/\*.ts, common/\*.ts)
+- **Workspace Link**: Configured in `pnpm-workspace.yaml` as `public/sdk`
 - **Import Pattern**: Use `@plotday/sdk`, `@plotday/sdk/plot`, `@plotday/sdk/tools/*`, etc.
 
 ### Making Changes to SDK Types
 
-**IMPORTANT**: SDK types must be modified in the `plot-sdk` repository, never in this repo.
+**IMPORTANT**: SDK types must be modified in the SDK submodule, never in this repo's main code.
 
-1. **Edit SDK files**: Make changes in `../plot-sdk/sdk/src/`
-2. **Rebuild SDK**: Run `cd ../plot-sdk/sdk && pnpm build && cd ../../plot`
+1. **Edit SDK files**: Make changes in `public/sdk/src/`
+2. **Rebuild SDK**: Run `cd public/sdk && pnpm build && cd ../..`
 3. **Test locally**: Changes are immediately available via workspace link
 4. **Verify builds**: Run `pnpm lint` in affected packages (workers/api, agents/\*)
 
@@ -85,7 +85,7 @@ The SDK repository (`../plot-sdk/sdk/`) contains all type definitions and is the
 
 ### Adding New SDK Exports
 
-When adding new top-level type files to the SDK, update `plot-sdk/sdk/package.json` exports:
+When adding new top-level type files to the SDK, update `public/sdk/package.json` exports:
 
 ```json
 {
@@ -104,10 +104,10 @@ Then rebuild the SDK and run `pnpm install` in this repo to update the workspace
 
 Only publish after testing locally:
 
-1. Update version in `../plot-sdk/sdk/package.json`
-2. Build: `cd ../plot-sdk/sdk && pnpm build`
-3. Publish: `npm publish` (from `plot-sdk/sdk` directory)
-4. Commit changes in both repositories
+1. Update version in `public/sdk/package.json`
+2. Build: `cd public/sdk && pnpm build`
+3. Publish: `npm publish` (from `public/sdk` directory)
+4. Commit changes to the SDK submodule, then commit the submodule reference update in this repo
 
 ### Important Notes
 
@@ -242,5 +242,5 @@ await this.callback.deleteAll();
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
 - To generate a migration, use "pnpm gen-migration MIGRATION_NAME".
-- **After modifying SDK types** in `../plot-sdk/sdk/src/`, always rebuild the SDK with `cd ../plot-sdk/sdk && pnpm build && cd ../../plot` before running or testing code in this repo.
-- If you see import errors for `@plotday/sdk/*` after making SDK changes, ensure the SDK has been rebuilt and the package exports are configured correctly in `../plot-sdk/sdk/package.json`.
+- **After modifying SDK types** in `public/sdk/src/`, always rebuild the SDK with `cd public/sdk && pnpm build && cd ../..` before running or testing code in this repo.
+- If you see import errors for `@plotday/sdk/*` after making SDK changes, ensure the SDK has been rebuilt and the package exports are configured correctly in `public/sdk/package.json`.

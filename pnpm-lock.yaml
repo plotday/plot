@@ -54,39 +54,11 @@ importers:
         specifier: ^4.42.1
         version: 4.42.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)
 
-  ../plot-sdk/sdk:
-    dependencies:
-      chalk:
-        specifier: ^4.1.2
-        version: 4.1.2
-      commander:
-        specifier: ^12.0.0
-        version: 12.1.0
-      dotenv:
-        specifier: ^16.4.5
-        version: 16.4.7
-      esbuild:
-        specifier: ^0.24.0
-        version: 0.24.2
-      prompts:
-        specifier: ^2.4.2
-        version: 2.4.2
-      typebox:
-        specifier: ^1.0.35
-        version: 1.0.35
-    devDependencies:
-      '@types/prompts':
-        specifier: ^2.4.9
-        version: 2.4.9
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
   agents/agent-builder:
     dependencies:
       '@plotday/sdk':
         specifier: workspace:*
-        version: link:../../../plot-sdk/sdk
+        version: link:../../public/sdk
     devDependencies:
       typescript:
         specifier: ^5.6.3
@@ -96,7 +68,7 @@ importers:
     dependencies:
       '@plotday/sdk':
         specifier: workspace:*
-        version: link:../../../plot-sdk/sdk
+        version: link:../../public/sdk
       '@plotday/tool-google-contacts':
         specifier: 0.1.0-alpha.0
         version: 0.1.0-alpha.0(typescript@5.9.3)
@@ -105,7 +77,7 @@ importers:
     dependencies:
       '@plotday/sdk':
         specifier: workspace:*
-        version: link:../../../plot-sdk/sdk
+        version: link:../../public/sdk
 
   apps/plot: {}
 
@@ -275,6 +247,34 @@ importers:
         specifier: workspace:*
         version: link:../tsconfig
 
+  public/sdk:
+    dependencies:
+      chalk:
+        specifier: ^4.1.2
+        version: 4.1.2
+      commander:
+        specifier: ^12.0.0
+        version: 12.1.0
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.4.7
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      prompts:
+        specifier: ^2.4.2
+        version: 2.4.2
+      typebox:
+        specifier: ^1.0.35
+        version: 1.0.35
+    devDependencies:
+      '@types/prompts':
+        specifier: ^2.4.9
+        version: 2.4.9
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   workers/api:
     dependencies:
       '@ai-sdk/anthropic':
@@ -291,7 +291,7 @@ importers:
         version: link:../../libs/db
       '@plotday/sdk':
         specifier: workspace:*
-        version: link:../../../plot-sdk/sdk
+        version: link:../../public/sdk
       '@sentry/cloudflare':
         specifier: ^10.12.0
         version: 10.12.0(@cloudflare/workers-types@4.20250415.0)
