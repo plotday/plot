@@ -43,21 +43,21 @@ export function createTool(
 ): ToolDependencies {
   let tool: unknown = undefined;
   switch (spec.id) {
-    case "plot":
+    case "Plot":
       tool = new Plot({
         supabase,
         priorityId,
         priorityAgentId,
       });
       break;
-    case "ai":
+    case "AI":
       tool = new AI({
         accountId: env.AI_GATEWAY_ACCOUNT_ID,
         gatewayId: env.AI_GATEWAY_ID,
         ai: env.AI,
       });
       break;
-    case "auth":
+    case "Auth":
       tool = new Auth({
         path,
         store: new Store({
@@ -70,14 +70,14 @@ export function createTool(
         callbacks,
       });
       break;
-    case "store":
+    case "Store":
       tool = new Store({
         path: path.slice(0, -1),
         storage,
         priorityAgentId,
       });
       break;
-    case "webhook":
+    case "Webhook":
       tool = new Webhook({
         path,
         callbacks,
@@ -85,7 +85,7 @@ export function createTool(
         baseUrl: env.API_ROOT,
       });
       break;
-    case "run":
+    case "Run":
       tool = new Run({
         path,
         callbacks,
@@ -93,14 +93,14 @@ export function createTool(
         queue: env.RUN_QUEUE,
       });
       break;
-    case "callback":
+    case "CallbackTool":
       tool = new CallbackTool({
         callbacks,
         priorityAgentId,
         path,
       });
       break;
-    case "agent":
+    case "AgentManager":
       tool = new Agent({
         supabase,
         priorityAgentId,
