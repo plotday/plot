@@ -67,6 +67,7 @@
   "files": [
     "dist",
     "bin",
+    "cli/templates",
     "tsconfig.base.json",
     "README.md",
     "LICENSE"

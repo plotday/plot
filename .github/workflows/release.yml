@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create Release Pull Request or Publish to npm
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm version-packages
+          publish: pnpm release
+          commit: 'chore: version packages'
+          title: 'chore: version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Releases
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Parse published packages and create releases for each
+          echo '${{ steps.changesets.outputs.publishedPackages }}' | jq -c '.[]' | while read -r package; do
+            name=$(echo "$package" | jq -r '.name')
+            version=$(echo "$package" | jq -r '.version')
+
+            # Determine package directory
+            if [[ "$name" == "@plotday/sdk" ]]; then
+              pkg_dir="sdk"
+            elif [[ "$name" == @plotday/tool-* ]]; then
+              tool_name="${name#@plotday/tool-}"
+              pkg_dir="tools/$tool_name"
+            else
+              echo "Unknown package: $name"
+              continue
+            fi
+
+            # Create tag name (e.g., sdk@0.9.1 or tool-google-calendar@0.1.0)
+            tag_name="${pkg_dir//\//@}@${version}"
+
+            # Extract changelog entry for this version
+            changelog_file="$pkg_dir/CHANGELOG.md"
+            if [ -f "$changelog_file" ]; then
+              # Extract the section for this version from CHANGELOG
+              release_notes=$(awk "/## ${version}/,/## [0-9]/" "$changelog_file" | sed '1d;$d' | sed '/^$/d')
+
+              if [ -z "$release_notes" ]; then
+                release_notes="Release ${name}@${version}"
+              fi
+            else
+              release_notes="Release ${name}@${version}"
+            fi
+
+            # Create GitHub release
+            echo "Creating release for $name@$version with tag $tag_name"
+            gh release create "$tag_name" \
+              --title "${name}@${version}" \
+              --notes "$release_notes" \
+              --verify-tag || echo "Release creation failed for $tag_name, may already exist"
+          done
+
+      - name: Summary
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          echo "### 🚀 Published Packages" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The following packages were published to npm:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.changesets.outputs.publishedPackages }}' | jq -r '.[] | "- **\(.name)@\(.version)** ([GitHub Release](https://github.com/${{ github.repository }}/releases/tag/\(.name | gsub("@plotday/"; "") | gsub("/"; "@"))@\(.version)))"' >> $GITHUB_STEP_SUMMARY
