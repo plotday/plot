@@ -52,12 +52,14 @@ export abstract class AgentManager extends ITool {
    * Deploys an agent programmatically.
    *
    * This method provides the same functionality as the plot agent deploy CLI
-   * command, but can be called from within an agent. It does not bundle the
-   * agent code - the module code must be provided pre-bundled.
+   * command, but can be called from within an agent. Accepts either:
+   * - A pre-bundled module (JavaScript code)
+   * - A spec (markdown text describing the functionality) - not yet implemented
    *
    * @param options - Deployment configuration
    * @param options.agentId - Agent ID for deployment
-   * @param options.module - Pre-bundled agent module code
+   * @param options.module - Pre-bundled agent module code (mutually exclusive with spec)
+   * @param options.spec - Markdown text describing agent functionality (mutually exclusive with module, not yet implemented)
    * @param options.environment - Target environment (defaults to "personal")
    * @param options.name - Optional agent name (required for first deploy)
    * @param options.description - Optional agent description (required for first deploy)
@@ -66,6 +68,7 @@ export abstract class AgentManager extends ITool {
    *
    * @example
    * ```typescript
+   * // Deploy with a module
    * const result = await agent.deploy({
    *   agentId: 'abc-123-...',
    *   module: 'export default class MyAgent extends Agent {...}',
@@ -74,15 +77,36 @@ export abstract class AgentManager extends ITool {
    *   description: 'Does something cool'
    * });
    * console.log(`Deployed version ${result.version}`);
+   *
+   * // Deploy with a spec (not yet implemented, will throw error)
+   * const result = await agent.deploy({
+   *   agentId: 'abc-123-...',
+   *   spec: '# My Agent\n\nDoes something cool',
+   *   environment: 'personal',
+   *   name: 'My Agent',
+   * });
    * ```
    */
-  abstract deploy(_options: {
-    agentId: string;
-    module: string;
-    environment?: "personal" | "private" | "review";
-    name: string;
-    description?: string;
-  }): Promise<{
+  abstract deploy(
+    _options: (
+      | {
+          agentId: string;
+          module: string;
+          spec?: never;
+          environment?: "personal" | "private" | "review";
+          name: string;
+          description?: string;
+        }
+      | {
+          agentId: string;
+          spec: string;
+          module?: never;
+          environment?: "personal" | "private" | "review";
+          name: string;
+          description?: string;
+        }
+    )
+  ): Promise<{
     version: string;
   }>;
 

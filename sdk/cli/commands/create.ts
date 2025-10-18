@@ -6,6 +6,8 @@ import * as out from "../utils/output";
 
 interface CreateOptions {
   dir?: string;
+  name?: string;
+  displayName?: string;
 }
 
 /**
@@ -34,27 +36,53 @@ function detectPackageManager(): string {
 export async function createCommand(options: CreateOptions) {
   out.header("Create a new Plot agent");
 
-  const response = await prompts([
-    {
-      type: "text",
-      name: "name",
-      message: "Package name:",
-      initial: options.dir || undefined,
-      validate: (value: string) =>
-        /^[a-z0-9-]+$/.test(value) ||
-        "Must be kebab-case (lowercase, hyphens only)",
-    },
-    {
-      type: "text",
-      name: "displayName",
-      message: "Display name:",
-      validate: (value: string) => value.length > 0 || "Name is required",
-    },
-  ]);
+  let response: { name: string; displayName: string };
 
-  if (Object.keys(response).length === 0) {
-    out.plain("\nCancelled.");
-    process.exit(0);
+  // If both name and displayName are provided via CLI, use them directly
+  if (options.name && options.displayName) {
+    // Validate name
+    if (!/^[a-z0-9-]+$/.test(options.name)) {
+      out.error("Name must be kebab-case (lowercase, hyphens only)");
+      process.exit(1);
+    }
+
+    // Validate displayName
+    if (options.displayName.length === 0) {
+      out.error("Display name is required");
+      process.exit(1);
+    }
+
+    response = {
+      name: options.name,
+      displayName: options.displayName,
+    };
+  } else {
+    // Use interactive prompts
+    const promptResponse = await prompts([
+      {
+        type: "text",
+        name: "name",
+        message: "Package name:",
+        initial: options.dir || options.name || undefined,
+        validate: (value: string) =>
+          /^[a-z0-9-]+$/.test(value) ||
+          "Must be kebab-case (lowercase, hyphens only)",
+      },
+      {
+        type: "text",
+        name: "displayName",
+        message: "Display name:",
+        initial: options.displayName || undefined,
+        validate: (value: string) => value.length > 0 || "Name is required",
+      },
+    ]);
+
+    if (Object.keys(promptResponse).length === 0) {
+      out.plain("\nCancelled.");
+      process.exit(0);
+    }
+
+    response = promptResponse as { name: string; displayName: string };
   }
 
   const agentDir = options.dir || response.name;
@@ -122,22 +150,18 @@ export async function createCommand(options: CreateOptions) {
   type Activity,
   Agent,
   type Tools,
-  createAgent,
 } from "@plotday/sdk";
 
-export default createAgent(
-  class extends Agent {
-
-    constructor(tools: Tools) {
-      super();
-    }
-
-    async activity(activity: Activity) {
-      // Implement your agent logic here
-      console.log("Received activity:", activity);
-    }
+export default class extends Agent {
+  constructor(tools: Tools) {
+    super();
   }
-);
+
+  async activity(activity: Activity) {
+    // Implement your agent logic here
+    console.log("Received activity:", activity);
+  }
+}
 `;
   fs.writeFileSync(path.join(agentPath, "src", "index.ts"), agentTemplate);
 

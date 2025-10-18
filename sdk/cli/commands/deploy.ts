@@ -1,14 +1,15 @@
 import * as dotenv from "dotenv";
-import * as esbuild from "esbuild";
 import * as fs from "fs";
 import * as path from "path";
 import prompts from "prompts";
 
 import * as out from "../utils/output";
 import { getGlobalTokenPath } from "../utils/token";
+import { bundleAgent } from "../utils/bundle";
 
 interface DeployOptions {
   dir: string;
+  spec?: string;
   id?: string;
   deployToken?: string;
   apiUrl: string;
@@ -34,33 +35,82 @@ interface PackageJson {
 export async function deployCommand(options: DeployOptions) {
   const agentPath = path.resolve(process.cwd(), options.dir);
 
-  // Verify we're in an agent directory by checking for package.json
-  const packageJsonPath = path.join(agentPath, "package.json");
-  if (!fs.existsSync(packageJsonPath)) {
-    out.error(
-      "package.json not found. Are you in an agent directory?",
-      "Run this command from your agent's root directory"
-    );
-    process.exit(1);
+  // Read spec file if provided
+  let specContent: string | undefined;
+  if (options.spec) {
+    const specPath = path.resolve(process.cwd(), options.spec);
+    if (!fs.existsSync(specPath)) {
+      out.error(`Spec file not found: ${options.spec}`);
+      process.exit(1);
+    }
+    try {
+      specContent = fs.readFileSync(specPath, "utf-8");
+    } catch (error) {
+      out.error("Failed to read spec file", String(error));
+      process.exit(1);
+    }
   }
 
-  // Read and validate package.json
-  let packageJson: PackageJson;
-  try {
-    const packageJsonContent = fs.readFileSync(packageJsonPath, "utf-8");
-    packageJson = JSON.parse(packageJsonContent);
-  } catch (error) {
-    out.error("Failed to parse package.json", String(error));
-    process.exit(1);
+  // Verify we're in an agent directory by checking for package.json
+  // Package.json is required when deploying source code, optional for spec
+  const packageJsonPath = path.join(agentPath, "package.json");
+  let packageJson: PackageJson | undefined;
+
+  if (!options.spec) {
+    // Source code deployment requires package.json
+    if (!fs.existsSync(packageJsonPath)) {
+      out.error(
+        "package.json not found. Are you in an agent directory?",
+        "Run this command from your agent's root directory, or use --spec to deploy from a spec file"
+      );
+      process.exit(1);
+    }
+
+    // Read and validate package.json
+    try {
+      const packageJsonContent = fs.readFileSync(packageJsonPath, "utf-8");
+      packageJson = JSON.parse(packageJsonContent);
+    } catch (error) {
+      out.error("Failed to parse package.json", String(error));
+      process.exit(1);
+    }
+  } else if (fs.existsSync(packageJsonPath)) {
+    // Optional: read package.json for defaults when using spec
+    try {
+      const packageJsonContent = fs.readFileSync(packageJsonPath, "utf-8");
+      packageJson = JSON.parse(packageJsonContent);
+    } catch {
+      // Ignore errors, package.json is optional for spec deployments
+    }
   }
 
   // Extract agent metadata from package.json
-  let agentId = packageJson.plotAgentId;
-  const agentName = packageJson.displayName;
-  const agentDescription = packageJson.description;
+  let agentId = packageJson?.plotAgentId;
+  const agentName = packageJson?.displayName;
+  const agentDescription = packageJson?.description;
 
-  // Validate required fields
-  if (!agentName) {
+  const environment = options.environment || "personal";
+
+  // For spec deployments without package.json, require CLI options
+  if (options.spec && !packageJson) {
+    if (!options.id) {
+      out.error(
+        "Agent ID is required when deploying spec without package.json",
+        "Provide --id flag"
+      );
+      process.exit(1);
+    }
+    if (!options.name) {
+      out.error(
+        "Agent name is required when deploying spec without package.json",
+        "Provide --name flag"
+      );
+      process.exit(1);
+    }
+  }
+
+  // Validate required fields for source code deployments
+  if (!options.spec && !agentName) {
     out.error(
       "package.json is missing displayName",
       'Add "displayName": "Your Agent Name" to package.json'
@@ -68,11 +118,12 @@ export async function deployCommand(options: DeployOptions) {
     process.exit(1);
   }
 
-  const environment = options.environment || "personal";
-
-  // Validate Agent ID is present
+  // Validate Agent ID is present (from package.json or CLI)
   if (!agentId && !options.id) {
-    out.error("Agent ID missing", "Run 'plot agent create' to generate one.");
+    out.error(
+      "Agent ID missing",
+      "Run 'plot agent create' to generate one, or provide --id flag"
+    );
     process.exit(1);
   }
 
@@ -149,46 +200,53 @@ export async function deployCommand(options: DeployOptions) {
     }
   }
 
-  const entryPoint = path.join(agentPath, "src", "index.ts");
-  if (!fs.existsSync(entryPoint)) {
-    out.error(
-      "src/index.ts not found",
-      "Your agent needs an entry point at src/index.ts"
-    );
-    process.exit(1);
-  }
-
-  const buildDir = path.join(agentPath, "build");
-
-  // Clean build directory
-  if (fs.existsSync(buildDir)) {
-    fs.rmSync(buildDir, { recursive: true });
-  }
-  fs.mkdirSync(buildDir, { recursive: true });
-
-  // Show progress
-  out.progress(`Building ${agentName}...`);
+  // Prepare request body based on spec or source code
+  let requestBody: {
+    module?: string;
+    spec?: string;
+    name: string;
+    description?: string;
+    environment: string;
+  };
 
   try {
-    const result = await esbuild.build({
-      entryPoints: [entryPoint],
-      bundle: true,
-      format: "esm",
-      platform: "browser",
-      target: "esnext",
-      outfile: path.join(buildDir, "index.js"),
-      sourcemap: true,
-      minify: false,
-      logLevel: "silent",
-    });
+    if (options.spec && specContent) {
+      // Deploying from spec
+      out.progress(`Deploying ${deploymentName} from spec...`);
 
-    if (result.errors.length > 0) {
-      out.error("Build failed with errors");
-      process.exit(1);
-    }
+      requestBody = {
+        spec: specContent,
+        name: deploymentName!,
+        description: deploymentDescription,
+        environment: environment,
+      };
+    } else {
+      // Deploying from source code - build the agent
+      out.progress(`Building ${deploymentName}...`);
 
-    if (result.warnings.length > 0) {
-      out.warning("Build completed with warnings");
+      const result = await bundleAgent(agentPath, {
+        minify: false,
+        sourcemap: true,
+      });
+
+      const moduleContent = result.code;
+
+      if (result.warnings.length > 0) {
+        out.warning("Build completed with warnings");
+        for (const warning of result.warnings.slice(0, 5)) {
+          console.warn(`  ${warning}`);
+        }
+        if (result.warnings.length > 5) {
+          console.warn(`  ... and ${result.warnings.length - 5} more warnings`);
+        }
+      }
+
+      requestBody = {
+        module: moduleContent,
+        name: deploymentName!,
+        description: deploymentDescription,
+        environment: environment,
+      };
     }
 
     // Validate all required deployment fields
@@ -209,27 +267,17 @@ export async function deployCommand(options: DeployOptions) {
       process.exit(1);
     }
 
-    const moduleContent = fs.readFileSync(
-      path.join(buildDir, "index.js"),
-      "utf-8"
-    );
-
     // Use deploymentId for non-personal, or "personal" for personal environment
     const urlPath = deploymentId || "personal";
 
     try {
       const response = await fetch(`${options.apiUrl}/v1/agent/${urlPath}`, {
-        method: "PUT",
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${deployToken}`,
         },
-        body: JSON.stringify({
-          module: moduleContent,
-          name: deploymentName,
-          description: deploymentDescription,
-          environment: environment,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
