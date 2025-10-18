@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.10.2
+
+### Patch Changes
+
+- [#5](https://github.com/plotday/plot/pull/5) [`0ac9a95`](https://github.com/plotday/plot/commit/0ac9a953212ccd3abb3517e143e6a0957c061b14) Thanks [@KrisBraun](https://github.com/KrisBraun)! - Add a CLAUDE.md on "plot agent create"
+
 ## 0.10.1
 
 ### Patch Changes
