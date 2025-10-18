@@ -1,5 +1,12 @@
 # @plotday/sdk
 
+## 0.10.1
+
+### Patch Changes
+
+- [#3](https://github.com/plotday/plot/pull/3) [`61668e5`](https://github.com/plotday/plot/commit/61668e5fb6a640f0894f922bc852f2669dd4ea39) Thanks [@KrisBraun](https://github.com/KrisBraun)! - plot create --name argument
+  plot deploy --spec spec.md (alpha)
+
 ## 0.10.0
 
 ### Minor Changes
