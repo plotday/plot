@@ -3,6 +3,7 @@ import { Command, Option } from "commander";
 import { readFileSync } from "fs";
 import { join } from "path";
 
+import { buildCommand } from "./commands/build";
 import { createCommand } from "./commands/create";
 import { deployCommand } from "./commands/deploy";
 import { lintCommand } from "./commands/lint";
@@ -52,6 +53,8 @@ agent
   .command("create")
   .description("Create a new Plot agent")
   .option("-d, --dir <directory>", "Directory to create the agent in")
+  .option("-n, --name <name>", "Package name (kebab-case)")
+  .option("--display-name <displayName>", "Display name for the agent")
   .action(createCommand);
 
 agent
@@ -61,9 +64,16 @@ agent
   .action(lintCommand);
 
 agent
+  .command("build")
+  .description("Bundle the agent without deploying")
+  .option("-d, --dir <directory>", "Agent directory to build", process.cwd())
+  .action(buildCommand);
+
+agent
   .command("deploy")
   .description("Bundle and deploy the agent")
   .option("-d, --dir <directory>", "Agent directory to deploy", process.cwd())
+  .option("--spec <file>", "Spec file to deploy (markdown)")
   .option("--id <agentId>", "Agent ID for deployment")
   .option("--deploy-token <token>", "Authentication token for deployment")
   .option("--name <name>", "Agent name")
@@ -76,6 +86,7 @@ agent
   .action(function (this: Command) {
     const opts = this.optsWithGlobals() as {
       dir: string;
+      spec?: string;
       id?: string;
       deployToken?: string;
       apiUrl: string;
