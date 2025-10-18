@@ -193,6 +193,15 @@ export default class extends Agent {
     console.warn("Warning: Could not copy AGENTS template");
   }
 
+  // Copy CLAUDE.md from template
+  const claudeTemplatePath = path.join(__dirname, "..", "templates", "CLAUDE.template.md");
+  try {
+    const claudeContent = fs.readFileSync(claudeTemplatePath, "utf-8");
+    fs.writeFileSync(path.join(agentPath, "CLAUDE.md"), claudeContent);
+  } catch (error) {
+    console.warn("Warning: Could not copy CLAUDE template");
+  }
+
   // Create .gitignore
   const gitignore = `node_modules/
 build/
