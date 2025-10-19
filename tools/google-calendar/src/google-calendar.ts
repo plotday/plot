@@ -55,7 +55,7 @@ type AuthSuccessContext = {
  * class EventsAgent extends Agent {
  *   private googleCalendar: GoogleCalendar;
  *
- *   constructor(tools: Tools) {
+ *   constructor(id: string, tools: Tools) {
  *     super();
  *     this.googleCalendar = tools.get(GoogleCalendar);
  *   }

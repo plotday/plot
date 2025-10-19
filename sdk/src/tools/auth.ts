@@ -12,7 +12,7 @@ import { type ActivityLink, type Callback, ITool, type Tools } from "..";
  * class CalendarTool extends Tool {
  *   private auth: Auth;
  *
- *   constructor(tools: Tools) {
+ *   constructor(id: string, tools: Tools) {
  *     super();
  *     this.auth = tools.get(Auth);
  *   }

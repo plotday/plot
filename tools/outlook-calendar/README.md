@@ -19,7 +19,7 @@ export default class extends Agent {
   private outlookCalendar: OutlookCalendar;
   private auth: Auth;
 
-  constructor(tools: Tools) {
+  constructor(id: string, tools: Tools) {
     super();
     this.outlookCalendar = tools.get(OutlookCalendar);
     this.auth = tools.get(Auth);

@@ -22,7 +22,7 @@ import {
  * class MyAgent extends Agent {
  *   private plot: Plot;
  *
- *   constructor(tools: Tools) {
+ *   constructor(id: string, tools: Tools) {
  *     super();
  *     this.plot = tools.get(Plot);
  *   }

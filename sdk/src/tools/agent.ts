@@ -39,7 +39,7 @@ export type Log = {
  * class AgentBuilderAgent extends Agent {
  *   private agent: AgentManager;
  *
- *   constructor(tools: Tools) {
+ *   constructor(id: string, tools: Tools) {
  *     super();
  *     this.agent = tools.get(AgentTool);
  *   }

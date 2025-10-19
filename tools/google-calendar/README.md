@@ -19,7 +19,7 @@ export default class extends Agent {
   private googleCalendar: GoogleCalendar;
   private auth: Auth;
 
-  constructor(tools: Tools) {
+  constructor(id: string, tools: Tools) {
     super();
     this.googleCalendar = tools.get(GoogleCalendar);
     this.auth = tools.get(Auth);

@@ -18,7 +18,7 @@ import { ITool, type Tools } from "..";
  * class CalendarTool extends Tool {
  *   private webhook: Webhook;
  *
- *   constructor(tools: Tools) {
+ *   constructor(id: string, tools: Tools) {
  *     super();
  *     this.webhook = tools.get(Webhook);
  *   }

@@ -179,7 +179,7 @@ const outlookApi = {
  * class EventsAgent extends Agent {
  *   private outlookCalendar: OutlookCalendar;
  *
- *   constructor(tools: Tools) {
+ *   constructor(id: string, tools: Tools) {
  *     super();
  *     this.outlookCalendar = tools.get(OutlookCalendar);
  *   }
