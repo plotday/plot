@@ -15,8 +15,8 @@ export default class extends Agent {
   private ai: AI;
   private plot: Plot;
 
-  constructor(protected tools: Tools) {
-    super(tools);
+  constructor(id: string, protected tools: Tools) {
+    super(id, tools);
     this.ai = tools.get(AI);
     this.plot = tools.get(Plot);
   }

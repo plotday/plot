@@ -32,8 +32,8 @@ import { Plot } from "@plotday/sdk/tools/plot";
 export default class extends Agent {
   private plot: Plot;
 
-  constructor(tools: Tools) {
-    super(tools);
+  constructor(id: string, tools: Tools) {
+    super(id, tools);
     this.plot = tools.get(Plot);
   }
 
@@ -100,8 +100,8 @@ Tools provide functionality to agents. They can be:
 Access tools via the `tools.get()` method in your agent constructor. Store, Run, and Callback methods are available directly on the Agent class:
 
 ```typescript
-constructor(tools: Tools) {
-  super(tools);
+constructor(id: string, tools: Tools) {
+  super(id, tools);
   this.plot = tools.get(Plot);
   this.googleCalendar = tools.get(GoogleCalendar);
   // Store, Run, and Callback methods are available directly:

@@ -5,7 +5,7 @@ import {
   ActivityType,
   Agent,
   type Priority,
-  Tools,
+  type Tools,
 } from "@plotday/sdk";
 import type {
   Calendar,
@@ -13,9 +13,9 @@ import type {
   CalendarTool,
   SyncOptions,
 } from "@plotday/sdk/common/calendar";
+import { Plot } from "@plotday/sdk/tools/plot";
 import { GoogleCalendar } from "@plotday/tool-google-calendar";
 import { OutlookCalendar } from "@plotday/tool-outlook-calendar";
-import { Plot } from "@plotday/sdk/tools/plot";
 
 type CalendarProvider = "google" | "outlook";
 
@@ -36,8 +36,8 @@ export default class extends Agent {
   private outlookCalendar: OutlookCalendar;
   private plot: Plot;
 
-  constructor(protected tools: Tools) {
-    super(tools);
+  constructor(id: string, protected tools: Tools) {
+    super(id, tools);
     this.googleCalendar = tools.get(GoogleCalendar);
     this.outlookCalendar = tools.get(OutlookCalendar);
     this.plot = tools.get(Plot);
@@ -61,7 +61,7 @@ export default class extends Agent {
 
   private async addStoredAuth(
     provider: CalendarProvider,
-    authToken: string,
+    authToken: string
   ): Promise<void> {
     const auths = await this.getStoredAuths();
     const existingIndex = auths.findIndex((auth) => auth.provider === provider);
@@ -76,7 +76,7 @@ export default class extends Agent {
   }
 
   private async getAuthToken(
-    provider: CalendarProvider,
+    provider: CalendarProvider
   ): Promise<string | null> {
     const auths = await this.getStoredAuths();
     const auth = auths.find((auth) => auth.provider === provider);
@@ -98,10 +98,12 @@ export default class extends Agent {
     });
 
     // Get auth links from both calendar tools
-    const googleAuthLink =
-      await this.googleCalendar.requestAuth(googleCallback);
-    const outlookAuthLink =
-      await this.outlookCalendar.requestAuth(outlookCallback);
+    const googleAuthLink = await this.googleCalendar.requestAuth(
+      googleCallback
+    );
+    const outlookAuthLink = await this.outlookCalendar.requestAuth(
+      outlookCallback
+    );
 
     // Create activity with both auth links
     const connectActivity = await this.plot.createActivity({
@@ -129,7 +131,7 @@ export default class extends Agent {
   async startSync(
     provider: CalendarProvider,
     calendarId: string,
-    options?: SyncOptions,
+    options?: SyncOptions
   ): Promise<void> {
     const authToken = await this.getAuthToken(provider);
     if (!authToken) {
@@ -149,7 +151,7 @@ export default class extends Agent {
 
   async stopSync(
     provider: CalendarProvider,
-    calendarId: string,
+    calendarId: string
   ): Promise<void> {
     const authToken = await this.getAuthToken(provider);
     if (!authToken) {
@@ -211,7 +213,7 @@ export default class extends Agent {
       await this.createCalendarSelectionActivity(
         provider,
         calendars,
-        authResult.authToken,
+        authResult.authToken
       );
     } catch (error) {
       console.error(`Failed to fetch calendars for ${provider}:`, error);
@@ -221,7 +223,7 @@ export default class extends Agent {
   private async createCalendarSelectionActivity(
     provider: CalendarProvider,
     calendars: Calendar[],
-    authToken: string,
+    authToken: string
   ): Promise<void> {
     const links: ActivityLink[] = [];
 
@@ -261,7 +263,7 @@ export default class extends Agent {
 
   async onCalendarSelected(
     _link: ActivityLink,
-    context: CalendarSelectionContext,
+    context: CalendarSelectionContext
   ): Promise<void> {
     console.log("Calendar selectedwith context:", context);
     if (!context) {
@@ -282,11 +284,11 @@ export default class extends Agent {
       await tool.startSync(
         context.authToken,
         context.calendarId,
-        eventCallback,
+        eventCallback
       );
 
       console.log(
-        `Started syncing ${context.provider} calendar: ${context.calendarName}`,
+        `Started syncing ${context.provider} calendar: ${context.calendarName}`
       );
 
       await this.plot.createActivity({
@@ -297,7 +299,7 @@ export default class extends Agent {
     } catch (error) {
       console.error(
         `Failed to start sync for calendar ${context.calendarName}:`,
-        error,
+        error
       );
     }
   }

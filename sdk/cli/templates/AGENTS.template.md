@@ -26,8 +26,8 @@ import { Plot } from "@plotday/sdk/tools/plot";
 export default class MyAgent extends Agent {
   private plot: Plot;
 
-  constructor(protected tools: Tools) {
-    super(tools);
+  constructor(id: string, protected tools: Tools) {
+    super(id, tools);
     this.plot = tools.get(Plot);
     // Store, Run, and Callback methods are available directly via this
   }
@@ -51,8 +51,8 @@ export default class MyAgent extends Agent {
 All tools are accessed through the `tools` parameter in the constructor:
 
 ```typescript
-constructor(protected tools: Tools) {
-  super();
+constructor(id: string, protected tools: Tools) {
+  super(id, tools);
   this.toolName = tools.get(ToolClass);
 }
 ```
