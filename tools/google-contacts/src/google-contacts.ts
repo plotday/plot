@@ -248,8 +248,8 @@ export default class extends Tool implements GoogleContacts {
 
   private auth: Auth;
 
-  constructor(protected tools: Tools) {
-    super(tools);
+  constructor(id: string, protected tools: Tools) {
+    super(id, tools);
     this.auth = tools.get(Auth);
   }
 

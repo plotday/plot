@@ -104,8 +104,8 @@ export class GoogleCalendar extends Tool implements CalendarTool {
   private auth: Auth;
   private webhook: Webhook;
 
-  constructor(protected tools: Tools) {
-    super(tools);
+  constructor(id: string, protected tools: Tools) {
+    super(id, tools);
     this.auth = tools.get(Auth);
     this.webhook = tools.get(Webhook);
   }

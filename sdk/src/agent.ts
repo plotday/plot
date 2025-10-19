@@ -18,8 +18,8 @@ import type {
  * class FlatteringAgent extends Agent<FlatteringAgent> {
  *  private plot: Plot;
  *
- *  constructor(tools: Tools) {
- *    super(tools);
+ *  constructor(id: string, tools: Tools) {
+ *    super(id, tools);
  *    this.plot = tools.get(Plot);
  *  }
  *
@@ -38,9 +38,11 @@ import type {
  * ```
  */
 export abstract class Agent<TSelf = any> {
+  protected id: string;
   protected tools: Tools;
 
-  constructor(tools: Tools) {
+  constructor(id: string, tools: Tools) {
+    this.id = id;
     this.tools = tools;
   }
 
@@ -229,7 +231,7 @@ export abstract class Agent<TSelf = any> {
  */
 export abstract class ITool {}
 
-export type ToolConstructor<T extends ITool> = (abstract new (tools: Tools) => T) | (new (tools: Tools) => T);
+export type ToolConstructor<T extends ITool> = (abstract new (id: string, tools: Tools) => T) | (new (id: string, tools: Tools) => T);
 
 /**
  * Base class for regular tools.
@@ -241,8 +243,8 @@ export type ToolConstructor<T extends ITool> = (abstract new (tools: Tools) => T
  * @example
  * ```typescript
  * class GoogleCalendarTool extends Tool<GoogleCalendarTool> {
- *   constructor(tools: Tools) {
- *     super(tools);
+ *   constructor(id: string, tools: Tools) {
+ *     super(id, tools);
  *     this.auth = tools.get(Auth);
  *   }
  *
@@ -253,9 +255,11 @@ export type ToolConstructor<T extends ITool> = (abstract new (tools: Tools) => T
  * ```
  */
 export abstract class Tool<TSelf = any> implements ITool {
+  protected id: string;
   protected tools: Tools;
 
-  constructor(tools: Tools) {
+  constructor(id: string, tools: Tools) {
+    this.id = id;
     this.tools = tools;
   }
 
