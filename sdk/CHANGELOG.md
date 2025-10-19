@@ -1,5 +1,12 @@
 # @plotday/sdk
 
+## 0.13.0
+
+### Changed
+
+- BREAKING: Add agent id to Agent and Tool constructors ([#22](https://github.com/plotday/plot/pull/22) [`34e7e43`](https://github.com/plotday/plot/commit/34e7e439d2d625e6749195623fe55389ff857e2a))
+- Generate agent-guide.ts from AGENT.template.md ([#21](https://github.com/plotday/plot/pull/21) [`fee051d`](https://github.com/plotday/plot/commit/fee051dcb33729826cb31910e74fbdf8f57acdeb))
+
 ## 0.12.2
 
 ### Fixed
