@@ -62,6 +62,10 @@
       "types": "./dist/common/calendar.d.ts",
       "default": "./dist/common/calendar.js"
     },
+    "./agents-guide": {
+      "types": "./dist/agents-guide.d.ts",
+      "default": "./dist/agents-guide.js"
+    },
     "./tsconfig.base.json": "./tsconfig.base.json"
   },
   "files": [

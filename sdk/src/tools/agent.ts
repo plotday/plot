@@ -1,6 +1,24 @@
 import { type Callback, ITool } from "..";
 
 /**
+ * Agent source code structure containing dependencies and source files.
+ */
+export interface AgentSource {
+  /**
+   * Package dependencies with version specifiers
+   * @example { "@plotday/sdk": "workspace:^", "@plotday/tool-google-calendar": "^1.0.0" }
+   */
+  dependencies: Record<string, string>;
+
+  /**
+   * Source files with their content
+   * Must include "index.ts" as the entry point
+   * @example { "index.ts": "export default class MyAgent extends Agent {...}" }
+   */
+  files: Record<string, string>;
+}
+
+/**
  * Represents a log entry from an agent execution.
  */
 export type Log = {
@@ -49,21 +67,52 @@ export abstract class AgentManager extends ITool {
   abstract create(): Promise<string>;
 
   /**
+   * Generates agent source code from a specification using AI.
+   *
+   * This method uses Claude AI to generate TypeScript source code and dependencies
+   * from a markdown specification. The generated source is validated by attempting
+   * to build it, with iterative error correction (up to 3 attempts).
+   *
+   * @param spec - Markdown specification describing the agent functionality
+   * @returns Promise resolving to agent source (dependencies and files)
+   * @throws When generation fails after maximum attempts
+   *
+   * @example
+   * ```typescript
+   * const source = await agent.generate(`
+   * # Calendar Sync Agent
+   *
+   * This agent syncs Google Calendar events to Plot activities.
+   *
+   * ## Features
+   * - Authenticate with Google
+   * - Sync calendar events
+   * - Create activities from events
+   * `);
+   *
+   * // source.dependencies: { "@plotday/sdk": "workspace:^", ... }
+   * // source.files: { "index.ts": "export default class..." }
+   * ```
+   */
+  abstract generate(_spec: string): Promise<AgentSource>;
+
+  /**
    * Deploys an agent programmatically.
    *
    * This method provides the same functionality as the plot agent deploy CLI
    * command, but can be called from within an agent. Accepts either:
    * - A pre-bundled module (JavaScript code)
-   * - A spec (markdown text describing the functionality) - not yet implemented
+   * - A source object (dependencies + files) which is built in a sandbox
    *
    * @param options - Deployment configuration
    * @param options.agentId - Agent ID for deployment
-   * @param options.module - Pre-bundled agent module code (mutually exclusive with spec)
-   * @param options.spec - Markdown text describing agent functionality (mutually exclusive with module, not yet implemented)
+   * @param options.module - Pre-bundled agent module code (mutually exclusive with source)
+   * @param options.source - Agent source code with dependencies (mutually exclusive with module)
    * @param options.environment - Target environment (defaults to "personal")
    * @param options.name - Optional agent name (required for first deploy)
    * @param options.description - Optional agent description (required for first deploy)
-   * @returns Promise resolving to deployment result with version
+   * @param options.dryRun - If true, validates without deploying (returns errors if any)
+   * @returns Promise resolving to deployment result with version and optional errors
    * @throws When deployment fails or user lacks access
    *
    * @example
@@ -78,36 +127,49 @@ export abstract class AgentManager extends ITool {
    * });
    * console.log(`Deployed version ${result.version}`);
    *
-   * // Deploy with a spec (not yet implemented, will throw error)
+   * // Deploy with source
+   * const source = await agent.generate(spec);
    * const result = await agent.deploy({
    *   agentId: 'abc-123-...',
-   *   spec: '# My Agent\n\nDoes something cool',
+   *   source,
    *   environment: 'personal',
    *   name: 'My Agent',
    * });
+   *
+   * // Validate with dryRun
+   * const result = await agent.deploy({
+   *   agentId: 'abc-123-...',
+   *   source,
+   *   dryRun: true,
+   * });
+   * if (result.errors?.length) {
+   *   console.error('Build errors:', result.errors);
+   * }
    * ```
    */
   abstract deploy(
-    _options: (
+    _options:
       | {
           agentId: string;
           module: string;
-          spec?: never;
+          source?: never;
           environment?: "personal" | "private" | "review";
-          name: string;
+          name?: string;
           description?: string;
+          dryRun?: boolean;
         }
       | {
           agentId: string;
-          spec: string;
+          source: AgentSource;
           module?: never;
           environment?: "personal" | "private" | "review";
-          name: string;
+          name?: string;
           description?: string;
+          dryRun?: boolean;
         }
-    )
   ): Promise<{
     version: string;
+    errors?: string[];
   }>;
 
   /**

@@ -6,6 +6,7 @@ import { join } from "path";
 import { buildCommand } from "./commands/build";
 import { createCommand } from "./commands/create";
 import { deployCommand } from "./commands/deploy";
+import { generateCommand } from "./commands/generate";
 import { lintCommand } from "./commands/lint";
 import { loginCommand } from "./commands/login";
 import { priorityCreateCommand } from "./commands/priority-create";
@@ -70,14 +71,32 @@ agent
   .action(buildCommand);
 
 agent
+  .command("generate")
+  .description("Generate agent code from a spec file")
+  .option("-d, --dir <directory>", "Agent directory to generate in", process.cwd())
+  .option("--spec <file>", "Spec file to generate from (defaults to plot-agent.md)")
+  .option("--id <agentId>", "Agent ID")
+  .option("--deploy-token <token>", "Authentication token")
+  .action(function (this: Command) {
+    const opts = this.optsWithGlobals() as {
+      dir: string;
+      spec?: string;
+      id?: string;
+      deployToken?: string;
+      apiUrl: string;
+    };
+    return generateCommand(opts);
+  });
+
+agent
   .command("deploy")
   .description("Bundle and deploy the agent")
   .option("-d, --dir <directory>", "Agent directory to deploy", process.cwd())
-  .option("--spec <file>", "Spec file to deploy (markdown)")
   .option("--id <agentId>", "Agent ID for deployment")
   .option("--deploy-token <token>", "Authentication token for deployment")
   .option("--name <name>", "Agent name")
   .option("--description <description>", "Agent description")
+  .option("--dry-run", "Validate without deploying")
   .option(
     "-e, --environment <env>",
     "Deployment environment (personal, private, review)",
@@ -86,13 +105,13 @@ agent
   .action(function (this: Command) {
     const opts = this.optsWithGlobals() as {
       dir: string;
-      spec?: string;
       id?: string;
       deployToken?: string;
       apiUrl: string;
       name?: string;
       description?: string;
       environment?: string;
+      dryRun?: boolean;
     };
     return deployCommand(opts);
   });
