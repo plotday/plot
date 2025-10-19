@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
-  "changelog": ["./.changeset/changelog-formatter.js", { "repo": "plotday/plot" }],
+  "changelog": ["./changelog-formatter.js", { "repo": "plotday/plot" }],
   "commit": false,
   "fixed": [],
   "linked": [],
