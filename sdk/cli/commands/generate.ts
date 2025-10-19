@@ -170,7 +170,7 @@ export async function generateCommand(options: GenerateOptions) {
   try {
     out.progress("Generating agent from spec...");
 
-    const response = await fetch(`${options.apiUrl}/v1/agent/${agentId}/generate`, {
+    const response = await fetch(`${options.apiUrl}/v1/agent/generate`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
