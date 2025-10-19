@@ -99,13 +99,9 @@ export async function generateCommand(options: GenerateOptions) {
     }
   }
 
-  // Require agent ID
+  // Generate agent ID if not provided
   if (!agentId) {
-    out.error(
-      "Agent ID is required",
-      "Run 'plot agent create' to generate one, or provide --id flag"
-    );
-    process.exit(1);
+    agentId = crypto.randomUUID();
   }
 
   // Load DEPLOY_TOKEN from multiple sources
