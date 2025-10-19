@@ -72,7 +72,7 @@ export async function generateCommand(options: GenerateOptions) {
   if (!fs.existsSync(specPath)) {
     out.error(
       `Spec file not found: ${path.relative(process.cwd(), specPath)}`,
-      'Create a plot-agent.md file describing your agent, or use --spec to specify a different file'
+      "Create a plot-agent.md file describing your agent, or use --spec to specify a different file"
     );
     process.exit(1);
   }
@@ -168,7 +168,8 @@ export async function generateCommand(options: GenerateOptions) {
 
   // Call generate API
   try {
-    out.progress("Generating agent from spec...");
+    const relativeSpecPath = path.relative(process.cwd(), specPath);
+    out.progress(`Generate agent from ${relativeSpecPath}...`);
 
     const response = await fetch(`${options.apiUrl}/v1/agent/generate`, {
       method: "POST",
@@ -235,7 +236,14 @@ export async function generateCommand(options: GenerateOptions) {
       version: "1.0.0",
       displayName: source.displayName,
       plotAgentId: agentId,
+      scripts: {
+        lint: "plot agent lint",
+        deploy: "plot agent deploy",
+      },
       dependencies: source.dependencies,
+      devDependencies: {
+        typescript: "latest",
+      },
     };
     writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n");
 
@@ -269,7 +277,10 @@ export async function generateCommand(options: GenerateOptions) {
       "utf-8"
     );
     // Replace template variables
-    readmeTemplate = readmeTemplate.replace(/\{\{displayName\}\}/g, source.displayName);
+    readmeTemplate = readmeTemplate.replace(
+      /\{\{displayName\}\}/g,
+      source.displayName
+    );
     readmeTemplate = readmeTemplate.replace(/\{\{packageManager\}\}/g, "pnpm");
     writeFile(readmePath, readmeTemplate);
 
