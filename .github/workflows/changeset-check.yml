@@ -65,3 +65,6 @@ jobs:
           else
             echo "✅ Changeset found (count: $CHANGESET_COUNT)"
           fi
+
+      - name: Validate changeset format
+        run: pnpm validate-changesets

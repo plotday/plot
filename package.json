@@ -9,12 +9,15 @@
     "lint": "pnpm -r run lint",
     "clean": "pnpm -r run clean",
     "changeset": "changeset",
-    "version-packages": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "validate-changesets": "node .changeset/validate-changesets.js",
+    "version-packages": "changeset version && node .changeset/reorganize-changelogs.js",
+    "release": "pnpm build && changeset publish",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.1",
     "@changesets/cli": "^2.29.7",
+    "husky": "^9.1.7",
     "typescript": "^5.9.3"
   }
 }

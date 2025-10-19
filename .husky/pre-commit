@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Validate changeset format before committing
+pnpm validate-changesets
