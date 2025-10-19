@@ -148,25 +148,20 @@ export abstract class AgentManager extends ITool {
    * ```
    */
   abstract deploy(
-    _options:
+    _options: {
+      agentId: string;
+      environment?: "personal" | "private" | "review";
+      name?: string;
+      description?: string;
+      dryRun?: boolean;
+    } & (
       | {
-          agentId: string;
           module: string;
-          source?: never;
-          environment?: "personal" | "private" | "review";
-          name?: string;
-          description?: string;
-          dryRun?: boolean;
         }
       | {
-          agentId: string;
           source: AgentSource;
-          module?: never;
-          environment?: "personal" | "private" | "review";
-          name?: string;
-          description?: string;
-          dryRun?: boolean;
         }
+    )
   ): Promise<{
     version: string;
     errors?: string[];

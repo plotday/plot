@@ -100,9 +100,9 @@ export async function createCommand(options: CreateOptions) {
   fs.mkdirSync(path.join(agentPath, "src"), { recursive: true });
 
   // Read SDK version from package.json
-  const sdkPackagePath = path.join(__dirname, "..", "..", "package.json");
   let sdkVersion = "^0.1.0"; // Fallback version
   try {
+    const sdkPackagePath = path.join(__dirname, "..", "..", "package.json");
     const sdkPackage = JSON.parse(fs.readFileSync(sdkPackagePath, "utf-8"));
     sdkVersion = `^${sdkPackage.version}`;
   } catch (error) {

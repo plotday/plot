@@ -70,6 +70,62 @@
       "types": "./dist/sdk-docs.d.ts",
       "default": "./dist/sdk-docs.js"
     },
+    "./llm-docs": {
+      "types": "./dist/llm-docs/index.d.ts",
+      "default": "./dist/llm-docs/index.js"
+    },
+    "./llm-docs/index": {
+      "types": "./dist/llm-docs/index.d.ts",
+      "default": "./dist/llm-docs/index.js"
+    },
+    "./llm-docs/agent": {
+      "types": "./dist/llm-docs/agent.d.ts",
+      "default": "./dist/llm-docs/agent.js"
+    },
+    "./llm-docs/plot": {
+      "types": "./dist/llm-docs/plot.d.ts",
+      "default": "./dist/llm-docs/plot.js"
+    },
+    "./llm-docs/tag": {
+      "types": "./dist/llm-docs/tag.d.ts",
+      "default": "./dist/llm-docs/tag.js"
+    },
+    "./llm-docs/tools/agent": {
+      "types": "./dist/llm-docs/tools/agent.d.ts",
+      "default": "./dist/llm-docs/tools/agent.js"
+    },
+    "./llm-docs/tools/ai": {
+      "types": "./dist/llm-docs/tools/ai.d.ts",
+      "default": "./dist/llm-docs/tools/ai.js"
+    },
+    "./llm-docs/tools/auth": {
+      "types": "./dist/llm-docs/tools/auth.d.ts",
+      "default": "./dist/llm-docs/tools/auth.js"
+    },
+    "./llm-docs/tools/callback": {
+      "types": "./dist/llm-docs/tools/callback.d.ts",
+      "default": "./dist/llm-docs/tools/callback.js"
+    },
+    "./llm-docs/tools/plot": {
+      "types": "./dist/llm-docs/tools/plot.d.ts",
+      "default": "./dist/llm-docs/tools/plot.js"
+    },
+    "./llm-docs/tools/run": {
+      "types": "./dist/llm-docs/tools/run.d.ts",
+      "default": "./dist/llm-docs/tools/run.js"
+    },
+    "./llm-docs/tools/store": {
+      "types": "./dist/llm-docs/tools/store.d.ts",
+      "default": "./dist/llm-docs/tools/store.js"
+    },
+    "./llm-docs/tools/webhook": {
+      "types": "./dist/llm-docs/tools/webhook.d.ts",
+      "default": "./dist/llm-docs/tools/webhook.js"
+    },
+    "./llm-docs/common/calendar": {
+      "types": "./dist/llm-docs/common/calendar.d.ts",
+      "default": "./dist/llm-docs/common/calendar.js"
+    },
     "./tsconfig.base.json": "./tsconfig.base.json"
   },
   "files": [
@@ -83,7 +139,8 @@
   "sideEffects": false,
   "scripts": {
     "lint": "tsc --noEmit",
-    "build": "tsc --project tsconfig.build.json && tsc --project tsconfig.cli.json && node postbuild.js",
+    "prebuild": "tsx prebuild.ts",
+    "build": "tsx prebuild.ts && tsc --project tsconfig.build.json && tsc --project tsconfig.cli.json && node postbuild.js",
     "clean": "rm -rf dist bin"
   },
   "dependencies": {
@@ -96,6 +153,7 @@
   },
   "devDependencies": {
     "@types/prompts": "^2.4.9",
+    "tsx": "^4.19.2",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
