@@ -3,24 +3,41 @@ import { z } from "zod";
 
 import { createClient } from "@plotday/db";
 
-import { storeAgentModule } from "../agent";
+import { deployAgent } from "../agent/deployment";
 import type { Bindings } from "../env";
 import { handleValidationError } from "../utils/validation";
 
 const agent = new Hono<{ Bindings: Bindings }>();
 
-const AgentDeploymentSchema = z.object({
-  module: z.string(),
-  env: z.record(z.string(), z.any()).optional(),
-  name: z.string().optional(),
-  description: z.string().optional(),
-  environment: z.enum(["personal", "private", "review"]).optional().default("personal"),
-});
+const AgentDeploymentSchema = z
+  .object({
+    module: z.string().optional(),
+    source: z
+      .object({
+        dependencies: z.record(z.string(), z.string()),
+        files: z.record(z.string(), z.string()),
+      })
+      .optional(),
+    dryRun: z.boolean().optional(),
+    env: z.record(z.string(), z.any()).optional(),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    environment: z
+      .enum(["personal", "private", "review"])
+      .optional()
+      .default("personal"),
+  })
+  .refine(
+    (data) => (data.module !== undefined) !== (data.source !== undefined),
+    {
+      message: "Exactly one of 'module' or 'source' must be provided",
+    }
+  );
 
-// PUT /agent/:id - Deploy agent
+// POST /agent/:id - Deploy agent
 // For personal environment: no id needed, authenticated by user token
 // For other environments: id is agent_admin.id (UUID), auth by user token (priority access) or publisher token
-agent.put("/agent/:id", async (c) => {
+agent.post("/agent/:id", async (c) => {
   const urlAdminId = c.req.param("id"); // This is agent_admin.id for non-personal
   const userToken = c.var.userToken;
   const publisherToken = c.var.publisherToken;
@@ -38,7 +55,8 @@ agent.put("/agent/:id", async (c) => {
     return handleValidationError(parseResult.error);
   }
 
-  const { module, env, name, description, environment } = parseResult.data;
+  const { module, source, dryRun, name, description, environment } =
+    parseResult.data;
 
   const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
 
@@ -163,77 +181,39 @@ agent.put("/agent/:id", async (c) => {
     }
   }
 
-  // Store agent module in R2
-  // Use admin_id as storage key
-  const storageKey = adminId!;
-  let version: string;
-  let dependencies: any[];
+  // Deploy agent using common implementation
+  let dependencies: string[];
+  let errors: string[] | undefined;
   try {
-    const storeResult = await storeAgentModule(c.env, storageKey, module);
-    version = storeResult.version;
-    dependencies = storeResult.dependencies;
+    const result = await deployAgent({
+      env: c.env,
+      supabase,
+      adminId: adminId!,
+      input: module !== undefined ? { module } : { source: source! },
+      environment,
+      name: name!,
+      description,
+      userId,
+      dryRun,
+    });
+    dependencies = result.dependencies;
+    errors = result.errors;
   } catch (error) {
-    console.error("Error storing agent module:", error);
+    console.error("Error deploying agent:", error);
     return new Response(
-      `Error storing agent module: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Error deploying agent: ${error instanceof Error ? error.message : "Unknown error"}`,
       { status: 500 }
     );
   }
 
-  // Check if agent already exists for this environment
-  // Query by id and environment (compound primary key)
-  const { data: existingAgent } = await supabase
-    .from("agent")
-    .select("name, description")
-    .eq("id", adminId)
-    .eq("environment", environment)
-    .maybeSingle();
-
-  if (!existingAgent) {
-    // Create new agent
-    const { data: newAgent, error: createError } = await supabase
-      .from("agent")
-      .insert({
-        id: adminId,
-        name,
-        description,
-        version,
-        environment,
-        user_id: userId,
-      })
-      .select()
-      .single();
-
-    if (createError || !newAgent) {
-      console.error("Error creating agent:", createError);
-      return new Response(`Error creating agent: ${createError?.message}`, {
-        status: 500,
-      });
-    }
-  } else {
-    // Update existing agent
-    const updateData: Record<string, any> = { version };
-    if (env !== undefined) updateData.env = env;
-    if (name !== undefined) updateData.name = name;
-    if (description !== undefined) updateData.description = description;
-
-    const { data: updatedAgent, error: updateError } = await supabase
-      .from("agent")
-      .update(updateData)
-      .eq("id", adminId)
-      .eq("environment", environment)
-      .select()
-      .single();
-
-    if (updateError || !updatedAgent) {
-      console.error("Error updating agent:", updateError);
-      return new Response(`Error updating agent: ${updateError?.message}`, {
-        status: 500,
-      });
-    }
+  // If dryRun, return validation result
+  if (dryRun) {
+    return c.json({
+      success: !errors || errors.length === 0,
+      errors,
+    });
   }
 
-  // Module already stored in R2 at the beginning of this function
   // Fetch the final agent to return
   const { data: finalAgent, error: finalError } = await supabase
     .from("agent")
@@ -249,51 +229,122 @@ agent.put("/agent/:id", async (c) => {
     });
   }
 
-  // If deploying to review and auto_approve is true, also deploy to public
-  if (environment === "review") {
-    const { data: agentAdmin, error: adminFetchError } = await supabase
+  return c.json({
+    ...finalAgent,
+    dependencies,
+  });
+});
+
+// POST /agent/:id/generate - Generate agent source from specification
+agent.post("/agent/:id/generate", async (c) => {
+  const urlAdminId = c.req.param("id");
+  const userToken = c.var.userToken;
+  const publisherToken = c.var.publisherToken;
+  const user = c.var.user;
+  const publisher = c.var.publisher;
+
+  if (!userToken && !publisherToken) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  // Parse and validate request body
+  const rawBody = await c.req.json();
+  const parseResult = z
+    .object({
+      spec: z.string(),
+    })
+    .safeParse(rawBody);
+
+  if (!parseResult.success) {
+    return handleValidationError(parseResult.error);
+  }
+
+  const { spec } = parseResult.data;
+
+  if (!spec || spec.trim().length === 0) {
+    return new Response("Bad request: spec cannot be empty", { status: 400 });
+  }
+
+  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+
+  // Validate admin_id is provided
+  if (!urlAdminId) {
+    return new Response("Bad request: agent admin ID required", {
+      status: 400,
+    });
+  }
+
+  const adminId = urlAdminId;
+
+  // Auth check based on token type
+  if (userToken && user) {
+    // For user token: check agent_admin exists and user has access
+    const { data: agentAdmin, error: adminError } = await supabase
       .from("agent_admin")
-      .select("auto_approve")
+      .select("id, priority_id")
+      .eq("id", adminId)
+      .maybeSingle();
+
+    if (adminError || !agentAdmin) {
+      return new Response("Bad request: agent admin not found", { status: 404 });
+    }
+
+    // Check if user has access to the admin's priority (if set)
+    if (agentAdmin.priority_id) {
+      const { data: hasAccess, error: accessError } = await supabase.rpc(
+        "user_has_priority_access",
+        {
+          user_id: user.id,
+          target_priority_id: agentAdmin.priority_id,
+        }
+      );
+
+      if (accessError || !hasAccess) {
+        return new Response(
+          "Forbidden: you do not have access to this agent's priority",
+          {
+            status: 403,
+          }
+        );
+      }
+    }
+  } else if (publisherToken && publisher) {
+    // For publisher token: check publisher matches
+    const { data: agentAdmin, error: adminError } = await supabase
+      .from("agent_admin")
+      .select("id, publisher_id")
       .eq("id", adminId)
       .single();
 
-    if (adminFetchError) {
-      console.error("Error fetching agent_admin for auto_approve check:", adminFetchError);
-    } else if (agentAdmin?.auto_approve) {
-      console.log(`Auto-approving agent ${adminId} to public environment`);
-
-      // Upsert public agent (compound key: id, environment)
-      const { error: upsertPublicError } = await supabase
-        .from("agent")
-        .upsert(
-          {
-            id: adminId,
-            environment: "public",
-            name,
-            description,
-            version,
-            user_id: null, // Public agents have no user_id
-          },
-          {
-            onConflict: "id,environment",
-          }
-        );
-
-      if (upsertPublicError) {
-        console.error("Error auto-deploying to public:", upsertPublicError);
-      } else {
-        console.log(`Successfully auto-deployed agent ${adminId} to public environment`);
-      }
+    if (adminError || !agentAdmin) {
+      return new Response("Bad request: agent admin not found", { status: 404 });
     }
+
+    if (publisher.id !== agentAdmin.publisher_id) {
+      return new Response(
+        "Forbidden: publisher token does not match agent publisher",
+        {
+          status: 403,
+        }
+      );
+    }
+  } else {
+    return new Response("Unauthorized", { status: 401 });
   }
 
-  // Extract only direct dependencies (id only) for the response
-  const directDependencies = dependencies.map((dep) => dep.id);
+  // Generate agent source from spec
+  try {
+    const { generateAgent } = await import("../agent/generator");
+    const source = await generateAgent(spec, c.env);
 
-  return c.json({
-    ...finalAgent,
-    dependencies: directDependencies,
-  });
+    return c.json(source);
+  } catch (error) {
+    console.error("Error generating agent:", error);
+    return new Response(
+      `Error generating agent: ${error instanceof Error ? error.message : "Unknown error"}`,
+      { status: 500 }
+    );
+  }
 });
 
 export default agent;

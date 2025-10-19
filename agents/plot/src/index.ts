@@ -5,7 +5,7 @@ export default class extends Agent {
   private plot: Plot;
 
   constructor(protected tools: Tools) {
-    super();
+    super(tools);
     this.plot = tools.get(Plot);
   }
 

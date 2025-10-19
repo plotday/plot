@@ -1,11 +1,11 @@
 import type { SupabaseClient } from "@plotday/db";
+import type { Tool } from "@plotday/sdk";
 
 import type { ToolDependencies } from "..";
 import type { Bindings } from "../../env";
 import { type Callbacks } from "../../state/callbacks";
 import { type LogSubscriptions } from "../../state/log-subscriptions";
 import { type Storage } from "../../state/storage";
-import type { Tool } from "@plotday/sdk";
 import { Agent } from "./agent";
 import { AI } from "./ai";
 import { Auth } from "./auth";
@@ -51,11 +51,7 @@ export function createTool(
       });
       break;
     case "AI":
-      tool = new AI({
-        accountId: env.AI_GATEWAY_ACCOUNT_ID,
-        gatewayId: env.AI_GATEWAY_ID,
-        ai: env.AI,
-      });
+      tool = new AI(env);
       break;
     case "Auth":
       tool = new Auth({
@@ -102,6 +98,7 @@ export function createTool(
       break;
     case "AgentManager":
       tool = new Agent({
+        env,
         supabase,
         priorityAgentId,
         logSubscriptions,

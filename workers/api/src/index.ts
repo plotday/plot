@@ -1,3 +1,4 @@
+import { Container } from "@cloudflare/containers";
 import { withSentry } from "@sentry/cloudflare";
 import { Hono } from "hono";
 
@@ -32,6 +33,11 @@ export { Callbacks } from "./state/callbacks";
 export { Broadcast } from "./state/broadcast";
 export { Usage } from "./state/usage";
 export { LogSubscriptions } from "./state/log-subscriptions";
+
+export class AgentBuilder extends Container {
+  defaultPort = 3000;
+  sleepAfter = "5m";
+}
 
 // Export types for external use
 export type {

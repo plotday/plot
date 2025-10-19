@@ -1,4 +1,5 @@
 {
+  "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "api",
   "main": "src/index.ts",
   "compatibility_date": "2025-10-01",
@@ -14,6 +15,10 @@
         "Usage",
         "LogSubscriptions"
       ]
+    },
+    {
+      "tag": "v7",
+      "new_sqlite_classes": ["AgentBuilder"]
     }
   ],
   "env": {
@@ -26,6 +31,15 @@
       "worker_loaders": [
         {
           "binding": "LOADER"
+        }
+      ],
+      "containers": [
+        {
+          "name": "AGENT_BUILDER",
+          "class_name": "AgentBuilder",
+          "image": "./containers/agent-builder/Dockerfile",
+          "instance_type": "basic",
+          "max_instances": 1
         }
       ],
       "queues": {
@@ -85,6 +99,10 @@
           {
             "name": "LOG_SUBSCRIPTIONS",
             "class_name": "LogSubscriptions"
+          },
+          {
+            "name": "AGENT_BUILDER",
+            "class_name": "AgentBuilder"
           }
         ]
       },
@@ -110,6 +128,14 @@
       "worker_loaders": [
         {
           "binding": "LOADER"
+        }
+      ],
+      "containers": [
+        {
+          "name": "AGENT_BUILDER",
+          "class_name": "AgentBuilder",
+          "image": "./containers/agent-builder/Dockerfile",
+          "max_instances": 3
         }
       ],
       "queues": {
@@ -169,6 +195,10 @@
           {
             "name": "LOG_SUBSCRIPTIONS",
             "class_name": "LogSubscriptions"
+          },
+          {
+            "name": "AGENT_BUILDER",
+            "class_name": "AgentBuilder"
           }
         ]
       },

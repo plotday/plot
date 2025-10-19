@@ -11,6 +11,8 @@ import type {
   AIToolSet,
   AI as IAI,
 } from "@plotday/sdk/tools/ai";
+
+import type { Bindings } from "../../env";
 import { Tool } from "./tool";
 
 export class AI extends Tool implements IAI {
@@ -19,34 +21,33 @@ export class AI extends Tool implements IAI {
   private google: ReturnType<typeof createGoogleGenerativeAI>;
   private workersai: ReturnType<typeof createWorkersAI>;
 
-  constructor({
-    accountId,
-    gatewayId,
-    ai,
-  }: {
-    accountId: string;
-    gatewayId: string;
-    ai: Ai;
-  }) {
+  constructor(env: Bindings) {
     super();
 
-    const gatewayBaseUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
+    const gatewayBaseUrl = `https://gateway.ai.cloudflare.com/v1/${env.AI_GATEWAY_ACCOUNT_ID}/${env.AI_GATEWAY_ID}`;
+    const gatewayHeaders = {
+      "cf-aig-authorization": `Bearer ${env.AI_GATEWAY_TOKEN}`,
+    };
 
     // Initialize provider instances with AI Gateway
     this.openai = createOpenAI({
       baseURL: `${gatewayBaseUrl}/openai`,
+      headers: gatewayHeaders,
     });
 
     this.anthropic = createAnthropic({
       baseURL: `${gatewayBaseUrl}/anthropic`,
+      apiKey: env.ANTHROPIC_API_KEY,
+      headers: gatewayHeaders,
     });
 
     this.google = createGoogleGenerativeAI({
       baseURL: `${gatewayBaseUrl}/google-ai-studio/v1beta`,
+      headers: gatewayHeaders,
     });
 
     // Workers AI doesn't go through the gateway, it uses the binding directly
-    this.workersai = createWorkersAI({ binding: ai });
+    this.workersai = createWorkersAI({ binding: env.AI });
   }
 
   async prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(

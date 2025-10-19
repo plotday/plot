@@ -1,3 +1,4 @@
+import { type AgentBuilder } from "../";
 import { type RunMessage } from "./agent/tools/run";
 import { type Broadcast } from "./state/broadcast";
 import { type Callbacks } from "./state/callbacks";
@@ -77,7 +78,11 @@ export type Bindings = {
 
   readonly AI_GATEWAY_ACCOUNT_ID: string;
   readonly AI_GATEWAY_ID: string;
+  readonly AI_GATEWAY_TOKEN: string;
+  // Can hopefully remove this once we can use the Vercel AI SDK with Cloudflare AI Gateway without requiring an API key.
+  readonly ANTHROPIC_API_KEY: string;
 
+  readonly AGENT_BUILDER: DurableObjectNamespace<AgentBuilder>;
   readonly LOADER: WorkerLoader;
   readonly RUN_QUEUE: Queue<RunMessage>;
   readonly UPDATES_QUEUE: Queue<UpdateMessage>;

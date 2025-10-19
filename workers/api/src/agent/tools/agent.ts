@@ -1,25 +1,33 @@
 import type { SupabaseClient } from "@plotday/db";
 
+import { deployAgent } from "../deployment";
+import { generateAgent } from "../generator";
 import { type LogSubscriptions } from "../../state/log-subscriptions";
+import type { Bindings } from "../../env";
 import type { AgentManager as IAgent } from "@plotday/sdk/tools/agent";
 import type { Callback } from "@plotday/sdk/tools/callback";
+import type { AgentSource } from "../types";
 import { Tool } from "./tool";
 
 export class Agent extends Tool implements IAgent {
+  private env: Bindings;
   private supabase: SupabaseClient;
   private priorityAgentId: string;
   private logSubscriptionsNamespace: DurableObjectNamespace<LogSubscriptions>;
 
   constructor({
+    env,
     supabase,
     priorityAgentId,
     logSubscriptions,
   }: {
+    env: Bindings;
     supabase: SupabaseClient;
     priorityAgentId: string;
     logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
   }) {
     super();
+    this.env = env;
     this.supabase = supabase;
     this.priorityAgentId = priorityAgentId;
     this.logSubscriptionsNamespace = logSubscriptions;
@@ -104,23 +112,44 @@ export class Agent extends Tool implements IAgent {
     return agentAdminId;
   }
 
-  async deploy({
-    agentId: agentAdminId,
-    module: _module,
-    environment = "personal",
-    name,
-    description,
-  }: {
-    agentId: string;
-    module: string;
-    environment?: "personal" | "private" | "review";
-    name?: string;
-    description?: string;
-  }): Promise<{ version: string }> {
+  async generate(spec: string): Promise<AgentSource> {
+    return await generateAgent(spec, this.env);
+  }
+
+  async deploy(
+    options:
+      | {
+          agentId: string;
+          module: string;
+          source?: never;
+          environment?: "personal" | "private" | "review";
+          name?: string;
+          description?: string;
+          dryRun?: boolean;
+        }
+      | {
+          agentId: string;
+          source: AgentSource;
+          module?: never;
+          environment?: "personal" | "private" | "review";
+          name?: string;
+          description?: string;
+          dryRun?: boolean;
+        }
+  ): Promise<{ version: string; errors?: string[] }> {
+    const {
+      agentId: agentAdminId,
+      module: _module,
+      source: _source,
+      environment = "personal",
+      name,
+      description,
+      dryRun,
+    } = options;
     // Verify user has access to deploy this agent
     await this.verifyAgentAccess(agentAdminId);
 
-    // Check if agent already exists with this id and environment (compound key)
+    // Check if agent already exists to determine if name is required
     const { data: existingAgent, error: existingError } = await this.supabase
       .from("agent")
       .select("name, description, user_id")
@@ -134,70 +163,39 @@ export class Agent extends Tool implements IAgent {
       );
     }
 
-    // Generate timestamp version
-    const version = Date.now().toString();
-
-    if (!existingAgent) {
-      // First deploy: Create new agent
-      if (!name || !description) {
-        throw new Error(
-          "name and description are required for first deployment"
-        );
-      }
-
-      // Get user_id for personal environment
-      let userId: string | null = null;
-      if (environment === "personal") {
-        const {
-          data: { user },
-        } = await this.supabase.auth.getUser();
-        if (!user) {
-          throw new Error("User not authenticated");
-        }
-        userId = user.id;
-      }
-
-      const { data: newAgent, error: createError } = await this.supabase
-        .from("agent")
-        .insert({
-          id: agentAdminId,
-          name,
-          description,
-          version,
-          environment,
-          user_id: userId,
-        })
-        .select()
-        .single();
-
-      if (createError || !newAgent) {
-        throw new Error(`Failed to create agent: ${createError?.message}`);
-      }
-    } else {
-      // Update existing agent for this environment
-      const updateData: Record<string, any> = { version };
-      if (name !== undefined) updateData.name = name;
-      if (description !== undefined) updateData.description = description;
-
-      const { data: updatedAgent, error: updateError } = await this.supabase
-        .from("agent")
-        .update(updateData)
-        .eq("id", agentAdminId)
-        .eq("environment", environment)
-        .select()
-        .single();
-
-      if (updateError || !updatedAgent) {
-        throw new Error(`Failed to update agent: ${updateError?.message}`);
-      }
+    // Require name for first deployment
+    if (!existingAgent && !name) {
+      throw new Error("name is required for first deployment");
     }
 
-    // Note: Module storage in R2 is handled by the API endpoint
-    // This tool is meant to be called from within the agent context,
-    // not as a replacement for the HTTP API
+    // Get user_id for personal environment
+    let userId: string | null = null;
+    if (environment === "personal") {
+      const {
+        data: { user },
+      } = await this.supabase.auth.getUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+      userId = user.id;
+    }
+
+    // Use common deployment implementation
+    const result = await deployAgent({
+      env: this.env,
+      supabase: this.supabase,
+      adminId: agentAdminId,
+      input: _module !== undefined ? { module: _module } : { source: _source! },
+      environment,
+      name: name || existingAgent?.name || "",
+      description,
+      userId,
+      dryRun,
+    });
 
     return {
-      version,
+      version: result.version,
+      errors: result.errors,
     };
   }
 
