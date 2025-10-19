@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.12.0
+
+### Changed
+
+- BREAKING: Use ModelPreferences instead of an explicit AIModel in AI.prompt(). This supports BYOK and user preferences. ([#15](https://github.com/plotday/plot/pull/15) [`7cd2d7e`](https://github.com/plotday/plot/commit/7cd2d7e2f706abf464c2436076c30567e96a01f3))
+
 ## 0.11.1
 
 ### Changed
