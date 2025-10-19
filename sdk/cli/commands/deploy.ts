@@ -6,6 +6,7 @@ import prompts from "prompts";
 import * as out from "../utils/output";
 import { getGlobalTokenPath } from "../utils/token";
 import { bundleAgent } from "../utils/bundle";
+import { handleSSEStream } from "../utils/sse";
 
 interface DeployOptions {
   dir: string;
@@ -257,6 +258,7 @@ export async function deployCommand(options: DeployOptions) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Accept: "text/event-stream",
           Authorization: `Bearer ${deployToken}`,
         },
         body: JSON.stringify(requestBody),
@@ -271,7 +273,12 @@ export async function deployCommand(options: DeployOptions) {
         process.exit(1);
       }
 
-      const result = (await response.json()) as any;
+      // Handle SSE stream with progress updates
+      const result = (await handleSSEStream(response, {
+        onProgress: (message) => {
+          out.progress(message);
+        },
+      })) as any;
 
       // Handle dryRun response
       if (options.dryRun) {

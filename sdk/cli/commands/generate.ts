@@ -1,10 +1,13 @@
+import { execSync } from "child_process";
 import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
 import prompts from "prompts";
 
 import * as out from "../utils/output";
+import { detectPackageManager } from "../utils/packageManager";
 import { getGlobalTokenPath } from "../utils/token";
+import { handleSSEStream } from "../utils/sse";
 
 interface GenerateOptions {
   dir: string;
@@ -175,6 +178,7 @@ export async function generateCommand(options: GenerateOptions) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Accept: "text/event-stream",
         Authorization: `Bearer ${deployToken}`,
       },
       body: JSON.stringify({ spec: specContent }),
@@ -189,7 +193,12 @@ export async function generateCommand(options: GenerateOptions) {
       process.exit(1);
     }
 
-    const source = (await response.json()) as AgentSource;
+    // Handle SSE stream with progress updates
+    const source = (await handleSSEStream(response, {
+      onProgress: (message) => {
+        out.progress(message);
+      },
+    })) as AgentSource;
 
     // Create agent directory if it doesn't exist
     if (!fs.existsSync(agentPath)) {
@@ -293,6 +302,41 @@ export async function generateCommand(options: GenerateOptions) {
     for (const [filename, content] of Object.entries(source.files)) {
       const filePath = path.join(srcPath, filename);
       writeFile(filePath, content);
+    }
+
+    out.blank();
+
+    // Detect package manager and install dependencies
+    const packageManager = detectPackageManager();
+
+    // Update @plotday/sdk to latest and install packages
+    try {
+      out.progress("Updating @plotday/sdk to latest version...");
+
+      const updateCommand =
+        packageManager === "npm" ? "npm install @plotday/sdk@latest" :
+        packageManager === "pnpm" ? "pnpm add @plotday/sdk@latest" :
+        "yarn add @plotday/sdk@latest";
+
+      execSync(updateCommand, { cwd: agentPath, stdio: "ignore" });
+
+      out.progress("Installing dependencies...");
+
+      const installCommand =
+        packageManager === "yarn" ? "yarn" :
+        `${packageManager} install`;
+
+      execSync(installCommand, { cwd: agentPath, stdio: "ignore" });
+
+      out.success("Dependencies installed successfully!");
+    } catch (error) {
+      out.warning(
+        "Couldn't install dependencies",
+        [
+          `Run '${packageManager === "npm" ? "npm install @plotday/sdk@latest" : packageManager === "pnpm" ? "pnpm add @plotday/sdk@latest" : "yarn add @plotday/sdk@latest"}' in ${options.dir}`,
+          `Then run '${packageManager === "yarn" ? "yarn" : `${packageManager} install`}'`
+        ]
+      );
     }
 
     out.blank();
