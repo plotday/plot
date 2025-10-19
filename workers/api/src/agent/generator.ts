@@ -3,6 +3,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 
 import { AGENTS_GUIDE } from "@plotday/sdk/agents-guide";
+import { getSDKDocumentation } from "@plotday/sdk/sdk-docs";
 
 import type { Bindings } from "../env";
 import { buildAgent } from "./builder";
@@ -97,11 +98,17 @@ ${previousErrors?.join("\n\n")}
 Please fix these errors and generate a corrected version.`;
     }
 
-    // System prompt structured for optimal caching:
-    // 1. Large static content first (AGENTS_GUIDE) - will be cached by Claude
-    // 2. Small static instructions after
-    // Variable content (spec, errors) goes in user prompt
-    const systemPrompt = `You are an expert at generating Plot agents based on this guide:
+    // Get complete SDK type definitions with import paths
+    const sdkDocs = getSDKDocumentation();
+
+    // System prompt structured for optimal prompt caching:
+    // 1. SDK type definitions (largest, most static) - FIRST for best caching
+    // 2. AGENTS_GUIDE (large, static) - SECOND for caching
+    // 3. Instructions (small, static) - THIRD
+    // Variable content (spec, errors) goes in user prompt to preserve cache
+    const systemPrompt = `You are an expert at generating Plot agents.
+
+${sdkDocs}
 
 ${AGENTS_GUIDE}`;
 

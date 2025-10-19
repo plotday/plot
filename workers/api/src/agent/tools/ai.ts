@@ -5,11 +5,13 @@ import { Output, generateText, jsonSchema } from "ai";
 import type { Static, TSchema } from "typebox";
 import { createWorkersAI } from "workers-ai-provider";
 
-import type {
-  AIRequest,
-  AIResponse,
-  AIToolSet,
-  AI as IAI,
+import {
+  AIModel,
+  type AIRequest,
+  type AIResponse,
+  type AIToolSet,
+  type AI as IAI,
+  type ModelPreferences,
 } from "@plotday/sdk/tools/ai";
 
 import type { Bindings } from "../../env";
@@ -50,11 +52,83 @@ export class AI extends Tool implements IAI {
     this.workersai = createWorkersAI({ binding: env.AI });
   }
 
+  /**
+   * Selects the best AI model based on speed and cost preferences.
+   * Maps preference combinations to specific models optimized for those requirements.
+   * Uses only Anthropic and Workers AI models by default.
+   */
+  private selectModel(preferences: ModelPreferences): AIModel {
+    const { speed, cost, hint } = preferences;
+
+    // Allow explicit model override via hint, but only for Workers AI and Anthropic
+    if (hint) {
+      const hintStr = hint.toLowerCase();
+      if (hintStr.startsWith("anthropic/") || (!hintStr.startsWith("openai/") && !hintStr.startsWith("google/"))) {
+        // Accept anthropic/ models and any model without a provider prefix (assumed to be Workers AI)
+        return hint as AIModel;
+      }
+      // Ignore hints for other providers and fall through to preference-based selection
+    }
+
+    // Model selection matrix based on speed and cost preferences
+    // Fast tier: Optimized for low latency
+    if (speed === "fast") {
+      if (cost === "low") {
+        // Workers AI: Free, very fast, 1B model
+        return AIModel.LLAMA_32_1B;
+      } else if (cost === "medium") {
+        // Anthropic: Extremely fast with excellent quality
+        // Alternatives: GPT_4O_MINI, GEMINI_25_FLASH_LITE
+        return AIModel.CLAUDE_HAIKU_45;
+      } else {
+        // Anthropic: Premium fast model with best quality
+        // Alternatives: GPT_4O_MINI, GEMINI_25_FLASH
+        return AIModel.CLAUDE_HAIKU_45;
+      }
+    }
+
+    // Balanced tier: Good mix of capability and speed
+    if (speed === "balanced") {
+      if (cost === "low") {
+        // Workers AI: Free, 17B reasoning model
+        return AIModel.LLAMA_4_SCOUT_17B;
+      } else if (cost === "medium") {
+        // Workers AI: Free, capable 70B model
+        // Alternatives: GPT_5_MINI, GEMINI_25_FLASH
+        return AIModel.LLAMA_33_70B;
+      } else {
+        // Anthropic: Hybrid reasoning model with fast responses and deeper thinking
+        // Alternatives: GPT_5, GEMINI_25_FLASH
+        return AIModel.CLAUDE_37_SONNET;
+      }
+    }
+
+    // Capable tier: Maximum reasoning and problem-solving
+    if (speed === "capable") {
+      if (cost === "low") {
+        // Workers AI: Free, 32B reasoning model (DeepSeek R1)
+        return AIModel.DEEPSEEK_R1_32B;
+      } else if (cost === "medium") {
+        // Anthropic: Advanced reasoning with thinking mode
+        // Alternatives: GEMINI_25_PRO, GPT_5_PRO
+        return AIModel.CLAUDE_37_SONNET;
+      } else {
+        // Anthropic: Best-in-class reasoning and problem-solving
+        // Alternatives: GPT_5_PRO, GEMINI_25_PRO
+        return AIModel.CLAUDE_SONNET_45;
+      }
+    }
+
+    // Default fallback: Fast, reliable, good quality
+    // Alternatives: GPT_5_MINI, GEMINI_25_FLASH, LLAMA_33_70B
+    return AIModel.CLAUDE_HAIKU_45;
+  }
+
   async prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(
     request: AIRequest<TOOLS, SCHEMA>
   ): Promise<AIResponse<TOOLS, SCHEMA>> {
     const {
-      model: modelEnum,
+      model: modelInput,
       system,
       prompt,
       messages,
@@ -65,6 +139,9 @@ export class AI extends Tool implements IAI {
       topP,
       toolChoice,
     } = request;
+
+    // Determine the actual model to use from preferences
+    const modelEnum = this.selectModel(modelInput);
 
     // Determine which provider to use based on the model enum value
     let model: any;
