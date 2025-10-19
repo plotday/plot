@@ -4,13 +4,13 @@
 
 ### Changed
 
-- Add instructions to AGENTS.md to avoid accidentally reprocessing agent-created activities ([#10]([#10](https://github.com/plotday/plot/pull/10)))
-- improved changelog format ([#9]([#9](https://github.com/plotday/plot/pull/9)))
-- Generate a plotAgentId on "plot agent generate" if none specified ([#10]([#10](https://github.com/plotday/plot/pull/10)))
+- Add instructions to AGENTS.md to avoid accidentally reprocessing agent-created activities ([#10](https://github.com/plotday/plot/pull/10) [`6dc8403`](https://github.com/plotday/plot/commit/6dc8403))
+- improved changelog format ([#9](https://github.com/plotday/plot/pull/9) [`ceecf33`](https://github.com/plotday/plot/commit/ceecf33))
+- Generate a plotAgentId on "plot agent generate" if none specified ([#10](https://github.com/plotday/plot/pull/10) [`6dc8403`](https://github.com/plotday/plot/commit/6dc8403))
 
 ### Fixed
 
-- Set displayName on plot agent generate ([#10]([#10](https://github.com/plotday/plot/pull/10)))
+- Set displayName on plot agent generate ([#10](https://github.com/plotday/plot/pull/10) [`6dc8403`](https://github.com/plotday/plot/commit/6dc8403))
 
 ## 0.11.0
 
