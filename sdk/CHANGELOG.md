@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.12.1
+
+### Changed
+
+- Export LLM docs ([#17](https://github.com/plotday/plot/pull/17) [`991afef`](https://github.com/plotday/plot/commit/991afeff288dfdaae4fb4f69a6471578149805aa))
+
 ## 0.12.0
 
 ### Changed
