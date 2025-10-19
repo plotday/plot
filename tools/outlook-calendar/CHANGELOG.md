@@ -1,5 +1,12 @@
 # @plotday/tool-outlook-calendar
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies [[`1d809ec`](https://github.com/plotday/plot/commit/1d809ec778244921cda072eb3744f36e28b3c1b4)]:
+  - @plotday/sdk@0.11.0
+
 ## 0.1.1
 
 ### Patch Changes
