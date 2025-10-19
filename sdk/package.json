@@ -66,6 +66,10 @@
       "types": "./dist/agents-guide.d.ts",
       "default": "./dist/agents-guide.js"
     },
+    "./sdk-docs": {
+      "types": "./dist/sdk-docs.d.ts",
+      "default": "./dist/sdk-docs.js"
+    },
     "./tsconfig.base.json": "./tsconfig.base.json"
   },
   "files": [

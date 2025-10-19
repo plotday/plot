@@ -1,6 +1,6 @@
 import type { Static, TSchema } from "typebox";
 
-import { ITool, type Tools } from "..";
+import { ITool } from "..";
 
 /**
  * Built-in tool for prompting Large Language Models (LLMs).
@@ -43,7 +43,7 @@ import { ITool, type Tools } from "..";
  *     });
  *
  *     const response = await this.ai.prompt({
- *       model: AIModel.GPT_4O_MINI,
+ *       model: { speed: "fast", cost: "medium" },
  *       system: "Classify emails into categories: work, personal, spam, or promotional.",
  *       prompt: `Categorize this email: ${emailContent}`,
  *       outputSchema: schema
@@ -54,7 +54,7 @@ import { ITool, type Tools } from "..";
  *
  *   async generateResponse(emailContent: string) {
  *     const response = await this.ai.prompt({
- *       model: AIModel.GPT_4O_MINI,
+ *       model: { speed: "fast", cost: "medium" },
  *       system: "Generate professional email responses that are helpful and concise.",
  *       prompt: `Write a response to: ${emailContent}`
  *     });
@@ -78,14 +78,21 @@ export abstract class AI extends ITool {
    * ```typescript
    * // Simple text generation
    * const response = await ai.prompt({
-   *   model: AIModel.GPT_4O_MINI,
+   *   model: { speed: "fast", cost: "medium" },
    *   prompt: "Explain quantum computing in simple terms"
    * });
    * console.log(response.text);
    *
-   * // With system instructions
+   * // Fast and cheap for simple tasks
    * const response = await ai.prompt({
-   *   model: AIModel.CLAUDE_35_SONNET,
+   *   model: { speed: "fast", cost: "low" },
+   *   prompt: "Summarize this text..."
+   * });
+   * console.log(response.text);
+   *
+   * // With system instructions for complex reasoning
+   * const response = await ai.prompt({
+   *   model: { speed: "capable", cost: "high" },
    *   system: "You are a helpful physics tutor.",
    *   prompt: "Explain quantum entanglement"
    * });
@@ -93,7 +100,7 @@ export abstract class AI extends ITool {
    *
    * // Multi-turn conversation
    * const response = await ai.prompt({
-   *   model: AIModel.CLAUDE_35_SONNET,
+   *   model: { speed: "balanced", cost: "medium" },
    *   messages: [
    *     { role: "user", content: "What is 2+2?" },
    *     { role: "assistant", content: "2+2 equals 4." },
@@ -104,7 +111,7 @@ export abstract class AI extends ITool {
    *
    * // Structured output with Typebox schema
    * const response = await ai.prompt({
-   *   model: AIModel.GPT_4O,
+   *   model: { speed: "fast", cost: "medium" },
    *   prompt: "Extract information: John is 30 years old",
    *   outputSchema: Type.Object({
    *     name: Type.String(),
@@ -115,7 +122,7 @@ export abstract class AI extends ITool {
    *
    * // Tool calling
    * const response = await ai.prompt({
-   *   model: AIModel.GPT_4O_MINI,
+   *   model: { speed: "balanced", cost: "medium" },
    *   prompt: "What's the weather in San Francisco?",
    *   tools: {
    *     getWeather: {
@@ -134,9 +141,65 @@ export abstract class AI extends ITool {
    * ```
    */
   abstract prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(
-    _request: AIRequest<TOOLS, SCHEMA>,
+    _request: AIRequest<TOOLS, SCHEMA>
   ): Promise<AIResponse<TOOLS, SCHEMA>>;
 }
+
+/**
+ * Model preferences for selecting an AI model based on performance and cost requirements.
+ * This allows Plot to match those preferences with user preferences (such as preferred or
+ * disallowed providers), as well as availability of newer and better models.
+ *
+ * @example
+ * ```typescript
+ * // Fast and cheap - uses Workers AI models like Llama 3.2 1B
+ * const response = await ai.prompt({
+ *   model: { speed: "fast", cost: "low" },
+ *   prompt: "Summarize this in one sentence: ..."
+ * });
+ *
+ * // Balanced performance - uses GPT-5 Mini or Gemini 2.5 Flash
+ * const response = await ai.prompt({
+ *   model: { speed: "balanced", cost: "medium" },
+ *   prompt: "Analyze this data..."
+ * });
+ *
+ * // Most capable - uses Claude Sonnet 4.5 or Opus 4.1
+ * const response = await ai.prompt({
+ *   model: { speed: "capable", cost: "high" },
+ *   prompt: "Solve this complex reasoning problem..."
+ * });
+ *
+ * // Request a specific model with a hint
+ * const response = await ai.prompt({
+ *   model: { speed: "balanced", cost: "medium", hint: AIModel.CLAUDE_SONNET_45 },
+ *   prompt: "..."
+ * });
+ * ```
+ */
+export type ModelPreferences = {
+  /**
+   * Desired speed tier:
+   * - "fast": Optimized for low latency and quick responses
+   * - "balanced": Good balance of speed and capability
+   * - "capable": Maximum reasoning and problem-solving ability
+   */
+  speed: "fast" | "balanced" | "capable";
+
+  /**
+   * Desired cost tier:
+   * - "low": Minimal cost, often using Workers AI models (free/very cheap)
+   * - "medium": Moderate pricing for good performance
+   * - "high": Premium pricing for best-in-class models
+   */
+  cost: "low" | "medium" | "high";
+
+  /**
+   * Optional hint to suggest a specific model. The system will use this
+   * model if possible, but may override it based on user preferences.
+   */
+  hint?: AIModel;
+};
 
 /**
  * Supported AI models available through Cloudflare AI Gateway and Workers AI.
@@ -145,27 +208,38 @@ export abstract class AI extends ITool {
  * - **OpenAI**: Latest GPT models via AI Gateway
  * - **Anthropic**: Claude models via AI Gateway (prefix with "anthropic/")
  * - **Google**: Gemini models via AI Gateway (prefix with "google-ai-studio/")
- * - **Workers AI**: Models running on Cloudflare's network
+ * - **Workers AI**: Models running on Cloudflare's network (free/low cost)
  */
 export enum AIModel {
-  // OpenAI models
+  // OpenAI models - Latest GPT and reasoning models
+  GPT_5 = "openai/gpt-5",
+  GPT_5_PRO = "openai/gpt-5-pro",
+  GPT_5_MINI = "openai/gpt-5-mini",
+  GPT_5_NANO = "openai/gpt-5-nano",
   GPT_4O = "openai/gpt-4o",
   GPT_4O_MINI = "openai/gpt-4o-mini",
-  GPT_4_TURBO = "openai/gpt-4-turbo",
-  GPT_35_TURBO = "openai/gpt-3.5-turbo",
+  O3 = "openai/o3",
+  O3_MINI = "openai/o3-mini",
 
-  // Anthropic models
-  CLAUDE_SONNET_4_5 = "anthropic/claude-sonnet-4-5",
-  CLAUDE_35_SONNET = "anthropic/claude-3-5-sonnet",
-  CLAUDE_3_OPUS = "anthropic/claude-3-opus",
+  // Anthropic models - Claude 4.x and 3.7 series
+  CLAUDE_SONNET_45 = "anthropic/claude-sonnet-4-5",
+  CLAUDE_HAIKU_45 = "anthropic/claude-haiku-4-5",
+  CLAUDE_OPUS_41 = "anthropic/claude-opus-4-1",
+  CLAUDE_37_SONNET = "anthropic/claude-3-7-sonnet-latest",
 
-  // Google models
+  // Google models - Gemini 2.x series
+  GEMINI_25_PRO = "google/gemini-2.5-pro",
   GEMINI_25_FLASH = "google/gemini-2.5-flash",
+  GEMINI_25_FLASH_LITE = "google/gemini-2.5-flash-lite",
+  GEMINI_20_FLASH = "google/gemini-2.0-flash",
+  GEMINI_20_FLASH_LITE = "google/gemini-2.0-flash-lite",
 
-  // Cloudflare Workers AI models
+  // Cloudflare Workers AI models - Free/low-cost models running on Cloudflare's network
+  LLAMA_4_SCOUT_17B = "meta/llama-4-scout-17b-16e-instruct",
   LLAMA_33_70B = "meta/llama-3.3-70b-instruct-fp8-fast",
-  LLAMA_31_8B = "meta/llama-3.1-8b-instruct-fast",
-  MISTRAL_7B = "meta/mistral-7b-instruct-v0.2",
+  LLAMA_31_8B = "meta/llama-3.1-8b-instruct-fp8",
+  LLAMA_32_1B = "meta/llama-3.2-1b-instruct",
+  DEEPSEEK_R1_32B = "deepseek-ai/deepseek-r1-distill-qwen-32b",
 }
 
 /**
@@ -173,12 +247,29 @@ export enum AIModel {
  */
 export interface AIRequest<
   TOOLS extends AIToolSet,
-  SCHEMA extends TSchema = never,
+  SCHEMA extends TSchema = never
 > {
   /**
-   * The AI model to use for generation.
+   * Model selection preferences based on desired speed and cost characteristics.
+   * Plot will automatically select the best available model matching these preferences.
+   *
+   * @example
+   * // Fast and cheap - good for simple tasks
+   * model: { speed: "fast", cost: "low" }
+   *
+   * @example
+   * // Balanced performance - general purpose
+   * model: { speed: "balanced", cost: "medium" }
+   *
+   * @example
+   * // Maximum capability - complex reasoning
+   * model: { speed: "capable", cost: "high" }
+   *
+   * @example
+   * // With a specific model hint
+   * model: { speed: "balanced", cost: "medium", hint: "anthropic/claude-sonnet-4-5" }
    */
-  model: AIModel;
+  model: ModelPreferences;
 
   /**
    * System instructions to guide the model's behavior.
@@ -240,7 +331,7 @@ export interface AIRequest<
  */
 export interface AIResponse<
   TOOLS extends AIToolSet,
-  SCHEMA extends TSchema = never,
+  SCHEMA extends TSchema = never
 > {
   /**
    * The generated text.
@@ -656,7 +747,7 @@ export type AITool<PARAMETERS extends ToolParameters = any, RESULT = any> = {
    */
   execute?: (
     args: inferParameters<PARAMETERS>,
-    options: ToolExecutionOptions,
+    options: ToolExecutionOptions
   ) => PromiseLike<RESULT>;
 } & (
   | {

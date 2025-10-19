@@ -20,12 +20,7 @@ Plot agents are TypeScript classes that extend the `Agent` base class. Agents in
 ## Agent Structure Pattern
 
 ```typescript
-import {
-  type Activity,
-  Agent,
-  type Priority,
-  type Tools,
-} from "@plotday/sdk";
+import { type Activity, Agent, type Priority, type Tools } from "@plotday/sdk";
 import { Plot } from "@plotday/sdk/tools/plot";
 
 export default class MyAgent extends Agent {
@@ -66,98 +61,21 @@ All `tools.get()` calls must occur in the constructor as they are used for depen
 
 ### Built-in Tools (Always Available)
 
-#### Plot Tool
+For complete API documentation of built-in tools including all methods, types, and detailed examples, see the TypeScript definitions in your installed package at `node_modules/@plotday/sdk/src/tools/*.ts`. Each tool file contains comprehensive JSDoc documentation.
 
-Core functionality for managing activities:
+**Quick reference - Available tools:**
 
-```typescript
-import { Plot } from "@plotday/sdk/tools/plot";
-
-// Create activity
-await this.plot.createActivity({
-  type: ActivityType.Task,
-  title: "Task title",
-  start: new Date(),
-  end: null,
-  links: [], // Optional activity links
-  parent: { id: "parent-activity-id" }, // Optional parent
-});
-
-// Update activity
-await this.plot.updateActivity(activityId, {
-  title: "New title",
-  completed: true,
-});
-
-// Delete activity
-await this.plot.deleteActivity(activityId);
-
-// Add contacts
-await this.plot.addContacts(contacts);
-```
-
-#### Store Tool
-
-Persistent key-value storage (available directly via `this`):
-
-```typescript
-// Set value (no import needed)
-await this.set("key", value);
-
-// Get value
-const value = await this.get<Type>("key");
-
-// Clear value
-await this.clear("key");
-
-// Clear all values
-await this.clearAll();
-```
+- `@plotday/sdk/tools/plot` - Core data layer (create/update activities, priorities, contacts)
+- `@plotday/sdk/tools/ai` - LLM integration (text generation, structured output, reasoning)
+  - Use ModelPreferences to specify `speed` (fast/balanced/capable) and `cost` (low/medium/high)
+- `@plotday/sdk/tools/store` - Persistent key-value storage (also via `this.set()`, `this.get()`)
+- `@plotday/sdk/tools/run` - Queue batched work (also via `this.run()`)
+- `@plotday/sdk/tools/callback` - Persistent function references (also via `this.callback()`)
+- `@plotday/sdk/tools/auth` - OAuth2 authentication flows
+- `@plotday/sdk/tools/webhook` - HTTP webhook management
+- `@plotday/sdk/tools/agent` - Manage other agents
 
 **Critical**: Never use instance variables for state. They are lost after function execution. Always use Store methods.
-
-#### Run Tool
-
-Queue separate chunks of work (available directly via `this`):
-
-```typescript
-// Create callback and queue execution (no import needed)
-const callback = await this.callback("functionName", { context: "data" });
-await this.run(callback);
-
-// The function must exist on the agent class
-async functionName(args: any, context: { context: string }) {
-  // Process batch and queue next if needed
-  if (hasMore) {
-    const nextCallback = await this.callback("functionName", { context: "next" });
-    await this.run(nextCallback);
-  }
-}
-```
-
-#### Callback Tool
-
-Create persistent function references (for webhooks, auth callbacks - available directly via `this`):
-
-```typescript
-// Create callback (no import needed)
-const token = await this.callback("onAuthComplete", {
-  provider: "google",
-});
-
-// Pass token to external service or store it
-await this.set("webhook_token", token);
-
-// When callback is invoked, your function is called
-async onAuthComplete(authResult: any, context?: any) {
-  // Handle callback
-  const provider = context?.provider;
-}
-
-// Clean up
-await this.deleteCallback(token);
-await this.deleteAllCallbacks(); // Delete all for this agent
-```
 
 ### External Tools (Add to package.json)
 
