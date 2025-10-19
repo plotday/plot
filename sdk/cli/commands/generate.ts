@@ -15,6 +15,7 @@ interface GenerateOptions {
 }
 
 interface AgentSource {
+  displayName: string;
   dependencies: Record<string, string>;
   files: Record<string, string>;
 }
@@ -236,6 +237,7 @@ export async function generateCommand(options: GenerateOptions) {
     const packageJson = {
       name: agentId,
       version: "1.0.0",
+      displayName: source.displayName,
       plotAgentId: agentId,
       dependencies: source.dependencies,
     };
@@ -271,11 +273,7 @@ export async function generateCommand(options: GenerateOptions) {
       "utf-8"
     );
     // Replace template variables
-    const displayName = packageJson.name
-      .split("-")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-    readmeTemplate = readmeTemplate.replace(/\{\{displayName\}\}/g, displayName);
+    readmeTemplate = readmeTemplate.replace(/\{\{displayName\}\}/g, source.displayName);
     readmeTemplate = readmeTemplate.replace(/\{\{packageManager\}\}/g, "pnpm");
     writeFile(readmePath, readmeTemplate);
 

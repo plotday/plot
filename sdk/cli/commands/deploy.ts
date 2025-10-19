@@ -33,6 +33,7 @@ interface PackageJson {
 }
 
 interface AgentSource {
+  displayName: string;
   dependencies: Record<string, string>;
   files: Record<string, string>;
 }
