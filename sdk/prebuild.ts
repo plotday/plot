@@ -153,4 +153,24 @@ export default llmDocs;
 const indexPath = join(llmDocsDir, "index.ts");
 writeFileSync(indexPath, indexContent, "utf-8");
 
+// Generate agents-guide-template.ts from AGENTS.template.md
+const agentsTemplatePath = join(__dirname, "cli", "templates", "AGENTS.template.md");
+if (existsSync(agentsTemplatePath)) {
+  const agentsTemplateContent = readFileSync(agentsTemplatePath, "utf-8");
+  const agentsGuideContent = `/**
+ * Generated agents guide template
+ *
+ * This file is auto-generated during build. Do not edit manually.
+ * Generated from: cli/templates/AGENTS.template.md
+ */
+
+export default ${JSON.stringify(agentsTemplateContent)};
+`;
+  const agentsGuideOutputPath = join(llmDocsDir, "agents-guide-template.ts");
+  writeFileSync(agentsGuideOutputPath, agentsGuideContent, "utf-8");
+  console.log(`✓ Generated agents-guide-template.ts from AGENTS.template.md`);
+} else {
+  console.warn(`Warning: AGENTS.template.md not found at ${agentsTemplatePath}`);
+}
+
 console.log(`✓ Generated ${typeFiles.length} LLM documentation files in src/llm-docs/`);

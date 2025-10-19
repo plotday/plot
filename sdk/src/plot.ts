@@ -221,14 +221,14 @@ export type Activity = {
     type: AuthorType;
   };
   /**
-   * Start time of a scheduled activity.
+   * Start time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the start of the first occurrence.
    * Can be a Date object for timed events or a date string in "YYYY-MM-DD" format for all-day events.
    * Null for activities without scheduled start times.
    */
   start: Date | string | null;
   /**
-   * End time of a scheduled activity.
+   * End time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the end of the first occurrence.
    * Can be a Date object for timed events or a date string in "YYYY-MM-DD" format for all-day events.
    * Null for tasks or activities without defined end times.
