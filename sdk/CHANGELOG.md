@@ -1,5 +1,16 @@
 # @plotday/sdk
 
+## 0.13.1
+
+### Added
+
+- Progress updates for agent generate and deploy ([#25](https://github.com/plotday/plot/pull/25) [`b9c3528`](https://github.com/plotday/plot/commit/b9c35288c9a49a9a4d21f59b637146e33c15fe87))
+- Install latest SDK package after generate ([#25](https://github.com/plotday/plot/pull/25) [`b9c3528`](https://github.com/plotday/plot/commit/b9c35288c9a49a9a4d21f59b637146e33c15fe87))
+
+### Fixed
+
+- Several instances of Agents and Tools missing the id argument ([#24](https://github.com/plotday/plot/pull/24) [`2d53d37`](https://github.com/plotday/plot/commit/2d53d3794419ee218976d6468319ae9129c93088))
+
 ## 0.13.0
 
 ### Changed
