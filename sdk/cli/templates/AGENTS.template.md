@@ -382,6 +382,8 @@ try {
 6. **Clean up callbacks and stored state** - Delete callbacks and Store entries when no longer needed.
 7. **Handle missing auth gracefully** - Check for stored auth before operations.
 8. **Batch size matters** - Process enough items per batch to be efficient, but few enough to stay under time limits.
+9. **Processing self-created activities** - Other users may change an Activity created by the agent, resulting in an \`activity\` call. Be sure to check the \`changes === null\` and/or \`activity.author.id !== this.id\` to avoid re-processing.
+10. Activity with type ActivityType.Note typically do not have a start or end set, unless they're a note about a specific day or time that shouldn't be shown until then.
 
 ## Type Patterns
 
