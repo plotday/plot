@@ -3,6 +3,12 @@
  */
 export interface AgentSource {
   /**
+   * Human-readable display name for the agent
+   * @example "Google Calendar Sync"
+   */
+  displayName: string;
+
+  /**
    * Package dependencies with version specifiers
    * @example { "@plotday/sdk": "workspace:^", "@plotday/tool-google-calendar": "^1.0.0" }
    */

@@ -12,8 +12,9 @@ import type { AgentSource } from "./types";
  * Zod schema for validating AgentSource structure
  */
 const agentSourceSchema = z.object({
-  dependencies: z.record(z.string(), z.string()),
+  displayName: z.string(),
   files: z.record(z.string(), z.string()),
+  dependencies: z.record(z.string(), z.string()),
 });
 
 /**
@@ -76,8 +77,11 @@ export async function generateAgent(
 ${spec}
 
 Requirements:
+- "displayName" must be a concise, human-readable title for the agent (e.g., "Google Calendar Sync", "Task Manager")
+- Extract the displayName from the specification based on the agent's purpose
 - "files" must include "index.ts" as the entry point
-- The index.ts file must export a default class extending Agent`;
+- The index.ts file must export a default class extending Agent
+`;
     } else {
       // Retry attempt - include previous attempt and errors
       userPrompt = `Your previous attempt to generate the agent had build errors.
@@ -97,20 +101,18 @@ Please fix these errors and generate a corrected version.`;
     // 1. Large static content first (AGENTS_GUIDE) - will be cached by Claude
     // 2. Small static instructions after
     // Variable content (spec, errors) goes in user prompt
-    const systemPrompt = `${AGENTS_GUIDE}
+    const systemPrompt = `You are an expert at generating Plot agents based on this guide:
 
----
-
-You are an expert at generating Plot agents using the guide above.`;
+${AGENTS_GUIDE}`;
 
     // Call Claude API via Vercel AI SDK and Cloudflare AI Gateway
-    const model: any = anthropicProvider("claude-4-sonnet-20250514");
+    const model: any = anthropicProvider("claude-sonnet-4-5");
     const result = await generateObject({
       model,
       schema: agentSourceSchema,
       schemaName: "AgentSource",
       schemaDescription:
-        "Agent source code structure containing dependencies and source files",
+        "Agent source code structure containing source files and npm dependencies",
       maxOutputTokens: 4095,
       system: systemPrompt,
       prompt: userPrompt,

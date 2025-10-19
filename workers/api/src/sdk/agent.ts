@@ -14,6 +14,7 @@ const AgentDeploymentSchema = z
     module: z.string().optional(),
     source: z
       .object({
+        displayName: z.string(),
         dependencies: z.record(z.string(), z.string()),
         files: z.record(z.string(), z.string()),
       })
