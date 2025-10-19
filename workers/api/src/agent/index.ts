@@ -14,6 +14,26 @@ export type ToolDependencies = {
   dependencies?: ToolDependencies[];
 };
 
+/**
+ * Common function to load an agent worker from a module
+ */
+function loadAgent(env: Bindings, id: string, version: string, module: string) {
+  const moduleId = `${id}-${version}`;
+
+  const worker = env.LOADER.get(moduleId, async () => {
+    return {
+      compatibilityDate: "2025-10-01",
+      mainModule: "index.js",
+      modules: {
+        "index.js": AgentEntrypoint.Module,
+        "agent.js": module,
+      },
+    };
+  });
+
+  return worker.getEntrypoint<AgentEntrypoint>();
+}
+
 export async function getAgent(
   env: Bindings,
   supabase: SupabaseClient,
@@ -39,8 +59,6 @@ export async function getAgent(
     version ??= data.version;
   }
 
-  let moduleId = `${id}-${environment}-${version}`;
-
   // Load agent payload from R2 using id
   const r2Key = `agents/${id}/modules/${version}.js`;
   const agentPayload = await env.AGENT_MODULES_BUCKET.get(r2Key);
@@ -55,51 +73,7 @@ export async function getAgent(
     dependencies: ToolDependencies[];
   };
 
-  // Get the isolate with the given ID, creating it if no such isolate exists yet.
-  let worker = env.LOADER.get(moduleId, async () => {
-    return {
-      compatibilityDate: "2025-10-01",
-      mainModule: "index.js",
-      modules: {
-        "index.js": AgentEntrypoint.Module,
-        "agent.js": module,
-      },
-      // tails: [{
-      //   async tail(events: any) {
-      //     // Parse console events from tail
-      //     for (const event of events) {
-      //       if (event.logs) {
-      //         for (const log of event.logs) {
-      //           const severity =
-      //             log.level === "error"
-      //               ? "error"
-      //               : log.level === "warn"
-      //               ? "warn"
-      //               : log.level === "info"
-      //               ? "info"
-      //               : "log";
-      //
-      //           const message = Array.isArray(log.message)
-      //             ? log.message.join(" ")
-      //             : String(log.message);
-      //
-      //           // Send to logs queue
-      //           await env.AGENT_LOGS_QUEUE.send({
-      //             agentRootId,
-      //             environment,
-      //             severity,
-      //             message,
-      //             timestamp: log.timestamp || Date.now(),
-      //           });
-      //         }
-      //       }
-      //     }
-      //   },
-      // }],
-    };
-  });
-
-  const agent = worker.getEntrypoint<AgentEntrypoint>();
+  const agent = loadAgent(env, id, version, module);
   return { agent, dependencies };
 }
 
@@ -118,19 +92,7 @@ export async function storeAgentModule(
   // Generate timestamp version
   const version = Date.now().toString();
 
-  // Get the module dependencies
-  let moduleId = `${id}-${version}`;
-  let worker = env.LOADER.get(moduleId, async () => {
-    return {
-      compatibilityDate: "2025-06-01",
-      mainModule: "index.js",
-      modules: {
-        "index.js": AgentEntrypoint.Module,
-        "agent.js": module,
-      },
-    };
-  });
-  const agent = worker.getEntrypoint<AgentEntrypoint>();
+  const agent = loadAgent(env, id, version, module);
   const dependencies = await agent.getDependencies();
 
   // Store module and dependencies together as JSON in R2
