@@ -1,5 +1,13 @@
 # @plotday/tool-google-contacts
 
+## 0.1.3
+
+### Changed
+
+- improved changelog format ([#9]([#9](https://github.com/plotday/plot/pull/9)))
+- Updated dependencies:
+- @plotday/sdk@0.11.1
+
 ## 0.1.2
 
 ### Changed
