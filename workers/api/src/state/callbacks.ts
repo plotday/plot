@@ -209,7 +209,8 @@ export class Callbacks extends DurableObject<Bindings> {
 
     // Create tools needed for the callback
     const callResult = tool
-      ? await agentInstance.callTool(
+      ? // @ts-ignore - Type instantiation issue
+        await agentInstance.callTool(
           createTool(callback.path, tool, {
             supabase: this.supabase,
             priorityId: agent.priority_id,
