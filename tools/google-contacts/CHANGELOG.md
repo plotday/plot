@@ -4,7 +4,7 @@
 
 ### Changed
 
-- improved changelog format ([#9]([#9](https://github.com/plotday/plot/pull/9)))
+- improved changelog format ([#9](https://github.com/plotday/plot/pull/9) [`ceecf33`](https://github.com/plotday/plot/commit/ceecf33))
 - Updated dependencies:
 - @plotday/sdk@0.11.1
 

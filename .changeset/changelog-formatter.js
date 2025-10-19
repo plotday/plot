@@ -56,9 +56,10 @@ async function getReleaseLine(changeset, type, options) {
       commit: changeset.commit,
     });
 
+    // getInfo returns pre-formatted markdown links
     // Format: [#PR](link) [`hash`](link)
-    const prLink = info.pull ? `[#${info.pull}](${info.links.pull})` : null;
-    const commitLink = info.commit ? `[\`${info.commit.slice(0, 7)}\`](${info.links.commit})` : null;
+    const prLink = info.links.pull;
+    const commitLink = info.links.commit;
 
     const linkParts = [prLink, commitLink].filter(Boolean);
     if (linkParts.length > 0) {
