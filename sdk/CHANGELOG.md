@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.11.0
+
+### Minor Changes
+
+- [#7](https://github.com/plotday/plot/pull/7) [`1d809ec`](https://github.com/plotday/plot/commit/1d809ec778244921cda072eb3744f36e28b3c1b4) Thanks [@KrisBraun](https://github.com/KrisBraun)! - Add plot agent generate command
+
 ## 0.10.2
 
 ### Patch Changes
