@@ -1,5 +1,16 @@
 # @plotday/tool-google-contacts
 
+## 0.1.6
+
+### Changed
+
+- Updated dependencies:
+- @plotday/sdk@0.13.1
+
+### Fixed
+
+- Several instances of Agents and Tools missing the id argument ([#24](https://github.com/plotday/plot/pull/24) [`2d53d37`](https://github.com/plotday/plot/commit/2d53d3794419ee218976d6468319ae9129c93088))
+
 ## 0.1.5
 
 ### Changed
