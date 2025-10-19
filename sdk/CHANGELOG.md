@@ -1,5 +1,17 @@
 # @plotday/sdk
 
+## 0.11.1
+
+### Changed
+
+- Add instructions to AGENTS.md to avoid accidentally reprocessing agent-created activities ([#10]([#10](https://github.com/plotday/plot/pull/10)))
+- improved changelog format ([#9]([#9](https://github.com/plotday/plot/pull/9)))
+- Generate a plotAgentId on "plot agent generate" if none specified ([#10]([#10](https://github.com/plotday/plot/pull/10)))
+
+### Fixed
+
+- Set displayName on plot agent generate ([#10]([#10](https://github.com/plotday/plot/pull/10)))
+
 ## 0.11.0
 
 ### Added
