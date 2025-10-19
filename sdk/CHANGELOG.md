@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.12.2
+
+### Fixed
+
+- Add lint and deploy scripts to generated package.json ([#19](https://github.com/plotday/plot/pull/19) [`0910b87`](https://github.com/plotday/plot/commit/0910b8770cd5cc404d5cedbe0e3380a624f7e348))
+
 ## 0.12.1
 
 ### Changed
