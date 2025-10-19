@@ -54,7 +54,7 @@ import { ITool } from "..";
  *
  *   async generateResponse(emailContent: string) {
  *     const response = await this.ai.prompt({
- *       model: AIModel.GPT_5_MINI,
+ *       model: { speed: "fast", cost: "medium" },
  *       system: "Generate professional email responses that are helpful and concise.",
  *       prompt: `Write a response to: ${emailContent}`
  *     });
@@ -76,21 +76,21 @@ export abstract class AI extends ITool {
    *
    * @example
    * ```typescript
-   * // Simple text generation with specific model
+   * // Simple text generation
    * const response = await ai.prompt({
-   *   model: AIModel.GPT_5_MINI,
+   *   model: { speed: "fast", cost: "medium" },
    *   prompt: "Explain quantum computing in simple terms"
    * });
    * console.log(response.text);
    *
-   * // Using model preferences for automatic selection
+   * // Fast and cheap for simple tasks
    * const response = await ai.prompt({
    *   model: { speed: "fast", cost: "low" },
    *   prompt: "Summarize this text..."
    * });
    * console.log(response.text);
    *
-   * // With system instructions
+   * // With system instructions for complex reasoning
    * const response = await ai.prompt({
    *   model: { speed: "capable", cost: "high" },
    *   system: "You are a helpful physics tutor.",
@@ -100,7 +100,7 @@ export abstract class AI extends ITool {
    *
    * // Multi-turn conversation
    * const response = await ai.prompt({
-   *   model: AIModel.CLAUDE_SONNET_45,
+   *   model: { speed: "balanced", cost: "medium" },
    *   messages: [
    *     { role: "user", content: "What is 2+2?" },
    *     { role: "assistant", content: "2+2 equals 4." },
@@ -111,7 +111,7 @@ export abstract class AI extends ITool {
    *
    * // Structured output with Typebox schema
    * const response = await ai.prompt({
-   *   model: AIModel.GPT_4O,
+   *   model: { speed: "fast", cost: "medium" },
    *   prompt: "Extract information: John is 30 years old",
    *   outputSchema: Type.Object({
    *     name: Type.String(),
@@ -122,7 +122,7 @@ export abstract class AI extends ITool {
    *
    * // Tool calling
    * const response = await ai.prompt({
-   *   model: AIModel.GPT_4O_MINI,
+   *   model: { speed: "balanced", cost: "medium" },
    *   prompt: "What's the weather in San Francisco?",
    *   tools: {
    *     getWeather: {
@@ -250,18 +250,26 @@ export interface AIRequest<
   SCHEMA extends TSchema = never
 > {
   /**
-   * The AI model to use for generation.
-   * Can be either a specific model from the AIModel enum or preferences (speed/cost tiers).
+   * Model selection preferences based on desired speed and cost characteristics.
+   * Plot will automatically select the best available model matching these preferences.
    *
    * @example
-   * // Using a specific model
-   * model: AIModel.GPT_5_MINI
-   *
-   * @example
-   * // Using preferences
+   * // Fast and cheap - good for simple tasks
    * model: { speed: "fast", cost: "low" }
+   *
+   * @example
+   * // Balanced performance - general purpose
+   * model: { speed: "balanced", cost: "medium" }
+   *
+   * @example
+   * // Maximum capability - complex reasoning
+   * model: { speed: "capable", cost: "high" }
+   *
+   * @example
+   * // With a specific model hint
+   * model: { speed: "balanced", cost: "medium", hint: "anthropic/claude-sonnet-4-5" }
    */
-  model: AIModel | ModelPreferences;
+  model: ModelPreferences;
 
   /**
    * System instructions to guide the model's behavior.

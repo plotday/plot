@@ -80,98 +80,22 @@ Assign tool instances to class properties for use in other methods.
 
 ### Built-in Tools (Always Available)
 
-#### Plot Tool
+The following tools are always available to agents. For complete API documentation including all methods, parameters, return types, and detailed examples, refer to the TypeScript definitions which are provided with full JSDoc when generating agents.
 
-Core functionality for managing activities:
+**Available Built-in Tools:**
+- **Plot** (\`@plotday/sdk/tools/plot\`): Core data layer - create/update activities, priorities, contacts
+- **AI** (\`@plotday/sdk/tools/ai\`): LLM access for text generation, structured output, reasoning
+  - Use ModelPreferences to specify \`speed\` (fast/balanced/capable) and \`cost\` (low/medium/high)
+- **Store** (\`@plotday/sdk/tools/store\`): Persistent key-value storage (also available via \`this.set()\`, \`this.get()\`)
+- **Run** (\`@plotday/sdk/tools/run\`): Queue batched work (also available via \`this.run()\`)
+- **Callback** (\`@plotday/sdk/tools/callback\`): Persistent function references (also available via \`this.callback()\`)
+- **Auth** (\`@plotday/sdk/tools/auth\`): OAuth2 authentication flows
+- **Webhook** (\`@plotday/sdk/tools/webhook\`): HTTP webhook management
+- **AgentManager** (\`@plotday/sdk/tools/agent\`): Manage other agents
 
-\`\`\`typescript
-import { Plot } from "@plotday/sdk/tools/plot";
-
-// Create activity
-await this.plot.createActivity({
-  type: ActivityType.Task,
-  title: "Task title",
-  start: new Date(),
-  end: null,
-  links: [], // Optional activity links
-  parent: { id: "parent-activity-id" }, // Optional parent
-});
-
-// Update activity
-await this.plot.updateActivity(activityId, {
-  title: "New title",
-  completed: true,
-});
-
-// Delete activity
-await this.plot.deleteActivity(activityId);
-
-// Add contacts
-await this.plot.addContacts(contacts);
-\`\`\`
-
-#### Store Tool
-
-Persistent key-value storage (available directly via \`this\`):
-
-\`\`\`typescript
-// Set value (no import needed)
-await this.set("key", value);
-
-// Get value
-const value = await this.get<Type>("key");
-
-// Clear value
-await this.clear("key");
-
-// Clear all values
-await this.clearAll();
-\`\`\`
+See the SDK type definitions for full API documentation with usage examples.
 
 **Critical**: Never use instance variables for state. They are lost after function execution. Always use Store methods.
-
-#### Run Tool
-
-Queue separate chunks of work (available directly via \`this\`):
-
-\`\`\`typescript
-// Create callback and queue execution (no import needed)
-const callback = await this.callback("functionName", { context: "data" });
-await this.run(callback);
-
-// The function must exist on the agent class
-async functionName(args: any, context: { context: string }) {
-  // Process batch and queue next if needed
-  if (hasMore) {
-    const nextCallback = await this.callback("functionName", { context: "next" });
-    await this.run(nextCallback);
-  }
-}
-\`\`\`
-
-#### Callback Tool
-
-Create persistent function references (for webhooks, auth callbacks - available directly via \`this\`):
-
-\`\`\`typescript
-// Create callback (no import needed)
-const token = await this.callback("onAuthComplete", {
-  provider: "google",
-});
-
-// Pass token to external service or store it
-await this.set("webhook_token", token);
-
-// When callback is invoked, your function is called
-async onAuthComplete(authResult: any, context?: any) {
-  // Handle callback
-  const provider = context?.provider;
-}
-
-// Clean up
-await this.deleteCallback(token);
-await this.deleteAllCallbacks(); // Delete all for this agent
-\`\`\`
 
 ### External Tools (Add to package.json)
 

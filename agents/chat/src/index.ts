@@ -1,21 +1,22 @@
+import { Type } from "typebox";
+
 import {
   type Activity,
   ActivityType,
   Agent,
   AuthorType,
   Tag,
-  Tools,
+  type Tools,
 } from "@plotday/sdk";
-import { AI, AIModel, type AIMessage } from "@plotday/sdk/tools/ai";
+import { AI, type AIMessage } from "@plotday/sdk/tools/ai";
 import { Plot } from "@plotday/sdk/tools/plot";
-import { Type } from "typebox";
 
 export default class extends Agent {
   private ai: AI;
   private plot: Plot;
 
   constructor(protected tools: Tools) {
-    super();
+    super(tools);
     this.ai = tools.get(AI);
     this.plot = tools.get(Plot);
   }
@@ -26,7 +27,7 @@ export default class extends Agent {
       previous: Activity;
       tagsAdded: Record<number, string[]>;
       tagsRemoved: Record<number, string[]>;
-    },
+    }
   ) {
     if (changes) return;
 
@@ -35,7 +36,7 @@ export default class extends Agent {
     if (
       activity.note?.includes("@chat") ||
       previousActivities.some((activity: any) =>
-        activity.note.includes("@chat"),
+        activity.note.includes("@chat")
       )
     ) {
       // Add Thinking tag to indicate processing has started
@@ -63,7 +64,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
                     ? "assistant"
                     : "user",
                 content: (prevActivity.note ?? prevActivity.title)!,
-              }) satisfies AIMessage,
+              } satisfies AIMessage)
           ),
       ];
 
@@ -81,7 +82,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
                 Type.String({
                   description:
                     "Optional detailed description of the action item. Can include markdown. Only add when important details are needed beyond the title.",
-                }),
+                })
               ),
               title: Type.String({
                 description:
@@ -90,13 +91,13 @@ You can also create tasks, but should only do so when the user explicitly asks y
             }),
             {
               description: "Tasks to create in response to the user's request.",
-            },
-          ),
+            }
+          )
         ),
       });
 
       const response = await this.ai.prompt({
-        model: AIModel.LLAMA_33_70B,
+        model: { speed: "balanced", cost: "low" },
         messages,
         outputSchema: schema,
       });
@@ -117,7 +118,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
             priority: activity.priority,
             type: ActivityType.Task,
             start: new Date(),
-          }),
+          })
         ) ?? []),
       ]);
 
