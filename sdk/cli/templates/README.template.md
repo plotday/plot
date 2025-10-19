@@ -52,7 +52,7 @@ Agents access functionality through tools. Get tools in the constructor:
 
 ```typescript
 constructor(protected tools: Tools) {
-  super(tools);
+  super(id, tools);
   this.plot = tools.get(Plot);
   // Store, Run, and Callback methods are available directly via this
 }
@@ -84,7 +84,7 @@ Then use them in your agent:
 ```typescript
 import { GoogleCalendar } from "@plotday/sdk/tools/google-calendar";
 
-constructor(tools: Tools) {
+constructor(id: string, tools: Tools) {
   super();
   this.googleCalendar = tools.get(GoogleCalendar);
 }

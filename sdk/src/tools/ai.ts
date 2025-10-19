@@ -24,7 +24,7 @@ import { ITool } from "..";
  * class SmartEmailTool extends Tool {
  *   private ai: AI;
  *
- *   constructor(tools: Tools) {
+ *   constructor(id: string, tools: Tools) {
  *     super();
  *     this.ai = tools.get(AI);
  *   }

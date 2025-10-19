@@ -19,7 +19,7 @@ export default class extends Agent {
   private googleContacts: GoogleContacts;
   private auth: Auth;
 
-  constructor(tools: Tools) {
+  constructor(id: string, tools: Tools) {
     super();
     this.googleContacts = tools.get(GoogleContacts);
     this.auth = tools.get(Auth);

@@ -131,7 +131,7 @@ export async function createCommand(options: CreateOptions) {
 } from "@plotday/sdk";
 
 export default class extends Agent {
-  constructor(tools: Tools) {
+  constructor(id: string, tools: Tools) {
     super();
   }
 
