@@ -20,9 +20,9 @@ Plot agents are TypeScript classes that extend the \`Agent\` base class. Agents 
 **Critical**: All agent and tool functions are executed in a sandboxed, ephemeral environment with limited resources:
 
 - **Memory is temporary**: Anything stored in memory (e.g. as a variable in the agent/tool object) is lost after the function completes. Use the Store tool instead. Only use memory for temporary caching.
-- **Limited CPU time**: Each execution has limited CPU time (typically 10 seconds) and memory (128MB)
-- **Use the Run tool**: Queue separate chunks of work with \`run.now(functionName, context)\`
-- **Break long operations**: Split large operations into smaller batches that can be processed independently
+- **Limited resources**: Each execution has limited CPU time and memory
+- **Limited runtime**: Agents execute in a Cloudflare Worker environment with the \`nodejs_compat\` flag. This means many but not all Node.js APIs are available.
+- **Use the Run tool**: Split large operations into smaller batches with \`run.now(functionName, context)\`
 - **Store intermediate state**: Use the Store tool to persist state between batches
 - **Examples**: Syncing large datasets, processing many API calls, or performing batch operations
 
@@ -46,13 +46,17 @@ export default class MyAgent extends Agent {
     // Store, Run, and Callback methods are available directly via this
   }
 
-  async activate(priority: Pick<Priority, "id">) {
+  async activate(priority) {
     // Called when agent is enabled for a priority
     // Common actions: request auth, create setup activities
   }
 
-  async activity(activity: Activity) {
-    // Called when an activity is routed to this agent
+  async activity(activity, changes) {
+    // Called when an activity is created or updated in the priority 
+    // where this agent is added (or its child priorities).
+    //
+    // IMPORTANT: check that changes is null if you only want to process new activities
+    //
     // Common actions: process external events, update activities
   }
 }
@@ -62,7 +66,7 @@ export default class MyAgent extends Agent {
 
 ### Accessing Tools
 
-All tools are accessed through the \`tools\` parameter in the constructor:
+Tools are made available through the \`tools\` parameter in the constructor:
 
 \`\`\`typescript
 constructor(protected tools: Tools) {
@@ -72,6 +76,7 @@ constructor(protected tools: Tools) {
 \`\`\`
 
 All \`tools.get()\` calls must occur in the constructor as they are used for dependency analysis.
+Assign tool instances to class properties for use in other methods.
 
 ### Built-in Tools (Always Available)
 
@@ -473,6 +478,8 @@ try {
 6. **Clean up callbacks and stored state** - Delete callbacks and Store entries when no longer needed.
 7. **Handle missing auth gracefully** - Check for stored auth before operations.
 8. **Batch size matters** - Process enough items per batch to be efficient, but few enough to stay under time limits.
+9. **Processing self-created activities** - Other users may change an Activity created by the agent, resulting  in an \`activity\` call.
+   Be sure to check the \`changes\` parameter and/or \`activity.author\` to avoid re-processing.
 
 ## Type Patterns
 
