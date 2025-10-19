@@ -35,7 +35,7 @@
       ],
       "containers": [
         {
-          "name": "AGENT_BUILDER",
+          "name": "agent_builder",
           "class_name": "AgentBuilder",
           "image": "./containers/agent-builder/Dockerfile",
           "instance_type": "basic",
@@ -132,7 +132,7 @@
       ],
       "containers": [
         {
-          "name": "AGENT_BUILDER",
+          "name": "agent_builder",
           "class_name": "AgentBuilder",
           "image": "./containers/agent-builder/Dockerfile",
           "max_instances": 3
