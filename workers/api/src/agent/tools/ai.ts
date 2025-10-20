@@ -63,7 +63,10 @@ export class AI extends Tool implements IAI {
     // Allow explicit model override via hint, but only for Workers AI and Anthropic
     if (hint) {
       const hintStr = hint.toLowerCase();
-      if (hintStr.startsWith("anthropic/") || (!hintStr.startsWith("openai/") && !hintStr.startsWith("google/"))) {
+      if (
+        hintStr.startsWith("anthropic/") ||
+        (!hintStr.startsWith("openai/") && !hintStr.startsWith("google/"))
+      ) {
         // Accept anthropic/ models and any model without a provider prefix (assumed to be Workers AI)
         return hint as AIModel;
       }
@@ -166,12 +169,11 @@ export class AI extends Tool implements IAI {
 
     // Prepare experimental_output if outputSchema is provided
     // Typebox schemas ARE JSON Schema, so we wrap them with jsonSchema() helper
-    let experimental_output;
-    if (outputSchema) {
-      experimental_output = Output.object({
-        schema: jsonSchema<Static<SCHEMA>>(outputSchema),
-      });
-    }
+    let experimental_output = outputSchema
+      ? Output.object({
+          schema: jsonSchema<Static<SCHEMA>>(outputSchema),
+        })
+      : undefined;
 
     // Transform tools to AI SDK format
     // Convert Typebox schemas to jsonSchema format expected by AI SDK
@@ -209,7 +211,9 @@ export class AI extends Tool implements IAI {
       finishReason: result.finishReason,
       usage: result.usage,
       sources: result.sources,
-      output: result.experimental_output as Static<SCHEMA> | undefined,
+      output: experimental_output
+        ? (result.experimental_output as Static<SCHEMA>)
+        : undefined,
       response: result.response
         ? {
             id: result.response.id,
