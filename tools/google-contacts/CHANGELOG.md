@@ -1,5 +1,12 @@
 # @plotday/tool-google-contacts
 
+## 0.1.7
+
+### Changed
+
+- Updated dependencies:
+- @plotday/sdk@0.14.0
+
 ## 0.1.6
 
 ### Changed

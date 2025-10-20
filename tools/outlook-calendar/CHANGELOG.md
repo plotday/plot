@@ -1,5 +1,13 @@
 # @plotday/tool-outlook-calendar
 
+## 0.1.7
+
+### Changed
+
+- Remove defunct static tool id ([#27](https://github.com/plotday/plot/pull/27) [`97b3195`](https://github.com/plotday/plot/commit/97b3195abaffb6886fda90ce511de796fbd34aac))
+- Updated dependencies:
+- @plotday/sdk@0.14.0
+
 ## 0.1.6
 
 ### Changed
