@@ -248,6 +248,7 @@ export async function generateCommand(options: GenerateOptions) {
       scripts: {
         lint: "plot agent lint",
         deploy: "plot agent deploy",
+        logs: "plot agent logs",
       },
       dependencies: source.dependencies,
       devDependencies: {
@@ -332,13 +333,7 @@ export async function generateCommand(options: GenerateOptions) {
       out.success("Dependencies installed.");
     } catch (error) {
       out.warning("Couldn't install dependencies", [
-        `Run '${
-          packageManager === "npm"
-            ? "npm install @plotday/sdk@latest"
-            : packageManager === "pnpm"
-            ? "pnpm add @plotday/sdk@latest"
-            : "yarn add @plotday/sdk@latest"
-        }' in ${options.dir}`,
+        `Run '${packageManager} install @plotday/sdk@latest' in ${options.dir}`,
         `Then run '${
           packageManager === "yarn" ? "yarn" : `${packageManager} install`
         }'`,
@@ -350,8 +345,8 @@ export async function generateCommand(options: GenerateOptions) {
 
     out.nextSteps([
       "Review the generated code in src/",
-      "Run 'plot agent lint' to check for errors",
-      "Run 'plot agent deploy' to deploy your agent",
+      `Run '${packageManager} run deploy' to deploy your agent`,
+      `Run '${packageManager} run logs' to watch for activity`,
     ]);
   } catch (error) {
     out.error("Generation failed", String(error));

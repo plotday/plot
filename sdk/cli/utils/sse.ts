@@ -87,6 +87,11 @@ export async function handleSSEStream(
           continue;
         }
 
+        // Skip comment lines (lines starting with ":")
+        if (line.startsWith(":")) {
+          continue;
+        }
+
         // Parse SSE field
         const colonIndex = line.indexOf(":");
         if (colonIndex === -1) {
