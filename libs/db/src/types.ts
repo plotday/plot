@@ -1345,6 +1345,7 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string | null
+          deleted_at: string | null
           email: string | null
           id: string | null
           name: string | null
@@ -1669,6 +1670,7 @@ export type Database = {
         Returns: {
           avatar_url: string | null
           created_at: string | null
+          deleted_at: string | null
           email: string | null
           id: string | null
           name: string | null
