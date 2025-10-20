@@ -6,8 +6,8 @@ import prompts from "prompts";
 
 import * as out from "../utils/output";
 import { detectPackageManager } from "../utils/packageManager";
-import { getGlobalTokenPath } from "../utils/token";
 import { handleSSEStream } from "../utils/sse";
+import { getGlobalTokenPath } from "../utils/token";
 
 interface GenerateOptions {
   dir: string;
@@ -311,32 +311,38 @@ export async function generateCommand(options: GenerateOptions) {
 
     // Update @plotday/sdk to latest and install packages
     try {
-      out.progress("Updating @plotday/sdk to latest version...");
+      out.progress("Updating SDK to latest version...");
 
       const updateCommand =
-        packageManager === "npm" ? "npm install @plotday/sdk@latest" :
-        packageManager === "pnpm" ? "pnpm add @plotday/sdk@latest" :
-        "yarn add @plotday/sdk@latest";
+        packageManager === "npm"
+          ? "npm install @plotday/sdk@latest"
+          : packageManager === "pnpm"
+          ? "pnpm add @plotday/sdk@latest"
+          : "yarn add @plotday/sdk@latest";
 
       execSync(updateCommand, { cwd: agentPath, stdio: "ignore" });
 
       out.progress("Installing dependencies...");
 
       const installCommand =
-        packageManager === "yarn" ? "yarn" :
-        `${packageManager} install`;
+        packageManager === "yarn" ? "yarn" : `${packageManager} install`;
 
       execSync(installCommand, { cwd: agentPath, stdio: "ignore" });
 
-      out.success("Dependencies installed successfully!");
+      out.success("Dependencies installed.");
     } catch (error) {
-      out.warning(
-        "Couldn't install dependencies",
-        [
-          `Run '${packageManager === "npm" ? "npm install @plotday/sdk@latest" : packageManager === "pnpm" ? "pnpm add @plotday/sdk@latest" : "yarn add @plotday/sdk@latest"}' in ${options.dir}`,
-          `Then run '${packageManager === "yarn" ? "yarn" : `${packageManager} install`}'`
-        ]
-      );
+      out.warning("Couldn't install dependencies", [
+        `Run '${
+          packageManager === "npm"
+            ? "npm install @plotday/sdk@latest"
+            : packageManager === "pnpm"
+            ? "pnpm add @plotday/sdk@latest"
+            : "yarn add @plotday/sdk@latest"
+        }' in ${options.dir}`,
+        `Then run '${
+          packageManager === "yarn" ? "yarn" : `${packageManager} install`
+        }'`,
+      ]);
     }
 
     out.blank();

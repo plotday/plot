@@ -374,16 +374,15 @@ try {
 
 ## Common Pitfalls
 
-1. **Don't use instance variables for state** - Anything stored in memory is lost after function execution. Always use the Store tool for data that needs to persist.
-2. **Don't forget timeout limits** - Each execution has ~10 seconds. Break long operations into batches with the Run tool.
-3. **Don't assume execution order** - Batches may run on different workers. Store all necessary state between executions.
-4. **Always use Callback tool for persistent references** - Direct function references don't survive worker restarts.
-5. **Store auth tokens** - Don't re-request authentication unnecessarily.
-6. **Clean up callbacks and stored state** - Delete callbacks and Store entries when no longer needed.
-7. **Handle missing auth gracefully** - Check for stored auth before operations.
-8. **Batch size matters** - Process enough items per batch to be efficient, but few enough to stay under time limits.
-9. **Processing self-created activities** - Other users may change an Activity created by the agent, resulting in an \`activity\` call. Be sure to check the \`changes === null\` and/or \`activity.author.id !== this.id\` to avoid re-processing.
-10. Activity with type ActivityType.Note typically do not have a start or end set, unless they're a note about a specific day or time that shouldn't be shown until then.
+- **Don't use instance variables for state** - Anything stored in memory is lost after function execution. Always use the Store tool for data that needs to persist.
+- **Processing self-created activities** - Other users may change an Activity created by the agent, resulting in an \`activity\` call. Be sure to check the \`changes === null\` and/or \`activity.author.id !== this.id\` to avoid re-processing.
+- Activity with type ActivityType.Note typically do not have a start or end set, unless they're a note about a specific day or time that shouldn't be shown until then.
+- Don't add the Tools instance as an instance variable. Any tools needed must bet rieved via \`this.tools.get(ToolClass)\` in the constructor and assigned to instance variables.
+- **Don't forget runtime limits** - Each execution has ~10 seconds. Break long operations into batches with the Run tool. Process enough items per batch to be efficient, but few enough to stay under time limits.
+- **Always use Callback tool for persistent references** - Direct function references don't survive worker restarts.
+- **Store auth tokens** - Don't re-request authentication unnecessarily.
+- **Clean up callbacks and stored state** - Delete callbacks and Store entries when no longer needed.
+- **Handle missing auth gracefully** - Check for stored auth before operations.
 
 ## Type Patterns
 
