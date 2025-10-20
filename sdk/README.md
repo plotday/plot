@@ -1,6 +1,17 @@
 # Plot Agent SDK
 
-The official SDK for building Plot agents - intelligent assistants that organize and prioritize your activities from all your apps and messages.
+<p align="center">
+  <a href="https://linear.app" target="_blank" rel="noopener noreferrer">
+    <img width="48" height="48" alt="favicon" src="https://github.com/user-attachments/assets/f38501fd-bb37-4671-a0bc-fd35fa25360d" alt="Plot logo" />
+  </a>
+</p>
+<h1 align="center">
+  Plot Agent SDK
+</h1>
+<p align="center">
+  The official SDK for building [Plot](https://plot.day) agents -<br/>
+  custom code that organize and prioritize all your messages, tasks, and apps.
+</p>
 
 ## Quick Start
 
@@ -54,7 +65,10 @@ export default class extends Agent {
 
 ### 3. Deploy Your Agent
 
+You'll need a [Plot account](https://plot.day) to deploy agents.
+
 ```bash
+npm run plot login
 npm run deploy
 ```
 
