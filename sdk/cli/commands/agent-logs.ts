@@ -1,11 +1,18 @@
 import * as fs from "fs";
+import * as path from "path";
 
 import * as out from "../utils/output";
 import { getGlobalTokenPath } from "../utils/token";
 import { handleSSEStream } from "../utils/sse";
 
+interface PackageJson {
+  plotAgentId?: string;
+}
+
 interface AgentLogsOptions {
-  agentId: string;
+  agentId?: string;
+  id?: string;
+  dir?: string;
   environment?: string;
   deployToken?: string;
   apiUrl: string;
@@ -15,7 +22,33 @@ interface AgentLogsOptions {
  * Stream agent logs in real-time
  */
 export async function agentLogsCommand(options: AgentLogsOptions) {
-  const { agentId, environment = "personal", apiUrl } = options;
+  const { environment = "personal", apiUrl, dir = process.cwd() } = options;
+
+  // Determine agent ID from options, positional arg, or package.json
+  let agentId = options.id || options.agentId;
+
+  if (!agentId) {
+    // Try to read from package.json
+    const packageJsonPath = path.join(dir, "package.json");
+    if (fs.existsSync(packageJsonPath)) {
+      try {
+        const packageJsonContent = fs.readFileSync(packageJsonPath, "utf-8");
+        const packageJson: PackageJson = JSON.parse(packageJsonContent);
+        agentId = packageJson.plotAgentId;
+      } catch (error) {
+        out.error("Failed to parse package.json", String(error));
+        process.exit(1);
+      }
+    }
+  }
+
+  if (!agentId) {
+    out.error(
+      "Agent ID required",
+      "Provide agent ID as argument, via --id flag, or add 'plotAgentId' to package.json"
+    );
+    process.exit(1);
+  }
 
   // Load deploy token
   let deployToken = options.deployToken;
