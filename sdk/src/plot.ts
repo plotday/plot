@@ -183,11 +183,20 @@ export type ActivitySource = {
  *
  * @example
  * ```typescript
+ * // Simple note
+ * const task: Activity = {
+ *   type: ActivityType.Note,
+ *   title: "New campaign brainstorming ideas",
+ *   note: "We could rent a bouncy castle...",
+ *   author: { id: "user-1", name: "John Doe", type: AuthorType.User },
+ *   priority: { id: "work", title: "Work" },
+ *   // ... other fields
+ * };
+ *
  * // Simple task
  * const task: Activity = {
- *   id: "task-123",
  *   type: ActivityType.Task,
- *   title: "Review pull request",
+ *   title: "Review budget proposal",
  *   author: { id: "user-1", name: "John Doe", type: AuthorType.User },
  *   start: new Date(),
  *   end: null,
@@ -197,7 +206,6 @@ export type ActivitySource = {
  *
  * // Recurring event
  * const meeting: Activity = {
- *   id: "meeting-456",
  *   type: ActivityType.Event,
  *   title: "Weekly standup",
  *   recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
@@ -220,6 +228,10 @@ export type Activity = {
     /** Type of author (User, Contact, or Agent) */
     type: AuthorType;
   };
+  /** The display title/summary of the activity */
+  title: string | null;
+  /** Primary content for the activity */
+  note: string | null;
   /**
    * Start time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the start of the first occurrence.
@@ -248,10 +260,6 @@ export type Activity = {
   recurrenceCount: number | null;
   /** Timestamp when the activity was marked as complete. Null if not completed. */
   doneAt: Date | null;
-  /** Optional detailed description or notes for the activity */
-  note: string | null;
-  /** The display title/summary of the activity */
-  title: string | null;
   /** Reference to a parent activity for creating hierarchical relationships */
   parent: Activity | null;
   /** Array of interactive links attached to the activity */

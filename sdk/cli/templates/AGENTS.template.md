@@ -274,9 +274,8 @@ private async createCalendarSelectionActivity(
   }
 
   await this.plot.createActivity({
-    type: ActivityType.Task,
+    type: ActivityType.Note,
     title: "Which calendars would you like to connect?",
-    start: new Date(),
     links,
   });
 }
@@ -376,7 +375,7 @@ try {
 
 - **Don't use instance variables for state** - Anything stored in memory is lost after function execution. Always use the Store tool for data that needs to persist.
 - **Processing self-created activities** - Other users may change an Activity created by the agent, resulting in an \`activity\` call. Be sure to check the \`changes === null\` and/or \`activity.author.id !== this.id\` to avoid re-processing.
-- Activity with type ActivityType.Note typically do not have a start or end set, unless they're a note about a specific day or time that shouldn't be shown until then.
+- Most activity should be `type = ActivityType.Note` with a `title` and `note`, and no `start` or `end`. This represents a typical message. `start` and `end` should only be used for a note if it should be displayed for a specific date or time, such as a birthday.
 - Don't add the Tools instance as an instance variable. Any tools needed must bet rieved via \`this.tools.get(ToolClass)\` in the constructor and assigned to instance variables.
 - **Don't forget runtime limits** - Each execution has ~10 seconds. Break long operations into batches with the Run tool. Process enough items per batch to be efficient, but few enough to stay under time limits.
 - **Always use Callback tool for persistent references** - Direct function references don't survive worker restarts.
