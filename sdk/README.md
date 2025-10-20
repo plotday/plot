@@ -11,7 +11,64 @@
   custom code that organizes and prioritizes all your messages, tasks, and apps.
 </p>
 
-## Quick Start
+## Two Ways to Build Agents
+
+You can create Plot agents in two ways:
+
+- **No Code Required** - Write a natural language description in a `plot-agent.md` file and deploy it directly. Perfect for non-developers or rapid prototyping. [Jump to No-Code Quick Start](#quick-start-no-code)
+- **Full Control with Code** - Write custom TypeScript code for complete flexibility and advanced integrations. [Jump to Developer Quick Start](#quick-start-for-developers)
+
+## Quick Start (No Code)
+
+Create an agent using natural language - no coding required.
+
+### 1. Create a `plot-agent.md` File
+
+Create a file named `plot-agent.md` in your project directory and describe what you want your agent to do in plain English:
+
+```markdown
+# My Calendar Agent
+
+I want an agent that:
+- Syncs my Google Calendar events into Plot as activities
+- Creates tasks for upcoming meetings
+- Sends me a reminder 10 minutes before each meeting
+- Updates activity status when meetings are completed
+```
+
+Be specific about:
+- What data sources to connect (e.g., Google Calendar, GitHub, Slack)
+- What actions to take (e.g., create tasks, send notifications)
+- When to trigger actions (e.g., on new events, on schedule, when activities change)
+
+### 2. Deploy Your Agent
+
+You'll need a [Plot account](https://plot.day) to deploy agents.
+
+```bash
+# Login to Plot
+npx @plotday/sdk login
+
+# Deploy directly from your spec
+npx @plotday/sdk agent deploy
+```
+
+That's it! Your agent is now live in Plot.
+
+**Optional: Generate Code First**
+
+If you want to see or customize the generated code before deploying:
+
+```bash
+# Generate TypeScript code from your spec
+npx @plotday/sdk agent generate
+
+# Review and edit the generated src/index.ts
+# Then deploy
+npx @plotday/sdk agent deploy
+```
+
+## Quick Start (For Developers)
 
 ### 1. Create a New Agent
 
@@ -349,18 +406,34 @@ Authenticate with Plot to generate an API token.
 ### Agent Management
 
 ```bash
-# Create a new agent
+# Create a new agent (code-based)
 plot agent create [options]
+
+# Generate code from plot-agent.md spec
+plot agent generate [--input <path>] [--output <directory>]
 
 # Check for errors
 plot agent lint [--dir <directory>]
 
-# Deploy agent
+# Deploy agent (works with code or plot-agent.md)
 plot agent deploy [options]
 
 # Link agent to priority
 plot agent link [--priority-id <id>]
 ```
+
+**`plot agent generate`**
+
+Generates fully functional TypeScript agent code from a natural language `plot-agent.md` specification.
+
+- `--input <path>` - Path to plot-agent.md file (default: `./plot-agent.md`)
+- `--output <directory>` - Output directory for generated code (default: `./src`)
+
+**`plot agent deploy`**
+
+Deploys an agent to Plot. Automatically detects whether to deploy from:
+- A `plot-agent.md` specification file (generates and deploys in one step)
+- Compiled TypeScript code in `src/` directory
 
 ### Priority Management
 
