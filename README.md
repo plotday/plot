@@ -7,8 +7,8 @@
   Plot Agent SDK
 </h1>
 <p align="center">
-  The official SDK for building Plot agents -<br/>
-  intelligent assistants that organize and prioritize your activities from all your apps.
+  The official SDK for building [Plot](https://plot.day) agents -<br/>
+  custom code that organize and prioritize all your messages, tasks, and apps.
 </p>
 
 ## Packages
@@ -19,9 +19,14 @@
 
 ## Quick Start
 
+You'll need a [Plot account](https://plot.day) to deploy agents.
+
 ```bash
 # Create a new agent
 npx @plotday/sdk agent create
+
+# Connect your Plot account
+npx @plotday/sdk login
 
 # Deploy your agent
 cd my-agent
