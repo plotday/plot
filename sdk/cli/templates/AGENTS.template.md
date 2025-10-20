@@ -59,6 +59,8 @@ constructor(id: string, protected tools: Tools) {
 
 All `tools.get()` calls must occur in the constructor as they are used for dependency analysis.
 
+IMPORTANT: http access is restricted to URLs requested via `tools.enableInternet([url1, url2, ...])` in the constructor. Wildcards are supported. Use `tools.enableInternet(['*'])` if full access is needed.
+
 ### Built-in Tools (Always Available)
 
 For complete API documentation of built-in tools including all methods, types, and detailed examples, see the TypeScript definitions in your installed package at `node_modules/@plotday/sdk/src/tools/*.ts`. Each tool file contains comprehensive JSDoc documentation.
