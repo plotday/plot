@@ -118,22 +118,28 @@ agent
   });
 
 agent
-  .command("logs <agent-id>")
+  .command("logs [agent-id]")
   .description("Stream real-time logs from an agent")
+  .option("-d, --dir <directory>", "Agent directory", process.cwd())
+  .option("--id <agentId>", "Agent ID")
   .option(
     "-e, --environment <env>",
     "Agent environment (personal, private, review)",
     "personal"
   )
   .option("--deploy-token <token>", "Authentication token")
-  .action(function (this: Command, agentId: string) {
+  .action(function (this: Command, agentId?: string) {
     const opts = this.optsWithGlobals() as {
+      dir?: string;
+      id?: string;
       environment?: string;
       deployToken?: string;
       apiUrl: string;
     };
     return agentLogsCommand({
       agentId,
+      id: opts.id,
+      dir: opts.dir,
       environment: opts.environment,
       deployToken: opts.deployToken,
       apiUrl: opts.apiUrl,
