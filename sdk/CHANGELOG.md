@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.15.0
+
+### Changed
+
+- BREAKING: Agents are now restricted to the http URLs they request via tools.enableInternet(). ([#45](https://github.com/plotday/plot/pull/45) [`0490f8e`](https://github.com/plotday/plot/commit/0490f8e801199893a971fdbfbead6ba2973a53c7))
+
 ## 0.14.8
 
 ### Added

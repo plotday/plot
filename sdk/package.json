@@ -1,6 +1,6 @@
 {
   "name": "@plotday/sdk",
-  "version": "0.14.8",
+  "version": "0.15.0",
   "description": "SDK for building Plot agents - intelligent assistants that organize and prioritize your activities",
   "packageManager": "pnpm@10.18.3",
   "type": "module",
