@@ -12,6 +12,7 @@ export interface SSEHandlers {
   onProgress?: (message: string) => void;
   onResult?: (data: any) => void;
   onError?: (error: string) => void;
+  onEvent?: (event: string, data: any) => void;
 }
 
 /**
@@ -73,6 +74,11 @@ export async function handleSSEStream(
               case "error":
                 handlers.onError?.(parsedData.error);
                 throw new Error(parsedData.error);
+              default:
+                // Handle custom events via onEvent handler
+                if (handlers.onEvent) {
+                  handlers.onEvent(currentEvent.event, parsedData);
+                }
             }
           }
 

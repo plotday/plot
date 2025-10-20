@@ -3,6 +3,7 @@ import { Command, Option } from "commander";
 import { readFileSync } from "fs";
 import { join } from "path";
 
+import { agentLogsCommand } from "./commands/agent-logs";
 import { buildCommand } from "./commands/build";
 import { createCommand } from "./commands/create";
 import { deployCommand } from "./commands/deploy";
@@ -114,6 +115,29 @@ agent
       dryRun?: boolean;
     };
     return deployCommand(opts);
+  });
+
+agent
+  .command("logs <agent-id>")
+  .description("Stream real-time logs from an agent")
+  .option(
+    "-e, --environment <env>",
+    "Agent environment (personal, private, review)",
+    "personal"
+  )
+  .option("--deploy-token <token>", "Authentication token")
+  .action(function (this: Command, agentId: string) {
+    const opts = this.optsWithGlobals() as {
+      environment?: string;
+      deployToken?: string;
+      apiUrl: string;
+    };
+    return agentLogsCommand({
+      agentId,
+      environment: opts.environment,
+      deployToken: opts.deployToken,
+      apiUrl: opts.apiUrl,
+    });
   });
 
 // Priority subcommand group
