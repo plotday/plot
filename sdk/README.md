@@ -1,5 +1,3 @@
-# Plot Agent SDK
-
 <p align="center">
   <a href="https://linear.app" target="_blank" rel="noopener noreferrer">
     <img width="48" height="48" alt="favicon" src="https://github.com/user-attachments/assets/f38501fd-bb37-4671-a0bc-fd35fa25360d" alt="Plot logo" />
@@ -9,7 +7,7 @@
   Plot Agent SDK
 </h1>
 <p align="center">
-  The official SDK for building [Plot](https://plot.day) agents -<br/>
+  The official SDK for building <a href="https://plot.day">Plot</a> agents -<br/>
   custom code that organize and prioritize all your messages, tasks, and apps.
 </p>
 
