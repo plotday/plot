@@ -8,7 +8,7 @@
 </h1>
 <p align="center">
   The official SDK for building <a href="https://plot.day">Plot</a> agents -<br/>
-  custom code that organize and prioritize all your messages, tasks, and apps.
+  custom code that organizes and prioritizes all your messages, tasks, and apps.
 </p>
 
 ## Packages
