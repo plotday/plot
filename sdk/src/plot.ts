@@ -198,7 +198,6 @@ export type ActivitySource = {
  *   type: ActivityType.Task,
  *   title: "Review budget proposal",
  *   author: { id: "user-1", name: "John Doe", type: AuthorType.User },
- *   start: new Date(),
  *   end: null,
  *   priority: { id: "work", title: "Work" },
  *   // ... other fields
@@ -300,7 +299,6 @@ export type Activity = {
  * const newTask: NewActivity = {
  *   type: ActivityType.Task,
  *   title: "Review pull request",
- *   start: new Date(),
  *   links: [{
  *     title: "View PR",
  *     type: ActivityLinkType.external,

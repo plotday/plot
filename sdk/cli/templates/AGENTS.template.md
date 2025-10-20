@@ -112,7 +112,6 @@ async activate(_priority: Pick<Priority, "id">) {
   await this.plot.createActivity({
     type: ActivityType.Task,
     title: "Connect your account",
-    start: new Date(),
     links: [authLink],
   });
 }
@@ -124,7 +123,6 @@ async activate(_priority: Pick<Priority, "id">) {
 const activity = await this.plot.createActivity({
   type: ActivityType.Task,
   title: "Setup",
-  start: new Date(),
 });
 
 await this.set("setup_activity_id", activity.id);
@@ -200,7 +198,6 @@ async activate(_priority: Pick<Priority, "id">) {
   const activity = await this.plot.createActivity({
     type: ActivityType.Task,
     title: "Connect Google account",
-    start: new Date(),
     links: [authLink],
   });
 
@@ -382,32 +379,6 @@ try {
 - **Store auth tokens** - Don't re-request authentication unnecessarily.
 - **Clean up callbacks and stored state** - Delete callbacks and Store entries when no longer needed.
 - **Handle missing auth gracefully** - Check for stored auth before operations.
-
-## Type Patterns
-
-### Entity Types
-
-Follow Plot's entity type patterns:
-
-```typescript
-export type Activity = {
-  id: string; // Required
-  type: ActivityType; // Required
-  title: string | null; // Nullable (not optional)
-  note: string | null; // Nullable (not optional)
-  start: Date | string | null; // Nullable (not optional)
-};
-
-export type NewActivity = {
-  type: Activity["type"]; // Only type is required
-} & Partial<Omit<Activity, "id" | "author" | "type">>;
-```
-
-This pattern distinguishes between:
-
-- Omitted fields (`undefined` in Partial types)
-- Explicitly set to null (clearing a value)
-- Set to a value
 
 ## Testing
 

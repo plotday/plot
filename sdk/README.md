@@ -77,7 +77,6 @@ Activities are the core data type in Plot, representing tasks, events, and notes
 await this.plot.createActivity({
   type: ActivityType.Task,
   title: "Review pull request",
-  start: new Date(),
   links: [
     {
       type: ActivityLinkType.external,
