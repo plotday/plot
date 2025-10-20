@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.14.4
+
+### Changed
+
+- ActivityType.Task now has a default start of new Date() ([#34](https://github.com/plotday/plot/pull/34) [`d87d285`](https://github.com/plotday/plot/commit/d87d2850a2ac2c30bade586fc7f1654f37ff6101))
+
 ## 0.14.3
 
 ### Fixed
