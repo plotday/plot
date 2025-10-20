@@ -5,18 +5,18 @@ import {
   Tool,
   type Tools,
 } from "@plotday/sdk";
-import {
-  Auth,
-  AuthLevel,
-  AuthProvider,
-  type Authorization,
-} from "@plotday/sdk/tools/auth";
 import type {
   Calendar,
   CalendarAuth,
   CalendarTool,
   SyncOptions,
 } from "@plotday/sdk/common/calendar";
+import {
+  Auth,
+  AuthLevel,
+  AuthProvider,
+  type Authorization,
+} from "@plotday/sdk/tools/auth";
 import { type Callback } from "@plotday/sdk/tools/callback";
 import { Webhook, type WebhookRequest } from "@plotday/sdk/tools/webhook";
 
@@ -114,7 +114,7 @@ const outlookApi = {
     config: CalendarConfig,
     credentials: CalendarCredentials,
     syncState: OutlookSyncState,
-    limit: number,
+    limit: number
   ) => {
     // This would contain the actual Outlook API sync logic
     // For now, return empty result
@@ -144,7 +144,7 @@ const outlookApi = {
     config: CalendarConfig,
     credentials: CalendarCredentials,
     calendarId: string,
-    existingWatch?: { watchId: string; watchSecret: string },
+    existingWatch?: { watchId: string; watchSecret: string }
   ) => {
     // This would contain the webhook setup logic
     return {
@@ -223,8 +223,6 @@ const outlookApi = {
  * ```
  */
 export class OutlookCalendar extends Tool implements CalendarTool {
-  static readonly id = "outlook-calendar";
-
   private auth: Auth;
   private webhook: Webhook;
 
@@ -253,7 +251,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
         level: AuthLevel.User,
         scopes: ["https://graph.microsoft.com/calendars.readwrite"],
       },
-      authCallback,
+      authCallback
     );
   }
 
@@ -262,7 +260,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
     credentials: CalendarCredentials;
   }> {
     const authorization = await this.get<Authorization>(
-      `authorization:${authToken}`,
+      `authorization:${authToken}`
     );
     if (!authorization) {
       throw new Error("Authorization no longer available");
@@ -308,7 +306,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
     authToken: string,
     calendarId: string,
     callback: Callback,
-    options?: SyncOptions,
+    options?: SyncOptions
   ): Promise<void> {
     // Store the callback token
     await this.set("event_callback_token", callback);
@@ -317,15 +315,16 @@ export class OutlookCalendar extends Tool implements CalendarTool {
     await this.setupOutlookWatch(authToken, calendarId, authToken);
 
     // Start sync batch using run tool for long-running operation
-    const syncCallback = await this.callback("syncOutlookBatch", { calendarId, authToken });
+    const syncCallback = await this.callback("syncOutlookBatch", {
+      calendarId,
+      authToken,
+    });
     await this.run(syncCallback);
   }
 
   async stopSync(authToken: string, calendarId: string): Promise<void> {
     // Stop webhook
-    const watchData = await this.get<WatchState>(
-      `outlook_watch_${calendarId}`,
-    );
+    const watchData = await this.get<WatchState>(`outlook_watch_${calendarId}`);
     if (watchData) {
       // Cancel the watch (would need Microsoft Graph API call)
       await this.clear(`outlook_watch_${calendarId}`);
@@ -338,7 +337,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
   private async setupOutlookWatch(
     authToken: string,
     calendarId: string,
-    opaqueAuthToken: string,
+    opaqueAuthToken: string
   ): Promise<void> {
     const { config, credentials } = await this.getApi(authToken);
 
@@ -350,10 +349,10 @@ export class OutlookCalendar extends Tool implements CalendarTool {
     config.webhookUrl = webhookUrl;
 
     const existingWatchId = await this.get<string>(
-      `outlook_watch_id_${calendarId}`,
+      `outlook_watch_id_${calendarId}`
     );
     const existingSecret = await this.get<string>(
-      `outlook_watch_secret_${calendarId}`,
+      `outlook_watch_secret_${calendarId}`
     );
 
     const watchResult = await outlookApi.watch(
@@ -362,16 +361,13 @@ export class OutlookCalendar extends Tool implements CalendarTool {
       calendarId,
       existingWatchId && existingSecret
         ? { watchId: existingWatchId, watchSecret: existingSecret }
-        : undefined,
+        : undefined
     );
 
-    await this.set(
-      `outlook_watch_id_${calendarId}`,
-      watchResult.state.watchId,
-    );
+    await this.set(`outlook_watch_id_${calendarId}`, watchResult.state.watchId);
     await this.set(
       `outlook_watch_secret_${calendarId}`,
-      watchResult.state.secret,
+      watchResult.state.secret
     );
 
     console.log("Outlook Calendar webhook configured", {
@@ -396,14 +392,13 @@ export class OutlookCalendar extends Tool implements CalendarTool {
     } catch (error) {
       console.error(
         "No Microsoft credentials found for the provided authToken:",
-        error,
+        error
       );
       return;
     }
 
     const lastSyncToken =
-      (await this.get<string>(`last_sync_token_${calendarId}`)) ||
-      undefined;
+      (await this.get<string>(`last_sync_token_${calendarId}`)) || undefined;
 
     const syncState: OutlookSyncState = {
       calendarId,
@@ -510,14 +505,14 @@ export class OutlookCalendar extends Tool implements CalendarTool {
         if (recurrenceRule && event.data?.recurrence) {
           // Parse recurrence count (takes precedence over end date)
           const recurrenceCount = parseOutlookRecurrenceCount(
-            event.data.recurrence,
+            event.data.recurrence
           );
           if (recurrenceCount) {
             activity.recurrenceCount = recurrenceCount;
           } else {
             // Parse recurrence end date if no count
             const recurrenceUntil = parseOutlookRecurrenceEnd(
-              event.data.recurrence,
+              event.data.recurrence
             );
             if (recurrenceUntil) {
               activity.recurrenceUntil = recurrenceUntil;
@@ -567,9 +562,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
         }
 
         // Call the event callback
-        const callbackToken = await this.get<Callback>(
-          "event_callback_token",
-        );
+        const callbackToken = await this.get<Callback>("event_callback_token");
         if (callbackToken) {
           await this.call(callbackToken, activity);
         }
@@ -582,12 +575,12 @@ export class OutlookCalendar extends Tool implements CalendarTool {
       syncState.state = result.state.state;
 
       console.log(
-        `Synced ${result.events.length} events, total: ${eventCount} for calendar ${calendarId}`,
+        `Synced ${result.events.length} events, total: ${eventCount} for calendar ${calendarId}`
       );
     }
 
     console.log(
-      `Outlook Calendar sync completed: ${eventCount} events for calendar ${calendarId}`,
+      `Outlook Calendar sync completed: ${eventCount} events for calendar ${calendarId}`
     );
   }
 
@@ -610,7 +603,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
     for (const notification of notifications) {
       if (notification.changeType) {
         console.log(
-          `Calendar ${notification.changeType} notification for ${context.calendarId}`,
+          `Calendar ${notification.changeType} notification for ${context.calendarId}`
         );
 
         // Trigger incremental sync
@@ -621,7 +614,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
 
   private async startIncrementalSync(
     calendarId: string,
-    authToken: string,
+    authToken: string
   ): Promise<void> {
     console.log("Starting incremental Outlook Calendar sync for", calendarId);
 
@@ -630,18 +623,21 @@ export class OutlookCalendar extends Tool implements CalendarTool {
     } catch (error) {
       console.error(
         "No Microsoft credentials found for the provided authToken:",
-        error,
+        error
       );
       return;
     }
 
-    const callback = await this.callback("syncOutlookBatch", { calendarId, authToken });
+    const callback = await this.callback("syncOutlookBatch", {
+      calendarId,
+      authToken,
+    });
     await this.run(callback);
   }
 
   async onAuthSuccess(
     authResult: Authorization,
-    context: AuthSuccessContext,
+    context: AuthSuccessContext
   ): Promise<void> {
     console.log("Outlook Calendar authentication successful", authResult);
 
@@ -650,7 +646,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
 
     // Retrieve and call the stored callback
     const callbackToken = await this.get<Callback>(
-      `auth_callback_token:${context.token}`,
+      `auth_callback_token:${context.token}`
     );
     if (callbackToken) {
       const authSuccessResult: CalendarAuth = {
