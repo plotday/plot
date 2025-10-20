@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.14.3
+
+### Fixed
+
+- Improve LLM guidance for activity creation ([#32](https://github.com/plotday/plot/pull/32) [`8f30644`](https://github.com/plotday/plot/commit/8f306448437af8bf5e20a5387594c0e655fcddf9))
+
 ## 0.14.2
 
 ### Added
