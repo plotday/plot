@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.14.7
+
+### Fixed
+
+- Fix typo in readme ([#41](https://github.com/plotday/plot/pull/41) [`8054b77`](https://github.com/plotday/plot/commit/8054b777ac582ed972526a71548918e55d8c3de0))
+
 ## 0.14.6
 
 ### Changed
