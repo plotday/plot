@@ -3,11 +3,7 @@
   "name": "api",
   "main": "src/index.ts",
   "compatibility_date": "2025-10-01",
-  "compatibility_flags": [
-    "nodejs_compat",
-    "enable_ctx_exports",
-    "experimental"
-  ],
+  "compatibility_flags": ["nodejs_compat", "enable_ctx_exports"],
   "upload_source_maps": true,
   "migrations": [
     {
