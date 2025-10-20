@@ -522,7 +522,7 @@ class Store extends _$Store {
       _noMore.add(entity);
     }
     final last = range != null
-        ? Value(range.$2)
+        ? Value(baseTable.ascending ? range.$2 : range.$1)
         : paged
         ? (more ? Value(to) : const Value(null))
         : const Value<String?>.absent();
