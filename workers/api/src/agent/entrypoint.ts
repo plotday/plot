@@ -63,6 +63,7 @@ class CachedTools {
 class DependencyTracker {
   constructor() {
     this.toolRequests = new Map();
+    this.httpPermissions = [];
   }
 
   get(ToolClass) {
@@ -88,16 +89,31 @@ class DependencyTracker {
     return {};
   }
 
+  enableInternet(urls) {
+    // Track HTTP permissions requested
+    if (Array.isArray(urls)) {
+      this.httpPermissions.push(...urls);
+    }
+  }
+
   buildDependencyTree() {
     const result = [];
 
     for (const [id, { constructor, nestedTracker }] of this.toolRequests) {
-      result.push({
+      const dep = {
         id,
         constructor,
         // Recursively build dependencies for this tool
         dependencies: nestedTracker.buildDependencyTree(),
-      });
+      };
+
+      // Include HTTP permissions if any were requested by this tool
+      const nestedHttp = nestedTracker.httpPermissions;
+      if (nestedHttp.length > 0) {
+        dep.httpPermissions = nestedHttp;
+      }
+
+      result.push(dep);
     }
 
     return result;

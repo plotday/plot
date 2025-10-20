@@ -12,12 +12,25 @@ export type ToolDependencies = {
   tool?: Tool;
   constructor?: ToolConstructor<any>;
   dependencies?: ToolDependencies[];
+  httpPermissions?: string[];
 };
 
 /**
  * Common function to load an agent worker from a module
  */
-function loadAgent(env: Bindings, id: string, version: string, module: string) {
+function loadAgent({
+  env,
+  ctx,
+  id,
+  version,
+  module,
+}: {
+  env: Bindings;
+  ctx: ExecutionContext;
+  id: string;
+  version: string;
+  module: string;
+}) {
   const moduleId = `${id}-${version}`;
 
   const worker = env.LOADER.get(moduleId, async () => {
@@ -28,19 +41,28 @@ function loadAgent(env: Bindings, id: string, version: string, module: string) {
         "index.js": AgentEntrypoint.Module,
         "agent.js": module,
       },
+      globalOutbound: ctx.exports.HttpProxy,
     };
   });
 
   return worker.getEntrypoint<AgentEntrypoint>();
 }
 
-export async function getAgent(
-  env: Bindings,
-  supabase: SupabaseClient,
-  id: string,
-  environment: string,
-  version?: string
-) {
+export async function getAgent({
+  env,
+  ctx,
+  supabase,
+  id,
+  environment,
+  version,
+}: {
+  env: Bindings;
+  ctx: ExecutionContext;
+  supabase: SupabaseClient;
+  id: string;
+  environment: string;
+  version?: string;
+}) {
   if (!version) {
     const { data, error: agentError } = await supabase
       .from("agent")
@@ -73,27 +95,57 @@ export async function getAgent(
     dependencies: ToolDependencies[];
   };
 
-  const agent = loadAgent(env, id, version, module);
+  const agent = loadAgent({ env, ctx, id, version, module });
   return { agent, dependencies };
 }
 
-export function agentFactory(env: Bindings) {
+export function agentFactory(env: Bindings, ctx: ExecutionContext) {
   // Create a single Supabase client that will be reused for all version fetches
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
   return (id: string, environment: string, version?: string) =>
-    getAgent(env, supabase, id, environment, version);
+    getAgent({ env, ctx, supabase, id, environment, version });
 }
 
-export async function storeAgentModule(
-  env: Bindings,
-  id: string,
-  module: string
-) {
+/**
+ * Recursively extracts all HTTP permissions from a dependency tree
+ */
+function extractHttpPermissions(dependencies: any[]): string[] {
+  const permissions: string[] = [];
+
+  for (const dep of dependencies) {
+    // Add this tool's HTTP permissions
+    if (dep.httpPermissions) {
+      permissions.push(...dep.httpPermissions);
+    }
+
+    // Recursively extract from nested dependencies
+    if (dep.dependencies) {
+      permissions.push(...extractHttpPermissions(dep.dependencies));
+    }
+  }
+
+  return permissions;
+}
+
+export async function storeAgentModule({
+  env,
+  ctx,
+  id,
+  module,
+}: {
+  env: Bindings;
+  ctx: ExecutionContext;
+  id: string;
+  module: string;
+}) {
   // Generate timestamp version
   const version = Date.now().toString();
 
-  const agent = loadAgent(env, id, version, module);
+  const agent = loadAgent({ env, ctx, id, version, module });
   const dependencies = await agent.getDependencies();
+
+  // Extract HTTP permissions from the entire dependency tree
+  const httpPermissions = extractHttpPermissions(dependencies as any[]);
 
   // Store module and dependencies together as JSON in R2
   const r2Key = `agents/${id}/modules/${version}.js`;
@@ -103,5 +155,6 @@ export async function storeAgentModule(
   return {
     version,
     dependencies,
+    permissions: httpPermissions.length > 0 ? { http: httpPermissions } : null,
   };
 }

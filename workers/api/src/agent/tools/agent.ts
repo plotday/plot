@@ -11,23 +11,27 @@ import { Tool } from "./tool";
 
 export class Agent extends Tool implements IAgent {
   private env: Bindings;
+  private ctx: ExecutionContext;
   private supabase: SupabaseClient;
   private priorityAgentId: string;
   private logSubscriptionsNamespace: DurableObjectNamespace<LogSubscriptions>;
 
   constructor({
     env,
+    ctx,
     supabase,
     priorityAgentId,
     logSubscriptions,
   }: {
     env: Bindings;
+    ctx: ExecutionContext;
     supabase: SupabaseClient;
     priorityAgentId: string;
     logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
   }) {
     super();
     this.env = env;
+    this.ctx = ctx;
     this.supabase = supabase;
     this.priorityAgentId = priorityAgentId;
     this.logSubscriptionsNamespace = logSubscriptions;
@@ -183,6 +187,7 @@ export class Agent extends Tool implements IAgent {
     // Use common deployment implementation
     const result = await deployAgent({
       env: this.env,
+      ctx: this.ctx,
       supabase: this.supabase,
       adminId: agentAdminId,
       input: _module !== undefined ? { module: _module } : { source: _source! },

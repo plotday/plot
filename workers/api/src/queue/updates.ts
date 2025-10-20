@@ -166,18 +166,20 @@ function buildActivityFromDbRecord(activityRecord: any): any {
 
 export async function processUpdates(
   batch: MessageBatch<UpdateMessage>,
-  env: Bindings
+  env: Bindings,
+  ctx: ExecutionContext
 ): Promise<void> {
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
   for (const message of batch.messages) {
-    await processUpdate(message.body, env, supabase);
+    await processUpdate(message.body, env, ctx, supabase);
   }
 }
 
 async function processUpdate(
   updateData: UpdateMessage,
   env: Bindings,
+  ctx: ExecutionContext,
   supabase: SupabaseClient
 ): Promise<void> {
   const { type, item, previous, agents, users } = updateData;
@@ -227,7 +229,7 @@ async function processUpdate(
         const activity = item as any; // We know this is an activity based on type check
 
         // Get tools dynamically from the agent
-        const { agent: agentInstance, dependencies } = await agentFactory(env)(
+        const { agent: agentInstance, dependencies } = await agentFactory(env, ctx)(
           agent.id,
           agent.environment,
           agent.version
@@ -246,6 +248,7 @@ async function processUpdate(
             callbacks: env.CALLBACKS,
             logSubscriptions: env.LOG_SUBSCRIPTIONS,
             env,
+            ctx,
           }
         );
 

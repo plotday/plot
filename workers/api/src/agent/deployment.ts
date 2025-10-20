@@ -11,6 +11,7 @@ export type DeploymentInput =
 
 export interface DeployAgentOptions {
   env: Bindings;
+  ctx: ExecutionContext;
   supabase: SupabaseClient;
   adminId: string;
   input: DeploymentInput;
@@ -41,6 +42,7 @@ export interface DeployAgentResult {
  */
 export async function deployAgent({
   env,
+  ctx,
   supabase,
   adminId,
   input,
@@ -100,10 +102,17 @@ export async function deployAgent({
   // Store agent module in R2 and get version + dependencies
   let version: string;
   let dependencies: any[];
+  let permissions: any;
   try {
-    const storeResult = await storeAgentModule(env, adminId, moduleCode);
+    const storeResult = await storeAgentModule({
+      env,
+      ctx,
+      id: adminId,
+      module: moduleCode,
+    });
     version = storeResult.version;
     dependencies = storeResult.dependencies;
+    permissions = storeResult.permissions;
   } catch (error) {
     throw new Error(
       `Failed to store agent module: ${error instanceof Error ? error.message : "Unknown error"}`
@@ -127,6 +136,7 @@ export async function deployAgent({
         name,
         description,
         version,
+        permissions,
         environment,
         user_id: userId ?? null,
       })
@@ -138,7 +148,7 @@ export async function deployAgent({
     }
   } else {
     // Update existing agent
-    const updateData: Record<string, any> = { version };
+    const updateData: Record<string, any> = { version, permissions };
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
 
@@ -173,6 +183,7 @@ export async function deployAgent({
           name,
           description,
           version,
+          permissions,
           user_id: null,
         },
         {

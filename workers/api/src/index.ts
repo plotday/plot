@@ -33,6 +33,7 @@ export { Callbacks } from "./state/callbacks";
 export { Broadcast } from "./state/broadcast";
 export { Usage } from "./state/usage";
 export { LogSubscriptions } from "./state/log-subscriptions";
+export { HttpProxy } from "./agent/http-proxy";
 
 export class AgentBuilder extends Container {
   defaultPort = 3000;

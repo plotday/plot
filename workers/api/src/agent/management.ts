@@ -16,6 +16,7 @@ export async function add(
   config?: any,
   activate?: {
     env: Bindings;
+    ctx: ExecutionContext;
     agentFactory: ReturnType<typeof AgentFactory>;
     createTools: typeof CreateTools;
     version?: string;
@@ -129,6 +130,7 @@ export async function add(
           callbacks: activate.env.CALLBACKS,
           logSubscriptions: activate.env.LOG_SUBSCRIPTIONS,
           env: activate.env,
+          ctx: activate.ctx,
         }
       );
 

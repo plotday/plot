@@ -211,7 +211,8 @@ account.post("/activate", async (c) => {
         undefined,
         {
           env: c.env,
-          agentFactory: agentFactory(c.env),
+          ctx: c.executionCtx as ExecutionContext,
+          agentFactory: agentFactory(c.env, c.executionCtx as ExecutionContext),
           createTools,
           version: plotAgent.version,
         }

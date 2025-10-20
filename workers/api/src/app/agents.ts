@@ -78,7 +78,8 @@ agents.post("/agent", async (c) => {
       body.config,
       {
         env: c.env,
-        agentFactory: agentFactory(c.env),
+        ctx: c.executionCtx as ExecutionContext,
+        agentFactory: agentFactory(c.env, c.executionCtx as ExecutionContext),
         createTools,
       }
     );

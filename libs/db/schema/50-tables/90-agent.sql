@@ -34,6 +34,7 @@ CREATE TABLE "public"."agent" (
     "description" text,
     "user_id" uuid REFERENCES auth.users ON DELETE CASCADE,
     "version" text NOT NULL,
+    "permissions" jsonb,
     PRIMARY KEY (id, environment),
     CONSTRAINT "agent_owner_check" CHECK ((environment = 'personal' AND user_id IS NOT NULL) OR (environment != 'personal' AND user_id IS NULL))
 );

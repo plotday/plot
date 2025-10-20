@@ -31,6 +31,7 @@ export function createTool(
     callbacks,
     logSubscriptions,
     env,
+    ctx,
   }: {
     supabase: SupabaseClient;
     priorityId: string;
@@ -39,6 +40,7 @@ export function createTool(
     callbacks: DurableObjectNamespace<Callbacks>;
     logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
     env: Bindings;
+    ctx: ExecutionContext;
   }
 ): ToolDependencies {
   let tool: unknown = undefined;
@@ -99,6 +101,7 @@ export function createTool(
     case "AgentManager":
       tool = new Agent({
         env,
+        ctx,
         supabase,
         priorityAgentId,
         logSubscriptions,
@@ -119,6 +122,7 @@ export function createTool(
         callbacks,
         logSubscriptions,
         env,
+        ctx,
       }
     ),
   };
@@ -140,6 +144,7 @@ export function createTools(
     callbacks,
     logSubscriptions,
     env,
+    ctx,
   }: {
     supabase: SupabaseClient;
     priorityId: string;
@@ -148,6 +153,7 @@ export function createTools(
     callbacks: DurableObjectNamespace<Callbacks>;
     logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
     env: Bindings;
+    ctx: ExecutionContext;
   }
 ): ToolDependencies[] {
   const ret = dependencies.map((dep) =>
@@ -159,6 +165,7 @@ export function createTools(
       callbacks,
       logSubscriptions,
       env,
+      ctx,
     })
   );
   return ret;

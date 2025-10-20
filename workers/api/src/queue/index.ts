@@ -9,7 +9,7 @@ import { processUpdates } from "./updates";
 export async function queue(
   batch: MessageBatch<QueueMessage>,
   env: Bindings,
-  _ctx: ExecutionContext
+  ctx: ExecutionContext
 ): Promise<void> {
   // Use batch.queue to distinguish between queues
   switch (batch.queue) {
@@ -20,7 +20,7 @@ export async function queue(
 
     case "updates-development":
     case "updates-production":
-      await processUpdates(batch as MessageBatch<UpdateMessage>, env);
+      await processUpdates(batch as MessageBatch<UpdateMessage>, env, ctx);
       break;
 
     case "agent-logs-development":

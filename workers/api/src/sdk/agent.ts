@@ -268,6 +268,7 @@ agent.post("/agent/:id", async (c) => {
       try {
         const result = await deployAgent({
           env: c.env,
+          ctx: c.executionCtx as ExecutionContext,
           supabase,
           adminId: adminId!,
           input: module !== undefined ? { module } : { source: source! },
@@ -324,6 +325,7 @@ agent.post("/agent/:id", async (c) => {
     try {
       const result = await deployAgent({
         env: c.env,
+        ctx: c.executionCtx as ExecutionContext,
         supabase,
         adminId: adminId!,
         input: module !== undefined ? { module } : { source: source! },

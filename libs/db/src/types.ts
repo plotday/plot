@@ -369,6 +369,7 @@ export type Database = {
           environment: Database["public"]["Enums"]["agent_environment"]
           id: string
           name: string
+          permissions: Json | null
           updated_at: string
           user_id: string | null
           version: string
@@ -380,6 +381,7 @@ export type Database = {
           environment?: Database["public"]["Enums"]["agent_environment"]
           id: string
           name: string
+          permissions?: Json | null
           updated_at?: string
           user_id?: string | null
           version: string
@@ -391,6 +393,7 @@ export type Database = {
           environment?: Database["public"]["Enums"]["agent_environment"]
           id?: string
           name?: string
+          permissions?: Json | null
           updated_at?: string
           user_id?: string | null
           version?: string
@@ -1711,6 +1714,7 @@ export type Database = {
           environment: Database["public"]["Enums"]["agent_environment"]
           id: string
           name: string
+          permissions: Json | null
           updated_at: string
           user_id: string | null
           version: string

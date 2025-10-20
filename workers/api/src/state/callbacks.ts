@@ -141,7 +141,7 @@ export class Callbacks extends DurableObject<Bindings> {
     return token;
   }
 
-  async call(token: string, args?: any): Promise<any> {
+  async call(token: string, args?: any, ctx?: ExecutionContext): Promise<any> {
     const result = this.sql
       .exec(
         `
@@ -190,7 +190,11 @@ export class Callbacks extends DurableObject<Bindings> {
     );
 
     // Get tools dynamically from the agent
-    const agents = agentFactory(this.env);
+    // ExecutionContext should be provided via the RPC call
+    if (!ctx) {
+      throw new Error("ExecutionContext is required for agent loading in callbacks");
+    }
+    const agents = agentFactory(this.env, ctx);
     const { agent: agentInstance, dependencies: agentDependencies } =
       await agents(agentId, environment, callback.version);
     let dependencies = agentDependencies;
@@ -219,6 +223,7 @@ export class Callbacks extends DurableObject<Bindings> {
             callbacks: this.env.CALLBACKS,
             logSubscriptions: this.env.LOG_SUBSCRIPTIONS,
             env: this.env,
+            ctx,
           }),
           callback.functionName,
           args === undefined ? callback.context : args,
@@ -239,6 +244,7 @@ export class Callbacks extends DurableObject<Bindings> {
               callbacks: this.env.CALLBACKS,
               logSubscriptions: this.env.LOG_SUBSCRIPTIONS,
               env: this.env,
+              ctx,
             }
           ),
           callback.functionName,
