@@ -24,15 +24,16 @@ function loadAgent({
   id,
   version,
   module,
+  environment,
 }: {
   env: Bindings;
   ctx: ExecutionContext;
   id: string;
   version: string;
   module: string;
+  environment: string;
 }) {
   const moduleId = `${id}-${version}`;
-
   const worker = env.LOADER.get(moduleId, async () => {
     return {
       compatibilityDate: "2025-10-01",
@@ -42,6 +43,17 @@ function loadAgent({
         "agent.js": module,
       },
       globalOutbound: ctx.exports.HttpProxy,
+      tails: [
+        ctx.exports.AgentTail({
+          env: {
+            AGENT_LOGS_QUEUE: env.AGENT_LOGS_QUEUE,
+          },
+          props: {
+            agentRootId: id,
+            environment,
+          },
+        }),
+      ],
     };
   });
 
@@ -95,7 +107,7 @@ export async function getAgent({
     dependencies: ToolDependencies[];
   };
 
-  const agent = loadAgent({ env, ctx, id, version, module });
+  const agent = loadAgent({ env, ctx, id, version, module, environment });
   return { agent, dependencies };
 }
 
@@ -132,16 +144,18 @@ export async function storeAgentModule({
   ctx,
   id,
   module,
+  environment,
 }: {
   env: Bindings;
   ctx: ExecutionContext;
   id: string;
   module: string;
+  environment: string;
 }) {
   // Generate timestamp version
   const version = Date.now().toString();
 
-  const agent = loadAgent({ env, ctx, id, version, module });
+  const agent = loadAgent({ env, ctx, id, version, module, environment });
   const dependencies = await agent.getDependencies();
 
   // Extract HTTP permissions from the entire dependency tree

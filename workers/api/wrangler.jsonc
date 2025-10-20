@@ -3,7 +3,11 @@
   "name": "api",
   "main": "src/index.ts",
   "compatibility_date": "2025-10-01",
-  "compatibility_flags": ["nodejs_compat", "enable_ctx_exports"],
+  "compatibility_flags": [
+    "nodejs_compat",
+    "enable_ctx_exports",
+    "experimental"
+  ],
   "upload_source_maps": true,
   "migrations": [
     {
@@ -19,6 +23,10 @@
     {
       "tag": "v7",
       "new_sqlite_classes": ["AgentBuilder"]
+    },
+    {
+      "tag": "v8",
+      "new_sqlite_classes": ["LogStream"]
     }
   ],
   "env": {
@@ -76,7 +84,8 @@
         ]
       },
       "ai": {
-        "binding": "AI"
+        "binding": "AI",
+        "remote": true
       },
       "durable_objects": {
         "bindings": [
@@ -99,6 +108,10 @@
           {
             "name": "LOG_SUBSCRIPTIONS",
             "class_name": "LogSubscriptions"
+          },
+          {
+            "name": "LOG_STREAM",
+            "class_name": "LogStream"
           },
           {
             "name": "AGENT_BUILDER",
@@ -195,6 +208,10 @@
           {
             "name": "LOG_SUBSCRIPTIONS",
             "class_name": "LogSubscriptions"
+          },
+          {
+            "name": "LOG_STREAM",
+            "class_name": "LogStream"
           },
           {
             "name": "AGENT_BUILDER",

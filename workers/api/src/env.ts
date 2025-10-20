@@ -2,6 +2,7 @@ import { type AgentBuilder } from "../";
 import { type RunMessage } from "./agent/tools/run";
 import { type Broadcast } from "./state/broadcast";
 import { type Callbacks } from "./state/callbacks";
+import { type LogStream } from "./state/log-stream";
 import { type LogSubscriptions } from "./state/log-subscriptions";
 import { type Storage } from "./state/storage";
 import { type Usage } from "./state/usage";
@@ -93,5 +94,6 @@ export type Bindings = {
   readonly BROADCAST: DurableObjectNamespace<Broadcast>;
   readonly USAGE: DurableObjectNamespace<Usage>;
   readonly LOG_SUBSCRIPTIONS: DurableObjectNamespace<LogSubscriptions>;
+  readonly LOG_STREAM: DurableObjectNamespace<LogStream>;
   readonly AGENT_MODULES_BUCKET: R2Bucket;
 };

@@ -5,8 +5,8 @@ import { createClient } from "@plotday/db";
 
 import { deployAgent } from "../agent/deployment";
 import type { Bindings } from "../env";
-import { handleValidationError } from "../utils/validation";
 import { SSEStream, acceptsSSE } from "../utils/sse";
+import { handleValidationError } from "../utils/validation";
 
 const agent = new Hono<{ Bindings: Bindings }>();
 
@@ -103,7 +103,9 @@ agent.post("/agent/generate", async (c) => {
   } catch (error) {
     console.error("Error generating agent:", error);
     return new Response(
-      `Error generating agent: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Error generating agent: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
       { status: 500 }
     );
   }
@@ -146,9 +148,12 @@ agent.post("/agent/:id", async (c) => {
   if (environment === "personal") {
     // Personal environment: require user token
     if (!userToken || !user) {
-      return new Response("Unauthorized: user token required for personal environment", {
-        status: 401,
-      });
+      return new Response(
+        "Unauthorized: user token required for personal environment",
+        {
+          status: 401,
+        }
+      );
     }
     userId = user.id;
 
@@ -170,9 +175,12 @@ agent.post("/agent/:id", async (c) => {
 
     if (adminCheckError) {
       console.error("Error checking agent_admin:", adminCheckError);
-      return new Response(`Error checking agent_admin: ${adminCheckError.message}`, {
-        status: 500,
-      });
+      return new Response(
+        `Error checking agent_admin: ${adminCheckError.message}`,
+        {
+          status: 500,
+        }
+      );
     }
 
     // Create agent_admin entry if it doesn't exist
@@ -187,24 +195,33 @@ agent.post("/agent/:id", async (c) => {
 
       if (createAdminError) {
         console.error("Error creating agent_admin:", createAdminError);
-        return new Response(`Error creating agent_admin: ${createAdminError.message}`, {
-          status: 500,
-        });
+        return new Response(
+          `Error creating agent_admin: ${createAdminError.message}`,
+          {
+            status: 500,
+          }
+        );
       }
     }
   } else {
     // Non-personal environment: require admin_id and validate access
     if (!urlAdminId) {
-      return new Response("Bad request: agent admin ID required for non-personal environment", {
-        status: 400,
-      });
+      return new Response(
+        "Bad request: agent admin ID required for non-personal environment",
+        {
+          status: 400,
+        }
+      );
     }
 
     // Validate description for non-personal
     if (!description) {
-      return new Response("Bad request: description is required for non-personal deployments", {
-        status: 400,
-      });
+      return new Response(
+        "Bad request: description is required for non-personal deployments",
+        {
+          status: 400,
+        }
+      );
     }
 
     adminId = urlAdminId;
@@ -217,7 +234,9 @@ agent.post("/agent/:id", async (c) => {
       .single();
 
     if (adminError || !agentAdmin) {
-      return new Response("Bad request: agent admin not found", { status: 404 });
+      return new Response("Bad request: agent admin not found", {
+        status: 404,
+      });
     }
 
     // Validate that publisher_id and priority_id are set for non-personal
@@ -240,16 +259,22 @@ agent.post("/agent/:id", async (c) => {
       );
 
       if (accessError || !hasAccess) {
-        return new Response("Forbidden: you do not have access to this agent's priority", {
-          status: 403,
-        });
+        return new Response(
+          "Forbidden: you do not have access to this agent's priority",
+          {
+            status: 403,
+          }
+        );
       }
     } else if (publisherToken && publisher) {
       // Check if publisher matches
       if (publisher.id !== agentAdmin.publisher_id) {
-        return new Response("Forbidden: publisher token does not match agent publisher", {
-          status: 403,
-        });
+        return new Response(
+          "Forbidden: publisher token does not match agent publisher",
+          {
+            status: 403,
+          }
+        );
       }
     } else {
       return new Response("Unauthorized", { status: 401 });
@@ -299,7 +324,9 @@ agent.post("/agent/:id", async (c) => {
 
         if (finalError || !finalAgent) {
           console.error("Error fetching final agent:", finalError);
-          stream.sendError(`Error fetching final agent: ${finalError?.message}`);
+          stream.sendError(
+            `Error fetching final agent: ${finalError?.message}`
+          );
           return;
         }
 
@@ -340,7 +367,9 @@ agent.post("/agent/:id", async (c) => {
     } catch (error) {
       console.error("Error deploying agent:", error);
       return new Response(
-        `Error deploying agent: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `Error deploying agent: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
         { status: 500 }
       );
     }
@@ -363,9 +392,12 @@ agent.post("/agent/:id", async (c) => {
 
     if (finalError || !finalAgent) {
       console.error("Error fetching final agent:", finalError);
-      return new Response(`Error fetching final agent: ${finalError?.message}`, {
-        status: 500,
-      });
+      return new Response(
+        `Error fetching final agent: ${finalError?.message}`,
+        {
+          status: 500,
+        }
+      );
     }
 
     return c.json({
@@ -373,6 +405,98 @@ agent.post("/agent/:id", async (c) => {
       dependencies,
     });
   }
+});
+
+// GET /agent/:id/logs - Stream agent logs via SSE
+agent.get("/agent/:id/logs", async (c) => {
+  const agentAdminId = c.req.param("id");
+  const environment = c.req.query("environment") || "personal";
+  const userToken = c.var.userToken;
+  const user = c.var.user;
+
+  if (!userToken || !user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  // Validate environment
+  if (!["personal", "private", "review", "public"].includes(environment)) {
+    return new Response("Invalid environment", { status: 400 });
+  }
+
+  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+
+  // For personal environment, verify agent exists
+  // For other environments, verify user has access to the agent's priority
+  if (environment === "personal") {
+    // Check if this is the user's agent
+    const { data: agent, error: agentError } = await supabase
+      .from("agent")
+      .select("id, user_id")
+      .eq("id", agentAdminId)
+      .eq("environment", environment)
+      .maybeSingle();
+
+    if (agentError || !agent) {
+      return new Response("Agent not found", { status: 404 });
+    }
+
+    if (agent.user_id !== user.id) {
+      return new Response("Forbidden", { status: 403 });
+    }
+  } else {
+    // For non-personal environments, check priority access
+    const { data: agentAdmin, error: adminError } = await supabase
+      .from("agent_admin")
+      .select("id, priority_id")
+      .eq("id", agentAdminId)
+      .single();
+
+    if (adminError || !agentAdmin) {
+      return new Response("Agent not found", { status: 404 });
+    }
+
+    if (!agentAdmin.priority_id) {
+      return new Response("Agent has no associated priority", { status: 400 });
+    }
+
+    // Check if user has access to the priority
+    const { data: hasAccess, error: accessError } = await supabase.rpc(
+      "user_has_priority_access",
+      {
+        user_id: user.id,
+        target_priority_id: agentAdmin.priority_id,
+      }
+    );
+
+    if (accessError || !hasAccess) {
+      return new Response("Forbidden: you do not have access to this agent", {
+        status: 403,
+      });
+    }
+  }
+
+  // Check if LOG_STREAM binding is configured
+  if (!c.env.LOG_STREAM) {
+    return new Response(
+      "Log streaming is not configured. Please configure the LOG_STREAM Durable Object binding.",
+      { status: 503 }
+    );
+  }
+
+  // Get the LogStream Durable Object for this agent
+  const logStreamId = c.env.LOG_STREAM.idFromName(agentAdminId);
+  const logStream = c.env.LOG_STREAM.get(logStreamId);
+
+  // Generate unique stream ID for this client
+  const streamId = `${user.id}-${Date.now()}-${Math.random()
+    .toString(36)
+    .substring(7)}`;
+
+  // Forward the request to the LogStream DO with the stream ID
+  const streamUrl = new URL(c.req.url);
+  streamUrl.searchParams.set("streamId", streamId);
+
+  return logStream.fetch(streamUrl.toString());
 });
 
 export default agent;

@@ -1,11 +1,11 @@
 import type { SupabaseClient } from "@plotday/db";
-
-import { deployAgent } from "../deployment";
-import { generateAgent } from "../generator";
-import { type LogSubscriptions } from "../../state/log-subscriptions";
-import type { Bindings } from "../../env";
 import type { AgentManager as IAgent } from "@plotday/sdk/tools/agent";
 import type { Callback } from "@plotday/sdk/tools/callback";
+
+import type { Bindings } from "../../env";
+import { type LogSubscriptions } from "../../state/log-subscriptions";
+import { deployAgent } from "../deployment";
+import { generateAgent } from "../generator";
 import type { AgentSource } from "../types";
 import { Tool } from "./tool";
 
@@ -35,6 +35,7 @@ export class Agent extends Tool implements IAgent {
     this.supabase = supabase;
     this.priorityAgentId = priorityAgentId;
     this.logSubscriptionsNamespace = logSubscriptions;
+    this.ctx = ctx;
   }
 
   /**
@@ -47,6 +48,7 @@ export class Agent extends Tool implements IAgent {
       .from("priority_agent")
       .select("priority_id")
       .eq("id", this.priorityAgentId)
+      .is("deleted_at", null)
       .single();
 
     if (fetchError || !priorityAgent) {
@@ -91,6 +93,7 @@ export class Agent extends Tool implements IAgent {
       .from("priority_agent")
       .select("priority_id")
       .eq("id", this.priorityAgentId)
+      .is("deleted_at", null)
       .single();
 
     if (fetchError || !priorityAgent) {

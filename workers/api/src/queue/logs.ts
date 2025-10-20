@@ -27,10 +27,6 @@ export async function processLogs(
       // Get subscribers for this agent
       const subscribers = await logSubscriptions.getSubscribers(agentRootId);
 
-      if (subscribers.length === 0) {
-        continue;
-      }
-
       // Convert logs to the format expected by the callback
       const formattedLogs = logs.map((log) => ({
         timestamp: new Date(log.timestamp),
@@ -39,17 +35,28 @@ export async function processLogs(
         message: log.message,
       }));
 
-      // Call each subscriber
-      for (const callbackToken of subscribers) {
-        try {
-          await CallbackTool.Call(
-            env.CALLBACKS,
-            callbackToken as Callback,
-            formattedLogs
-          );
-        } catch (error) {
-          console.error(`Failed to call log callback ${callbackToken}:`, error);
+      // Send to callback subscribers
+      if (subscribers.length > 0) {
+        for (const callbackToken of subscribers) {
+          try {
+            await CallbackTool.Call(
+              env.CALLBACKS,
+              callbackToken as Callback,
+              formattedLogs
+            );
+          } catch (error) {
+            console.error(`Failed to call log callback ${callbackToken}:`, error);
+          }
         }
+      }
+
+      // Also send to any active log streams (for API clients)
+      try {
+        const logStreamId = env.LOG_STREAM.idFromName(agentRootId);
+        const logStream = env.LOG_STREAM.get(logStreamId);
+        await logStream.sendLogs(logs);
+      } catch (error) {
+        console.error(`Failed to send logs to stream for agent ${agentRootId}:`, error);
       }
     } catch (error) {
       console.error(`Error processing logs for agent ${agentRootId}:`, error);

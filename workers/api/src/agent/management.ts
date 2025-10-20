@@ -134,9 +134,55 @@ export async function add(
         }
       );
 
-      await agentInstance.activate(tools, {
-        id: priority_id,
-      }, priorityAgent.id);
+      try {
+        // Log before calling activate
+        await activate.env.AGENT_LOGS_QUEUE.send({
+          agentRootId: agent_id,
+          environment: agent_environment as
+            | "personal"
+            | "private"
+            | "review"
+            | "public",
+          severity: "info",
+          message: `Activating in ${agent_environment} for priority ${priority_id}`,
+          timestamp: Date.now(),
+        });
+
+        await agentInstance.activate(
+          tools,
+          {
+            id: priority_id,
+          },
+          priorityAgent.id
+        );
+      } catch (activateError) {
+        // Log activation errors
+        console.error("Error activating agent:", activateError);
+        const message =
+          activateError instanceof Error
+            ? `${activateError.name}: ${activateError.message}\n${
+                activateError.stack || ""
+              }`
+            : String(activateError);
+
+        try {
+          await activate.env.AGENT_LOGS_QUEUE.send({
+            agentRootId: agent_id,
+            environment: agent_environment as
+              | "personal"
+              | "private"
+              | "review"
+              | "public",
+            severity: "error",
+            message: `Unhandled exception in activate: ${message}`,
+            timestamp: Date.now(),
+          });
+        } catch (logError) {
+          console.error("Failed to log activation error:", logError);
+        }
+
+        throw activateError;
+      }
     }
 
     return priorityAgent;
@@ -188,6 +234,7 @@ export async function getById(
       .from("priority_agent")
       .select()
       .eq("id", priority_agent_id)
+      .is("deleted_at", null)
       .single();
 
     if (error) {
@@ -243,6 +290,7 @@ export async function update(
         .from("priority_agent")
         .select("priority_id, name")
         .eq("id", priority_agent_id)
+        .is("deleted_at", null)
         .single();
 
       if (currentError) {

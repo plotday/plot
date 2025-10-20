@@ -109,6 +109,7 @@ export async function deployAgent({
       ctx,
       id: adminId,
       module: moduleCode,
+      environment,
     });
     version = storeResult.version;
     dependencies = storeResult.dependencies;
