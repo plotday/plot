@@ -71,7 +71,6 @@ export interface SyncOptions {
  *       type: ActivityType.Task,
  *       title: "Connect Google Calendar",
  *       links: [authLink],
- *       start: new Date(),
  *     });
  *   }
  *
