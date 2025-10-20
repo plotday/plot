@@ -1,5 +1,12 @@
 # @plotday/tool-google-calendar
 
+## 0.1.8
+
+### Changed
+
+- Updated dependencies:
+- @plotday/sdk@0.15.0
+
 ## 0.1.7
 
 ### Changed
