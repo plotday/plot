@@ -3,7 +3,10 @@ import type {
   Callback,
   CallbackContext,
   CallbackMethods,
+  CallbackTool,
 } from "./tools/callback";
+import type { Run } from "./tools/run";
+import type { Store } from "./tools/store";
 
 /**
  * Base class for all agents.
@@ -39,11 +42,20 @@ import type {
  */
 export abstract class Agent<TSelf = any> {
   protected id: string;
-  protected tools: Tools;
+  private _callbackTool: CallbackTool<TSelf>;
+  private _store: Store;
+  private _runTool: Run;
 
   constructor(id: string, tools: Tools) {
     this.id = id;
-    this.tools = tools;
+    // Get specific tools in constructor for dependency detection
+    // Use dynamic imports to avoid circular dependencies with tool files
+    const { CallbackTool } = require("./tools/callback");
+    const { Store } = require("./tools/store");
+    const { Run } = require("./tools/run");
+    this._callbackTool = tools.get(CallbackTool);
+    this._store = tools.get(Store);
+    this._runTool = tools.get(Run);
   }
 
   /**
@@ -57,9 +69,7 @@ export abstract class Agent<TSelf = any> {
     functionName: K,
     context?: CallbackContext<TSelf, K>
   ): Promise<Callback> {
-    const { CallbackTool } = await import("./tools/callback");
-    const callbackTool = this.tools.get(CallbackTool) as any;
-    return callbackTool.create(functionName, context);
+    return this._callbackTool.create(functionName, context);
   }
 
   /**
@@ -69,9 +79,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when the callback is deleted
    */
   protected async deleteCallback(token: Callback): Promise<void> {
-    const { CallbackTool } = await import("./tools/callback");
-    const callbackTool = this.tools.get(CallbackTool) as any;
-    return callbackTool.delete(token);
+    return this._callbackTool.delete(token);
   }
 
   /**
@@ -80,9 +88,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when all callbacks are deleted
    */
   protected async deleteAllCallbacks(): Promise<void> {
-    const { CallbackTool } = await import("./tools/callback");
-    const callbackTool = this.tools.get(CallbackTool) as any;
-    return callbackTool.deleteAll();
+    return this._callbackTool.deleteAll();
   }
 
   /**
@@ -93,9 +99,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise resolving to the callback result
    */
   protected async call(token: Callback, args?: any): Promise<any> {
-    const { CallbackTool } = await import("./tools/callback");
-    const callbackTool = this.tools.get(CallbackTool) as any;
-    return callbackTool.call(token, args);
+    return this._callbackTool.call(token, args);
   }
 
   /**
@@ -106,9 +110,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise resolving to the stored value or null
    */
   protected async get<T>(key: string): Promise<T | null> {
-    const { Store } = await import("./tools/store");
-    const store = this.tools.get(Store);
-    return store.get<T>(key);
+    return this._store.get<T>(key);
   }
 
   /**
@@ -120,9 +122,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when the value is stored
    */
   protected async set<T>(key: string, value: T): Promise<void> {
-    const { Store } = await import("./tools/store");
-    const store = this.tools.get(Store);
-    return store.set(key, value);
+    return this._store.set(key, value);
   }
 
   /**
@@ -132,9 +132,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when the key is removed
    */
   protected async clear(key: string): Promise<void> {
-    const { Store } = await import("./tools/store");
-    const store = this.tools.get(Store);
-    return store.clear(key);
+    return this._store.clear(key);
   }
 
   /**
@@ -143,9 +141,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when all keys are removed
    */
   protected async clearAll(): Promise<void> {
-    const { Store } = await import("./tools/store");
-    const store = this.tools.get(Store);
-    return store.clearAll();
+    return this._store.clearAll();
   }
 
   /**
@@ -160,9 +156,7 @@ export abstract class Agent<TSelf = any> {
     callback: Callback,
     options?: { runAt?: Date }
   ): Promise<string | void> {
-    const { Run } = await import("./tools/run");
-    const runTool = this.tools.get(Run);
-    return runTool.run(callback, options);
+    return this._runTool.run(callback, options);
   }
 
   /**
@@ -172,9 +166,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when the cancellation is processed
    */
   protected async cancel(token: string): Promise<void> {
-    const { Run } = await import("./tools/run");
-    const runTool = this.tools.get(Run);
-    return runTool.cancel(token);
+    return this._runTool.cancel(token);
   }
 
   /**
@@ -183,9 +175,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when all cancellations are processed
    */
   protected async cancelAll(): Promise<void> {
-    const { Run } = await import("./tools/run");
-    const runTool = this.tools.get(Run);
-    return runTool.cancelAll();
+    return this._runTool.cancelAll();
   }
 
   /**
@@ -231,7 +221,9 @@ export abstract class Agent<TSelf = any> {
  */
 export abstract class ITool {}
 
-export type ToolConstructor<T extends ITool> = (abstract new (id: string, tools: Tools) => T) | (new (id: string, tools: Tools) => T);
+export type ToolConstructor<T extends ITool> =
+  | (abstract new (id: string, tools: Tools) => T)
+  | (new (id: string, tools: Tools) => T);
 
 /**
  * Base class for regular tools.
@@ -256,11 +248,20 @@ export type ToolConstructor<T extends ITool> = (abstract new (id: string, tools:
  */
 export abstract class Tool<TSelf = any> implements ITool {
   protected id: string;
-  protected tools: Tools;
+  private _callbackTool: CallbackTool<TSelf>;
+  private _store: Store;
+  private _runTool: Run;
 
   constructor(id: string, tools: Tools) {
     this.id = id;
-    this.tools = tools;
+    // Get specific tools in constructor for dependency detection
+    // Use dynamic imports to avoid circular dependencies with tool files
+    const { CallbackTool } = require("./tools/callback");
+    const { Store } = require("./tools/store");
+    const { Run } = require("./tools/run");
+    this._callbackTool = tools.get(CallbackTool);
+    this._store = tools.get(Store);
+    this._runTool = tools.get(Run);
   }
 
   /**
@@ -274,9 +275,7 @@ export abstract class Tool<TSelf = any> implements ITool {
     functionName: K,
     context?: CallbackContext<TSelf, K>
   ): Promise<Callback> {
-    const { CallbackTool } = await import("./tools/callback");
-    const callbackTool = this.tools.get(CallbackTool) as any;
-    return callbackTool.create(functionName, context);
+    return this._callbackTool.create(functionName, context);
   }
 
   /**
@@ -286,9 +285,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when the callback is deleted
    */
   protected async deleteCallback(token: Callback): Promise<void> {
-    const { CallbackTool } = await import("./tools/callback");
-    const callbackTool = this.tools.get(CallbackTool) as any;
-    return callbackTool.delete(token);
+    return this._callbackTool.delete(token);
   }
 
   /**
@@ -297,9 +294,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when all callbacks are deleted
    */
   protected async deleteAllCallbacks(): Promise<void> {
-    const { CallbackTool } = await import("./tools/callback");
-    const callbackTool = this.tools.get(CallbackTool) as any;
-    return callbackTool.deleteAll();
+    return this._callbackTool.deleteAll();
   }
 
   /**
@@ -310,9 +305,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise resolving to the callback result
    */
   protected async call(token: Callback, args?: any): Promise<any> {
-    const { CallbackTool } = await import("./tools/callback");
-    const callbackTool = this.tools.get(CallbackTool) as any;
-    return callbackTool.call(token, args);
+    return this._callbackTool.call(token, args);
   }
 
   /**
@@ -323,9 +316,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise resolving to the stored value or null
    */
   protected async get<T>(key: string): Promise<T | null> {
-    const { Store } = await import("./tools/store");
-    const store = this.tools.get(Store);
-    return store.get<T>(key);
+    return this._store.get<T>(key);
   }
 
   /**
@@ -337,9 +328,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when the value is stored
    */
   protected async set<T>(key: string, value: T): Promise<void> {
-    const { Store } = await import("./tools/store");
-    const store = this.tools.get(Store);
-    return store.set(key, value);
+    return this._store.set(key, value);
   }
 
   /**
@@ -349,9 +338,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when the key is removed
    */
   protected async clear(key: string): Promise<void> {
-    const { Store } = await import("./tools/store");
-    const store = this.tools.get(Store);
-    return store.clear(key);
+    return this._store.clear(key);
   }
 
   /**
@@ -360,9 +347,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when all keys are removed
    */
   protected async clearAll(): Promise<void> {
-    const { Store } = await import("./tools/store");
-    const store = this.tools.get(Store);
-    return store.clearAll();
+    return this._store.clearAll();
   }
 
   /**
@@ -377,9 +362,7 @@ export abstract class Tool<TSelf = any> implements ITool {
     callback: Callback,
     options?: { runAt?: Date }
   ): Promise<string | void> {
-    const { Run } = await import("./tools/run");
-    const runTool = this.tools.get(Run);
-    return runTool.run(callback, options);
+    return this._runTool.run(callback, options);
   }
 
   /**
@@ -389,9 +372,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when the cancellation is processed
    */
   protected async cancel(token: string): Promise<void> {
-    const { Run } = await import("./tools/run");
-    const runTool = this.tools.get(Run);
-    return runTool.cancel(token);
+    return this._runTool.cancel(token);
   }
 
   /**
@@ -400,9 +381,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when all cancellations are processed
    */
   protected async cancelAll(): Promise<void> {
-    const { Run } = await import("./tools/run");
-    const runTool = this.tools.get(Run);
-    return runTool.cancelAll();
+    return this._runTool.cancelAll();
   }
 }
 
