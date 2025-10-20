@@ -1,5 +1,15 @@
 # @plotday/sdk
 
+## 0.14.8
+
+### Added
+
+- Documentation on generating agents from a spec ([#43](https://github.com/plotday/plot/pull/43) [`83ebb7e`](https://github.com/plotday/plot/commit/83ebb7ef96770e1d8ae42b62e8d48200424ee35e))
+
+### Changed
+
+- Improve developer docs in SDK readme ([#43](https://github.com/plotday/plot/pull/43) [`5ee6cab`](https://github.com/plotday/plot/commit/5ee6cab4a71584bdf7cbc176499c9b55e45f67da))
+
 ## 0.14.7
 
 ### Fixed
