@@ -268,7 +268,7 @@ async function processUpdate(
               }
             : undefined;
 
-        await agentInstance.activity(tools, currentActivity, changes);
+        await agentInstance.activity(tools, currentActivity, changes, agent.priority_agent_id);
       } catch (error) {
         console.error(
           `Error processing activity for agent ${agent.id}: ${

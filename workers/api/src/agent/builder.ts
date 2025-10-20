@@ -20,11 +20,13 @@ import type { AgentSource, BuildResult } from "./types";
  *
  * @param source - Agent source code containing dependencies and files
  * @param env - Bindings containing Sandbox (Container) configuration
+ * @param onProgress - Optional callback for progress updates
  * @returns Promise resolving to build result (success with module or failure with errors)
  */
 export async function buildAgent(
   source: AgentSource,
-  env: Bindings
+  env: Bindings,
+  onProgress?: (message: string) => void
 ): Promise<BuildResult> {
   // Validate that index.ts exists
   if (!source.files["index.ts"]) {
@@ -43,6 +45,9 @@ export async function buildAgent(
   }
 
   try {
+    // Report progress
+    onProgress?.("Building agent code");
+
     // Get a container instance
     // We use a consistent ID "builder" to reuse the same container instance
     // for better performance (warm starts)

@@ -19,6 +19,7 @@ export interface DeployAgentOptions {
   description?: string;
   userId?: string | null;
   dryRun?: boolean;
+  onProgress?: (message: string) => void;
 }
 
 export interface DeployAgentResult {
@@ -48,6 +49,7 @@ export async function deployAgent({
   description,
   userId,
   dryRun = false,
+  onProgress,
 }: DeployAgentOptions): Promise<DeployAgentResult> {
   // Validate input: exactly one of module or source must be provided
   if (input.module === undefined && input.source === undefined) {
@@ -60,7 +62,7 @@ export async function deployAgent({
   if (input.source !== undefined) {
     // Build module from source using container sandbox
     console.log("Building agent from source...");
-    const buildResult = await buildAgent(input.source, env);
+    const buildResult = await buildAgent(input.source, env, onProgress);
 
     if (!buildResult.success) {
       // Return build errors for dryRun or throw for real deployment
@@ -91,6 +93,9 @@ export async function deployAgent({
       errors: [],
     };
   }
+
+  // Report deployment progress
+  onProgress?.("Deploying agent");
 
   // Store agent module in R2 and get version + dependencies
   let version: string;

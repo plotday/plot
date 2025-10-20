@@ -32,8 +32,8 @@ export default class ContactsAgent extends Agent<ContactsAgent> {
   private plot: Plot;
   private store: Store;
 
-  constructor(tools: Tools) {
-    super(tools);
+  constructor(id: string, tools: Tools) {
+    super(id, tools);
     this.googleContacts = tools.get(GoogleContactsTool);
     this.plot = tools.get(Plot);
     this.store = tools.get(Store);

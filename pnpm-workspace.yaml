@@ -4,6 +4,7 @@ packages:
   - libs/*
   - agents/*
   - public/sdk
+  - public/tools/*
 onlyBuiltDependencies:
   - "@sentry/cli"
   - bufferutil

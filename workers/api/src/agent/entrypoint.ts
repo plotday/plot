@@ -1,7 +1,8 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
-import { type ToolDependencies } from ".";
 import { type Activity, type Priority } from "@plotday/sdk/plot";
+
+import { type ToolDependencies } from ".";
 
 const MODULE = `
 import { WorkerEntrypoint } from "cloudflare:workers";
@@ -9,8 +10,9 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import AgentConstructor from "agent.js";
 
 class CachedTools {
-  constructor(dependencies) {
+  constructor(dependencies, priorityAgentId) {
     this.dependencies = dependencies;
+    this.priorityAgentId = priorityAgentId;
     this.cache = new Map();
   }
 
@@ -53,8 +55,8 @@ class CachedTools {
       );
     }
 
-    const tools = new CachedTools(dependencies);
-    return new constructor(tools);
+    const tools = new CachedTools(dependencies, this.priorityAgentId);
+    return new constructor(this.priorityAgentId, tools);
   }
 }
 
@@ -71,7 +73,7 @@ class DependencyTracker {
 
     // Try to construct the tool to trigger its dependency requests
     try {
-      new ToolClass(nestedTracker);
+      new ToolClass('mock-id', nestedTracker);
     } catch (e) {
       // Expected to fail - we're just capturing dependency requests
     }
@@ -102,17 +104,17 @@ class DependencyTracker {
   }
 }
 
-function buildAgent(dependencies) {
-  const tools = new CachedTools(dependencies);
-  return new AgentConstructor(tools);
+function buildAgent(dependencies, priorityAgentId) {
+  const tools = new CachedTools(dependencies, priorityAgentId);
+  return new AgentConstructor(priorityAgentId, tools);
 }
 
-function buildTool(tool) {
+function buildTool(tool, priorityAgentId) {
   // Use pre-built tool if available, otherwise construct lazily
   if (tool.tool) {
     return tool.tool;
   } else {
-    const tools = new CachedTools(tool.dependencies ?? []);
+    const tools = new CachedTools(tool.dependencies ?? [], priorityAgentId);
     return tools.getById(tool.id);
   }
 }
@@ -138,23 +140,23 @@ export default class extends WorkerEntrypoint {
     return new Response("OK");
   }
 
-  async activate(dependencies, priority) {
-    const agent = buildAgent(dependencies);
+  async activate(dependencies, priority, priorityAgentId) {
+    const agent = buildAgent(dependencies, priorityAgentId);
     return agent.activate(priority);
   }
 
-  async activity(dependencies, activity, changes) {
-    const agent = buildAgent(dependencies);
+  async activity(dependencies, activity, changes, priorityAgentId) {
+    const agent = buildAgent(dependencies, priorityAgentId);
     return agent.activity(activity, changes);
   }
 
-  async call(dependencies, functionName, args, context) {
-    const agent = buildAgent(dependencies);
+  async call(dependencies, functionName, args, context, priorityAgentId) {
+    const agent = buildAgent(dependencies, priorityAgentId);
     return callAgent(agent, functionName, args, context);
   }
 
-  async callTool(tool, functionName, args, context) {
-    const target = buildTool(tool);
+  async callTool(tool, functionName, args, context, priorityAgentId) {
+    const target = buildTool(tool, priorityAgentId);
     return callTool(target, functionName, args, context);
   }
 
@@ -163,7 +165,7 @@ export default class extends WorkerEntrypoint {
 
     try {
       // Construct agent to trigger dependency requests
-      new AgentConstructor(tracker);
+      new AgentConstructor('mock-id', tracker);
     } catch (e) {
       // Expected to fail since we're passing mock tools
       // We only care about what was requested, not actual execution
@@ -184,23 +186,31 @@ export class AgentEntrypoint extends WorkerEntrypoint {
 
   async activate(
     _dependencies: ToolDependencies[],
-    _priority: Pick<Priority, "id">
+    _priority: Pick<Priority, "id">,
+    _priorityAgentId: string
   ) {}
 
-  async activity(_dependencies: ToolDependencies[], _activity: Activity, _changes?: { previous: Activity }) {}
+  async activity(
+    _dependencies: ToolDependencies[],
+    _activity: Activity,
+    _changes: { previous: Activity } | undefined,
+    _priorityAgentId: string
+  ) {}
 
   async call(
     _dependencies: ToolDependencies[],
     _functionName: string,
     _args: any,
-    _context: any
+    _context: any,
+    _priorityAgentId: string
   ): Promise<any> {}
 
   async callTool(
     _tool: ToolDependencies,
     _functionName: string,
     _args: any,
-    _context: any
+    _context: any,
+    _priorityAgentId: string
   ): Promise<any> {
     return null;
   }

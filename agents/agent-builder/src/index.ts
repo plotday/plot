@@ -14,8 +14,8 @@ export default class AgentBuilderAgent extends Agent<AgentBuilderAgent> {
   private agent: AgentManager;
   private store: Store;
 
-  constructor(tools: Tools) {
-    super(tools);
+  constructor(id: string, tools: Tools) {
+    super(id, tools);
     this.plot = tools.get(Plot);
     this.agent = tools.get(AgentManager);
     this.store = tools.get(Store);

@@ -4,8 +4,8 @@ import { Plot } from "@plotday/sdk/tools/plot";
 export default class extends Agent {
   private plot: Plot;
 
-  constructor(protected tools: Tools) {
-    super(tools);
+  constructor(id: string, protected tools: Tools) {
+    super(id, tools);
     this.plot = tools.get(Plot);
   }
 

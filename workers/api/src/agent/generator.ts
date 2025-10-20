@@ -18,6 +18,12 @@ const agentSourceSchema = z.object({
   dependencies: z.record(z.string(), z.string()),
 });
 
+export interface GenerateAgentOptions {
+  spec: string;
+  env: Bindings;
+  onProgress?: (message: string) => void;
+}
+
 /**
  * Generates an agent source from a specification using Claude AI.
  *
@@ -33,15 +39,18 @@ const agentSourceSchema = z.object({
  * - Role/instructions (small, static) follow
  * - Variable content (spec/errors) goes in the user prompt
  *
- * @param spec - Markdown specification describing the agent functionality
- * @param env - Bindings containing Sandbox
+ * @param options - Configuration object
+ * @param options.spec - Markdown specification describing the agent functionality
+ * @param options.env - Bindings containing Sandbox
+ * @param options.onProgress - Optional callback for progress updates
  * @returns Promise resolving to valid agent source
  * @throws Error if generation fails after max attempts
  */
-export async function generateAgent(
-  spec: string,
-  env: Bindings
-): Promise<AgentSource> {
+export async function generateAgent({
+  spec,
+  env,
+  onProgress,
+}: GenerateAgentOptions): Promise<AgentSource> {
   if (
     !env.AI_GATEWAY_ACCOUNT_ID ||
     !env.AI_GATEWAY_ID ||
@@ -67,6 +76,11 @@ export async function generateAgent(
 
   while (attempt < MAX_ATTEMPTS) {
     attempt++;
+
+    // Report progress
+    onProgress?.(
+      attempt === 1 ? "Generating agent code" : "Adjusting agent code"
+    );
 
     // Build the prompt based on whether this is a retry
     let userPrompt: string;
@@ -139,7 +153,7 @@ ${AGENTS_GUIDE}`;
     }
 
     // Try to build the agent
-    const buildResult = await buildAgent(source, env);
+    const buildResult = await buildAgent(source, env, onProgress);
 
     if (buildResult.success) {
       // Success! Return the source

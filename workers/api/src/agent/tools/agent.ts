@@ -113,7 +113,7 @@ export class Agent extends Tool implements IAgent {
   }
 
   async generate(spec: string): Promise<AgentSource> {
-    return await generateAgent(spec, this.env);
+    return await generateAgent({ spec, env: this.env });
   }
 
   async deploy(

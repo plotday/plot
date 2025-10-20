@@ -222,7 +222,8 @@ export class Callbacks extends DurableObject<Bindings> {
           }),
           callback.functionName,
           args === undefined ? callback.context : args,
-          args === undefined ? undefined : callback.context
+          args === undefined ? undefined : callback.context,
+          callback.priorityAgentId
         )
       : await agentInstance.call(
           createTools(
@@ -242,7 +243,8 @@ export class Callbacks extends DurableObject<Bindings> {
           ),
           callback.functionName,
           args === undefined ? callback.context : args,
-          args === undefined ? undefined : callback.context
+          args === undefined ? undefined : callback.context,
+          callback.priorityAgentId
         );
 
     if (callback.callOnce) {

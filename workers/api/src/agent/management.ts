@@ -134,7 +134,7 @@ export async function add(
 
       await agentInstance.activate(tools, {
         id: priority_id,
-      });
+      }, priorityAgent.id);
     }
 
     return priorityAgent;

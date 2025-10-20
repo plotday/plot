@@ -36,7 +36,7 @@ export { LogSubscriptions } from "./state/log-subscriptions";
 
 export class AgentBuilder extends Container {
   defaultPort = 3000;
-  sleepAfter = "5m";
+  sleepAfter = "60m";
 }
 
 // Export types for external use

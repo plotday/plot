@@ -6,6 +6,7 @@ import { createClient } from "@plotday/db";
 import { deployAgent } from "../agent/deployment";
 import type { Bindings } from "../env";
 import { handleValidationError } from "../utils/validation";
+import { SSEStream, acceptsSSE } from "../utils/sse";
 
 const agent = new Hono<{ Bindings: Bindings }>();
 
@@ -34,6 +35,79 @@ const AgentDeploymentSchema = z
       message: "Exactly one of 'module' or 'source' must be provided",
     }
   );
+
+// POST /agent/generate - Generate agent source from specification
+// This route must be defined BEFORE /agent/:id to prevent "generate" being matched as an id
+agent.post("/agent/generate", async (c) => {
+  const userToken = c.var.userToken;
+  const publisherToken = c.var.publisherToken;
+
+  if (!userToken && !publisherToken) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  // Parse and validate request body
+  const rawBody = await c.req.json();
+  const parseResult = z
+    .object({
+      spec: z.string(),
+    })
+    .safeParse(rawBody);
+
+  if (!parseResult.success) {
+    return handleValidationError(parseResult.error);
+  }
+
+  const { spec } = parseResult.data;
+
+  if (!spec || spec.trim().length === 0) {
+    return new Response("Bad request: spec cannot be empty", { status: 400 });
+  }
+
+  // Generate agent source from spec
+  try {
+    const { generateAgent } = await import("../agent/generator");
+
+    // Check if client wants streaming response
+    const useSSE = acceptsSSE(c.req.raw);
+
+    if (useSSE) {
+      // Stream progress updates via SSE
+      const stream = new SSEStream();
+
+      // Start generation in the background
+      (async () => {
+        try {
+          const source = await generateAgent({
+            spec,
+            env: c.env,
+            onProgress: (message) => stream.sendProgress(message),
+          });
+          stream.sendResult(source);
+        } catch (error) {
+          console.error("Error generating agent:", error);
+          stream.sendError(
+            error instanceof Error ? error.message : "Unknown error"
+          );
+        } finally {
+          stream.close();
+        }
+      })();
+
+      return stream.toResponse();
+    } else {
+      // Return JSON response (no progress updates)
+      const source = await generateAgent({ spec, env: c.env });
+      return c.json(source);
+    }
+  } catch (error) {
+    console.error("Error generating agent:", error);
+    return new Response(
+      `Error generating agent: ${error instanceof Error ? error.message : "Unknown error"}`,
+      { status: 500 }
+    );
+  }
+});
 
 // POST /agent/:id - Deploy agent
 // For personal environment: no id needed, authenticated by user token
@@ -182,169 +256,120 @@ agent.post("/agent/:id", async (c) => {
     }
   }
 
-  // Deploy agent using common implementation
-  let dependencies: string[];
-  let errors: string[] | undefined;
-  try {
-    const result = await deployAgent({
-      env: c.env,
-      supabase,
-      adminId: adminId!,
-      input: module !== undefined ? { module } : { source: source! },
-      environment,
-      name: name!,
-      description,
-      userId,
-      dryRun,
-    });
-    dependencies = result.dependencies;
-    errors = result.errors;
-  } catch (error) {
-    console.error("Error deploying agent:", error);
-    return new Response(
-      `Error deploying agent: ${error instanceof Error ? error.message : "Unknown error"}`,
-      { status: 500 }
-    );
-  }
+  // Check if client wants streaming response
+  const useSSE = acceptsSSE(c.req.raw);
 
-  // If dryRun, return validation result
-  if (dryRun) {
-    return c.json({
-      success: !errors || errors.length === 0,
-      errors,
-    });
-  }
+  if (useSSE) {
+    // Stream progress updates via SSE
+    const stream = new SSEStream();
 
-  // Fetch the final agent to return
-  const { data: finalAgent, error: finalError } = await supabase
-    .from("agent")
-    .select("*")
-    .eq("id", adminId)
-    .eq("environment", environment)
-    .single();
+    // Start deployment in the background
+    (async () => {
+      try {
+        const result = await deployAgent({
+          env: c.env,
+          supabase,
+          adminId: adminId!,
+          input: module !== undefined ? { module } : { source: source! },
+          environment,
+          name: name!,
+          description,
+          userId,
+          dryRun,
+          onProgress: (message) => stream.sendProgress(message),
+        });
 
-  if (finalError || !finalAgent) {
-    console.error("Error fetching final agent:", finalError);
-    return new Response(`Error fetching final agent: ${finalError?.message}`, {
-      status: 500,
-    });
-  }
-
-  return c.json({
-    ...finalAgent,
-    dependencies,
-  });
-});
-
-// POST /agent/:id/generate - Generate agent source from specification
-agent.post("/agent/:id/generate", async (c) => {
-  const urlAdminId = c.req.param("id");
-  const userToken = c.var.userToken;
-  const publisherToken = c.var.publisherToken;
-  const user = c.var.user;
-  const publisher = c.var.publisher;
-
-  if (!userToken && !publisherToken) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
-  // Parse and validate request body
-  const rawBody = await c.req.json();
-  const parseResult = z
-    .object({
-      spec: z.string(),
-    })
-    .safeParse(rawBody);
-
-  if (!parseResult.success) {
-    return handleValidationError(parseResult.error);
-  }
-
-  const { spec } = parseResult.data;
-
-  if (!spec || spec.trim().length === 0) {
-    return new Response("Bad request: spec cannot be empty", { status: 400 });
-  }
-
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
-
-  // Validate admin_id is provided
-  if (!urlAdminId) {
-    return new Response("Bad request: agent admin ID required", {
-      status: 400,
-    });
-  }
-
-  const adminId = urlAdminId;
-
-  // Auth check based on token type
-  if (userToken && user) {
-    // For user token: check agent_admin exists and user has access
-    const { data: agentAdmin, error: adminError } = await supabase
-      .from("agent_admin")
-      .select("id, priority_id")
-      .eq("id", adminId)
-      .maybeSingle();
-
-    if (adminError || !agentAdmin) {
-      return new Response("Bad request: agent admin not found", { status: 404 });
-    }
-
-    // Check if user has access to the admin's priority (if set)
-    if (agentAdmin.priority_id) {
-      const { data: hasAccess, error: accessError } = await supabase.rpc(
-        "user_has_priority_access",
-        {
-          user_id: user.id,
-          target_priority_id: agentAdmin.priority_id,
+        // If dryRun, return validation result
+        if (dryRun) {
+          stream.sendResult({
+            success: !result.errors || result.errors.length === 0,
+            errors: result.errors,
+          });
+          return;
         }
-      );
 
-      if (accessError || !hasAccess) {
-        return new Response(
-          "Forbidden: you do not have access to this agent's priority",
-          {
-            status: 403,
-          }
+        // Fetch the final agent to return
+        const { data: finalAgent, error: finalError } = await supabase
+          .from("agent")
+          .select("*")
+          .eq("id", adminId)
+          .eq("environment", environment)
+          .single();
+
+        if (finalError || !finalAgent) {
+          console.error("Error fetching final agent:", finalError);
+          stream.sendError(`Error fetching final agent: ${finalError?.message}`);
+          return;
+        }
+
+        stream.sendResult({
+          ...finalAgent,
+          dependencies: result.dependencies,
+        });
+      } catch (error) {
+        console.error("Error deploying agent:", error);
+        stream.sendError(
+          error instanceof Error ? error.message : "Unknown error"
         );
+      } finally {
+        stream.close();
       }
+    })();
+
+    return stream.toResponse();
+  } else {
+    // Non-streaming JSON response
+    let dependencies: string[];
+    let errors: string[] | undefined;
+    try {
+      const result = await deployAgent({
+        env: c.env,
+        supabase,
+        adminId: adminId!,
+        input: module !== undefined ? { module } : { source: source! },
+        environment,
+        name: name!,
+        description,
+        userId,
+        dryRun,
+      });
+      dependencies = result.dependencies;
+      errors = result.errors;
+    } catch (error) {
+      console.error("Error deploying agent:", error);
+      return new Response(
+        `Error deploying agent: ${error instanceof Error ? error.message : "Unknown error"}`,
+        { status: 500 }
+      );
     }
-  } else if (publisherToken && publisher) {
-    // For publisher token: check publisher matches
-    const { data: agentAdmin, error: adminError } = await supabase
-      .from("agent_admin")
-      .select("id, publisher_id")
+
+    // If dryRun, return validation result
+    if (dryRun) {
+      return c.json({
+        success: !errors || errors.length === 0,
+        errors,
+      });
+    }
+
+    // Fetch the final agent to return
+    const { data: finalAgent, error: finalError } = await supabase
+      .from("agent")
+      .select("*")
       .eq("id", adminId)
+      .eq("environment", environment)
       .single();
 
-    if (adminError || !agentAdmin) {
-      return new Response("Bad request: agent admin not found", { status: 404 });
+    if (finalError || !finalAgent) {
+      console.error("Error fetching final agent:", finalError);
+      return new Response(`Error fetching final agent: ${finalError?.message}`, {
+        status: 500,
+      });
     }
 
-    if (publisher.id !== agentAdmin.publisher_id) {
-      return new Response(
-        "Forbidden: publisher token does not match agent publisher",
-        {
-          status: 403,
-        }
-      );
-    }
-  } else {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
-  // Generate agent source from spec
-  try {
-    const { generateAgent } = await import("../agent/generator");
-    const source = await generateAgent(spec, c.env);
-
-    return c.json(source);
-  } catch (error) {
-    console.error("Error generating agent:", error);
-    return new Response(
-      `Error generating agent: ${error instanceof Error ? error.message : "Unknown error"}`,
-      { status: 500 }
-    );
+    return c.json({
+      ...finalAgent,
+      dependencies,
+    });
   }
 });
 
