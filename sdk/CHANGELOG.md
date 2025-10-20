@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.14.6
+
+### Changed
+
+- Fix README link ([#39](https://github.com/plotday/plot/pull/39) [`6f06dce`](https://github.com/plotday/plot/commit/6f06dce1482f8d7af3c547bad2c0badf8d8e5f70))
+
 ## 0.14.5
 
 ### Changed
