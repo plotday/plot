@@ -70,7 +70,8 @@ export interface SyncOptions {
  *     await this.plot.createActivity({
  *       type: ActivityType.Task,
  *       title: "Connect Google Calendar",
- *       links: [authLink]
+ *       links: [authLink],
+ *       start: new Date(),
  *     });
  *   }
  *

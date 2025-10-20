@@ -7,7 +7,6 @@ import {
   type NewActivity,
   type NewPriority,
   type Priority,
-  type Tools,
 } from "..";
 
 /**
@@ -27,12 +26,11 @@ import {
  *     this.plot = tools.get(Plot);
  *   }
  *
- *   async activate(priority: Pick<Priority, "id">) {
+ *   async activate(priority) {
  *     // Create a welcome activity
  *     await this.plot.createActivity({
- *       type: ActivityType.Task,
+ *       type: ActivityType.Note,
  *       title: "Welcome to Plot!",
- *       start: new Date(),
  *       links: [{
  *         title: "Get Started",
  *         type: ActivityLinkType.external,
@@ -142,7 +140,9 @@ export abstract class Plot extends ITool {
    * @param source - The external source reference to search for
    * @returns Promise resolving to the matching activity or null if not found
    */
-  abstract getActivityBySource(_source: ActivitySource): Promise<Activity | null>;
+  abstract getActivityBySource(
+    _source: ActivitySource
+  ): Promise<Activity | null>;
 
   /**
    * Adds contacts to the Plot system.
