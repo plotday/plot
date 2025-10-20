@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.14.2
+
+### Added
+
+- plot agent logs keepalive
+
 ## 0.14.1
 
 ### Changed
