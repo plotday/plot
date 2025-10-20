@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.14.1
+
+### Changed
+
+- plot agent logs takes id from package.json ([#29](https://github.com/plotday/plot/pull/29) [`9fefaca`](https://github.com/plotday/plot/commit/9fefaca426640fb84f7433471340d4f8ab4ba7b4))
+
 ## 0.14.0
 
 ### Added
