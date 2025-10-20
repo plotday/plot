@@ -164,6 +164,11 @@ ${AGENTS_GUIDE}`;
     previousSource = source;
     previousErrors = buildResult.errors;
 
+    console.warn(
+      `Agent build errors on attempt ${attempt}:`,
+      previousErrors?.join("\n\n")
+    );
+
     if (attempt === MAX_ATTEMPTS) {
       // Max attempts reached
       throw new Error(
