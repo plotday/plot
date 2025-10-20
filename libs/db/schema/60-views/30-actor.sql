@@ -7,13 +7,15 @@ SELECT
     c.id AS id,
     c.created_at,
     c.updated_at,
-    CASE 
-        WHEN c.user_id IS NOT NULL THEN 'user'::text
-        ELSE 'contact'::text
+    CASE WHEN c.user_id IS NOT NULL THEN
+        'user'::text
+    ELSE
+        'contact'::text
     END AS type,
     COALESCE(c.name, c.email) AS name,
     c.email,
-    c.avatar_url
+    c.avatar_url,
+    c.deleted_at
 FROM
     "public"."contact" c
 UNION ALL
@@ -25,7 +27,8 @@ SELECT
     'priority_agent'::text AS type,
     pa.name,
     NULL::text AS email,
-    NULL::text AS avatar_url
+    NULL::text AS avatar_url,
+    pa.deleted_at
 FROM
     "public"."priority_agent" pa;
 
