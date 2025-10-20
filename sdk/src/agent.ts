@@ -401,4 +401,44 @@ export interface Tools {
    * @throws When the tool is not found or not properly configured
    */
   get<T extends ITool>(ToolClass: ToolConstructor<T>): T;
+
+  /**
+   * Enables HTTP access to the specified URLs for this agent or tool.
+   *
+   * **IMPORTANT**: This method must be called in the Agent or Tool constructor
+   * to request HTTP access permissions. Without calling this method, all outbound
+   * HTTP requests (fetch, etc.) will be blocked.
+   *
+   * @param urls - Array of URL patterns to allow. Supports wildcards:
+   *   - `*` - Allow access to all URLs
+   *   - `https://*.example.com` - Allow access to all subdomains
+   *   - `https://api.example.com/*` - Allow access to all paths on the domain
+   *   - `https://api.example.com/v1/*` - Allow access to specific path prefix
+   *
+   * @example
+   * ```typescript
+   * class MyAgent extends Agent<MyAgent> {
+   *   constructor(id: string, tools: Tools) {
+   *     super(id, tools);
+   *     // Request HTTP access to specific APIs
+   *     tools.enableInternet([
+   *       'https://api.github.com/*',
+   *       'https://api.openai.com/*'
+   *     ]);
+   *   }
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * class MyTool extends Tool<MyTool> {
+   *   constructor(id: string, tools: Tools) {
+   *     super(id, tools);
+   *     // Request unrestricted HTTP access
+   *     tools.enableInternet(['*']);
+   *   }
+   * }
+   * ```
+   */
+  enableInternet(urls: string[]): void;
 }
