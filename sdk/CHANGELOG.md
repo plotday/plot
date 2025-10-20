@@ -1,5 +1,15 @@
 # @plotday/sdk
 
+## 0.14.0
+
+### Added
+
+- plot agent logs ([#27](https://github.com/plotday/plot/pull/27) [`8030c59`](https://github.com/plotday/plot/commit/8030c5951a72dc6326b06d798ea150843cdc0143))
+
+### Fixed
+
+- Improper use of tools in Agent and Tool base classes causing "Tool not found" errors ([#27](https://github.com/plotday/plot/pull/27) [`43ce7ab`](https://github.com/plotday/plot/commit/43ce7abdd97bea1fc8ee8569fd371f5f249c498c))
+
 ## 0.13.1
 
 ### Added
