@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.14.5
+
+### Changed
+
+- Add login information to the README ([#37](https://github.com/plotday/plot/pull/37) [`f7439dc`](https://github.com/plotday/plot/commit/f7439dccdf05c3434a47800ffcd311d360d15cb3))
+
 ## 0.14.4
 
 ### Changed
