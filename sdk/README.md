@@ -11,7 +11,66 @@
   custom code that organizes and prioritizes all your messages, tasks, and apps.
 </p>
 
-## Quick Start
+## Two Ways to Build Agents
+
+You can create Plot agents in two ways:
+
+- **No Code Required** - Write a natural language description in a `plot-agent.md` file and deploy it directly. Perfect for non-developers or rapid prototyping. [Jump to No-Code Quick Start](#quick-start-no-code)
+- **Full Control with Code** - Write custom TypeScript code for complete flexibility and advanced integrations. [Jump to Developer Quick Start](#quick-start-for-developers)
+
+## Quick Start (No Code)
+
+Create an agent using natural language - no coding required.
+
+### 1. Create a `plot-agent.md` File
+
+Create a file named `plot-agent.md` in your project directory and describe what you want your agent to do in plain English:
+
+```markdown
+# My Calendar Agent
+
+I want an agent that:
+
+- Syncs my Google Calendar events into Plot as activities
+- Creates tasks for upcoming meetings
+- Sends me a reminder 10 minutes before each meeting
+- Updates activity status when meetings are completed
+```
+
+Be specific about:
+
+- What data sources to connect (e.g., Google Calendar, GitHub, Slack)
+- What actions to take (e.g., create tasks, send notifications)
+- When to trigger actions (e.g., on new events, on schedule, when activities change)
+
+### 2. Deploy Your Agent
+
+You'll need a [Plot account](https://plot.day) to deploy agents.
+
+```bash
+# Login to Plot
+npx @plotday/sdk login
+
+# Deploy directly from your spec
+npx @plotday/sdk agent deploy
+```
+
+That's it! Your agent is now live in Plot.
+
+**Optional: Generate Code First**
+
+If you want to see or customize the generated code before deploying:
+
+```bash
+# Generate TypeScript code from your spec
+npx @plotday/sdk agent generate
+
+# Review and edit the generated src/index.ts
+# Then deploy
+npx @plotday/sdk agent deploy
+```
+
+## Quick Start (For Developers)
 
 ### 1. Create a New Agent
 
@@ -101,6 +160,11 @@ await this.plot.createActivity({
 
 Activities are grouped within nested contexts called Priorities (e.g. Work, Project X).
 
+**Type References:**
+- [ActivityType enum](https://github.com/plotday/plot/blob/main/sdk/src/plot.ts#L35-L42) - Note, Task, Event
+- [ActivityLinkType enum](https://github.com/plotday/plot/blob/main/sdk/src/plot.ts#L65-L74) - external, auth, hidden, callback
+- [Activity type](https://github.com/plotday/plot/blob/main/sdk/src/plot.ts#L216-L288) - Full activity structure
+
 ## Tools
 
 Tools provide functionality to agents. They can be:
@@ -178,16 +242,20 @@ const authLink = await this.auth.request(
     level: AuthLevel.User,
     scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
   },
-  authCallback,
+  authCallback
 );
 
 // Handle auth completion
 async onAuthComplete(authorization: Authorization, context: any) {
   // Get access token
   const authToken = await this.auth.get(authorization);
-  console.log("Access token:", authToken.token);
+  console.log("Access token:", authToken?.token);
 }
 ```
+
+**Type References:**
+- [AuthProvider enum](https://github.com/plotday/plot/blob/main/sdk/src/tools/auth.ts#L78-L83) - Google, Microsoft
+- [AuthLevel enum](https://github.com/plotday/plot/blob/main/sdk/src/tools/auth.ts#L90-L95) - Priority, User
 
 ### Run
 
@@ -251,12 +319,12 @@ await this.deleteAllCallbacks(); // Delete all
 Prompt large language models with structured output support.
 
 ```typescript
-import { AI, AIModel } from "@plotday/sdk/tools/ai";
+import { AI } from "@plotday/sdk/tools/ai";
 import { Type } from "typebox";
 
-// Simple text generation
+// Simple text generation with fast, low-cost model
 const response = await this.ai.prompt({
-  model: AIModel.GPT_4O_MINI,
+  model: { speed: "fast", cost: "low" },
   prompt: "Explain quantum computing in simple terms",
 });
 console.log(response.text);
@@ -273,7 +341,7 @@ const schema = Type.Object({
 });
 
 const response = await this.ai.prompt({
-  model: AIModel.GPT_4O,
+  model: { speed: "balanced", cost: "medium" },
   prompt: "Categorize this email: Meeting at 3pm tomorrow",
   outputSchema: schema,
 });
@@ -284,7 +352,7 @@ console.log(response.output.priority); // number
 
 // Tool calling
 const response = await this.ai.prompt({
-  model: AIModel.GPT_4O_MINI,
+  model: { speed: "fast", cost: "medium" },
   prompt: "What's 15% of $250?",
   tools: {
     calculate: {
@@ -316,7 +384,7 @@ const PersonSchema = Type.Object({
 
 // Use in AI prompt
 const response = await this.ai.prompt({
-  model: AIModel.GPT_4O,
+  model: { speed: "balanced", cost: "medium" },
   prompt: "Extract: John Doe, 30 years old, john@example.com",
   outputSchema: PersonSchema,
 });
@@ -327,12 +395,13 @@ response.output.age; // number
 response.output.email; // string | undefined
 ```
 
-**Available Models:**
+**Model Selection:**
 
-- **OpenAI**: `GPT_4O`, `GPT_4O_MINI`, `GPT_4_TURBO`, `GPT_35_TURBO`
-- **Anthropic**: `CLAUDE_SONNET_4_5`, `CLAUDE_35_SONNET`, `CLAUDE_3_OPUS`
-- **Google**: `GEMINI_25_FLASH`
-- **Workers AI**: `LLAMA_33_70B`, `LLAMA_31_8B`, `MISTRAL_7B`
+Use `ModelPreferences` to specify your requirements based on speed and cost tiers:
+- **Speed**: `"fast"`, `"balanced"`, or `"capable"`
+- **Cost**: `"low"`, `"medium"`, or `"high"`
+
+Plot automatically selects the best available model matching your preferences. See the [AIModel enum](https://github.com/plotday/plot/blob/main/sdk/src/tools/ai.ts#L213-L243) for specific models currently supported.
 
 ## CLI Commands
 
@@ -349,18 +418,35 @@ Authenticate with Plot to generate an API token.
 ### Agent Management
 
 ```bash
-# Create a new agent
+# Create a new agent (code-based)
 plot agent create [options]
+
+# Generate code from plot-agent.md spec
+plot agent generate [--input <path>] [--output <directory>]
 
 # Check for errors
 plot agent lint [--dir <directory>]
 
-# Deploy agent
+# Deploy agent (works with code or plot-agent.md)
 plot agent deploy [options]
 
 # Link agent to priority
 plot agent link [--priority-id <id>]
 ```
+
+**`plot agent generate`**
+
+Generates fully functional TypeScript agent code from a natural language `plot-agent.md` specification.
+
+- `--input <path>` - Path to plot-agent.md file (default: `./plot-agent.md`)
+- `--output <directory>` - Output directory for generated code (default: `./src`)
+
+**`plot agent deploy`**
+
+Deploys an agent to Plot. Automatically detects whether to deploy from:
+
+- A `plot-agent.md` specification file (generates and deploys in one step)
+- Compiled TypeScript code in `src/` directory
 
 ### Priority Management
 
