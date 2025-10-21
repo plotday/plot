@@ -13,6 +13,8 @@ export * from "@plotday/sdk/tools/callback";
 export class CallbackTool<TParent = any> extends Tool implements ICallbackTool<TParent> {
   private callbacks: DurableObjectStub<Callbacks>;
   private priorityAgentId: string;
+  private agentId: string;
+  private environment: string;
   private path: string[];
 
   private static GetStub(
@@ -26,15 +28,21 @@ export class CallbackTool<TParent = any> extends Tool implements ICallbackTool<T
   constructor({
     callbacks,
     priorityAgentId,
+    agentId,
+    environment,
     path,
   }: {
     callbacks: DurableObjectNamespace<Callbacks>;
     priorityAgentId: string;
+    agentId: string;
+    environment: string;
     path: string[];
   }) {
     super();
     this.callbacks = CallbackTool.GetStub(callbacks, priorityAgentId);
     this.priorityAgentId = priorityAgentId;
+    this.agentId = agentId;
+    this.environment = environment;
     // Remove this tool
     this.path = path.slice(0, -1);
   }
@@ -45,6 +53,8 @@ export class CallbackTool<TParent = any> extends Tool implements ICallbackTool<T
   ): Promise<Callback> {
     const token = await this.callbacks.create({
       priorityAgentId: this.priorityAgentId,
+      agentId: this.agentId,
+      environment: this.environment,
       path: this.path,
       functionName: functionName as string,
       context,
@@ -77,6 +87,8 @@ export class CallbackTool<TParent = any> extends Tool implements ICallbackTool<T
   async deleteAll(): Promise<void> {
     await this.callbacks.deleteAll({
       priorityAgentId: this.priorityAgentId,
+      agentId: this.agentId,
+      environment: this.environment,
       path: this.path,
     });
   }

@@ -2,18 +2,15 @@ import { DurableObject } from "cloudflare:workers";
 
 import { type SupabaseClient, createClient, safeQuery } from "@plotday/db";
 
-import {
-  type ToolDependencySpec,
-  agentFactory,
-  createTool,
-  createTools,
-} from "../agent";
+import { agentFactory } from "../agent";
 import { type Bindings } from "../env";
 
 export type CallbackData = {
   token: string;
   priorityAgentId: string;
-  path: string[]; // agentId, environment, followed by toolIds
+  agentId: string;
+  environment: string;
+  path: string[]; // tool hierarchy only
   version: string; // agent version
   functionName: string;
   context?: any;
@@ -49,6 +46,8 @@ export class Callbacks extends DurableObject<Bindings> {
         CREATE TABLE IF NOT EXISTS callbacks (
           token TEXT PRIMARY KEY,
           priority_agent_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          environment TEXT NOT NULL,
           path TEXT NOT NULL,
           version TEXT NOT NULL,
           function_name TEXT NOT NULL,
@@ -70,6 +69,8 @@ export class Callbacks extends DurableObject<Bindings> {
 
   async create({
     priorityAgentId,
+    agentId,
+    environment,
     path,
     version,
     functionName,
@@ -79,7 +80,9 @@ export class Callbacks extends DurableObject<Bindings> {
     expires,
   }: {
     priorityAgentId: string;
-    path: string[]; // [agentId, environment, ...toolIds]
+    agentId: string;
+    environment: string;
+    path: string[]; // tool hierarchy only
     version?: string;
     functionName: string;
     context?: any;
@@ -87,13 +90,8 @@ export class Callbacks extends DurableObject<Bindings> {
     callOnce?: boolean;
     expires?: Date;
   }): Promise<string> {
-    if (path.length < 2) {
-      throw new Error("Path must contain at least agent ID and environment");
-    }
-
     // Fetch version from database if not provided
     if (!version) {
-      const [agentId, environment] = path;
       const { data, error } = await this.supabase
         .from("agent")
         .select("version")
@@ -119,11 +117,13 @@ export class Callbacks extends DurableObject<Bindings> {
     this.sql.exec(
       `
         INSERT INTO callbacks (
-          token, priority_agent_id, path, version, function_name, context, call_at, call_once, expires
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          token, priority_agent_id, agent_id, environment, path, version, function_name, context, call_at, call_once, expires
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       token,
       priorityAgentId,
+      agentId,
+      environment,
       JSON.stringify(path),
       version,
       functionName,
@@ -145,7 +145,7 @@ export class Callbacks extends DurableObject<Bindings> {
     const result = this.sql
       .exec(
         `
-          SELECT token, priority_agent_id, path, version, function_name, context, call_at, call_once, expires
+          SELECT token, priority_agent_id, agent_id, environment, path, version, function_name, context, call_at, call_once, expires
           FROM callbacks
           WHERE token = ?
           `,
@@ -153,12 +153,15 @@ export class Callbacks extends DurableObject<Bindings> {
       )
       .next();
     if (result.done) {
+      console.warn(`Callback not found for token: ${token}`);
       return Promise.reject("Callback not found");
     }
     const rawCallback = result.value as any;
     const callback: CallbackData = {
       token: rawCallback.token,
       priorityAgentId: rawCallback.priority_agent_id,
+      agentId: rawCallback.agent_id,
+      environment: rawCallback.environment,
       path: JSON.parse(rawCallback.path),
       version: rawCallback.version,
       functionName: rawCallback.function_name,
@@ -176,10 +179,7 @@ export class Callbacks extends DurableObject<Bindings> {
       return Promise.reject("Callback has expired");
     }
 
-    const [agentId, environment, ...path] = callback.path;
-    if (!agentId || !environment) {
-      throw new Error(`Invalid callback path: ${callback.path}`);
-    }
+    const { agentId, environment, path } = callback;
 
     const agent = safeQuery(
       await this.supabase
@@ -192,66 +192,33 @@ export class Callbacks extends DurableObject<Bindings> {
     // Get tools dynamically from the agent
     // ExecutionContext should be provided via the RPC call
     if (!ctx) {
-      throw new Error("ExecutionContext is required for agent loading in callbacks");
+      throw new Error(
+        "ExecutionContext is required for agent loading in callbacks"
+      );
     }
-    const agents = agentFactory(this.env, ctx);
-    const { agent: agentInstance, dependencies: agentDependencies } =
-      await agents(agentId, environment, callback.version);
-    let dependencies = agentDependencies;
-    let tool: ToolDependencySpec | undefined;
-    // navigate to the correct tool if a path is provided
-    for (const pathId of path) {
-      tool = dependencies.find((tool) => tool.id === pathId);
-      if (!tool) {
-        throw new Error(
-          `Path ${path} not found in agent ${agentId} (${environment}) tools`
-        );
-      }
-      // @ts-ignore - Type instantiation issue with ToolDependencies recursion
-      dependencies = tool.tools ?? [];
-    }
+    const factory = agentFactory(this.env, ctx, this.supabase);
+    const agentWrapper = await factory({
+      id: agentId,
+      environment,
+      version: callback.version,
+      priorityId: agent.priority_id,
+      priorityAgentId: callback.priorityAgentId,
+    });
 
-    // Create tools needed for the callback
-    const callResult = tool
-      ? // @ts-ignore - Type instantiation issue
-        await agentInstance.callTool(
-          createTool(callback.path, tool, {
-            supabase: this.supabase,
-            priorityId: agent.priority_id,
-            priorityAgentId: callback.priorityAgentId,
-            storage: this.env.STORAGE,
-            callbacks: this.env.CALLBACKS,
-            logSubscriptions: this.env.LOG_SUBSCRIPTIONS,
-            env: this.env,
-            ctx,
-          }),
-          callback.functionName,
-          args === undefined ? callback.context : args,
-          args === undefined ? undefined : callback.context,
-          callback.priorityAgentId
-        )
-      : await agentInstance.call(
-          createTools(
-            {
-              path: callback.path,
-              dependencies,
-            },
-            {
-              supabase: this.supabase,
-              priorityId: agent.priority_id,
-              priorityAgentId: callback.priorityAgentId,
-              storage: this.env.STORAGE,
-              callbacks: this.env.CALLBACKS,
-              logSubscriptions: this.env.LOG_SUBSCRIPTIONS,
-              env: this.env,
-              ctx,
-            }
-          ),
-          callback.functionName,
-          args === undefined ? callback.context : args,
-          args === undefined ? undefined : callback.context,
-          callback.priorityAgentId
-        );
+    // Call the tool or agent based on whether a path is provided
+    const callResult =
+      path.length > 0
+        ? await agentWrapper.callTool(
+            path,
+            callback.functionName,
+            args === undefined ? callback.context : args,
+            args === undefined ? undefined : callback.context
+          )
+        : await agentWrapper.call(
+            callback.functionName,
+            args === undefined ? callback.context : args,
+            args === undefined ? undefined : callback.context
+          );
 
     if (callback.callOnce) {
       this.delete(token);
@@ -268,6 +235,8 @@ export class Callbacks extends DurableObject<Bindings> {
     args:
       | {
           priorityAgentId: string;
+          agentId: string;
+          environment: string;
           path?: string[];
           reallyDeleteEverything?: boolean;
         }
@@ -277,11 +246,13 @@ export class Callbacks extends DurableObject<Bindings> {
       this.sql.exec("DELETE FROM callbacks");
       return;
     }
-    const { priorityAgentId, path } = args;
+    const { priorityAgentId, agentId, environment, path } = args;
     this.sql.exec(
-      "DELETE FROM callbacks WHERE priority_agent_id = ?" +
+      "DELETE FROM callbacks WHERE priority_agent_id = ? AND agent_id = ? AND environment = ?" +
         (path ? " AND path = ?" : ""),
-      ...(path ? [priorityAgentId, JSON.stringify(path)] : [priorityAgentId])
+      ...(path
+        ? [priorityAgentId, agentId, environment, JSON.stringify(path)]
+        : [priorityAgentId, agentId, environment])
     );
   }
 

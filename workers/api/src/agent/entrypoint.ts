@@ -17,52 +17,38 @@ class CachedTools {
   }
 
   get(ToolClass) {
-    return this.getById(ToolClass.name);
+    return this.getById(ToolClass.name, ToolClass);
   }
 
-  getById(id) {
+  getById(id, constructor) {
     // Check cache first
     if (this.cache.has(id)) {
       return this.cache.get(id);
     }
 
-    // Find the dependency
-    const dep = this.dependencies.find((d) => d.id === id);
-    if (!dep) {
-      throw new Error(\`Tool not found: \${id}\`);
-    }
-
     // Use pre-built tool if available (for built-in tools)
-    if (dep.tool) {
+    const dep = this.dependencies.find((d) => d.id === id);
+    if (dep?.tool) {
       this.cache.set(id, dep.tool);
       return dep.tool;
     }
 
     // Otherwise construct it lazily using the constructor from the dependency
-    const tool = this.constructTool(
-      id,
-      dep.dependencies ?? [],
-      dep.constructor
-    );
-    this.cache.set(id, tool);
-    return tool;
-  }
-
-  constructTool(id, dependencies, constructor) {
     if (!constructor) {
       throw new Error(
         \`No constructor available for tool: \${id}. Tool must be imported and used via tools.get() to be auto-discovered.\`
       );
     }
-
-    const tools = new CachedTools(dependencies, this.priorityAgentId);
-    return new constructor(this.priorityAgentId, tools);
+    const tools = new CachedTools(dep?.dependencies ?? [], this.priorityAgentId);
+    const tool = new constructor(this.priorityAgentId, tools);
+    this.cache.set(id, tool);
+    return tool;
   }
 }
 
 class DependencyTracker {
   constructor() {
-    this.toolRequests = new Map();
+    this.dependencies = [];
     this.httpPermissions = [];
   }
 
@@ -74,16 +60,28 @@ class DependencyTracker {
 
     // Try to construct the tool to trigger its dependency requests
     try {
-      new ToolClass('mock-id', nestedTracker);
+      new ToolClass(toolId, nestedTracker);
     } catch (e) {
       // Expected to fail - we're just capturing dependency requests
     }
 
-    // Record this tool request and its nested dependencies
-    this.toolRequests.set(toolId, {
-      constructor: ToolClass,
-      nestedTracker,
-    });
+    // Build ToolDependencies entry directly
+    const dep = {
+      id: toolId,
+    };
+
+    // Include dependencies if any were requested by this tool
+    if (nestedTracker.dependencies.length > 0) {
+      dep.dependencies = nestedTracker.dependencies;
+    }
+
+    // Include HTTP permissions if any were requested by this tool
+    if (nestedTracker.httpPermissions.length > 0) {
+      dep.httpPermissions = nestedTracker.httpPermissions;
+    }
+
+    // Add to dependencies array
+    this.dependencies.push(dep);
 
     // Return mock object (construction will likely fail later, but we don't care)
     return {};
@@ -97,26 +95,7 @@ class DependencyTracker {
   }
 
   buildDependencyTree() {
-    const result = [];
-
-    for (const [id, { constructor, nestedTracker }] of this.toolRequests) {
-      const dep = {
-        id,
-        constructor,
-        // Recursively build dependencies for this tool
-        dependencies: nestedTracker.buildDependencyTree(),
-      };
-
-      // Include HTTP permissions if any were requested by this tool
-      const nestedHttp = nestedTracker.httpPermissions;
-      if (nestedHttp.length > 0) {
-        dep.httpPermissions = nestedHttp;
-      }
-
-      result.push(dep);
-    }
-
-    return result;
+    return this.dependencies;
   }
 }
 
@@ -176,12 +155,12 @@ export default class extends WorkerEntrypoint {
     return callTool(target, functionName, args, context);
   }
 
-  getDependencies() {
+  getDependencies(id) {
     const tracker = new DependencyTracker();
 
     try {
       // Construct agent to trigger dependency requests
-      new AgentConstructor('mock-id', tracker);
+      new AgentConstructor(id, tracker);
     } catch (e) {
       // Expected to fail since we're passing mock tools
       // We only care about what was requested, not actual execution
@@ -193,47 +172,41 @@ export default class extends WorkerEntrypoint {
 }
 `;
 
-export class AgentEntrypoint extends WorkerEntrypoint {
+export abstract class AgentEntrypoint extends WorkerEntrypoint {
   static Module = MODULE;
 
-  async fetch() {
-    return new Response("OK");
-  }
+  abstract fetch(): Promise<Response>;
 
-  async activate(
+  abstract activate(
     _dependencies: ToolDependencies[],
     _priority: Pick<Priority, "id">,
     _priorityAgentId: string
-  ) {}
+  ): Promise<void>;
 
-  async activity(
+  abstract activity(
     _dependencies: ToolDependencies[],
     _activity: Activity,
     _changes: { previous: Activity } | undefined,
     _priorityAgentId: string
-  ) {}
+  ): void;
 
-  async call(
+  abstract call(
     _dependencies: ToolDependencies[],
     _functionName: string,
     _args: any,
     _context: any,
     _priorityAgentId: string
-  ): Promise<any> {}
+  ): Promise<any>;
 
-  async callTool(
+  abstract callTool(
     _tool: ToolDependencies,
     _functionName: string,
     _args: any,
     _context: any,
     _priorityAgentId: string
-  ): Promise<any> {
-    return null;
-  }
+  ): Promise<any>;
 
-  getDependencies(): ToolDependencies[] {
-    return [];
-  }
+  abstract getDependencies(_id: string): ToolDependencies[];
 }
 
 export default AgentEntrypoint;

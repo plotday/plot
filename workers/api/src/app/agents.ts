@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { agentFactory, createTools } from "../agent";
+import { agentFactory } from "../agent";
 import {
   add as addAgent,
   deleteAgent,
@@ -77,10 +77,11 @@ agents.post("/agent", async (c) => {
       body.name,
       body.config,
       {
-        env: c.env,
-        ctx: c.executionCtx as ExecutionContext,
-        agentFactory: agentFactory(c.env, c.executionCtx as ExecutionContext),
-        createTools,
+        agentFactory: agentFactory(
+          c.env,
+          c.executionCtx as ExecutionContext,
+          c.var.supabaseAdmin
+        ),
       }
     );
     return c.json(dbPriorityAgent.id);

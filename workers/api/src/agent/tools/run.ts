@@ -13,6 +13,8 @@ export type RunMessage = {
 export class Run extends Tool implements IRun {
   private callbacks: DurableObjectStub<Callbacks>;
   private priorityAgentId: string;
+  private agentId: string;
+  private environment: string;
   private path: string[]; // path to the tool within the agent
   private queue: Queue<RunMessage>;
 
@@ -30,19 +32,25 @@ export class Run extends Tool implements IRun {
   constructor({
     callbacks,
     priorityAgentId,
+    agentId,
+    environment,
     path,
     queue,
   }: {
     callbacks: DurableObjectNamespace<Callbacks>;
     priorityAgentId: string;
+    agentId: string;
+    environment: string;
     path: string[];
     queue: Queue<RunMessage>;
   }) {
     super();
     this.callbacks = Run.GetStub(callbacks, priorityAgentId, path);
     this.priorityAgentId = priorityAgentId;
+    this.agentId = agentId;
+    this.environment = environment;
     // remove final element, which is the ID of this tool
-    this.path = path;
+    this.path = path.slice(0, -1);
     this.queue = queue;
   }
 
@@ -51,6 +59,8 @@ export class Run extends Tool implements IRun {
       // Schedule for later execution
       return await this.callbacks.create({
         priorityAgentId: this.priorityAgentId,
+        agentId: this.agentId,
+        environment: this.environment,
         path: this.path,
         functionName: "scheduledSend",
         context: callback,

@@ -12,6 +12,8 @@ export type WebhookRequest = {
 export class Webhook extends Tool implements IWebhook {
   private callbacks: DurableObjectStub<Callbacks>;
   private priorityAgentId: string;
+  private agentId: string;
+  private environment: string;
   private baseUrl: string;
   private path: string[]; // path to the tool within the agent
 
@@ -40,17 +42,23 @@ export class Webhook extends Tool implements IWebhook {
   constructor({
     callbacks,
     priorityAgentId,
+    agentId,
+    environment,
     baseUrl,
     path,
   }: {
     callbacks: DurableObjectNamespace<Callbacks>;
     priorityAgentId: string;
+    agentId: string;
+    environment: string;
     baseUrl: string;
     path: string[];
   }) {
     super();
     this.callbacks = Webhook.GetStub(callbacks, priorityAgentId);
     this.priorityAgentId = priorityAgentId;
+    this.agentId = agentId;
+    this.environment = environment;
     this.baseUrl = baseUrl;
     // remove final element, which is the ID of this tool
     this.path = path.slice(0, -1);
@@ -59,6 +67,8 @@ export class Webhook extends Tool implements IWebhook {
   async create(callbackName: string, context?: any): Promise<string> {
     const token = await this.callbacks.create({
       priorityAgentId: this.priorityAgentId,
+      agentId: this.agentId,
+      environment: this.environment,
       path: this.path,
       functionName: callbackName,
       context,

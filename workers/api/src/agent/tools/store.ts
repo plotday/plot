@@ -15,8 +15,10 @@ export class Store extends Tool implements IStore {
     path: string[];
   }) {
     super();
+    // Remove final element (this tool's ID) from path
+    const toolPath = path.slice(0, -1);
     const storageId = storage.idFromName(
-      `${priorityAgentId}:${path.join(":")}`
+      `${priorityAgentId}:${toolPath.join(":")}`
     );
     this.storage = storage.get(storageId);
   }

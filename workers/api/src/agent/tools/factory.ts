@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@plotday/db";
-import type { Tool } from "@plotday/sdk";
 
 import type { ToolDependencies } from "..";
 import type { Bindings } from "../../env";
@@ -13,17 +12,15 @@ import { CallbackTool } from "./callback";
 import { Plot } from "./plot";
 import { Run } from "./run";
 import { Store } from "./store";
+import type { Tool } from "./tool";
 import { Webhook } from "./webhook";
-
-export type ToolDependencySpec = {
-  id: string;
-  tools?: ToolDependencySpec[];
-};
 
 export function createTool(
   path: string[],
-  spec: ToolDependencySpec,
+  spec: ToolDependencies,
   {
+    agentId,
+    environment,
     supabase,
     priorityId,
     priorityAgentId,
@@ -33,6 +30,8 @@ export function createTool(
     env,
     ctx,
   }: {
+    agentId: string;
+    environment: string;
     supabase: SupabaseClient;
     priorityId: string;
     priorityAgentId: string;
@@ -43,7 +42,7 @@ export function createTool(
     ctx: ExecutionContext;
   }
 ): ToolDependencies {
-  let tool: unknown = undefined;
+  let tool: Tool | undefined;
   switch (spec.id) {
     case "Plot":
       tool = new Plot({
@@ -65,12 +64,14 @@ export function createTool(
         }),
         env,
         priorityAgentId,
+        agentId,
+        environment,
         callbacks,
       });
       break;
     case "Store":
       tool = new Store({
-        path: path.slice(0, -1),
+        path,
         storage,
         priorityAgentId,
       });
@@ -80,6 +81,8 @@ export function createTool(
         path,
         callbacks,
         priorityAgentId,
+        agentId,
+        environment,
         baseUrl: env.API_ROOT,
       });
       break;
@@ -88,13 +91,18 @@ export function createTool(
         path,
         callbacks,
         priorityAgentId,
+        agentId,
+        environment,
         queue: env.RUN_QUEUE,
       });
       break;
     case "CallbackTool":
+      console.log("Creating CallbackTool at path", path);
       tool = new CallbackTool({
         callbacks,
         priorityAgentId,
+        agentId,
+        environment,
         path,
       });
       break;
@@ -108,13 +116,14 @@ export function createTool(
       });
       break;
   }
-  // @ts-ignore - Type instantiation issue with ToolDependencies recursion
   return {
     id: spec.id,
-    tool: tool as Tool | undefined,
+    tool: tool ?? undefined,
     dependencies: createTools(
-      { path, dependencies: spec.tools ?? [] },
+      { path, dependencies: spec.dependencies ?? [] },
       {
+        agentId,
+        environment,
         supabase,
         priorityId,
         priorityAgentId,
@@ -134,9 +143,11 @@ export function createTools(
     dependencies,
   }: {
     path: string[]; // path to the tool within the agent
-    dependencies: ToolDependencySpec[];
+    dependencies: ToolDependencies[];
   },
   {
+    agentId,
+    environment,
     supabase,
     priorityId,
     priorityAgentId,
@@ -146,6 +157,8 @@ export function createTools(
     env,
     ctx,
   }: {
+    agentId: string;
+    environment: string;
     supabase: SupabaseClient;
     priorityId: string;
     priorityAgentId: string;
@@ -158,6 +171,8 @@ export function createTools(
 ): ToolDependencies[] {
   const ret = dependencies.map((dep) =>
     createTool(path.concat([dep.id]), dep, {
+      agentId,
+      environment,
       supabase,
       priorityId,
       priorityAgentId,

@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/cloudflare";
 
 import { type SupabaseClient, createClient } from "@plotday/db";
 
-import { agentFactory, createTools } from "../agent";
+import { agentFactory } from "../agent";
 import {
   type ActivityLink,
   type ActivitySource,
@@ -228,29 +228,15 @@ async function processUpdate(
         // Now TypeScript knows this is an activity item
         const activity = item as any; // We know this is an activity based on type check
 
-        // Get tools dynamically from the agent
-        const { agent: agentInstance, dependencies } = await agentFactory(env, ctx)(
-          agent.id,
-          agent.environment,
-          agent.version
-        );
-
-        const tools = createTools(
-          {
-            path: [agent.id, agent.environment],
-            dependencies,
-          },
-          {
-            supabase,
-            priorityId: String(activity.priority_id),
-            priorityAgentId: agent.priority_agent_id,
-            storage: env.STORAGE,
-            callbacks: env.CALLBACKS,
-            logSubscriptions: env.LOG_SUBSCRIPTIONS,
-            env,
-            ctx,
-          }
-        );
+        // Get agent and tools dynamically
+        const factory = agentFactory(env, ctx, supabase);
+        const agentWrapper = await factory({
+          id: agent.id,
+          environment: agent.environment,
+          version: agent.version,
+          priorityId: String(activity.priority_id),
+          priorityAgentId: agent.priority_agent_id,
+        });
 
         // Build the current activity object
         const currentActivity = buildActivityFromDbRecord(activity);
@@ -271,7 +257,7 @@ async function processUpdate(
               }
             : undefined;
 
-        await agentInstance.activity(tools, currentActivity, changes, agent.priority_agent_id);
+        await agentWrapper.activity(currentActivity, changes);
       } catch (error) {
         console.error(
           `Error processing activity for agent ${agent.id}: ${

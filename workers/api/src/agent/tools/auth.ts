@@ -35,6 +35,8 @@ export class Auth extends Tool implements IAuth {
   // These are callbacks we create and call
   private authCallbacks: DurableObjectStub<Callbacks>;
   private callbacks: DurableObjectNamespace<Callbacks>;
+  private agentId: string;
+  private environment: string;
   private path: string[];
 
   private static GetStub(
@@ -49,12 +51,16 @@ export class Auth extends Tool implements IAuth {
     store,
     env,
     priorityAgentId,
+    agentId,
+    environment,
     callbacks,
     path, // path to this tool within the agent's tool hierarchy
   }: {
     store: Store;
     env: Bindings;
     priorityAgentId: string;
+    agentId: string;
+    environment: string;
     callbacks: DurableObjectNamespace<Callbacks>;
     path: string[];
   }) {
@@ -62,9 +68,12 @@ export class Auth extends Tool implements IAuth {
     this.store = store;
     this.env = env;
     this.priorityAgentId = priorityAgentId;
+    this.agentId = agentId;
+    this.environment = environment;
     this.callbacks = callbacks;
     this.authCallbacks = Auth.GetStub(callbacks, priorityAgentId);
-    this.path = path;
+    // Remove final element (this tool's ID) from path
+    this.path = path.slice(0, -1);
   }
 
   async request(
@@ -86,6 +95,8 @@ export class Auth extends Tool implements IAuth {
     // Create wrapped callback to onAuth
     const onAuthCallback = await this.authCallbacks.create({
       priorityAgentId: this.priorityAgentId,
+      agentId: this.agentId,
+      environment: this.environment,
       path: this.path,
       functionName: "onAuth",
       context: { callerCallback: callback } satisfies OnAuthCallbackContext,

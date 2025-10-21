@@ -1,10 +1,6 @@
 import { type Database, type SupabaseClient, safeQuery } from "@plotday/db";
 
-import type {
-  agentFactory as AgentFactory,
-  createTools as CreateTools,
-} from ".";
-import type { Bindings } from "../env";
+import type { agentFactory as AgentFactory } from ".";
 
 export async function add(
   supabase: SupabaseClient,
@@ -15,10 +11,7 @@ export async function add(
   name?: string,
   config?: any,
   activate?: {
-    env: Bindings;
-    ctx: ExecutionContext;
     agentFactory: ReturnType<typeof AgentFactory>;
-    createTools: typeof CreateTools;
     version?: string;
   }
 ) {
@@ -110,79 +103,14 @@ export async function add(
 
     // Activate agent if requested
     if (activate) {
-      const { agent: agentInstance, dependencies } =
-        await activate.agentFactory(
-          agent_id,
-          agent_environment,
-          activate.version
-        );
-
-      const tools = activate.createTools(
-        {
-          path: [agent_id, agent_environment],
-          dependencies,
-        },
-        {
-          supabase: supabaseAdmin,
-          priorityId: priority_id,
-          priorityAgentId: priorityAgent.id,
-          storage: activate.env.STORAGE,
-          callbacks: activate.env.CALLBACKS,
-          logSubscriptions: activate.env.LOG_SUBSCRIPTIONS,
-          env: activate.env,
-          ctx: activate.ctx,
-        }
-      );
-
-      try {
-        // Log before calling activate
-        await activate.env.AGENT_LOGS_QUEUE.send({
-          agentRootId: agent_id,
-          environment: agent_environment as
-            | "personal"
-            | "private"
-            | "review"
-            | "public",
-          severity: "info",
-          message: `Activating in ${agent_environment} for priority ${priority_id}`,
-          timestamp: Date.now(),
-        });
-
-        await agentInstance.activate(
-          tools,
-          {
-            id: priority_id,
-          },
-          priorityAgent.id
-        );
-      } catch (activateError) {
-        // Log activation errors
-        console.error("Error activating agent:", activateError);
-        const message =
-          activateError instanceof Error
-            ? `${activateError.name}: ${activateError.message}\n${
-                activateError.stack || ""
-              }`
-            : String(activateError);
-
-        try {
-          await activate.env.AGENT_LOGS_QUEUE.send({
-            agentRootId: agent_id,
-            environment: agent_environment as
-              | "personal"
-              | "private"
-              | "review"
-              | "public",
-            severity: "error",
-            message: `Unhandled exception in activate: ${message}`,
-            timestamp: Date.now(),
-          });
-        } catch (logError) {
-          console.error("Failed to log activation error:", logError);
-        }
-
-        throw activateError;
-      }
+      const agentWrapper = await activate.agentFactory({
+        id: agent_id,
+        environment: agent_environment,
+        version: activate.version,
+        priorityId: priority_id,
+        priorityAgentId: priorityAgent.id,
+      });
+      await agentWrapper.activate({ id: priority_id });
     }
 
     return priorityAgent;
