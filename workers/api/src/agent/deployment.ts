@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@plotday/db";
 
 import type { Bindings } from "../env";
-import { storeAgentModule } from "./index";
 import { buildAgent } from "./builder";
+import { storeAgentModule } from "./index";
 import type { AgentSource } from "./types";
 
 export type DeploymentInput =
@@ -11,7 +11,7 @@ export type DeploymentInput =
 
 export interface DeployAgentOptions {
   env: Bindings;
-  ctx: ExecutionContext;
+  ctx: { exports: ExecutionContext["exports"] };
   supabase: SupabaseClient;
   adminId: string;
   input: DeploymentInput;
@@ -116,7 +116,9 @@ export async function deployAgent({
     permissions = storeResult.permissions;
   } catch (error) {
     throw new Error(
-      `Failed to store agent module: ${error instanceof Error ? error.message : "Unknown error"}`
+      `Failed to store agent module: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
     );
   }
 

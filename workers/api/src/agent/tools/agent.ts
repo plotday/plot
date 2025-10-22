@@ -11,7 +11,7 @@ import { Tool } from "./tool";
 
 export class Agent extends Tool implements IAgent {
   private env: Bindings;
-  private ctx: ExecutionContext;
+  private ctx: { exports: ExecutionContext["exports"] };
   private supabase: SupabaseClient;
   private priorityAgentId: string;
   private logSubscriptionsNamespace: DurableObjectNamespace<LogSubscriptions>;
@@ -24,7 +24,7 @@ export class Agent extends Tool implements IAgent {
     logSubscriptions,
   }: {
     env: Bindings;
-    ctx: ExecutionContext;
+    ctx: { exports: ExecutionContext["exports"] };
     supabase: SupabaseClient;
     priorityAgentId: string;
     logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
@@ -35,7 +35,6 @@ export class Agent extends Tool implements IAgent {
     this.supabase = supabase;
     this.priorityAgentId = priorityAgentId;
     this.logSubscriptionsNamespace = logSubscriptions;
-    this.ctx = ctx;
   }
 
   /**

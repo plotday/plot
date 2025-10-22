@@ -1,10 +1,12 @@
 import type { Callback } from "@plotday/sdk/tools/callback";
+
 import { CallbackTool } from "../agent/tools/callback";
 import { type Bindings, type LogMessage } from "../env";
 
 export async function processLogs(
   batch: MessageBatch<LogMessage>,
-  env: Bindings
+  env: Bindings,
+  ctx: { exports: ExecutionContext["exports"] }
 ): Promise<void> {
   // Group logs by agent_root_id
   const logsByAgent = new Map<string, LogMessage[]>();
@@ -41,11 +43,15 @@ export async function processLogs(
           try {
             await CallbackTool.Call(
               env.CALLBACKS,
+              ctx,
               callbackToken as Callback,
               formattedLogs
             );
           } catch (error) {
-            console.error(`Failed to call log callback ${callbackToken}:`, error);
+            console.error(
+              `Failed to call log callback ${callbackToken}:`,
+              error
+            );
           }
         }
       }
@@ -56,7 +62,10 @@ export async function processLogs(
         const logStream = env.LOG_STREAM.get(logStreamId);
         await logStream.sendLogs(logs);
       } catch (error) {
-        console.error(`Failed to send logs to stream for agent ${agentRootId}:`, error);
+        console.error(
+          `Failed to send logs to stream for agent ${agentRootId}:`,
+          error
+        );
       }
     } catch (error) {
       console.error(`Error processing logs for agent ${agentRootId}:`, error);

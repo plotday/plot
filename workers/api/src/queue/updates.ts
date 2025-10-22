@@ -1,14 +1,14 @@
 import * as Sentry from "@sentry/cloudflare";
 
 import { type SupabaseClient, createClient } from "@plotday/db";
-
-import { agentFactory } from "../agent";
 import {
   type ActivityLink,
   type ActivitySource,
   ActivityType,
   AuthorType,
 } from "@plotday/sdk/plot";
+
+import { agentFactory } from "../agent";
 import { type Bindings, type UpdateMessage } from "../env";
 import { truncateUuidForUpdatedBy } from "../utils/uuid";
 

@@ -22,7 +22,6 @@ export type CallbackData = {
 export class Callbacks extends DurableObject<Bindings> {
   private sql: SqlStorage;
   private supabase: SupabaseClient;
-  private shardKey: string;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -32,9 +31,6 @@ export class Callbacks extends DurableObject<Bindings> {
       this.env.SUPABASE_URL,
       this.env.SUPABASE_SERVICE_KEY
     );
-    // Extract shard key from the DO name (what was passed to idFromName)
-    // The DO id.name property gives us the string passed to idFromName
-    this.shardKey = ctx.id.name || "";
   }
 
   async fetch(_request: Request): Promise<Response> {
@@ -141,7 +137,7 @@ export class Callbacks extends DurableObject<Bindings> {
     return token;
   }
 
-  async call(token: string, args?: any, ctx?: ExecutionContext): Promise<any> {
+  async call(token: string, args?: any): Promise<any> {
     const result = this.sql
       .exec(
         `
@@ -189,14 +185,7 @@ export class Callbacks extends DurableObject<Bindings> {
         .single()
     );
 
-    // Get tools dynamically from the agent
-    // ExecutionContext should be provided via the RPC call
-    if (!ctx) {
-      throw new Error(
-        "ExecutionContext is required for agent loading in callbacks"
-      );
-    }
-    const factory = agentFactory(this.env, ctx, this.supabase);
+    const factory = agentFactory(this.env, this.ctx, this.supabase);
     const agentWrapper = await factory({
       id: agentId,
       environment,
@@ -327,32 +316,34 @@ export class Callbacks extends DurableObject<Bindings> {
       .replace(/\//g, "_")
       .replace(/=/g, "");
 
-    // Encode shard key in token for routing
-    return `${this.shardKey}:${randomToken}`;
+    // Encode id in token for routing
+    return `${this.ctx.id}:${randomToken}`;
   }
 
   /**
-   * Parse a token to extract the shard key for routing
-   * For simple priorityAgentId sharding: returns just the priorityAgentId
-   * For complex sharding (e.g. Run tool): returns the full shard key
+   * Static method to call a callback by token.
+   * Parses the token to extract priorityAgentId, gets the correct DO stub,
+   * and executes the callback.
    */
-  static parseToken(token: string): {
-    shardKey: string;
-    priorityAgentId: string;
-    fullToken: string;
-  } {
+  static async call(
+    callbacks: DurableObjectNamespace<Callbacks>,
+    ctx: { exports: ExecutionContext["exports"] },
+    token: string,
+    args?: any
+  ): Promise<any> {
+    // Extract priorityAgentId from token (first part before colon)
     const colonIndex = token.indexOf(":");
     if (colonIndex === -1) {
       throw new Error("Invalid token format");
     }
-    const shardKey = token.substring(0, token.lastIndexOf(":"));
-    // Extract priorityAgentId (first component of shard key)
-    const priorityAgentId = shardKey.split(":")[0];
+    const id = token.substring(0, colonIndex);
 
-    return {
-      shardKey,
-      priorityAgentId,
-      fullToken: token,
-    };
+    // Get the appropriate DO stub using id
+    const callbacksId = callbacks.idFromString(id);
+    const callbacksStub = callbacks.get(callbacksId);
+
+    // Call the stub's call method
+    // @ts-ignore nested type issue
+    return await callbacksStub.call(ctx, token, args);
   }
 }

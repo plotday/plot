@@ -1,7 +1,3 @@
-import type { Bindings } from "../../env";
-import { PROVIDER_CONFIGS } from "../../provider";
-import { Callbacks } from "../../state/callbacks";
-import type { Storage } from "../../state/storage";
 import { type ActivityLink, ActivityLinkType } from "@plotday/sdk/plot";
 import type {
   AuthLevel,
@@ -12,6 +8,11 @@ import type {
 } from "@plotday/sdk/tools/auth";
 import type { Callback } from "@plotday/sdk/tools/callback";
 import type { Store } from "@plotday/sdk/tools/store";
+
+import type { Bindings } from "../../env";
+import { PROVIDER_CONFIGS } from "../../provider";
+import { Callbacks } from "../../state/callbacks";
+import type { Storage } from "../../state/storage";
 import { CallbackTool } from "./callback";
 import { Tool } from "./tool";
 
@@ -31,6 +32,7 @@ type OnAuthCallbackContext = {
 export class Auth extends Tool implements IAuth {
   private store: Store;
   private env: Bindings;
+  private ctx: { exports: ExecutionContext["exports"] };
   private priorityAgentId: string;
   // These are callbacks we create and call
   private authCallbacks: DurableObjectStub<Callbacks>;
@@ -50,6 +52,7 @@ export class Auth extends Tool implements IAuth {
   constructor({
     store,
     env,
+    ctx,
     priorityAgentId,
     agentId,
     environment,
@@ -58,6 +61,7 @@ export class Auth extends Tool implements IAuth {
   }: {
     store: Store;
     env: Bindings;
+    ctx: { exports: ExecutionContext["exports"] };
     priorityAgentId: string;
     agentId: string;
     environment: string;
@@ -67,6 +71,7 @@ export class Auth extends Tool implements IAuth {
     super();
     this.store = store;
     this.env = env;
+    this.ctx = ctx;
     this.priorityAgentId = priorityAgentId;
     this.agentId = agentId;
     this.environment = environment;
@@ -154,6 +159,7 @@ export class Auth extends Tool implements IAuth {
       // @ts-ignore type instantiation issue
       await CallbackTool.Call(
         this.callbacks,
+        this.ctx,
         context.callerCallback,
         authorization
       );
@@ -325,11 +331,8 @@ export class Auth extends Tool implements IAuth {
       // Call the wrapped callback (onAuth) with token info
       if (authState.callback) {
         try {
-          const { shardKey } = Callbacks.parseToken(authState.callback);
-          const callbacksId = callbacks.idFromName(shardKey);
-          const callbacksStub = callbacks.get(callbacksId);
           // @ts-ignore type instantiation issue
-          await callbacksStub.call(authState.callback, {
+          await Callbacks.call(callbacks, authState.callback, {
             access_token: tokenResponse.access_token,
             refresh_token: tokenResponse.refresh_token,
             expires_in: tokenResponse.expires_in,

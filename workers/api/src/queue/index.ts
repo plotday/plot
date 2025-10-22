@@ -1,5 +1,10 @@
 import { Run, type RunMessage } from "../agent/tools/run";
-import { type Bindings, type LogMessage, type QueueMessage, type UpdateMessage } from "../env";
+import {
+  type Bindings,
+  type LogMessage,
+  type QueueMessage,
+  type UpdateMessage,
+} from "../env";
 import { processLogs } from "./logs";
 import { processUpdates } from "./updates";
 
@@ -25,7 +30,7 @@ export async function queue(
 
     case "agent-logs-development":
     case "agent-logs-production":
-      await processLogs(batch as MessageBatch<LogMessage>, env);
+      await processLogs(batch as MessageBatch<LogMessage>, env, ctx);
       break;
 
     default:

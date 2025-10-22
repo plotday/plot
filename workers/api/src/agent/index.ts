@@ -31,12 +31,15 @@ function loadAgent({
   environment,
 }: {
   env: Bindings;
-  ctx: ExecutionContext;
+  ctx: { exports: ExecutionContext["exports"] };
   id: string;
   version: string;
   module: string;
   environment: string;
 }) {
+  if (!ctx.exports) {
+    throw new Error("ExecutionContext exports missing");
+  }
   const moduleId = `${id}-${version}`;
   const worker = env.LOADER.get(moduleId, async () => {
     return {
@@ -78,7 +81,7 @@ export async function getAgent({
   logSubscriptions,
 }: {
   env: Bindings;
-  ctx: ExecutionContext;
+  ctx: { exports: ExecutionContext["exports"] };
   supabase: SupabaseClient;
   id: string;
   environment: string;
@@ -148,9 +151,12 @@ export async function getAgent({
 
 export function agentFactory(
   env: Bindings,
-  ctx: ExecutionContext,
+  ctx: { exports: ExecutionContext["exports"] },
   supabase: SupabaseClient
 ) {
+  if (!ctx.exports) {
+    throw new Error("ExecutionContext exports missing");
+  }
   const factory = async ({
     id,
     environment,
@@ -229,7 +235,13 @@ export function agentFactory(
         });
 
         // @ts-ignore - Type instantiation is excessively deep due to recursive ToolDependencies type
-        return agent.callTool(createdTool, functionName, args, context, priorityAgentId);
+        return agent.callTool(
+          createdTool,
+          functionName,
+          args,
+          context,
+          priorityAgentId
+        );
       },
 
       tools,
@@ -326,7 +338,7 @@ export async function storeAgentModule({
   environment,
 }: {
   env: Bindings;
-  ctx: ExecutionContext;
+  ctx: { exports: ExecutionContext["exports"] };
   id: string;
   module: string;
   environment: string;

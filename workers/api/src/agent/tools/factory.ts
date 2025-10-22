@@ -39,7 +39,7 @@ export function createTool(
     callbacks: DurableObjectNamespace<Callbacks>;
     logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
     env: Bindings;
-    ctx: ExecutionContext;
+    ctx: { exports: ExecutionContext["exports"] };
   }
 ): ToolDependencies {
   let tool: Tool | undefined;
@@ -63,6 +63,7 @@ export function createTool(
           priorityAgentId,
         }),
         env,
+        ctx,
         priorityAgentId,
         agentId,
         environment,
@@ -97,7 +98,6 @@ export function createTool(
       });
       break;
     case "CallbackTool":
-      console.log("Creating CallbackTool at path", path);
       tool = new CallbackTool({
         callbacks,
         priorityAgentId,
@@ -166,7 +166,7 @@ export function createTools(
     callbacks: DurableObjectNamespace<Callbacks>;
     logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
     env: Bindings;
-    ctx: ExecutionContext;
+    ctx: { exports: ExecutionContext["exports"] };
   }
 ): ToolDependencies[] {
   const ret = dependencies.map((dep) =>

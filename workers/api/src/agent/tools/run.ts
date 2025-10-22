@@ -1,7 +1,8 @@
+import type { Callback } from "@plotday/sdk/tools/callback";
+import type { Run as IRun } from "@plotday/sdk/tools/run";
+
 import { type Bindings } from "../../env";
 import { type Callbacks } from "../../state/callbacks";
-import type { Run as IRun } from "@plotday/sdk/tools/run";
-import type { Callback } from "@plotday/sdk/tools/callback";
 import { Tool } from "./tool";
 
 export type RunMessage = {
@@ -20,12 +21,9 @@ export class Run extends Tool implements IRun {
 
   private static GetStub(
     callbacks: DurableObjectNamespace<Callbacks>,
-    priorityAgentId: string,
-    path: string[]
+    priorityAgentId: string
   ) {
-    const callbacksId = callbacks.idFromName(
-      `${priorityAgentId}:${path.join(":")}`
-    );
+    const callbacksId = callbacks.idFromName(priorityAgentId);
     return callbacks.get(callbacksId);
   }
 
@@ -45,7 +43,7 @@ export class Run extends Tool implements IRun {
     queue: Queue<RunMessage>;
   }) {
     super();
-    this.callbacks = Run.GetStub(callbacks, priorityAgentId, path);
+    this.callbacks = Run.GetStub(callbacks, priorityAgentId);
     this.priorityAgentId = priorityAgentId;
     this.agentId = agentId;
     this.environment = environment;
@@ -54,7 +52,10 @@ export class Run extends Tool implements IRun {
     this.queue = queue;
   }
 
-  async run(callback: Callback, options?: { runAt?: Date }): Promise<string | void> {
+  async run(
+    callback: Callback,
+    options?: { runAt?: Date }
+  ): Promise<string | void> {
     if (options?.runAt) {
       // Schedule for later execution
       return await this.callbacks.create({
@@ -77,7 +78,12 @@ export class Run extends Tool implements IRun {
   }
 
   async cancelAll(): Promise<void> {
-    await this.callbacks.deleteAll({ reallyDeleteEverything: true });
+    await this.callbacks.deleteAll({
+      priorityAgentId: this.priorityAgentId,
+      agentId: this.agentId,
+      environment: this.environment,
+      path: this.path,
+    });
   }
 
   private async send(token: string) {
@@ -97,8 +103,7 @@ export class Run extends Tool implements IRun {
       try {
         const callbacks = Run.GetStub(
           env.CALLBACKS,
-          message.body.priorityAgentId,
-          message.body.path
+          message.body.priorityAgentId
         );
         // @ts-ignore - TypeScript type recursion workaround
         await callbacks.call(message.body.token);

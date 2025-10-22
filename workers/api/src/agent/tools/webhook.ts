@@ -1,5 +1,6 @@
-import { Callbacks } from "../../state/callbacks";
 import type { Webhook as IWebhook } from "@plotday/sdk/tools/webhook";
+
+import { Callbacks } from "../../state/callbacks";
 import { Tool } from "./tool";
 
 export type WebhookRequest = {
@@ -32,11 +33,8 @@ export class Webhook extends Tool implements IWebhook {
     token: string,
     request: WebhookRequest
   ) {
-    const { shardKey } = Callbacks.parseToken(token);
-    const callbacksId = callbacks.idFromName(shardKey);
-    const callbacksStub = callbacks.get(callbacksId);
     // @ts-ignore - TypeScript type recursion workaround
-    return await callbacksStub.call(token, request);
+    return await Callbacks.call(callbacks, token, request);
   }
 
   constructor({
