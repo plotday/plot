@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.16.1
+
+### Fixed
+
+- Several references to call() renamed to callCallback() ([#49](https://github.com/plotday/plot/pull/49) [`2405588`](https://github.com/plotday/plot/commit/2405588f3c296b7e06057f11096e43771615a4b5))
+
 ## 0.16.0
 
 ### Changed
