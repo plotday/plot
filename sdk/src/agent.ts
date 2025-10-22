@@ -98,8 +98,8 @@ export abstract class Agent<TSelf = any> {
    * @param args - Optional arguments to pass to the callback
    * @returns Promise resolving to the callback result
    */
-  protected async call(token: Callback, args?: any): Promise<any> {
-    return this._callbackTool.call(token, args);
+  protected async callCallback(token: Callback, args?: any): Promise<any> {
+    return this._callbackTool.callCallback(token, args);
   }
 
   /**
@@ -304,8 +304,8 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @param args - Optional arguments to pass to the callback
    * @returns Promise resolving to the callback result
    */
-  protected async call(token: Callback, args?: any): Promise<any> {
-    return this._callbackTool.call(token, args);
+  protected async callCallback(token: Callback, args?: any): Promise<any> {
+    return this._callbackTool.callCallback(token, args);
   }
 
   /**

@@ -50,7 +50,7 @@ export type CallbackContext<T, K extends keyof T> = T[K] extends (
  *
  * **Note:** Callback methods are also available directly on Agent and Tool classes
  * via `this.callback()`, `this.deleteCallback()`, `this.deleteAllCallbacks()`, and
- * `this.call()`. This is the recommended approach for most use cases.
+ * `this.callCallback()`. This is the recommended approach for most use cases.
  *
  * **When to use callbacks:**
  * - Webhook handlers that need persistent function references
@@ -120,5 +120,5 @@ export abstract class CallbackTool<TParent = any> extends ITool {
    * @param args - Optional arguments to pass to the callback function
    * @returns Promise resolving to the callback result
    */
-  abstract call(_callback: Callback, _args?: any): Promise<any>;
+  abstract callCallback(_callback: Callback, _args?: any): Promise<any>;
 }

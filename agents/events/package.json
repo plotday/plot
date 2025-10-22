@@ -10,7 +10,8 @@
   "private": true,
   "scripts": {
     "deploy": "plot agent deploy",
-    "lint": "plot agent lint"
+    "lint": "plot agent lint",
+    "logs": "plot agent logs"
   },
   "dependencies": {
     "@plotday/sdk": "workspace:^",

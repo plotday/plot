@@ -1,4 +1,4 @@
-import { type ActivityLink, type Callback, ITool, type Tools } from "..";
+import { type ActivityLink, type Callback, ITool } from "..";
 
 /**
  * Built-in tool for managing OAuth authentication flows.
@@ -55,7 +55,7 @@ export abstract class Auth extends ITool {
       level: AuthLevel;
       scopes: string[];
     },
-    _callback: Callback,
+    _callback: Callback
   ): Promise<ActivityLink>;
 
   /**
