@@ -87,11 +87,30 @@ class Dialog extends StatelessWidget {
   }
 }
 
-class DialogProvider extends InheritedWidget {
-  DialogProvider({required super.child, super.key})
-    : _dialogStack = <_DialogStackItem<dynamic>>[];
+class DialogProvider extends StatefulWidget {
+  const DialogProvider({required this.child, super.key});
 
-  final List<_DialogStackItem<dynamic>> _dialogStack;
+  final Widget child;
+
+  @override
+  State<DialogProvider> createState() => _DialogProviderState();
+
+  // ignore: library_private_types_in_public_api
+  static _DialogProviderInherited of(BuildContext context) {
+    final _DialogProviderInherited? provider =
+        context
+            .dependOnInheritedWidgetOfExactType<_InnerDialogProvider>()
+            ?.provider ??
+        context.dependOnInheritedWidgetOfExactType<_DialogProviderInherited>();
+    assert(provider != null, 'No DialogProvider found in context');
+    return provider!;
+  }
+}
+
+class _DialogProviderState extends State<DialogProvider> {
+  final List<_DialogStackItem<dynamic>> _dialogStack = [];
+  final ValueNotifier<int> _dialogStackNotifier = ValueNotifier<int>(0);
+  final GlobalKey _rootContextKey = GlobalKey();
 
   Future<Value<T>> push<T>(BuildContext context, Widget dialog) async {
     final stackItem = _DialogStackItem<T>(dialog);
@@ -100,19 +119,33 @@ class DialogProvider extends InheritedWidget {
     _notifyStackChanged();
 
     if (_dialogStack.length == 1) {
+      // Use root context if available, otherwise fall back to passed context
+      final dialogContext = _rootContextKey.currentContext ?? context;
+
       final result = await showFDialog<Value<T>>(
-        context: context,
-        builder: (context, _, _) => CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.escape): () {
-              pop(context, Value<T>.absent());
+        context: dialogContext,
+        builder: (context, _, _) {
+          final provider = _DialogProviderInherited._(
+            dialogStack: _dialogStack,
+            dialogStackNotifier: _dialogStackNotifier,
+            state: this,
+            child: _DialogStackDisplay(
+              dialogStack: _dialogStack,
+              dialogStackNotifier: _dialogStackNotifier,
+            ),
+          );
+          return CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.escape): () {
+                pop(context, Value<T>.absent());
+              },
             },
-          },
-          child: _InnerDialogProvider(
-            this,
-            child: _DialogStackDisplay(provider: this),
-          ),
-        ),
+            child: _InnerDialogProvider(
+              provider,
+              child: provider,
+            ),
+          );
+        },
       );
       _dialogStack.clear();
       return result ?? Value.absent();
@@ -146,20 +179,52 @@ class DialogProvider extends InheritedWidget {
     _dialogStackNotifier.value = _dialogStack.length;
   }
 
-  final ValueNotifier<int> _dialogStackNotifier = ValueNotifier<int>(0);
-
-  static DialogProvider of(BuildContext context) {
-    final DialogProvider? provider =
-        context
-            .dependOnInheritedWidgetOfExactType<_InnerDialogProvider>()
-            ?.provider ??
-        context.dependOnInheritedWidgetOfExactType<DialogProvider>();
-    assert(provider != null, 'No DialogProvider found in context');
-    return provider!;
+  @override
+  Widget build(BuildContext context) {
+    return _DialogProviderInherited._(
+      dialogStack: _dialogStack,
+      dialogStackNotifier: _dialogStackNotifier,
+      state: this,
+      child: Container(
+        key: _rootContextKey,
+        child: widget.child,
+      ),
+    );
   }
 
   @override
-  bool updateShouldNotify(DialogProvider oldWidget) => false;
+  void dispose() {
+    _dialogStackNotifier.dispose();
+    super.dispose();
+  }
+}
+
+class _DialogProviderInherited extends InheritedWidget {
+  const _DialogProviderInherited._({
+    required this.dialogStack,
+    required this.dialogStackNotifier,
+    required this.state,
+    required super.child,
+  });
+
+  final List<_DialogStackItem<dynamic>> dialogStack;
+  final ValueNotifier<int> dialogStackNotifier;
+  final _DialogProviderState state;
+
+  Future<Value<T>> push<T>(BuildContext context, Widget dialog) {
+    return state.push<T>(context, dialog);
+  }
+
+  void pop<T>(BuildContext context, Value<T> result) {
+    state.pop<T>(context, result);
+  }
+
+  void popAll(BuildContext context) {
+    state.popAll(context);
+  }
+
+  @override
+  bool updateShouldNotify(_DialogProviderInherited oldWidget) => false;
 }
 
 class _DialogStackItem<T> {
@@ -172,9 +237,13 @@ class _DialogStackItem<T> {
 }
 
 class _DialogStackDisplay extends StatefulWidget {
-  const _DialogStackDisplay({required this.provider});
+  const _DialogStackDisplay({
+    required this.dialogStack,
+    required this.dialogStackNotifier,
+  });
 
-  final DialogProvider provider;
+  final List<_DialogStackItem<dynamic>> dialogStack;
+  final ValueNotifier<int> dialogStackNotifier;
 
   @override
   State<_DialogStackDisplay> createState() => _DialogStackDisplayState();
@@ -184,12 +253,12 @@ class _DialogStackDisplayState extends State<_DialogStackDisplay> {
   @override
   void initState() {
     super.initState();
-    widget.provider._dialogStackNotifier.addListener(_onStackChanged);
+    widget.dialogStackNotifier.addListener(_onStackChanged);
   }
 
   @override
   void dispose() {
-    widget.provider._dialogStackNotifier.removeListener(_onStackChanged);
+    widget.dialogStackNotifier.removeListener(_onStackChanged);
     super.dispose();
   }
 
@@ -199,17 +268,17 @@ class _DialogStackDisplayState extends State<_DialogStackDisplay> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.provider._dialogStack.isEmpty) {
+    if (widget.dialogStack.isEmpty) {
       return const SizedBox.shrink();
     }
-    return widget.provider._dialogStack.last.dialog;
+    return widget.dialogStack.last.dialog;
   }
 }
 
 class _InnerDialogProvider extends InheritedWidget {
   const _InnerDialogProvider(this.provider, {required super.child});
 
-  final DialogProvider provider;
+  final _DialogProviderInherited provider;
 
   @override
   bool updateShouldNotify(_InnerDialogProvider oldWidget) =>
