@@ -138,7 +138,7 @@ export class Callbacks extends DurableObject<Bindings> {
     return `${this.ctx.id}:${token}`;
   }
 
-  async call(token: string, args?: any): Promise<any> {
+  async callCallback(token: string, args?: any): Promise<any> {
     [, token] = token.split(":");
     const result = this.sql
       .exec(
@@ -196,20 +196,13 @@ export class Callbacks extends DurableObject<Bindings> {
       priorityAgentId: callback.priorityAgentId,
     });
 
-    // Call the tool or agent based on whether a path is provided
-    const callResult =
-      path.length > 0
-        ? await agentWrapper.callTool(
-            path,
-            callback.functionName,
-            args === undefined ? callback.context : args,
-            args === undefined ? undefined : callback.context
-          )
-        : await agentWrapper.call(
-            callback.functionName,
-            args === undefined ? callback.context : args,
-            args === undefined ? undefined : callback.context
-          );
+    // Call the callback (works for both agents and tools via path parameter)
+    const callResult = await agentWrapper.callCallback(
+      path,
+      callback.functionName,
+      args === undefined ? callback.context : args,
+      args === undefined ? undefined : callback.context
+    );
 
     if (callback.callOnce) {
       this.delete(token);
@@ -279,8 +272,8 @@ export class Callbacks extends DurableObject<Bindings> {
     const callbackResults = this.sql.exec(
       `
         SELECT token
-        FROM callbacks 
-        WHERE call_at IS NOT NULL 
+        FROM callbacks
+        WHERE call_at IS NOT NULL
           AND call_at <= ?
         ORDER BY call_at ASC
       `,
@@ -290,7 +283,7 @@ export class Callbacks extends DurableObject<Bindings> {
     for (const row of callbackResults) {
       const token = row.token as string;
       try {
-        await this.call(token);
+        await this.callCallback(token);
       } catch (error) {
         console.error(`Callback failed:`, error);
       } finally {
@@ -322,7 +315,7 @@ export class Callbacks extends DurableObject<Bindings> {
    * Parses the token to extract priorityAgentId, gets the correct DO stub,
    * and executes the callback.
    */
-  static async call(
+  static async CallCallback(
     callbacks: DurableObjectNamespace<Callbacks>,
     token: string,
     args?: any
@@ -330,6 +323,6 @@ export class Callbacks extends DurableObject<Bindings> {
     const [id] = token.split(":");
     const callbacksId = callbacks.idFromString(id);
     const callbacksStub = callbacks.get(callbacksId);
-    return await callbacksStub.call(token, args);
+    return await callbacksStub.callCallback(token, args);
   }
 }

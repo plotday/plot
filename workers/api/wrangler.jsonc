@@ -7,7 +7,7 @@
   "upload_source_maps": true,
   "migrations": [
     {
-      "tag": "v2",
+      "tag": "v3",
       "new_sqlite_classes": [
         "Storage",
         "Callbacks",

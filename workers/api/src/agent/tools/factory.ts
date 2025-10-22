@@ -63,7 +63,6 @@ export function createTool(
           priorityAgentId,
         }),
         env,
-        ctx,
         priorityAgentId,
         agentId,
         environment,

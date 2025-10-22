@@ -40,7 +40,7 @@ export async function processLogs(
       if (subscribers.length > 0) {
         for (const callbackToken of subscribers) {
           try {
-            await CallbackTool.Call(
+            await CallbackTool.CallCallback(
               env.CALLBACKS,
               callbackToken as Callback,
               formattedLogs

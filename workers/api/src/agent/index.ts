@@ -191,28 +191,21 @@ export function agentFactory(
       activity: (activity: Activity, changes?: { previous: Activity }) =>
         agent.activity(tools, activity, changes, priorityAgentId),
 
-      call: (functionName: string, args?: any, context?: any) =>
-        // @ts-ignore - Type instantiation is excessively deep due to recursive ToolDependencies type
-        agent.call(tools, functionName, args, context, priorityAgentId),
-
-      callTool: (
+      callCallback: (
         path: string[],
         functionName: string,
         args?: any,
         context?: any
-      ) => {
-        // Pass the full tools array and path to the entrypoint
-        // The entrypoint will build the agent and navigate to the target tool
+      ) =>
         // @ts-ignore - Type instantiation is excessively deep due to recursive ToolDependencies type
-        return agent.callTool(
+        agent.callCallback(
           tools,
           path,
           functionName,
           args,
           context,
           priorityAgentId
-        );
-      },
+        ),
 
       tools,
     };

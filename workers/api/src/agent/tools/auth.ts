@@ -13,7 +13,6 @@ import type { Bindings } from "../../env";
 import { PROVIDER_CONFIGS } from "../../provider";
 import { Callbacks } from "../../state/callbacks";
 import type { Storage } from "../../state/storage";
-import { CallbackTool } from "./callback";
 import { Tool } from "./tool";
 
 type AuthState = {
@@ -32,11 +31,9 @@ type OnAuthCallbackContext = {
 export class Auth extends Tool implements IAuth {
   private store: Store;
   private env: Bindings;
-  private ctx: { exports: ExecutionContext["exports"] };
   private priorityAgentId: string;
   // These are callbacks we create and call
-  private authCallbacks: DurableObjectStub<Callbacks>;
-  private callbacks: DurableObjectNamespace<Callbacks>;
+  private callbacks: DurableObjectStub<Callbacks>;
   private agentId: string;
   private environment: string;
   private path: string[];
@@ -52,7 +49,6 @@ export class Auth extends Tool implements IAuth {
   constructor({
     store,
     env,
-    ctx,
     priorityAgentId,
     agentId,
     environment,
@@ -61,7 +57,6 @@ export class Auth extends Tool implements IAuth {
   }: {
     store: Store;
     env: Bindings;
-    ctx: { exports: ExecutionContext["exports"] };
     priorityAgentId: string;
     agentId: string;
     environment: string;
@@ -71,14 +66,11 @@ export class Auth extends Tool implements IAuth {
     super();
     this.store = store;
     this.env = env;
-    this.ctx = ctx;
     this.priorityAgentId = priorityAgentId;
     this.agentId = agentId;
     this.environment = environment;
-    this.callbacks = callbacks;
-    this.authCallbacks = Auth.GetStub(callbacks, priorityAgentId);
-    // Remove final element (this tool's ID) from path
-    this.path = path.slice(0, -1);
+    this.callbacks = Auth.GetStub(callbacks, priorityAgentId);
+    this.path = path;
   }
 
   async request(
@@ -98,7 +90,7 @@ export class Auth extends Tool implements IAuth {
     }
 
     // Create wrapped callback to onAuth
-    const onAuthCallback = await this.authCallbacks.create({
+    const onAuthCallback = await this.callbacks.create({
       priorityAgentId: this.priorityAgentId,
       agentId: this.agentId,
       environment: this.environment,
@@ -156,12 +148,8 @@ export class Auth extends Tool implements IAuth {
 
     // Call original user callback with Authorization
     try {
-      // @ts-ignore type instantiation issue
-      await CallbackTool.Call(
-        this.callbacks,
-        context.callerCallback,
-        authorization
-      );
+      // @ts-ignore - TypeScript type recursion workaround
+      await this.callbacks.callCallback(context.callerCallback, authorization);
     } catch (error) {
       console.error("Error executing original auth callback:", error);
     }
@@ -330,8 +318,7 @@ export class Auth extends Tool implements IAuth {
       // Call the wrapped callback (onAuth) with token info
       if (authState.callback) {
         try {
-          // @ts-ignore type instantiation issue
-          await Callbacks.call(callbacks, authState.callback, {
+          await Callbacks.CallCallback(callbacks, authState.callback, {
             access_token: tokenResponse.access_token,
             refresh_token: tokenResponse.refresh_token,
             expires_in: tokenResponse.expires_in,

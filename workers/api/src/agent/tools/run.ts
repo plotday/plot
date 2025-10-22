@@ -106,7 +106,7 @@ export class Run extends Tool implements IRun {
           message.body.priorityAgentId
         );
         // @ts-ignore - TypeScript type recursion workaround
-        await callbacks.call(message.body.token);
+        await callbacks.callCallback(message.body.token);
         message.ack();
       } catch (error) {
         console.error(`Failed to execute callback ${message.body}:`, error);

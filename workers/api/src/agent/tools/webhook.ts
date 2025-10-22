@@ -33,8 +33,7 @@ export class Webhook extends Tool implements IWebhook {
     token: string,
     request: WebhookRequest
   ) {
-    // @ts-ignore - TypeScript type recursion workaround
-    return await Callbacks.call(callbacks, token, request);
+    return await Callbacks.CallCallback(callbacks, token, request);
   }
 
   constructor({

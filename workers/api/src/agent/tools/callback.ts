@@ -68,17 +68,17 @@ export class CallbackTool<TParent = any>
   }
 
   // Call a callback from another tool
-  static async Call(
+  static async CallCallback(
     callbacks: DurableObjectNamespace<Callbacks>,
     callback: Callback,
     args?: any
   ): Promise<any> {
-    return await Callbacks.call(callbacks, callback, args);
+    return await Callbacks.CallCallback(callbacks, callback, args);
   }
 
-  async call(callback: Callback, args?: any): Promise<any> {
+  async callCallback(callback: Callback, args?: any): Promise<any> {
     // @ts-ignore - TypeScript type recursion workaround
-    return await this.callbacks.call(callback, args);
+    return await this.callbacks.callCallback(callback, args);
   }
 
   async delete(callback: Callback): Promise<void> {
@@ -118,7 +118,11 @@ export class CallbackTool<TParent = any>
       }
 
       // Execute the callback with the full activity link as argument
-      const result = await Callbacks.call(callbacks, callbackToken, link);
+      const result = await Callbacks.CallCallback(
+        callbacks,
+        callbackToken,
+        link
+      );
 
       return result;
     } catch (error) {
