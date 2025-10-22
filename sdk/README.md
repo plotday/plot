@@ -161,6 +161,7 @@ await this.plot.createActivity({
 Activities are grouped within nested contexts called Priorities (e.g. Work, Project X).
 
 **Type References:**
+
 - [ActivityType enum](https://github.com/plotday/plot/blob/main/sdk/src/plot.ts#L35-L42) - Note, Task, Event
 - [ActivityLinkType enum](https://github.com/plotday/plot/blob/main/sdk/src/plot.ts#L65-L74) - external, auth, hidden, callback
 - [Activity type](https://github.com/plotday/plot/blob/main/sdk/src/plot.ts#L216-L288) - Full activity structure
@@ -254,6 +255,7 @@ async onAuthComplete(authorization: Authorization, context: any) {
 ```
 
 **Type References:**
+
 - [AuthProvider enum](https://github.com/plotday/plot/blob/main/sdk/src/tools/auth.ts#L78-L83) - Google, Microsoft
 - [AuthLevel enum](https://github.com/plotday/plot/blob/main/sdk/src/tools/auth.ts#L90-L95) - Priority, User
 
@@ -300,12 +302,12 @@ Create persistent function references for webhooks and auth flows. Callback meth
 
 ```typescript
 // Create callback (no import needed - available directly)
-const token = await this.callback("handleEvent", {
+const callback = await this.callback("handleEvent", {
   eventType: "calendar_sync",
 });
 
 // Execute callback
-const result = await this.call(token, {
+const result = await this.callCallback(callback, {
   data: eventData,
 });
 
@@ -398,6 +400,7 @@ response.output.email; // string | undefined
 **Model Selection:**
 
 Use `ModelPreferences` to specify your requirements based on speed and cost tiers:
+
 - **Speed**: `"fast"`, `"balanced"`, or `"capable"`
 - **Cost**: `"low"`, `"medium"`, or `"high"`
 
