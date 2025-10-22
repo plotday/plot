@@ -1,5 +1,11 @@
 # @plotday/sdk
 
+## 0.16.0
+
+### Changed
+
+- BREAKING: Rename Agent.call() and Tool.call() to callCallback() to avoid confusion with JavaScript's Object.call(). ([#47](https://github.com/plotday/plot/pull/47) [`9ed2cf4`](https://github.com/plotday/plot/commit/9ed2cf4e019b5f7f0e04d35c383675ca4b6cd137))
+
 ## 0.15.0
 
 ### Changed
