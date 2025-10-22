@@ -196,16 +196,43 @@ export function agentFactory(
         functionName: string,
         args?: any,
         context?: any
-      ) =>
+      ) => {
+        // If path is non-empty, check if it points to a built-in tool
+        if (path.length > 0) {
+          // Navigate the tool tree to find the target
+          let currentDeps = tools;
+          let targetTool: ToolDependencies | undefined;
+
+          for (const pathId of path) {
+            targetTool = currentDeps.find((dep) => dep.id === pathId);
+            if (!targetTool) break;
+            currentDeps = targetTool.dependencies ?? [];
+          }
+
+          // If we found a built-in tool, execute the callback directly in API worker
+          if (targetTool?.tool) {
+            const fn = (targetTool.tool as any)[functionName];
+            if (typeof fn !== "function") {
+              return Promise.reject(
+                `Callback function '${functionName}' not found.`
+              );
+            }
+            // Call with proper binding
+            return fn.call(targetTool.tool, args, context);
+          }
+        }
+
+        // Otherwise, dispatch to agent worker (for agent callbacks or non-built-in tools)
         // @ts-ignore - Type instantiation is excessively deep due to recursive ToolDependencies type
-        agent.callCallback(
+        return agent.callCallback(
           tools,
           path,
           functionName,
           args,
           context,
           priorityAgentId
-        ),
+        );
+      },
 
       tools,
     };
@@ -233,7 +260,7 @@ export function agentFactory(
       timestamp: Date.now(),
     });
 
-    const agentWrapper = await factory({
+    const agent = await factory({
       id,
       environment,
       version,
@@ -242,7 +269,7 @@ export function agentFactory(
     });
 
     try {
-      await agentWrapper.activate({ id: priorityId });
+      await agent.activate({ id: priorityId });
     } catch (activateError) {
       // Log activation errors
       console.error("Error activating agent:", activateError);

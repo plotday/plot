@@ -104,22 +104,12 @@ function buildAgent(dependencies, priorityAgentId) {
   return new AgentConstructor(priorityAgentId, tools);
 }
 
-function buildTool(tool, priorityAgentId) {
-  // Use pre-built tool if available, otherwise construct lazily
-  if (tool.tool) {
-    return tool.tool;
-  } else {
-    const tools = new CachedTools(tool.dependencies ?? [], priorityAgentId);
-    return tools.getById(tool.id);
-  }
-}
-
 function callCallback(target, functionName, args, context) {
   const fn = target[functionName];
   if (typeof fn !== "function") {
     return Promise.reject(\`Callback function '\${functionName}' not found.\`);
   }
-  return fn(args, context);
+  return fn.call(target, args, context);
 }
 
 export default class extends WorkerEntrypoint {
