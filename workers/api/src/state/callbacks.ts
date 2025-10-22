@@ -134,10 +134,12 @@ export class Callbacks extends DurableObject<Bindings> {
       this.updateAlarm();
     }
 
-    return token;
+    // Encode id in token for routing
+    return `${this.ctx.id}:${token}`;
   }
 
   async call(token: string, args?: any): Promise<any> {
+    [, token] = token.split(":");
     const result = this.sql
       .exec(
         `
@@ -217,6 +219,7 @@ export class Callbacks extends DurableObject<Bindings> {
   }
 
   delete(token: string): void {
+    [, token] = token.split(":");
     this.sql.exec("DELETE FROM callbacks WHERE token = ?", token);
   }
 
@@ -311,13 +314,7 @@ export class Callbacks extends DurableObject<Bindings> {
     const base64 = btoa(
       Array.from(randomBytes, (byte) => String.fromCharCode(byte)).join("")
     );
-    const randomToken = base64
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=/g, "");
-
-    // Encode id in token for routing
-    return `${this.ctx.id}:${randomToken}`;
+    return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
   }
 
   /**
@@ -327,23 +324,12 @@ export class Callbacks extends DurableObject<Bindings> {
    */
   static async call(
     callbacks: DurableObjectNamespace<Callbacks>,
-    ctx: { exports: ExecutionContext["exports"] },
     token: string,
     args?: any
   ): Promise<any> {
-    // Extract priorityAgentId from token (first part before colon)
-    const colonIndex = token.indexOf(":");
-    if (colonIndex === -1) {
-      throw new Error("Invalid token format");
-    }
-    const id = token.substring(0, colonIndex);
-
-    // Get the appropriate DO stub using id
+    const [id] = token.split(":");
     const callbacksId = callbacks.idFromString(id);
     const callbacksStub = callbacks.get(callbacksId);
-
-    // Call the stub's call method
-    // @ts-ignore nested type issue
-    return await callbacksStub.call(ctx, token, args);
+    return await callbacksStub.call(token, args);
   }
 }

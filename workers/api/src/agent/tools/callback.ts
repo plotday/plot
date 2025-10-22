@@ -74,7 +74,7 @@ export class CallbackTool<TParent = any>
     callback: Callback,
     args?: any
   ): Promise<any> {
-    return await Callbacks.call(callbacks, ctx, callback, args);
+    return await Callbacks.call(callbacks, callback, args);
   }
 
   async call(callback: Callback, args?: any): Promise<any> {
@@ -121,7 +121,7 @@ export class CallbackTool<TParent = any>
       }
 
       // Execute the callback with the full activity link as argument
-      const result = await Callbacks.call(callbacks, ctx, callbackToken, link);
+      const result = await Callbacks.call(callbacks, callbackToken, link);
 
       return result;
     } catch (error) {
