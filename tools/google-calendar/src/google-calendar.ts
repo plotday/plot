@@ -377,7 +377,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
               source: activityData.source || null,
             };
 
-            await this.call(callbackToken, activity);
+            await this.callCallback(callbackToken, activity);
           }
         }
       } catch (error) {
@@ -423,7 +423,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
         source: activityData.source || null,
       };
 
-      await this.call(callbackToken, activity);
+      await this.callCallback(callbackToken, activity);
     }
   }
 
@@ -502,7 +502,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
     const authSuccessResult: CalendarAuth = {
       authToken: context.authToken,
     };
-    await this.call(context.callbackToken, authSuccessResult);
+    await this.callCallback(context.callbackToken, authSuccessResult);
 
     // Clean up the callback token
     await this.clear(`auth_callback_token:${context.authToken}`);

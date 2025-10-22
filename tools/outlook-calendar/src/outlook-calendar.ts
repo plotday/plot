@@ -564,7 +564,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
         // Call the event callback
         const callbackToken = await this.get<Callback>("event_callback_token");
         if (callbackToken) {
-          await this.call(callbackToken, activity);
+          await this.callCallback(callbackToken, activity);
         }
       }
 
@@ -653,7 +653,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
         authToken: context.token,
       };
 
-      await this.call(callbackToken, authSuccessResult);
+      await this.callCallback(callbackToken, authSuccessResult);
 
       // Clean up the callback token
       await this.clear(`auth_callback_token:${context.token}`);
