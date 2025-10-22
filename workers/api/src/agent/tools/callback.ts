@@ -70,7 +70,6 @@ export class CallbackTool<TParent = any>
   // Call a callback from another tool
   static async Call(
     callbacks: DurableObjectNamespace<Callbacks>,
-    ctx: { exports: ExecutionContext["exports"] },
     callback: Callback,
     args?: any
   ): Promise<any> {
@@ -97,11 +96,9 @@ export class CallbackTool<TParent = any>
 
   /**
    * Static method to handle activity link callbacks from API endpoints
-   * Similar to Auth.HandleOauthCallback() pattern
    */
   static async HandleLinkCallback(
     callbacks: DurableObjectNamespace<Callbacks>,
-    ctx: { exports: ExecutionContext["exports"] },
     token: string,
     link: ActivityLink
   ): Promise<any> {

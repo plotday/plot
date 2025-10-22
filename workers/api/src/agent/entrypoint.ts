@@ -17,6 +17,7 @@ class CachedTools {
   }
 
   get(ToolClass) {
+    console.log("Getting tool:", ToolClass.name, !!ToolClass);
     return this.getById(ToolClass.name, ToolClass);
   }
 
@@ -110,6 +111,7 @@ function buildTool(tool, priorityAgentId) {
     return tool.tool;
   } else {
     const tools = new CachedTools(tool.dependencies ?? [], priorityAgentId);
+    console.log("Getting tool:", tool.id);
     return tools.getById(tool.id);
   }
 }
@@ -150,9 +152,28 @@ export default class extends WorkerEntrypoint {
     return callAgent(agent, functionName, args, context);
   }
 
-  async callTool(tool, functionName, args, context, priorityAgentId) {
-    const target = buildTool(tool, priorityAgentId);
-    return callTool(target, functionName, args, context);
+  async callTool(dependencies, path, functionName, args, context, priorityAgentId) {
+    // Build the full agent with all its tools
+    const agent = buildAgent(dependencies, priorityAgentId);
+
+    // Navigate through the tool tree to find the target tool
+    let currentTools = agent.tools;
+    let targetTool = null;
+
+    for (const pathId of path) {
+      targetTool = currentTools.getById(pathId);
+      if (!targetTool) {
+        return Promise.reject(\`Tool path \${path.join('/')} not found\`);
+      }
+      // Move to the next level in the tool tree
+      currentTools = targetTool.tools || currentTools;
+    }
+
+    if (!targetTool) {
+      return Promise.reject('Path cannot be empty for callTool');
+    }
+
+    return callTool(targetTool, functionName, args, context);
   }
 
   getDependencies(id) {
@@ -199,7 +220,8 @@ export abstract class AgentEntrypoint extends WorkerEntrypoint {
   ): Promise<any>;
 
   abstract callTool(
-    _tool: ToolDependencies,
+    _dependencies: ToolDependencies[],
+    _path: string[],
     _functionName: string,
     _args: any,
     _context: any,

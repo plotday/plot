@@ -5,8 +5,7 @@ import { type Bindings, type LogMessage } from "../env";
 
 export async function processLogs(
   batch: MessageBatch<LogMessage>,
-  env: Bindings,
-  ctx: { exports: ExecutionContext["exports"] }
+  env: Bindings
 ): Promise<void> {
   // Group logs by agent_root_id
   const logsByAgent = new Map<string, LogMessage[]>();
@@ -43,7 +42,6 @@ export async function processLogs(
           try {
             await CallbackTool.Call(
               env.CALLBACKS,
-              ctx,
               callbackToken as Callback,
               formattedLogs
             );

@@ -6,7 +6,7 @@ import { type Callbacks } from "../state/callbacks";
 import { type LogSubscriptions } from "../state/log-subscriptions";
 import { type Storage } from "../state/storage";
 import AgentEntrypoint from "./entrypoint";
-import { createTool, createTools } from "./tools/factory";
+import { createTools } from "./tools/factory";
 import { type Tool } from "./tools/tool";
 
 export * from "./management";
@@ -201,42 +201,12 @@ export function agentFactory(
         args?: any,
         context?: any
       ) => {
-        // Navigate through the tool dependency tree to find the target tool
-        let toolDeps = tools;
-        let targetTool: ToolDependencies | undefined;
-
-        for (const pathId of path) {
-          targetTool = toolDeps.find((t: any) => t.id === pathId);
-          if (!targetTool) {
-            throw new Error(
-              `Path ${path} not found in agent ${id} (${environment}) tools`
-            );
-          }
-          // @ts-ignore - Type instantiation issue with ToolDependencies recursion
-          toolDeps = targetTool.dependencies ?? [];
-        }
-
-        if (!targetTool) {
-          throw new Error("Path cannot be empty for callTool");
-        }
-
-        // Create the tool with all necessary context
-        const createdTool = createTool(path, targetTool, {
-          agentId: id,
-          environment,
-          supabase,
-          priorityId,
-          priorityAgentId,
-          storage: env.STORAGE,
-          callbacks: env.CALLBACKS,
-          logSubscriptions: env.LOG_SUBSCRIPTIONS,
-          env,
-          ctx,
-        });
-
+        // Pass the full tools array and path to the entrypoint
+        // The entrypoint will build the agent and navigate to the target tool
         // @ts-ignore - Type instantiation is excessively deep due to recursive ToolDependencies type
         return agent.callTool(
-          createdTool,
+          tools,
+          path,
           functionName,
           args,
           context,

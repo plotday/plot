@@ -159,7 +159,6 @@ export class Auth extends Tool implements IAuth {
       // @ts-ignore type instantiation issue
       await CallbackTool.Call(
         this.callbacks,
-        this.ctx,
         context.callerCallback,
         authorization
       );

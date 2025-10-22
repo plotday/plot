@@ -20,7 +20,6 @@ callbacks.post("/callback/:token", async (c) => {
 
     const result = await CallbackTool.HandleLinkCallback(
       c.env.CALLBACKS,
-      c.executionCtx as ExecutionContext,
       token,
       link
     );

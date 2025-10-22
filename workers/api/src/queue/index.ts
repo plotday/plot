@@ -30,7 +30,7 @@ export async function queue(
 
     case "agent-logs-development":
     case "agent-logs-production":
-      await processLogs(batch as MessageBatch<LogMessage>, env, ctx);
+      await processLogs(batch as MessageBatch<LogMessage>, env);
       break;
 
     default:
