@@ -2,7 +2,7 @@ import {
   type ActivityLink,
   type NewActivity,
   Tool,
-  type Tools,
+  type ToolBuilder,
 } from "@plotday/sdk";
 import {
   type Calendar,
@@ -10,14 +10,14 @@ import {
   type CalendarTool,
   type SyncOptions,
 } from "@plotday/sdk/common/calendar";
+import { type Callback } from "@plotday/sdk/tools/callbacks";
 import {
-  Auth,
   AuthLevel,
   AuthProvider,
   type Authorization,
-} from "@plotday/sdk/tools/auth";
-import { type Callback } from "@plotday/sdk/tools/callback";
-import { Webhook, type WebhookRequest } from "@plotday/sdk/tools/webhook";
+  Integrations,
+} from "@plotday/sdk/tools/integrations";
+import { Network, type WebhookRequest } from "@plotday/sdk/tools/network";
 
 import {
   GoogleApi,
@@ -99,14 +99,17 @@ type AuthSuccessContext = {
  * }
  * ```
  */
-export class GoogleCalendar extends Tool implements CalendarTool {
-  private auth: Auth;
-  private webhook: Webhook;
-
-  constructor(id: string, protected tools: Tools) {
-    super(id, tools);
-    this.auth = tools.get(Auth);
-    this.webhook = tools.get(Webhook);
+export class GoogleCalendar
+  extends Tool<typeof GoogleCalendar>
+  implements CalendarTool
+{
+  static Init(tools: ToolBuilder) {
+    return {
+      integrations: tools.init(Integrations),
+      network: tools.init(Network, {
+        urls: ["https://www.googleapis.com/calendar/*"],
+      }),
+    };
   }
 
   async requestAuth(callback: Callback): Promise<ActivityLink> {
@@ -115,7 +118,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
       "https://www.googleapis.com/auth/calendar.events",
     ];
 
-    // Generate opaque token for this authorization
+    // Generate opaque token for this.integrationsorization
     const authToken = crypto.randomUUID();
 
     // Use the provided callback token
@@ -128,7 +131,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
     } satisfies AuthSuccessContext);
 
     // Request auth and return the activity link
-    return await this.auth.request(
+    return await this.tools.integrations.request(
       {
         provider: AuthProvider.Google,
         level: AuthLevel.User,
@@ -146,7 +149,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
       throw new Error("Authorization no longer available");
     }
 
-    const token = await this.auth.get(authorization);
+    const token = await this.tools.integrations.get(authorization);
     if (!token) {
       throw new Error("Authorization no longer available");
     }
@@ -229,10 +232,13 @@ export class GoogleCalendar extends Tool implements CalendarTool {
     calendarId: string,
     opaqueAuthToken: string
   ): Promise<void> {
-    const webhookUrl = await this.webhook.create("onCalendarWebhook", {
-      calendarId,
-      authToken: opaqueAuthToken,
-    });
+    const webhookUrl = await this.tools.network.createWebhook(
+      "onCalendarWebhook",
+      {
+        calendarId,
+        authToken: opaqueAuthToken,
+      }
+    );
 
     // Check if webhook URL is localhost
     if (URL.parse(webhookUrl)?.hostname === "localhost") {

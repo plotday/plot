@@ -3,7 +3,7 @@ import {
   type ActivityLink,
   ActivityType,
   Tool,
-  type Tools,
+  type ToolBuilder,
 } from "@plotday/sdk";
 import type {
   Calendar,
@@ -11,14 +11,14 @@ import type {
   CalendarTool,
   SyncOptions,
 } from "@plotday/sdk/common/calendar";
+import { type Callback } from "@plotday/sdk/tools/callbacks";
 import {
-  Auth,
   AuthLevel,
   AuthProvider,
   type Authorization,
-} from "@plotday/sdk/tools/auth";
-import { type Callback } from "@plotday/sdk/tools/callback";
-import { Webhook, type WebhookRequest } from "@plotday/sdk/tools/webhook";
+  Integrations,
+} from "@plotday/sdk/tools/integrations";
+import { Network, type WebhookRequest } from "@plotday/sdk/tools/network";
 
 type AuthSuccessContext = {
   token: string;
@@ -222,18 +222,19 @@ const outlookApi = {
  * }
  * ```
  */
-export class OutlookCalendar extends Tool implements CalendarTool {
-  private auth: Auth;
-  private webhook: Webhook;
-
-  constructor(id: string, protected tools: Tools) {
-    super(id, tools);
-    this.auth = tools.get(Auth);
-    this.webhook = tools.get(Webhook);
+export class OutlookCalendar
+  extends Tool<typeof OutlookCalendar>
+  implements CalendarTool
+{
+  static Init(tools: ToolBuilder, _options: any) {
+    return {
+      integrations: tools.init(Integrations),
+      network: tools.init(Network),
+    };
   }
 
   async requestAuth(callback: Callback): Promise<ActivityLink> {
-    // Generate opaque token for this auth request
+    // Generate opaque token for this.integrations request
     const token = crypto.randomUUID();
 
     // Store the callback token for auth completion
@@ -245,7 +246,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
     } satisfies AuthSuccessContext);
 
     // Request Microsoft authentication and return the activity link
-    return await this.auth.request(
+    return await this.tools.integrations.request(
       {
         provider: AuthProvider.Microsoft,
         level: AuthLevel.User,
@@ -266,7 +267,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
       throw new Error("Authorization no longer available");
     }
 
-    const token = await this.auth.get(authorization);
+    const token = await this.tools.integrations.get(authorization);
     if (!token) {
       throw new Error("Authorization no longer available");
     }
@@ -341,7 +342,7 @@ export class OutlookCalendar extends Tool implements CalendarTool {
   ): Promise<void> {
     const { config, credentials } = await this.getApi(authToken);
 
-    const webhookUrl = await this.webhook.create("onOutlookWebhook", {
+    const webhookUrl = await this.tools.network.createWebhook("onOutlookWebhook", {
       calendarId,
       authToken: opaqueAuthToken,
     });
@@ -639,8 +640,6 @@ export class OutlookCalendar extends Tool implements CalendarTool {
     authResult: Authorization,
     context: AuthSuccessContext
   ): Promise<void> {
-    console.log("Outlook Calendar authentication successful", authResult);
-
     // Store the actual auth token using opaque token as key
     await this.set(`authorization:${context.token}`, authResult);
 

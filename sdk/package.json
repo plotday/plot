@@ -34,29 +34,29 @@
       "types": "./dist/tools/ai.d.ts",
       "default": "./dist/tools/ai.js"
     },
-    "./tools/auth": {
-      "types": "./dist/tools/auth.d.ts",
-      "default": "./dist/tools/auth.js"
+    "./tools/integrations": {
+      "types": "./dist/tools/integrations.d.ts",
+      "default": "./dist/tools/integrations.js"
     },
-    "./tools/callback": {
-      "types": "./dist/tools/callback.d.ts",
-      "default": "./dist/tools/callback.js"
+    "./tools/callbacks": {
+      "types": "./dist/tools/callbacks.d.ts",
+      "default": "./dist/tools/callbacks.js"
+    },
+    "./tools/network": {
+      "types": "./dist/tools/network.d.ts",
+      "default": "./dist/tools/network.js"
     },
     "./tools/plot": {
       "types": "./dist/tools/plot.d.ts",
       "default": "./dist/tools/plot.js"
     },
-    "./tools/run": {
-      "types": "./dist/tools/run.d.ts",
-      "default": "./dist/tools/run.js"
+    "./tools/tasks": {
+      "types": "./dist/tools/tasks.d.ts",
+      "default": "./dist/tools/tasks.js"
     },
     "./tools/store": {
       "types": "./dist/tools/store.d.ts",
       "default": "./dist/tools/store.js"
-    },
-    "./tools/webhook": {
-      "types": "./dist/tools/webhook.d.ts",
-      "default": "./dist/tools/webhook.js"
     },
     "./common/calendar": {
       "types": "./dist/common/calendar.d.ts",
@@ -98,29 +98,29 @@
       "types": "./dist/llm-docs/tools/ai.d.ts",
       "default": "./dist/llm-docs/tools/ai.js"
     },
-    "./llm-docs/tools/auth": {
-      "types": "./dist/llm-docs/tools/auth.d.ts",
-      "default": "./dist/llm-docs/tools/auth.js"
+    "./llm-docs/tools/integrations": {
+      "types": "./dist/llm-docs/tools/integrations.d.ts",
+      "default": "./dist/llm-docs/tools/integrations.js"
     },
-    "./llm-docs/tools/callback": {
-      "types": "./dist/llm-docs/tools/callback.d.ts",
-      "default": "./dist/llm-docs/tools/callback.js"
+    "./llm-docs/tools/callbacks": {
+      "types": "./dist/llm-docs/tools/callbacks.d.ts",
+      "default": "./dist/llm-docs/tools/callbacks.js"
+    },
+    "./llm-docs/tools/network": {
+      "types": "./dist/llm-docs/tools/network.d.ts",
+      "default": "./dist/llm-docs/tools/network.js"
     },
     "./llm-docs/tools/plot": {
       "types": "./dist/llm-docs/tools/plot.d.ts",
       "default": "./dist/llm-docs/tools/plot.js"
     },
-    "./llm-docs/tools/run": {
-      "types": "./dist/llm-docs/tools/run.d.ts",
-      "default": "./dist/llm-docs/tools/run.js"
+    "./llm-docs/tools/tasks": {
+      "types": "./dist/llm-docs/tools/tasks.d.ts",
+      "default": "./dist/llm-docs/tools/tasks.js"
     },
     "./llm-docs/tools/store": {
       "types": "./dist/llm-docs/tools/store.d.ts",
       "default": "./dist/llm-docs/tools/store.js"
-    },
-    "./llm-docs/tools/webhook": {
-      "types": "./dist/llm-docs/tools/webhook.d.ts",
-      "default": "./dist/llm-docs/tools/webhook.js"
     },
     "./llm-docs/common/calendar": {
       "types": "./dist/llm-docs/common/calendar.d.ts",

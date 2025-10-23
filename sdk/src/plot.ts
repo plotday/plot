@@ -88,7 +88,7 @@ export enum ActivityLinkType {
  *   url: "https://calendar.google.com/event/123",
  * };
  *
- * // Auth link - initiates OAuth flow
+ * // Integrations link - initiates OAuth flow
  * const authLink: ActivityLink = {
  *   type: ActivityLinkType.auth,
  *   title: "Continue with Google",

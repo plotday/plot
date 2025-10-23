@@ -1,5 +1,5 @@
-import { ITool, type Tools } from "..";
-import type { Callback } from "./callback";
+import { ITool, type ToolBuilder } from "..";
+import type { Callback } from "./callbacks";
 
 /**
  * Run background tasks and scheduled jobs.
@@ -55,7 +55,7 @@ import type { Callback } from "./callback";
  * }
  * ```
  */
-export abstract class Run extends ITool {
+export abstract class Tasks extends ITool {
   /**
    * Queues a callback to execute in a separate worker context.
    *
@@ -70,7 +70,7 @@ export abstract class Run extends ITool {
    */
   abstract run(
     _callback: Callback,
-    _options?: { runAt?: Date },
+    _options?: { runAt?: Date }
   ): Promise<string | void>;
 
   /**

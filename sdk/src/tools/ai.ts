@@ -1,6 +1,6 @@
 import type { Static, TSchema } from "typebox";
 
-import { ITool } from "..";
+import { ITool, type ToolBuilder } from "..";
 
 /**
  * Built-in tool for prompting Large Language Models (LLMs).
@@ -24,7 +24,7 @@ import { ITool } from "..";
  * class SmartEmailTool extends Tool {
  *   private ai: AI;
  *
- *   constructor(id: string, tools: Tools) {
+ *   constructor(id: string, tools: ToolBuilder) {
  *     super();
  *     this.ai = tools.get(AI);
  *   }
@@ -65,6 +65,10 @@ import { ITool } from "..";
  * ```
  */
 export abstract class AI extends ITool {
+  static Init(_tools: ToolBuilder, _options?: any): Record<string, never> {
+    return {};
+  }
+
   /**
    * Sends a request to an AI model and returns the response using the Vercel AI SDK.
    *

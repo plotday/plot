@@ -6,19 +6,17 @@ import {
   Agent,
   AuthorType,
   Tag,
-  type Tools,
+  type ToolBuilder,
 } from "@plotday/sdk";
 import { AI, type AIMessage } from "@plotday/sdk/tools/ai";
 import { Plot } from "@plotday/sdk/tools/plot";
 
-export default class extends Agent {
-  private ai: AI;
-  private plot: Plot;
-
-  constructor(id: string, protected tools: Tools) {
-    super(id, tools);
-    this.ai = tools.get(AI);
-    this.plot = tools.get(Plot);
+export default class ChatAgent extends Agent<typeof ChatAgent> {
+  static Init(tools: ToolBuilder) {
+    return {
+      ai: tools.init(AI),
+      plot: tools.init(Plot),
+    };
   }
 
   async activity(
@@ -31,7 +29,7 @@ export default class extends Agent {
   ) {
     if (changes) return;
 
-    const previousActivities = await this.plot.getThread(activity);
+    const previousActivities = await this.tools.plot.getThread(activity);
 
     if (
       activity.note?.includes("@chat") ||
@@ -40,7 +38,7 @@ export default class extends Agent {
       )
     ) {
       // Add Thinking tag to indicate processing has started
-      await this.plot.updateActivity({
+      await this.tools.plot.updateActivity({
         id: activity.id,
         tags: {
           [Tag.Agent]: true,
@@ -96,14 +94,14 @@ You can also create tasks, but should only do so when the user explicitly asks y
         ),
       });
 
-      const response = await this.ai.prompt({
+      const response = await this.tools.ai.prompt({
         model: { speed: "balanced", cost: "low" },
         messages,
         outputSchema: schema,
       });
 
       await Promise.all([
-        this.plot.createActivity({
+        this.tools.plot.createActivity({
           title: response.output!.message.title,
           note: response.output!.message.note,
           parent: activity,
@@ -111,7 +109,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
           type: activity.type,
         }),
         ...(response.output!.action_items?.map((item: any) =>
-          this.plot.createActivity({
+          this.tools.plot.createActivity({
             title: item.title,
             note: item.note,
             parent: activity,
@@ -123,7 +121,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
       ]);
 
       // Remove Thinking tag after response is created
-      await this.plot.updateActivity({
+      await this.tools.plot.updateActivity({
         id: activity.id,
         tags: {
           [Tag.Agent]: false,

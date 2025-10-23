@@ -1,4 +1,4 @@
-import { ITool, type Tools } from "..";
+import { ITool, type ToolBuilder } from "..";
 
 /**
  * Represents a callback token for persistent function references.
@@ -35,7 +35,7 @@ export type CallbackMethods<T> = {
  */
 export type CallbackContext<T, K extends keyof T> = T[K] extends (
   args: any,
-  context?: infer C,
+  context: infer C
 ) => any
   ? C
   : undefined;
@@ -84,7 +84,7 @@ export type CallbackContext<T, K extends keyof T> = T[K] extends (
  * }
  * ```
  */
-export abstract class CallbackTool<TParent = any> extends ITool {
+export abstract class Callbacks<TParent> extends ITool {
   /**
    * Creates a persistent callback to the tool's parent.
    * Returns a callback token that can be used to call the callback later.
@@ -95,7 +95,7 @@ export abstract class CallbackTool<TParent = any> extends ITool {
    */
   abstract create<K extends CallbackMethods<TParent>>(
     _functionName: K,
-    _context?: CallbackContext<TParent, K>,
+    _context?: CallbackContext<TParent, K>
   ): Promise<Callback>;
 
   /**

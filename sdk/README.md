@@ -94,20 +94,19 @@ This will prompt you for:
 Edit `src/index.ts` to add your agent logic:
 
 ```typescript
-import { type Activity, ActivityType, Agent, type Tools } from "@plotday/sdk";
+import { type Activity, ActivityType, Agent, type Priority, type ToolBuilder } from "@plotday/sdk";
 import { Plot } from "@plotday/sdk/tools/plot";
 
-export default class extends Agent {
-  private plot: Plot;
-
-  constructor(id: string, tools: Tools) {
-    super(id, tools);
-    this.plot = tools.get(Plot);
+export default class MyAgent extends Agent<typeof MyAgent> {
+  static Init(tools: ToolBuilder) {
+    return {
+      plot: tools.init(Plot),
+    };
   }
 
-  async activate(priority: { id: string }) {
+  async activate(priority: Pick<Priority, "id">) {
     // Called when the agent is activated for a priority
-    await this.plot.createActivity({
+    await this.tools.plot.createActivity({
       type: ActivityType.Note,
       title: "Welcome! Your agent is now active.",
     });
@@ -170,19 +169,20 @@ Activities are grouped within nested contexts called Priorities (e.g. Work, Proj
 
 Tools provide functionality to agents. They can be:
 
-- **Built-in Tools** - Core Plot functionality (Plot, Store, Auth, etc.).
+- **Built-in Tools** - Core Plot functionality (Plot, Store, Integrations, etc.).
 - **Custom Tools** - Extra packages that add capabilities using the built-in tools. They often implement integrations with external services (Google Calendar, Outlook, etc.).
 
-Access tools via the `tools.get()` method in your agent constructor. Store, Run, and Callback methods are available directly on the Agent class:
+Declare tools in the static `Init` method. Store, Tasks, and Callbacks methods are available directly on the Agent class:
 
 ```typescript
-constructor(id: string, tools: Tools) {
-  super(id, tools);
-  this.plot = tools.get(Plot);
-  this.googleCalendar = tools.get(GoogleCalendar);
-  // Store, Run, and Callback methods are available directly:
-  // this.get(), this.set(), this.callback(), this.run(), etc.
+static Init(tools: ToolBuilder) {
+  return {
+    plot: tools.init(Plot),
+    googleCalendar: tools.init(GoogleCalendar),
+  };
 }
+// Store, Tasks, and Callbacks methods are available directly:
+// this.get(), this.set(), this.callback(), this.run(), etc.
 ```
 
 ### Plot
@@ -193,21 +193,21 @@ Core tool for creating and managing activities and priorities.
 import { Plot } from "@plotday/sdk/tools/plot";
 
 // Create activities
-await this.plot.createActivity({
+await this.tools.plot.createActivity({
   type: ActivityType.Task,
   title: "My task",
 });
 
 // Update activities
-await this.plot.updateActivity(activity.id, {
+await this.tools.plot.updateActivity(activity.id, {
   doneAt: new Date(),
 });
 
 // Delete activities
-await this.plot.deleteActivity(activity.id);
+await this.tools.plot.deleteActivity(activity.id);
 
 // Create priorities
-await this.plot.createPriority({
+await this.tools.plot.createPriority({
   title: "Work",
 });
 ```
@@ -228,16 +228,16 @@ await this.clear("sync_token");
 await this.clearAll();
 ```
 
-### Auth
+### Integrations
 
 OAuth authentication for external services.
 
 ```typescript
-import { Auth, AuthLevel, AuthProvider, type Authorization } from "@plotday/sdk/tools/auth";
+import { Integrations, AuthLevel, AuthProvider, type Authorization } from "@plotday/sdk/tools/integrations";
 
 // Request authentication
 const authCallback = await this.callback("onAuthComplete", { provider: "google" });
-const authLink = await this.auth.request(
+const authLink = await this.tools.integrations.request(
   {
     provider: AuthProvider.Google,
     level: AuthLevel.User,
@@ -249,19 +249,19 @@ const authLink = await this.auth.request(
 // Handle auth completion
 async onAuthComplete(authorization: Authorization, context: any) {
   // Get access token
-  const authToken = await this.auth.get(authorization);
+  const authToken = await this.tools.integrations.get(authorization);
   console.log("Access token:", authToken?.token);
 }
 ```
 
 **Type References:**
 
-- [AuthProvider enum](https://github.com/plotday/plot/blob/main/sdk/src/tools/auth.ts#L78-L83) - Google, Microsoft
-- [AuthLevel enum](https://github.com/plotday/plot/blob/main/sdk/src/tools/auth.ts#L90-L95) - Priority, User
+- [AuthProvider enum](https://github.com/plotday/plot/blob/main/sdk/src/tools/integrations.ts#L82-L87) - Google, Microsoft
+- [AuthLevel enum](https://github.com/plotday/plot/blob/main/sdk/src/tools/integrations.ts#L94-L99) - Priority, User
 
-### Run
+### Tasks
 
-Queue background tasks and scheduled operations. Run methods are available directly on Agent and Tool classes.
+Queue background tasks and scheduled operations. Tasks methods are available directly on Agent and Tool classes.
 
 ```typescript
 // Execute immediately (no import needed - available directly)
@@ -273,15 +273,24 @@ const reminderCallback = await this.callback("sendReminder", { userId: "123" });
 await this.run(reminderCallback, { runAt: new Date("2025-01-15T10:00:00Z") });
 ```
 
-### Webhook
+### Network
 
-Create webhook endpoints for real-time notifications from external services.
+Request HTTP access permissions and create webhook endpoints for real-time notifications from external services.
 
 ```typescript
-import { Webhook, type WebhookRequest } from "@plotday/sdk/tools/webhook";
+import { Network, type WebhookRequest } from "@plotday/sdk/tools/network";
+
+// Declare HTTP access in Init method
+static Init(tools: ToolBuilder) {
+  return {
+    network: tools.init(Network, {
+      urls: ['https://api.example.com/*']
+    })
+  };
+}
 
 // Create webhook endpoint
-const webhookUrl = await this.webhook.create(
+const webhookUrl = await this.tools.network.createWebhook(
   "onCalendarUpdate",
   { calendarId: "primary" }
 );
@@ -293,12 +302,12 @@ async onCalendarUpdate(request: WebhookRequest, context: any) {
 }
 
 // Delete webhook endpoint
-await this.webhook.delete(webhookUrl);
+await this.tools.network.deleteWebhook(webhookUrl);
 ```
 
-### Callback
+### Callbacks
 
-Create persistent function references for webhooks and auth flows. Callback methods are available directly on Agent and Tool classes.
+Create persistent function references for webhooks and auth flows. Callbacks methods are available directly on Agent and Tool classes.
 
 ```typescript
 // Create callback (no import needed - available directly)
@@ -312,7 +321,7 @@ const result = await this.callCallback(callback, {
 });
 
 // Delete callback
-await this.deleteCallback(token);
+await this.deleteCallback(callback);
 await this.deleteAllCallbacks(); // Delete all
 ```
 
@@ -325,7 +334,7 @@ import { AI } from "@plotday/sdk/tools/ai";
 import { Type } from "typebox";
 
 // Simple text generation with fast, low-cost model
-const response = await this.ai.prompt({
+const response = await this.tools.ai.prompt({
   model: { speed: "fast", cost: "low" },
   prompt: "Explain quantum computing in simple terms",
 });
@@ -342,7 +351,7 @@ const schema = Type.Object({
   summary: Type.String({ description: "Brief summary" }),
 });
 
-const response = await this.ai.prompt({
+const response = await this.tools.ai.prompt({
   model: { speed: "balanced", cost: "medium" },
   prompt: "Categorize this email: Meeting at 3pm tomorrow",
   outputSchema: schema,
@@ -353,7 +362,7 @@ console.log(response.output.category); // "work" | "personal" | "urgent"
 console.log(response.output.priority); // number
 
 // Tool calling
-const response = await this.ai.prompt({
+const response = await this.tools.ai.prompt({
   model: { speed: "fast", cost: "medium" },
   prompt: "What's 15% of $250?",
   tools: {
@@ -385,7 +394,7 @@ const PersonSchema = Type.Object({
 });
 
 // Use in AI prompt
-const response = await this.ai.prompt({
+const response = await this.tools.ai.prompt({
   model: { speed: "balanced", cost: "medium" },
   prompt: "Extract: John Doe, 30 years old, john@example.com",
   outputSchema: PersonSchema,

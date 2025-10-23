@@ -3,10 +3,50 @@ import type {
   Callback,
   CallbackContext,
   CallbackMethods,
-  CallbackTool,
-} from "./tools/callback";
-import type { Run } from "./tools/run";
+  Callbacks,
+} from "./tools/callbacks";
 import type { Store } from "./tools/store";
+import type { Tasks } from "./tools/tasks";
+
+// Type utilities for extracting types from Init method
+type PromiseValues<T> = {
+  [K in keyof T]: T[K] extends Promise<infer U> ? U : T[K];
+};
+
+// Break down InferTools into intermediate steps to avoid deep recursion
+type ExtractInitReturn<T> = T extends {
+  Init: (...args: any[]) => infer R;
+}
+  ? R
+  : never;
+
+type ResolveInitTools<T> = PromiseValues<ExtractInitReturn<T>>;
+
+type BuiltInTools<T> = {
+  callbacks: Callbacks<T extends new (...args: any[]) => infer I ? I : any>;
+  store: Store;
+  tasks: Tasks;
+} & {}; // Counter reset with intersection
+
+// Note: Due to TypeScript limitations with self-referential generic types and static methods,
+// this type may not properly infer tools in all cases. Use explicit type casts if needed.
+type InferTools<T> = T extends {
+  Init: (...args: any[]) => any;
+  new (...args: any[]): any;
+}
+  ? ResolveInitTools<T> & BuiltInTools<T>
+  : never;
+
+type InferOptions<T> = T extends {
+  Init: (tools: any, options?: infer O) => any;
+}
+  ? O
+  : undefined;
+
+type HasInit<TSelf> = {
+  Init(tools: ToolBuilder, ...args: any[]): any;
+  new (id: string, tools: any, ...args: any[]): any;
+};
 
 /**
  * Base class for all agents.
@@ -19,19 +59,18 @@ import type { Store } from "./tools/store";
  * @example
  * ```typescript
  * class FlatteringAgent extends Agent<FlatteringAgent> {
- *  private plot: Plot;
- *
- *  constructor(id: string, tools: Tools) {
- *    super(id, tools);
- *    this.plot = tools.get(Plot);
- *  }
+ *   static Init(tools: ToolBuilder, options?: { greeting: string }) {
+ *     return {
+ *       plot: tools.init(Plot, PLOT_OPTIONS),
+ *     };
+ *   }
  *
  *   async activate(priority: Pick<Priority, "id">) {
  *     // Initialize agent for the given priority
- *     await this.plot.createActivity({
- *      type: ActivityType.Note,
- *      note: "Hello, good looking!",
- *    });
+ *     await this.tools.plot.createActivity({
+ *       type: ActivityType.Note,
+ *       note: this.options.greeting || "Hello, good looking!",
+ *     });
  *   }
  *
  *   async activity(activity: Activity) {
@@ -40,23 +79,12 @@ import type { Store } from "./tools/store";
  * }
  * ```
  */
-export abstract class Agent<TSelf = any> {
-  protected id: string;
-  private _callbackTool: CallbackTool<TSelf>;
-  private _store: Store;
-  private _runTool: Run;
-
-  constructor(id: string, tools: Tools) {
-    this.id = id;
-    // Get specific tools in constructor for dependency detection
-    // Use dynamic imports to avoid circular dependencies with tool files
-    const { CallbackTool } = require("./tools/callback");
-    const { Store } = require("./tools/store");
-    const { Run } = require("./tools/run");
-    this._callbackTool = tools.get(CallbackTool);
-    this._store = tools.get(Store);
-    this._runTool = tools.get(Run);
-  }
+export abstract class Agent<TSelf extends HasInit<TSelf>> {
+  constructor(
+    protected id: string,
+    protected tools: InferTools<TSelf>,
+    protected options: InferOptions<TSelf>
+  ) {}
 
   /**
    * Creates a persistent callback to a method on this agent.
@@ -65,11 +93,13 @@ export abstract class Agent<TSelf = any> {
    * @param context - Optional context data to pass to the callback
    * @returns Promise resolving to a callback token
    */
-  protected async callback<K extends CallbackMethods<TSelf>>(
+  protected async callback<
+    K extends CallbackMethods<InstanceType<TSelf>> & string
+  >(
     functionName: K,
-    context?: CallbackContext<TSelf, K>
+    context?: CallbackContext<InstanceType<TSelf>, K>
   ): Promise<Callback> {
-    return this._callbackTool.create(functionName, context);
+    return this.tools.callbacks.create(functionName, context);
   }
 
   /**
@@ -79,7 +109,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when the callback is deleted
    */
   protected async deleteCallback(token: Callback): Promise<void> {
-    return this._callbackTool.delete(token);
+    return this.tools.callbacks.delete(token);
   }
 
   /**
@@ -88,7 +118,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when all callbacks are deleted
    */
   protected async deleteAllCallbacks(): Promise<void> {
-    return this._callbackTool.deleteAll();
+    return this.tools.callbacks.deleteAll();
   }
 
   /**
@@ -99,7 +129,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise resolving to the callback result
    */
   protected async callCallback(token: Callback, args?: any): Promise<any> {
-    return this._callbackTool.callCallback(token, args);
+    return this.tools.callbacks.callCallback(token, args);
   }
 
   /**
@@ -110,7 +140,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise resolving to the stored value or null
    */
   protected async get<T>(key: string): Promise<T | null> {
-    return this._store.get<T>(key);
+    return this.tools.store.get(key);
   }
 
   /**
@@ -122,7 +152,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when the value is stored
    */
   protected async set<T>(key: string, value: T): Promise<void> {
-    return this._store.set(key, value);
+    return this.tools.store.set(key, value);
   }
 
   /**
@@ -132,7 +162,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when the key is removed
    */
   protected async clear(key: string): Promise<void> {
-    return this._store.clear(key);
+    return this.tools.store.clear(key);
   }
 
   /**
@@ -141,7 +171,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when all keys are removed
    */
   protected async clearAll(): Promise<void> {
-    return this._store.clearAll();
+    return this.tools.store.clearAll();
   }
 
   /**
@@ -156,7 +186,7 @@ export abstract class Agent<TSelf = any> {
     callback: Callback,
     options?: { runAt?: Date }
   ): Promise<string | void> {
-    return this._runTool.run(callback, options);
+    return this.tools.tasks.run(callback, options);
   }
 
   /**
@@ -166,7 +196,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when the cancellation is processed
    */
   protected async cancel(token: string): Promise<void> {
-    return this._runTool.cancel(token);
+    return this.tools.tasks.cancel(token);
   }
 
   /**
@@ -175,7 +205,7 @@ export abstract class Agent<TSelf = any> {
    * @returns Promise that resolves when all cancellations are processed
    */
   protected async cancelAll(): Promise<void> {
-    return this._runTool.cancelAll();
+    return this.tools.tasks.cancelAll();
   }
 
   /**
@@ -222,47 +252,39 @@ export abstract class Agent<TSelf = any> {
 export abstract class ITool {}
 
 export type ToolConstructor<T extends ITool> =
-  | (abstract new (id: string, tools: Tools) => T)
-  | (new (id: string, tools: Tools) => T);
+  | (abstract new (id: string, tools: any, options?: any) => T)
+  | (new (id: string, tools: any, options?: any) => T);
 
 /**
  * Base class for regular tools.
  *
- * Regular tools run in isolation and can only access other tools declared
+ * Regular tools.tasks in isolation and can only access other tools declared
  * in their tool.json dependencies. They are ideal for external API integrations
  * and reusable functionality that doesn't require Plot's internal infrastructure.
  *
  * @example
  * ```typescript
  * class GoogleCalendarTool extends Tool<GoogleCalendarTool> {
- *   constructor(id: string, tools: Tools) {
- *     super(id, tools);
- *     this.auth = tools.get(Auth);
+ *   static Init(tools: ToolBuilder, options?: { clientId: string }) {
+ *     return {
+ *       auth: tools.init(Integrations, AUTH_OPTIONS),
+ *       network: tools.init(Network, NETWORK_OPTIONS),
+ *     };
  *   }
  *
  *   async getCalendars() {
+ *     const token = await this.tools.auth.get(...);
  *     // Implementation
  *   }
  * }
  * ```
  */
-export abstract class Tool<TSelf = any> implements ITool {
-  protected id: string;
-  private _callbackTool: CallbackTool<TSelf>;
-  private _store: Store;
-  private _runTool: Run;
-
-  constructor(id: string, tools: Tools) {
-    this.id = id;
-    // Get specific tools in constructor for dependency detection
-    // Use dynamic imports to avoid circular dependencies with tool files
-    const { CallbackTool } = require("./tools/callback");
-    const { Store } = require("./tools/store");
-    const { Run } = require("./tools/run");
-    this._callbackTool = tools.get(CallbackTool);
-    this._store = tools.get(Store);
-    this._runTool = tools.get(Run);
-  }
+export abstract class Tool<TSelf extends HasInit<TSelf>> implements ITool {
+  constructor(
+    protected id: string,
+    protected tools: InferTools<TSelf>,
+    protected options: InferOptions<TSelf>
+  ) {}
 
   /**
    * Creates a persistent callback to a method on this tool.
@@ -271,11 +293,13 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @param context - Optional context data to pass to the callback
    * @returns Promise resolving to a callback token
    */
-  protected async callback<K extends CallbackMethods<TSelf>>(
+  protected async callback<
+    K extends CallbackMethods<InstanceType<TSelf>> & string
+  >(
     functionName: K,
-    context?: CallbackContext<TSelf, K>
+    context: CallbackContext<InstanceType<TSelf>, K>
   ): Promise<Callback> {
-    return this._callbackTool.create(functionName, context);
+    return this.tools.callbacks.create(functionName, context);
   }
 
   /**
@@ -285,7 +309,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when the callback is deleted
    */
   protected async deleteCallback(token: Callback): Promise<void> {
-    return this._callbackTool.delete(token);
+    return this.tools.callbacks.delete(token);
   }
 
   /**
@@ -294,7 +318,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when all callbacks are deleted
    */
   protected async deleteAllCallbacks(): Promise<void> {
-    return this._callbackTool.deleteAll();
+    return this.tools.callbacks.deleteAll();
   }
 
   /**
@@ -305,7 +329,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise resolving to the callback result
    */
   protected async callCallback(token: Callback, args?: any): Promise<any> {
-    return this._callbackTool.callCallback(token, args);
+    return this.tools.callbacks.callCallback(token, args);
   }
 
   /**
@@ -316,7 +340,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise resolving to the stored value or null
    */
   protected async get<T>(key: string): Promise<T | null> {
-    return this._store.get<T>(key);
+    return this.tools.store.get(key);
   }
 
   /**
@@ -328,7 +352,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when the value is stored
    */
   protected async set<T>(key: string, value: T): Promise<void> {
-    return this._store.set(key, value);
+    return this.tools.store.set(key, value);
   }
 
   /**
@@ -338,7 +362,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when the key is removed
    */
   protected async clear(key: string): Promise<void> {
-    return this._store.clear(key);
+    return this.tools.store.clear(key);
   }
 
   /**
@@ -347,7 +371,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when all keys are removed
    */
   protected async clearAll(): Promise<void> {
-    return this._store.clearAll();
+    return this.tools.store.clearAll();
   }
 
   /**
@@ -362,7 +386,7 @@ export abstract class Tool<TSelf = any> implements ITool {
     callback: Callback,
     options?: { runAt?: Date }
   ): Promise<string | void> {
-    return this._runTool.run(callback, options);
+    return this.tools.tasks.run(callback, options);
   }
 
   /**
@@ -372,7 +396,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when the cancellation is processed
    */
   protected async cancel(token: string): Promise<void> {
-    return this._runTool.cancel(token);
+    return this.tools.tasks.cancel(token);
   }
 
   /**
@@ -381,7 +405,7 @@ export abstract class Tool<TSelf = any> implements ITool {
    * @returns Promise that resolves when all cancellations are processed
    */
   protected async cancelAll(): Promise<void> {
-    return this._runTool.cancelAll();
+    return this.tools.tasks.cancelAll();
   }
 }
 
@@ -391,54 +415,26 @@ export abstract class Tool<TSelf = any> implements ITool {
  * This interface provides type-safe access to tools that have been declared
  * as dependencies in the agent.json or tool.json configuration files.
  */
-export interface Tools {
+export interface ToolBuilder {
   /**
-   * Retrieves a tool instance by its class reference.
+   * Initializes a tool instance by its class reference, returning a promise.
    *
    * @template T - The expected type of the tool
-   * @param ToolClass - The tool class reference
-   * @returns The tool instance
+   * @template O - The options type expected by the tool's Init method
+   * @param ToolClass - The tool class reference with Init method
+   * @param options - Optional options to pass to the tool's Init method
+   * @returns Promise resolving to the tool instance
    * @throws When the tool is not found or not properly configured
    */
-  get<T extends ITool>(ToolClass: ToolConstructor<T>): T;
-
-  /**
-   * Enables HTTP access to the specified URLs for this agent or tool.
-   *
-   * **IMPORTANT**: This method must be called in the Agent or Tool constructor
-   * to request HTTP access permissions. Without calling this method, all outbound
-   * HTTP requests (fetch, etc.) will be blocked.
-   *
-   * @param urls - Array of URL patterns to allow. Supports wildcards:
-   *   - `*` - Allow access to all URLs
-   *   - `https://*.example.com` - Allow access to all subdomains
-   *   - `https://api.example.com/*` - Allow access to all paths on the domain
-   *   - `https://api.example.com/v1/*` - Allow access to specific path prefix
-   *
-   * @example
-   * ```typescript
-   * class MyAgent extends Agent<MyAgent> {
-   *   constructor(id: string, tools: Tools) {
-   *     super(id, tools);
-   *     // Request HTTP access to specific APIs
-   *     tools.enableInternet([
-   *       'https://api.github.com/*',
-   *       'https://api.openai.com/*'
-   *     ]);
-   *   }
-   * }
-   * ```
-   *
-   * @example
-   * ```typescript
-   * class MyTool extends Tool<MyTool> {
-   *   constructor(id: string, tools: Tools) {
-   *     super(id, tools);
-   *     // Request unrestricted HTTP access
-   *     tools.enableInternet(['*']);
-   *   }
-   * }
-   * ```
-   */
-  enableInternet(urls: string[]): void;
+  init<
+    T extends ITool,
+    O = T extends { Init: (tools: any, options?: infer Opt) => any }
+      ? Opt
+      : never
+  >(
+    ToolClass: ToolConstructor<T> & {
+      Init: (tools: ToolBuilder, options?: O) => any;
+    },
+    options?: O
+  ): Promise<T>;
 }

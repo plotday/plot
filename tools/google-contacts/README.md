@@ -13,21 +13,21 @@ npm install @plotday/tool-google-contacts @plotday/sdk
 ```typescript
 import { Agent, Tools } from "@plotday/sdk";
 import { GoogleContacts } from "@plotday/tool-google-contacts";
-import { Auth, AuthLevel, AuthProvider } from "@plotday/sdk/tools/auth";
+import { Integrations, AuthLevel, AuthProvider } from "@plotday/sdk/tools/integrations";
 
 export default class extends Agent {
   private googleContacts: GoogleContacts;
-  private auth: Auth;
+  private auth: Integrations;
 
   constructor(id: string, tools: Tools) {
     super();
     this.googleContacts = tools.get(GoogleContacts);
-    this.auth = tools.get(Auth);
+    this.integrations = tools.get(Integrations);
   }
 
   async activate(priority: { id: string }) {
     // Request Google Contacts access
-    const authLink = await this.auth.request(
+    const authLink = await this.integrations.request(
       {
         provider: AuthProvider.Google,
         level: AuthLevel.User,
@@ -43,7 +43,7 @@ export default class extends Agent {
   }
 
   async onAuthComplete(authorization: any, context: any) {
-    const authToken = await this.auth.get(authorization);
+    const authToken = await this.integrations.get(authorization);
 
     // Start syncing contacts
     await this.googleContacts.startSync(authToken, "onContact");

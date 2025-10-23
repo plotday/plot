@@ -3,10 +3,10 @@ import * as fs from "fs";
 import * as path from "path";
 import prompts from "prompts";
 
-import * as out from "../utils/output";
-import { getGlobalTokenPath } from "../utils/token";
 import { bundleAgent } from "../utils/bundle";
+import * as out from "../utils/output";
 import { handleSSEStream } from "../utils/sse";
+import { getGlobalTokenPath } from "../utils/token";
 
 interface DeployOptions {
   dir: string;
@@ -33,12 +33,6 @@ interface PackageJson {
   env?: Record<string, any>;
 }
 
-interface AgentSource {
-  displayName: string;
-  dependencies: Record<string, string>;
-  files: Record<string, string>;
-}
-
 export async function deployCommand(options: DeployOptions) {
   const agentPath = path.resolve(process.cwd(), options.dir);
 
@@ -59,10 +53,9 @@ export async function deployCommand(options: DeployOptions) {
     // No package.json - check for plot-agent.md as fallback
     const specPath = path.join(agentPath, "plot-agent.md");
     if (fs.existsSync(specPath)) {
-      out.info(
-        "No package.json found, but plot-agent.md exists",
-        ["Generating agent from spec first..."]
-      );
+      out.info("No package.json found, but plot-agent.md exists", [
+        "Generating agent from spec first...",
+      ]);
 
       // Import and run generate command
       const { generateCommand } = await import("./generate");
@@ -280,6 +273,11 @@ export async function deployCommand(options: DeployOptions) {
         },
       })) as any;
 
+      if (!result) {
+        out.error("Upload failed");
+        process.exit(1);
+      }
+
       // Handle dryRun response
       if (options.dryRun) {
         if (result.errors && result.errors.length > 0) {
@@ -290,24 +288,36 @@ export async function deployCommand(options: DeployOptions) {
           process.exit(1);
         } else {
           out.success("Validation passed - agent is ready to deploy");
-          out.info(
-            "Run without --dry-run to deploy",
-            [`plot agent deploy`]
-          );
+          out.info("Run without --dry-run to deploy", [`plot agent deploy`]);
         }
         return;
       }
 
-      // Show dependencies from API response
-      const dependencies = result.dependencies;
-      if (dependencies && dependencies.length > 0) {
-        const deps = dependencies.map((depId: string) =>
-          depId
-            .split("-")
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(" ")
-        );
-        out.progress("Dependencies: " + deps.join(", "));
+      // Show permissions from API response
+      const permissions = result.permissions;
+      if (permissions && Object.keys(permissions).length > 0) {
+        out.info("Permissions:", []);
+        for (const [toolName, toolPermissions] of Object.entries(permissions)) {
+          console.log(`  ${toolName}:`);
+
+          // Display each permission property
+          if (toolPermissions && typeof toolPermissions === "object") {
+            for (const [key, value] of Object.entries(toolPermissions)) {
+              if (Array.isArray(value)) {
+                if (value.length > 0) {
+                  console.log(`    ${key}:`);
+                  for (const item of value) {
+                    console.log(`      - ${item}`);
+                  }
+                } else {
+                  console.log(`    ${key}: []`);
+                }
+              } else {
+                console.log(`    ${key}: ${JSON.stringify(value)}`);
+              }
+            }
+          }
+        }
       }
 
       // Show success with relevant info

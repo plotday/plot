@@ -7,6 +7,7 @@ import {
   type NewActivity,
   type NewPriority,
   type Priority,
+  type ToolBuilder,
 } from "..";
 
 /**
@@ -21,7 +22,7 @@ import {
  * class MyAgent extends Agent {
  *   private plot: Plot;
  *
- *   constructor(id: string, tools: Tools) {
+ *   constructor(id: string, tools: ToolBuilder) {
  *     super();
  *     this.plot = tools.get(Plot);
  *   }
@@ -42,6 +43,10 @@ import {
  * ```
  */
 export abstract class Plot extends ITool {
+  static Init(_tools: ToolBuilder, _options?: any): Record<string, never> {
+    return {};
+  }
+
   /**
    * Creates a new activity in the Plot system.
    *

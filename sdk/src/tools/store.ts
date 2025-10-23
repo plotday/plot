@@ -1,4 +1,4 @@
-import { ITool, type Tools } from "..";
+import { ITool, type ToolBuilder } from "..";
 
 /**
  * Built-in tool for persistent key-value storage.

@@ -1,4 +1,4 @@
-import { type Callback, ITool } from "..";
+import { type Callback, ITool, type ToolBuilder } from "..";
 
 /**
  * Agent source code structure containing dependencies and source files.
@@ -29,6 +29,20 @@ export type Log = {
 };
 
 /**
+ * Agent permissions returned after deployment.
+ * Maps tool names to their respective permission configurations.
+ *
+ * @example
+ * ```typescript
+ * {
+ *   "Network": { urls: ["https://api.example.com"] },
+ *   "Integrations": { provider: "google" }
+ * }
+ * ```
+ */
+export type AgentPermissions = Record<string, object>;
+
+/**
  * Built-in tool for managing agents and deployments.
  *
  * The Agent tool provides agents with the ability to create agent IDs
@@ -37,9 +51,9 @@ export type Log = {
  * @example
  * ```typescript
  * class AgentBuilderAgent extends Agent {
- *   private agent: AgentManager;
+ *   private agent: Agents;
  *
- *   constructor(id: string, tools: Tools) {
+ *   constructor(id: string, tools: ToolBuilder) {
  *     super();
  *     this.agent = tools.get(AgentTool);
  *   }
@@ -51,7 +65,10 @@ export type Log = {
  * }
  * ```
  */
-export abstract class AgentManager extends ITool {
+export abstract class Agents extends ITool {
+  static Init(_tools: ToolBuilder, _options?: any): Record<string, never> {
+    return {};
+  }
   /**
    * Creates a new agent ID and grants access to people in the current priority.
    *
@@ -164,6 +181,7 @@ export abstract class AgentManager extends ITool {
     )
   ): Promise<{
     version: string;
+    permissions: AgentPermissions;
     errors?: string[];
   }>;
 

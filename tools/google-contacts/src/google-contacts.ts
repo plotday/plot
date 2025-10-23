@@ -1,13 +1,17 @@
-import { Tool, type Tools } from "@plotday/sdk";
+import { Tool, type ToolBuilder } from "@plotday/sdk";
+import { type Callback } from "@plotday/sdk/tools/callbacks";
 import {
-  Auth,
   AuthLevel,
   AuthProvider,
   type AuthToken,
-} from "@plotday/sdk/tools/auth";
-import { type Callback } from "@plotday/sdk/tools/callback";
+  Integrations,
+} from "@plotday/sdk/tools/integrations";
 
-import type { Contact, ContactAuth, GoogleContacts } from "./types";
+import type {
+  Contact,
+  ContactAuth,
+  GoogleContacts as IGoogleContacts,
+} from "./types";
 
 type ContactTokens = {
   connections?: {
@@ -243,34 +247,26 @@ async function getGoogleContacts(
   };
 }
 
-export default class extends Tool implements GoogleContacts {
+export default class GoogleContacts
+  extends Tool<typeof GoogleContacts>
+  implements IGoogleContacts
+{
   static readonly id = "google-contacts";
 
-  private auth: Auth;
-
-  constructor(id: string, protected tools: Tools) {
-    super(id, tools);
-    this.auth = tools.get(Auth);
+  static Init(tools: ToolBuilder) {
+    return {
+      integrations: tools.init(Integrations),
+    };
   }
 
-  async requestAuth(
-    callbackFunctionName: string,
-    callbackContext?: any
-  ): Promise<any> {
+  async requestAuth(callback: Callback): Promise<any> {
     const contactsScopes = [
       "https://www.googleapis.com/auth/contacts.readonly",
       "https://www.googleapis.com/auth/contacts.other.readonly",
     ];
 
-    // Generate opaque token for this authorization
     const opaqueToken = crypto.randomUUID();
-
-    // Register the callback for auth completion with opaque token
-    const callbackToken = await this.callback(
-      callbackFunctionName,
-      callbackContext
-    );
-    await this.set(`auth_callback_token:${opaqueToken}`, callbackToken);
+    await this.set(`auth_callback_token:${opaqueToken}`, callback);
 
     // Create callback for auth completion
     const authCallback = await this.callback("onAuthSuccess", {
@@ -279,7 +275,7 @@ export default class extends Tool implements GoogleContacts {
     });
 
     // Request auth and return the activity link
-    return await this.auth.request(
+    return await this.tools.integrations.request(
       {
         provider: AuthProvider.Google,
         level: AuthLevel.User,
@@ -307,13 +303,7 @@ export default class extends Tool implements GoogleContacts {
     return result.contacts;
   }
 
-  async startSync(
-    authToken: string,
-    callbackFunctionName: string,
-    options?: {
-      context?: any;
-    }
-  ): Promise<void> {
+  async startSync(authToken: string, callback: Callback): Promise<void> {
     const storedAuthToken = await this.get<AuthToken>(
       `auth_token:${authToken}`
     );
@@ -324,11 +314,7 @@ export default class extends Tool implements GoogleContacts {
     }
 
     // Register the callback
-    const callbackToken = await this.callback(
-      callbackFunctionName,
-      options?.context
-    );
-    await this.set(`contacts_callback_token:${authToken}`, callbackToken);
+    await this.set(`contacts_callback_token:${authToken}`, callback);
 
     // Start initial sync
     const initialState: ContactSyncState = {
@@ -338,11 +324,11 @@ export default class extends Tool implements GoogleContacts {
     await this.set(`sync_state:${authToken}`, initialState);
 
     // Start sync batch using run tool for long-running operation
-    const callback = await this.callback("syncBatch", {
+    const sync = await this.callback("syncBatch", {
       batchNumber: 1,
       authToken,
     });
-    await this.run(callback);
+    await this.run(sync);
   }
 
   async stopSync(authToken: string): Promise<void> {

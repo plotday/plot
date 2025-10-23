@@ -1,4 +1,4 @@
-import type { ActivityLink, Tool } from "@plotday/sdk";
+import type { ActivityLink, ITool } from "@plotday/sdk";
 
 export type Contact = {
   email: string;
@@ -10,7 +10,7 @@ export type ContactAuth = {
   authToken: string;
 };
 
-export interface GoogleContacts extends Tool {
+export interface GoogleContacts extends ITool {
   requestAuth(
     callbackFunctionName: string,
     callbackContext?: any
@@ -28,4 +28,3 @@ export interface GoogleContacts extends Tool {
 
   stopSync(authToken: string): Promise<void>;
 }
-

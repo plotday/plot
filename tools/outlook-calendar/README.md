@@ -13,21 +13,21 @@ npm install @plotday/tool-outlook-calendar @plotday/sdk
 ```typescript
 import { Agent, Tools } from "@plotday/sdk";
 import { OutlookCalendar } from "@plotday/tool-outlook-calendar";
-import { Auth, AuthLevel, AuthProvider } from "@plotday/sdk/tools/auth";
+import { Integrations, AuthLevel, AuthProvider } from "@plotday/sdk/tools/integrations";
 
 export default class extends Agent {
   private outlookCalendar: OutlookCalendar;
-  private auth: Auth;
+  private auth: Integrations;
 
   constructor(id: string, tools: Tools) {
     super();
     this.outlookCalendar = tools.get(OutlookCalendar);
-    this.auth = tools.get(Auth);
+    this.integrations = tools.get(Integrations);
   }
 
   async activate(priority: { id: string }) {
     // Request Outlook Calendar access
-    const authLink = await this.auth.request(
+    const authLink = await this.integrations.request(
       {
         provider: AuthProvider.Microsoft,
         level: AuthLevel.User,
@@ -43,7 +43,7 @@ export default class extends Agent {
   }
 
   async onAuthComplete(authorization: any, context: any) {
-    const authToken = await this.auth.get(authorization);
+    const authToken = await this.integrations.get(authorization);
 
     // Get available calendars
     const calendars = await this.outlookCalendar.getCalendars(authToken);
