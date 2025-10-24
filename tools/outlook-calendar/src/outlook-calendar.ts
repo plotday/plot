@@ -565,7 +565,7 @@ export class OutlookCalendar
         // Call the event callback
         const callbackToken = await this.get<Callback>("event_callback_token");
         if (callbackToken) {
-          await this.callCallback(callbackToken, activity);
+          await this.run(callbackToken, activity);
         }
       }
 
@@ -652,7 +652,7 @@ export class OutlookCalendar
         authToken: context.token,
       };
 
-      await this.callCallback(callbackToken, authSuccessResult);
+      await this.run(callbackToken, authSuccessResult);
 
       // Clean up the callback token
       await this.clear(`auth_callback_token:${context.token}`);

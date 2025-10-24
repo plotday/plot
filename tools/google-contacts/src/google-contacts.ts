@@ -328,7 +328,7 @@ export default class GoogleContacts
       batchNumber: 1,
       authToken,
     });
-    await this.run(sync);
+    await this.runTask(sync);
   }
 
   async stopSync(authToken: string): Promise<void> {
@@ -380,7 +380,7 @@ export default class GoogleContacts
           batchNumber: batchNumber + 1,
           authToken,
         });
-        await this.run(callback);
+        await this.runTask(callback);
       } else {
         console.log(
           `Google Contacts sync completed after ${batchNumber} batches`
@@ -402,7 +402,7 @@ export default class GoogleContacts
       `contacts_callback_token:${authToken}`
     );
     if (callbackToken) {
-      await this.callCallback(callbackToken, contacts);
+      await this.run(callbackToken, contacts);
     }
   }
 
@@ -428,7 +428,7 @@ export default class GoogleContacts
         authToken: opaqueToken,
       };
 
-      await this.callCallback(callbackToken, authSuccessResult);
+      await this.run(callbackToken, authSuccessResult);
 
       // Clean up the callback token
       await this.clear(`auth_callback_token:${opaqueToken}`);

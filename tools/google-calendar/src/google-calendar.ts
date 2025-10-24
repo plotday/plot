@@ -185,8 +185,11 @@ export class GoogleCalendar
     callback: Callback,
     options?: SyncOptions
   ): Promise<void> {
+    console.log("Saving callback");
+
     // Store the callback token
     await this.set("event_callback_token", callback);
+    console.log("Setting up watch");
 
     // Setup webhook for this calendar
     await this.setupCalendarWatch(authToken, calendarId, authToken);
@@ -205,6 +208,7 @@ export class GoogleCalendar
 
     await this.set(`sync_state_${calendarId}`, initialState);
 
+    console.log("Starting sync");
     // Start sync batch using run tool for long-running operation
     const syncCallback = await this.callback("syncBatch", {
       calendarId,
@@ -383,7 +387,7 @@ export class GoogleCalendar
               source: activityData.source || null,
             };
 
-            await this.callCallback(callbackToken, activity);
+            await this.run(callbackToken, activity);
           }
         }
       } catch (error) {
@@ -429,7 +433,7 @@ export class GoogleCalendar
         source: activityData.source || null,
       };
 
-      await this.callCallback(callbackToken, activity);
+      await this.run(callbackToken, activity);
     }
   }
 
@@ -508,7 +512,7 @@ export class GoogleCalendar
     const authSuccessResult: CalendarAuth = {
       authToken: context.authToken,
     };
-    await this.callCallback(context.callbackToken, authSuccessResult);
+    await this.run(context.callbackToken, authSuccessResult);
 
     // Clean up the callback token
     await this.clear(`auth_callback_token:${context.authToken}`);

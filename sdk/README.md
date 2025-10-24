@@ -316,7 +316,7 @@ const callback = await this.callback("handleEvent", {
 });
 
 // Execute callback
-const result = await this.callCallback(callback, {
+const result = await this.run(callback, {
   data: eventData,
 });
 

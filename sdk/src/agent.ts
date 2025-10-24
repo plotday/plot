@@ -128,8 +128,8 @@ export abstract class Agent<TSelf extends HasInit<TSelf>> {
    * @param args - Optional arguments to pass to the callback
    * @returns Promise resolving to the callback result
    */
-  protected async callCallback(token: Callback, args?: any): Promise<any> {
-    return this.tools.callbacks.callCallback(token, args);
+  protected async run(token: Callback, args?: any): Promise<any> {
+    return this.tools.callbacks.run(token, args);
   }
 
   /**
@@ -182,21 +182,21 @@ export abstract class Agent<TSelf extends HasInit<TSelf>> {
    * @param options.runAt - If provided, schedules execution at this time; otherwise runs immediately
    * @returns Promise resolving to a cancellation token (only for scheduled executions)
    */
-  protected async run(
+  protected async runTask(
     callback: Callback,
     options?: { runAt?: Date }
   ): Promise<string | void> {
-    return this.tools.tasks.run(callback, options);
+    return this.tools.tasks.runTask(callback, options);
   }
 
   /**
    * Cancels a previously scheduled execution.
    *
-   * @param token - The cancellation token returned by run() with runAt option
+   * @param token - The cancellation token returned by runTask() with runAt option
    * @returns Promise that resolves when the cancellation is processed
    */
-  protected async cancel(token: string): Promise<void> {
-    return this.tools.tasks.cancel(token);
+  protected async cancelTask(token: string): Promise<void> {
+    return this.tools.tasks.cancelTask(token);
   }
 
   /**
@@ -204,8 +204,8 @@ export abstract class Agent<TSelf extends HasInit<TSelf>> {
    *
    * @returns Promise that resolves when all cancellations are processed
    */
-  protected async cancelAll(): Promise<void> {
-    return this.tools.tasks.cancelAll();
+  protected async cancelAllTasks(): Promise<void> {
+    return this.tools.tasks.cancelAllTasks();
   }
 
   /**
@@ -328,8 +328,8 @@ export abstract class Tool<TSelf extends HasInit<TSelf>> implements ITool {
    * @param args - Optional arguments to pass to the callback
    * @returns Promise resolving to the callback result
    */
-  protected async callCallback(token: Callback, args?: any): Promise<any> {
-    return this.tools.callbacks.callCallback(token, args);
+  protected async run(token: Callback, args?: any): Promise<any> {
+    return this.tools.callbacks.run(token, args);
   }
 
   /**
@@ -382,21 +382,21 @@ export abstract class Tool<TSelf extends HasInit<TSelf>> implements ITool {
    * @param options.runAt - If provided, schedules execution at this time; otherwise runs immediately
    * @returns Promise resolving to a cancellation token (only for scheduled executions)
    */
-  protected async run(
+  protected async runTask(
     callback: Callback,
     options?: { runAt?: Date }
   ): Promise<string | void> {
-    return this.tools.tasks.run(callback, options);
+    return this.tools.tasks.runTask(callback, options);
   }
 
   /**
    * Cancels a previously scheduled execution.
    *
-   * @param token - The cancellation token returned by run() with runAt option
+   * @param token - The cancellation token returned by runTask() with runAt option
    * @returns Promise that resolves when the cancellation is processed
    */
-  protected async cancel(token: string): Promise<void> {
-    return this.tools.tasks.cancel(token);
+  protected async cancelTask(token: string): Promise<void> {
+    return this.tools.tasks.cancelTask(token);
   }
 
   /**
@@ -404,8 +404,8 @@ export abstract class Tool<TSelf extends HasInit<TSelf>> implements ITool {
    *
    * @returns Promise that resolves when all cancellations are processed
    */
-  protected async cancelAll(): Promise<void> {
-    return this.tools.tasks.cancelAll();
+  protected async cancelAllTasks(): Promise<void> {
+    return this.tools.tasks.cancelAllTasks();
   }
 }
 
