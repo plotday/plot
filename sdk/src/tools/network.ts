@@ -117,15 +117,21 @@ export abstract class Network extends ITool {
   /**
    * Creates a new webhook endpoint.
    *
-   * Generates a unique HTTP endpoint that will invoke the specified callback
-   * function on the parent tool/agent when requests are received. The context
-   * data will be passed to the callback along with the request information.
+   * Generates a unique HTTP endpoint that will invoke the callback function
+   * when requests are received. The callback receives the WebhookRequest plus any extraArgs.
    *
-   * @param callbackName - Name of the function to call on the parent when webhook is triggered
-   * @param context - Optional context data to pass to the callback function
+   * @param callback - Function receiving (request, ...extraArgs)
+   * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise resolving to the webhook URL
    */
-  abstract createWebhook(_callbackName: string, _context?: any): Promise<string>;
+  abstract createWebhook<
+    TCallback extends (request: WebhookRequest, ...args: any[]) => any
+  >(
+    _callback: TCallback,
+    ..._extraArgs: TCallback extends (req: any, ...rest: infer R) => any
+      ? R
+      : []
+  ): Promise<string>;
 
   /**
    * Deletes an existing webhook endpoint.

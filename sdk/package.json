@@ -58,6 +58,10 @@
       "types": "./dist/tools/store.d.ts",
       "default": "./dist/tools/store.js"
     },
+    "./utils/types": {
+      "types": "./dist/utils/types.d.ts",
+      "default": "./dist/utils/types.js"
+    },
     "./common/calendar": {
       "types": "./dist/common/calendar.d.ts",
       "default": "./dist/common/calendar.js"

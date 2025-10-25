@@ -187,6 +187,7 @@ export async function deployCommand(options: DeployOptions) {
   // Build the agent
   let requestBody: {
     module: string;
+    sourcemap?: string;
     name: string;
     description?: string;
     environment: string;
@@ -206,6 +207,7 @@ export async function deployCommand(options: DeployOptions) {
     });
 
     const moduleContent = result.code;
+    const sourcemapContent = result.sourcemap;
 
     if (result.warnings.length > 0) {
       out.warning("Build completed with warnings");
@@ -219,6 +221,7 @@ export async function deployCommand(options: DeployOptions) {
 
     requestBody = {
       module: moduleContent,
+      sourcemap: sourcemapContent,
       name: deploymentName!,
       description: deploymentDescription,
       environment: environment,

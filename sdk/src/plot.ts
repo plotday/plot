@@ -3,10 +3,18 @@ import { type Tag } from "./tag";
 export { Tag } from "./tag";
 
 /**
+ * Represents a unique user, contact, or agent in Plot.
+ *
+ * Note contacts (i.e. people not using Plot) are also represented by ActorIds. They may be
+ * people interacting with other services that are connected.
+ */
+export type ActorId = string & { readonly __brand: "ActorId" };
+
+/**
  * Represents a priority context within Plot.
  *
- * Priorities are organizational units that group related activities and agents.
- * They serve as the primary context for agent activation and activity management.
+ * Priorities are similar to projects in other apps. All Activity is in a Priority.
+ * Priorities can be nested.
  */
 export type Priority = {
   /** Unique identifier for the priority */
@@ -221,7 +229,7 @@ export type Activity = {
   /** Information about who created the activity */
   author: {
     /** Unique identifier for the author */
-    id: string;
+    id: ActorId;
     /** Display name for the author */
     name: string | null;
     /** Type of author (User, Contact, or Agent) */
@@ -284,7 +292,7 @@ export type Activity = {
   /** Reference to the external system that created this activity */
   source: ActivitySource | null;
   /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
-  tags: Partial<Record<Tag, string[]>> | null;
+  tags: Partial<Record<Tag, ActorId[]>> | null;
 };
 
 /**

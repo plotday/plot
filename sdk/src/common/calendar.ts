@@ -1,4 +1,4 @@
-import type { ActivityLink, Callback } from "../index";
+import type { Activity, ActivityLink } from "../index";
 
 /**
  * Represents successful calendar authorization.
@@ -100,10 +100,16 @@ export interface CalendarTool {
   /**
    * Initiates the authorization flow for the calendar service.
    *
-   * @param callback - Function to call when auth completes. The ActivityLink is passed to the callback.
+   * @param callback - Function receiving (auth, ...extraArgs) when auth completes
+   * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise resolving to an ActivityLink to initiate the auth flow
    */
-  requestAuth(callback: Callback): Promise<ActivityLink>;
+  requestAuth<TCallback extends (auth: CalendarAuth, ...args: any[]) => any>(
+    callback: TCallback,
+    ...extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
+      ? R
+      : []
+  ): Promise<ActivityLink>;
 
   /**
    * Retrieves the list of calendars accessible to the authenticated user.
@@ -127,16 +133,18 @@ export interface CalendarTool {
    *
    * @param authToken - Authorization token for calendar access
    * @param calendarId - ID of the calendar to sync
-   * @param callback - Function to call for each synced event
-   * @param options - Optional sync configuration
+   * @param callback - Function receiving (activity, ...extraArgs) for each synced event
+   * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise that resolves when sync setup is complete
    * @throws When auth token is invalid or calendar doesn't exist
    */
-  startSync(
+  startSync<TCallback extends (activity: Activity, ...args: any[]) => any>(
     authToken: string,
     calendarId: string,
-    callback: Callback,
-    options?: SyncOptions
+    callback: TCallback,
+    ...extraArgs: TCallback extends (activity: any, ...rest: infer R) => any
+      ? R
+      : []
   ): Promise<void>;
 
   /**

@@ -120,7 +120,12 @@ export async function agentLogsCommand(options: AgentLogsOptions) {
         if (event === "log") {
           // Format log entry
           const { timestamp, severity, message } = data;
-          const time = new Date(timestamp).toLocaleTimeString();
+          const time = new Date(timestamp).toLocaleTimeString("en-US", {
+            hour12: true,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          });
 
           // Color-code by severity
           let severityColor = "";
@@ -143,9 +148,43 @@ export async function agentLogsCommand(options: AgentLogsOptions) {
           const reset = "\x1b[0m";
           const gray = "\x1b[90m";
 
+          // Split message into lines for multi-line formatting
+          const lines = message.split("\n");
+          const firstLine = lines[0];
+          const restLines = lines.slice(1);
+
+          // Print first line with timestamp/severity
           console.log(
-            `${gray}[${time}]${reset} ${severityColor}${severityLabel}${reset} ${message}`
+            `${gray}[${time}]${reset} ${severityColor}${severityLabel}${reset} ${firstLine}`
           );
+
+          // Print continuation lines with box-drawing characters for stack frames
+          // Indent = 13 chars "[01:38:09 PM] " + 7 chars "ERROR " = 20 spaces
+          const indent = " ".repeat(20);
+          for (let i = 0; i < restLines.length; i++) {
+            const line = restLines[i];
+
+            // Check if this is a stack trace line (starts with whitespace + "at")
+            const isStackFrame = /^\s+at\s/.test(line);
+
+            if (isStackFrame) {
+              // Find if this is the last stack frame
+              const remainingLines = restLines.slice(i + 1);
+              const hasMoreStackFrames = remainingLines.some(
+                (l: string) => /^\s+at\s/.test(l)
+              );
+
+              // Remove leading spaces from the line (but keep "at" and everything after)
+              const trimmedLine = line.trimStart();
+
+              // Add box-drawing character: ┊ for middle frames, └ for last frame
+              const prefix = hasMoreStackFrames ? "┊" : "└";
+              console.log(`${indent}${prefix} ${trimmedLine}`);
+            } else {
+              // Regular continuation line (like "Error: Debugging")
+              console.log(`${indent}${line}`);
+            }
+          }
         }
       },
       onError: (error) => {
