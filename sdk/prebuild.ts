@@ -36,7 +36,8 @@ for (const [exportPath, exportValue] of Object.entries(exports)) {
     exportPath === "./tsconfig.base.json" ||
     exportPath === "./agents-guide" ||
     exportPath === "./sdk-docs" ||
-    exportPath.startsWith("./llm-docs")
+    exportPath.startsWith("./llm-docs") ||
+    exportPath.startsWith("./utils/")
   ) {
     continue;
   }

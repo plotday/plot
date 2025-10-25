@@ -1,52 +1,15 @@
-import { type Activity, type Priority } from "./plot";
+import { type Activity, type ActorId, type Priority, type Tag } from "./plot";
+import type { Callback } from "./tools/callbacks";
 import type {
-  Callback,
-  CallbackContext,
   CallbackMethods,
-  Callbacks,
-} from "./tools/callbacks";
-import type { Store } from "./tools/store";
-import type { Tasks } from "./tools/tasks";
+  HasInit,
+  InferOptions,
+  InferTools,
+  NoFunctions,
+  ToolBuilder,
+} from "./utils/types";
 
-// Type utilities for extracting types from Init method
-type PromiseValues<T> = {
-  [K in keyof T]: T[K] extends Promise<infer U> ? U : T[K];
-};
-
-// Break down InferTools into intermediate steps to avoid deep recursion
-type ExtractInitReturn<T> = T extends {
-  Init: (...args: any[]) => infer R;
-}
-  ? R
-  : never;
-
-type ResolveInitTools<T> = PromiseValues<ExtractInitReturn<T>>;
-
-type BuiltInTools<T> = {
-  callbacks: Callbacks<T extends new (...args: any[]) => infer I ? I : any>;
-  store: Store;
-  tasks: Tasks;
-} & {}; // Counter reset with intersection
-
-// Note: Due to TypeScript limitations with self-referential generic types and static methods,
-// this type may not properly infer tools in all cases. Use explicit type casts if needed.
-type InferTools<T> = T extends {
-  Init: (...args: any[]) => any;
-  new (...args: any[]): any;
-}
-  ? ResolveInitTools<T> & BuiltInTools<T>
-  : never;
-
-type InferOptions<T> = T extends {
-  Init: (tools: any, options?: infer O) => any;
-}
-  ? O
-  : undefined;
-
-type HasInit<TSelf> = {
-  Init(tools: ToolBuilder, ...args: any[]): any;
-  new (id: string, tools: any, ...args: any[]): any;
-};
+export type { ToolBuilder };
 
 /**
  * Base class for all agents.
@@ -79,7 +42,7 @@ type HasInit<TSelf> = {
  * }
  * ```
  */
-export abstract class Agent<TSelf extends HasInit<TSelf>> {
+export abstract class Agent<TSelf extends HasInit> {
   constructor(
     protected id: string,
     protected tools: InferTools<TSelf>,
@@ -89,17 +52,27 @@ export abstract class Agent<TSelf extends HasInit<TSelf>> {
   /**
    * Creates a persistent callback to a method on this agent.
    *
-   * @param functionName - The name of the method to callback
-   * @param context - Optional context data to pass to the callback
-   * @returns Promise resolving to a callback token
+   * ExtraArgs are strongly typed to match the method's signature after the first argument.
+   *
+   * @param fn - The method to callback
+   * @param extraArgs - Additional arguments to pass (type-checked, must be serializable)
+   * @returns Promise resolving to a persistent callback token
+   *
+   * @example
+   * ```typescript
+   * const callback = await this.callback(this.onWebhook, "calendar", 123);
+   * ```
    */
   protected async callback<
-    K extends CallbackMethods<InstanceType<TSelf>> & string
+    K extends CallbackMethods<InstanceType<TSelf>>,
+    TMethod extends InstanceType<TSelf>[K] = InstanceType<TSelf>[K]
   >(
-    functionName: K,
-    context?: CallbackContext<InstanceType<TSelf>, K>
+    fn: TMethod,
+    ...extraArgs: TMethod extends (arg: any, ...rest: infer R) => any
+      ? NoFunctions<R>
+      : []
   ): Promise<Callback> {
-    return this.tools.callbacks.create(functionName, context);
+    return this.tools.callbacks.create(fn, ...extraArgs);
   }
 
   /**
@@ -128,8 +101,8 @@ export abstract class Agent<TSelf extends HasInit<TSelf>> {
    * @param args - Optional arguments to pass to the callback
    * @returns Promise resolving to the callback result
    */
-  protected async run(token: Callback, args?: any): Promise<any> {
-    return this.tools.callbacks.run(token, args);
+  protected async run(token: Callback, ...args: []): Promise<any> {
+    return this.tools.callbacks.run(token, ...args);
   }
 
   /**
@@ -145,6 +118,25 @@ export abstract class Agent<TSelf extends HasInit<TSelf>> {
 
   /**
    * Stores a value in persistent storage.
+   *
+   * **Important**: Values must be JSON-serializable. Functions, Symbols, and undefined values
+   * cannot be stored directly.
+   *
+   * **For function references**: Use callbacks instead of storing functions directly.
+   *
+   * @example
+   * ```typescript
+   * // ❌ WRONG: Cannot store functions directly
+   * await this.set("handler", this.myHandler);
+   *
+   * // ✅ CORRECT: Create a callback token first
+   * const token = await this.callback(this.myHandler, "arg1", "arg2");
+   * await this.set("handler_token", token);
+   *
+   * // Later, execute the callback
+   * const token = await this.get<string>("handler_token");
+   * await this.run(token, args);
+   * ```
    *
    * @template T - The type of value being stored
    * @param key - The storage key to use
@@ -222,6 +214,31 @@ export abstract class Agent<TSelf extends HasInit<TSelf>> {
   }
 
   /**
+   * Called when a new version of the agent is deployed to an existing priority.
+   *
+   * This method should contain migration logic for updating old data structures
+   * or setting up new resources that weren't needed by the previous version.
+   * It is called with the new version for each active priorityAgent.
+   *
+   * @returns Promise that resolves when upgrade is complete
+   */
+  upgrade(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called when the agent is removed from a priority.
+   *
+   * This method should contain cleanup logic such as removing webhooks,
+   * cleaning up external resources, or performing final data operations.
+   *
+   * @returns Promise that resolves when deactivation is complete
+   */
+  deactivate(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
    * Called when an activity needs to be processed by this agent.
    *
    * This method is invoked when activities are routed to this agent,
@@ -236,8 +253,8 @@ export abstract class Agent<TSelf extends HasInit<TSelf>> {
     _activity: Activity,
     _changes?: {
       previous: Activity;
-      tagsAdded: Record<number, string[]>;
-      tagsRemoved: Record<number, string[]>;
+      tagsAdded: Record<Tag, ActorId[]>;
+      tagsRemoved: Record<Tag, ActorId[]>;
     }
   ): Promise<void> {
     return Promise.resolve();
@@ -250,10 +267,6 @@ export abstract class Agent<TSelf extends HasInit<TSelf>> {
  * outside the agent runtime.
  */
 export abstract class ITool {}
-
-export type ToolConstructor<T extends ITool> =
-  | (abstract new (id: string, tools: any, options?: any) => T)
-  | (new (id: string, tools: any, options?: any) => T);
 
 /**
  * Base class for regular tools.
@@ -279,7 +292,7 @@ export type ToolConstructor<T extends ITool> =
  * }
  * ```
  */
-export abstract class Tool<TSelf extends HasInit<TSelf>> implements ITool {
+export abstract class Tool<TSelf extends HasInit> implements ITool {
   constructor(
     protected id: string,
     protected tools: InferTools<TSelf>,
@@ -289,17 +302,27 @@ export abstract class Tool<TSelf extends HasInit<TSelf>> implements ITool {
   /**
    * Creates a persistent callback to a method on this tool.
    *
-   * @param functionName - The name of the method to callback
-   * @param context - Optional context data to pass to the callback
-   * @returns Promise resolving to a callback token
+   * ExtraArgs are strongly typed to match the method's signature after the first argument.
+   *
+   * @param fn - The method to callback
+   * @param extraArgs - Additional arguments to pass (type-checked, must be serializable)
+   * @returns Promise resolving to a persistent callback token
+   *
+   * @example
+   * ```typescript
+   * const callback = await this.callback(this.onWebhook, "calendar", 123);
+   * ```
    */
   protected async callback<
-    K extends CallbackMethods<InstanceType<TSelf>> & string
+    K extends CallbackMethods<InstanceType<TSelf>>,
+    TMethod extends InstanceType<TSelf>[K] = InstanceType<TSelf>[K]
   >(
-    functionName: K,
-    context: CallbackContext<InstanceType<TSelf>, K>
+    fn: TMethod,
+    ...extraArgs: TMethod extends (arg: any, ...rest: infer R) => any
+      ? NoFunctions<R>
+      : []
   ): Promise<Callback> {
-    return this.tools.callbacks.create(functionName, context);
+    return this.tools.callbacks.create(fn, ...extraArgs);
   }
 
   /**
@@ -345,6 +368,25 @@ export abstract class Tool<TSelf extends HasInit<TSelf>> implements ITool {
 
   /**
    * Stores a value in persistent storage.
+   *
+   * **Important**: Values must be JSON-serializable. Functions, Symbols, and undefined values
+   * cannot be stored directly.
+   *
+   * **For function references**: Use callbacks instead of storing functions directly.
+   *
+   * @example
+   * ```typescript
+   * // ❌ WRONG: Cannot store functions directly
+   * await this.set("handler", this.myHandler);
+   *
+   * // ✅ CORRECT: Create a callback token first
+   * const token = await this.callback(this.myHandler, "arg1", "arg2");
+   * await this.set("handler_token", token);
+   *
+   * // Later, execute the callback
+   * const token = await this.get<string>("handler_token");
+   * await this.run(token, args);
+   * ```
    *
    * @template T - The type of value being stored
    * @param key - The storage key to use
@@ -407,34 +449,81 @@ export abstract class Tool<TSelf extends HasInit<TSelf>> implements ITool {
   protected async cancelAllTasks(): Promise<void> {
     return this.tools.tasks.cancelAllTasks();
   }
-}
 
-/**
- * Interface for accessing tool dependencies.
- *
- * This interface provides type-safe access to tools that have been declared
- * as dependencies in the agent.json or tool.json configuration files.
- */
-export interface ToolBuilder {
   /**
-   * Initializes a tool instance by its class reference, returning a promise.
+   * Called before the agent's activate method, starting from the deepest tool dependencies.
    *
-   * @template T - The expected type of the tool
-   * @template O - The options type expected by the tool's Init method
-   * @param ToolClass - The tool class reference with Init method
-   * @param options - Optional options to pass to the tool's Init method
-   * @returns Promise resolving to the tool instance
-   * @throws When the tool is not found or not properly configured
+   * This method is called in a depth-first manner, with the deepest dependencies
+   * being called first, bubbling up to the top-level tools before the agent's
+   * activate method is called.
+   *
+   * @param _priority - The priority context containing the priority ID
+   * @returns Promise that resolves when pre-activation is complete
    */
-  init<
-    T extends ITool,
-    O = T extends { Init: (tools: any, options?: infer Opt) => any }
-      ? Opt
-      : never
-  >(
-    ToolClass: ToolConstructor<T> & {
-      Init: (tools: ToolBuilder, options?: O) => any;
-    },
-    options?: O
-  ): Promise<T>;
+  preActivate(_priority: Priority): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called after the agent's activate method, starting from the top-level tools.
+   *
+   * This method is called in reverse order, with top-level tools being called
+   * first, then cascading down to the deepest dependencies.
+   *
+   * @param _priority - The priority context containing the priority ID
+   * @returns Promise that resolves when post-activation is complete
+   */
+  postActivate(_priority: Priority): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called before the agent's upgrade method, starting from the deepest tool dependencies.
+   *
+   * This method is called in a depth-first manner, with the deepest dependencies
+   * being called first, bubbling up to the top-level tools before the agent's
+   * upgrade method is called.
+   *
+   * @returns Promise that resolves when pre-upgrade is complete
+   */
+  preUpgrade(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called after the agent's upgrade method, starting from the top-level tools.
+   *
+   * This method is called in reverse order, with top-level tools being called
+   * first, then cascading down to the deepest dependencies.
+   *
+   * @returns Promise that resolves when post-upgrade is complete
+   */
+  postUpgrade(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called before the agent's deactivate method, starting from the deepest tool dependencies.
+   *
+   * This method is called in a depth-first manner, with the deepest dependencies
+   * being called first, bubbling up to the top-level tools before the agent's
+   * deactivate method is called.
+   *
+   * @returns Promise that resolves when pre-deactivation is complete
+   */
+  preDeactivate(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called after the agent's deactivate method, starting from the top-level tools.
+   *
+   * This method is called in reverse order, with top-level tools being called
+   * first, then cascading down to the deepest dependencies.
+   *
+   * @returns Promise that resolves when post-deactivation is complete
+   */
+  postDeactivate(): Promise<void> {
+    return Promise.resolve();
+  }
 }

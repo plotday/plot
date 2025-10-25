@@ -1,4 +1,5 @@
-import { type ActivityLink, type Callback, ITool, ToolBuilder } from "..";
+import { type ActivityLink, ITool, type ToolBuilder } from "..";
+import { type NoFunctions } from "./callbacks";
 
 /**
  * Built-in tool for managing OAuth authentication flows.
@@ -44,22 +45,28 @@ export abstract class Integrations extends ITool {
    *
    * Creates an authentication link that users can click to authorize access
    * to the specified provider with the requested scopes. When authorization
-   * completes, the optional callback will be invoked with the results.
+   * completes, the callback will be invoked with the Authorization and any extraArgs.
    *
    * @param auth - Authentication configuration
    * @param auth.provider - The OAuth provider to authenticate with
    * @param auth.level - The authorization level (priority-scoped or user-scoped)
    * @param auth.scopes - Array of OAuth scopes to request
-   * @param callback - Callback receiving an Authorization
+   * @param callback - Function receiving (authorization, ...extraArgs)
+   * @param extraArgs - Additional arguments to pass to the callback (type-checked, must be serializable)
    * @returns Promise resolving to an ActivityLink for the auth flow
    */
-  abstract request(
+  abstract request<
+    TCallback extends (auth: Authorization, ...args: any[]) => any
+  >(
     _auth: {
       provider: AuthProvider;
       level: AuthLevel;
       scopes: string[];
     },
-    _callback: Callback
+    _callback: TCallback,
+    ..._extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
+      ? NoFunctions<R>
+      : []
   ): Promise<ActivityLink>;
 
   /**

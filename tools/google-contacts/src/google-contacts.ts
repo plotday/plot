@@ -4,6 +4,7 @@ import {
   AuthLevel,
   AuthProvider,
   type AuthToken,
+  type Authorization,
   Integrations,
 } from "@plotday/sdk/tools/integrations";
 
@@ -259,20 +260,21 @@ export default class GoogleContacts
     };
   }
 
-  async requestAuth(callback: Callback): Promise<any> {
+  async requestAuth<
+    TCallback extends (auth: ContactAuth, ...args: any[]) => any
+  >(callback: TCallback, ...extraArgs: any[]): Promise<any> {
     const contactsScopes = [
       "https://www.googleapis.com/auth/contacts.readonly",
       "https://www.googleapis.com/auth/contacts.other.readonly",
     ];
 
     const opaqueToken = crypto.randomUUID();
-    await this.set(`auth_callback_token:${opaqueToken}`, callback);
 
-    // Create callback for auth completion
-    const authCallback = await this.callback("onAuthSuccess", {
-      toolName: "google-contacts",
-      opaqueToken,
-    });
+    // Create callback token for parent
+    const callbackToken = await this.tools.callbacks.createParent(
+      callback,
+      ...extraArgs
+    );
 
     // Request auth and return the activity link
     return await this.tools.integrations.request(
@@ -281,7 +283,9 @@ export default class GoogleContacts
         level: AuthLevel.User,
         scopes: contactsScopes,
       },
-      authCallback
+      this.onAuthSuccess,
+      opaqueToken,
+      callbackToken
     );
   }
 
@@ -303,7 +307,13 @@ export default class GoogleContacts
     return result.contacts;
   }
 
-  async startSync(authToken: string, callback: Callback): Promise<void> {
+  async startSync<
+    TCallback extends (contacts: Contact[], ...args: any[]) => any
+  >(
+    authToken: string,
+    callback: TCallback,
+    ...extraArgs: any[]
+  ): Promise<void> {
     const storedAuthToken = await this.get<AuthToken>(
       `auth_token:${authToken}`
     );
@@ -313,8 +323,12 @@ export default class GoogleContacts
       );
     }
 
-    // Register the callback
-    await this.set(`contacts_callback_token:${authToken}`, callback);
+    // Create callback token for parent
+    const callbackToken = await this.tools.callbacks.createParent(
+      callback,
+      ...extraArgs
+    );
+    await this.set(`contacts_callback_token:${authToken}`, callbackToken);
 
     // Start initial sync
     const initialState: ContactSyncState = {
@@ -324,11 +338,8 @@ export default class GoogleContacts
     await this.set(`sync_state:${authToken}`, initialState);
 
     // Start sync batch using run tool for long-running operation
-    const sync = await this.callback("syncBatch", {
-      batchNumber: 1,
-      authToken,
-    });
-    await this.runTask(sync);
+    const syncCallback = await this.callback(this.syncBatch, 1, authToken);
+    await this.run(syncCallback);
   }
 
   async stopSync(authToken: string): Promise<void> {
@@ -337,11 +348,11 @@ export default class GoogleContacts
     await this.clear(`contacts_callback_token:${authToken}`);
   }
 
-  async syncBatch(context: {
-    batchNumber: number;
-    authToken: string;
-  }): Promise<void> {
-    const { batchNumber, authToken } = context;
+  async syncBatch(
+    _args: any,
+    batchNumber: number,
+    authToken: string
+  ): Promise<void> {
     console.log(`Starting Google Contacts sync batch ${batchNumber}`);
 
     try {
@@ -376,11 +387,12 @@ export default class GoogleContacts
       await this.set(`sync_state:${authToken}`, result.state);
 
       if (result.state.more) {
-        const callback = await this.callback("syncBatch", {
-          batchNumber: batchNumber + 1,
-          authToken,
-        });
-        await this.runTask(callback);
+        const nextCallback = await this.callback(
+          this.syncBatch,
+          batchNumber + 1,
+          authToken
+        );
+        await this.run(nextCallback);
       } else {
         console.log(
           `Google Contacts sync completed after ${batchNumber} batches`
@@ -398,40 +410,28 @@ export default class GoogleContacts
     contacts: Contact[],
     authToken: string
   ): Promise<void> {
-    const callbackToken = await this.get<Callback>(
+    const callbackToken = await this.get<string>(
       `contacts_callback_token:${authToken}`
     );
     if (callbackToken) {
-      await this.run(callbackToken, contacts);
+      await this.run(callbackToken as any, contacts);
     }
   }
 
-  async onAuthSuccess(authResult: any, context: any): Promise<void> {
+  async onAuthSuccess(
+    authResult: Authorization,
+    opaqueToken: string,
+    callbackToken: Callback
+  ): Promise<void> {
     console.log("Google Contacts authentication successful", authResult);
-
-    // Extract opaque token from context
-    const opaqueToken = context?.opaqueToken;
-    if (!opaqueToken) {
-      console.error("No opaque token found in auth context");
-      return;
-    }
 
     // Store the actual auth token using opaque token as key
     await this.set(`auth_token:${opaqueToken}`, authResult);
 
-    // Retrieve and call the stored callback
-    const callbackToken = await this.get<Callback>(
-      `auth_callback_token:${opaqueToken}`
-    );
-    if (callbackToken) {
-      const authSuccessResult: ContactAuth = {
-        authToken: opaqueToken,
-      };
+    const authSuccessResult: ContactAuth = {
+      authToken: opaqueToken,
+    };
 
-      await this.run(callbackToken, authSuccessResult);
-
-      // Clean up the callback token
-      await this.clear(`auth_callback_token:${opaqueToken}`);
-    }
+    await this.run(callbackToken, authSuccessResult);
   }
 }

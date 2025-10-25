@@ -1,4 +1,5 @@
 import {
+  type Activity,
   type ActivityLink,
   type NewActivity,
   Tool,
@@ -8,7 +9,6 @@ import {
   type Calendar,
   type CalendarAuth,
   type CalendarTool,
-  type SyncOptions,
 } from "@plotday/sdk/common/calendar";
 import { type Callback } from "@plotday/sdk/tools/callbacks";
 import {
@@ -26,11 +26,6 @@ import {
   syncGoogleCalendar,
   transformGoogleEvent,
 } from "./google-api";
-
-type AuthSuccessContext = {
-  authToken: string;
-  callbackToken: Callback;
-};
 
 /**
  * Google Calendar integration tool.
@@ -112,23 +107,22 @@ export class GoogleCalendar
     };
   }
 
-  async requestAuth(callback: Callback): Promise<ActivityLink> {
+  async requestAuth<
+    TCallback extends (auth: CalendarAuth, ...args: any[]) => any
+  >(callback: TCallback, ...extraArgs: any[]): Promise<ActivityLink> {
+    console.log("Requesting Google Calendar auth");
     const calendarScopes = [
       "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
       "https://www.googleapis.com/auth/calendar.events",
     ];
 
-    // Generate opaque token for this.integrationsorization
+    // Generate opaque token for authorization
     const authToken = crypto.randomUUID();
 
-    // Use the provided callback token
-    const callbackToken = callback;
-
-    // Create callback for auth completion
-    const authCallback = await this.callback("onAuthSuccess", {
-      authToken,
-      callbackToken,
-    } satisfies AuthSuccessContext);
+    const callbackToken = await this.tools.callbacks.createParent(
+      callback,
+      ...extraArgs
+    );
 
     // Request auth and return the activity link
     return await this.tools.integrations.request(
@@ -137,7 +131,9 @@ export class GoogleCalendar
         level: AuthLevel.User,
         scopes: calendarScopes,
       },
-      authCallback
+      this.onAuthSuccess,
+      authToken,
+      callbackToken
     );
   }
 
@@ -158,6 +154,7 @@ export class GoogleCalendar
   }
 
   async getCalendars(authToken: string): Promise<Calendar[]> {
+    console.log("Fetching Google Calendar list");
     const api = await this.getApi(authToken);
     const data = (await api.call(
       "GET",
@@ -170,6 +167,7 @@ export class GoogleCalendar
         primary?: boolean;
       }>;
     };
+    console.log("Got Google Calendar list", data.items);
 
     return data.items.map((item) => ({
       id: item.id,
@@ -179,16 +177,22 @@ export class GoogleCalendar
     }));
   }
 
-  async startSync(
+  async startSync<
+    TCallback extends (activity: Activity, ...args: any[]) => any
+  >(
     authToken: string,
     calendarId: string,
-    callback: Callback,
-    options?: SyncOptions
+    callback: TCallback,
+    ...extraArgs: any[]
   ): Promise<void> {
     console.log("Saving callback");
 
-    // Store the callback token
-    await this.set("event_callback_token", callback);
+    // Create callback token for parent
+    const callbackToken = await this.tools.callbacks.createParent(
+      callback,
+      ...extraArgs
+    );
+    await this.set("event_callback_token", callbackToken);
     console.log("Setting up watch");
 
     // Setup webhook for this calendar
@@ -196,8 +200,8 @@ export class GoogleCalendar
 
     // Start initial sync
     const now = new Date();
-    const min = options?.timeMin || new Date(now.getFullYear() - 2, 0, 1);
-    const max = options?.timeMax || new Date(now.getFullYear() + 1, 11, 31);
+    const min = new Date(now.getFullYear() - 2, 0, 1);
+    const max = new Date(now.getFullYear() + 1, 11, 31);
 
     const initialState: SyncState = {
       calendarId,
@@ -210,16 +214,17 @@ export class GoogleCalendar
 
     console.log("Starting sync");
     // Start sync batch using run tool for long-running operation
-    const syncCallback = await this.callback("syncBatch", {
-      calendarId,
-      batchNumber: 1,
-      mode: "full",
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "full",
       authToken,
-    });
+      calendarId
+    );
     await this.run(syncCallback);
   }
 
-  async stopSync(authToken: string, calendarId: string): Promise<void> {
+  async stopSync(_authToken: string, calendarId: string): Promise<void> {
     // Stop webhook
     const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
     if (watchData) {
@@ -237,11 +242,9 @@ export class GoogleCalendar
     opaqueAuthToken: string
   ): Promise<void> {
     const webhookUrl = await this.tools.network.createWebhook(
-      "onCalendarWebhook",
-      {
-        calendarId,
-        authToken: opaqueAuthToken,
-      }
+      this.onCalendarWebhook,
+      calendarId,
+      opaqueAuthToken
     );
 
     // Check if webhook URL is localhost
@@ -278,17 +281,13 @@ export class GoogleCalendar
     console.log("Calendar watch setup complete", { watchId, calendarId });
   }
 
-  async syncBatch({
-    calendarId,
-    batchNumber,
-    mode,
-    authToken,
-  }: {
-    calendarId: string;
-    batchNumber: number;
-    mode: "full" | "incremental";
-    authToken: string;
-  }): Promise<void> {
+  async syncBatch(
+    _args: any,
+    batchNumber: number,
+    mode: "full" | "incremental",
+    authToken: string,
+    calendarId: string
+  ): Promise<void> {
     console.log(
       `Starting Google Calendar sync batch ${batchNumber} (${mode}) for calendar ${calendarId}`
     );
@@ -320,12 +319,13 @@ export class GoogleCalendar
       await this.set(`sync_state_${calendarId}`, result.state);
 
       if (result.state.more) {
-        const syncCallback = await this.callback("syncBatch", {
-          calendarId,
-          batchNumber: batchNumber + 1,
+        const syncCallback = await this.callback(
+          this.syncBatch,
+          batchNumber + 1,
           mode,
           authToken,
-        });
+          calendarId
+        );
         await this.run(syncCallback);
       } else {
         console.log(
@@ -364,9 +364,7 @@ export class GoogleCalendar
           const activityData = transformGoogleEvent(event, calendarId);
 
           // Convert to full Activity and call callback
-          const callbackToken = await this.get<Callback>(
-            "event_callback_token"
-          );
+          const callbackToken = await this.get<string>("event_callback_token");
           if (callbackToken && activityData.type) {
             const activity: NewActivity = {
               type: activityData.type,
@@ -387,7 +385,7 @@ export class GoogleCalendar
               source: activityData.source || null,
             };
 
-            await this.run(callbackToken, activity);
+            await this.run(callbackToken as any, activity);
           }
         }
       } catch (error) {
@@ -412,7 +410,7 @@ export class GoogleCalendar
 
     const activityData = transformGoogleEvent(event, calendarId);
 
-    const callbackToken = await this.get<Callback>("event_callback_token");
+    const callbackToken = await this.get<string>("event_callback_token");
     if (callbackToken && activityData.type) {
       const activity: NewActivity = {
         type: activityData.type,
@@ -433,18 +431,19 @@ export class GoogleCalendar
         source: activityData.source || null,
       };
 
-      await this.run(callbackToken, activity);
+      await this.run(callbackToken as any, activity);
     }
   }
 
   async onCalendarWebhook(
     request: WebhookRequest,
-    context: any
+    calendarId: string,
+    authToken: string
   ): Promise<void> {
     console.log("Received calendar webhook notification", {
       headers: request.headers,
       params: request.params,
-      calendarId: context.calendarId,
+      calendarId,
     });
 
     // Validate webhook authenticity
@@ -455,9 +454,7 @@ export class GoogleCalendar
       throw new Error("Invalid webhook headers");
     }
 
-    const watchData = await this.get<any>(
-      `calendar_watch_${context.calendarId}`
-    );
+    const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
 
     if (!watchData || watchData.watchId !== channelId) {
       console.warn("Unknown or expired webhook notification");
@@ -473,7 +470,7 @@ export class GoogleCalendar
     }
 
     // Trigger incremental sync
-    await this.startIncrementalSync(context.calendarId, context.authToken);
+    await this.startIncrementalSync(calendarId, authToken);
   }
 
   private async startIncrementalSync(
@@ -493,29 +490,32 @@ export class GoogleCalendar
     };
 
     await this.set(`sync_state_${calendarId}`, incrementalState);
-    const syncCallback = await this.callback("syncBatch", {
-      calendarId,
-      batchNumber: 1,
-      mode: "incremental",
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "incremental",
       authToken,
-    });
+      calendarId
+    );
     await this.run(syncCallback);
   }
 
   async onAuthSuccess(
     authResult: Authorization,
-    context: AuthSuccessContext
+    authToken: string,
+    callback: Callback
   ): Promise<void> {
     // Store the actual auth token using opaque token as key
-    await this.set(`authorization:${context.authToken}`, authResult);
+    await this.set(`authorization:${authToken}`, authResult);
 
     const authSuccessResult: CalendarAuth = {
-      authToken: context.authToken,
+      authToken,
     };
-    await this.run(context.callbackToken, authSuccessResult);
+
+    await this.run(callback, authSuccessResult);
 
     // Clean up the callback token
-    await this.clear(`auth_callback_token:${context.authToken}`);
+    await this.clear(`auth_callback_token:${authToken}`);
   }
 }
 

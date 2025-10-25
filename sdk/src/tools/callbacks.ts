@@ -1,4 +1,8 @@
-import { ITool, type ToolBuilder } from "..";
+import { ITool } from "..";
+import type { CallbackMethods, NoFunctions, NonFunction } from "../utils/types";
+
+// Re-export types for consumers
+export type { CallbackMethods, NoFunctions, NonFunction };
 
 /**
  * Represents a callback token for persistent function references.
@@ -10,40 +14,15 @@ import { ITool, type ToolBuilder } from "..";
  *
  * @example
  * ```typescript
- * const callback = await this.callback.create("onCalendarSelected", {
- *   calendarId: "primary",
- *   provider: "google"
- * });
+ * const callback = await this.callback(this.onCalendarSelected, "primary", "google");
  * ```
  */
 export type Callback = string & { readonly __brand: "Callback" };
 
 /**
- * Extracts method names from a type that match the callback signature.
- * Callback methods must accept (args: any, context?: any) and return Promise<any>
- * or accept (args: any) and return Promise<any>.
- */
-export type CallbackMethods<T> = {
-  [K in keyof T]: T[K] extends (args: any, context?: any) => Promise<any>
-    ? K
-    : never;
-}[keyof T];
-
-/**
- * Extracts the context parameter type for a specific callback method.
- * Returns undefined if the method doesn't accept a context parameter.
- */
-export type CallbackContext<T, K extends keyof T> = T[K] extends (
-  args: any,
-  context: infer C
-) => any
-  ? C
-  : undefined;
-
-/**
  * Built-in tool for creating and managing persistent callback references.
  *
- * The CallbackTool enables agents and tools to create callback links that persist
+ * The Callbacks tool enables agents and tools to create callback links that persist
  * across worker invocations and restarts. This is essential for webhook handlers,
  * scheduled operations, and user interaction flows that need to survive runtime
  * boundaries.
@@ -58,44 +37,54 @@ export type CallbackContext<T, K extends keyof T> = T[K] extends (
  * - User interaction links (ActivityLinkType.callback)
  * - Cross-tool communication that survives restarts
  *
- * **Security note:** Callbacks are hardcoded to target the tool's parent for security.
- *
  * **Type Safety:**
- * For full type safety, cast the callback tool to include your agent/tool type:
- * `tools.get(CallbackTool) as CallbackTool<this>`
- * This enables autocomplete for method names and type-checked context parameters.
+ * Callbacks are fully type-safe - extraArgs are type-checked against the function signature.
  *
  * @example
  * ```typescript
  * class MyTool extends Tool {
  *   async setupWebhook() {
  *     // Using built-in callback method (recommended)
- *     const callback = await this.callback("handleWebhook", {
- *       webhookType: "calendar"
- *     });
- *
- *     // Use callback in webhook URL or activity link
+ *     const callback = await this.callback(this.handleWebhook, "calendar");
  *     return `https://api.plot.day/webhook/${callback}`;
  *   }
  *
- *   async handleWebhook(data: any, context?: { webhookType: string }) {
- *     console.log("Webhook received:", data, context);
+ *   async handleWebhook(data: any, webhookType: string) {
+ *     console.log("Webhook received:", data, webhookType);
  *   }
  * }
  * ```
  */
 export abstract class Callbacks<TParent> extends ITool {
   /**
-   * Creates a persistent callback to the tool's parent.
-   * Returns a callback token that can be used to call the callback later.
+   * Creates a persistent callback to a method on TParent (the current class).
+   * ExtraArgs are strongly typed to match the function signature after the first arg.
    *
-   * @param functionName - The name of the function to call on the parent tool/agent
-   * @param context - Optional context data to pass to the callback function (type-checked when TParent is specified)
-   * @returns Promise resolving to a callback token
+   * @param fn - The function to callback on TParent
+   * @param extraArgs - Additional arguments to pass to the function (type-checked, must be serializable)
+   * @returns Promise resolving to a persistent callback token
    */
-  abstract create<K extends CallbackMethods<TParent>>(
-    _functionName: K,
-    _context?: CallbackContext<TParent, K>
+  abstract create<
+    K extends CallbackMethods<TParent>,
+    TFn extends TParent[K] = TParent[K]
+  >(
+    _fn: TFn,
+    ..._extraArgs: TFn extends (arg: any, ...rest: infer R) => any
+      ? NoFunctions<R>
+      : []
+  ): Promise<Callback>;
+
+  /**
+   * Creates a persistent callback to a function from the parent agent/tool.
+   * Use this when the callback function is passed in from outside this class.
+   *
+   * @param fn - The function to callback
+   * @param extraArgs - Additional arguments to pass to the function (must be serializable, validated at runtime)
+   * @returns Promise resolving to a persistent callback token
+   */
+  abstract createParent(
+    _fn: Function,
+    ..._extraArgs: NonFunction[]
   ): Promise<Callback>;
 
   /**
@@ -120,5 +109,5 @@ export abstract class Callbacks<TParent> extends ITool {
    * @param args - Optional arguments to pass to the callback function
    * @returns Promise resolving to the callback result
    */
-  abstract run(_callback: Callback, _args?: any): Promise<any>;
+  abstract run<T = unknown>(_callback: Callback, ..._args: any[]): Promise<T>;
 }

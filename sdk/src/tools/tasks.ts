@@ -1,4 +1,4 @@
-import { ITool, type ToolBuilder } from "..";
+import { ITool } from "..";
 import type { Callback } from "./callbacks";
 
 /**
@@ -63,7 +63,7 @@ export abstract class Tasks extends ITool {
    * in an isolated execution environment with limited resources. Use this
    * for breaking up long-running operations into manageable chunks.
    *
-   * @param callback - The callback token created with `this.callback()`
+   * @param callback - Callback created with `this.callback()`
    * @param options - Optional configuration for the execution
    * @param options.runAt - If provided, schedules execution at this time; otherwise runs immediately
    * @returns Promise resolving to a cancellation token (only for scheduled executions)
