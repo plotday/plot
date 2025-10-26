@@ -5,7 +5,7 @@
 "@plotday/sdk": minor
 ---
 
-Changed: BREAKING: Agents and Tools now use a static Init() function to gain access to tools, which are then available via this.tools.
+Changed: BREAKING: Agents and Tools now define a build() method to gain access to tools, which are then available via this.tools.
 Changed: BREAKING: Webhook functionality has been moved into the Network tool.
 Changed: BREAKING: CallbackTool renamed Callbacks.
 Changed: BREAKING: Auth renamed Integrations.

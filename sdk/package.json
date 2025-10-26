@@ -18,6 +18,10 @@
       "types": "./dist/agent.d.ts",
       "default": "./dist/agent.js"
     },
+    "./tool": {
+      "types": "./dist/tool.d.ts",
+      "default": "./dist/tool.js"
+    },
     "./plot": {
       "types": "./dist/plot.d.ts",
       "default": "./dist/plot.js"
@@ -26,9 +30,9 @@
       "types": "./dist/tag.d.ts",
       "default": "./dist/tag.js"
     },
-    "./tools/agent": {
-      "types": "./dist/tools/agent.d.ts",
-      "default": "./dist/tools/agent.js"
+    "./tools/agents": {
+      "types": "./dist/tools/agents.d.ts",
+      "default": "./dist/tools/agents.js"
     },
     "./tools/ai": {
       "types": "./dist/tools/ai.d.ts",
@@ -94,9 +98,9 @@
       "types": "./dist/llm-docs/tag.d.ts",
       "default": "./dist/llm-docs/tag.js"
     },
-    "./llm-docs/tools/agent": {
-      "types": "./dist/llm-docs/tools/agent.d.ts",
-      "default": "./dist/llm-docs/tools/agent.js"
+    "./llm-docs/tools/agents": {
+      "types": "./dist/llm-docs/tools/agents.d.ts",
+      "default": "./dist/llm-docs/tools/agents.js"
     },
     "./llm-docs/tools/ai": {
       "types": "./dist/llm-docs/tools/ai.d.ts",

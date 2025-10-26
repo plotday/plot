@@ -194,8 +194,8 @@ export function transformGoogleEvent(
     note: event.description || null,
     start,
     end,
-    source: {
-      type: "google-calendar-event",
+    meta: {
+      source: `google-calendar:${event.id}`,
       id: event.id,
       calendarId: calendarId,
       htmlLink: event.htmlLink,
@@ -290,4 +290,3 @@ export async function syncGoogleCalendar(
     state: nextState,
   };
 }
-

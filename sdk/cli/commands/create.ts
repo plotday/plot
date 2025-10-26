@@ -2,6 +2,7 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import prompts from "prompts";
+
 import * as out from "../utils/output";
 import { detectPackageManager } from "../utils/packageManager";
 
@@ -127,17 +128,24 @@ export async function createCommand(options: CreateOptions) {
   const agentTemplate = `import {
   type Activity,
   Agent,
-  type Tools,
+  type Priority,
+  type ToolBuilder,
 } from "@plotday/sdk";
+import { Plot } from "@plotday/sdk/tools/plot";
 
-export default class extends Agent {
-  constructor(id: string, tools: Tools) {
-    super();
+export default class MyAgent extends Agent<MyAgent> {
+  build(build: ToolBuilder) {
+    return {
+      plot: build(Plot),
+    };
+  }
+
+  async activate(_priority: Pick<Priority, "id">) {
+    // Called when agent is enabled for a priority
   }
 
   async activity(activity: Activity) {
-    // Implement your agent logic here
-    console.log("Received activity:", activity);
+    // Called when an activity is routed to this agent
   }
 }
 `;
@@ -145,34 +153,59 @@ export default class extends Agent {
 
   // Detect and use appropriate package manager
   const packageManager = detectPackageManager();
-  const packageManagerCommand = packageManager === "npm" ? "npm run" : packageManager;
+  const packageManagerCommand =
+    packageManager === "npm" ? "npm run" : packageManager;
 
   // Copy README.md from template
-  const readmeTemplatePath = path.join(__dirname, "..", "templates", "README.template.md");
+  const readmeTemplatePath = path.join(
+    __dirname,
+    "..",
+    "templates",
+    "README.template.md"
+  );
   try {
     let readmeContent = fs.readFileSync(readmeTemplatePath, "utf-8");
     // Replace template variables
-    readmeContent = readmeContent.replace(/\{\{displayName\}\}/g, response.displayName);
+    readmeContent = readmeContent.replace(
+      /\{\{displayName\}\}/g,
+      response.displayName
+    );
     readmeContent = readmeContent.replace(/\{\{name\}\}/g, response.name);
-    readmeContent = readmeContent.replace(/\{\{packageManager\}\}/g, packageManagerCommand);
+    readmeContent = readmeContent.replace(
+      /\{\{packageManager\}\}/g,
+      packageManagerCommand
+    );
     fs.writeFileSync(path.join(agentPath, "README.md"), readmeContent);
   } catch (error) {
     console.warn("Warning: Could not copy README template");
   }
 
   // Copy AGENTS.md from template
-  const agentsTemplatePath = path.join(__dirname, "..", "templates", "AGENTS.template.md");
+  const agentsTemplatePath = path.join(
+    __dirname,
+    "..",
+    "templates",
+    "AGENTS.template.md"
+  );
   try {
     let agentsContent = fs.readFileSync(agentsTemplatePath, "utf-8");
     // Replace template variables
-    agentsContent = agentsContent.replace(/\{\{packageManager\}\}/g, packageManagerCommand);
+    agentsContent = agentsContent.replace(
+      /\{\{packageManager\}\}/g,
+      packageManagerCommand
+    );
     fs.writeFileSync(path.join(agentPath, "AGENTS.md"), agentsContent);
   } catch (error) {
     console.warn("Warning: Could not copy AGENTS template");
   }
 
   // Copy CLAUDE.md from template
-  const claudeTemplatePath = path.join(__dirname, "..", "templates", "CLAUDE.template.md");
+  const claudeTemplatePath = path.join(
+    __dirname,
+    "..",
+    "templates",
+    "CLAUDE.template.md"
+  );
   try {
     const claudeContent = fs.readFileSync(claudeTemplatePath, "utf-8");
     fs.writeFileSync(path.join(agentPath, "CLAUDE.md"), claudeContent);
@@ -194,16 +227,16 @@ build/
     // Silently fail - not critical
   }
 
-  const installCommand = packageManager === "yarn" ? "yarn" : `${packageManager} install`;
+  const installCommand =
+    packageManager === "yarn" ? "yarn" : `${packageManager} install`;
 
   // Install dependencies
   try {
     execSync(installCommand, { cwd: agentPath, stdio: "ignore" });
   } catch (error) {
-    out.warning(
-      "Couldn't install dependencies",
-      [`Run '${installCommand}' in ${agentDir}`]
-    );
+    out.warning("Couldn't install dependencies", [
+      `Run '${installCommand}' in ${agentDir}`,
+    ]);
   }
 
   out.success(`${response.displayName} created`);

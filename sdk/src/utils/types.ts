@@ -8,14 +8,12 @@
  *
  * @internal
  */
-
-import type { ITool } from "../agent";
 import type { Callbacks } from "../tools/callbacks";
 import type { Store } from "../tools/store";
 import type { Tasks } from "../tools/tasks";
 
 // ============================================================================
-// Type utilities from agent.ts
+// Type utilities for agent.ts
 // ============================================================================
 
 /**
@@ -27,93 +25,75 @@ export type PromiseValues<T> = {
 };
 
 /**
- * Extracts the return type from a static Init method.
+ * Extracts the return type from an instance build method.
  */
-export type ExtractInitReturn<T> = T extends {
-  Init: (...args: any[]) => infer R;
+export type ExtractBuildReturn<T> = T extends {
+  build: (...args: any[]) => infer R;
 }
   ? R
-  : never;
-
-/**
- * Resolves the tools returned by Init, unwrapping any Promises.
- */
-export type ResolveInitTools<T> = PromiseValues<ExtractInitReturn<T>>;
+  : {};
 
 /**
  * Built-in tools available to all agents and tools.
  */
-export type BuiltInTools<T> = {
-  callbacks: Callbacks<T extends new (...args: any[]) => infer I ? I : any>;
+export type BuiltInTools = {
+  callbacks: Callbacks;
   store: Store;
   tasks: Tasks;
-} & {}; // Counter reset with intersection
-
-/**
- * Infers the complete set of tools available to an agent or tool,
- * combining tools declared in Init with built-in tools.
- */
-export type InferTools<T> = T extends {
-  Init: (...args: any[]) => any;
-  new (...args: any[]): any;
-}
-  ? ResolveInitTools<T> & BuiltInTools<T>
-  : never;
-
-/**
- * Infers the options type from a static Init method's second parameter.
- */
-export type InferOptions<T> = T extends {
-  Init: (tools: any, options?: infer O) => any;
-}
-  ? O
-  : undefined;
-
-/**
- * Constraint for types that have both Init static method and constructor.
- */
-export type HasInit = {
-  Init(tools: ToolBuilder, ...args: any[]): any;
-  new (id: string, tools: any, ...args: any[]): any;
 };
 
 /**
- * Constructor type for Tool classes (can be abstract or concrete).
+ * Infers the complete set of tools available to an agent or tool,
+ * combining tools declared in build with built-in tools.
  */
-export type ToolConstructor<T extends ITool> =
-  | (abstract new (id: string, tools: any, options?: any) => T)
-  | (new (id: string, tools: any, options?: any) => T);
+export type InferTools<T> = PromiseValues<ExtractBuildReturn<T>> & BuiltInTools;
 
 /**
- * Interface for accessing tool dependencies.
- * Used in static Init methods to initialize tool dependencies.
+ * Infers the options type from a constructor's second parameter.
  */
-export interface ToolBuilder {
+export type InferOptions<T> = T extends {
+  Options: infer O;
+}
+  ? O
+  : unknown;
+
+/**
+ * Function type for building tool dependencies.
+ * Used in build methods to request tool instances.
+ */
+export type ToolBuilder = <TC extends abstract new (...args: any) => any>(
+  ToolClass: TC,
+  options?: InferOptions<TC>
+) => Promise<InstanceType<TC>>;
+
+/**
+ * Interface for managing tool initialization and lifecycle.
+ * Implemented by the agent runtime to provide tools to agents and tools.
+ */
+export interface ToolShed {
   /**
-   * Initializes a tool instance by its class reference, returning a promise.
-   *
-   * @template T - The expected type of the tool
-   * @template O - The options type expected by the tool's Init method
-   * @param ToolClass - The tool class reference with Init method
-   * @param options - Optional options to pass to the tool's Init method
-   * @returns Promise resolving to the tool instance
-   * @throws When the tool is not found or not properly configured
+   * Build function for requesting tool dependencies
    */
-  init<
-    T extends ITool,
-    O = T extends { Init: (tools: any, options?: infer Opt) => any }
-      ? Opt
-      : never
-  >(
-    ToolClass: ToolConstructor<T> & {
-      Init: (tools: ToolBuilder, options?: O) => any;
-    },
-    options?: O
-  ): Promise<T>;
+  build: ToolBuilder;
+
+  /**
+   * Whether tools are ready (all promises resolved)
+   */
+  readonly ready: boolean;
+
+  /**
+   * Wait for all tool promises to resolve
+   */
+  waitForReady(): Promise<void>;
+
+  /**
+   * Get resolved tools (throws if not ready)
+   */
+  getTools<T>(): T;
 }
 
 // ============================================================================
-// Type utilities from callbacks.ts
+// Type utilities for callbacks.ts
 // ============================================================================
 
 /**

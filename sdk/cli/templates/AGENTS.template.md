@@ -20,13 +20,18 @@ Plot agents are TypeScript classes that extend the `Agent` base class. Agents in
 ## Agent Structure Pattern
 
 ```typescript
-import { type Activity, Agent, type Priority, type ToolBuilder } from "@plotday/sdk";
+import {
+  type Activity,
+  Agent,
+  type Priority,
+  type ToolBuilder,
+} from "@plotday/sdk";
 import { Plot } from "@plotday/sdk/tools/plot";
 
-export default class MyAgent extends Agent<typeof MyAgent> {
-  static Init(tools: ToolBuilder) {
+export default class MyAgent extends Agent<MyAgent> {
+  build(build: ToolBuilder) {
     return {
-      plot: tools.init(Plot),
+      plot: build(Plot),
     };
   }
 
@@ -46,19 +51,19 @@ export default class MyAgent extends Agent<typeof MyAgent> {
 
 ### Accessing Tools
 
-All tools are declared in the static `Init` method:
+All tools are declared in the `build` method:
 
 ```typescript
-static Init(tools: ToolBuilder) {
+build(build: ToolBuilder) {
   return {
-    toolName: tools.init(ToolClass),
+    toolName: build(ToolClass),
   };
 }
 ```
 
-All `tools.init()` calls must occur in the `Init` method as they are used for dependency analysis.
+All `build()` calls must occur in the `build` method as they are used for dependency analysis.
 
-IMPORTANT: HTTP access is restricted to URLs requested via `tools.init(Network, { urls: [url1, url2, ...] })` in the `Init` method. Wildcards are supported. Use `tools.init(Network, { urls: ['*'] })` if full access is needed.
+IMPORTANT: HTTP access is restricted to URLs requested via `build(Network, { urls: [url1, url2, ...] })` in the `build` method. Wildcards are supported. Use `build(Network, { urls: ['*'] })` if full access is needed.
 
 ### Built-in Tools (Always Available)
 
@@ -74,7 +79,7 @@ For complete API documentation of built-in tools including all methods, types, a
 - `@plotday/sdk/tools/callbacks` - Persistent function references (also via `this.callback()`)
 - `@plotday/sdk/tools/integrations` - OAuth2 authentication flows
 - `@plotday/sdk/tools/network` - HTTP access permissions and webhook management
-- `@plotday/sdk/tools/agent` - Manage other agents
+- `@plotday/sdk/tools/agents` - Manage other agents
 
 **Critical**: Never use instance variables for state. They are lost after function execution. Always use Store methods.
 
@@ -107,8 +112,10 @@ Called when the agent is enabled for a priority. Common patterns:
 
 ```typescript
 async activate(_priority: Pick<Priority, "id">) {
-  const callback = await this.callback("onAuthComplete", { provider: "google" });
-  const authLink = await this.tools.externalTool.requestAuth(callback);
+  const authLink = await this.tools.externalTool.requestAuth(
+    this.onAuthComplete,
+    "google"
+  );
 
   await this.tools.plot.createActivity({
     type: ActivityType.Task,
@@ -166,7 +173,7 @@ const urlLink: ActivityLink = {
 };
 
 // Callback link (uses Callbacks tool)
-const token = await this.callback("onLinkClicked", { data: "context" });
+const token = await this.callback(this.onLinkClicked, "context");
 const callbackLink: ActivityLink = {
   title: "Click me",
   type: ActivityLinkType.callback,
@@ -187,13 +194,11 @@ Common pattern for OAuth authentication:
 
 ```typescript
 async activate(_priority: Pick<Priority, "id">) {
-  // Create callback for auth completion
-  const callback = await this.callback("onAuthComplete", {
-    provider: "google",
-  });
-
-  // Request auth link from tool
-  const authLink = await this.tools.googleTool.requestAuth(callback);
+  // Request auth link from tool with callback
+  const authLink = await this.tools.googleTool.requestAuth(
+    this.onAuthComplete,
+    "google"
+  );
 
   // Create activity with auth link
   const activity = await this.tools.plot.createActivity({
@@ -206,9 +211,7 @@ async activate(_priority: Pick<Priority, "id">) {
   await this.set("auth_activity_id", activity.id);
 }
 
-async onAuthComplete(authResult: { authToken: string }, context?: any) {
-  const provider = context?.provider;
-
+async onAuthComplete(authResult: { authToken: string }, provider: string) {
   // Store auth token
   await this.set(`${provider}_auth`, authResult.authToken);
 
@@ -225,15 +228,15 @@ Pattern for syncing external data with callbacks:
 async startSync(calendarId: string): Promise<void> {
   const authToken = await this.get<string>("auth_token");
 
-  // Create callback for event handling
-  const callback = await this.callback("handleEvent", {
+  await this.tools.calendarTool.startSync(
+    authToken,
     calendarId,
-  });
-
-  await this.tools.calendarTool.startSync(authToken, calendarId, callback);
+    this.handleEvent,
+    calendarId
+  );
 }
 
-async handleEvent(activity: Activity, context?: any): Promise<void> {
+async handleEvent(activity: Activity, calendarId: string): Promise<void> {
   // Process incoming event from external service
   await this.tools.plot.createActivity(activity);
 }
@@ -257,12 +260,13 @@ private async createCalendarSelectionActivity(
   const links: ActivityLink[] = [];
 
   for (const calendar of calendars) {
-    const token = await this.callback("onCalendarSelected", {
+    const token = await this.callback(
+      this.onCalendarSelected,
       provider,
-      calendarId: calendar.id,
-      calendarName: calendar.name,
-      authToken,
-    });
+      calendar.id,
+      calendar.name,
+      authToken
+    );
 
     links.push({
       title: `📅 ${calendar.name}${calendar.primary ? " (Primary)" : ""}`,
@@ -278,14 +282,21 @@ private async createCalendarSelectionActivity(
   });
 }
 
-async onCalendarSelected(link: ActivityLink, context: any): Promise<void> {
+async onCalendarSelected(
+  link: ActivityLink,
+  provider: string,
+  calendarId: string,
+  calendarName: string,
+  authToken: string
+): Promise<void> {
   // Start sync for selected calendar
-  const callback = await this.callback("handleEvent", {
-    provider: context.provider,
-    calendarId: context.calendarId,
-  });
-
-  await this.tools.tool.startSync(context.authToken, context.calendarId, callback);
+  await this.tools.tool.startSync(
+    authToken,
+    calendarId,
+    this.handleEvent,
+    provider,
+    calendarId
+  );
 }
 ```
 
@@ -311,14 +322,14 @@ async startSync(resourceId: string): Promise<void> {
     itemsProcessed: 0,
   });
 
-  // Queue first batch using run method
-  const callback = await this.callback("syncBatch", { resourceId });
-  await this.run(callback);
+  // Queue first batch using runTask method
+  const callback = await this.callback(this.syncBatch, resourceId);
+  await this.runTask(callback);
 }
 
-async syncBatch(args: any, context: { resourceId: string }): Promise<void> {
+async syncBatch(args: any, resourceId: string): Promise<void> {
   // Load state from Store (set by previous execution)
-  const state = await this.get(`sync_state_${context.resourceId}`);
+  const state = await this.get(`sync_state_${resourceId}`);
 
   // Process one batch (keep under time limit)
   const result = await this.fetchBatch(state.nextPageToken);
@@ -330,18 +341,18 @@ async syncBatch(args: any, context: { resourceId: string }): Promise<void> {
 
   if (result.nextPageToken) {
     // Update state in Store for next batch
-    await this.set(`sync_state_${context.resourceId}`, {
+    await this.set(`sync_state_${resourceId}`, {
       nextPageToken: result.nextPageToken,
       batchNumber: state.batchNumber + 1,
       itemsProcessed: state.itemsProcessed + result.items.length,
     });
 
     // Queue next batch (runs in new execution context)
-    const nextCallback = await this.callback("syncBatch", context);
-    await this.run(nextCallback);
+    const nextCallback = await this.callback(this.syncBatch, resourceId);
+    await this.runTask(nextCallback);
   } else {
     // Cleanup when complete
-    await this.clear(`sync_state_${context.resourceId}`);
+    await this.clear(`sync_state_${resourceId}`);
 
     // Optionally notify user of completion
     await this.tools.plot.createActivity({
@@ -374,7 +385,7 @@ try {
 - **Don't use instance variables for state** - Anything stored in memory is lost after function execution. Always use the Store tool for data that needs to persist.
 - **Processing self-created activities** - Other users may change an Activity created by the agent, resulting in an \`activity\` call. Be sure to check the \`changes === null\` and/or \`activity.author.id !== this.id\` to avoid re-processing.
 - Most activity should be `type = ActivityType.Note` with a `title` and `note`, and no `start` or `end`. This represents a typical message. `start` and `end` should only be used for a note if it should be displayed for a specific date or time, such as a birthday.
-- Tools are declared in the static `Init` method and accessed via `this.tools.toolName` in agent methods.
+- Tools are declared in the `build` method and accessed via `this.tools.toolName` in agent methods.
 - **Don't forget runtime limits** - Each execution has ~10 seconds. Break long operations into batches with the Tasks tool. Process enough items per batch to be efficient, but few enough to stay under time limits.
 - **Always use Callbacks tool for persistent references** - Direct function references don't survive worker restarts.
 - **Store auth tokens** - Don't re-request authentication unnecessarily.

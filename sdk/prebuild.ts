@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -9,8 +9,8 @@ const __dirname = dirname(__filename);
 interface TypeFile {
   file: string;
   importPath: string;
-  docFilePath: string; // Path where doc file will be written (e.g., "tools/agent.ts")
-  varName: string; // Valid JS identifier for imports (e.g., "toolsAgent")
+  docFilePath: string; // Path where doc file will be written (e.g., "tools/agents.ts")
+  varName: string; // Valid JS identifier for imports (e.g., "toolsAgents")
 }
 
 // Generate SDK documentation files for LLM consumption
@@ -61,13 +61,13 @@ for (const [exportPath, exportValue] of Object.entries(exports)) {
   const importPath =
     exportPath === "." ? "@plotday/sdk" : `@plotday/sdk${exportPath.slice(1)}`;
 
-  // docFilePath mirrors the source file structure (e.g., "tools/agent.ts")
+  // docFilePath mirrors the source file structure (e.g., "tools/agents.ts")
   // This is the path where the doc file will be written
   const docFilePath = sourceFile;
 
   // varName is a valid JavaScript identifier for use in index.ts imports
   // Convert path separators and hyphens to create valid identifiers
-  // e.g., "tools/agent.ts" -> "toolsAgent", "common/calendar.ts" -> "commonCalendar"
+  // e.g., "tools/agents.ts" -> "toolsAgents", "common/calendar.ts" -> "commonCalendar"
   const varName = sourceFile
     .replace(/\.ts$/, "") // Remove .ts extension
     .replace(/\//g, "_") // Replace / with _
@@ -155,7 +155,12 @@ const indexPath = join(llmDocsDir, "index.ts");
 writeFileSync(indexPath, indexContent, "utf-8");
 
 // Generate agents-guide-template.ts from AGENTS.template.md
-const agentsTemplatePath = join(__dirname, "cli", "templates", "AGENTS.template.md");
+const agentsTemplatePath = join(
+  __dirname,
+  "cli",
+  "templates",
+  "AGENTS.template.md"
+);
 if (existsSync(agentsTemplatePath)) {
   const agentsTemplateContent = readFileSync(agentsTemplatePath, "utf-8");
   const agentsGuideContent = `/**
@@ -171,7 +176,11 @@ export default ${JSON.stringify(agentsTemplateContent)};
   writeFileSync(agentsGuideOutputPath, agentsGuideContent, "utf-8");
   console.log(`✓ Generated agents-guide-template.ts from AGENTS.template.md`);
 } else {
-  console.warn(`Warning: AGENTS.template.md not found at ${agentsTemplatePath}`);
+  console.warn(
+    `Warning: AGENTS.template.md not found at ${agentsTemplatePath}`
+  );
 }
 
-console.log(`✓ Generated ${typeFiles.length} LLM documentation files in src/llm-docs/`);
+console.log(
+  `✓ Generated ${typeFiles.length} LLM documentation files in src/llm-docs/`
+);

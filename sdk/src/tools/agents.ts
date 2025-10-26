@@ -1,4 +1,4 @@
-import { type Callback, ITool, type ToolBuilder } from "..";
+import { type Callback, ITool } from "..";
 
 /**
  * Agent source code structure containing dependencies and source files.
@@ -51,24 +51,20 @@ export type AgentPermissions = Record<string, object>;
  * @example
  * ```typescript
  * class AgentBuilderAgent extends Agent {
- *   private agent: Agents;
- *
- *   constructor(id: string, tools: ToolBuilder) {
- *     super();
- *     this.agent = tools.get(AgentTool);
+ *   build(build: ToolBuilder) {
+ *    return {
+ *      agents: build.get(Agents)
+ *    }
  *   }
  *
  *   async activate() {
- *     const agentId = await this.agent.create();
+ *     const agentId = await this.tools.agents.create();
  *     // Display agent ID to user
  *   }
  * }
  * ```
  */
 export abstract class Agents extends ITool {
-  static Init(_tools: ToolBuilder, _options?: any): Record<string, never> {
-    return {};
-  }
   /**
    * Creates a new agent ID and grants access to people in the current priority.
    *

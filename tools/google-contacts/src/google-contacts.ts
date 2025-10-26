@@ -249,14 +249,14 @@ async function getGoogleContacts(
 }
 
 export default class GoogleContacts
-  extends Tool<typeof GoogleContacts>
+  extends Tool<GoogleContacts>
   implements IGoogleContacts
 {
   static readonly id = "google-contacts";
 
-  static Init(tools: ToolBuilder) {
+  build(build: ToolBuilder) {
     return {
-      integrations: tools.init(Integrations),
+      integrations: build(Integrations),
     };
   }
 
@@ -271,7 +271,7 @@ export default class GoogleContacts
     const opaqueToken = crypto.randomUUID();
 
     // Create callback token for parent
-    const callbackToken = await this.tools.callbacks.createParent(
+    const callbackToken = await (this.tools as any).callbacks.createFromParent(
       callback,
       ...extraArgs
     );
@@ -324,7 +324,7 @@ export default class GoogleContacts
     }
 
     // Create callback token for parent
-    const callbackToken = await this.tools.callbacks.createParent(
+    const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );

@@ -1,4 +1,4 @@
-import { type ActivityLink, ITool, type ToolBuilder } from "..";
+import { type ActivityLink, ITool } from "..";
 import { type NoFunctions } from "./callbacks";
 
 /**
@@ -36,10 +36,6 @@ import { type NoFunctions } from "./callbacks";
  * ```
  */
 export abstract class Integrations extends ITool {
-  static Init(_tools: ToolBuilder, _options?: any): Record<string, never> {
-    return {};
-  }
-
   /**
    * Initiates an OAuth authentication flow.
    *

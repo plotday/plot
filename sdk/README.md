@@ -94,13 +94,19 @@ This will prompt you for:
 Edit `src/index.ts` to add your agent logic:
 
 ```typescript
-import { type Activity, ActivityType, Agent, type Priority, type ToolBuilder } from "@plotday/sdk";
+import {
+  type Activity,
+  ActivityType,
+  Agent,
+  type Priority,
+  type ToolBuilder,
+} from "@plotday/sdk";
 import { Plot } from "@plotday/sdk/tools/plot";
 
-export default class MyAgent extends Agent<typeof MyAgent> {
-  static Init(tools: ToolBuilder) {
+export default class MyAgent extends Agent<MyAgent> {
+  build(build: ToolBuilder) {
     return {
-      plot: tools.init(Plot),
+      plot: build(Plot),
     };
   }
 
@@ -172,13 +178,13 @@ Tools provide functionality to agents. They can be:
 - **Built-in Tools** - Core Plot functionality (Plot, Store, Integrations, etc.).
 - **Custom Tools** - Extra packages that add capabilities using the built-in tools. They often implement integrations with external services (Google Calendar, Outlook, etc.).
 
-Declare tools in the static `Init` method. Store, Tasks, and Callbacks methods are available directly on the Agent class:
+Declare tools in the `build` method. Store, Tasks, and Callbacks methods are available directly on the Agent class:
 
 ```typescript
-static Init(tools: ToolBuilder) {
+build(build: ToolBuilder) {
   return {
-    plot: tools.init(Plot),
-    googleCalendar: tools.init(GoogleCalendar),
+    plot: build(Plot),
+    googleCalendar: build(GoogleCalendar),
   };
 }
 // Store, Tasks, and Callbacks methods are available directly:
@@ -280,10 +286,10 @@ Request HTTP access permissions and create webhook endpoints for real-time notif
 ```typescript
 import { Network, type WebhookRequest } from "@plotday/sdk/tools/network";
 
-// Declare HTTP access in Init method
-static Init(tools: ToolBuilder) {
+// Declare HTTP access in build method
+build(build: ToolBuilder) {
   return {
-    network: tools.init(Network, {
+    network: build(Network, {
       urls: ['https://api.example.com/*']
     })
   };

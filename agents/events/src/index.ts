@@ -24,12 +24,12 @@ type StoredCalendarAuth = {
   authToken: string;
 };
 
-export default class EventsAgent extends Agent<typeof EventsAgent> {
-  static Init(tools: ToolBuilder) {
+export default class EventsAgent extends Agent<EventsAgent> {
+  build(build: ToolBuilder) {
     return {
-      googleCalendar: tools.init(GoogleCalendar),
-      outlookCalendar: tools.init(OutlookCalendar),
-      plot: tools.init(Plot),
+      googleCalendar: build(GoogleCalendar),
+      outlookCalendar: build(OutlookCalendar),
+      plot: build(Plot),
     };
   }
 

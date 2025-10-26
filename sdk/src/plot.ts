@@ -159,15 +159,15 @@ export type ActivityLink =
     };
 
 /**
- * Represents the source of an activity from an external system.
+ * Represents metadata about an activity, typically from an external system.
  *
- * Activity sources enable tracking where activities originated from,
+ * Activity metadata enables tracking where activities originated from,
  * which is useful for synchronization, deduplication, and linking
  * back to external systems.
  *
  * @example
  * ```typescript
- * const googleCalendarSource: ActivitySource = {
+ * const googleCalendarMeta: ActivityMeta = {
  *   type: "google-calendar-event",
  *   id: "event-123",
  *   calendarId: "primary",
@@ -175,9 +175,9 @@ export type ActivityLink =
  * };
  * ```
  */
-export type ActivitySource = {
+export type ActivityMeta = {
   /** The type identifier for the source system */
-  type: string;
+  source: string;
   /** Additional source-specific properties */
   [key: string]: any;
 };
@@ -289,10 +289,12 @@ export type Activity = {
    * Used to identify which occurrence of a recurring event this exception replaces.
    */
   occurrence: Date | null;
-  /** Reference to the external system that created this activity */
-  source: ActivitySource | null;
+  /** Metadata about the activity, typically from an external system that created it */
+  meta: ActivityMeta | null;
   /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
   tags: Partial<Record<Tag, ActorId[]>> | null;
+  /** Array of actor IDs (users, contacts, or agents) mentioned in this activity via @-mentions */
+  mentions: ActorId[] | null;
 };
 
 /**
@@ -332,7 +334,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
       | "doneAt"
       | "note"
       | "title"
-      | "source"
+      | "meta"
       | "links"
       | "recurrenceRule"
       | "recurrenceDates"
@@ -340,6 +342,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
       | "recurrenceUntil"
       | "recurrenceCount"
       | "occurrence"
+      | "mentions"
     >
   > & {
     parent?: Pick<Activity, "id"> | null;

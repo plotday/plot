@@ -48,12 +48,12 @@ Called when an activity is routed to this agent. Use this to:
 
 ### Using Tools
 
-Agents access functionality through tools. Declare tools in the static `Init` method:
+Agents access functionality through tools. Declare tools in the `build` method:
 
 ```typescript
-static Init(tools: ToolBuilder) {
+build(build: ToolBuilder) {
   return {
-    plot: tools.init(Plot),
+    plot: build(Plot),
   };
 }
 // Store, Tasks, and Callbacks methods are available directly via this
@@ -86,9 +86,9 @@ Then use them in your agent:
 ```typescript
 import GoogleCalendarTool from "@plotday/tool-google-calendar";
 
-static Init(tools: ToolBuilder) {
+build(build: ToolBuilder) {
   return {
-    googleCalendar: tools.init(GoogleCalendarTool),
+    googleCalendar: build(GoogleCalendarTool),
   };
 }
 ```

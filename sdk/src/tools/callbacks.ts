@@ -55,23 +55,17 @@ export type Callback = string & { readonly __brand: "Callback" };
  * }
  * ```
  */
-export abstract class Callbacks<TParent> extends ITool {
+export abstract class Callbacks extends ITool {
   /**
-   * Creates a persistent callback to a method on TParent (the current class).
-   * ExtraArgs are strongly typed to match the function signature after the first arg.
+   * Creates a persistent callback to a method on the current class.
    *
-   * @param fn - The function to callback on TParent
-   * @param extraArgs - Additional arguments to pass to the function (type-checked, must be serializable)
+   * @param fn - The function to callback
+   * @param extraArgs - Additional arguments to pass to the function (must be serializable)
    * @returns Promise resolving to a persistent callback token
    */
-  abstract create<
-    K extends CallbackMethods<TParent>,
-    TFn extends TParent[K] = TParent[K]
-  >(
-    _fn: TFn,
-    ..._extraArgs: TFn extends (arg: any, ...rest: infer R) => any
-      ? NoFunctions<R>
-      : []
+  abstract create(
+    _fn: Function,
+    ..._extraArgs: any[]
   ): Promise<Callback>;
 
   /**
@@ -82,9 +76,9 @@ export abstract class Callbacks<TParent> extends ITool {
    * @param extraArgs - Additional arguments to pass to the function (must be serializable, validated at runtime)
    * @returns Promise resolving to a persistent callback token
    */
-  abstract createParent(
+  abstract createFromParent(
     _fn: Function,
-    ..._extraArgs: NonFunction[]
+    ..._extraArgs: any[]
   ): Promise<Callback>;
 
   /**

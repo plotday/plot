@@ -1,4 +1,4 @@
-import { ITool, type ToolBuilder } from "..";
+import { ITool } from "..";
 
 /**
  * Represents an incoming webhook request.
@@ -54,10 +54,10 @@ export type WebhookRequest = {
  * @example
  * ```typescript
  * class MyAgent extends Agent<MyAgent> {
- *   static Init(tools: ToolBuilder) {
+ *   build(build: ToolBuilder) {
  *     return {
  *       // Request HTTP access to specific APIs
- *       network: tools.init(Network, {
+ *       network: build(Network, {
  *         urls: [
  *           'https://api.github.com/*',
  *           'https://api.openai.com/*'
@@ -71,9 +71,9 @@ export type WebhookRequest = {
  * @example
  * ```typescript
  * class CalendarTool extends Tool<CalendarTool> {
- *   static Init(tools: ToolBuilder) {
+ *   build(build: ToolBuilder) {
  *     return {
- *       network: tools.init(Network, {
+ *       network: build(Network, {
  *         urls: ['https://www.googleapis.com/calendar/*']
  *       })
  *     };
@@ -110,9 +110,13 @@ export type WebhookRequest = {
  * ```
  */
 export abstract class Network extends ITool {
-  static Init(_tools: ToolBuilder, _options?: any): Record<string, never> {
-    return {};
-  }
+  static readonly Options: {
+    /**
+     * All network access is blocked except the specified URLs.
+     * Wildcards (*) are supported for domains and paths.
+     */
+    urls: string[];
+  };
 
   /**
    * Creates a new webhook endpoint.

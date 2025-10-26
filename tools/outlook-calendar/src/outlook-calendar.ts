@@ -219,13 +219,13 @@ const outlookApi = {
  * ```
  */
 export class OutlookCalendar
-  extends Tool<typeof OutlookCalendar>
+  extends Tool<OutlookCalendar>
   implements CalendarTool
 {
-  static Init(tools: ToolBuilder, _options: any) {
+  build(build: ToolBuilder) {
     return {
-      integrations: tools.init(Integrations),
-      network: tools.init(Network),
+      integrations: build(Integrations),
+      network: build(Network),
     };
   }
 
@@ -236,7 +236,7 @@ export class OutlookCalendar
     const token = crypto.randomUUID();
 
     // Create callback token for parent
-    const callbackToken = await this.tools.callbacks.createParent(
+    const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );
@@ -310,7 +310,7 @@ export class OutlookCalendar
     ...extraArgs: any[]
   ): Promise<void> {
     // Create callback token for parent
-    const callbackToken = await this.tools.callbacks.createParent(
+    const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );
@@ -489,8 +489,8 @@ export class OutlookCalendar
           recurrenceDates: null,
           recurrence: null,
           occurrence: null,
-          source: {
-            type: "outlook-calendar-event",
+          meta: {
+            source: `outlook-calendar:${event.id}`,
             id: event.id,
             calendarId: syncState.calendarId,
           },

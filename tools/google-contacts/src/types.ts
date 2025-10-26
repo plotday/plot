@@ -13,9 +13,7 @@ export type ContactAuth = {
 export interface GoogleContacts extends ITool {
   requestAuth<TCallback extends (auth: ContactAuth, ...args: any[]) => any>(
     callback: TCallback,
-    ...extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
-      ? R
-      : []
+    ...extraArgs: any[]
   ): Promise<ActivityLink>;
 
   getContacts(authToken: string): Promise<Contact[]>;
@@ -23,9 +21,7 @@ export interface GoogleContacts extends ITool {
   startSync<TCallback extends (contacts: Contact[], ...args: any[]) => any>(
     authToken: string,
     callback: TCallback,
-    ...extraArgs: TCallback extends (contacts: any, ...rest: infer R) => any
-      ? R
-      : []
+    ...extraArgs: any[]
   ): Promise<void>;
 
   stopSync(authToken: string): Promise<void>;

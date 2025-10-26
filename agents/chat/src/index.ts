@@ -11,11 +11,11 @@ import {
 import { AI, type AIMessage } from "@plotday/sdk/tools/ai";
 import { Plot } from "@plotday/sdk/tools/plot";
 
-export default class ChatAgent extends Agent<typeof ChatAgent> {
-  static Init(tools: ToolBuilder) {
+export default class ChatAgent extends Agent<ChatAgent> {
+  build(build: ToolBuilder) {
     return {
-      ai: tools.init(AI),
-      plot: tools.init(Plot),
+      ai: build(AI),
+      plot: build(Plot),
     };
   }
 

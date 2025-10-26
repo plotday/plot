@@ -95,13 +95,13 @@ import {
  * ```
  */
 export class GoogleCalendar
-  extends Tool<typeof GoogleCalendar>
+  extends Tool<GoogleCalendar>
   implements CalendarTool
 {
-  static Init(tools: ToolBuilder) {
+  build(build: ToolBuilder) {
     return {
-      integrations: tools.init(Integrations),
-      network: tools.init(Network, {
+      integrations: build(Integrations),
+      network: build(Network, {
         urls: ["https://www.googleapis.com/calendar/*"],
       }),
     };
@@ -119,7 +119,7 @@ export class GoogleCalendar
     // Generate opaque token for authorization
     const authToken = crypto.randomUUID();
 
-    const callbackToken = await this.tools.callbacks.createParent(
+    const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );
@@ -188,7 +188,7 @@ export class GoogleCalendar
     console.log("Saving callback");
 
     // Create callback token for parent
-    const callbackToken = await this.tools.callbacks.createParent(
+    const callbackToken = await this.tools.callbacks.createFromParent(
       callback,
       ...extraArgs
     );
@@ -382,7 +382,7 @@ export class GoogleCalendar
               recurrenceDates: activityData.recurrenceDates || null,
               recurrence: null,
               occurrence: null,
-              source: activityData.source || null,
+              meta: activityData.meta ?? null,
             };
 
             await this.run(callbackToken as any, activity);
@@ -428,7 +428,7 @@ export class GoogleCalendar
         recurrenceDates: null,
         recurrence: null, // Would need to find master activity
         occurrence: new Date(originalStartTime),
-        source: activityData.source || null,
+        meta: activityData.meta ?? null,
       };
 
       await this.run(callbackToken as any, activity);

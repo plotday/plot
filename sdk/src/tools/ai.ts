@@ -1,6 +1,6 @@
 import type { Static, TSchema } from "typebox";
 
-import { ITool, type ToolBuilder } from "..";
+import { ITool } from "..";
 
 /**
  * Built-in tool for prompting Large Language Models (LLMs).
@@ -65,10 +65,6 @@ import { ITool, type ToolBuilder } from "..";
  * ```
  */
 export abstract class AI extends ITool {
-  static Init(_tools: ToolBuilder, _options?: any): Record<string, never> {
-    return {};
-  }
-
   /**
    * Sends a request to an AI model and returns the response using the Vercel AI SDK.
    *

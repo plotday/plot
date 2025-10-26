@@ -1,4 +1,4 @@
-export * from "./agent";
+export * from "./agents";
 export * from "./ai";
 export * from "./callbacks";
 export * from "./integrations";
