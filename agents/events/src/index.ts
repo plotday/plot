@@ -13,7 +13,7 @@ import type {
   CalendarTool,
   SyncOptions,
 } from "@plotday/sdk/common/calendar";
-import { Plot } from "@plotday/sdk/tools/plot";
+import { ActivityAccess, Plot } from "@plotday/sdk/tools/plot";
 import { GoogleCalendar } from "@plotday/tool-google-calendar";
 import { OutlookCalendar } from "@plotday/tool-outlook-calendar";
 
@@ -29,7 +29,11 @@ export default class EventsAgent extends Agent<EventsAgent> {
     return {
       googleCalendar: build(GoogleCalendar),
       outlookCalendar: build(OutlookCalendar),
-      plot: build(Plot),
+      plot: build(Plot, {
+        activity: {
+          access: ActivityAccess.Create,
+        },
+      }),
     };
   }
 

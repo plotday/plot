@@ -225,7 +225,9 @@ export class OutlookCalendar
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
-      network: build(Network),
+      network: build(Network, {
+        urls: ["https://graph.microsoft.com/*"],
+      }),
     };
   }
 

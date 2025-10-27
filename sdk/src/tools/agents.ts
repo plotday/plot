@@ -30,17 +30,28 @@ export type Log = {
 
 /**
  * Agent permissions returned after deployment.
- * Maps tool names to their respective permission configurations.
+ * Nested structure mapping domains to entities to permission flags.
+ *
+ * Format: { domain: { entity: flags[] } }
+ * - domain: Tool name (e.g., "network", "plot")
+ * - entity: Domain-specific identifier (e.g., URL pattern, resource type)
+ * - flags: Array of permission flags ("read", "write", "update", "use")
  *
  * @example
  * ```typescript
  * {
- *   "Network": { urls: ["https://api.example.com"] },
- *   "Integrations": { provider: "google" }
+ *   "network": {
+ *     "https://api.example.com/*": ["use"],
+ *     "https://googleapis.com/*": ["use"]
+ *   },
+ *   "plot": {
+ *     "activity:mentioned": ["read", "write", "update"],
+ *     "priority": ["read", "write", "update"]
+ *   }
  * }
  * ```
  */
-export type AgentPermissions = Record<string, object>;
+export type AgentPermissions = Record<string, Record<string, string[]>>;
 
 /**
  * Built-in tool for managing agents and deployments.

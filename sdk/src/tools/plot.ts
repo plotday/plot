@@ -11,56 +11,39 @@ import {
   type Tag,
 } from "..";
 
-/**
- * Handler function for activity intent callbacks.
- * Called when an activity with an at-mention matches a registered intent.
- */
-export type IntentHandler = (activity: Activity) => Promise<void>;
-
-/**
- * Callbacks for activity events.
- */
-export type PlotActivityCallbacks = {
+export enum ActivityAccess {
   /**
-   * Called when an activity is updated.
-   *
-   * @param activity - The updated activity
-   * @param changes - Optional changes object containing the previous version and tag modifications
+   * Create new Activity on a thread where the agent was mentioned.
+   * Add/remove tags on Activity where the agent was mentioned.
    */
-  updated?: (
-    activity: Activity,
-    changes?: {
-      previous: Activity;
-      tagsAdded: Record<Tag, ActorId[]>;
-      tagsRemoved: Record<Tag, ActorId[]>;
-    }
-  ) => Promise<void>;
-
+  Respond,
   /**
-   * Intent handlers for activity mentions.
-   * When an activity mentions this agent, the system will match the activity
-   * content against these intent descriptions and call the matching handler.
-   *
-   * @example
-   * ```typescript
-   * intents: {
-   *   "Schedule or reschedule calendar events": this.onSchedulingRequest,
-   *   "Find available meeting times": this.onAvailabilityRequest
-   * }
-   * ```
+   * Create new, top-level Activity.
+   * Create new Activity in a thread the agent created.
+   * All Respond permissions.
    */
-  intents?: Record<string, IntentHandler>;
-};
+  Create,
+}
 
-/**
- * Options for configuring the Plot tool.
- */
-export type PlotOptions = {
+export enum PriorityAccess {
   /**
-   * Activity event callbacks.
+   * Create new priority.
+   * Update Priority created by the agent.
    */
-  activity?: PlotActivityCallbacks;
-};
+  Create,
+  /**
+   * Update and archive Priority created by others.
+   * All Create permissions.
+   */
+  Full,
+}
+
+export enum ContactAccess {
+  /** Read existing contacts. */
+  Read,
+  /** Create and update contacts. */
+  Write,
+}
 
 /**
  * Built-in tool for interacting with the core Plot data layer.
@@ -95,7 +78,50 @@ export type PlotOptions = {
  * ```
  */
 export abstract class Plot extends ITool {
-  static readonly Options: PlotOptions;
+  static readonly Options: {
+    /**
+     * Activity event callbacks.
+     */
+    activity?: {
+      access?: ActivityAccess;
+
+      /**
+       * Called when an activity is updated.
+       *
+       * @param activity - The updated activity
+       * @param changes - Optional changes object containing the previous version and tag modifications
+       */
+      updated?: (
+        activity: Activity,
+        changes?: {
+          previous: Activity;
+          tagsAdded: Record<Tag, ActorId[]>;
+          tagsRemoved: Record<Tag, ActorId[]>;
+        }
+      ) => Promise<void>;
+
+      /**
+       * Intent handlers for activity mentions.
+       * When an activity mentions this agent, the system will match the activity
+       * content against these intent descriptions and call the matching handler.
+       *
+       * @example
+       * ```typescript
+       * intents: {
+       *   "Schedule or reschedule calendar events": this.onSchedulingRequest,
+       *   "Find available meeting times": this.onAvailabilityRequest
+       * }
+       * ```
+       */
+      intents?: Record<string, (activity: Activity) => Promise<void>>;
+    };
+    priority?: {
+      access?: PriorityAccess;
+    };
+    contact?: {
+      access?: ContactAccess;
+    };
+  };
 
   /**
    * Creates a new activity in the Plot system.
@@ -108,6 +134,18 @@ export abstract class Plot extends ITool {
    * @returns Promise resolving to the complete created activity
    */
   abstract createActivity(_activity: NewActivity): Promise<Activity>;
+
+  /**
+   * Creates multiple activities in a single batch operation.
+   *
+   * This method efficiently creates multiple activities at once, which is
+   * more performant than calling createActivity() multiple times individually.
+   * All activities are created with the same author and access control rules.
+   *
+   * @param activities - Array of activity data to create
+   * @returns Promise resolving to array of created activities
+   */
+  abstract createActivities(_activities: NewActivity[]): Promise<Activity[]>;
 
   /**
    * Updates an existing activity in the Plot system.
@@ -163,17 +201,6 @@ export abstract class Plot extends ITool {
   abstract updateActivity(_activity: ActivityUpdate): Promise<void>;
 
   /**
-   * Creates a new priority in the Plot system.
-   *
-   * Priorities serve as organizational containers for activities and agents.
-   * The created priority will be automatically assigned a unique ID.
-   *
-   * @param priority - The priority data to create
-   * @returns Promise resolving to the complete created priority
-   */
-  abstract createPriority(_priority: NewPriority): Promise<Priority>;
-
-  /**
    * Retrieves all activities in the same thread as the specified activity.
    *
    * A thread consists of related activities linked through parent-child
@@ -198,6 +225,17 @@ export abstract class Plot extends ITool {
   abstract getActivityByMeta(_meta: ActivityMeta): Promise<Activity | null>;
 
   /**
+   * Creates a new priority in the Plot system.
+   *
+   * Priorities serve as organizational containers for activities and agents.
+   * The created priority will be automatically assigned a unique ID.
+   *
+   * @param priority - The priority data to create
+   * @returns Promise resolving to the complete created priority
+   */
+  abstract createPriority(_priority: NewPriority): Promise<Priority>;
+
+  /**
    * Adds contacts to the Plot system.
    *
    * Contacts are used for associating people with activities, such as
@@ -208,16 +246,4 @@ export abstract class Plot extends ITool {
    * @returns Promise that resolves when all contacts have been processed
    */
   abstract addContacts(_contacts: Array<Contact>): Promise<void>;
-
-  /**
-   * Creates multiple activities in a single batch operation.
-   *
-   * This method efficiently creates multiple activities at once, which is
-   * more performant than calling createActivity() multiple times individually.
-   * All activities are created with the same author and access control rules.
-   *
-   * @param activities - Array of activity data to create
-   * @returns Promise resolving to array of created activities
-   */
-  abstract createActivities(_activities: NewActivity[]): Promise<Activity[]>;
 }
