@@ -1,5 +1,18 @@
 # @plotday/sdk
 
+## 0.17.0
+
+### Added
+
+- Improved stack traces ([#51](https://github.com/plotday/plot/pull/51) [`02c6a1e`](https://github.com/plotday/plot/commit/02c6a1e834b9aa645f29191ed59ee5b66b70c32a))
+
+### Changed
+
+- BREAKING: Creating and updating Activity using the Plot tool now requires requesting permission in options ([#51](https://github.com/plotday/plot/pull/51) [`b3242e4`](https://github.com/plotday/plot/commit/b3242e4adecea87011379ac2dd58712dc91729d7))
+- BREAKING: Agents and Tools now define a build() method to gain access to tools, which are then available via this.tools.
+- BREAKING: Renamed callCallback, run, cancel, and cancelAll Agent/Tool functions ([#51](https://github.com/plotday/plot/pull/51) [`49b4dc9`](https://github.com/plotday/plot/commit/49b4dc94e08906a89799903610325c5fe7ebe10b))
+- BREAKING: Improved callback ergonomics and types to use functions instead of strings ([#51](https://github.com/plotday/plot/pull/51) [`02c6a1e`](https://github.com/plotday/plot/commit/02c6a1e834b9aa645f29191ed59ee5b66b70c32a))
+
 ## 0.16.1
 
 ### Fixed
