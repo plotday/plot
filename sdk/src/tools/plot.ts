@@ -1,13 +1,49 @@
 import {
   type Activity,
-  type ActivitySource,
+  type ActivityMeta,
   type ActivityUpdate,
+  type ActorId,
   type Contact,
   ITool,
   type NewActivity,
   type NewPriority,
   type Priority,
+  type Tag,
 } from "..";
+
+export enum ActivityAccess {
+  /**
+   * Create new Activity on a thread where the agent was mentioned.
+   * Add/remove tags on Activity where the agent was mentioned.
+   */
+  Respond,
+  /**
+   * Create new, top-level Activity.
+   * Create new Activity in a thread the agent created.
+   * All Respond permissions.
+   */
+  Create,
+}
+
+export enum PriorityAccess {
+  /**
+   * Create new priority.
+   * Update Priority created by the agent.
+   */
+  Create,
+  /**
+   * Update and archive Priority created by others.
+   * All Create permissions.
+   */
+  Full,
+}
+
+export enum ContactAccess {
+  /** Read existing contacts. */
+  Read,
+  /** Create and update contacts. */
+  Write,
+}
 
 /**
  * Built-in tool for interacting with the core Plot data layer.
@@ -21,7 +57,7 @@ import {
  * class MyAgent extends Agent {
  *   private plot: Plot;
  *
- *   constructor(id: string, tools: Tools) {
+ *   constructor(id: string, tools: ToolBuilder) {
  *     super();
  *     this.plot = tools.get(Plot);
  *   }
@@ -42,6 +78,51 @@ import {
  * ```
  */
 export abstract class Plot extends ITool {
+  static readonly Options: {
+    /**
+     * Activity event callbacks.
+     */
+    activity?: {
+      access?: ActivityAccess;
+
+      /**
+       * Called when an activity is updated.
+       *
+       * @param activity - The updated activity
+       * @param changes - Optional changes object containing the previous version and tag modifications
+       */
+      updated?: (
+        activity: Activity,
+        changes?: {
+          previous: Activity;
+          tagsAdded: Record<Tag, ActorId[]>;
+          tagsRemoved: Record<Tag, ActorId[]>;
+        }
+      ) => Promise<void>;
+
+      /**
+       * Intent handlers for activity mentions.
+       * When an activity mentions this agent, the system will match the activity
+       * content against these intent descriptions and call the matching handler.
+       *
+       * @example
+       * ```typescript
+       * intents: {
+       *   "Schedule or reschedule calendar events": this.onSchedulingRequest,
+       *   "Find available meeting times": this.onAvailabilityRequest
+       * }
+       * ```
+       */
+      intents?: Record<string, (activity: Activity) => Promise<void>>;
+    };
+    priority?: {
+      access?: PriorityAccess;
+    };
+    contact?: {
+      access?: ContactAccess;
+    };
+  };
+
   /**
    * Creates a new activity in the Plot system.
    *
@@ -53,6 +134,18 @@ export abstract class Plot extends ITool {
    * @returns Promise resolving to the complete created activity
    */
   abstract createActivity(_activity: NewActivity): Promise<Activity>;
+
+  /**
+   * Creates multiple activities in a single batch operation.
+   *
+   * This method efficiently creates multiple activities at once, which is
+   * more performant than calling createActivity() multiple times individually.
+   * All activities are created with the same author and access control rules.
+   *
+   * @param activities - Array of activity data to create
+   * @returns Promise resolving to array of created activities
+   */
+  abstract createActivities(_activities: NewActivity[]): Promise<Activity[]>;
 
   /**
    * Updates an existing activity in the Plot system.
@@ -108,17 +201,6 @@ export abstract class Plot extends ITool {
   abstract updateActivity(_activity: ActivityUpdate): Promise<void>;
 
   /**
-   * Creates a new priority in the Plot system.
-   *
-   * Priorities serve as organizational containers for activities and agents.
-   * The created priority will be automatically assigned a unique ID.
-   *
-   * @param priority - The priority data to create
-   * @returns Promise resolving to the complete created priority
-   */
-  abstract createPriority(_priority: NewPriority): Promise<Priority>;
-
-  /**
    * Retrieves all activities in the same thread as the specified activity.
    *
    * A thread consists of related activities linked through parent-child
@@ -131,18 +213,27 @@ export abstract class Plot extends ITool {
   abstract getThread(_activity: Activity): Promise<Activity[]>;
 
   /**
-   * Finds an activity by its external source reference.
+   * Finds an activity by its metadata.
    *
    * This method enables lookup of activities that were created from external
-   * systems, using the source information to locate the corresponding Plot activity.
+   * systems, using the metadata to locate the corresponding Plot activity.
    * Useful for preventing duplicate imports and maintaining sync state.
    *
-   * @param source - The external source reference to search for
+   * @param meta - The activity metadata to search for
    * @returns Promise resolving to the matching activity or null if not found
    */
-  abstract getActivityBySource(
-    _source: ActivitySource
-  ): Promise<Activity | null>;
+  abstract getActivityByMeta(_meta: ActivityMeta): Promise<Activity | null>;
+
+  /**
+   * Creates a new priority in the Plot system.
+   *
+   * Priorities serve as organizational containers for activities and agents.
+   * The created priority will be automatically assigned a unique ID.
+   *
+   * @param priority - The priority data to create
+   * @returns Promise resolving to the complete created priority
+   */
+  abstract createPriority(_priority: NewPriority): Promise<Priority>;
 
   /**
    * Adds contacts to the Plot system.
@@ -155,16 +246,4 @@ export abstract class Plot extends ITool {
    * @returns Promise that resolves when all contacts have been processed
    */
   abstract addContacts(_contacts: Array<Contact>): Promise<void>;
-
-  /**
-   * Creates multiple activities in a single batch operation.
-   *
-   * This method efficiently creates multiple activities at once, which is
-   * more performant than calling createActivity() multiple times individually.
-   * All activities are created with the same author and access control rules.
-   *
-   * @param activities - Array of activity data to create
-   * @returns Promise resolving to array of created activities
-   */
-  abstract createActivities(_activities: NewActivity[]): Promise<Activity[]>;
 }

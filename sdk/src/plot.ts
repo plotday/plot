@@ -3,10 +3,18 @@ import { type Tag } from "./tag";
 export { Tag } from "./tag";
 
 /**
+ * Represents a unique user, contact, or agent in Plot.
+ *
+ * Note contacts (i.e. people not using Plot) are also represented by ActorIds. They may be
+ * people interacting with other services that are connected.
+ */
+export type ActorId = string & { readonly __brand: "ActorId" };
+
+/**
  * Represents a priority context within Plot.
  *
- * Priorities are organizational units that group related activities and agents.
- * They serve as the primary context for agent activation and activity management.
+ * Priorities are similar to projects in other apps. All Activity is in a Priority.
+ * Priorities can be nested.
  */
 export type Priority = {
   /** Unique identifier for the priority */
@@ -88,7 +96,7 @@ export enum ActivityLinkType {
  *   url: "https://calendar.google.com/event/123",
  * };
  *
- * // Auth link - initiates OAuth flow
+ * // Integrations link - initiates OAuth flow
  * const authLink: ActivityLink = {
  *   type: ActivityLinkType.auth,
  *   title: "Continue with Google",
@@ -151,15 +159,15 @@ export type ActivityLink =
     };
 
 /**
- * Represents the source of an activity from an external system.
+ * Represents metadata about an activity, typically from an external system.
  *
- * Activity sources enable tracking where activities originated from,
+ * Activity metadata enables tracking where activities originated from,
  * which is useful for synchronization, deduplication, and linking
  * back to external systems.
  *
  * @example
  * ```typescript
- * const googleCalendarSource: ActivitySource = {
+ * const googleCalendarMeta: ActivityMeta = {
  *   type: "google-calendar-event",
  *   id: "event-123",
  *   calendarId: "primary",
@@ -167,9 +175,9 @@ export type ActivityLink =
  * };
  * ```
  */
-export type ActivitySource = {
+export type ActivityMeta = {
   /** The type identifier for the source system */
-  type: string;
+  source: string;
   /** Additional source-specific properties */
   [key: string]: any;
 };
@@ -221,7 +229,7 @@ export type Activity = {
   /** Information about who created the activity */
   author: {
     /** Unique identifier for the author */
-    id: string;
+    id: ActorId;
     /** Display name for the author */
     name: string | null;
     /** Type of author (User, Contact, or Agent) */
@@ -281,10 +289,12 @@ export type Activity = {
    * Used to identify which occurrence of a recurring event this exception replaces.
    */
   occurrence: Date | null;
-  /** Reference to the external system that created this activity */
-  source: ActivitySource | null;
+  /** Metadata about the activity, typically from an external system that created it */
+  meta: ActivityMeta | null;
   /** Tags attached to this activity. Maps tag ID to array of actor IDs who added that tag. */
-  tags: Partial<Record<Tag, string[]>> | null;
+  tags: Partial<Record<Tag, ActorId[]>> | null;
+  /** Array of actor IDs (users, contacts, or agents) mentioned in this activity via @-mentions */
+  mentions: ActorId[] | null;
 };
 
 /**
@@ -324,7 +334,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
       | "doneAt"
       | "note"
       | "title"
-      | "source"
+      | "meta"
       | "links"
       | "recurrenceRule"
       | "recurrenceDates"
@@ -332,6 +342,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
       | "recurrenceUntil"
       | "recurrenceCount"
       | "occurrence"
+      | "mentions"
     >
   > & {
     parent?: Pick<Activity, "id"> | null;

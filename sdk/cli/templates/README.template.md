@@ -48,23 +48,25 @@ Called when an activity is routed to this agent. Use this to:
 
 ### Using Tools
 
-Agents access functionality through tools. Get tools in the constructor:
+Agents access functionality through tools. Declare tools in the `build` method:
 
 ```typescript
-constructor(protected tools: Tools) {
-  super(id, tools);
-  this.plot = tools.get(Plot);
-  // Store, Run, and Callback methods are available directly via this
+build(build: ToolBuilder) {
+  return {
+    plot: build(Plot),
+  };
 }
+// Store, Tasks, and Callbacks methods are available directly via this
 ```
 
 #### Built-in Tools
 
 - **Plot**: Create, update, and delete activities
 - **Store**: Persist data across agent invocations
-- **Auth**: Request OAuth authentication from external services
-- **Run**: Queue background tasks and batch operations
-- **Callback**: Create persistent function references for webhooks
+- **Integrations**: Request OAuth authentication from external services
+- **Tasks**: Queue background tasks and batch operations
+- **Callbacks**: Create persistent function references for webhooks
+- **Network**: HTTP access permissions and webhook management
 
 #### External Tools
 
@@ -82,11 +84,12 @@ Add external tool dependencies to `package.json`:
 Then use them in your agent:
 
 ```typescript
-import { GoogleCalendar } from "@plotday/sdk/tools/google-calendar";
+import GoogleCalendarTool from "@plotday/tool-google-calendar";
 
-constructor(id: string, tools: Tools) {
-  super();
-  this.googleCalendar = tools.get(GoogleCalendar);
+build(build: ToolBuilder) {
+  return {
+    googleCalendar: build(GoogleCalendarTool),
+  };
 }
 ```
 
@@ -118,7 +121,7 @@ const token = await this.get<string>("sync_token");
 
 - **Memory is temporary**: Anything stored in memory (e.g. as a variable in the agent/tool object) is lost after the function completes. Use the Store tool instead. Only use memory for temporary caching.
 - **Limited CPU time**: Each execution has limited CPU time (typically 10 seconds) and memory (128MB)
-- **Use the Run tool**: Queue separate chunks of work with `run.now(functionName, context)`
+- **Use the Tasks tool**: Queue separate chunks of work with `this.run(callback)`
 - **Break long operations**: Split large operations into smaller batches that can be processed independently
 - **Store intermediate state**: Use the Store tool to persist state between batches
 - **Examples**: Syncing large datasets, processing many API calls, or performing batch operations

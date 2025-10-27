@@ -9,6 +9,7 @@ export interface BundleOptions {
 
 export interface BundleResult {
   code: string;
+  sourcemap?: string;
   warnings: string[];
 }
 
@@ -80,8 +81,18 @@ export async function bundleAgent(
   const bundlePath = path.join(buildDir, "index.js");
   const code = fs.readFileSync(bundlePath, "utf-8");
 
+  // Read the sourcemap if it exists
+  let sourcemapContent: string | undefined;
+  if (sourcemap) {
+    const sourcemapPath = path.join(buildDir, "index.js.map");
+    if (fs.existsSync(sourcemapPath)) {
+      sourcemapContent = fs.readFileSync(sourcemapPath, "utf-8");
+    }
+  }
+
   return {
     code,
+    sourcemap: sourcemapContent,
     warnings,
   };
 }

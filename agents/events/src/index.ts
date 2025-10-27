@@ -5,7 +5,7 @@ import {
   ActivityType,
   Agent,
   type Priority,
-  type Tools,
+  type ToolBuilder,
 } from "@plotday/sdk";
 import type {
   Calendar,
@@ -13,7 +13,7 @@ import type {
   CalendarTool,
   SyncOptions,
 } from "@plotday/sdk/common/calendar";
-import { Plot } from "@plotday/sdk/tools/plot";
+import { ActivityAccess, Plot } from "@plotday/sdk/tools/plot";
 import { GoogleCalendar } from "@plotday/tool-google-calendar";
 import { OutlookCalendar } from "@plotday/tool-outlook-calendar";
 
@@ -24,31 +24,25 @@ type StoredCalendarAuth = {
   authToken: string;
 };
 
-type CalendarSelectionContext = {
-  provider: CalendarProvider;
-  calendarId: string;
-  calendarName: string;
-  authToken: string;
-};
-
-export default class extends Agent {
-  private googleCalendar: GoogleCalendar;
-  private outlookCalendar: OutlookCalendar;
-  private plot: Plot;
-
-  constructor(id: string, protected tools: Tools) {
-    super(id, tools);
-    this.googleCalendar = tools.get(GoogleCalendar);
-    this.outlookCalendar = tools.get(OutlookCalendar);
-    this.plot = tools.get(Plot);
+export default class EventsAgent extends Agent<EventsAgent> {
+  build(build: ToolBuilder) {
+    return {
+      googleCalendar: build(GoogleCalendar),
+      outlookCalendar: build(OutlookCalendar),
+      plot: build(Plot, {
+        activity: {
+          access: ActivityAccess.Create,
+        },
+      }),
+    };
   }
 
   private getProviderTool(provider: CalendarProvider): CalendarTool {
     switch (provider) {
       case "google":
-        return this.googleCalendar;
+        return this.tools.googleCalendar;
       case "outlook":
-        return this.outlookCalendar;
+        return this.tools.outlookCalendar;
       default:
         throw new Error(`Unknown calendar provider: ${provider}`);
     }
@@ -89,24 +83,18 @@ export default class extends Agent {
   }
 
   async activate(_priority: Pick<Priority, "id">) {
-    // Create callbacks for auth completion
-    const googleCallback = await this.callback("onAuthComplete", {
-      provider: "google",
-    });
-    const outlookCallback = await this.callback("onAuthComplete", {
-      provider: "outlook",
-    });
-
     // Get auth links from both calendar tools
-    const googleAuthLink = await this.googleCalendar.requestAuth(
-      googleCallback
+    const googleAuthLink = await this.tools.googleCalendar.requestAuth(
+      this.onAuthComplete,
+      "google"
     );
-    const outlookAuthLink = await this.outlookCalendar.requestAuth(
-      outlookCallback
+    const outlookAuthLink = await this.tools.outlookCalendar.requestAuth(
+      this.onAuthComplete,
+      "outlook"
     );
 
     // Create activity with both auth links
-    const connectActivity = await this.plot.createActivity({
+    const connectActivity = await this.tools.plot.createActivity({
       type: ActivityType.Task,
       title: "Connect your calendar",
       start: new Date(),
@@ -131,7 +119,7 @@ export default class extends Agent {
   async startSync(
     provider: CalendarProvider,
     calendarId: string,
-    options?: SyncOptions
+    _options?: SyncOptions
   ): Promise<void> {
     const authToken = await this.getAuthToken(provider);
     if (!authToken) {
@@ -140,13 +128,14 @@ export default class extends Agent {
 
     const tool = this.getProviderTool(provider);
 
-    // Create callback for event handling
-    const eventCallback = await this.callback("handleEvent", {
-      options,
-      context: { provider, calendarId },
-    });
-
-    await tool.startSync(authToken, calendarId, eventCallback);
+    // Start sync with event handling callback
+    await tool.startSync(
+      authToken,
+      calendarId,
+      this.handleEvent,
+      provider,
+      calendarId
+    );
   }
 
   async stopSync(
@@ -180,12 +169,18 @@ export default class extends Agent {
     return results;
   }
 
-  async handleEvent(activity: Activity, _context?: any): Promise<void> {
-    await this.plot.createActivity(activity);
+  async handleEvent(
+    activity: Activity,
+    _provider: CalendarProvider,
+    _calendarId: string
+  ): Promise<void> {
+    await this.tools.plot.createActivity(activity);
   }
 
-  async onAuthComplete(authResult: CalendarAuth, context?: any): Promise<void> {
-    const provider = context?.provider as CalendarProvider;
+  async onAuthComplete(
+    authResult: CalendarAuth,
+    provider: CalendarProvider
+  ): Promise<void> {
     if (!provider) {
       console.error("No provider specified in auth context");
       return;
@@ -193,7 +188,6 @@ export default class extends Agent {
 
     // Store the auth token for later use
     await this.addStoredAuth(provider, authResult.authToken);
-    console.log(`${provider} Calendar authentication completed`);
 
     try {
       // Fetch available calendars for this provider
@@ -201,7 +195,7 @@ export default class extends Agent {
       const calendars = await tool.getCalendars(authResult.authToken);
 
       if (calendars.length === 0) {
-        await this.plot.createActivity({
+        await this.tools.plot.createActivity({
           type: ActivityType.Note,
           note: `I couldn't find any calendars for that account.`,
           parent: await this.getParentActivity(),
@@ -229,12 +223,13 @@ export default class extends Agent {
 
     // Create callback links for each calendar
     for (const calendar of calendars) {
-      const token = await this.callback("onCalendarSelected", {
+      const token = await this.callback(
+        this.onCalendarSelected,
         provider,
-        calendarId: calendar.id,
-        calendarName: calendar.name,
-        authToken,
-      } as CalendarSelectionContext);
+        calendar.id,
+        calendar.name,
+        authToken
+      );
 
       if (calendar.primary) {
         links.unshift({
@@ -252,7 +247,7 @@ export default class extends Agent {
     }
 
     // Create the calendar selection activity
-    await this.plot.createActivity({
+    await this.tools.plot.createActivity({
       type: ActivityType.Task,
       title: `Which calendars would you like to connect?`,
       start: new Date(),
@@ -263,42 +258,40 @@ export default class extends Agent {
 
   async onCalendarSelected(
     _link: ActivityLink,
-    context: CalendarSelectionContext
+    provider: CalendarProvider,
+    calendarId: string,
+    calendarName: string,
+    authToken: string
   ): Promise<void> {
-    console.log("Calendar selectedwith context:", context);
-    if (!context) {
-      console.error("No context found in calendar selection callback");
-      return;
-    }
+    console.log("Calendar selected with context:", {
+      provider,
+      calendarId,
+      calendarName,
+    });
 
     try {
       // Start sync for the selected calendar
-      const tool = this.getProviderTool(context.provider);
+      const tool = this.getProviderTool(provider);
 
-      // Create callback for event handling
-      const eventCallback = await this.callback("handleEvent", {
-        provider: context.provider,
-        calendarId: context.calendarId,
-      });
-
+      // Start sync with event handling callback
       await tool.startSync(
-        context.authToken,
-        context.calendarId,
-        eventCallback
+        authToken,
+        calendarId,
+        this.handleEvent,
+        provider,
+        calendarId
       );
 
-      console.log(
-        `Started syncing ${context.provider} calendar: ${context.calendarName}`
-      );
+      console.log(`Started syncing ${provider} calendar: ${calendarName}`);
 
-      await this.plot.createActivity({
+      await this.tools.plot.createActivity({
         type: ActivityType.Note,
-        note: `Reading your ${context.calendarName} calendar`,
+        note: `Reading your ${calendarName} calendar`,
         parent: await this.getParentActivity(),
       });
     } catch (error) {
       console.error(
-        `Failed to start sync for calendar ${context.calendarName}:`,
+        `Failed to start sync for calendar ${calendarName}:`,
         error
       );
     }

@@ -1,49 +1,67 @@
 import { type Priority } from "./plot";
-import { type ITool } from "./tool";
 import type { Callback } from "./tools/callbacks";
-import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
+import type {
+  InferOptions,
+  InferTools,
+  ToolBuilder,
+  ToolShed,
+} from "./utils/types";
+
+export type { ToolBuilder };
 
 /**
- * Base class for all agents.
+ * Abstrtact parent for both built-in tools and regular Tools.
+ * Regular tools extend Tool.
+ */
+export abstract class ITool {}
+
+/**
+ * Base class for regular tools.
  *
- * Agents are activated in a Plot priority and have access to that priority and all
- * its descendants.
- *
- * Override build() to declare tool dependencies and lifecycle methods to handle events.
+ * Regular tools run in isolation and can only access other tools declared
+ * in their build method. They are ideal for external API integrations
+ * and reusable functionality that doesn't require Plot's internal infrastructure.
  *
  * @example
  * ```typescript
- * class FlatteringAgent extends Agent<FlatteringAgent> {
- *   build(build: ToolBuilder) {
+ * class GoogleCalendarTool extends Tool<GoogleCalendarTool> {
+ *   constructor(id: string, options: { clientId: string }) {
+ *     super(id, options);
+ *   }
+ *
+ *   build(tools: ToolBuilder) {
  *     return {
- *       plot: build(Plot),
+ *       auth: tools.build(Integrations),
+ *       network: tools.build(Network),
  *     };
  *   }
  *
- *   async activate(priority: Pick<Priority, "id">) {
- *     // Initialize agent for the given priority
- *     await this.tools.plot.createActivity({
- *       type: ActivityType.Note,
- *       note: "Hello, good looking!",
- *     });
+ *   async getCalendars() {
+ *     const token = await this.tools.auth.get(...);
+ *     // Implementation
  *   }
  * }
  * ```
  */
-export abstract class Agent<TSelf> {
-  constructor(protected id: string, private toolShed: ToolShed) {}
+export abstract class Tool<TSelf> implements ITool {
+  constructor(
+    protected id: string,
+    protected options: InferOptions<TSelf>,
+    private toolShed: ToolShed
+  ) {}
 
   /**
-   * Gets the initialized tools for this agent.
+   * Gets the initialized tools for this tool.
    * @throws Error if called before initialization is complete
    */
-  protected get tools(): InferTools<TSelf> {
+  protected get tools() {
     return this.toolShed.getTools<InferTools<TSelf>>();
   }
 
   /**
-   * Declares tool dependencies for this agent.
+   * Declares tool dependencies for this tool.
    * Return an object mapping tool names to build() promises.
+   * Default implementation returns empty object (no custom tools).
    *
    * @param build - The build function to use for declaring dependencies
    * @returns Object mapping tool names to tool promises
@@ -52,16 +70,17 @@ export abstract class Agent<TSelf> {
    * ```typescript
    * build(build: ToolBuilder) {
    *   return {
-   *     plot: build(Plot),
-   *     calendar: build(GoogleCalendar, { apiKey: "..." }),
+   *     network: build(Network, { urls: ["https://api.example.com/*"] }),
    *   };
    * }
    * ```
    */
-  abstract build(build: ToolBuilder): Record<string, Promise<ITool>>;
+  build(_build: ToolBuilder): Record<string, Promise<ITool>> {
+    return {};
+  }
 
   /**
-   * Creates a persistent callback to a method on this agent.
+   * Creates a persistent callback to a method on this tool.
    *
    * ExtraArgs are strongly typed to match the method's signature after the first argument.
    *
@@ -78,7 +97,7 @@ export abstract class Agent<TSelf> {
     fn: Function,
     ...extraArgs: any[]
   ): Promise<Callback> {
-    return this.tools.callbacks.create(fn as any, ...extraArgs);
+    return this.tools.callbacks.create(fn, ...extraArgs);
   }
 
   /**
@@ -92,7 +111,7 @@ export abstract class Agent<TSelf> {
   }
 
   /**
-   * Deletes all callbacks for this agent.
+   * Deletes all callbacks for this tool.
    *
    * @returns Promise that resolves when all callbacks are deleted
    */
@@ -107,8 +126,8 @@ export abstract class Agent<TSelf> {
    * @param args - Optional arguments to pass to the callback
    * @returns Promise resolving to the callback result
    */
-  protected async run(token: Callback, ...args: []): Promise<any> {
-    return this.tools.callbacks.run(token, ...args);
+  protected async run(token: Callback, args?: any): Promise<any> {
+    return this.tools.callbacks.run(token, args);
   }
 
   /**
@@ -164,7 +183,7 @@ export abstract class Agent<TSelf> {
   }
 
   /**
-   * Removes all keys from this agent's storage.
+   * Removes all keys from this tool's storage.
    *
    * @returns Promise that resolves when all keys are removed
    */
@@ -198,7 +217,7 @@ export abstract class Agent<TSelf> {
   }
 
   /**
-   * Cancels all scheduled executions for this agent.
+   * Cancels all scheduled executions for this tool.
    *
    * @returns Promise that resolves when all cancellations are processed
    */
@@ -207,40 +226,79 @@ export abstract class Agent<TSelf> {
   }
 
   /**
-   * Called when the agent is activated for a specific priority.
+   * Called before the agent's activate method, starting from the deepest tool dependencies.
    *
-   * This method should contain initialization logic such as setting up
-   * initial activities, configuring webhooks, or establishing external connections.
+   * This method is called in a depth-first manner, with the deepest dependencies
+   * being called first, bubbling up to the top-level tools before the agent's
+   * activate method is called.
    *
    * @param _priority - The priority context containing the priority ID
-   * @returns Promise that resolves when activation is complete
+   * @returns Promise that resolves when pre-activation is complete
    */
-  activate(_priority: Pick<Priority, "id">): Promise<void> {
+  preActivate(_priority: Priority): Promise<void> {
     return Promise.resolve();
   }
 
   /**
-   * Called when a new version of the agent is deployed to an existing priority.
+   * Called after the agent's activate method, starting from the top-level tools.
    *
-   * This method should contain migration logic for updating old data structures
-   * or setting up new resources that weren't needed by the previous version.
-   * It is called with the new version for each active priorityAgent.
+   * This method is called in reverse order, with top-level tools being called
+   * first, then cascading down to the deepest dependencies.
    *
-   * @returns Promise that resolves when upgrade is complete
+   * @param _priority - The priority context containing the priority ID
+   * @returns Promise that resolves when post-activation is complete
    */
-  upgrade(): Promise<void> {
+  postActivate(_priority: Priority): Promise<void> {
     return Promise.resolve();
   }
 
   /**
-   * Called when the agent is removed from a priority.
+   * Called before the agent's upgrade method, starting from the deepest tool dependencies.
    *
-   * This method should contain cleanup logic such as removing webhooks,
-   * cleaning up external resources, or performing final data operations.
+   * This method is called in a depth-first manner, with the deepest dependencies
+   * being called first, bubbling up to the top-level tools before the agent's
+   * upgrade method is called.
    *
-   * @returns Promise that resolves when deactivation is complete
+   * @returns Promise that resolves when pre-upgrade is complete
    */
-  deactivate(): Promise<void> {
+  preUpgrade(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called after the agent's upgrade method, starting from the top-level tools.
+   *
+   * This method is called in reverse order, with top-level tools being called
+   * first, then cascading down to the deepest dependencies.
+   *
+   * @returns Promise that resolves when post-upgrade is complete
+   */
+  postUpgrade(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called before the agent's deactivate method, starting from the deepest tool dependencies.
+   *
+   * This method is called in a depth-first manner, with the deepest dependencies
+   * being called first, bubbling up to the top-level tools before the agent's
+   * deactivate method is called.
+   *
+   * @returns Promise that resolves when pre-deactivation is complete
+   */
+  preDeactivate(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called after the agent's deactivate method, starting from the top-level tools.
+   *
+   * This method is called in reverse order, with top-level tools being called
+   * first, then cascading down to the deepest dependencies.
+   *
+   * @returns Promise that resolves when post-deactivation is complete
+   */
+  postDeactivate(): Promise<void> {
     return Promise.resolve();
   }
 

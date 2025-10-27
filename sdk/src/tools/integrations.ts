@@ -1,24 +1,25 @@
-import { type ActivityLink, type Callback, ITool } from "..";
+import { type ActivityLink, ITool } from "..";
+import { type NoFunctions } from "./callbacks";
 
 /**
  * Built-in tool for managing OAuth authentication flows.
  *
- * The Auth tool provides a unified interface for requesting user authorization
+ * The Integrations tool provides a unified interface for requesting user authorization
  * from external service providers like Google and Microsoft. It handles the
  * OAuth flow creation, token management, and callback integration.
  *
  * @example
  * ```typescript
  * class CalendarTool extends Tool {
- *   private auth: Auth;
+ *   private auth: Integrations;
  *
- *   constructor(id: string, tools: Tools) {
+ *   constructor(id: string, tools: ToolBuilder) {
  *     super();
- *     this.auth = tools.get(Auth);
+ *     this.integrations = tools.get(Integrations);
  *   }
  *
  *   async requestAuth() {
- *     return await this.auth.request({
+ *     return await this.integrations.request({
  *       provider: AuthProvider.Google,
  *       level: AuthLevel.User,
  *       scopes: ["https://www.googleapis.com/auth/calendar.readonly"]
@@ -29,33 +30,39 @@ import { type ActivityLink, type Callback, ITool } from "..";
  *   }
  *
  *   async onAuthComplete(authResult: Authorization, context: any) {
- *     const authToken = await this.auth.get(authResult);
+ *     const authToken = await this.integrations.get(authResult);
  *   }
  * }
  * ```
  */
-export abstract class Auth extends ITool {
+export abstract class Integrations extends ITool {
   /**
    * Initiates an OAuth authentication flow.
    *
    * Creates an authentication link that users can click to authorize access
    * to the specified provider with the requested scopes. When authorization
-   * completes, the optional callback will be invoked with the results.
+   * completes, the callback will be invoked with the Authorization and any extraArgs.
    *
    * @param auth - Authentication configuration
    * @param auth.provider - The OAuth provider to authenticate with
    * @param auth.level - The authorization level (priority-scoped or user-scoped)
    * @param auth.scopes - Array of OAuth scopes to request
-   * @param callback - Callback receiving an Authorization
+   * @param callback - Function receiving (authorization, ...extraArgs)
+   * @param extraArgs - Additional arguments to pass to the callback (type-checked, must be serializable)
    * @returns Promise resolving to an ActivityLink for the auth flow
    */
-  abstract request(
+  abstract request<
+    TCallback extends (auth: Authorization, ...args: any[]) => any
+  >(
     _auth: {
       provider: AuthProvider;
       level: AuthLevel;
       scopes: string[];
     },
-    _callback: Callback
+    _callback: TCallback,
+    ..._extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
+      ? NoFunctions<R>
+      : []
   ): Promise<ActivityLink>;
 
   /**
@@ -73,7 +80,7 @@ export abstract class Auth extends ITool {
  * Enumeration of supported OAuth providers.
  *
  * Each provider has different OAuth endpoints, scopes, and token formats.
- * The Auth tool handles the provider-specific implementation details.
+ * The Integrations tool handles the provider-specific implementation details.
  */
 export enum AuthProvider {
   /** Google OAuth provider for Google Workspace services */
@@ -101,11 +108,11 @@ export enum AuthLevel {
  * based on provider, scopes, and authorization ID.
  */
 export type Authorization = {
-  /** Unique identifier for this authorization */
+  /** Unique identifier for this.integrationsorization */
   id: string;
-  /** The OAuth provider this authorization is for */
+  /** The OAuth provider this.integrationsorization is for */
   provider: AuthProvider;
-  /** Array of OAuth scopes this authorization covers */
+  /** Array of OAuth scopes this.integrationsorization covers */
   scopes: string[];
 };
 

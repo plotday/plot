@@ -1,5 +1,5 @@
-import { ITool, type Tools } from "..";
-import type { Callback } from "./callback";
+import { ITool } from "..";
+import type { Callback } from "./callbacks";
 
 /**
  * Run background tasks and scheduled jobs.
@@ -10,7 +10,7 @@ import type { Callback } from "./callback";
  * retries on failure.
  *
  * **Note:** Run methods are also available directly on Agent and Tool classes
- * via `this.run()`, `this.cancel()`, and `this.cancelAll()`.
+ * via `this.runTask()`, `this.cancelTask()`, and `this.cancelAllTasks()`.
  * This is the recommended approach for most use cases.
  *
  * **Best Practices:**
@@ -27,7 +27,7 @@ import type { Callback } from "./callback";
  *
  *     // Create callback and queue first batch using built-in methods
  *     const callback = await this.callback("processBatch", { batchNumber: 1 });
- *     await this.run(callback);
+ *     await this.runTask(callback);
  *   }
  *
  *   async processBatch(args: any, context: { batchNumber: number }) {
@@ -41,7 +41,7 @@ import type { Callback } from "./callback";
  *       const callback = await this.callback("processBatch", {
  *         batchNumber: context.batchNumber + 1
  *       });
- *       await this.run(callback);
+ *       await this.runTask(callback);
  *     }
  *   }
  *
@@ -55,7 +55,7 @@ import type { Callback } from "./callback";
  * }
  * ```
  */
-export abstract class Run extends ITool {
+export abstract class Tasks extends ITool {
   /**
    * Queues a callback to execute in a separate worker context.
    *
@@ -63,14 +63,14 @@ export abstract class Run extends ITool {
    * in an isolated execution environment with limited resources. Use this
    * for breaking up long-running operations into manageable chunks.
    *
-   * @param callback - The callback token created with `this.callback()`
+   * @param callback - Callback created with `this.callback()`
    * @param options - Optional configuration for the execution
    * @param options.runAt - If provided, schedules execution at this time; otherwise runs immediately
    * @returns Promise resolving to a cancellation token (only for scheduled executions)
    */
-  abstract run(
+  abstract runTask(
     _callback: Callback,
-    _options?: { runAt?: Date },
+    _options?: { runAt?: Date }
   ): Promise<string | void>;
 
   /**
@@ -79,10 +79,10 @@ export abstract class Run extends ITool {
    * Prevents a scheduled function from executing. No error is thrown
    * if the token is invalid or the execution has already completed.
    *
-   * @param token - The cancellation token returned by run() with runAt option
+   * @param token - The cancellation token returned by runTask() with runAt option
    * @returns Promise that resolves when the cancellation is processed
    */
-  abstract cancel(_token: string): Promise<void>;
+  abstract cancelTask(_token: string): Promise<void>;
 
   /**
    * Cancels all scheduled executions for this tool/agent.
@@ -92,5 +92,5 @@ export abstract class Run extends ITool {
    *
    * @returns Promise that resolves when all cancellations are processed
    */
-  abstract cancelAll(): Promise<void>;
+  abstract cancelAllTasks(): Promise<void>;
 }

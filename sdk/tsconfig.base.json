@@ -22,7 +22,8 @@
     "noUnusedParameters": false,
     "preserveWatchOutput": true,
     "skipLibCheck": true,
-    "strict": true
+    "strict": true,
+    "disableSizeLimit": true
   },
   "exclude": ["node_modules"]
 }

@@ -1,23 +1,23 @@
 import {
+  type Activity,
   type ActivityLink,
   type NewActivity,
   Tool,
-  type Tools,
+  type ToolBuilder,
 } from "@plotday/sdk";
 import {
   type Calendar,
   type CalendarAuth,
   type CalendarTool,
-  type SyncOptions,
 } from "@plotday/sdk/common/calendar";
+import { type Callback } from "@plotday/sdk/tools/callbacks";
 import {
-  Auth,
   AuthLevel,
   AuthProvider,
   type Authorization,
-} from "@plotday/sdk/tools/auth";
-import { type Callback } from "@plotday/sdk/tools/callback";
-import { Webhook, type WebhookRequest } from "@plotday/sdk/tools/webhook";
+  Integrations,
+} from "@plotday/sdk/tools/integrations";
+import { Network, type WebhookRequest } from "@plotday/sdk/tools/network";
 
 import {
   GoogleApi,
@@ -26,11 +26,6 @@ import {
   syncGoogleCalendar,
   transformGoogleEvent,
 } from "./google-api";
-
-type AuthSuccessContext = {
-  authToken: string;
-  callbackToken: Callback;
-};
 
 /**
  * Google Calendar integration tool.
@@ -99,42 +94,46 @@ type AuthSuccessContext = {
  * }
  * ```
  */
-export class GoogleCalendar extends Tool implements CalendarTool {
-  private auth: Auth;
-  private webhook: Webhook;
-
-  constructor(id: string, protected tools: Tools) {
-    super(id, tools);
-    this.auth = tools.get(Auth);
-    this.webhook = tools.get(Webhook);
+export class GoogleCalendar
+  extends Tool<GoogleCalendar>
+  implements CalendarTool
+{
+  build(build: ToolBuilder) {
+    return {
+      integrations: build(Integrations),
+      network: build(Network, {
+        urls: ["https://www.googleapis.com/calendar/*"],
+      }),
+    };
   }
 
-  async requestAuth(callback: Callback): Promise<ActivityLink> {
+  async requestAuth<
+    TCallback extends (auth: CalendarAuth, ...args: any[]) => any
+  >(callback: TCallback, ...extraArgs: any[]): Promise<ActivityLink> {
+    console.log("Requesting Google Calendar auth");
     const calendarScopes = [
       "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
       "https://www.googleapis.com/auth/calendar.events",
     ];
 
-    // Generate opaque token for this authorization
+    // Generate opaque token for authorization
     const authToken = crypto.randomUUID();
 
-    // Use the provided callback token
-    const callbackToken = callback;
-
-    // Create callback for auth completion
-    const authCallback = await this.callback("onAuthSuccess", {
-      authToken,
-      callbackToken,
-    } satisfies AuthSuccessContext);
+    const callbackToken = await this.tools.callbacks.createFromParent(
+      callback,
+      ...extraArgs
+    );
 
     // Request auth and return the activity link
-    return await this.auth.request(
+    return await this.tools.integrations.request(
       {
         provider: AuthProvider.Google,
         level: AuthLevel.User,
         scopes: calendarScopes,
       },
-      authCallback
+      this.onAuthSuccess,
+      authToken,
+      callbackToken
     );
   }
 
@@ -146,7 +145,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
       throw new Error("Authorization no longer available");
     }
 
-    const token = await this.auth.get(authorization);
+    const token = await this.tools.integrations.get(authorization);
     if (!token) {
       throw new Error("Authorization no longer available");
     }
@@ -155,6 +154,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
   }
 
   async getCalendars(authToken: string): Promise<Calendar[]> {
+    console.log("Fetching Google Calendar list");
     const api = await this.getApi(authToken);
     const data = (await api.call(
       "GET",
@@ -167,6 +167,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
         primary?: boolean;
       }>;
     };
+    console.log("Got Google Calendar list", data.items);
 
     return data.items.map((item) => ({
       id: item.id,
@@ -176,22 +177,31 @@ export class GoogleCalendar extends Tool implements CalendarTool {
     }));
   }
 
-  async startSync(
+  async startSync<
+    TCallback extends (activity: Activity, ...args: any[]) => any
+  >(
     authToken: string,
     calendarId: string,
-    callback: Callback,
-    options?: SyncOptions
+    callback: TCallback,
+    ...extraArgs: any[]
   ): Promise<void> {
-    // Store the callback token
-    await this.set("event_callback_token", callback);
+    console.log("Saving callback");
+
+    // Create callback token for parent
+    const callbackToken = await this.tools.callbacks.createFromParent(
+      callback,
+      ...extraArgs
+    );
+    await this.set("event_callback_token", callbackToken);
+    console.log("Setting up watch");
 
     // Setup webhook for this calendar
     await this.setupCalendarWatch(authToken, calendarId, authToken);
 
     // Start initial sync
     const now = new Date();
-    const min = options?.timeMin || new Date(now.getFullYear() - 2, 0, 1);
-    const max = options?.timeMax || new Date(now.getFullYear() + 1, 11, 31);
+    const min = new Date(now.getFullYear() - 2, 0, 1);
+    const max = new Date(now.getFullYear() + 1, 11, 31);
 
     const initialState: SyncState = {
       calendarId,
@@ -202,17 +212,19 @@ export class GoogleCalendar extends Tool implements CalendarTool {
 
     await this.set(`sync_state_${calendarId}`, initialState);
 
+    console.log("Starting sync");
     // Start sync batch using run tool for long-running operation
-    const syncCallback = await this.callback("syncBatch", {
-      calendarId,
-      batchNumber: 1,
-      mode: "full",
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "full",
       authToken,
-    });
+      calendarId
+    );
     await this.run(syncCallback);
   }
 
-  async stopSync(authToken: string, calendarId: string): Promise<void> {
+  async stopSync(_authToken: string, calendarId: string): Promise<void> {
     // Stop webhook
     const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
     if (watchData) {
@@ -229,10 +241,11 @@ export class GoogleCalendar extends Tool implements CalendarTool {
     calendarId: string,
     opaqueAuthToken: string
   ): Promise<void> {
-    const webhookUrl = await this.webhook.create("onCalendarWebhook", {
+    const webhookUrl = await this.tools.network.createWebhook(
+      this.onCalendarWebhook,
       calendarId,
-      authToken: opaqueAuthToken,
-    });
+      opaqueAuthToken
+    );
 
     // Check if webhook URL is localhost
     if (URL.parse(webhookUrl)?.hostname === "localhost") {
@@ -268,17 +281,13 @@ export class GoogleCalendar extends Tool implements CalendarTool {
     console.log("Calendar watch setup complete", { watchId, calendarId });
   }
 
-  async syncBatch({
-    calendarId,
-    batchNumber,
-    mode,
-    authToken,
-  }: {
-    calendarId: string;
-    batchNumber: number;
-    mode: "full" | "incremental";
-    authToken: string;
-  }): Promise<void> {
+  async syncBatch(
+    _args: any,
+    batchNumber: number,
+    mode: "full" | "incremental",
+    authToken: string,
+    calendarId: string
+  ): Promise<void> {
     console.log(
       `Starting Google Calendar sync batch ${batchNumber} (${mode}) for calendar ${calendarId}`
     );
@@ -310,12 +319,13 @@ export class GoogleCalendar extends Tool implements CalendarTool {
       await this.set(`sync_state_${calendarId}`, result.state);
 
       if (result.state.more) {
-        const syncCallback = await this.callback("syncBatch", {
-          calendarId,
-          batchNumber: batchNumber + 1,
+        const syncCallback = await this.callback(
+          this.syncBatch,
+          batchNumber + 1,
           mode,
           authToken,
-        });
+          calendarId
+        );
         await this.run(syncCallback);
       } else {
         console.log(
@@ -354,9 +364,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
           const activityData = transformGoogleEvent(event, calendarId);
 
           // Convert to full Activity and call callback
-          const callbackToken = await this.get<Callback>(
-            "event_callback_token"
-          );
+          const callbackToken = await this.get<string>("event_callback_token");
           if (callbackToken && activityData.type) {
             const activity: NewActivity = {
               type: activityData.type,
@@ -374,10 +382,10 @@ export class GoogleCalendar extends Tool implements CalendarTool {
               recurrenceDates: activityData.recurrenceDates || null,
               recurrence: null,
               occurrence: null,
-              source: activityData.source || null,
+              meta: activityData.meta ?? null,
             };
 
-            await this.callCallback(callbackToken, activity);
+            await this.run(callbackToken as any, activity);
           }
         }
       } catch (error) {
@@ -402,7 +410,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
 
     const activityData = transformGoogleEvent(event, calendarId);
 
-    const callbackToken = await this.get<Callback>("event_callback_token");
+    const callbackToken = await this.get<string>("event_callback_token");
     if (callbackToken && activityData.type) {
       const activity: NewActivity = {
         type: activityData.type,
@@ -420,21 +428,22 @@ export class GoogleCalendar extends Tool implements CalendarTool {
         recurrenceDates: null,
         recurrence: null, // Would need to find master activity
         occurrence: new Date(originalStartTime),
-        source: activityData.source || null,
+        meta: activityData.meta ?? null,
       };
 
-      await this.callCallback(callbackToken, activity);
+      await this.run(callbackToken as any, activity);
     }
   }
 
   async onCalendarWebhook(
     request: WebhookRequest,
-    context: any
+    calendarId: string,
+    authToken: string
   ): Promise<void> {
     console.log("Received calendar webhook notification", {
       headers: request.headers,
       params: request.params,
-      calendarId: context.calendarId,
+      calendarId,
     });
 
     // Validate webhook authenticity
@@ -445,9 +454,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
       throw new Error("Invalid webhook headers");
     }
 
-    const watchData = await this.get<any>(
-      `calendar_watch_${context.calendarId}`
-    );
+    const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
 
     if (!watchData || watchData.watchId !== channelId) {
       console.warn("Unknown or expired webhook notification");
@@ -463,7 +470,7 @@ export class GoogleCalendar extends Tool implements CalendarTool {
     }
 
     // Trigger incremental sync
-    await this.startIncrementalSync(context.calendarId, context.authToken);
+    await this.startIncrementalSync(calendarId, authToken);
   }
 
   private async startIncrementalSync(
@@ -483,29 +490,32 @@ export class GoogleCalendar extends Tool implements CalendarTool {
     };
 
     await this.set(`sync_state_${calendarId}`, incrementalState);
-    const syncCallback = await this.callback("syncBatch", {
-      calendarId,
-      batchNumber: 1,
-      mode: "incremental",
+    const syncCallback = await this.callback(
+      this.syncBatch,
+      1,
+      "incremental",
       authToken,
-    });
+      calendarId
+    );
     await this.run(syncCallback);
   }
 
   async onAuthSuccess(
     authResult: Authorization,
-    context: AuthSuccessContext
+    authToken: string,
+    callback: Callback
   ): Promise<void> {
     // Store the actual auth token using opaque token as key
-    await this.set(`authorization:${context.authToken}`, authResult);
+    await this.set(`authorization:${authToken}`, authResult);
 
     const authSuccessResult: CalendarAuth = {
-      authToken: context.authToken,
+      authToken,
     };
-    await this.callCallback(context.callbackToken, authSuccessResult);
+
+    await this.run(callback, authSuccessResult);
 
     // Clean up the callback token
-    await this.clear(`auth_callback_token:${context.authToken}`);
+    await this.clear(`auth_callback_token:${authToken}`);
   }
 }
 

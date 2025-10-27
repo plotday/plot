@@ -29,6 +29,31 @@ export type Log = {
 };
 
 /**
+ * Agent permissions returned after deployment.
+ * Nested structure mapping domains to entities to permission flags.
+ *
+ * Format: { domain: { entity: flags[] } }
+ * - domain: Tool name (e.g., "network", "plot")
+ * - entity: Domain-specific identifier (e.g., URL pattern, resource type)
+ * - flags: Array of permission flags ("read", "write", "update", "use")
+ *
+ * @example
+ * ```typescript
+ * {
+ *   "network": {
+ *     "https://api.example.com/*": ["use"],
+ *     "https://googleapis.com/*": ["use"]
+ *   },
+ *   "plot": {
+ *     "activity:mentioned": ["read", "write", "update"],
+ *     "priority": ["read", "write", "update"]
+ *   }
+ * }
+ * ```
+ */
+export type AgentPermissions = Record<string, Record<string, string[]>>;
+
+/**
  * Built-in tool for managing agents and deployments.
  *
  * The Agent tool provides agents with the ability to create agent IDs
@@ -37,21 +62,20 @@ export type Log = {
  * @example
  * ```typescript
  * class AgentBuilderAgent extends Agent {
- *   private agent: AgentManager;
- *
- *   constructor(id: string, tools: Tools) {
- *     super();
- *     this.agent = tools.get(AgentTool);
+ *   build(build: ToolBuilder) {
+ *    return {
+ *      agents: build.get(Agents)
+ *    }
  *   }
  *
  *   async activate() {
- *     const agentId = await this.agent.create();
+ *     const agentId = await this.tools.agents.create();
  *     // Display agent ID to user
  *   }
  * }
  * ```
  */
-export abstract class AgentManager extends ITool {
+export abstract class Agents extends ITool {
   /**
    * Creates a new agent ID and grants access to people in the current priority.
    *
@@ -164,6 +188,7 @@ export abstract class AgentManager extends ITool {
     )
   ): Promise<{
     version: string;
+    permissions: AgentPermissions;
     errors?: string[];
   }>;
 

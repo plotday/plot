@@ -13,21 +13,21 @@ npm install @plotday/tool-google-calendar @plotday/sdk
 ```typescript
 import { Agent, Tools } from "@plotday/sdk";
 import { GoogleCalendar } from "@plotday/tool-google-calendar";
-import { Auth, AuthLevel, AuthProvider } from "@plotday/sdk/tools/auth";
+import { Integrations, AuthLevel, AuthProvider } from "@plotday/sdk/tools/integrations";
 
 export default class extends Agent {
   private googleCalendar: GoogleCalendar;
-  private auth: Auth;
+  private auth: Integrations;
 
   constructor(id: string, tools: Tools) {
     super();
     this.googleCalendar = tools.get(GoogleCalendar);
-    this.auth = tools.get(Auth);
+    this.integrations = tools.get(Integrations);
   }
 
   async activate(priority: { id: string }) {
     // Request Google Calendar access
-    const authLink = await this.auth.request(
+    const authLink = await this.integrations.request(
       {
         provider: AuthProvider.Google,
         level: AuthLevel.User,
@@ -43,7 +43,7 @@ export default class extends Agent {
   }
 
   async onAuthComplete(authorization: any, context: any) {
-    const authToken = await this.auth.get(authorization);
+    const authToken = await this.integrations.get(authorization);
 
     // Get available calendars
     const calendars = await this.googleCalendar.getCalendars(authToken);
