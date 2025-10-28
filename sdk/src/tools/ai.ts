@@ -140,8 +140,9 @@ export abstract class AI extends ITool {
    * console.log(response.toolCalls); // Array of tool calls made
    * ```
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(
-    _request: AIRequest<TOOLS, SCHEMA>
+    request: AIRequest<TOOLS, SCHEMA>
   ): Promise<AIResponse<TOOLS, SCHEMA>>;
 }
 

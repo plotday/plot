@@ -75,7 +75,8 @@ export abstract class Tool<TSelf> implements ITool {
    * }
    * ```
    */
-  build(_build: ToolBuilder): Record<string, Promise<ITool>> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  build(build: ToolBuilder): Record<string, Promise<ITool>> {
     return {};
   }
 
@@ -232,10 +233,11 @@ export abstract class Tool<TSelf> implements ITool {
    * being called first, bubbling up to the top-level tools before the agent's
    * activate method is called.
    *
-   * @param _priority - The priority context containing the priority ID
+   * @param priority - The priority context containing the priority ID
    * @returns Promise that resolves when pre-activation is complete
    */
-  preActivate(_priority: Priority): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  preActivate(priority: Priority): Promise<void> {
     return Promise.resolve();
   }
 
@@ -245,10 +247,11 @@ export abstract class Tool<TSelf> implements ITool {
    * This method is called in reverse order, with top-level tools being called
    * first, then cascading down to the deepest dependencies.
    *
-   * @param _priority - The priority context containing the priority ID
+   * @param priority - The priority context containing the priority ID
    * @returns Promise that resolves when post-activation is complete
    */
-  postActivate(_priority: Priority): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  postActivate(priority: Priority): Promise<void> {
     return Promise.resolve();
   }
 

@@ -51,16 +51,17 @@ export abstract class Integrations extends ITool {
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, must be serializable)
    * @returns Promise resolving to an ActivityLink for the auth flow
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract request<
     TCallback extends (auth: Authorization, ...args: any[]) => any
   >(
-    _auth: {
+    auth: {
       provider: AuthProvider;
       level: AuthLevel;
       scopes: string[];
     },
-    _callback: TCallback,
-    ..._extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
+    callback: TCallback,
+    ...extraArgs: TCallback extends (auth: any, ...rest: infer R) => any
       ? NoFunctions<R>
       : []
   ): Promise<ActivityLink>;
@@ -73,7 +74,8 @@ export abstract class Integrations extends ITool {
    * @param authorization - The authorization from the request callback
    * @returns Promise resolving to the access token or null if no longer available
    */
-  abstract get(_authorization: Authorization): Promise<AuthToken | null>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract get(authorization: Authorization): Promise<AuthToken | null>;
 }
 
 /**

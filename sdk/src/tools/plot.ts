@@ -133,7 +133,8 @@ export abstract class Plot extends ITool {
    * @param activity - The activity data to create
    * @returns Promise resolving to the complete created activity
    */
-  abstract createActivity(_activity: NewActivity): Promise<Activity>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createActivity(activity: NewActivity): Promise<Activity>;
 
   /**
    * Creates multiple activities in a single batch operation.
@@ -145,7 +146,8 @@ export abstract class Plot extends ITool {
    * @param activities - Array of activity data to create
    * @returns Promise resolving to array of created activities
    */
-  abstract createActivities(_activities: NewActivity[]): Promise<Activity[]>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createActivities(activities: NewActivity[]): Promise<Activity[]>;
 
   /**
    * Updates an existing activity in the Plot system.
@@ -198,7 +200,8 @@ export abstract class Plot extends ITool {
    * });
    * ```
    */
-  abstract updateActivity(_activity: ActivityUpdate): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract updateActivity(activity: ActivityUpdate): Promise<void>;
 
   /**
    * Retrieves all activities in the same thread as the specified activity.
@@ -210,7 +213,8 @@ export abstract class Plot extends ITool {
    * @param activity - The activity whose thread to retrieve
    * @returns Promise resolving to array of activities in the thread
    */
-  abstract getThread(_activity: Activity): Promise<Activity[]>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getThread(activity: Activity): Promise<Activity[]>;
 
   /**
    * Finds an activity by its metadata.
@@ -222,7 +226,8 @@ export abstract class Plot extends ITool {
    * @param meta - The activity metadata to search for
    * @returns Promise resolving to the matching activity or null if not found
    */
-  abstract getActivityByMeta(_meta: ActivityMeta): Promise<Activity | null>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getActivityByMeta(meta: ActivityMeta): Promise<Activity | null>;
 
   /**
    * Creates a new priority in the Plot system.
@@ -233,7 +238,8 @@ export abstract class Plot extends ITool {
    * @param priority - The priority data to create
    * @returns Promise resolving to the complete created priority
    */
-  abstract createPriority(_priority: NewPriority): Promise<Priority>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createPriority(priority: NewPriority): Promise<Priority>;
 
   /**
    * Adds contacts to the Plot system.
@@ -245,5 +251,6 @@ export abstract class Plot extends ITool {
    * @param contacts - Array of contact information to add
    * @returns Promise that resolves when all contacts have been processed
    */
-  abstract addContacts(_contacts: Array<Contact>): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract addContacts(contacts: Array<Contact>): Promise<void>;
 }

@@ -212,10 +212,11 @@ export abstract class Agent<TSelf> {
    * This method should contain initialization logic such as setting up
    * initial activities, configuring webhooks, or establishing external connections.
    *
-   * @param _priority - The priority context containing the priority ID
+   * @param priority - The priority context containing the priority ID
    * @returns Promise that resolves when activation is complete
    */
-  activate(_priority: Pick<Priority, "id">): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  activate(priority: Pick<Priority, "id">): Promise<void> {
     return Promise.resolve();
   }
 

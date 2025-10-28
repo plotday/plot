@@ -128,11 +128,12 @@ export abstract class Network extends ITool {
    * @param extraArgs - Additional arguments to pass to the callback (type-checked)
    * @returns Promise resolving to the webhook URL
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createWebhook<
     TCallback extends (request: WebhookRequest, ...args: any[]) => any
   >(
-    _callback: TCallback,
-    ..._extraArgs: TCallback extends (req: any, ...rest: infer R) => any
+    callback: TCallback,
+    ...extraArgs: TCallback extends (req: any, ...rest: infer R) => any
       ? R
       : []
   ): Promise<string>;
@@ -146,5 +147,6 @@ export abstract class Network extends ITool {
    * @param url - The webhook URL to delete
    * @returns Promise that resolves when the webhook is deleted
    */
-  abstract deleteWebhook(_url: string): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract deleteWebhook(url: string): Promise<void>;
 }
