@@ -9,9 +9,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "deploy": "plot agent deploy",
-    "lint": "plot agent lint",
-    "logs": "plot agent logs"
+    "deploy": "plot deploy",
+    "lint": "plot lint",
+    "logs": "plot logs"
   },
   "dependencies": {
     "@plotday/agent": "workspace:^",
