@@ -26,7 +26,7 @@ The Plot tool is the core interface for creating and managing activities and pri
 ### Setup
 
 ```typescript
-import { Plot } from "@plotday/sdk/tools/plot";
+import { Plot } from "@plotday/agent/tools/plot";
 
 build(build: ToolBuilder) {
   return {
@@ -38,7 +38,7 @@ build(build: ToolBuilder) {
 ### Creating Activities
 
 ```typescript
-import { ActivityLinkType, ActivityType } from "@plotday/sdk";
+import { ActivityLinkType, ActivityType } from "@plotday/agent";
 
 // Create a note
 await this.tools.plot.createActivity({
@@ -236,7 +236,7 @@ OAuth authentication for external services (Google, Microsoft, etc.).
 ### Setup
 
 ```typescript
-import { Integrations } from "@plotday/sdk/tools/integrations";
+import { Integrations } from "@plotday/agent/tools/integrations";
 
 build(build: ToolBuilder) {
   return {
@@ -248,8 +248,8 @@ build(build: ToolBuilder) {
 ### Requesting Authentication
 
 ```typescript
-import { AuthLevel, AuthProvider, type Authorization } from "@plotday/sdk/tools/integrations";
-import { ActivityLinkType } from "@plotday/sdk";
+import { AuthLevel, AuthProvider, type Authorization } from "@plotday/agent/tools/integrations";
+import { ActivityLinkType } from "@plotday/agent";
 
 async activate(priority: Pick<Priority, "id">) {
   // Create callback for auth completion
@@ -432,7 +432,7 @@ Request HTTP access and create webhook endpoints for real-time notifications.
 ### Setup
 
 ```typescript
-import { Network, type WebhookRequest } from "@plotday/sdk/tools/network";
+import { Network, type WebhookRequest } from "@plotday/agent/tools/network";
 
 build(build: ToolBuilder) {
   return {
@@ -596,7 +596,7 @@ Prompt large language models with support for structured output and tool calling
 ### Setup
 
 ```typescript
-import { AI } from "@plotday/sdk/tools/ai";
+import { AI } from "@plotday/agent/tools/ai";
 
 build(build: ToolBuilder) {
   return {

@@ -49,7 +49,7 @@ Tools extend the `Tool<T>` base class and can access other tools through depende
 ### Minimal Tool Example
 
 ```typescript
-import { Tool, type ToolBuilder } from "@plotday/sdk";
+import { Tool, type ToolBuilder } from "@plotday/agent";
 
 export class HelloTool extends Tool<HelloTool> {
   async sayHello(name: string): Promise<string> {
@@ -61,7 +61,7 @@ export class HelloTool extends Tool<HelloTool> {
 ### Using Your Tool
 
 ```typescript
-import { Agent, type ToolBuilder } from "@plotday/sdk";
+import { Agent, type ToolBuilder } from "@plotday/agent";
 
 import { HelloTool } from "./tools/hello";
 
@@ -86,7 +86,7 @@ export default class MyAgent extends Agent<MyAgent> {
 ### Class Definition
 
 ```typescript
-import { Tool, type ToolBuilder } from "@plotday/sdk";
+import { Tool, type ToolBuilder } from "@plotday/agent";
 
 // Tool class with type parameter
 export class MyTool extends Tool<MyTool> {
@@ -225,9 +225,9 @@ Tools can depend on other tools, including built-in tools.
 ### Declaring Dependencies
 
 ```typescript
-import { Tool, type ToolBuilder } from "@plotday/sdk";
-import { Network } from "@plotday/sdk/tools/network";
-import { Store } from "@plotday/sdk/tools/store";
+import { Tool, type ToolBuilder } from "@plotday/agent";
+import { Network } from "@plotday/agent/tools/network";
+import { Store } from "@plotday/agent/tools/store";
 
 export class GitHubTool extends Tool<GitHubTool> {
   // Declare dependencies
@@ -292,7 +292,7 @@ Tools can accept configuration options when declared.
 ### Defining Options
 
 ```typescript
-import { Tool, type ToolBuilder, type InferOptions } from "@plotday/sdk";
+import { Tool, type ToolBuilder, type InferOptions } from "@plotday/agent";
 
 export class SlackTool extends Tool<SlackTool> {
   // Define static Options type
@@ -354,10 +354,10 @@ static Options = {
 A complete GitHub integration with webhooks and issue management.
 
 ```typescript
-import { type Priority, Tool, type ToolBuilder } from "@plotday/sdk";
-import { ActivityLinkType, ActivityType } from "@plotday/sdk";
-import { Network, type WebhookRequest } from "@plotday/sdk/tools/network";
-import { Plot } from "@plotday/sdk/tools/plot";
+import { type Priority, Tool, type ToolBuilder } from "@plotday/agent";
+import { ActivityLinkType, ActivityType } from "@plotday/agent";
+import { Network, type WebhookRequest } from "@plotday/agent/tools/network";
+import { Plot } from "@plotday/agent/tools/plot";
 
 export class GitHubTool extends Tool<GitHubTool> {
   static Options = {
@@ -490,8 +490,8 @@ export class GitHubTool extends Tool<GitHubTool> {
 A tool for sending Slack notifications.
 
 ```typescript
-import { Tool, type ToolBuilder } from "@plotday/sdk";
-import { Network } from "@plotday/sdk/tools/network";
+import { Tool, type ToolBuilder } from "@plotday/agent";
+import { Network } from "@plotday/agent/tools/network";
 
 export class SlackTool extends Tool<SlackTool> {
   static Options = {
@@ -583,8 +583,8 @@ describe("GitHubTool", () => {
 Test your tool with a real agent:
 
 ```typescript
-import { Agent, type ToolBuilder } from "@plotday/sdk";
-import { Plot } from "@plotday/sdk/tools/plot";
+import { Agent, type ToolBuilder } from "@plotday/agent";
+import { Plot } from "@plotday/agent/tools/plot";
 
 import { GitHubTool } from "./github-tool";
 
@@ -637,10 +637,10 @@ my-plot-tool/
     "test": "vitest"
   },
   "peerDependencies": {
-    "@plotday/sdk": "^0.16.0"
+    "@plotday/agent": "^0.16.0"
   },
   "devDependencies": {
-    "@plotday/sdk": "^0.16.0",
+    "@plotday/agent": "^0.16.0",
     "typescript": "^5.0.0"
   }
 }

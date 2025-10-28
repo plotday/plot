@@ -29,8 +29,8 @@ import { GitHubTool } from "@mycompany/plot-github-tool";
 import { JiraTool } from "@mycompany/plot-jira-tool";
 import { SlackTool } from "@mycompany/plot-slack-tool";
 
-import { Agent, type Priority, type ToolBuilder } from "@plotday/sdk";
-import { Plot } from "@plotday/sdk/tools/plot";
+import { Agent, type Priority, type ToolBuilder } from "@plotday/agent";
+import { Plot } from "@plotday/agent/tools/plot";
 
 export default class DevOpsAgent extends Agent<DevOpsAgent> {
   build(build: ToolBuilder) {

@@ -1,6 +1,6 @@
-# Plot SDK Documentation
+# Plot Agent Builder Documentation
 
-This directory contains the TypeDoc-generated API documentation for the Plot Agent SDK.
+This directory contains the TypeDoc-generated API documentation for the Plot Agent Builder.
 
 ## Published Documentation
 
@@ -8,7 +8,7 @@ The SDK documentation is automatically published to GitHub Pages whenever change
 
 **Live Documentation**: [https://plotday.github.io/plot/](https://plotday.github.io/plot/)
 
-The documentation is automatically updated whenever changes to the SDK are merged into the main branch, ensuring developers always have access to the latest API reference.
+The documentation is automatically updated whenever changes to the Builder are merged into the main branch, ensuring developers always have access to the latest API reference.
 
 ## Generating Documentation
 
@@ -17,8 +17,8 @@ The documentation is automatically generated during the build process, but you c
 ### Generate Documentation
 
 ```bash
-# From the SDK directory
-pnpm docs
+# From the Builder directory
+pnpm build:docs
 ```
 
 This will create the documentation in `dist/docs/`
@@ -27,7 +27,7 @@ This will create the documentation in `dist/docs/`
 
 ```bash
 # Remove the generated docs
-pnpm docs:clean
+pnpm clean:docs
 ```
 
 ## Viewing Documentation Locally
@@ -40,6 +40,7 @@ pnpm docs:open
 ```
 
 This script automatically uses the correct command for your platform:
+
 - `open` on macOS
 - `xdg-open` on Linux
 - `start` on Windows
@@ -73,13 +74,14 @@ The documentation is automatically published in two ways:
 
 ### 1. GitHub Pages (Automatic)
 
-When changes to the SDK are pushed to the main branch, a GitHub Action automatically:
-- Builds the SDK and generates the documentation
+When changes to the Builder are pushed to the main branch, a GitHub Action automatically:
+
+- Builds the Builder and generates the documentation
 - Deploys it to GitHub Pages at [https://plotday.github.io/plot/](https://plotday.github.io/plot/)
 
 **Workflow Location**: `.github/workflows/deploy-sdk-docs.yml`
 
-**Trigger**: Automatic on push to `main` when files in `public/sdk/**` change
+**Trigger**: Automatic on push to `main` when files in `public/agent/**` change
 
 ### 2. npm Package (Manual)
 
@@ -103,7 +105,7 @@ The `deploy-sdk-docs.yml` workflow includes all necessary permissions and config
 
 The documentation generation is configured in `typedoc.json`. Key settings:
 
-- **Entry Points**: Main SDK exports (agent, tool, plot, tools/*)
+- **Entry Points**: Main SDK exports (agent, tool, plot, tools/\*)
 - **Output**: `dist/docs/`
 - **Visibility**: Public APIs only (excludes private/protected/internal members)
 - **Theme**: Default TypeDoc theme optimized for GitHub Pages
@@ -128,11 +130,11 @@ When adding new public APIs:
 3. Use `@returns` tag for return values
 4. Use `@example` tags to show usage examples
 5. Use `@see` tags to link to related APIs
-6. Regenerate docs with `pnpm docs` to verify formatting
+6. Regenerate docs with `pnpm build:docs` to verify formatting
 
 ### JSDoc Example
 
-```typescript
+````typescript
 /**
  * Creates a new activity in the current priority.
  *
@@ -159,11 +161,11 @@ When adding new public APIs:
  * @see {@link ActivityType} for available activity types
  */
 abstract createActivity(activity: NewActivity): Promise<Activity>;
-```
+````
 
 ## Support
 
 For issues or questions about the documentation:
 
-- Open an issue at https://github.com/plotday/plot/issues
+- Open an issue at <https://github.com/plotday/plot/issues>
 - Tag it with the `documentation` label

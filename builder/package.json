@@ -1,7 +1,7 @@
 {
-  "name": "@plotday/sdk",
+  "name": "@plotday/agent",
   "version": "0.17.0",
-  "description": "SDK for building Plot agents - intelligent assistants that organize and prioritize your activities",
+  "description": "Plot Agent Builder - Build intelligent agents that organize and prioritize your activities",
   "packageManager": "pnpm@10.18.3",
   "type": "module",
   "main": "./dist/index.js",
@@ -74,9 +74,9 @@
       "types": "./dist/agents-guide.d.ts",
       "default": "./dist/agents-guide.js"
     },
-    "./sdk-docs": {
-      "types": "./dist/sdk-docs.d.ts",
-      "default": "./dist/sdk-docs.js"
+    "./builder-docs": {
+      "types": "./dist/builder-docs.d.ts",
+      "default": "./dist/builder-docs.js"
     },
     "./llm-docs": {
       "types": "./dist/llm-docs/index.d.ts",
@@ -148,10 +148,12 @@
   "scripts": {
     "lint": "tsc --noEmit",
     "prebuild": "tsx prebuild.ts",
-    "build": "tsx prebuild.ts && tsc --project tsconfig.build.json && tsc --project tsconfig.cli.json && node postbuild.js && pnpm docs",
-    "docs": "typedoc",
+    "build": "pnpm build:builder && pnpm build:cli && pnpm build:docs",
+    "build:builder": "tsx prebuild.ts && tsc --project tsconfig.build.json",
+    "build:cli": "tsc --project tsconfig.cli.json && node postbuild.js",
+    "build:docs": "typedoc",
     "docs:open": "open dist/docs/index.html || xdg-open dist/docs/index.html || start dist/docs/index.html",
-    "docs:clean": "rm -rf dist/docs",
+    "clean:docs": "rm -rf dist/docs",
     "clean": "rm -rf dist bin"
   },
   "dependencies": {
@@ -178,7 +180,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/plotday/plot.git",
-    "directory": "sdk"
+    "directory": "builder"
   },
   "homepage": "https://build.plot.day",
   "bugs": {
@@ -187,7 +189,7 @@
   "keywords": [
     "plot",
     "agent",
-    "sdk",
+    "builder",
     "automation",
     "productivity",
     "calendar",

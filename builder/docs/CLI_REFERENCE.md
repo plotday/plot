@@ -19,14 +19,14 @@ Complete reference for the Plot CLI (`plot` command).
 
 ## Installation
 
-The Plot CLI is included with the SDK:
+The Plot CLI is included with the Builder:
 
 ```bash
 # Run directly with npx
-npx @plotday/sdk [command]
+npx @plotday/agent [command]
 
 # Or install globally
-npm install -g @plotday/sdk
+npm install -g @plotday/agent
 plot [command]
 ```
 
@@ -54,12 +54,12 @@ This will:
 
 ## Agent Commands
 
-### plot agent create
+### plot create
 
 Scaffold a new agent project with TypeScript.
 
 ```bash
-plot agent create [options]
+plot create [options]
 ```
 
 **Options:**
@@ -71,7 +71,7 @@ plot agent create [options]
 **Example:**
 
 ```bash
-plot agent create --name my-calendar-agent --display-name "My Calendar Agent"
+plot create --name my-calendar-agent --display-name "My Calendar Agent"
 ```
 
 **Creates:**
@@ -87,12 +87,12 @@ my-calendar-agent/
 
 ---
 
-### plot agent generate
+### plot generate
 
 Generate TypeScript code from a natural language `plot-agent.md` specification.
 
 ```bash
-plot agent generate [options]
+plot generate [options]
 ```
 
 **Options:**
@@ -104,17 +104,17 @@ plot agent generate [options]
 **Example:**
 
 ```bash
-plot agent generate --input ./my-spec.md --output ./src
+plot generate --input ./my-spec.md --output ./src
 ```
 
 ---
 
-### plot agent lint
+### plot lint
 
 Check agent code for errors without deploying.
 
 ```bash
-plot agent lint [options]
+plot lint [options]
 ```
 
 **Options:**
@@ -124,17 +124,17 @@ plot agent lint [options]
 **Example:**
 
 ```bash
-plot agent lint --dir ./my-agent
+plot lint --dir ./my-agent
 ```
 
 ---
 
-### plot agent deploy
+### plot deploy
 
 Deploy an agent to Plot.
 
 ```bash
-plot agent deploy [options]
+plot deploy [options]
 ```
 
 **Options:**
@@ -155,37 +155,41 @@ plot agent deploy [options]
 
 ```bash
 # Deploy new agent
-plot agent deploy
+plot deploy
 
 # Update existing agent
-plot agent deploy --agent-id ag_1234567890
+plot deploy --agent-id ag_1234567890
 
 # Dry run
-plot agent deploy --dry-run
+plot deploy --dry-run
 ```
 
 ---
 
-### plot agent link
+### plot logs
 
-Link (activate) an agent to a priority.
+Stream real-time logs from an agent.
 
 ```bash
-plot agent link [options]
+plot logs [agent-id] [options]
 ```
 
 **Options:**
 
-- `--agent-id <id>` - Agent to link (required)
-- `--priority-id <id>` - Priority to link to (required)
+- `--id <agentId>` - Agent ID
+- `--dir <directory>` - Agent directory (default: current directory)
+- `--environment <env>` - Agent environment (personal, private, review) (default: personal)
+- `--deploy-token <token>` - Authentication token
 
 **Example:**
 
 ```bash
-plot agent link --agent-id ag_1234567890 --priority-id pr_0987654321
-```
+# Stream logs for an agent
+plot logs ag_1234567890
 
-After linking, the agent's `activate()` method will be called for that priority.
+# Stream logs using agent in current directory
+plot logs --dir ./my-agent
+```
 
 ---
 
@@ -307,7 +311,7 @@ plot agent deploy
 
 ```bash
 # 1. Create project
-plot agent create --name my-agent
+plot create --name my-agent
 
 # 2. Navigate to directory
 cd my-agent
@@ -331,7 +335,7 @@ npm run deploy
 npm run build
 
 # 3. Deploy update
-plot agent deploy --agent-id ag_1234567890
+plot deploy --agent-id ag_1234567890
 ```
 
 ### No-Code Agent Deployment
@@ -344,7 +348,7 @@ plot agent deploy --agent-id ag_1234567890
 plot login
 
 # 3. Deploy directly from spec
-plot agent deploy
+plot deploy
 ```
 
 ---
@@ -368,17 +372,17 @@ plot login
 npm run build
 
 # Or use lint command
-plot agent lint
+plot lint
 ```
 
 ### Deployment Failures
 
 ```bash
 # Try dry run first
-plot agent deploy --dry-run
+plot deploy --dry-run
 
 # Enable verbose logging
-plot agent deploy --verbose
+plot deploy --verbose
 ```
 
 ---

@@ -13,7 +13,7 @@
     "lint": "plot agent lint"
   },
   "dependencies": {
-    "@plotday/sdk": "workspace:^",
+    "@plotday/agent": "workspace:^",
     "typebox": "^1.0.35"
   },
   "devDependencies": {

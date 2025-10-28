@@ -4,16 +4,20 @@
   </a>
 </p>
 <h1 align="center">
-  Plot Agent SDK
+  Plot Agent Builder
 </h1>
 <p align="center">
-  The official SDK for building <a href="https://plot.day">Plot</a> agents -<br/>
+  The official Builder for building <a href="https://plot.day">Plot</a> agents -<br/>
   custom code that organizes and prioritizes all your messages, tasks, and apps.
 </p>
 
 <p align="center">
   <a href="https://build.plot.day"><strong>📚 Full Documentation →</strong></a>
 </p>
+
+---
+
+> **⚠️ DEPRECATED:** This package has been renamed to **@plotday/agent**. Please use [@plotday/agent](https://www.npmjs.com/package/@plotday/agent) instead.
 
 ---
 
@@ -42,8 +46,8 @@ I want an agent that:
 **2. Deploy:**
 
 ```bash
-npx @plotday/sdk login
-npx @plotday/sdk agent deploy
+npx @plotday/agent login
+npx @plotday/agent deploy
 ```
 
 That's it! [Learn more →](https://build.plot.day/GETTING_STARTED.html#no-code-agents)
@@ -55,14 +59,14 @@ Build agents with TypeScript for maximum flexibility.
 **1. Create a new agent:**
 
 ```bash
-npx @plotday/sdk agent create
+npx @plotday/agent create
 ```
 
 **2. Implement your agent:**
 
 ```typescript
-import { Agent, ActivityType, type Priority, type ToolBuilder } from "@plotday/sdk";
-import { Plot } from "@plotday/sdk/tools/plot";
+import { Agent, ActivityType, type Priority, type ToolBuilder } from "@plotday/agent";
+import { Plot } from "@plotday/agent/tools/plot";
 
 export default class MyAgent extends Agent<MyAgent> {
   build(build: ToolBuilder) {
@@ -146,10 +150,10 @@ await this.tools.plot.createActivity({
 plot login
 
 # Agent management
-plot agent create              # Create new agent project
-plot agent generate            # Generate code from plot-agent.md
-plot agent deploy              # Deploy to Plot
-plot agent link                # Activate for a priority
+plot create                    # Create new agent project
+plot generate                  # Generate code from plot-agent.md
+plot deploy                    # Deploy to Plot
+plot logs                      # Stream real-time agent logs
 
 # Priority management
 plot priority list             # List all priorities
@@ -228,11 +232,11 @@ export default class GitHubAgent extends Agent<GitHubAgent> {
 
 ## TypeScript Configuration
 
-Extend the SDK's base configuration in your `tsconfig.json`:
+Extend the Builder's base configuration in your `tsconfig.json`:
 
 ```json
 {
-  "extends": "@plotday/sdk/tsconfig.base.json",
+  "extends": "@plotday/agent/tsconfig.base.json",
   "include": ["src/*.ts"]
 }
 ```

@@ -1,5 +1,5 @@
-import type { Activity } from "@plotday/sdk";
-import { ActivityType } from "@plotday/sdk";
+import type { Activity } from "@plotday/agent";
+import { ActivityType } from "@plotday/agent";
 
 export type GoogleEvent = {
   id: string;

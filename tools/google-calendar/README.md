@@ -5,15 +5,15 @@ A Plot tool for syncing with Google Calendar.
 ## Installation
 
 ```bash
-npm install @plotday/tool-google-calendar @plotday/sdk
+npm install @plotday/tool-google-calendar @plotday/agent
 ```
 
 ## Usage
 
 ```typescript
-import { Agent, Tools } from "@plotday/sdk";
+import { Agent, Tools } from "@plotday/agent";
 import { GoogleCalendar } from "@plotday/tool-google-calendar";
-import { Integrations, AuthLevel, AuthProvider } from "@plotday/sdk/tools/integrations";
+import { Integrations, AuthLevel, AuthProvider } from "@plotday/agent/tools/integrations";
 
 export default class extends Agent {
   private googleCalendar: GoogleCalendar;

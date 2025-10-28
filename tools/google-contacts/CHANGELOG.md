@@ -9,14 +9,14 @@
 - BREAKING: Improved callback ergonomics and types to use functions instead of strings ([#51](https://github.com/plotday/plot/pull/51) [`02c6a1e`](https://github.com/plotday/plot/commit/02c6a1e834b9aa645f29191ed59ee5b66b70c32a))
 - Update for new callback function names ([#51](https://github.com/plotday/plot/pull/51) [`49b4dc9`](https://github.com/plotday/plot/commit/49b4dc94e08906a89799903610325c5fe7ebe10b))
 - Updated dependencies:
-- @plotday/sdk@0.17.0
+- @plotday/agent@0.17.0
 
 ## 0.1.10
 
 ### Changed
 
 - Updated dependencies:
-- @plotday/sdk@0.16.1
+- @plotday/agent@0.16.1
 
 ### Fixed
 
@@ -27,28 +27,28 @@
 ### Changed
 
 - Updated dependencies:
-- @plotday/sdk@0.16.0
+- @plotday/agent@0.16.0
 
 ## 0.1.8
 
 ### Changed
 
 - Updated dependencies:
-- @plotday/sdk@0.15.0
+- @plotday/agent@0.15.0
 
 ## 0.1.7
 
 ### Changed
 
 - Updated dependencies:
-- @plotday/sdk@0.14.0
+- @plotday/agent@0.14.0
 
 ## 0.1.6
 
 ### Changed
 
 - Updated dependencies:
-- @plotday/sdk@0.13.1
+- @plotday/agent@0.13.1
 
 ### Fixed
 
@@ -59,14 +59,14 @@
 ### Changed
 
 - Updated dependencies:
-- @plotday/sdk@0.13.0
+- @plotday/agent@0.13.0
 
 ## 0.1.4
 
 ### Changed
 
 - Updated dependencies:
-- @plotday/sdk@0.12.0
+- @plotday/agent@0.12.0
 
 ## 0.1.3
 
@@ -74,14 +74,14 @@
 
 - improved changelog format ([#9](https://github.com/plotday/plot/pull/9) [`ceecf33`](https://github.com/plotday/plot/commit/ceecf33))
 - Updated dependencies:
-- @plotday/sdk@0.11.1
+- @plotday/agent@0.11.1
 
 ## 0.1.2
 
 ### Changed
 
 - Updated dependencies [[`1d809ec`](https://github.com/plotday/plot/commit/1d809ec778244921cda072eb3744f36e28b3c1b4)]:
-  - @plotday/sdk@0.11.0
+  - @plotday/agent@0.11.0
 
 ## 0.1.1
 
@@ -92,4 +92,4 @@
 ### Changed
 
 - Updated dependencies [[`a00de4c`](https://github.com/plotday/plot/commit/a00de4c48e3ec1d6190235d1d38fd3e5d398d480), [`dce4f2f`](https://github.com/plotday/plot/commit/dce4f2ff3596bd9c73212c90a1cd49a7dac12f48)]:
-  - @plotday/sdk@0.10.0
+  - @plotday/agent@0.10.0

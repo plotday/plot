@@ -5,20 +5,20 @@ import {
   type NewActivity,
   Tool,
   type ToolBuilder,
-} from "@plotday/sdk";
+} from "@plotday/agent";
 import type {
   Calendar,
   CalendarAuth,
   CalendarTool,
-} from "@plotday/sdk/common/calendar";
-import { type Callback } from "@plotday/sdk/tools/callbacks";
+} from "@plotday/agent/common/calendar";
+import { type Callback } from "@plotday/agent/tools/callbacks";
 import {
   AuthLevel,
   AuthProvider,
   type Authorization,
   Integrations,
-} from "@plotday/sdk/tools/integrations";
-import { Network, type WebhookRequest } from "@plotday/sdk/tools/network";
+} from "@plotday/agent/tools/integrations";
+import { Network, type WebhookRequest } from "@plotday/agent/tools/network";
 
 // Import types from the existing outlook.ts file
 type CalendarConfig = {

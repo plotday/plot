@@ -1,4 +1,4 @@
-import type { ActivityLink, ITool } from "@plotday/sdk";
+import type { ActivityLink, ITool } from "@plotday/agent";
 
 export type Contact = {
   email: string;

@@ -1,4 +1,4 @@
-# @plotday/sdk
+# @plotday/agent
 
 ## 0.17.0
 
@@ -8,6 +8,12 @@
 
 ### Changed
 
+- **BREAKING: Package renamed from @plotday/sdk to @plotday/agent**
+  - Product name changed to "Plot Agent Builder"
+  - Directory renamed from `public/sdk/` to `public/builder/`
+  - Export `./sdk-docs` renamed to `./builder-docs`
+  - Function `getSDKDocumentation()` renamed to `getBuilderDocumentation()`
+  - See deprecation notice in @plotday/sdk@0.17.1
 - BREAKING: Creating and updating Activity using the Plot tool now requires requesting permission in options ([#51](https://github.com/plotday/plot/pull/51) [`b3242e4`](https://github.com/plotday/plot/commit/b3242e4adecea87011379ac2dd58712dc91729d7))
 - BREAKING: Agents and Tools now define a build() method to gain access to tools, which are then available via this.tools.
 - BREAKING: Renamed callCallback, run, cancel, and cancelAll Agent/Tool functions ([#51](https://github.com/plotday/plot/pull/51) [`49b4dc9`](https://github.com/plotday/plot/commit/49b4dc94e08906a89799903610325c5fe7ebe10b))

@@ -48,10 +48,8 @@ program
     return loginCommand(opts);
   });
 
-// Agent subcommand group
-const agent = program.command("agent").description("Manage Plot agents");
-
-agent
+// Top-level create command
+program
   .command("create")
   .description("Create a new Plot agent")
   .option("-d, --dir <directory>", "Directory to create the agent in")
@@ -59,19 +57,22 @@ agent
   .option("--display-name <displayName>", "Display name for the agent")
   .action(createCommand);
 
-agent
+// Top-level lint command
+program
   .command("lint")
   .description("Check for build or lint errors")
   .option("-d, --dir <directory>", "Agent directory to lint", process.cwd())
   .action(lintCommand);
 
-agent
+// Top-level build command
+program
   .command("build")
   .description("Bundle the agent without deploying")
   .option("-d, --dir <directory>", "Agent directory to build", process.cwd())
   .action(buildCommand);
 
-agent
+// Top-level generate command
+program
   .command("generate")
   .description("Generate agent code from a spec file")
   .option("-d, --dir <directory>", "Agent directory to generate in", process.cwd())
@@ -89,7 +90,8 @@ agent
     return generateCommand(opts);
   });
 
-agent
+// Top-level deploy command
+program
   .command("deploy")
   .description("Bundle and deploy the agent")
   .option("-d, --dir <directory>", "Agent directory to deploy", process.cwd())
@@ -117,7 +119,8 @@ agent
     return deployCommand(opts);
   });
 
-agent
+// Top-level logs command
+program
   .command("logs [agent-id]")
   .description("Stream real-time logs from an agent")
   .option("-d, --dir <directory>", "Agent directory", process.cwd())

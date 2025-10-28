@@ -6,14 +6,14 @@ import {
   Agent,
   type Priority,
   type ToolBuilder,
-} from "@plotday/sdk";
+} from "@plotday/agent";
 import type {
   Calendar,
   CalendarAuth,
   CalendarTool,
   SyncOptions,
-} from "@plotday/sdk/common/calendar";
-import { ActivityAccess, Plot } from "@plotday/sdk/tools/plot";
+} from "@plotday/agent/common/calendar";
+import { ActivityAccess, Plot } from "@plotday/agent/tools/plot";
 import { GoogleCalendar } from "@plotday/tool-google-calendar";
 import { OutlookCalendar } from "@plotday/tool-outlook-calendar";
 

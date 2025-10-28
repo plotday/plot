@@ -13,7 +13,7 @@
 
 ## Packages
 
-- **[@plotday/sdk](./sdk)** - Core SDK with types, Agent class, built-in tool interfaces, and CLI
+- **[@plotday/agent](./agent)** - Core SDK with types, Agent class, built-in tool interfaces, and CLI
 - **[tools/](./tools)** - Tools for building agents, including integrations with popular services
 - **[agents/](./agents)** - Full source code for several Plot agents
 
@@ -23,10 +23,10 @@ You'll need a [Plot account](https://plot.day) to deploy agents.
 
 ```bash
 # Create a new agent
-npx @plotday/sdk agent create
+npx @plotday/agent create
 
 # Connect your Plot account
-npx @plotday/sdk login
+npx @plotday/agent login
 
 # Deploy your agent
 cd my-agent
@@ -35,11 +35,11 @@ npm run deploy
 
 ## Documentation
 
-See the [SDK documentation](./sdk/README.md) for detailed guides and API reference.
+See the [SDK documentation](./agent/README.md) for detailed guides and API reference.
 
 ## Changelog
 
-See the [SDK changelog](./sdk/CHANGELOG.md) for version history and release notes.
+See the [SDK changelog](./agent/CHANGELOG.md) for version history and release notes.
 
 ## License
 

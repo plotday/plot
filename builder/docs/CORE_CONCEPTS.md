@@ -34,8 +34,8 @@ An agent is a class that:
 ### Agent Anatomy
 
 ```typescript
-import { Agent, type Priority, type ToolBuilder } from "@plotday/sdk";
-import { Plot } from "@plotday/sdk/tools/plot";
+import { Agent, type Priority, type ToolBuilder } from "@plotday/agent";
+import { Plot } from "@plotday/agent/tools/plot";
 
 export default class MyAgent extends Agent<MyAgent> {
   // 1. Declare dependencies
@@ -80,7 +80,7 @@ Tools provide functionality to agents. They encapsulate reusable capabilities an
 
 #### 1. Built-in Tools
 
-Core Plot functionality provided by the SDK:
+Core Plot functionality provided by the Builder:
 
 - **Plot** - Create and manage activities and priorities
 - **Store** - Persistent key-value storage
@@ -209,7 +209,7 @@ Activities are the core data type in Plot, representing tasks, events, and notes
 - **Event** - Scheduled occurrences with start/end times
 
 ```typescript
-import { ActivityType } from "@plotday/sdk";
+import { ActivityType } from "@plotday/agent";
 
 // Note
 await this.tools.plot.createActivity({
@@ -255,7 +255,7 @@ type Activity = {
 Links enable user interaction with activities:
 
 ```typescript
-import { ActivityLinkType } from "@plotday/sdk";
+import { ActivityLinkType } from "@plotday/agent";
 
 await this.tools.plot.createActivity({
   type: ActivityType.Task,

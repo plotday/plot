@@ -1,4 +1,4 @@
-Welcome to the Plot Agent SDK documentation! This comprehensive guide will help you build powerful agents that organize and prioritize activities in Plot.
+Welcome to the Plot Agent Builder documentation! This comprehensive guide will help you build powerful agents that organize and prioritize activities in Plot.
 
 ## What are Plot Agents?
 
@@ -74,7 +74,7 @@ Explore the complete API documentation using the navigation on the left:
 
 - [Plot Website](https://plot.day)
 - [GitHub Repository](https://github.com/plotday/plot)
-- [NPM Package](https://www.npmjs.com/package/@plotday/sdk)
+- [NPM Package](https://www.npmjs.com/package/@plotday/agent)
 - [Report Issues](https://github.com/plotday/plot/issues)
 
 ## Examples
@@ -89,8 +89,8 @@ import {
   Agent,
   type Priority,
   type ToolBuilder,
-} from "@plotday/sdk";
-import { Plot } from "@plotday/sdk/tools/plot";
+} from "@plotday/agent";
+import { Plot } from "@plotday/agent/tools/plot";
 
 export default class WelcomeAgent extends Agent<WelcomeAgent> {
   build(build: ToolBuilder) {
@@ -111,9 +111,9 @@ export default class WelcomeAgent extends Agent<WelcomeAgent> {
 ### Calendar Sync Agent
 
 ```typescript
-import { type Activity, Agent, type ToolBuilder } from "@plotday/sdk";
-import { Network } from "@plotday/sdk/tools/network";
-import { Plot } from "@plotday/sdk/tools/plot";
+import { type Activity, Agent, type ToolBuilder } from "@plotday/agent";
+import { Network } from "@plotday/agent/tools/network";
+import { Plot } from "@plotday/agent/tools/plot";
 
 export default class CalendarAgent extends Agent<CalendarAgent> {
   build(build: ToolBuilder) {

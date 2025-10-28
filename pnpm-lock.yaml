@@ -26,9 +26,9 @@ importers:
 
   agents/chat:
     dependencies:
-      '@plotday/sdk':
+      '@plotday/agent':
         specifier: workspace:^
-        version: link:../../sdk
+        version: link:../../builder
       typebox:
         specifier: ^1.0.35
         version: 1.0.35
@@ -39,9 +39,9 @@ importers:
 
   agents/events:
     dependencies:
-      '@plotday/sdk':
+      '@plotday/agent':
         specifier: workspace:^
-        version: link:../../sdk
+        version: link:../../builder
       '@plotday/tool-google-calendar':
         specifier: workspace:^
         version: link:../../tools/google-calendar
@@ -53,7 +53,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sdk:
+  builder:
     dependencies:
       chalk:
         specifier: ^4.1.2
@@ -92,9 +92,9 @@ importers:
 
   tools/google-calendar:
     dependencies:
-      '@plotday/sdk':
+      '@plotday/agent':
         specifier: workspace:^
-        version: link:../../sdk
+        version: link:../../builder
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -102,9 +102,9 @@ importers:
 
   tools/google-contacts:
     dependencies:
-      '@plotday/sdk':
+      '@plotday/agent':
         specifier: workspace:^
-        version: link:../../sdk
+        version: link:../../builder
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -112,9 +112,9 @@ importers:
 
   tools/outlook-calendar:
     dependencies:
-      '@plotday/sdk':
+      '@plotday/agent':
         specifier: workspace:^
-        version: link:../../sdk
+        version: link:../../builder
     devDependencies:
       typescript:
         specifier: ^5.9.3
