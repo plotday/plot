@@ -1,5 +1,15 @@
 # @plotday/agent
 
+## 0.18.0
+
+### Added
+
+- Docs for build.plot.day ([#53](https://github.com/plotday/plot/pull/53) [`262d280`](https://github.com/plotday/plot/commit/262d2808858fdcb7a69f92d22286c435bb3f479f))
+
+### Changed
+
+- Renamed @plotday/sdk to @plotday/agent. ([#55](https://github.com/plotday/plot/pull/55) [`8106ba0`](https://github.com/plotday/plot/commit/8106ba0597966909dd223b800adf4f63b9c4b278))
+
 ## 0.17.0
 
 ### Added
