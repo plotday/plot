@@ -1,5 +1,13 @@
 # @plotday/tool-google-calendar
 
+## 0.2.1
+
+### Changed
+
+- Updated to @plotday/agent ([#55](https://github.com/plotday/plot/pull/55) [`8106ba0`](https://github.com/plotday/plot/commit/8106ba0597966909dd223b800adf4f63b9c4b278))
+- Updated dependencies:
+- @plotday/agent@0.18.0
+
 ## 0.2.0
 
 ### Changed
