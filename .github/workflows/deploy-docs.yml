@@ -1,11 +1,11 @@
-name: Deploy SDK Docs
+name: Deploy Docs
 
 on:
   push:
     branches: [main]
     paths:
-      - "sdk/**"
-      - ".github/workflows/deploy-sdk-docs.yml"
+      - "builder/**"
+      - ".github/workflows/deploy-docs.yml"
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -22,7 +22,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: Build SDK Documentation
+    name: Build Documentation
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -38,11 +38,11 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Install SDK dependencies
-        run: pnpm install --frozen-lockfile --filter=./sdk
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter=./builder
 
-      - name: Build SDK
-        run: cd sdk && pnpm build
+      - name: Build
+        run: cd builder && pnpm build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -50,7 +50,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "sdk/dist/docs"
+          path: "builder/dist/docs"
 
   deploy:
     environment:
