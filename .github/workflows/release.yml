@@ -26,7 +26,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -37,8 +37,8 @@ jobs:
         with:
           version: pnpm version-packages
           publish: pnpm release
-          commit: 'chore: version packages'
-          title: 'chore: version packages'
+          commit: "chore: version packages"
+          title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -54,8 +54,8 @@ jobs:
             version=$(echo "$package" | jq -r '.version')
 
             # Determine package directory
-            if [[ "$name" == "@plotday/sdk" ]]; then
-              pkg_dir="sdk"
+            if [[ "$name" == "@plotday/agent" ]]; then
+              pkg_dir="builder"
             elif [[ "$name" == @plotday/tool-* ]]; then
               tool_name="${name#@plotday/tool-}"
               pkg_dir="tools/$tool_name"
@@ -64,7 +64,7 @@ jobs:
               continue
             fi
 
-            # Create tag name (e.g., sdk@0.9.1 or tool-google-calendar@0.1.0)
+            # Create tag name (e.g., agent@0.9.1 or tool-google-calendar@0.1.0)
             tag_name="${pkg_dir//\//@}@${version}"
 
             # Extract changelog entry for this version
