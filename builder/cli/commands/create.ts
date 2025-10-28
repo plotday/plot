@@ -103,7 +103,7 @@ export async function createCommand(options: CreateOptions) {
       deploy: "plot agent deploy",
     },
     dependencies: {
-      "@plotday/sdk": sdkVersion,
+      "@plotday/agent": sdkVersion,
     },
     devDependencies: {
       typescript: "^5.8.3",
@@ -117,7 +117,7 @@ export async function createCommand(options: CreateOptions) {
 
   // Create tsconfig.json
   const tsconfigJson = {
-    extends: "@plotday/sdk/tsconfig.base.json",
+    extends: "@plotday/agent/tsconfig.base.json",
     include: ["src/*.ts"],
   };
   fs.writeFileSync(
@@ -130,8 +130,8 @@ export async function createCommand(options: CreateOptions) {
   Agent,
   type Priority,
   type ToolBuilder,
-} from "@plotday/sdk";
-import { Plot } from "@plotday/sdk/tools/plot";
+} from "@plotday/agent";
+import { Plot } from "@plotday/agent/tools/plot";
 
 export default class MyAgent extends Agent<MyAgent> {
   build(build: ToolBuilder) {

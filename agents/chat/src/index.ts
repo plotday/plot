@@ -7,9 +7,9 @@ import {
   AuthorType,
   Tag,
   type ToolBuilder,
-} from "@plotday/sdk";
-import { AI, type AIMessage } from "@plotday/sdk/tools/ai";
-import { ActivityAccess, Plot } from "@plotday/sdk/tools/plot";
+} from "@plotday/agent";
+import { AI, type AIMessage } from "@plotday/agent/tools/ai";
+import { ActivityAccess, Plot } from "@plotday/agent/tools/plot";
 
 export default class ChatAgent extends Agent<ChatAgent> {
   build(build: ToolBuilder) {

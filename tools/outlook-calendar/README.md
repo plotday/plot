@@ -5,15 +5,15 @@ A Plot tool for syncing with Microsoft Outlook Calendar (Microsoft 365).
 ## Installation
 
 ```bash
-npm install @plotday/tool-outlook-calendar @plotday/sdk
+npm install @plotday/tool-outlook-calendar @plotday/agent
 ```
 
 ## Usage
 
 ```typescript
-import { Agent, Tools } from "@plotday/sdk";
+import { Agent, Tools } from "@plotday/agent";
 import { OutlookCalendar } from "@plotday/tool-outlook-calendar";
-import { Integrations, AuthLevel, AuthProvider } from "@plotday/sdk/tools/integrations";
+import { Integrations, AuthLevel, AuthProvider } from "@plotday/agent/tools/integrations";
 
 export default class extends Agent {
   private outlookCalendar: OutlookCalendar;

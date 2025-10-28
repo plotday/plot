@@ -14,7 +14,7 @@
     "logs": "plot agent logs"
   },
   "dependencies": {
-    "@plotday/sdk": "workspace:^",
+    "@plotday/agent": "workspace:^",
     "@plotday/tool-google-calendar": "workspace:^",
     "@plotday/tool-outlook-calendar": "workspace:^"
   },

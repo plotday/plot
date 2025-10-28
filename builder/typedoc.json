@@ -24,7 +24,7 @@
     "**/llm-docs/**",
     "**/cli/**",
     "src/agents-guide.ts",
-    "src/sdk-docs.ts",
+    "src/builder-docs.ts",
     "prebuild.ts",
     "postbuild.js"
   ],
@@ -45,7 +45,7 @@
   "name": "Build Plot Agents",
   "includeVersion": false,
   "disableSources": false,
-  "sourceLinkTemplate": "https://github.com/plotday/plot/blob/main/sdk/{path}#L{line}",
+  "sourceLinkTemplate": "https://github.com/plotday/plot/blob/main/builder/{path}#L{line}",
   "navigation": {
     "includeCategories": true,
     "includeGroups": true
@@ -87,7 +87,7 @@
   "navigationLinks": {
     "Plot": "https://plot.day",
     "GitHub": "https://github.com/plotday/plot",
-    "NPM": "https://www.npmjs.com/package/@plotday/sdk"
+    "NPM": "https://www.npmjs.com/package/@plotday/agent"
   },
   "titleLink": "/",
   "highlightLanguages": [

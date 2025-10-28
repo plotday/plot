@@ -24,7 +24,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@plotday/sdk": "workspace:^"
+    "@plotday/agent": "workspace:^"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

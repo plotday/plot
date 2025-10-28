@@ -45,10 +45,10 @@ You'll need a [Plot account](https://plot.day) to deploy agents.
 
 ```bash
 # Login to Plot
-npx @plotday/sdk login
+npx @plotday/agent login
 
 # Deploy directly from your spec
-npx @plotday/sdk agent deploy
+npx @plotday/agent deploy
 ```
 
 That's it! Your agent is now live in Plot.
@@ -59,11 +59,11 @@ If you want to review or customize the generated code before deploying:
 
 ```bash
 # Generate TypeScript code from your spec
-npx @plotday/sdk agent generate
+npx @plotday/agent generate
 
 # Review and edit the generated src/index.ts
 # Then deploy
-npx @plotday/sdk agent deploy
+npx @plotday/agent deploy
 ```
 
 The `generate` command creates a complete TypeScript agent that you can modify and extend.
@@ -79,11 +79,11 @@ Build agents with full control using TypeScript.
 Use the Plot CLI to scaffold a new agent:
 
 ```bash
-npx @plotday/sdk agent create
+npx @plotday/agent create
 # or
-yarn dlx @plotday/sdk agent create
+yarn dlx @plotday/agent create
 # or
-pnpm dlx @plotday/sdk agent create
+pnpm dlx @plotday/agent create
 ```
 
 You'll be prompted for:
@@ -113,8 +113,8 @@ import {
   Agent,
   type Priority,
   type ToolBuilder,
-} from "@plotday/sdk";
-import { Plot } from "@plotday/sdk/tools/plot";
+} from "@plotday/agent";
+import { Plot } from "@plotday/agent/tools/plot";
 
 export default class MyAgent extends Agent<MyAgent> {
   // Declare tool dependencies
@@ -191,11 +191,11 @@ Contains agent metadata:
 
 ### TypeScript Config (tsconfig.json)
 
-Extends the SDK's base configuration:
+Extends the Builder's base configuration:
 
 ```json
 {
-  "extends": "@plotday/sdk/tsconfig.base.json",
+  "extends": "@plotday/agent/tsconfig.base.json",
   "include": ["src/*.ts"]
 }
 ```

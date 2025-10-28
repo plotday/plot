@@ -291,7 +291,7 @@ export async function deployCommand(options: DeployOptions) {
           process.exit(1);
         } else {
           out.success("Validation passed - agent is ready to deploy");
-          out.info("Run without --dry-run to deploy", [`plot agent deploy`]);
+          out.info("Run without --dry-run to deploy", [`plot deploy`]);
         }
         return;
       }

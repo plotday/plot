@@ -259,7 +259,7 @@ export async function generateCommand(options: GenerateOptions) {
 
     // Write tsconfig.json
     const tsconfigContent = {
-      extends: "@plotday/sdk/tsconfig.base.json",
+      extends: "@plotday/agent/tsconfig.base.json",
       include: ["src/*.ts"],
     };
     writeFile(tsconfigPath, JSON.stringify(tsconfigContent, null, 2) + "\n");
@@ -310,16 +310,16 @@ export async function generateCommand(options: GenerateOptions) {
     // Detect package manager and install dependencies
     const packageManager = detectPackageManager();
 
-    // Update @plotday/sdk to latest and install packages
+    // Update @plotday/agent to latest and install packages
     try {
       out.progress("Updating SDK to latest version...");
 
       const updateCommand =
         packageManager === "npm"
-          ? "npm install @plotday/sdk@latest"
+          ? "npm install @plotday/agent@latest"
           : packageManager === "pnpm"
-          ? "pnpm add @plotday/sdk@latest"
-          : "yarn add @plotday/sdk@latest";
+          ? "pnpm add @plotday/agent@latest"
+          : "yarn add @plotday/agent@latest";
 
       execSync(updateCommand, { cwd: agentPath, stdio: "ignore" });
 
@@ -333,7 +333,7 @@ export async function generateCommand(options: GenerateOptions) {
       out.success("Dependencies installed.");
     } catch (error) {
       out.warning("Couldn't install dependencies", [
-        `Run '${packageManager} install @plotday/sdk@latest' in ${options.dir}`,
+        `Run '${packageManager} install @plotday/agent@latest' in ${options.dir}`,
         `Then run '${
           packageManager === "yarn" ? "yarn" : `${packageManager} install`
         }'`,

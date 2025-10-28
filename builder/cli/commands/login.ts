@@ -84,7 +84,7 @@ export async function loginCommand(options: LoginOptions) {
   const sessionId = crypto.randomUUID();
 
   // Construct login URL
-  const loginUrl = `${options.siteUrl}/sdk/login?session=${sessionId}`;
+  const loginUrl = `${options.siteUrl}/agent/login?session=${sessionId}`;
 
   // Open browser
   openBrowser(loginUrl);

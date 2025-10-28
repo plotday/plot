@@ -5,15 +5,15 @@ A Plot tool for syncing with Google Contacts.
 ## Installation
 
 ```bash
-npm install @plotday/tool-google-contacts @plotday/sdk
+npm install @plotday/tool-google-contacts @plotday/agent
 ```
 
 ## Usage
 
 ```typescript
-import { Agent, Tools } from "@plotday/sdk";
+import { Agent, Tools } from "@plotday/agent";
 import { GoogleContacts } from "@plotday/tool-google-contacts";
-import { Integrations, AuthLevel, AuthProvider } from "@plotday/sdk/tools/integrations";
+import { Integrations, AuthLevel, AuthProvider } from "@plotday/agent/tools/integrations";
 
 export default class extends Agent {
   private googleContacts: GoogleContacts;

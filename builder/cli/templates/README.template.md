@@ -75,7 +75,7 @@ Add external tool dependencies to `package.json`:
 ```json
 {
   "dependencies": {
-    "@plotday/sdk": "workspace:^",
+    "@plotday/agent": "workspace:^",
     "@plotday/tool-google-calendar": "workspace:^"
   }
 }
@@ -178,7 +178,7 @@ Test your agent locally before deploying:
 
 ## Resources
 
-- [Plot SDK Documentation](https://github.com/plotday/plot)
+- [Plot Agent Builder Documentation](https://github.com/plotday/plot)
 - [Agent Examples](https://github.com/plotday/plot/tree/main/libs/agent/examples)
 - [Tool Documentation](https://github.com/plotday/plot/tree/main/libs/agent/tools)
 

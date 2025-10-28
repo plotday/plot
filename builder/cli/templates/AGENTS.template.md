@@ -25,8 +25,8 @@ import {
   Agent,
   type Priority,
   type ToolBuilder,
-} from "@plotday/sdk";
-import { Plot } from "@plotday/sdk/tools/plot";
+} from "@plotday/agent";
+import { Plot } from "@plotday/agent/tools/plot";
 
 export default class MyAgent extends Agent<MyAgent> {
   build(build: ToolBuilder) {
@@ -67,19 +67,19 @@ IMPORTANT: HTTP access is restricted to URLs requested via `build(Network, { url
 
 ### Built-in Tools (Always Available)
 
-For complete API documentation of built-in tools including all methods, types, and detailed examples, see the TypeScript definitions in your installed package at `node_modules/@plotday/sdk/src/tools/*.ts`. Each tool file contains comprehensive JSDoc documentation.
+For complete API documentation of built-in tools including all methods, types, and detailed examples, see the TypeScript definitions in your installed package at `node_modules/@plotday/agent/src/tools/*.ts`. Each tool file contains comprehensive JSDoc documentation.
 
 **Quick reference - Available tools:**
 
-- `@plotday/sdk/tools/plot` - Core data layer (create/update activities, priorities, contacts)
-- `@plotday/sdk/tools/ai` - LLM integration (text generation, structured output, reasoning)
+- `@plotday/agent/tools/plot` - Core data layer (create/update activities, priorities, contacts)
+- `@plotday/agent/tools/ai` - LLM integration (text generation, structured output, reasoning)
   - Use ModelPreferences to specify `speed` (fast/balanced/capable) and `cost` (low/medium/high)
-- `@plotday/sdk/tools/store` - Persistent key-value storage (also via `this.set()`, `this.get()`)
-- `@plotday/sdk/tools/tasks` - Queue batched work (also via `this.run()`)
-- `@plotday/sdk/tools/callbacks` - Persistent function references (also via `this.callback()`)
-- `@plotday/sdk/tools/integrations` - OAuth2 authentication flows
-- `@plotday/sdk/tools/network` - HTTP access permissions and webhook management
-- `@plotday/sdk/tools/agents` - Manage other agents
+- `@plotday/agent/tools/store` - Persistent key-value storage (also via `this.set()`, `this.get()`)
+- `@plotday/agent/tools/tasks` - Queue batched work (also via `this.run()`)
+- `@plotday/agent/tools/callbacks` - Persistent function references (also via `this.callback()`)
+- `@plotday/agent/tools/integrations` - OAuth2 authentication flows
+- `@plotday/agent/tools/network` - HTTP access permissions and webhook management
+- `@plotday/agent/tools/agents` - Manage other agents
 
 **Critical**: Never use instance variables for state. They are lost after function execution. Always use Store methods.
 
@@ -90,7 +90,7 @@ Add tool dependencies to `package.json`:
 ```json
 {
   "dependencies": {
-    "@plotday/sdk": "workspace:^",
+    "@plotday/agent": "workspace:^",
     "@plotday/tool-google-calendar": "workspace:^"
   }
 }
@@ -163,7 +163,7 @@ async activity(activity: Activity) {
 Activity links enable user interaction:
 
 ```typescript
-import { type ActivityLink, ActivityLinkType } from "@plotday/sdk";
+import { type ActivityLink, ActivityLinkType } from "@plotday/agent";
 
 // URL link
 const urlLink: ActivityLink = {

@@ -4,7 +4,7 @@ This repository uses [Changesets](https://github.com/changesets/changesets) to m
 
 ## Package Versioning Strategy
 
-- **SDK** (`@plotday/sdk`): Independent versioning
+- **SDK** (`@plotday/agent`): Independent versioning
 - **Tools** (`@plotday/tool-*`): Independent versioning
 - **Agents** (`@plotday/agent-*`): Not published, excluded from releases
 
@@ -102,7 +102,7 @@ This tagging convention allows you to:
 
 Each GitHub release includes:
 
-- **Title**: Package name and version (e.g., `@plotday/sdk@0.9.1`)
+- **Title**: Package name and version (e.g., `@plotday/agent@0.9.1`)
 - **Release Notes**: Automatically extracted from the package's CHANGELOG.md for that version
 - **Assets**: None (packages are distributed via npm)
 
@@ -121,7 +121,7 @@ If you need to create a GitHub release manually after publishing:
 
 ```bash
 # For SDK
-gh release create sdk@0.9.1 --title "@plotday/sdk@0.9.1" --notes "Release notes here"
+gh release create sdk@0.9.1 --title "@plotday/agent@0.9.1" --notes "Release notes here"
 
 # For a tool
 gh release create tool-google-calendar@0.1.0 --title "@plotday/tool-google-calendar@0.1.0" --notes "Release notes here"
@@ -198,7 +198,7 @@ git push
 pnpm release
 
 # 5. (Optional) Create GitHub release manually
-gh release create sdk@0.9.1 --title "@plotday/sdk@0.9.1" --notes "Release notes"
+gh release create sdk@0.9.1 --title "@plotday/agent@0.9.1" --notes "Release notes"
 ```
 
 ⚠️ This should only be done in emergencies. The automated workflow is preferred.
