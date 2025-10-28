@@ -45,7 +45,7 @@ npx @plotday/agent login
 npx @plotday/agent deploy
 ```
 
-That's it! [Learn more →](https://build.plot.day/GETTING_STARTED.html#no-code-agents)
+That's it! [Learn more →](https://build.plot.day/documents/Getting_Started.html#no-code-agents)
 
 ### Developer Quick Start
 
@@ -91,7 +91,7 @@ npm run plot login
 npm run deploy
 ```
 
-[Complete guide →](https://build.plot.day/GETTING_STARTED.html)
+[Complete guide →](https://build.plot.day/documents/Getting_Started.html)
 
 ---
 
@@ -122,7 +122,7 @@ Tools provide capabilities to agents. Use built-in tools or create your own.
 - **Tasks** - Background task execution
 - **Callbacks** - Persistent function references
 
-[View all tools →](https://build.plot.day/TOOLS_GUIDE.html)
+[View all tools →](https://build.plot.day/documents/Built-in_Tools.html)
 
 ### Activities
 
@@ -142,7 +142,7 @@ await this.tools.plot.createActivity({
 });
 ```
 
-[Learn more →](https://build.plot.day/CORE_CONCEPTS.html)
+[Learn more →](https://build.plot.day/documents/Core_Concepts.html)
 
 ---
 
@@ -163,7 +163,7 @@ plot priority list             # List all priorities
 plot priority create           # Create new priority
 ```
 
-[Complete CLI reference →](https://build.plot.day/CLI_REFERENCE.html)
+[Complete CLI reference →](https://build.plot.day/documents/CLI_Reference.html)
 
 ---
 
@@ -173,16 +173,16 @@ plot priority create           # Create new priority
 
 ### Guides
 
-- [Getting Started](https://build.plot.day/GETTING_STARTED.html) - Complete walkthrough
-- [Core Concepts](https://build.plot.day/CORE_CONCEPTS.html) - Agents, tools, and architecture
-- [Built-in Tools](https://build.plot.day/TOOLS_GUIDE.html) - Plot, Store, AI, and more
-- [Building Custom Tools](https://build.plot.day/BUILDING_TOOLS.html) - Create reusable tools
-- [Runtime Environment](https://build.plot.day/RUNTIME.html) - Execution constraints and optimization
-- [Advanced Topics](https://build.plot.day/ADVANCED.html) - Complex patterns and techniques
+- [Getting Started](https://build.plot.day/documents/Getting_Started.html) - Complete walkthrough
+- [Core Concepts](https://build.plot.day/documents/Core_Concepts.html) - Agents, tools, and architecture
+- [Built-in Tools](https://build.plot.day/documents/Built-in_Tools.html) - Plot, Store, AI, and more
+- [Building Custom Tools](https://build.plot.day/documents/Building_Custom_Tools.html) - Create reusable tools
+- [Runtime Environment](https://build.plot.day/documents/Runtime_Environment.html) - Execution constraints and optimization
+- [Advanced Topics](https://build.plot.day/documents/Advanced.html) - Complex patterns and techniques
 
 ### Reference
 
-- [CLI Reference](https://build.plot.day/CLI_REFERENCE.html) - Complete command documentation
+- [CLI Reference](https://build.plot.day/documents/CLI_Reference.html) - Complete command documentation
 - [API Reference](https://build.plot.day) - TypeDoc-generated API docs
 
 ---
@@ -231,7 +231,7 @@ export default class GitHubAgent extends Agent<GitHubAgent> {
 }
 ```
 
-[More examples →](https://build.plot.day/GETTING_STARTED.html)
+[More examples →](https://build.plot.day/documents/Getting_Started.html)
 
 ---
 
