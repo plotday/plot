@@ -1,5 +1,11 @@
 # @plotday/agent
 
+## 0.18.2
+
+### Fixed
+
+- README links ([#59](https://github.com/plotday/plot/pull/59) [`a1542bc`](https://github.com/plotday/plot/commit/a1542bc96a0d158b6080d5e44fc5eb1b9d87781e))
+
 ## 0.18.1
 
 ### Fixed
