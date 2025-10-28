@@ -118,7 +118,8 @@ export abstract class Agents extends ITool {
    * // source.files: { "index.ts": "export default class..." }
    * ```
    */
-  abstract generate(_spec: string): Promise<AgentSource>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract generate(spec: string): Promise<AgentSource>;
 
   /**
    * Deploys an agent programmatically.
@@ -171,8 +172,9 @@ export abstract class Agents extends ITool {
    * }
    * ```
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract deploy(
-    _options: {
+    options: {
       agentId: string;
       environment?: "personal" | "private" | "review";
       name?: string;
@@ -221,5 +223,6 @@ export abstract class Agents extends ITool {
    * }
    * ```
    */
-  abstract watchLogs(_agentId: string, _callback: Callback): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract watchLogs(agentId: string, callback: Callback): Promise<void>;
 }

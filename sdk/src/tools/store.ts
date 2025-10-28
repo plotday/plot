@@ -55,7 +55,8 @@ export abstract class Store extends ITool {
    * @param key - The storage key to retrieve
    * @returns Promise resolving to the stored value or null
    */
-  abstract get<T>(_key: string): Promise<T | null>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract get<T>(key: string): Promise<T | null>;
 
   /**
    * Stores a value in persistent storage.
@@ -68,7 +69,8 @@ export abstract class Store extends ITool {
    * @param value - The value to store (must be JSON-serializable)
    * @returns Promise that resolves when the value is stored
    */
-  abstract set<T>(_key: string, _value: T): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract set<T>(key: string, value: T): Promise<void>;
 
   /**
    * Removes a specific key from storage.
@@ -79,7 +81,8 @@ export abstract class Store extends ITool {
    * @param key - The storage key to remove
    * @returns Promise that resolves when the key is removed
    */
-  abstract clear(_key: string): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract clear(key: string): Promise<void>;
 
   /**
    * Removes all keys from this storage instance.

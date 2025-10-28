@@ -68,9 +68,10 @@ export abstract class Tasks extends ITool {
    * @param options.runAt - If provided, schedules execution at this time; otherwise runs immediately
    * @returns Promise resolving to a cancellation token (only for scheduled executions)
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract runTask(
-    _callback: Callback,
-    _options?: { runAt?: Date }
+    callback: Callback,
+    options?: { runAt?: Date }
   ): Promise<string | void>;
 
   /**
@@ -82,7 +83,8 @@ export abstract class Tasks extends ITool {
    * @param token - The cancellation token returned by runTask() with runAt option
    * @returns Promise that resolves when the cancellation is processed
    */
-  abstract cancelTask(_token: string): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract cancelTask(token: string): Promise<void>;
 
   /**
    * Cancels all scheduled executions for this tool/agent.

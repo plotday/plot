@@ -63,9 +63,10 @@ export abstract class Callbacks extends ITool {
    * @param extraArgs - Additional arguments to pass to the function (must be serializable)
    * @returns Promise resolving to a persistent callback token
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract create(
-    _fn: Function,
-    ..._extraArgs: any[]
+    fn: Function,
+    ...extraArgs: any[]
   ): Promise<Callback>;
 
   /**
@@ -76,9 +77,10 @@ export abstract class Callbacks extends ITool {
    * @param extraArgs - Additional arguments to pass to the function (must be serializable, validated at runtime)
    * @returns Promise resolving to a persistent callback token
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createFromParent(
-    _fn: Function,
-    ..._extraArgs: any[]
+    fn: Function,
+    ...extraArgs: any[]
   ): Promise<Callback>;
 
   /**
@@ -87,7 +89,8 @@ export abstract class Callbacks extends ITool {
    * @param callback - The callback token to delete
    * @returns Promise that resolves when the callback is deleted
    */
-  abstract delete(_callback: Callback): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract delete(callback: Callback): Promise<void>;
 
   /**
    * Deletes all callbacks for the tool's parent.
@@ -103,5 +106,6 @@ export abstract class Callbacks extends ITool {
    * @param args - Optional arguments to pass to the callback function
    * @returns Promise resolving to the callback result
    */
-  abstract run<T = unknown>(_callback: Callback, ..._args: any[]): Promise<T>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract run<T = unknown>(callback: Callback, ...args: any[]): Promise<T>;
 }

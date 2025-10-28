@@ -148,20 +148,25 @@
   "scripts": {
     "lint": "tsc --noEmit",
     "prebuild": "tsx prebuild.ts",
-    "build": "tsx prebuild.ts && tsc --project tsconfig.build.json && tsc --project tsconfig.cli.json && node postbuild.js",
+    "build": "tsx prebuild.ts && tsc --project tsconfig.build.json && tsc --project tsconfig.cli.json && node postbuild.js && pnpm docs",
+    "docs": "typedoc",
+    "docs:open": "open dist/docs/index.html || xdg-open dist/docs/index.html || start dist/docs/index.html",
+    "docs:clean": "rm -rf dist/docs",
     "clean": "rm -rf dist bin"
   },
   "dependencies": {
-    "typebox": "^1.0.35",
     "chalk": "^4.1.2",
     "commander": "^12.0.0",
     "dotenv": "^16.4.5",
     "esbuild": "^0.24.0",
-    "prompts": "^2.4.2"
+    "prompts": "^2.4.2",
+    "typebox": "^1.0.35"
   },
   "devDependencies": {
     "@types/prompts": "^2.4.9",
     "tsx": "^4.19.2",
+    "typedoc": "^0.28.14",
+    "typedoc-plugin-missing-exports": "^4.1.2",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
@@ -175,7 +180,7 @@
     "url": "https://github.com/plotday/plot.git",
     "directory": "sdk"
   },
-  "homepage": "https://plot.day",
+  "homepage": "https://build.plot.day",
   "bugs": {
     "url": "https://github.com/plotday/plot/issues"
   },
