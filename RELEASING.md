@@ -1,10 +1,10 @@
 # Releasing Packages
 
-This repository uses [Changesets](https://github.com/changesets/changesets) to manage versioning and publishing of packages. This guide explains how to create releases for SDK and tools packages.
+This repository uses [Changesets](https://github.com/changesets/changesets) to manage versioning and publishing of packages. This guide explains how to create releases for builder and tools packages.
 
 ## Package Versioning Strategy
 
-- **SDK** (`@plotday/agent`): Independent versioning
+- **Agent Builder** (`@plotday/agent`): Independent versioning
 - **Tools** (`@plotday/tool-*`): Independent versioning
 - **Agents** (`@plotday/agent-*`): Not published, excluded from releases
 
@@ -12,7 +12,7 @@ Each package maintains its own version and can be released independently.
 
 ## How to Add a Changeset
 
-When you make changes to the SDK or any tools package, you need to add a changeset before merging your PR.
+When you make changes to the builder or any tools package, you need to add a changeset before merging your PR.
 
 ### 1. Create a Changeset
 
@@ -25,7 +25,7 @@ This will prompt you with:
 1. **Which packages would you like to include?**
 
    - Select the packages you've modified (use space to select, enter to confirm)
-   - Only SDK and tools packages can be selected (agents are excluded)
+   - Only builder and tools packages can be selected (agents are excluded)
 
 2. **What kind of change is this?**
 
@@ -53,14 +53,14 @@ The changeset file will be created in `.changeset/` with a random name like `.ch
 
 1. **Developer makes changes**
 
-   - Make your changes to SDK or tools packages
+   - Make your changes to builder or tools packages
    - Run `pnpm changeset` to add a changeset
    - Commit the changeset file along with your changes
    - Open a PR to `main`
 
 2. **PR validation**
 
-   - GitHub Actions will check if SDK/tools were modified
+   - GitHub Actions will check if builder/tools were modified
    - If modified, it ensures a changeset file exists
    - PR cannot be merged without a changeset (or admin override)
 
@@ -79,7 +79,7 @@ The changeset file will be created in `.changeset/` with a random name like `.ch
      - Builds all packages
      - Publishes changed packages to npm
      - Creates GitHub releases with changelogs
-     - Tags each release (e.g., `sdk@0.9.1`, `tool-google-calendar@0.1.0`)
+     - Tags each release (e.g., `agent@0.9.1`, `tool-google-calendar@0.1.0`)
 
 ## GitHub Releases
 
@@ -89,7 +89,7 @@ When packages are published, GitHub releases are automatically created with the 
 
 Each package gets its own tag based on its directory structure:
 
-- **SDK**: `sdk@0.9.1`
+- **Agent Builder**: `agent@0.9.1`
 - **Tools**: `tool-google-calendar@0.1.0`, `tool-outlook-calendar@0.1.0`, etc.
 
 This tagging convention allows you to:
@@ -112,7 +112,7 @@ View all releases at: `https://github.com/plotday/plot/releases`
 
 Or filter by package:
 
-- SDK releases: Search for tags starting with `sdk@`
+- Builder releases: Search for tags starting with `agent@`
 - Tool releases: Search for tags starting with `tool-`
 
 ### Manual GitHub Release
@@ -120,8 +120,8 @@ Or filter by package:
 If you need to create a GitHub release manually after publishing:
 
 ```bash
-# For SDK
-gh release create sdk@0.9.1 --title "@plotday/agent@0.9.1" --notes "Release notes here"
+# For Agent Builder
+gh release create agent@0.9.1 --title "@plotday/agent@0.9.1" --notes "Release notes here"
 
 # For a tool
 gh release create tool-google-calendar@0.1.0 --title "@plotday/tool-google-calendar@0.1.0" --notes "Release notes here"
@@ -198,7 +198,7 @@ git push
 pnpm release
 
 # 5. (Optional) Create GitHub release manually
-gh release create sdk@0.9.1 --title "@plotday/agent@0.9.1" --notes "Release notes"
+gh release create agent@0.9.1 --title "@plotday/agent@0.9.1" --notes "Release notes"
 ```
 
 ⚠️ This should only be done in emergencies. The automated workflow is preferred.
@@ -240,4 +240,4 @@ gh release create sdk@0.9.1 --title "@plotday/agent@0.9.1" --notes "Release note
 
 - [Changesets documentation](https://github.com/changesets/changesets)
 - [Semantic Versioning (semver)](https://semver.org/)
-- [Plot SDK repository](https://github.com/plotday/plot)
+- [Plot repository](https://github.com/plotday/plot)

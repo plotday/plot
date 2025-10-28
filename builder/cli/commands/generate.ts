@@ -312,7 +312,7 @@ export async function generateCommand(options: GenerateOptions) {
 
     // Update @plotday/agent to latest and install packages
     try {
-      out.progress("Updating SDK to latest version...");
+      out.progress("Updating Agent Builder to latest version...");
 
       const updateCommand =
         packageManager === "npm"

@@ -42,7 +42,7 @@
     "docs/RUNTIME.md",
     "docs/ADVANCED.md"
   ],
-  "name": "Build Plot Agents",
+  "name": "Plot Agent Builder",
   "includeVersion": false,
   "disableSources": false,
   "sourceLinkTemplate": "https://github.com/plotday/plot/blob/main/builder/{path}#L{line}",

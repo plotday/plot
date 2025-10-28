@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "Plot SDK",
+  "display": "Plot Agent Builder",
   "compilerOptions": {
     "target": "ESNext",
     "lib": ["ES2021", "ES2022.error", "WebWorker"],

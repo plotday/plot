@@ -85,7 +85,9 @@ export async function createCommand(options: CreateOptions) {
     const sdkPackage = JSON.parse(fs.readFileSync(sdkPackagePath, "utf-8"));
     sdkVersion = `^${sdkPackage.version}`;
   } catch (error) {
-    console.warn("Warning: Could not read SDK version, using fallback");
+    console.warn(
+      "Warning: Could not read Agent Builder version, using fallback"
+    );
   }
 
   // Generate a unique agent ID

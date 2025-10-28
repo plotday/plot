@@ -4,18 +4,18 @@
   </a>
 </p>
 <h1 align="center">
-  Plot Agent SDK
+  Plot Agent Builder
 </h1>
 <p align="center">
-  The official SDK for building <a href="https://plot.day">Plot</a> agents -<br/>
+  The official package for building <a href="https://plot.day">Plot</a> agents -<br/>
   custom code that organizes and prioritizes all your messages, tasks, and apps.
 </p>
 
 ## Packages
 
-- **[@plotday/agent](./agent)** - Core SDK with types, Agent class, built-in tool interfaces, and CLI
-- **[tools/](./tools)** - Tools for building agents, including integrations with popular services
-- **[agents/](./agents)** - Full source code for several Plot agents
+- **[@plotday/agent](./agent)** - Core agent builder package with the `plot` command, agent and tool SDK, and built-in tools
+- **[tools/](./tools)** - Additional tools for building agents, including integrations with popular services
+- **[agents/](./agents)** - Full source code for several agents
 
 ## Quick Start
 
@@ -35,11 +35,11 @@ npm run deploy
 
 ## Documentation
 
-See the [SDK documentation](./agent/README.md) for detailed guides and API reference.
+See the [Plot Agent Builder documentation](https://build.plot.day) for detailed guides and API reference.
 
 ## Changelog
 
-See the [SDK changelog](./agent/CHANGELOG.md) for version history and release notes.
+See the [builder changelog](./agent/CHANGELOG.md) for version history and release notes.
 
 ## License
 

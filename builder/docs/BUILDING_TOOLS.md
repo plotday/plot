@@ -37,7 +37,7 @@ Build custom tools when you need to:
 | ------------------------------ | ------------------------------------ |
 | Plot, Store, AI, Network, etc. | Your integrations and utilities      |
 | Access to Plot internals       | Built on top of built-in tools       |
-| Provided by SDK                | Created by you or installed from npm |
+| Provided by Agent Builder      | Created by you or installed from npm |
 | Always available               | Declared as dependencies             |
 
 ---

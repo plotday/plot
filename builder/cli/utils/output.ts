@@ -121,8 +121,7 @@ export function blank() {
  */
 export function cliHeader(version: string) {
   const title = "Plot";
-  const subtitle = `SDK v${version}`;
-  // const title = `Plot SDK ${colors.dim(`v${version}`)}`;
+  const subtitle = `Agent Builder v${version}`;
   const underline = colors.brand(
     "─".repeat(title.length + subtitle.length + 1)
   );

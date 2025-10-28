@@ -4,7 +4,7 @@ This directory contains the TypeDoc-generated API documentation for the Plot Age
 
 ## Published Documentation
 
-The SDK documentation is automatically published to GitHub Pages whenever changes are pushed to the main branch:
+The Agent Builder documentation is automatically published to GitHub Pages whenever changes are pushed to the main branch:
 
 **Live Documentation**: [https://plotday.github.io/plot/](https://plotday.github.io/plot/)
 
@@ -79,7 +79,7 @@ When changes to the Builder are pushed to the main branch, a GitHub Action autom
 - Builds the Builder and generates the documentation
 - Deploys it to GitHub Pages at [https://plotday.github.io/plot/](https://plotday.github.io/plot/)
 
-**Workflow Location**: `.github/workflows/deploy-sdk-docs.yml`
+**Workflow Location**: `.github/workflows/deploy-docs.yml`
 
 **Trigger**: Automatic on push to `main` when files in `public/agent/**` change
 
@@ -99,13 +99,13 @@ If you need to enable or configure GitHub Pages for this repository:
 2. Under "Source", select: **GitHub Actions**
 3. The workflow will automatically handle deployment
 
-The `deploy-sdk-docs.yml` workflow includes all necessary permissions and configurations for GitHub Pages deployment.
+The `deploy-docs.yml` workflow includes all necessary permissions and configurations for GitHub Pages deployment.
 
 ## Configuration
 
 The documentation generation is configured in `typedoc.json`. Key settings:
 
-- **Entry Points**: Main SDK exports (agent, tool, plot, tools/\*)
+- **Entry Points**: Main Agent Builder exports (agent, tool, plot, tools/\*)
 - **Output**: `dist/docs/`
 - **Visibility**: Public APIs only (excludes private/protected/internal members)
 - **Theme**: Default TypeDoc theme optimized for GitHub Pages
