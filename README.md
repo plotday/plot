@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://linear.app" target="_blank" rel="noopener noreferrer">
+  <a href="https://plot.day" target="_blank" rel="noopener noreferrer">
     <img width="48" height="48" alt="favicon" src="https://github.com/user-attachments/assets/f38501fd-bb37-4671-a0bc-fd35fa25360d" alt="Plot logo" />
   </a>
 </p>
@@ -13,7 +13,7 @@
 
 ## Packages
 
-- **[@plotday/agent](./agent)** - Core agent builder package with the `plot` command, agent and tool SDK, and built-in tools
+- **[@plotday/agent](./builder)** - Core agent builder package with the `plot` command, agent and tool SDK, and built-in tools
 - **[tools/](./tools)** - Additional tools for building agents, including integrations with popular services
 - **[agents/](./agents)** - Full source code for several agents
 
@@ -35,11 +35,11 @@ npm run deploy
 
 ## Documentation
 
-See the [Plot Agent Builder documentation](https://build.plot.day) for detailed guides and API reference.
+See the [Agent Builder documentation](https://build.plot.day) for detailed guides and API reference.
 
 ## Changelog
 
-See the [builder changelog](./agent/CHANGELOG.md) for version history and release notes.
+See the [Agent Builder changelog](./builder/CHANGELOG.md) for version history and release notes.
 
 ## License
 

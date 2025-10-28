@@ -15,12 +15,6 @@
   <a href="https://build.plot.day"><strong>📚 Full Documentation →</strong></a>
 </p>
 
----
-
-> **⚠️ DEPRECATED:** This package has been renamed to **@plotday/agent**. Please use [@plotday/agent](https://www.npmjs.com/package/@plotday/agent) instead.
-
----
-
 ## Quick Start
 
 Choose your path:
@@ -38,6 +32,7 @@ Create agents using natural language - no programming required!
 # My Calendar Agent
 
 I want an agent that:
+
 - Syncs my Google Calendar events into Plot
 - Creates tasks for upcoming meetings
 - Sends reminders 10 minutes before meetings
@@ -65,7 +60,12 @@ npx @plotday/agent create
 **2. Implement your agent:**
 
 ```typescript
-import { Agent, ActivityType, type Priority, type ToolBuilder } from "@plotday/agent";
+import {
+  ActivityType,
+  Agent,
+  type Priority,
+  type ToolBuilder,
+} from "@plotday/agent";
 import { Plot } from "@plotday/agent/tools/plot";
 
 export default class MyAgent extends Agent<MyAgent> {
@@ -113,6 +113,7 @@ async upgrade()            // When new version is deployed
 Tools provide capabilities to agents. Use built-in tools or create your own.
 
 **Built-in Tools:**
+
 - **Plot** - Manage activities and priorities
 - **Store** - Persistent key-value storage
 - **AI** - Language models with structured output
@@ -131,11 +132,13 @@ The core data type representing tasks, events, and notes.
 await this.tools.plot.createActivity({
   type: ActivityType.Task,
   title: "Review pull request",
-  links: [{
-    type: ActivityLinkType.external,
-    title: "View PR",
-    url: "https://github.com/org/repo/pull/123"
-  }]
+  links: [
+    {
+      type: ActivityLinkType.external,
+      title: "View PR",
+      url: "https://github.com/org/repo/pull/123",
+    },
+  ],
 });
 ```
 
@@ -169,6 +172,7 @@ plot priority create           # Create new priority
 **[📚 Full Documentation at build.plot.day](https://build.plot.day)**
 
 ### Guides
+
 - [Getting Started](https://build.plot.day/GETTING_STARTED.html) - Complete walkthrough
 - [Core Concepts](https://build.plot.day/CORE_CONCEPTS.html) - Agents, tools, and architecture
 - [Built-in Tools](https://build.plot.day/TOOLS_GUIDE.html) - Plot, Store, AI, and more
@@ -177,6 +181,7 @@ plot priority create           # Create new priority
 - [Advanced Topics](https://build.plot.day/ADVANCED.html) - Complex patterns and techniques
 
 ### Reference
+
 - [CLI Reference](https://build.plot.day/CLI_REFERENCE.html) - Complete command documentation
 - [API Reference](https://build.plot.day) - TypeDoc-generated API docs
 
@@ -195,7 +200,7 @@ export default class WelcomeAgent extends Agent<WelcomeAgent> {
   async activate(priority: Pick<Priority, "id">) {
     await this.tools.plot.createActivity({
       type: ActivityType.Note,
-      title: "Welcome to Plot! 👋"
+      title: "Welcome to Plot! 👋",
     });
   }
 }
@@ -209,8 +214,8 @@ export default class GitHubAgent extends Agent<GitHubAgent> {
     return {
       plot: build(Plot),
       network: build(Network, {
-        urls: ['https://api.github.com/*']
-      })
+        urls: ["https://api.github.com/*"],
+      }),
     };
   }
 
