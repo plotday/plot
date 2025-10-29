@@ -90,6 +90,7 @@
     "NPM": "https://www.npmjs.com/package/@plotday/agent"
   },
   "titleLink": "/",
+  "favicon": "assets/favicon.svg",
   "highlightLanguages": [
     "bash",
     "json",
