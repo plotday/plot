@@ -18,9 +18,15 @@ export default class ChatAgent extends Agent<ChatAgent> {
       plot: build(Plot, {
         activity: {
           access: ActivityAccess.Respond,
-          intents: {
-            "Respond to general questions and requests": this.responsd,
-          },
+          intents: [{
+            description: "Respond to general questions and requests",
+            examples: [
+              "What's the weather like?",
+              "Can you help me plan my day?",
+              "Write me a summary of this article"
+            ],
+            handler: this.responsd,
+          }],
         },
       }),
     };

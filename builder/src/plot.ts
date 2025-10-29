@@ -319,8 +319,9 @@ export type Activity = {
  */
 export type NewActivity = Pick<Activity, "type"> &
   Partial<
-    Omit<Activity, "id" | "author" | "type" | "parent"> & {
+    Omit<Activity, "id" | "author" | "type" | "parent" | "priority"> & {
       parent?: Pick<Activity, "id"> | null;
+      priority?: Pick<Priority, "id">;
     }
   >;
 

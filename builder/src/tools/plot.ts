@@ -46,6 +46,19 @@ export enum ContactAccess {
 }
 
 /**
+ * Intent handler for activity mentions.
+ * Defines how the agent should respond when mentioned in an activity.
+ */
+export type ActivityIntentHandler = {
+  /** Human-readable description of what this intent handles */
+  description: string;
+  /** Example phrases or activity content that would match this intent */
+  examples: string[];
+  /** The function to call when this intent is matched */
+  handler: (activity: Activity) => Promise<void>;
+};
+
+/**
  * Built-in tool for interacting with the core Plot data layer.
  *
  * The Plot tool provides agents with the ability to create and manage activities,
@@ -107,13 +120,18 @@ export abstract class Plot extends ITool {
        *
        * @example
        * ```typescript
-       * intents: {
-       *   "Schedule or reschedule calendar events": this.onSchedulingRequest,
-       *   "Find available meeting times": this.onAvailabilityRequest
-       * }
+       * intents: [{
+       *   description: "Schedule or reschedule calendar events",
+       *   examples: ["Schedule a meeting tomorrow at 2pm", "Move my 3pm meeting to 4pm"],
+       *   handler: this.onSchedulingRequest
+       * }, {
+       *   description: "Find available meeting times",
+       *   examples: ["When am I free this week?", "Find time for a 1 hour meeting"],
+       *   handler: this.onAvailabilityRequest
+       * }]
        * ```
        */
-      intents?: Record<string, (activity: Activity) => Promise<void>>;
+      intents?: ActivityIntentHandler[];
     };
     priority?: {
       access?: PriorityAccess;
