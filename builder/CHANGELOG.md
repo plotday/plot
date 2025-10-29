@@ -1,5 +1,15 @@
 # @plotday/agent
 
+## 0.18.3
+
+### Changed
+
+- Update several references to the previous agent subcommand group ([`02936a6`](https://github.com/plotday/plot/commit/02936a671496c6124a31c1c54d69598276f4d8bb))
+
+### Fixed
+
+- build fixes ([`c3c83a7`](https://github.com/plotday/plot/commit/c3c83a7cddc72966209721fceec2eeb96c385dc2))
+
 ## 0.18.2
 
 ### Fixed
