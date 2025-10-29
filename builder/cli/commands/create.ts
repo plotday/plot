@@ -101,8 +101,8 @@ export async function createCommand(options: CreateOptions) {
     types: "src/index.ts",
     plotAgentId: plotAgentId,
     scripts: {
-      lint: "plot agent lint",
-      deploy: "plot agent deploy",
+      lint: "plot lint",
+      deploy: "plot deploy",
     },
     dependencies: {
       "@plotday/agent": sdkVersion,

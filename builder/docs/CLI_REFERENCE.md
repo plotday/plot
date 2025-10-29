@@ -251,7 +251,7 @@ These options are available for all commands:
 **Example:**
 
 ```bash
-plot agent deploy --verbose
+plot deploy --verbose
 plot --version
 ```
 
@@ -300,7 +300,7 @@ Configure the CLI using environment variables:
 
 ```bash
 export PLOT_API_TOKEN=your-token
-plot agent deploy
+plot deploy
 ```
 
 ---

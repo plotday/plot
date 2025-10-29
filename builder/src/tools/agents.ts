@@ -124,7 +124,7 @@ export abstract class Agents extends ITool {
   /**
    * Deploys an agent programmatically.
    *
-   * This method provides the same functionality as the plot agent deploy CLI
+   * This method provides the same functionality as the plot deploy CLI
    * command, but can be called from within an agent. Accepts either:
    * - A pre-bundled module (JavaScript code)
    * - A source object (dependencies + files) which is built in a sandbox

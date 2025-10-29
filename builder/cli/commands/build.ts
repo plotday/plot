@@ -1,8 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
 
-import * as out from "../utils/output";
 import { bundleAgent } from "../utils/bundle";
+import * as out from "../utils/output";
 
 interface BuildOptions {
   dir: string;
@@ -76,7 +76,7 @@ export async function buildCommand(options: BuildOptions) {
     // Tip for next steps
     out.blank();
     out.plain("Next steps:");
-    out.plain("  • Run 'plot agent deploy' to deploy this agent");
+    out.plain("  • Run 'plot deploy' to deploy this agent");
     out.plain("  • Or inspect the bundled output in build/index.js");
     out.blank();
   } catch (error) {

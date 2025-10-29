@@ -246,9 +246,9 @@ export async function generateCommand(options: GenerateOptions) {
       displayName: source.displayName,
       plotAgentId: agentId,
       scripts: {
-        lint: "plot agent lint",
-        deploy: "plot agent deploy",
-        logs: "plot agent logs",
+        lint: "plot lint",
+        deploy: "plot deploy",
+        logs: "plot logs",
       },
       dependencies: source.dependencies,
       devDependencies: {

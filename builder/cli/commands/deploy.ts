@@ -80,7 +80,7 @@ export async function deployCommand(options: DeployOptions) {
     } else {
       out.error(
         "Neither package.json nor plot-agent.md found",
-        "Run 'plot agent create' to create a new agent, or create a plot-agent.md spec file"
+        "Run 'plot create' to create a new agent, or create a plot-agent.md spec file"
       );
       process.exit(1);
     }
@@ -106,7 +106,7 @@ export async function deployCommand(options: DeployOptions) {
   if (!agentId && !options.id) {
     out.error(
       "Agent ID missing",
-      "Run 'plot agent create' to generate one, or provide --id flag"
+      "Run 'plot create' to generate one, or provide --id flag"
     );
     process.exit(1);
   }
