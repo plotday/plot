@@ -386,7 +386,10 @@ enum ActivityOrder { sorted, nested, reverse }
 
 class Activity extends Equatable implements Comparable<Activity> {
   /// Parse @mentions from note and return list of agent UUIDs
-  static List<Uuid> parseMentionsFromNote(String? note, List<PriorityAgent> agents) {
+  static List<Uuid> parseMentionsFromNote(
+    String? note,
+    List<PriorityAgent> agents,
+  ) {
     if (note == null || note.isEmpty || agents.isEmpty) {
       return [];
     }
@@ -1447,6 +1450,7 @@ class Activity extends Equatable implements Comparable<Activity> {
             ? Value(assigneeId)
             : const Value.absent(),
         mentions: mentions,
+        createdAt: draft == false && _activity.draft ? now : null,
         updatedAt: now,
         pending: Value(ActivityPendingSync.full.value),
         startAt: rootStartAt,
