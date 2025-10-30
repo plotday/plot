@@ -269,6 +269,8 @@ export type Activity = {
   doneAt: Date | null;
   /** Reference to a parent activity for creating hierarchical relationships */
   parent: Activity | null;
+  /** For nested activities in a thread, references the top-level activity of that thread */
+  threadRoot?: Activity;
   /** Array of interactive links attached to the activity */
   links: Array<ActivityLink> | null;
   /** The priority context this activity belongs to */
@@ -319,7 +321,7 @@ export type Activity = {
  */
 export type NewActivity = Pick<Activity, "type"> &
   Partial<
-    Omit<Activity, "id" | "author" | "type" | "parent" | "priority"> & {
+    Omit<Activity, "id" | "author" | "type" | "parent" | "priority" | "threadRoot"> & {
       parent?: Pick<Activity, "id"> | null;
       priority?: Pick<Priority, "id">;
     }

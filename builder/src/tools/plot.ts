@@ -27,13 +27,14 @@ export enum ActivityAccess {
 
 export enum PriorityAccess {
   /**
-   * Create new priority.
+   * Create a new Priority within the agent's Priority.
    * Update Priority created by the agent.
    */
   Create,
   /**
-   * Update and archive Priority created by others.
-   * All Create permissions.
+   * Read all Priority within the agent's Priority.
+   * Create a new Priority within the agent's Priority.
+   * Update and archive any Priority within the agent's Priority.
    */
   Full,
 }
