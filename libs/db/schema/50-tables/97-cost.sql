@@ -2,7 +2,7 @@ CREATE TABLE "public"."cost" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "name" text NOT NULL,
+    "name" text NOT NULL UNIQUE,
     "amount" numeric
 );
 

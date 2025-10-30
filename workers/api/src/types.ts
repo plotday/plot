@@ -1,11 +1,12 @@
 import { z } from "zod";
 
-// Activity item schema (with enriched fields)
-export const ActivityItemSchema = z.object({
+// Define base schema for non-recursive fields
+const BaseActivityItemSchema = z.object({
   id: z.string(),
   created_at: z.string(),
   updated_at: z.string(),
   author_id: z.string(),
+  created_by: z.string(),
   assignee_id: z.string().nullable(),
   updated_by: z.number(),
   deleted_at: z.string().nullable(),
@@ -25,11 +26,19 @@ export const ActivityItemSchema = z.object({
   recurrence_rule: z.string().nullable(),
   recurrence_exdates: z.array(z.string()).nullable(),
   recurrence_dates: z.array(z.string()).nullable(),
-  source: z.record(z.string(), z.any()).nullable(),
+  meta: z.record(z.string(), z.any()).nullable(),
+  mentions: z.array(z.string()).nullable(),
   // Enriched fields from database JOINs
   author_name: z.string().nullable(),
   author_type: z.enum(["user", "contact", "priority_agent"]),
   priority_title: z.string(),
+  tags: z.record(z.string(), z.any()).nullable(),
+});
+
+// Activity item schema (with enriched fields and recursive thread_root)
+export const ActivityItemSchema: z.ZodType<any> = BaseActivityItemSchema.extend({
+  // Thread root (recursive, only present for nested activities)
+  thread_root: z.lazy(() => ActivityItemSchema).optional(),
 });
 
 // Priority item schema

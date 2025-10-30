@@ -15,7 +15,7 @@ import type { AgentSource, BuildResult } from "./types";
  * - Creates a unique temporary directory for each build
  * - Sets up the agent project structure using the Plot CLI
  * - Writes source files and dependencies
- * - Runs npm install and plot agent build
+ * - Runs npm install and plot build
  * - Cleans up the temporary directory after the build
  *
  * @param source - Agent source code containing dependencies and files

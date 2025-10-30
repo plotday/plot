@@ -153,10 +153,11 @@ extension BuildContextCommandExtension on BuildContext {
 }
 
 abstract class CommandGroup {
-  CommandGroup({required this.title, this.subtitle});
+  CommandGroup({this.title, this.subtitle, this.infoBuilder});
 
-  final String title;
+  final String? title;
   final String? subtitle; // count
+  final Widget Function(BuildContext)? infoBuilder;
 
   Future<List<Command>> list({String? search});
 
@@ -199,8 +200,9 @@ abstract class CommandGroup {
 
 class StaticCommandGroup extends CommandGroup {
   StaticCommandGroup({
-    required super.title,
+    super.title,
     super.subtitle,
+    super.infoBuilder,
     required this.commands,
   });
 
@@ -245,6 +247,7 @@ class Commands {
           StaticCommandGroup(
             title: group.title,
             subtitle: group.subtitle,
+            infoBuilder: group.infoBuilder,
             commands: matchingCommands,
           ),
         );

@@ -1,40 +1,36 @@
+import type {
+  AgentPermissions,
+  Agents as IAgents,
+} from "@plotday/agent/tools/agents";
+import type { Callback } from "@plotday/agent/tools/callbacks";
 import type { SupabaseClient } from "@plotday/db";
-import type { AgentManager as IAgent } from "@plotday/sdk/tools/agent";
-import type { Callback } from "@plotday/sdk/tools/callback";
 
-import type { Bindings } from "../../env";
+import { type AgentEnvironment, type Bindings } from "../../env";
 import { type LogSubscriptions } from "../../state/log-subscriptions";
 import { deployAgent } from "../deployment";
 import { generateAgent } from "../generator";
 import type { AgentSource } from "../types";
 import { Tool } from "./tool";
 
-export class Agent extends Tool implements IAgent {
+export class Agents extends Tool implements IAgents {
   private env: Bindings;
   private ctx: { exports: ExecutionContext["exports"] };
   private supabase: SupabaseClient;
   private priorityAgentId: string;
   private logSubscriptionsNamespace: DurableObjectNamespace<LogSubscriptions>;
 
-  constructor({
-    env,
-    ctx,
-    supabase,
-    priorityAgentId,
-    logSubscriptions,
-  }: {
+  constructor(options: {
     env: Bindings;
     ctx: { exports: ExecutionContext["exports"] };
     supabase: SupabaseClient;
     priorityAgentId: string;
-    logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
   }) {
     super();
-    this.env = env;
-    this.ctx = ctx;
-    this.supabase = supabase;
-    this.priorityAgentId = priorityAgentId;
-    this.logSubscriptionsNamespace = logSubscriptions;
+    this.env = options.env;
+    this.ctx = options.ctx;
+    this.supabase = options.supabase;
+    this.priorityAgentId = options.priorityAgentId;
+    this.logSubscriptionsNamespace = options.env.LOG_SUBSCRIPTIONS;
   }
 
   /**
@@ -128,7 +124,7 @@ export class Agent extends Tool implements IAgent {
           agentId: string;
           module: string;
           source?: never;
-          environment?: "personal" | "private" | "review";
+          environment?: Exclude<AgentEnvironment, "public">;
           name?: string;
           description?: string;
           dryRun?: boolean;
@@ -137,12 +133,16 @@ export class Agent extends Tool implements IAgent {
           agentId: string;
           source: AgentSource;
           module?: never;
-          environment?: "personal" | "private" | "review";
+          environment?: Exclude<AgentEnvironment, "public">;
           name?: string;
           description?: string;
           dryRun?: boolean;
         }
-  ): Promise<{ version: string; errors?: string[] }> {
+  ): Promise<{
+    version: string;
+    permissions: AgentPermissions;
+    errors?: string[];
+  }> {
     const {
       agentId: agentAdminId,
       module: _module,
@@ -202,6 +202,7 @@ export class Agent extends Tool implements IAgent {
 
     return {
       version: result.version,
+      permissions: result.permissions,
       errors: result.errors,
     };
   }

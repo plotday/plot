@@ -7,6 +7,7 @@ import 'package:equatable/equatable.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/page/loading.dart';
+import 'package:plot/api/agent_api.dart';
 import 'logging.dart';
 
 part 'priority_state.dart';
@@ -148,6 +149,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       _loadActivity(state.activity!);
     }
 
+    // Load agents for the priority
+    _loadAgents();
+
     _loadSchedule(
       state.range ??
           CustomBoundedDateRange(
@@ -159,6 +163,21 @@ class PriorityBloc extends Cubit<PriorityState> {
           ),
       firstDate: Date.today(),
     );
+  }
+
+  Future<void> _loadAgents() async {
+    try {
+      final agents = await AgentApi.getAgentsForPriority(state.context);
+      log.info('Loaded ${agents.length} agents for priority ${state.context.title}');
+      emit(state.copyWith(agents: agents));
+    } catch (e, t) {
+      log.warning('Failed to load agents for priority', e, t);
+    }
+  }
+
+  /// Public method to reload agents - can be called from commands
+  Future<void> reloadAgents() async {
+    await _loadAgents();
   }
 
   void _loadActivity(Activity activity) {

@@ -1,186 +1,168 @@
 import type { SupabaseClient } from "@plotday/db";
 
-import type { ToolDependencies } from "..";
-import type { Bindings } from "../../env";
-import { type Callbacks } from "../../state/callbacks";
-import { type LogSubscriptions } from "../../state/log-subscriptions";
-import { type Storage } from "../../state/storage";
-import { Agent } from "./agent";
+import { type AgentEnvironment, type Bindings } from "../../env";
+import { type ToolPermission } from "../permissions";
+import { Agents } from "./agents";
 import { AI } from "./ai";
-import { Auth } from "./auth";
-import { CallbackTool } from "./callback";
+import { Callbacks } from "./callbacks";
+import { Integrations } from "./integrations";
+import { Network } from "./network";
 import { Plot } from "./plot";
-import { Run } from "./run";
 import { Store } from "./store";
+import { Tasks } from "./tasks";
 import type { Tool } from "./tool";
-import { Webhook } from "./webhook";
+
+/**
+ * Returns the tool class for a given tool ID.
+ * Centralizes the tool ID -> class mapping to ensure consistency
+ * across createTool() and collectToolPermissions().
+ *
+ * @param toolId - The tool identifier (e.g., "Plot", "Network")
+ * @returns The tool class
+ * @throws Error if tool ID is unknown
+ */
+function getToolClass(
+  toolId: string
+):
+  | typeof Plot
+  | typeof Network
+  | typeof AI
+  | typeof Integrations
+  | typeof Store
+  | typeof Tasks
+  | typeof Callbacks
+  | typeof Agents {
+  switch (toolId) {
+    case "Plot":
+      return Plot;
+    case "Network":
+      return Network;
+    case "AI":
+      return AI;
+    case "Integrations":
+      return Integrations;
+    case "Store":
+      return Store;
+    case "Tasks":
+      return Tasks;
+    case "Callbacks":
+      return Callbacks;
+    case "Agents":
+      return Agents;
+    default:
+      throw new Error(`Unknown tool ID: ${toolId}`);
+  }
+}
 
 export function createTool(
   path: string[],
-  spec: ToolDependencies,
+  id: string,
+  options: object,
   {
     agentId,
     environment,
     supabase,
     priorityId,
     priorityAgentId,
-    storage,
-    callbacks,
-    logSubscriptions,
     env,
     ctx,
   }: {
     agentId: string;
-    environment: string;
+    environment: AgentEnvironment;
     supabase: SupabaseClient;
     priorityId: string;
     priorityAgentId: string;
-    storage: DurableObjectNamespace<Storage>;
-    callbacks: DurableObjectNamespace<Callbacks>;
-    logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
     env: Bindings;
     ctx: { exports: ExecutionContext["exports"] };
   }
-): ToolDependencies {
-  let tool: Tool | undefined;
-  switch (spec.id) {
+): Tool {
+  switch (id) {
     case "Plot":
-      tool = new Plot({
+      return new Plot({
         supabase,
         priorityId,
         priorityAgentId,
+        options,
+        env,
       });
-      break;
     case "AI":
-      tool = new AI(env);
-      break;
-    case "Auth":
-      tool = new Auth({
+      return new AI({ env, priorityAgentId });
+    case "Network":
+      return new Network({
+        ...options,
+        callbacks: env.CALLBACKS,
+        priorityAgentId,
+        agentId,
+        environment,
+        baseUrl: env.API_ROOT,
+        path,
+      });
+    case "Integrations":
+      return new Integrations({
         path,
         store: new Store({
           path,
-          storage,
+          storage: env.STORAGE,
           priorityAgentId,
         }),
         env,
         priorityAgentId,
         agentId,
         environment,
-        callbacks,
       });
-      break;
     case "Store":
-      tool = new Store({
+      return new Store({
         path,
-        storage,
+        storage: env.STORAGE,
         priorityAgentId,
       });
-      break;
-    case "Webhook":
-      tool = new Webhook({
+    case "Tasks":
+      return new Tasks({
         path,
-        callbacks,
-        priorityAgentId,
-        agentId,
-        environment,
-        baseUrl: env.API_ROOT,
-      });
-      break;
-    case "Run":
-      tool = new Run({
-        path,
-        callbacks,
+        callbacks: env.CALLBACKS,
         priorityAgentId,
         agentId,
         environment,
         queue: env.RUN_QUEUE,
       });
-      break;
-    case "CallbackTool":
-      tool = new CallbackTool({
-        callbacks,
+    case "Callbacks":
+      return new Callbacks({
+        callbacks: env.CALLBACKS,
         priorityAgentId,
         agentId,
         environment,
         path,
       });
-      break;
-    case "AgentManager":
-      tool = new Agent({
+    case "Agents":
+      return new Agents({
         env,
         ctx,
         supabase,
         priorityAgentId,
-        logSubscriptions,
       });
-      break;
+    default:
+      throw new Error(`Unknown tool: ${id}`);
   }
-  return {
-    id: spec.id,
-    tool: tool ?? undefined,
-    dependencies: createTools(
-      { path, dependencies: spec.dependencies ?? [] },
-      {
-        agentId,
-        environment,
-        supabase,
-        priorityId,
-        priorityAgentId,
-        storage,
-        callbacks,
-        logSubscriptions,
-        env,
-        ctx,
-      }
-    ),
-  };
 }
 
-export function createTools(
-  {
-    path,
-    dependencies,
-  }: {
-    path: string[]; // path to the tool within the agent
-    dependencies: ToolDependencies[];
-  },
-  {
-    agentId,
-    environment,
-    supabase,
-    priorityId,
-    priorityAgentId,
-    storage,
-    callbacks,
-    logSubscriptions,
-    env,
-    ctx,
-  }: {
-    agentId: string;
-    environment: string;
-    supabase: SupabaseClient;
-    priorityId: string;
-    priorityAgentId: string;
-    storage: DurableObjectNamespace<Storage>;
-    callbacks: DurableObjectNamespace<Callbacks>;
-    logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
-    env: Bindings;
-    ctx: { exports: ExecutionContext["exports"] };
+/**
+ * Collects permissions for a tool by calling its static Permissions method.
+ * Returns empty array if the tool doesn't implement the method.
+ */
+export function collectToolPermissions(
+  toolId: string,
+  options: any
+): ToolPermission[] {
+  const ToolClass = getToolClass(toolId);
+
+  // Check if the class has a static Permissions method
+  if (
+    "Permissions" in ToolClass &&
+    typeof ToolClass.Permissions === "function"
+  ) {
+    return ToolClass.Permissions(options);
   }
-): ToolDependencies[] {
-  const ret = dependencies.map((dep) =>
-    createTool(path.concat([dep.id]), dep, {
-      agentId,
-      environment,
-      supabase,
-      priorityId,
-      priorityAgentId,
-      storage,
-      callbacks,
-      logSubscriptions,
-      env,
-      ctx,
-    })
-  );
-  return ret;
+
+  // Tool doesn't require permissions
+  return [];
 }

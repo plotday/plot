@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { Auth } from "../agent/tools/auth";
-import type { AuthProvider } from "@plotday/sdk/tools/auth";
-import type { Callback } from "@plotday/sdk/tools/callback";
+import type { Callback } from "@plotday/agent/tools/callbacks";
+import type { AuthProvider } from "@plotday/agent/tools/integrations";
+
+import { Integrations } from "../agent/tools/integrations";
 import type { Bindings } from "../env";
 import { handleValidationError } from "../utils/validation";
 
@@ -22,7 +23,7 @@ const AuthUrlRequestSchema = z.object({
 // POST /auth - Handle OAuth redirects
 authRoutes.post("/auth", async (c) => {
   try {
-    return await Auth.HandleOauthCallback(
+    return await Integrations.HandleOauthCallback(
       c.env.STORAGE,
       c.env.CALLBACKS,
       c.req.query(),
@@ -60,7 +61,7 @@ authRoutes.get("/auth", async (c) => {
     // Use the scopes from the request or from query parameters
     const scopesToUse = requestScopes?.length > 0 ? requestScopes : scopes;
 
-    const result = await Auth.GenerateAuthUrl({
+    const result = await Integrations.GenerateAuthUrl({
       provider: provider as AuthProvider,
       level: level as any, // AuthLevel type
       scopes: scopesToUse,

@@ -7,7 +7,7 @@ import type { Bindings } from "../env";
 /**
  * Middleware for Stripe endpoints
  * Sets up Supabase client for database access
- * Auth is handled via Stripe signature verification in the endpoint
+ * Integrations is handled via Stripe signature verification in the endpoint
  */
 export const stripeMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   c,

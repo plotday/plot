@@ -5,30 +5,15 @@ import { WorkerEntrypoint } from "cloudflare:workers";
  * URLs they can access via fetch() and other HTTP operations.
  *
  * This is used with the WorkerLoader globalOutbound option to enforce
- * HTTP access permissions declared via tools.enableInternet().
+ * HTTP access permissions declared via tools.get(Network, { urls: [...] }).
+ *
+ * Props are passed when the proxy is configured as globalOutbound, providing
+ * the specific URL patterns allowed for each agent worker.
  */
-export class HttpProxy extends WorkerEntrypoint {
-  private allowedPatterns: string[] = [];
-  private allowAll: boolean = false;
-
-  /**
-   * Initializes the proxy with allowed URL patterns.
-   * This method should be called before the proxy is used.
-   *
-   * @param patterns - Array of URL patterns with wildcard support
-   */
-  setAllowedPatterns(patterns: string[]): void {
-    // Check if unrestricted access is requested
-    if (patterns.includes("*")) {
-      this.allowAll = true;
-      this.allowedPatterns = ["*"];
-      return;
-    }
-
-    // Merge and deduplicate patterns
-    this.allowedPatterns = this.mergePatterns(patterns);
-  }
-
+export class HttpProxy extends WorkerEntrypoint<
+  {}, // No special env bindings needed
+  { allowedPatterns: string[] } // Props containing URL patterns
+> {
   /**
    * Merges URL patterns, removing redundant ones.
    * For example, if we have both "https://api.example.com/*" and
@@ -83,44 +68,52 @@ export class HttpProxy extends WorkerEntrypoint {
 
     // Replace * with appropriate regex patterns
     // Handle protocol wildcards
-    regexStr = regexStr.replace(/^(\w+):\/\/\\\*/, "$1://[^/]+");
+    regexStr = regexStr.replace(/^(\w+):\/\/\*/, "$1://[^/]+");
     // Handle path wildcards (after the domain)
-    regexStr = regexStr.replace(/\\\*/g, ".*");
+    regexStr = regexStr.replace(/\*/g, ".*");
 
     return new RegExp(`^${regexStr}$`);
   }
 
   /**
-   * Checks if a URL is allowed based on the configured patterns.
+   * Checks if a URL is allowed based on the provided patterns.
+   *
+   * @param url - The URL to check
+   * @param allowedPatterns - Array of URL patterns to check against
    */
-  private isAllowed(url: string): boolean {
-    if (this.allowAll) {
+  private isAllowed(url: string, allowedPatterns: string[]): boolean {
+    // Check for unrestricted access
+    if (allowedPatterns.includes("*")) {
       return true;
     }
 
-    if (this.allowedPatterns.length === 0) {
+    if (allowedPatterns.length === 0) {
       // No patterns configured means deny all
+      console.warn(
+        "HTTP Proxy: No allowed patterns configured, denying all requests."
+      );
       return false;
     }
 
-    return this.allowedPatterns.some((pattern) => {
+    return allowedPatterns.some((pattern) => {
       const regex = this.patternToRegex(pattern);
       return regex.test(url);
     });
   }
 
   /**
-   * Handles fetch requests, filtering based on allowed patterns.
+   * Handles fetch requests, filtering based on allowed patterns from props.
    * Authorized requests are forwarded; unauthorized requests are blocked.
    */
   override async fetch(request: Request): Promise<Response> {
     const url = request.url;
+    const { allowedPatterns } = this.ctx.props;
 
-    if (!this.isAllowed(url)) {
+    if (!this.isAllowed(url, allowedPatterns)) {
       return new Response(
         JSON.stringify({
           error: "Forbidden",
-          message: `HTTP access to ${url} is not allowed. Request access via tools.enableInternet() in your agent or tool constructor.`,
+          message: `HTTP access to ${url} is not allowed. Request access via tools.get(Network, { urls: [...] }) in your agent or tool constructor.`,
           url,
         }),
         {
@@ -133,69 +126,4 @@ export class HttpProxy extends WorkerEntrypoint {
     // Forward the request
     return fetch(request);
   }
-}
-
-/**
- * Merges URL patterns from multiple sources, removing redundant patterns.
- * Returns null if no permissions (block all), undefined if all access (*),
- * or an array of merged patterns otherwise.
- *
- * @param urlSets - Array of URL pattern arrays from different tools/agents
- * @returns Merged patterns: null (deny all), undefined (allow all), or string[] (specific patterns)
- */
-export function mergeHttpPermissions(
-  urlSets: string[][]
-): string[] | null | undefined {
-  if (urlSets.length === 0) {
-    // No permissions requested - deny all
-    return null;
-  }
-
-  // Flatten all URL patterns
-  const allUrls = urlSets.flat();
-
-  if (allUrls.length === 0) {
-    // Empty arrays mean no permissions - deny all
-    return null;
-  }
-
-  // Check for unrestricted access
-  if (allUrls.includes("*")) {
-    // Allow all access
-    return undefined;
-  }
-
-  // Merge and deduplicate patterns
-  const uniquePatterns = [...new Set(allUrls)];
-  uniquePatterns.sort((a, b) => a.length - b.length);
-
-  const merged: string[] = [];
-
-  for (const pattern of uniquePatterns) {
-    const isCovered = merged.some((existing) => {
-      const existingRegex = patternToRegex(existing);
-      return existingRegex.test(pattern.replace(/\*/g, "anything"));
-    });
-
-    if (!isCovered) {
-      merged.push(pattern);
-    }
-  }
-
-  return merged;
-}
-
-/**
- * Helper function to convert a URL pattern to RegExp (used by merge function)
- */
-function patternToRegex(pattern: string): RegExp {
-  if (pattern === "*") {
-    return /.*/;
-  }
-
-  let regexStr = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
-  regexStr = regexStr.replace(/^(\w+):\/\/\\\*/, "$1://[^/]+");
-  regexStr = regexStr.replace(/\\\*/g, ".*");
-
-  return new RegExp(`^${regexStr}$`);
 }

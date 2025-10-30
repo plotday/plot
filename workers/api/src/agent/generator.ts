@@ -2,8 +2,8 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject } from "ai";
 import { z } from "zod";
 
-import { AGENTS_GUIDE } from "@plotday/sdk/agents-guide";
-import { getSDKDocumentation } from "@plotday/sdk/sdk-docs";
+import { AGENTS_GUIDE } from "@plotday/agent/agents-guide";
+import { getBuilderDocumentation } from "@plotday/agent/builder-docs";
 
 import type { Bindings } from "../env";
 import { buildAgent } from "./builder";
@@ -113,7 +113,7 @@ Please fix these errors and generate a corrected version.`;
     }
 
     // Get complete SDK type definitions with import paths
-    const sdkDocs = getSDKDocumentation();
+    const sdkDocs = getBuilderDocumentation();
 
     // System prompt structured for optimal prompt caching:
     // 1. SDK type definitions (largest, most static) - FIRST for best caching
@@ -144,7 +144,7 @@ ${AGENTS_GUIDE}`;
     const source: AgentSource = result.object;
     source.dependencies = {
       ...source.dependencies,
-      "@plotday/sdk": "latest",
+      "@plotday/agent": "latest",
     };
 
     // Validate required index.ts file exists

@@ -96,7 +96,8 @@ SELECT
     a.recurrence_rule,
     a.recurrence_exdates,
     a.recurrence_dates,
-    a.source,
+    a.meta,
+    a.mentions,
     CASE WHEN a.done_at IS NOT NULL THEN
         tstzrange(a.done_at, a.done_at, '[]')
     WHEN a.at IS NOT NULL THEN

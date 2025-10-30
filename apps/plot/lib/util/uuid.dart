@@ -52,3 +52,32 @@ class UuidConverter extends TypeConverter<Uuid, Uint8List>
     return value.toString();
   }
 }
+
+class UuidListConverter extends TypeConverter<List<Uuid>, String>
+    with JsonTypeConverter2<List<Uuid>, String, List<dynamic>> {
+  const UuidListConverter();
+
+  @override
+  List<Uuid> fromSql(String fromDb) {
+    if (fromDb.isEmpty) return [];
+    return fromDb
+        .split(',')
+        .map((uuidStr) => Uuid.fromString(uuidStr.trim()))
+        .toList();
+  }
+
+  @override
+  String toSql(List<Uuid> value) {
+    return value.map((uuid) => uuid.toString()).join(',');
+  }
+
+  @override
+  List<Uuid> fromJson(List<dynamic> json) {
+    return json.map((item) => Uuid.fromString(item as String)).toList();
+  }
+
+  @override
+  List<dynamic> toJson(List<Uuid> value) {
+    return value.map((uuid) => uuid.toString()).toList();
+  }
+}

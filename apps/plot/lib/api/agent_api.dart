@@ -5,6 +5,7 @@ import 'package:plot/env.dart';
 import 'package:plot/store/store.dart';
 import 'api.dart' as api;
 import 'logging.dart';
+import 'agent_permission.dart';
 
 /// Represents an agent tool with its identifier
 class AgentTool extends Equatable {
@@ -33,6 +34,10 @@ class Agent {
   final String? authorUrl;
   final List<AgentTool> tools;
   final String environment;
+  final AgentPermissions? permissions;
+  final String? version;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   const Agent({
     required this.id,
@@ -43,6 +48,10 @@ class Agent {
     this.authorUrl,
     required this.tools,
     required this.environment,
+    this.permissions,
+    this.version,
+    this.createdAt,
+    this.updatedAt,
   });
 
   factory Agent.fromJson(Map<String, dynamic> json) {
@@ -72,6 +81,16 @@ class Agent {
       authorUrl: json['author_url'] as String?,
       tools: tools,
       environment: json['environment'] as String? ?? 'public',
+      permissions: json['permissions'] != null
+          ? AgentPermissions.fromJson(json['permissions'] as Map<String, dynamic>)
+          : null,
+      version: json['version'] as String?,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : null,
     );
   }
 }
@@ -87,6 +106,7 @@ class PriorityAgent {
   final DateTime? updatedAt;
   final DateTime? deletedAt;
   final List<AgentTool>? tools;
+  final AgentPermissions? permissions;
 
   const PriorityAgent({
     required this.id,
@@ -99,6 +119,7 @@ class PriorityAgent {
     this.updatedAt,
     this.deletedAt,
     this.tools,
+    this.permissions,
   });
 
   factory PriorityAgent.fromJson(Map<String, dynamic> json) {
@@ -115,6 +136,16 @@ class PriorityAgent {
         tools = toolsRaw
             .map((tool) => AgentTool.fromJson(tool as Map<String, dynamic>))
             .toList();
+      }
+    }
+
+    // Extract permissions from nested agent data if available
+    AgentPermissions? permissions;
+    if (json['agent'] != null) {
+      final agentData = json['agent'] as Map<String, dynamic>;
+      if (agentData['permissions'] != null) {
+        permissions = AgentPermissions.fromJson(
+            agentData['permissions'] as Map<String, dynamic>);
       }
     }
 
@@ -135,6 +166,7 @@ class PriorityAgent {
           ? DateTime.parse(json['deleted_at'] as String)
           : null,
       tools: tools,
+      permissions: permissions,
     );
   }
 }

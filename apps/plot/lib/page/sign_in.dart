@@ -109,35 +109,40 @@ class _SignInPageState extends State<SignInPage> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                Text.rich(
-                  TextSpan(
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6B7280),
-                    ),
-                    children: [
-                      const TextSpan(text: 'By signing in, you agree to the '),
-                      WidgetSpan(
-                        alignment: PlaceholderAlignment.baseline,
-                        baseline: TextBaseline.alphabetic,
-                        child: HoverableLink(
-                          text: 'Terms of Service',
-                          uri: Uri.parse('https://plot.day/terms'),
-                        ),
-                      ),
-                      const TextSpan(text: ' and '),
-                      WidgetSpan(
-                        alignment: PlaceholderAlignment.baseline,
-                        baseline: TextBaseline.alphabetic,
-                        child: HoverableLink(
-                          text: 'Privacy Policy',
-                          uri: Uri.parse('https://plot.day/privacy'),
-                        ),
-                      ),
-                      const TextSpan(text: '.'),
-                    ],
+                DefaultTextStyle(
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.2,
+                    color: Color(0xFF6B7280),
                   ),
-                  textAlign: TextAlign.center,
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        const TextSpan(
+                          text: 'By signing in, you agree to the ',
+                        ),
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.baseline,
+                          baseline: TextBaseline.alphabetic,
+                          child: HoverableLink(
+                            text: 'Terms of Service',
+                            uri: Uri.parse('https://plot.day/terms'),
+                          ),
+                        ),
+                        const TextSpan(text: ' and '),
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.baseline,
+                          baseline: TextBaseline.alphabetic,
+                          child: HoverableLink(
+                            text: 'Privacy Policy',
+                            uri: Uri.parse('https://plot.day/privacy'),
+                          ),
+                        ),
+                        const TextSpan(text: '.'),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ],
             ),

@@ -3,9 +3,11 @@ CREATE TABLE "public"."usage" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "priority_agent_id" uuid NOT NULL REFERENCES public.priority_agent ON DELETE CASCADE,
-    "date" timestamp with time zone NOT NULL,
+    "hour" timestamp with time zone NOT NULL,
     "cost_id" bigint NOT NULL REFERENCES public.cost ON DELETE CASCADE,
-    "amount" integer NOT NULL
+    "amount" integer NOT NULL,
+    UNIQUE ("priority_agent_id", "hour", "cost_id"),
+    CHECK ("hour" = DATE_TRUNC('hour', "hour"))
 );
 
 CREATE INDEX idx_usage_priority_agent_id ON "public"."usage" ("priority_agent_id");

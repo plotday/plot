@@ -1,8 +1,8 @@
-import type { Callback } from "@plotday/sdk/tools/callback";
-import type { Run as IRun } from "@plotday/sdk/tools/run";
+import { type Callback } from "@plotday/agent/tools/callbacks";
+import type { Tasks as IRun } from "@plotday/agent/tools/tasks";
 
-import { type Bindings } from "../../env";
-import { type Callbacks } from "../../state/callbacks";
+import { type AgentEnvironment, type Bindings } from "../../env";
+import { type CallbacksState } from "../../state/callbacks";
 import { Tool } from "./tool";
 
 export type RunMessage = {
@@ -11,48 +11,41 @@ export type RunMessage = {
   token: string;
 };
 
-export class Run extends Tool implements IRun {
-  private callbacks: DurableObjectStub<Callbacks>;
+export class Tasks extends Tool implements IRun {
+  private callbacks: DurableObjectStub<CallbacksState>;
   private priorityAgentId: string;
   private agentId: string;
-  private environment: string;
+  private environment: AgentEnvironment;
   private path: string[]; // path to the tool within the agent
   private queue: Queue<RunMessage>;
 
   private static GetStub(
-    callbacks: DurableObjectNamespace<Callbacks>,
+    callbacks: DurableObjectNamespace<CallbacksState>,
     priorityAgentId: string
   ) {
     const callbacksId = callbacks.idFromName(priorityAgentId);
     return callbacks.get(callbacksId);
   }
 
-  constructor({
-    callbacks,
-    priorityAgentId,
-    agentId,
-    environment,
-    path,
-    queue,
-  }: {
-    callbacks: DurableObjectNamespace<Callbacks>;
+  constructor(options: {
+    callbacks: DurableObjectNamespace<CallbacksState>;
     priorityAgentId: string;
     agentId: string;
-    environment: string;
+    environment: AgentEnvironment;
     path: string[];
     queue: Queue<RunMessage>;
   }) {
     super();
-    this.callbacks = Run.GetStub(callbacks, priorityAgentId);
-    this.priorityAgentId = priorityAgentId;
-    this.agentId = agentId;
-    this.environment = environment;
+    this.callbacks = Tasks.GetStub(options.callbacks, options.priorityAgentId);
+    this.priorityAgentId = options.priorityAgentId;
+    this.agentId = options.agentId;
+    this.environment = options.environment;
     // remove final element, which is the ID of this tool
-    this.path = path.slice(0, -1);
-    this.queue = queue;
+    this.path = options.path.slice(0, -1);
+    this.queue = options.queue;
   }
 
-  async run(
+  async runTask(
     callback: Callback,
     options?: { runAt?: Date }
   ): Promise<string | void> {
@@ -64,7 +57,7 @@ export class Run extends Tool implements IRun {
         environment: this.environment,
         path: this.path,
         functionName: "scheduledSend",
-        context: callback,
+        extraArgs: [callback],
         callAt: options.runAt,
       });
     } else {
@@ -73,11 +66,11 @@ export class Run extends Tool implements IRun {
     }
   }
 
-  async cancel(token: string): Promise<void> {
+  async cancelTask(token: string): Promise<void> {
     await this.callbacks.delete(token);
   }
 
-  async cancelAll(): Promise<void> {
+  async cancelAllTasks(): Promise<void> {
     await this.callbacks.deleteAll({
       priorityAgentId: this.priorityAgentId,
       agentId: this.agentId,
@@ -94,14 +87,14 @@ export class Run extends Tool implements IRun {
     });
   }
 
-  private async scheduledSend(__args: any, token: string) {
+  private async scheduledSend(token: string) {
     await this.send(token);
   }
 
   static async processQueue(env: Bindings, batch: MessageBatch<RunMessage>) {
     for (const message of batch.messages) {
       try {
-        const callbacks = Run.GetStub(
+        const callbacks = Tasks.GetStub(
           env.CALLBACKS,
           message.body.priorityAgentId
         );

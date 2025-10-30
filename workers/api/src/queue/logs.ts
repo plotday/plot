@@ -1,6 +1,6 @@
-import type { Callback } from "@plotday/sdk/tools/callback";
+import type { Callback } from "@plotday/agent/tools/callbacks";
 
-import { CallbackTool } from "../agent/tools/callback";
+import { Callbacks } from "../agent/tools/callbacks";
 import { type Bindings, type LogMessage } from "../env";
 
 export async function processLogs(
@@ -40,7 +40,7 @@ export async function processLogs(
       if (subscribers.length > 0) {
         for (const callbackToken of subscribers) {
           try {
-            await CallbackTool.CallCallback(
+            await Callbacks.CallCallback(
               env.CALLBACKS,
               callbackToken as Callback,
               formattedLogs

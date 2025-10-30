@@ -1,168 +1,10 @@
 import * as Sentry from "@sentry/cloudflare";
 
 import { type SupabaseClient, createClient } from "@plotday/db";
-import {
-  type ActivityLink,
-  type ActivitySource,
-  ActivityType,
-  AuthorType,
-} from "@plotday/sdk/plot";
 
 import { agentFactory } from "../agent";
 import { type Bindings, type UpdateMessage } from "../env";
 import { truncateUuidForUpdatedBy } from "../utils/uuid";
-
-function parseRangeStart(
-  rangeOn: unknown,
-  rangeAt: unknown
-): Date | string | null {
-  // Priority: if there's a timestamp range (rangeAt), use it
-  if (rangeAt) {
-    const rangeStr = rangeAt.toString();
-    const match = rangeStr.match(/^\[([^,\]]+)/);
-    if (match) {
-      return new Date(match[1]);
-    }
-  }
-
-  // Otherwise, try date range (rangeOn)
-  if (rangeOn) {
-    const rangeStr = rangeOn.toString();
-    const match = rangeStr.match(/^\[([^,\]]+)/);
-    if (match) {
-      return match[1]; // Return as date string in YYYY-MM-DD format
-    }
-  }
-
-  return null;
-}
-
-function parseRangeEnd(
-  rangeOn: unknown,
-  rangeAt: unknown
-): Date | string | null {
-  // Priority: if there's a timestamp range (rangeAt), use it
-  if (rangeAt) {
-    const rangeStr = rangeAt.toString();
-    const match = rangeStr.match(/,([^)\]]+)[)\]]/);
-    if (match) {
-      return new Date(match[1]);
-    }
-    // Check for unbounded end (ends with comma and closing bracket/paren)
-    if (rangeStr.match(/,[)\]]$/)) {
-      return null;
-    }
-  }
-
-  // Otherwise, try date range (rangeOn)
-  if (rangeOn) {
-    const rangeStr = rangeOn.toString();
-    const match = rangeStr.match(/,([^)\]]+)[)\]]/);
-    if (match) {
-      return match[1]; // Return as date string in YYYY-MM-DD format
-    }
-    // Check for unbounded end (ends with comma and closing bracket/paren)
-    if (rangeStr.match(/,[)\]]$/)) {
-      return null;
-    }
-  }
-
-  return null;
-}
-
-function calculateTagsAdded(
-  currentTags: any,
-  previousTags: any
-): Record<number, string[]> {
-  if (!currentTags) return {};
-  if (!previousTags) return currentTags;
-
-  const added: Record<number, string[]> = {};
-  for (const [tagId, actorIds] of Object.entries(
-    currentTags as Record<string, string[]>
-  )) {
-    const prevActorIds = previousTags[tagId] || [];
-    const newActorIds = actorIds.filter((id) => !prevActorIds.includes(id));
-    if (newActorIds.length > 0) {
-      added[Number(tagId)] = newActorIds;
-    }
-  }
-  return added;
-}
-
-function calculateTagsRemoved(
-  currentTags: any,
-  previousTags: any
-): Record<number, string[]> {
-  if (!previousTags) return {};
-  if (!currentTags) return previousTags;
-
-  const removed: Record<number, string[]> = {};
-  for (const [tagId, actorIds] of Object.entries(
-    previousTags as Record<string, string[]>
-  )) {
-    const currActorIds = currentTags[tagId] || [];
-    const removedActorIds = actorIds.filter((id) => !currActorIds.includes(id));
-    if (removedActorIds.length > 0) {
-      removed[Number(tagId)] = removedActorIds;
-    }
-  }
-  return removed;
-}
-
-function buildActivityFromDbRecord(activityRecord: any): any {
-  // Convert string activity type to ActivityType enum
-  let activityType: ActivityType;
-  switch (activityRecord.type) {
-    case "task":
-      activityType = ActivityType.Task;
-      break;
-    case "event":
-      activityType = ActivityType.Event;
-      break;
-    default:
-      activityType = ActivityType.Note;
-  }
-
-  return {
-    id: activityRecord.id,
-    type: activityType,
-    author: {
-      id: activityRecord.author_id,
-      name: activityRecord.author_name,
-      type:
-        activityRecord.author_type === "user"
-          ? AuthorType.User
-          : activityRecord.author_type === "priority_agent"
-          ? AuthorType.Agent
-          : AuthorType.Contact,
-    },
-    priority: {
-      id: activityRecord.priority_id,
-      title: activityRecord.priority_title,
-    },
-    start: parseRangeStart(activityRecord.on, activityRecord.at),
-    end: parseRangeEnd(activityRecord.on, activityRecord.at),
-    recurrenceUntil: null,
-    recurrenceCount: null,
-    doneAt: activityRecord.done_at ? new Date(activityRecord.done_at) : null,
-    note: activityRecord.note,
-    title: activityRecord.title,
-    parent: null,
-    links: activityRecord.links as ActivityLink[] | null,
-    recurrenceRule: activityRecord.recurrence_rule,
-    recurrenceExdates: activityRecord.recurrence_exdates
-      ? activityRecord.recurrence_exdates.map((date: any) => new Date(date))
-      : null,
-    recurrenceDates: activityRecord.recurrence_dates
-      ? activityRecord.recurrence_dates.map((date: any) => new Date(date))
-      : null,
-    recurrence: null,
-    occurrence: null,
-    source: activityRecord.source as ActivitySource | null,
-    tags: activityRecord.tags || null,
-  };
-}
 
 export async function processUpdates(
   batch: MessageBatch<UpdateMessage>,
@@ -225,39 +67,22 @@ async function processUpdate(
           }
         }
 
-        // Now TypeScript knows this is an activity item
-        const activity = item as any; // We know this is an activity based on type check
-
         // Get agent and tools dynamically
-        const factory = agentFactory(env, ctx, supabase);
+        const factory = agentFactory({
+          env,
+          ctx,
+          supabase,
+        });
         const agentWrapper = await factory({
           id: agent.id,
           environment: agent.environment,
           version: agent.version,
-          priorityId: String(activity.priority_id),
+          priorityId: String(item.priority_id),
           priorityAgentId: agent.priority_agent_id,
         });
 
-        // Build the current activity object
-        const currentActivity = buildActivityFromDbRecord(activity);
-
-        // Build the changes object if previous exists
-        const changes =
-          previous && "priority_id" in previous && "author_id" in previous
-            ? {
-                previous: buildActivityFromDbRecord(previous),
-                tagsAdded: calculateTagsAdded(
-                  activity.tags,
-                  (previous as any).tags
-                ),
-                tagsRemoved: calculateTagsRemoved(
-                  activity.tags,
-                  (previous as any).tags
-                ),
-              }
-            : undefined;
-
-        await agentWrapper.activity(currentActivity, changes);
+        // Dispatch to Plot tool - it will handle all filtering and processing logic
+        await agentWrapper.dispatch("Plot", item, previous);
       } catch (error) {
         console.error(
           `Error processing activity for agent ${agent.id}: ${

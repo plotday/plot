@@ -1,9 +1,9 @@
-import express from "express";
 import { exec } from "child_process";
-import { promisify } from "util";
 import { randomBytes } from "crypto";
-import { writeFile, readFile, rm, mkdir } from "fs/promises";
+import express from "express";
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
+import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
@@ -25,7 +25,7 @@ interface AgentSource {
  * Result from building an agent from source
  */
 type BuildResult =
-  | { success: true; module: string }
+  | { success: true; module: string; sourcemap?: string }
   | { success: false; errors: string[] };
 
 /**
@@ -49,7 +49,9 @@ app.post("/build", async (req, res) => {
     if (!source || !source.files || !source.dependencies) {
       return res.status(400).json({
         success: false,
-        errors: ["Invalid request body: must include 'files' and 'dependencies'"],
+        errors: [
+          "Invalid request body: must include 'files' and 'dependencies'",
+        ],
       });
     }
 
@@ -75,14 +77,16 @@ app.post("/build", async (req, res) => {
     console.log(`[${agentName}] Creating agent structure...`);
     try {
       await execAsync(
-        `cd /tmp && plot agent create --name ${agentName} --display-name "${agentName}"`,
+        `cd /tmp && plot create --name ${agentName} --display-name "${agentName}"`,
         { timeout: 30000 }
       );
     } catch (error: any) {
       return res.json({
         success: false,
         errors: [
-          `Failed to create agent structure:\n${error.stderr || error.stdout || error.message}`,
+          `Failed to create agent structure:\n${
+            error.stderr || error.stdout || error.message
+          }`,
         ],
       });
     }
@@ -104,7 +108,11 @@ app.post("/build", async (req, res) => {
     );
 
     // Write all source files
-    console.log(`[${agentName}] Writing ${Object.keys(source.files).length} source files...`);
+    console.log(
+      `[${agentName}] Writing ${
+        Object.keys(source.files).length
+      } source files...`
+    );
     const srcDir = join(buildDir, "src");
     await mkdir(srcDir, { recursive: true });
 
@@ -120,7 +128,9 @@ app.post("/build", async (req, res) => {
       return res.json({
         success: false,
         errors: [
-          `Failed to install dependencies:\n${error.stderr || error.stdout || error.message}`,
+          `Failed to install dependencies:\n${
+            error.stderr || error.stdout || error.message
+          }`,
         ],
       });
     }
@@ -128,11 +138,13 @@ app.post("/build", async (req, res) => {
     // Build the agent
     console.log(`[${agentName}] Building agent...`);
     try {
-      await execAsync(`cd ${buildDir} && plot agent build`, { timeout: 60000 });
+      await execAsync(`cd ${buildDir} && plot build`, { timeout: 60000 });
     } catch (error: any) {
       return res.json({
         success: false,
-        errors: [`Build failed:\n${error.stderr || error.stdout || error.message}`],
+        errors: [
+          `Build failed:\n${error.stderr || error.stdout || error.message}`,
+        ],
       });
     }
 
@@ -156,20 +168,36 @@ app.post("/build", async (req, res) => {
       });
     }
 
+    // Read the sourcemap if it exists
+    let sourcemapCode: string | undefined;
+    try {
+      sourcemapCode = await readFile(
+        join(buildDir, "build", "index.js.map"),
+        "utf-8"
+      );
+      console.log(`[${agentName}] Sourcemap found and loaded`);
+    } catch (error: any) {
+      // Sourcemap is optional, continue without it
+      console.log(`[${agentName}] No sourcemap found (this is okay)`);
+    }
+
     const duration = Date.now() - startTime;
     console.log(`[${agentName}] Build successful in ${duration}ms`);
 
-    // Return success with module
+    // Return success with module and optional sourcemap
     res.json({
       success: true,
       module: moduleCode,
+      sourcemap: sourcemapCode,
     } as BuildResult);
   } catch (error: any) {
     console.error("Build error:", error);
     res.status(500).json({
       success: false,
       errors: [
-        `Build failed with exception: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+        `Build failed with exception: ${
+          error instanceof Error ? error.message : JSON.stringify(error)
+        }`,
       ],
     });
   } finally {

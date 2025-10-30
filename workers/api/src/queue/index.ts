@@ -1,4 +1,4 @@
-import { Run, type RunMessage } from "../agent/tools/run";
+import { Tasks, type RunMessage } from "../agent/tools/tasks";
 import {
   type Bindings,
   type LogMessage,
@@ -20,7 +20,7 @@ export async function queue(
   switch (batch.queue) {
     case "run-development":
     case "run-production":
-      await Run.processQueue(env, batch as MessageBatch<RunMessage>);
+      await Tasks.processQueue(env, batch as MessageBatch<RunMessage>);
       break;
 
     case "updates-development":

@@ -9,16 +9,27 @@ const HOUR_MS = 60 * 60 * 1000;
 
 type UsageRow = {
   cost_type: string;
-  hour: number;
+  hour: number; // this is the nearest UTC hour (rounded down)
   amount: number;
 };
 
 export class Usage extends DurableObject<Bindings> {
   private sql: SqlStorage;
   private supabase: SupabaseClient;
-  private priorityAgentId: string;
+  private priorityAgentId?: string;
   private isDirty: boolean = false;
   private nextFlushTime: number | null = null;
+
+  static Get(
+    env: {
+      readonly USAGE: DurableObjectNamespace<Usage>;
+    },
+    priorityAgentId: string
+  ) {
+    const usage = env.USAGE.get(env.USAGE.idFromName(priorityAgentId));
+    usage.init(priorityAgentId);
+    return usage;
+  }
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -27,13 +38,20 @@ export class Usage extends DurableObject<Bindings> {
       this.env.SUPABASE_URL,
       this.env.SUPABASE_SERVICE_KEY
     );
-    // Extract priorityAgentId from the Durable Object ID
-    this.priorityAgentId = ctx.id.toString();
     this.initializeTable();
+    this.loadState();
   }
 
-  async fetch(_request: Request): Promise<Response> {
-    return new Response("OK", { status: 200 });
+  public init(priorityAgentId: string) {
+    this.priorityAgentId = priorityAgentId;
+    this.persistState();
+  }
+
+  private getPriorityAgentId() {
+    if (!this.priorityAgentId) {
+      throw new Error("Usage used before init()");
+    }
+    return this.priorityAgentId;
   }
 
   private initializeTable() {
@@ -45,24 +63,63 @@ export class Usage extends DurableObject<Bindings> {
         PRIMARY KEY (cost_type, hour)
       )
     `);
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS state (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        priorityAgentId TEXT,
+        isDirty INTEGER DEFAULT 0,
+        nextFlushTime INTEGER
+      ) STRICT
+    `);
+  }
+
+  private loadState() {
+    const result = this.sql.exec("SELECT * FROM state WHERE id = 1").next();
+    if (!result.done && result.value) {
+      const row = result.value as {
+        priorityAgentId: string | null;
+        isDirty: number;
+        nextFlushTime: number | null;
+      };
+      this.priorityAgentId = row.priorityAgentId ?? undefined;
+      this.isDirty = row.isDirty === 1;
+      this.nextFlushTime = row.nextFlushTime ?? null;
+    }
+  }
+
+  private persistState() {
+    this.sql.exec(
+      `INSERT INTO state (id, priorityAgentId, isDirty, nextFlushTime)
+       VALUES (1, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         priorityAgentId = excluded.priorityAgentId,
+         isDirty = excluded.isDirty,
+         nextFlushTime = excluded.nextFlushTime`,
+      this.priorityAgentId ?? null,
+      this.isDirty ? 1 : 0,
+      this.nextFlushTime ?? null
+    );
   }
 
   /**
    * Increment usage for the given cost type by the specified amount
    */
-  spend(costType: string, amount: number): void {
+  spend(costType: string, amount: number) {
+    this.getPriorityAgentId();
+
     const currentHour = this.getCurrentHour();
 
     // Check if we've rolled over to a new hour
     const previousHourResult = this.sql
-      .exec(
-        "SELECT DISTINCT hour FROM usage WHERE hour < ? LIMIT 1",
-        [currentHour]
-      )
+      .exec("SELECT DISTINCT hour FROM usage WHERE hour < ? LIMIT 1", [
+        currentHour,
+      ])
       .next();
 
     if (!previousHourResult.done) {
       // We have data from a previous hour, flush it before continuing
+      // Note: flushToSupabase is async but we can't await it here
+      // It will handle errors internally
       this.flushToSupabase();
     }
 
@@ -80,6 +137,7 @@ export class Usage extends DurableObject<Bindings> {
     );
 
     this.isDirty = true;
+    this.persistState();
     this.scheduleFlush();
   }
 
@@ -95,6 +153,7 @@ export class Usage extends DurableObject<Bindings> {
     }
 
     this.nextFlushTime = now + FLUSH_INTERVAL_MS;
+    this.persistState();
     this.ctx.storage.setAlarm(this.nextFlushTime);
   }
 
@@ -103,6 +162,7 @@ export class Usage extends DurableObject<Bindings> {
    */
   async alarm(): Promise<void> {
     this.nextFlushTime = null;
+    this.persistState();
 
     if (this.isDirty) {
       await this.flushToSupabase();
@@ -122,6 +182,7 @@ export class Usage extends DurableObject<Bindings> {
 
     if (usageRecords.length === 0) {
       this.isDirty = false;
+      this.persistState();
       return;
     }
 
@@ -145,6 +206,7 @@ export class Usage extends DurableObject<Bindings> {
     }
 
     this.isDirty = false;
+    this.persistState();
   }
 
   /**
@@ -154,59 +216,111 @@ export class Usage extends DurableObject<Bindings> {
     hour: number,
     records: UsageRow[]
   ): Promise<void> {
-    // Get cost IDs for all cost types
-    const costTypes = [...new Set(records.map((r) => r.cost_type))];
+    const priorityAgentId = this.getPriorityAgentId();
+    console.log(
+      `[Usage DO] Flushing ${
+        records.length
+      } records for ${priorityAgentId} at ${new Date(hour).toISOString()}`
+    );
+    // Get ALL cost types from the database
     const { data: costs, error: costsError } = await this.supabase
       .from("cost")
-      .select("id, name")
-      .in("name", costTypes);
+      .select("id, name");
 
     if (costsError || !costs) {
       console.error("Failed to fetch costs:", costsError);
       throw new Error(`Failed to fetch costs: ${costsError?.message}`);
     }
 
-    // Create a map of cost name -> cost id
-    const costIdMap = new Map(costs.map((c) => [c.name, c.id]));
+    // Create a set of existing cost names
+    const existingCostNames = new Set(costs.map((c) => c.name));
 
-    // Prepare usage records for upsert
-    const usageRows = records
-      .map((record) => {
-        const costId = costIdMap.get(record.cost_type);
-        if (!costId) {
-          console.warn(`Cost type "${record.cost_type}" not found in database`);
-          return null;
-        }
+    // Find cost types in records that don't exist in the cost table
+    const missingCostNames = records
+      .map((r) => r.cost_type)
+      .filter((name) => !existingCostNames.has(name));
 
-        return {
-          priority_agent_id: this.priorityAgentId,
-          date: new Date(hour).toISOString(),
-          cost_id: costId,
-          amount: record.amount,
-        };
-      })
-      .filter((r) => r !== null);
+    // Insert missing cost types with amount 0
+    if (missingCostNames.length > 0) {
+      const newCosts = missingCostNames.map((name) => ({
+        name,
+        amount: 0,
+      }));
+
+      console.log(
+        `[Usage DO] Inserting ${newCosts.length} missing cost types:`,
+        missingCostNames
+      );
+
+      const { data: insertedCosts, error: insertError } = await this.supabase
+        .from("cost")
+        .upsert(newCosts, { onConflict: "name", ignoreDuplicates: false })
+        .select("id, name");
+
+      if (insertError) {
+        console.error(
+          "[Usage DO] Failed to insert missing costs:",
+          insertError
+        );
+        throw new Error(
+          `Failed to insert missing costs: ${insertError.message}`
+        );
+      }
+
+      // Add newly inserted costs to our costs array
+      if (insertedCosts) {
+        costs.push(...insertedCosts);
+      }
+    }
+
+    // Create a map of cost name -> amount from records
+    const recordAmountMap = new Map(
+      records.map((r) => [r.cost_type, r.amount])
+    );
+
+    // Prepare usage records for ALL cost types, using 0 for missing ones
+    const usageRows = costs.map((cost) => {
+      const amount = recordAmountMap.get(cost.name) ?? 0;
+
+      return {
+        priority_agent_id: priorityAgentId,
+        hour: new Date(hour).toISOString(),
+        cost_id: cost.id,
+        amount,
+      };
+    });
 
     if (usageRows.length === 0) {
       return;
     }
 
-    // Upsert to Supabase
-    const { error: upsertError } = await this.supabase
+    // Upsert to Supabase - use .select() to get affected rows
+    const { data, error: upsertError } = await this.supabase
       .from("usage")
       .upsert(usageRows, {
-        onConflict: "priority_agent_id,date,cost_id",
+        onConflict: "priority_agent_id,hour,cost_id",
         ignoreDuplicates: false,
-      });
+      })
+      .select();
 
     if (upsertError) {
-      console.error("Failed to upsert usage:", upsertError);
+      console.error("[Usage DO] Failed to upsert usage:", upsertError);
       throw new Error(`Failed to upsert usage: ${upsertError.message}`);
+    }
+
+    // Check if rows were actually affected
+    if (!data || data.length === 0) {
+      console.error(
+        `[Usage DO] WARNING: Upsert succeeded but no rows were returned. Expected ${usageRows.length} rows.`
+      );
+      console.error(
+        `[Usage DO] This may indicate a database constraint issue or silent failure.`
+      );
     }
   }
 
   /**
-   * Get the current hour timestamp (rounded down to the hour)
+   * Get the current hour timestamp (rounded down to the hour boundary)
    */
   private getCurrentHour(): number {
     return Math.floor(Date.now() / HOUR_MS) * HOUR_MS;

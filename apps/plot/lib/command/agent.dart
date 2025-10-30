@@ -1,11 +1,14 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/api/agent_api.dart';
+import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/agent_details.dart';
 import 'logging.dart';
 
 /// Formats agent name with environment label if not public
@@ -30,44 +33,122 @@ class ManageAgents extends ShowCommands {
       AgentApi.getAgentsForPriority(priority),
       AgentApi.getAllAgents(priority),
     ]);
-    
+
     final priorityAgents = results[0] as List<PriorityAgent>;
     final allAgents = results[1] as List<Agent>;
-    
+
     final editCommands = priorityAgents
-        .map((agent) => EditAgentCommand(agent))
+        .map((agent) => EditAgentCommand(priority, agent))
         .toList();
 
-    final addCommands = allAgents
-        .map((agent) => AddAgent(priority, agent))
+    final viewCommands = allAgents
+        .map(
+          (agent) =>
+              ViewAgentDetailsCommand(priority, agent, isInstalled: false),
+        )
         .toList();
 
     return Commands(
       groups: [
         StaticCommandGroup(title: 'Active Agents', commands: editCommands),
-        StaticCommandGroup(title: 'Add Agent', commands: addCommands),
+        StaticCommandGroup(title: 'Available Agents', commands: viewCommands),
+      ],
+    );
+  }
+}
+
+class ViewAgentDetailsCommand extends ShowCommands {
+  ViewAgentDetailsCommand(
+    this.priority,
+    this.agent, {
+    required this.isInstalled,
+    this.priorityAgent,
+  }) : super(
+         title: _formatAgentName(agent.name, agent.environment),
+         icon: PlotIcon.agent,
+         commands: (context) =>
+             _getDetailCommands(priority, agent, isInstalled, priorityAgent),
+       );
+
+  final Priority priority;
+  final Agent agent;
+  final bool isInstalled;
+  final PriorityAgent? priorityAgent;
+
+  static Future<Commands> _getDetailCommands(
+    Priority priority,
+    Agent agent,
+    bool isInstalled,
+    PriorityAgent? priorityAgent,
+  ) async {
+    final commands = <Command>[];
+
+    if (isInstalled && priorityAgent != null) {
+      commands.add(RemoveAgent(priorityAgent));
+    } else {
+      commands.add(AddAgent(priority, agent));
+    }
+
+    return Commands(
+      groups: [
+        StaticCommandGroup(
+          infoBuilder: (context) => AgentDetails(agent: agent),
+          commands: commands,
+        ),
       ],
     );
   }
 }
 
 class EditAgentCommand extends ShowCommands {
-  EditAgentCommand(PriorityAgent agent)
+  EditAgentCommand(this.priority, this.priorityAgent)
     : super(
-        title: _formatAgentName(agent.name, agent.agentEnvironment),
+        title: _formatAgentName(
+          priorityAgent.name,
+          priorityAgent.agentEnvironment,
+        ),
         icon: PlotIcon.settings,
-        commands: (context) => _getAgentCommands(agent),
+        commands: (context) => _getAgentCommands(priority, priorityAgent),
       );
 
-  static Future<Commands> _getAgentCommands(PriorityAgent agent) async {
-    return Commands(
-      groups: [
-        StaticCommandGroup(
-          title: 'Agent Actions', 
-          commands: [RemoveAgent(agent)]
-        ),
-      ],
-    );
+  final Priority priority;
+  final PriorityAgent priorityAgent;
+
+  static Future<Commands> _getAgentCommands(
+    Priority priority,
+    PriorityAgent priorityAgent,
+  ) async {
+    // Fetch the full Agent data to show details
+    try {
+      // Fetch all agents to find the matching one
+      final allAgents = await AgentApi.getAllAgents(priority);
+      final matchingAgent = allAgents.firstWhere(
+        (a) =>
+            a.id == priorityAgent.agentId &&
+            a.environment == priorityAgent.agentEnvironment,
+        orElse: () => throw Exception('Agent not found'),
+      );
+
+      return Commands(
+        groups: [
+          StaticCommandGroup(
+            infoBuilder: (context) => AgentDetails(agent: matchingAgent),
+            commands: [RemoveAgent(priorityAgent)],
+          ),
+        ],
+      );
+    } catch (e, t) {
+      log.warning('Error loading agent details', e, t);
+      // Fallback to simple commands without details
+      return Commands(
+        groups: [
+          StaticCommandGroup(
+            title: 'Agent Actions',
+            commands: [RemoveAgent(priorityAgent)],
+          ),
+        ],
+      );
+    }
   }
 }
 
@@ -91,7 +172,15 @@ class AddAgent extends Command {
         agentEnvironment: agent.environment,
       );
       Posthog().capture(eventName: 'Agent Added');
-      return CommandMessage('Agent "${_formatAgentName(agent.name, agent.environment)}" added successfully');
+
+      // Reload agents in PriorityBloc
+      if (context.mounted) {
+        await context.read<PriorityBloc>().reloadAgents();
+      }
+
+      return CommandMessage(
+        'Agent "${_formatAgentName(agent.name, agent.environment)}" added successfully',
+      );
     } catch (e, t) {
       log.warning('Failed to add agent', e, t);
       return CommandMessage(
@@ -106,7 +195,8 @@ class RemoveAgent extends Command {
   RemoveAgent(this.agent)
     : super(
         title: 'Remove Agent',
-        subtitle: 'Remove ${_formatAgentName(agent.name, agent.agentEnvironment)} from this priority',
+        subtitle:
+            'Remove ${_formatAgentName(agent.name, agent.agentEnvironment)} from this priority',
         icon: FontAwesomeIcons.trash,
       );
 
@@ -117,7 +207,15 @@ class RemoveAgent extends Command {
     try {
       await AgentApi.removeAgent(agent.id);
       Posthog().capture(eventName: 'Agent Removed');
-      return CommandMessage('Agent "${_formatAgentName(agent.name, agent.agentEnvironment)}" removed successfully');
+
+      // Reload agents in PriorityBloc
+      if (context.mounted) {
+        await context.read<PriorityBloc>().reloadAgents();
+      }
+
+      return CommandMessage(
+        'Agent "${_formatAgentName(agent.name, agent.agentEnvironment)}" removed successfully',
+      );
     } catch (e) {
       return CommandMessage(
         'Failed to remove agent: ${e.toString()}',
@@ -126,4 +224,3 @@ class RemoveAgent extends Command {
     }
   }
 }
-

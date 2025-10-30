@@ -1,26 +1,24 @@
+import type { Store as IStore } from "@plotday/agent/tools/store";
+
 import { type Storage } from "../../state/storage";
-import type { Store as IStore } from "@plotday/sdk/tools/store";
 import { Tool } from "./tool";
+import { validateSerializable } from "./validation";
 
 export class Store extends Tool implements IStore {
   private storage: DurableObjectStub<Storage>;
 
-  constructor({
-    storage,
-    priorityAgentId,
-    path,
-  }: {
+  constructor(options: {
     storage: DurableObjectNamespace<Storage>;
     priorityAgentId: string;
     path: string[];
   }) {
     super();
     // Remove final element (this tool's ID) from path
-    const toolPath = path.slice(0, -1);
-    const storageId = storage.idFromName(
-      `${priorityAgentId}:${toolPath.join(":")}`
+    const toolPath = options.path.slice(0, -1);
+    const storageId = options.storage.idFromName(
+      `${options.priorityAgentId}:${toolPath.join(":")}`
     );
-    this.storage = storage.get(storageId);
+    this.storage = options.storage.get(storageId);
   }
 
   async get<T>(key: string) {
@@ -35,25 +33,18 @@ export class Store extends Tool implements IStore {
   }
 
   async set<T>(key: string, value: T) {
+    // Validate that the value doesn't contain functions or other non-serializable types
+    validateSerializable(`store value for key "${key}"`, value);
+
     const serializedValue = JSON.stringify(value);
     return await this.storage.set(key, serializedValue);
   }
 
   async clear(key: string) {
-    try {
-      await this.storage.clear(key);
-    } catch (error) {
-      console.error("Store remove error:", error);
-      throw error;
-    }
+    await this.storage.clear(key);
   }
 
   async clearAll() {
-    try {
-      await this.storage.clearAll();
-    } catch (error) {
-      console.error("Store remove error:", error);
-      throw error;
-    }
+    await this.storage.clearAll();
   }
 }

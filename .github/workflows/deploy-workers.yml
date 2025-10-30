@@ -32,7 +32,7 @@ jobs:
 
       - name: Build SDK
         run: |
-          cd public/sdk
+          cd public/builder
           pnpm install --frozen-lockfile
           pnpm build
 
@@ -102,7 +102,7 @@ jobs:
 
       - name: Build SDK
         run: |
-          cd public/sdk
+          cd public/builder
           pnpm install --frozen-lockfile
           pnpm build
 

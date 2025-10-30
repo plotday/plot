@@ -111,7 +111,6 @@ class ActivityDetailWidget extends StatelessWidget {
     );
 
     return ListTile(
-      command: !isContext ? ChangeCurrentActivity(activity) : null,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

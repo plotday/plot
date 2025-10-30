@@ -8,13 +8,10 @@ import type { Bindings, LogMessage } from "../env";
  */
 export class LogStream extends DurableObject<Bindings> {
   private streams: Map<string, ReadableStreamDefaultController> = new Map();
-  private agentRootId: string;
   private keepAliveInterval = 30000; // 30 seconds
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    // Extract agent root ID from DO name
-    this.agentRootId = ctx.id.name || "";
   }
 
   /**
@@ -48,19 +45,10 @@ export class LogStream extends DurableObject<Bindings> {
     }
 
     // Create SSE stream
-    const encoder = new TextEncoder();
-
     const stream = new ReadableStream({
       start: async (c) => {
         // Store this controller so we can send logs to it
         this.streams.set(streamId, c);
-
-        // Send initial connection message
-        const initialMessage = this.formatSSE({
-          event: "progress",
-          data: { message: "=== Connected ===" },
-        });
-        c.enqueue(encoder.encode(initialMessage));
 
         // Schedule keep-alive alarm if this is the first stream
         if (this.streams.size === 1) {

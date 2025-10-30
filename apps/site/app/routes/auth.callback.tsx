@@ -60,9 +60,9 @@ export default function AuthCallback({ loaderData }: Route.ComponentProps) {
       const encodedReturnTo = searchParams.get("returnTo") || "/";
       const returnTo = encodedReturnTo === "/" ? "/" : decodeURIComponent(encodedReturnTo);
 
-      console.log("Auth callback - URL:", window.location.href);
-      console.log("Auth callback - error:", error_code, error_description);
-      console.log("Auth callback - returnTo:", returnTo);
+      console.log("Integrations callback - URL:", window.location.href);
+      console.log("Integrations callback - error:", error_code, error_description);
+      console.log("Integrations callback - returnTo:", returnTo);
 
       if (error_code) {
         console.error("OAuth error:", error_code, error_description);

@@ -29,7 +29,7 @@ import webhook from "./webhook";
 
 // Export Durable Objects
 export { Storage } from "./state/storage";
-export { Callbacks } from "./state/callbacks";
+export { CallbacksState } from "./state/callbacks";
 export { Broadcast } from "./state/broadcast";
 export { Usage } from "./state/usage";
 export { LogSubscriptions } from "./state/log-subscriptions";

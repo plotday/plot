@@ -12,44 +12,44 @@ jobs:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        submodules: true
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
 
-    - uses: pnpm/action-setup@v4
-      name: Install pnpm
-      with:
-        run_install: false
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          run_install: false
 
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: 22
-        cache: 'pnpm'
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
 
-    - name: Build SDK
-      run: |
-        cd public/sdk
-        pnpm install --frozen-lockfile
-        pnpm build
+      - name: Build SDK
+        run: |
+          cd public/builder
+          pnpm install --frozen-lockfile
+          pnpm build
 
-    - name: Install dependencies
-      run: pnpm install
+      - name: Install dependencies
+        run: pnpm install
 
-    - name: Install Perl
-      uses: shogo82148/actions-setup-perl@v1
+      - name: Install Perl
+        uses: shogo82148/actions-setup-perl@v1
 
-    - name: Install pg_format
-      run: |
-        curl -L -o pg_format.zip https://github.com/darold/pgFormatter/archive/refs/tags/v5.5.zip
-        unzip pg_format.zip -d $HOME/pg_format
-        mv $HOME/pg_format/pgFormatter*/* $HOME/pg_format/
-        chmod +x $HOME/pg_format/pg_format
-        echo "$HOME/pg_format" >> "$GITHUB_PATH"
+      - name: Install pg_format
+        run: |
+          curl -L -o pg_format.zip https://github.com/darold/pgFormatter/archive/refs/tags/v5.5.zip
+          unzip pg_format.zip -d $HOME/pg_format
+          mv $HOME/pg_format/pgFormatter*/* $HOME/pg_format/
+          chmod +x $HOME/pg_format/pg_format
+          echo "$HOME/pg_format" >> "$GITHUB_PATH"
 
-    - name: Start Supabase
-      run: cd libs/db && pnpm run start:db
+      - name: Start Supabase
+        run: cd libs/db && pnpm run start:db
 
-    - name: Lint
-      run: pnpm run lint
+      - name: Lint
+        run: pnpm run lint

@@ -1,13 +1,13 @@
 import type { SupabaseClient } from "@plotday/db";
 
-import type { Bindings } from "../env";
+import { type AgentEnvironment, type Bindings } from "../env";
 import { buildAgent } from "./builder";
-import { storeAgentModule } from "./index";
+import { type AgentPermissions, storeAgentModule } from "./index";
 import type { AgentSource } from "./types";
 
 export type DeploymentInput =
-  | { module: string; source?: never }
-  | { source: AgentSource; module?: never };
+  | { module: string; sourcemap?: string; source?: never }
+  | { source: AgentSource; module?: never; sourcemap?: never };
 
 export interface DeployAgentOptions {
   env: Bindings;
@@ -15,7 +15,7 @@ export interface DeployAgentOptions {
   supabase: SupabaseClient;
   adminId: string;
   input: DeploymentInput;
-  environment: "personal" | "private" | "review";
+  environment: Exclude<AgentEnvironment, "public">;
   name: string;
   description?: string;
   userId?: string | null;
@@ -25,13 +25,13 @@ export interface DeployAgentOptions {
 
 export interface DeployAgentResult {
   version: string;
-  dependencies: string[];
+  permissions: AgentPermissions;
   errors?: string[];
 }
 
 /**
  * Common implementation for deploying agents, used by both the API endpoint
- * and the AgentManager tool.
+ * and the Agents tool.
  *
  * Supports deploying from either:
  * - A pre-bundled module (JavaScript code)
@@ -60,6 +60,7 @@ export async function deployAgent({
 
   // Determine the module to deploy
   let moduleCode: string;
+  let sourcemapCode: string | undefined;
 
   if (input.source !== undefined) {
     // Build module from source using container sandbox
@@ -70,8 +71,8 @@ export async function deployAgent({
       // Return build errors for dryRun or throw for real deployment
       if (dryRun) {
         return {
-          version: "",
-          dependencies: [],
+          version: "dry-run",
+          permissions: {},
           errors: buildResult.errors,
         };
       }
@@ -81,45 +82,53 @@ export async function deployAgent({
     }
 
     moduleCode = buildResult.module;
+    sourcemapCode = buildResult.sourcemap;
     console.log("Agent built successfully from source");
   } else {
     // Use provided module directly
     moduleCode = input.module!;
+    sourcemapCode = input.sourcemap;
   }
 
-  // If dryRun, stop here and return validation success
-  if (dryRun) {
-    return {
-      version: "dry-run",
-      dependencies: [],
-      errors: [],
-    };
-  }
-
-  // Report deployment progress
-  onProgress?.("Deploying agent");
-
-  // Store agent module in R2 and get version + dependencies
+  // Store agent module in R2 and get version + permissions
+  // (or just collect permissions in dry-run mode)
   let version: string;
-  let dependencies: any[];
-  let permissions: any;
+  let permissions: AgentPermissions;
   try {
+    if (dryRun) {
+      onProgress?.("Analyzing permissions");
+    } else {
+      onProgress?.("Deploying agent");
+    }
+
     const storeResult = await storeAgentModule({
       env,
       ctx,
       id: adminId,
       module: moduleCode,
+      sourcemap: sourcemapCode,
       environment,
+      supabase,
+      dryRun,
     });
     version = storeResult.version;
-    dependencies = storeResult.dependencies;
     permissions = storeResult.permissions;
   } catch (error) {
+    console.error("Error storing agent module:", error);
     throw new Error(
-      `Failed to store agent module: ${
+      `Failed to ${dryRun ? "analyze" : "store"} agent module: ${
         error instanceof Error ? error.message : "Unknown error"
       }`
     );
+  }
+
+  // If dryRun, return permissions without storing to database
+  if (dryRun) {
+    return {
+      version: "dry-run",
+      permissions,
+      errors: [],
+    };
   }
 
   // Check if agent already exists for this environment
@@ -139,7 +148,7 @@ export async function deployAgent({
         name,
         description,
         version,
-        permissions,
+        permissions: permissions as any,
         environment,
         user_id: userId ?? null,
       })
@@ -151,7 +160,10 @@ export async function deployAgent({
     }
   } else {
     // Update existing agent
-    const updateData: Record<string, any> = { version, permissions };
+    const updateData: Record<string, any> = {
+      version,
+      permissions,
+    };
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
 
@@ -165,6 +177,61 @@ export async function deployAgent({
 
     if (updateError || !updatedAgent) {
       throw new Error(`Failed to update agent: ${updateError?.message}`);
+    }
+
+    // Call upgrade callback for all active priorityAgents
+    onProgress?.("Upgrading active agents");
+    try {
+      const { data: priorityAgents, error: fetchError } = await supabase
+        .from("priority_agent")
+        .select("id, priority_id")
+        .eq("agent_id", adminId)
+        .eq("agent_environment", environment)
+        .is("deleted_at", null);
+
+      if (fetchError) {
+        console.error(
+          "Error fetching priority agents for upgrade:",
+          fetchError
+        );
+      } else if (priorityAgents && priorityAgents.length > 0) {
+        console.log(
+          `Calling upgrade on ${priorityAgents.length} active priority agents`
+        );
+
+        const { agentFactory } = await import("./index");
+        const factory = agentFactory({ env, ctx, supabase });
+
+        // Use allSettled to handle errors without blocking other upgrades
+        const upgradeResults = await Promise.allSettled(
+          priorityAgents.map(async (pa) => {
+            const agentWrapper = await factory({
+              id: adminId,
+              environment,
+              version, // Use NEW version
+              priorityId: pa.priority_id,
+              priorityAgentId: pa.id,
+            });
+            return agentWrapper.upgrade();
+          })
+        );
+
+        // Log any upgrade failures
+        upgradeResults.forEach((result, index) => {
+          if (result.status === "rejected") {
+            console.error(
+              `Failed to upgrade priority_agent ${priorityAgents[index].id}:`,
+              result.reason
+            );
+          }
+        });
+      }
+    } catch (upgradeError) {
+      // Log upgrade errors but continue with deployment
+      console.error(
+        "Error during upgrade callback processing (continuing with deployment):",
+        upgradeError
+      );
     }
   }
 
@@ -186,7 +253,7 @@ export async function deployAgent({
           name,
           description,
           version,
-          permissions,
+          permissions: permissions as any,
           user_id: null,
         },
         {
@@ -204,11 +271,8 @@ export async function deployAgent({
     }
   }
 
-  // Extract only direct dependencies (id only) for the response
-  const directDependencies = dependencies.map((dep) => dep.id);
-
   return {
     version,
-    dependencies: directDependencies,
+    permissions,
   };
 }

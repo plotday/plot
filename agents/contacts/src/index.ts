@@ -4,10 +4,9 @@ import {
   ActivityType,
   Agent,
   type Priority,
-  type Tools,
-} from "@plotday/sdk";
-import { Plot } from "@plotday/sdk/tools/plot";
-import { Store } from "@plotday/sdk/tools/store";
+  type ToolBuilder,
+} from "@plotday/agent";
+import { Plot } from "@plotday/agent/tools/plot";
 import GoogleContactsTool from "@plotday/tool-google-contacts";
 import type {
   Contact,
@@ -22,34 +21,27 @@ type StoredContactAuth = {
   authToken: string;
 };
 
-type ContactSelectionContext = {
-  provider: ContactProvider;
-  authToken: string;
-};
-
 export default class ContactsAgent extends Agent<ContactsAgent> {
-  private googleContacts: GoogleContacts;
-  private plot: Plot;
-  private store: Store;
-
-  constructor(id: string, tools: Tools) {
-    super(id, tools);
-    this.googleContacts = tools.get(GoogleContactsTool);
-    this.plot = tools.get(Plot);
-    this.store = tools.get(Store);
+  build(build: ToolBuilder) {
+    return {
+      googleContacts: build(GoogleContactsTool),
+      plot: build(Plot),
+    };
   }
 
   private getProviderTool(provider: ContactProvider): GoogleContacts {
     switch (provider) {
       case "google":
-        return this.googleContacts;
+        return this.tools.googleContacts;
       default:
         throw new Error(`Unknown contact provider: ${provider}`);
     }
   }
 
   private async getStoredAuths(): Promise<StoredContactAuth[]> {
-    const stored = await this.store.get<StoredContactAuth[]>("contact_auths");
+    const stored = await this.tools.store.get<StoredContactAuth[]>(
+      "contact_auths"
+    );
     return stored || [];
   }
 
@@ -66,7 +58,7 @@ export default class ContactsAgent extends Agent<ContactsAgent> {
       auths.push({ provider, authToken });
     }
 
-    await this.store.set("contact_auths", auths);
+    await this.tools.store.set("contact_auths", auths);
   }
 
   private async getAuthToken(
@@ -79,13 +71,13 @@ export default class ContactsAgent extends Agent<ContactsAgent> {
 
   async activate(_priority: Pick<Priority, "id">) {
     // Get auth links from contacts tools
-    const googleAuthLink = await this.googleContacts.requestAuth(
-      "onAuthComplete",
-      { provider: "google" }
+    const googleAuthLink = await this.tools.googleContacts.requestAuth(
+      this.onAuthComplete,
+      "google"
     );
 
     // Create activity with auth link
-    await this.plot.createActivity({
+    await this.tools.plot.createActivity({
       type: ActivityType.Task,
       title: "Connect your contacts",
       start: new Date(),
@@ -111,9 +103,7 @@ export default class ContactsAgent extends Agent<ContactsAgent> {
     }
 
     const tool = this.getProviderTool(provider);
-    await tool.startSync(authToken, "handleContacts", {
-      context: { provider },
-    });
+    await tool.startSync(authToken, this.handleContacts, provider);
   }
 
   async stopSync(provider: ContactProvider): Promise<void> {
@@ -151,11 +141,13 @@ export default class ContactsAgent extends Agent<ContactsAgent> {
     });
 
     // Process the contacts through the plot tool
-    await this.plot.addContacts(contacts);
+    await this.tools.plot.addContacts(contacts);
   }
 
-  async onAuthComplete(authResult: ContactAuth, context?: any): Promise<void> {
-    const provider = context?.provider as ContactProvider;
+  async onAuthComplete(
+    authResult: ContactAuth,
+    provider: ContactProvider
+  ): Promise<void> {
     if (!provider) {
       console.error("No provider specified in auth context");
       return;
@@ -181,19 +173,16 @@ export default class ContactsAgent extends Agent<ContactsAgent> {
     authToken: string
   ): Promise<void> {
     // Create callback link for sync using the cleaner API
-    const token = await this.callback("onSyncSelected", {
-      provider,
-      authToken,
-    });
+    const token = await this.callback(this.onSyncSelected, provider, authToken);
 
     const link: ActivityLink = {
       title: `🔄 Start syncing ${provider} contacts`,
       type: ActivityLinkType.callback,
-      token: token,
+      token,
     };
 
     // Create the sync confirmation activity
-    await this.plot.createActivity({
+    await this.tools.plot.createActivity({
       type: ActivityType.Task,
       title: `Would you like to sync your ${provider} contacts?`,
       start: new Date(),
@@ -204,39 +193,28 @@ export default class ContactsAgent extends Agent<ContactsAgent> {
 
   async onSyncSelected(
     link: ActivityLink,
-    context?: ContactSelectionContext
+    provider: ContactProvider,
+    authToken: string
   ): Promise<void> {
     console.log("Sync selected:", link.title);
 
-    if (!context) {
-      console.error("No context found in sync selection callback");
-      return;
-    }
-
     try {
       // Start sync for the contacts
-      const tool = this.getProviderTool(context.provider);
-      await tool.startSync(context.authToken, "handleContacts", {
-        context: {
-          provider: context.provider,
-        },
-      });
+      const tool = this.getProviderTool(provider);
+      await tool.startSync(authToken, this.handleContacts, provider);
 
-      console.log(`Started syncing ${context.provider} contacts`);
+      console.log(`Started syncing ${provider} contacts`);
 
       // Optionally create a confirmation activity
-      await this.plot.createActivity({
+      await this.tools.plot.createActivity({
         type: ActivityType.Task,
-        title: `✅ Started syncing ${context.provider} contacts`,
-        note: `Contact sync has been started for your ${context.provider} contacts.`,
+        title: `✅ Started syncing ${provider} contacts`,
+        note: `Contact sync has been started for your ${provider} contacts.`,
         start: new Date(),
         end: null,
       });
     } catch (error) {
-      console.error(
-        `Failed to start sync for ${context.provider} contacts:`,
-        error
-      );
+      console.error(`Failed to start sync for ${provider} contacts:`, error);
     }
   }
 }

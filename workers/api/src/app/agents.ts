@@ -77,11 +77,11 @@ agents.post("/agent", async (c) => {
       body.name,
       body.config,
       {
-        agentFactory: agentFactory(
-          c.env,
-          c.executionCtx as ExecutionContext,
-          c.var.supabaseAdmin
-        ),
+        agentFactory: agentFactory({
+          env: c.env,
+          ctx: c.executionCtx as ExecutionContext,
+          supabase: c.var.supabaseAdmin,
+        }),
       }
     );
     return c.json(dbPriorityAgent.id);

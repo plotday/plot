@@ -6,14 +6,12 @@ class HoverableLink extends StatefulWidget {
     required this.text,
     required this.uri,
     this.color = const Color(0xFF6B7280),
-    this.fontSize = 12,
     super.key,
   });
 
   final String text;
   final Uri uri;
   final Color color;
-  final double fontSize;
 
   @override
   State<HoverableLink> createState() => _HoverableLinkState();
@@ -32,9 +30,10 @@ class _HoverableLinkState extends State<HoverableLink> {
         child: Text(
           widget.text,
           style: TextStyle(
-            fontSize: widget.fontSize,
             color: widget.color,
-            decoration: _isHovered ? TextDecoration.underline : TextDecoration.none,
+            decoration: _isHovered
+                ? TextDecoration.underline
+                : TextDecoration.none,
             decorationColor: widget.color,
           ),
         ),

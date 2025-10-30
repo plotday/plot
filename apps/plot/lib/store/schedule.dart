@@ -64,7 +64,9 @@ class Schedule extends Equatable {
               previous,
               days: days,
               range: CustomBoundedDateRange(
-                previous ?? range.start!.subDays(31),
+                (previous != null && previous.isBefore(range.start!))
+                    ? previous
+                    : range.start!.subDays(31),
                 range.start!,
               ),
               reverse: true,
@@ -77,7 +79,9 @@ class Schedule extends Equatable {
               days: days,
               range: CustomBoundedDateRange(
                 range.end!,
-                next ?? range.end!.addDays(31),
+                (next != null && next.isAfter(range.end!))
+                    ? next
+                    : range.end!.addDays(31),
               ),
               reverse: false,
             );

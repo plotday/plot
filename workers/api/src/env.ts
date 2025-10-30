@@ -1,7 +1,7 @@
 import { type AgentBuilder } from "../";
-import { type RunMessage } from "./agent/tools/run";
+import { type RunMessage } from "./agent/tools/tasks";
 import { type Broadcast } from "./state/broadcast";
-import { type Callbacks } from "./state/callbacks";
+import { type CallbacksState } from "./state/callbacks";
 import { type LogStream } from "./state/log-stream";
 import { type LogSubscriptions } from "./state/log-subscriptions";
 import { type Storage } from "./state/storage";
@@ -13,6 +13,8 @@ import {
   type UpdateItem,
 } from "./types";
 
+export type AgentEnvironment = "personal" | "private" | "review" | "public";
+
 export type UpdateMessage = {
   type: "activity" | "priority" | "session";
   event?: "created" | "updated" | "deleted";
@@ -20,7 +22,7 @@ export type UpdateMessage = {
   previous?: UpdateItem;
   agents: {
     id: string;
-    environment: string;
+    environment: AgentEnvironment;
     priority_agent_id: string;
     config?: any;
     version?: string;
@@ -48,7 +50,7 @@ export type SessionUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
 
 export type LogMessage = {
   agentRootId: string;
-  environment: "personal" | "private" | "review" | "public";
+  environment: AgentEnvironment;
   severity: "log" | "error" | "warn" | "info";
   message: string;
   timestamp: number;
@@ -83,6 +85,8 @@ export type Bindings = {
   // Can hopefully remove this once we can use the Vercel AI SDK with Cloudflare AI Gateway without requiring an API key.
   readonly ANTHROPIC_API_KEY: string;
 
+  readonly AGENT_CONFIG: KVNamespace;
+
   readonly AGENT_BUILDER: DurableObjectNamespace<AgentBuilder>;
   readonly LOADER: WorkerLoader;
   readonly RUN_QUEUE: Queue<RunMessage>;
@@ -90,7 +94,7 @@ export type Bindings = {
   readonly AGENT_LOGS_QUEUE: Queue<LogMessage>;
   readonly AI: Ai;
   readonly STORAGE: DurableObjectNamespace<Storage>;
-  readonly CALLBACKS: DurableObjectNamespace<Callbacks>;
+  readonly CALLBACKS: DurableObjectNamespace<CallbacksState>;
   readonly BROADCAST: DurableObjectNamespace<Broadcast>;
   readonly USAGE: DurableObjectNamespace<Usage>;
   readonly LOG_SUBSCRIPTIONS: DurableObjectNamespace<LogSubscriptions>;

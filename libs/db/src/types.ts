@@ -40,12 +40,15 @@ export type Database = {
           at: unknown | null
           author_id: string
           created_at: string
+          created_by: string
           deleted_at: string | null
           done_at: string | null
           draft: boolean
           duration: unknown | null
           id: string
           links: Json | null
+          mentions: string[] | null
+          meta: Json | null
           note: string | null
           on: unknown | null
           order: number
@@ -55,7 +58,6 @@ export type Database = {
           recurrence_dates: string[] | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
-          source: Json | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"]
           updated_at: string
@@ -67,12 +69,15 @@ export type Database = {
           at?: unknown | null
           author_id: string
           created_at?: string
+          created_by: string
           deleted_at?: string | null
           done_at?: string | null
           draft?: boolean
           duration?: unknown | null
           id?: string
           links?: Json | null
+          mentions?: string[] | null
+          meta?: Json | null
           note?: string | null
           on?: unknown | null
           order?: number
@@ -82,7 +87,6 @@ export type Database = {
           recurrence_dates?: string[] | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
-          source?: Json | null
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"]
           updated_at?: string
@@ -93,12 +97,15 @@ export type Database = {
           at?: unknown | null
           author_id?: string
           created_at?: string
+          created_by?: string
           deleted_at?: string | null
           done_at?: string | null
           draft?: boolean
           duration?: unknown | null
           id?: string
           links?: Json | null
+          mentions?: string[] | null
+          meta?: Json | null
           note?: string | null
           on?: unknown | null
           order?: number
@@ -108,7 +115,6 @@ export type Database = {
           recurrence_dates?: string[] | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
-          source?: Json | null
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"]
           updated_at?: string
@@ -168,10 +174,10 @@ export type Database = {
           done_at: string | null
           duration: unknown | null
           id: string
+          meta: Json | null
           note: string | null
           occurrence: string
           on: unknown | null
-          source: Json | null
           title: string | null
           updated_at: string
           updated_by: number
@@ -184,10 +190,10 @@ export type Database = {
           done_at?: string | null
           duration?: unknown | null
           id?: string
+          meta?: Json | null
           note?: string | null
           occurrence: string
           on?: unknown | null
-          source?: Json | null
           title?: string | null
           updated_at?: string
           updated_by?: number
@@ -200,10 +206,10 @@ export type Database = {
           done_at?: string | null
           duration?: unknown | null
           id?: string
+          meta?: Json | null
           note?: string | null
           occurrence?: string
           on?: unknown | null
-          source?: Json | null
           title?: string | null
           updated_at?: string
           updated_by?: number
@@ -1189,7 +1195,7 @@ export type Database = {
           amount: number
           cost_id: number
           created_at: string
-          date: string
+          hour: string
           id: number
           priority_agent_id: string
           updated_at: string
@@ -1198,7 +1204,7 @@ export type Database = {
           amount: number
           cost_id: number
           created_at?: string
-          date: string
+          hour: string
           id?: never
           priority_agent_id: string
           updated_at?: string
@@ -1207,7 +1213,7 @@ export type Database = {
           amount?: number
           cost_id?: number
           created_at?: string
-          date?: string
+          hour?: string
           id?: never
           priority_agent_id?: string
           updated_at?: string
@@ -1510,6 +1516,8 @@ export type Database = {
           duration: unknown | null
           id: string | null
           links: Json | null
+          mentions: string[] | null
+          meta: Json | null
           note: string | null
           on: unknown | null
           order: number | null
@@ -1521,7 +1529,6 @@ export type Database = {
           recurrence_dates: string[] | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
-          source: Json | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"] | null
           unread: boolean | null
@@ -1646,12 +1653,15 @@ export type Database = {
           at: unknown | null
           author_id: string
           created_at: string
+          created_by: string
           deleted_at: string | null
           done_at: string | null
           draft: boolean
           duration: unknown | null
           id: string
           links: Json | null
+          mentions: string[] | null
+          meta: Json | null
           note: string | null
           on: unknown | null
           order: number
@@ -1661,7 +1671,6 @@ export type Database = {
           recurrence_dates: string[] | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
-          source: Json | null
           title: string | null
           type: Database["public"]["Enums"]["activity_type"]
           updated_at: string

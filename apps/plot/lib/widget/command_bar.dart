@@ -182,7 +182,7 @@ class CommandBarState extends State<_CommandBar> {
                     ),
                   ),
                   if (errorBox != null) errorBox,
-                  Flexible(
+                  Expanded(
                     child: BidirectionalList(
                       // shrinkWrap: true,
                       controller: listController,
@@ -192,12 +192,14 @@ class CommandBarState extends State<_CommandBar> {
                         final command = _getCommandAtIndex(index);
                         final body = command.buildBody(context);
                         Widget? header;
-                        if (index == 0 ||
-                            group != _getGroupAtIndex(index - 1)) {
+                        Widget? info;
+                        if (group.title != null &&
+                            (index == 0 ||
+                                group != _getGroupAtIndex(index - 1))) {
                           header = Padding(
                             padding: widgetPaddingSm,
                             child: Text(
-                              group.title,
+                              group.title!,
 
                               style: TextStyle(
                                 color: context.theme.colors.mutedForeground,
@@ -206,11 +208,27 @@ class CommandBarState extends State<_CommandBar> {
                             ),
                           );
                         }
+                        // Render info widget if provided
+                        if (group.infoBuilder != null) {
+                          info = Container(
+                            padding: const EdgeInsets.all(0),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: context.theme.colors.border,
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: group.infoBuilder!(context),
+                          );
+                        }
                         return Column(
                           key: ValueKey(index),
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (header != null) header,
+                            if (info != null) info,
                             ListTile(
                               command: command,
                               body: body,

@@ -10,7 +10,7 @@ export interface AgentSource {
 
   /**
    * Package dependencies with version specifiers
-   * @example { "@plotday/sdk": "workspace:^", "@plotday/tool-google-calendar": "^1.0.0" }
+   * @example { "@plotday/agent": "workspace:^", "@plotday/tool-google-calendar": "^1.0.0" }
    */
   dependencies: Record<string, string>;
 
@@ -28,6 +28,8 @@ export interface AgentSource {
 export interface BuildSuccess {
   success: true;
   module: string;
+  /** Optional sourcemap for the bundled module (for stack trace translation) */
+  sourcemap?: string;
 }
 
 /**

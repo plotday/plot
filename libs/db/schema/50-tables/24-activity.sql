@@ -9,6 +9,7 @@ CREATE TABLE "public"."activity" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "author_id" uuid NOT NULL,
+    "created_by" uuid NOT NULL,
     "assignee_id" uuid,
     "updated_by" integer NOT NULL DEFAULT 0,
     "deleted_at" timestamp with time zone,
@@ -30,7 +31,8 @@ CREATE TABLE "public"."activity" (
     "recurrence_rule" text,
     "recurrence_exdates" timestamptz[],
     "recurrence_dates" timestamptz[],
-    "source" jsonb
+    "meta" jsonb,
+    "mentions" uuid[]
 );
 
 CREATE TABLE "public"."activity_exception" (
@@ -48,8 +50,14 @@ CREATE TABLE "public"."activity_exception" (
     "done_at" timestamp with time zone,
     "title" text,
     "note" text,
-    "source" jsonb
+    "meta" jsonb
 );
+
+COMMENT ON COLUMN "public"."activity"."author_id" IS 'The actor to credit with creating this activity. For activities created by agents on behalf of contacts or users, this is the contact/user. For activities created directly by users or agents, this is the user/agent ID.';
+
+COMMENT ON COLUMN "public"."activity"."created_by" IS 'The user_id or priority_agent_id that actually created this activity. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
+
+COMMENT ON COLUMN "public"."activity"."mentions" IS 'Array of actor IDs (user_id, contact_id, or priority_agent_id) that are mentioned in this activity via @-mentions.';
 
 COMMENT ON COLUMN "public"."activity_exception"."occurrence" IS 'Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM';
 
@@ -86,23 +94,62 @@ CREATE TRIGGER set_activity_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 
-CREATE OR REPLACE FUNCTION update_author_id ()
+CREATE OR REPLACE FUNCTION public.update_author_and_created_by ()
     RETURNS TRIGGER
-    AS $$
+    LANGUAGE plpgsql
+    AS $function$
 BEGIN
+    -- Don't allow users to impersonate others
     NEW.author_id = COALESCE(user_contact_id (), NEW.author_id);
+    NEW.created_by = COALESCE(auth.uid (), NEW.created_by);
     RETURN NEW;
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 
-CREATE TRIGGER set_activity_author_id
+CREATE TRIGGER set_activity_author_and_created_by
     BEFORE INSERT ON "public"."activity"
     FOR EACH ROW
-    EXECUTE FUNCTION update_author_id ();
+    EXECUTE FUNCTION update_author_and_created_by ();
 
 CREATE TRIGGER activity_change_api_call
     AFTER INSERT OR UPDATE ON public.activity
     FOR EACH ROW
     EXECUTE FUNCTION public.notify_internal_api_for_activity ();
+
+CREATE OR REPLACE FUNCTION public.propagate_mentions_to_parent ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $function$
+DECLARE
+    parent_path ltree;
+BEGIN
+    -- Skip if this is already a top-level activity
+    IF nlevel (NEW.path) = 1 THEN
+        RETURN NEW;
+    END IF;
+    -- Skip if no mentions
+    IF NEW.mentions IS NULL OR array_length(NEW.mentions, 1) IS NULL THEN
+        RETURN NEW;
+    END IF;
+    -- Get top-level path (first segment only)
+    parent_path := subpath (NEW.path, 0, 1);
+    -- Update parent activity with deduplicated mentions
+    -- Silently skips if parent not found (UPDATE affects 0 rows)
+    UPDATE
+        public.activity
+    SET
+        mentions = ARRAY ( SELECT DISTINCT
+                unnest(COALESCE(mentions, ARRAY[]::uuid[]) || NEW.mentions))
+    WHERE
+        path = parent_path
+        AND priority_id = NEW.priority_id
+        AND deleted_at IS NULL;
+    RETURN NEW;
+END;
+$function$;
+
+CREATE TRIGGER activity_propagate_mentions_to_parent
+    AFTER INSERT OR UPDATE OF mentions ON public.activity
+    FOR EACH ROW
+    EXECUTE FUNCTION public.propagate_mentions_to_parent ();
 

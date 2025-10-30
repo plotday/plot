@@ -2,6 +2,7 @@
   "name": "@plotday/api",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "type": "module",
   "sideEffects": false,
   "private": true,
   "config": {
@@ -13,29 +14,37 @@
     "deploy": "../../scripts/deploy-worker",
     "deploy:vars": "../../scripts/deploy-worker-vars",
     "types": "wrangler types",
-    "lint": "tsc && eslint ."
+    "lint": "tsc && eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:watch": "vitest --config vitest.integration.config.ts",
+    "test:all": "pnpm test && pnpm test:integration"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.33",
     "@ai-sdk/google": "^2.0.23",
     "@ai-sdk/openai": "^2.0.52",
     "@cloudflare/containers": "^0.0.28",
+    "@jridgewell/trace-mapping": "^0.3.31",
     "@plotday/db": "workspace:^",
-    "@plotday/sdk": "workspace:*",
+    "@plotday/agent": "workspace:*",
     "@sentry/cloudflare": "^10.12.0",
-    "typebox": "^1.0.35",
     "@supabase/supabase-js": "^2.38.4",
     "ai": "^5.0.76",
     "hono": "^4.6.15",
     "stripe": "^17.5.0",
+    "typebox": "^1.0.35",
     "workers-ai-provider": "^2.0.0",
     "zod": "^4.0.10"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.7.8",
     "@cloudflare/workers-types": "^4.0.0",
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
-    "@types/node": "^20.14.2"
+    "@types/node": "^20.14.2",
+    "vitest": "^2.1.8"
   },
   "nx": {
     "tags": [

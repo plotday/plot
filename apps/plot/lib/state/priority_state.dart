@@ -15,6 +15,7 @@ class PriorityState extends Equatable {
     bool showArchived = false,
     List<AgendaItem>? agendaItems,
     List<Tag> filter = const [],
+    List<PriorityAgent> agents = const [],
   }) {
     final agenda = agendaItems ?? _makeAgenda(schedule, context: context);
 
@@ -49,6 +50,7 @@ class PriorityState extends Equatable {
       previous: previous,
       showArchived: showArchived,
       filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
+      agents: agents.isNotEmpty ? List.unmodifiable(agents) : agents,
     );
   }
 
@@ -64,6 +66,7 @@ class PriorityState extends Equatable {
     this.first = 0,
     this.showArchived = false,
     this.filter = const [],
+    this.agents = const [],
   });
 
   final Priority context;
@@ -77,6 +80,7 @@ class PriorityState extends Equatable {
   final bool showArchived;
   final List<AgendaItem> agendaItems;
   final List<Tag> filter;
+  final List<PriorityAgent> agents;
 
   bool get doneStart => range != null && previous == null;
   bool get doneEnd => range != null && next == null;
@@ -159,6 +163,7 @@ class PriorityState extends Equatable {
     bool? showArchived,
     List<AgendaItem>? agendaItems,
     List<Tag>? filter,
+    List<PriorityAgent>? agents,
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -181,6 +186,9 @@ class PriorityState extends Equatable {
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
           : this.filter,
+      agents: agents != null
+          ? (agents.isNotEmpty ? List.unmodifiable(agents) : agents)
+          : this.agents,
     );
   }
 
@@ -197,11 +205,12 @@ class PriorityState extends Equatable {
     showArchived,
     agendaItems,
     filter,
+    agents,
   ];
 
   @override
   String toString() {
-    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, draft: $draft, first: $first, range: $range, showArchived: $showArchived, filter: $filter)';
+    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, draft: $draft, first: $first, range: $range, showArchived: $showArchived, filter: $filter, agents: ${agents.length})';
   }
 
   /// Returns the index of the first DateAgendaItem on or after the given date.

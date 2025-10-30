@@ -26,7 +26,7 @@ const DatabaseUpdateRequestSchema = z.object({
   agents: z.array(
     z.object({
       id: z.string(),
-      environment: z.string(),
+      environment: z.enum(["personal", "private", "review", "public"]),
       version: z.string(),
       priority_agent_id: z.string(),
       config: z.record(z.string(), z.any()).optional(),

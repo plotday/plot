@@ -3,23 +3,24 @@ import { DurableObject } from "cloudflare:workers";
 import { type SupabaseClient, createClient, safeQuery } from "@plotday/db";
 
 import { agentFactory } from "../agent";
-import { type Bindings } from "../env";
+import { validateSerializable } from "../agent/tools/validation";
+import { type AgentEnvironment, type Bindings } from "../env";
 
 export type CallbackData = {
   token: string;
   priorityAgentId: string;
   agentId: string;
-  environment: string;
+  environment: AgentEnvironment;
   path: string[]; // tool hierarchy only
   version: string; // agent version
   functionName: string;
-  context?: any;
+  extraArgs?: any[];
   callAt?: Date;
   callOnce?: boolean;
   expires?: Date;
 };
 
-export class Callbacks extends DurableObject<Bindings> {
+export class CallbacksState extends DurableObject<Bindings> {
   private sql: SqlStorage;
   private supabase: SupabaseClient;
 
@@ -47,7 +48,7 @@ export class Callbacks extends DurableObject<Bindings> {
           path TEXT NOT NULL,
           version TEXT NOT NULL,
           function_name TEXT NOT NULL,
-          context TEXT,
+          extra_args TEXT,
           call_at INTEGER,
           call_once INTEGER DEFAULT 0,
           expires INTEGER
@@ -70,22 +71,29 @@ export class Callbacks extends DurableObject<Bindings> {
     path,
     version,
     functionName,
-    context,
+    extraArgs,
     callAt,
     callOnce,
     expires,
   }: {
     priorityAgentId: string;
     agentId: string;
-    environment: string;
+    environment: AgentEnvironment;
     path: string[]; // tool hierarchy only
     version?: string;
     functionName: string;
-    context?: any;
+    extraArgs?: Exclude<any, Function>[];
     callAt?: Date;
     callOnce?: boolean;
     expires?: Date;
   }): Promise<string> {
+    if (extraArgs !== undefined) {
+      validateSerializable(
+        `create callback args for function "${functionName}"`,
+        extraArgs
+      );
+    }
+
     // Fetch version from database if not provided
     if (!version) {
       const { data, error } = await this.supabase
@@ -113,7 +121,7 @@ export class Callbacks extends DurableObject<Bindings> {
     this.sql.exec(
       `
         INSERT INTO callbacks (
-          token, priority_agent_id, agent_id, environment, path, version, function_name, context, call_at, call_once, expires
+          token, priority_agent_id, agent_id, environment, path, version, function_name, extra_args, call_at, call_once, expires
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       token,
@@ -123,7 +131,7 @@ export class Callbacks extends DurableObject<Bindings> {
       JSON.stringify(path),
       version,
       functionName,
-      context ? JSON.stringify(context) : null,
+      extraArgs ? JSON.stringify(extraArgs) : null,
       callAt ? callAt.getTime() : null,
       callOnce ? 1 : 0,
       expires ? expires.getTime() : null
@@ -138,12 +146,18 @@ export class Callbacks extends DurableObject<Bindings> {
     return `${this.ctx.id}:${token}`;
   }
 
-  async callCallback(token: string, args?: any): Promise<any> {
+  async callCallback(token: string, ...args: any[]): Promise<any> {
+    if (!token) {
+      throw new Error("Invalid callback token");
+    }
     [, token] = token.split(":");
+    if (!token) {
+      throw new Error("Invalid callback token");
+    }
     const result = this.sql
       .exec(
         `
-          SELECT token, priority_agent_id, agent_id, environment, path, version, function_name, context, call_at, call_once, expires
+          SELECT token, priority_agent_id, agent_id, environment, path, version, function_name, extra_args, call_at, call_once, expires
           FROM callbacks
           WHERE token = ?
           `,
@@ -163,8 +177,8 @@ export class Callbacks extends DurableObject<Bindings> {
       path: JSON.parse(rawCallback.path),
       version: rawCallback.version,
       functionName: rawCallback.function_name,
-      context: rawCallback.context
-        ? JSON.parse(rawCallback.context)
+      extraArgs: rawCallback.extra_args
+        ? JSON.parse(rawCallback.extra_args)
         : undefined,
       callAt: rawCallback.call_at ? new Date(rawCallback.call_at) : undefined,
       callOnce: Boolean(rawCallback.call_once),
@@ -187,7 +201,11 @@ export class Callbacks extends DurableObject<Bindings> {
         .single()
     );
 
-    const factory = agentFactory(this.env, this.ctx, this.supabase);
+    const factory = agentFactory({
+      env: this.env,
+      ctx: this.ctx,
+      supabase: this.supabase,
+    });
     const agentWrapper = await factory({
       id: agentId,
       environment,
@@ -200,8 +218,8 @@ export class Callbacks extends DurableObject<Bindings> {
     const callResult = await agentWrapper.callCallback(
       path,
       callback.functionName,
-      args === undefined ? callback.context : args,
-      args === undefined ? undefined : callback.context
+      ...(args ?? []),
+      ...(callback.extraArgs ?? [])
     );
 
     if (callback.callOnce) {
@@ -221,7 +239,7 @@ export class Callbacks extends DurableObject<Bindings> {
       | {
           priorityAgentId: string;
           agentId: string;
-          environment: string;
+          environment: AgentEnvironment;
           path?: string[];
           reallyDeleteEverything?: boolean;
         }
@@ -271,7 +289,7 @@ export class Callbacks extends DurableObject<Bindings> {
     const now = Date.now();
     const callbackResults = this.sql.exec(
       `
-        SELECT token
+        SELECT token, extra_args
         FROM callbacks
         WHERE call_at IS NOT NULL
           AND call_at <= ?
@@ -282,8 +300,11 @@ export class Callbacks extends DurableObject<Bindings> {
 
     for (const row of callbackResults) {
       const token = row.token as string;
+      const extraArgs = row.extra_args
+        ? JSON.parse(row.extra_args as string)
+        : undefined;
       try {
-        await this.callCallback(token);
+        await this.callCallback(token, ...(extraArgs ?? []));
       } catch (error) {
         console.error(`Callback failed:`, error);
       } finally {
@@ -316,13 +337,14 @@ export class Callbacks extends DurableObject<Bindings> {
    * and executes the callback.
    */
   static async CallCallback(
-    callbacks: DurableObjectNamespace<Callbacks>,
+    callbacks: DurableObjectNamespace<CallbacksState>,
     token: string,
-    args?: any
+    ...args: any[]
   ): Promise<any> {
     const [id] = token.split(":");
     const callbacksId = callbacks.idFromString(id);
     const callbacksStub = callbacks.get(callbacksId);
-    return await callbacksStub.callCallback(token, args);
+    // @ts-ignore TS2589: Type instantiation is excessively deep and possibly infinite.
+    return await callbacksStub.callCallback(token, ...args);
   }
 }

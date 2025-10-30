@@ -1,5 +1,6 @@
 import { type Database, type SupabaseClient, safeQuery } from "@plotday/db";
 
+import { type AgentEnvironment } from "../env";
 import type { agentFactory as AgentFactory } from ".";
 
 export async function add(
@@ -7,7 +8,7 @@ export async function add(
   supabaseAdmin: SupabaseClient,
   priority_id: string,
   agent_id: string,
-  agent_environment: "personal" | "private" | "review" | "public",
+  agent_environment: AgentEnvironment,
   name?: string,
   config?: any,
   activate?: {
@@ -142,7 +143,42 @@ export async function getAll(supabase: SupabaseClient, priorityId: string) {
       throw error;
     }
 
-    return data;
+    // Enrich agent data with publisher information
+    const enrichedData = await Promise.all(
+      data.map(async (agent: any) => {
+        // For personal agents, author is the user themselves
+        if (agent.environment === "personal") {
+          // Get user info from auth.users
+          const { data: userData } = await supabase.auth.getUser();
+          return {
+            ...agent,
+            author_name: userData?.user?.email || "You",
+            author_email: userData?.user?.email || null,
+            author_url: null,
+          };
+        }
+
+        // For other environments, get publisher info via agent_admin
+        const { data: adminData } = await supabase
+          .from("agent_admin")
+          .select("publisher:publisher_id(name, email, url)")
+          .eq("id", agent.id)
+          .single();
+
+        if (adminData?.publisher) {
+          return {
+            ...agent,
+            author_name: (adminData.publisher as any).name || null,
+            author_email: (adminData.publisher as any).email || null,
+            author_url: (adminData.publisher as any).url || null,
+          };
+        }
+
+        return agent;
+      })
+    );
+
+    return enrichedData;
   } catch (error) {
     console.error("Error fetching agents:", error);
     throw error;
@@ -160,7 +196,7 @@ export async function getById(
 
     const { data, error } = await supabase
       .from("priority_agent")
-      .select()
+      .select("*, agent(permissions)")
       .eq("id", priority_agent_id)
       .is("deleted_at", null)
       .single();
@@ -187,7 +223,7 @@ export async function getByPriority(
 
     const { data, error } = await supabase
       .from("priority_child_agent")
-      .select()
+      .select("*, agent(permissions)")
       .eq("priority_child_id", priority_id)
       .is("deleted_at", null);
 
@@ -274,11 +310,48 @@ export async function update(
 
 export async function deleteAgent(
   supabase: SupabaseClient,
-  priority_agent_id: string
+  priority_agent_id: string,
+  deactivate?: {
+    agentFactory: ReturnType<typeof AgentFactory>;
+  }
 ) {
   try {
     if (!priority_agent_id || typeof priority_agent_id !== "string") {
       throw new Error("priority_agent_id is required and must be a string");
+    }
+
+    // Call deactivate callback if requested
+    if (deactivate) {
+      try {
+        // Get agent metadata needed to create wrapper
+        const { data: priorityAgent, error: fetchError } = await supabase
+          .from("priority_agent")
+          .select("agent_id, agent_environment, priority_id")
+          .eq("id", priority_agent_id)
+          .is("deleted_at", null)
+          .single();
+
+        if (fetchError || !priorityAgent) {
+          console.warn(
+            `Could not fetch priority_agent ${priority_agent_id} for deactivation:`,
+            fetchError?.message
+          );
+        } else {
+          const agentWrapper = await deactivate.agentFactory({
+            id: priorityAgent.agent_id,
+            environment: priorityAgent.agent_environment,
+            priorityId: priorityAgent.priority_id,
+            priorityAgentId: priority_agent_id,
+          });
+          await agentWrapper.deactivate();
+        }
+      } catch (deactivateError) {
+        // Log deactivation errors but continue with deletion
+        console.error(
+          "Error calling deactivate callback (continuing with deletion):",
+          deactivateError
+        );
+      }
     }
 
     return safeQuery(

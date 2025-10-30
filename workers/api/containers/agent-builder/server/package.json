@@ -8,7 +8,7 @@
     "start": "node build/server.js"
   },
   "dependencies": {
-    "@plotday/sdk": "latest",
+    "@plotday/agent": "latest",
     "express": "^4.18.2"
   },
   "devDependencies": {

@@ -13,6 +13,7 @@ const agent = new Hono<{ Bindings: Bindings }>();
 const AgentDeploymentSchema = z
   .object({
     module: z.string().optional(),
+    sourcemap: z.string().optional(),
     source: z
       .object({
         displayName: z.string(),
@@ -132,7 +133,7 @@ agent.post("/agent/:id", async (c) => {
     return handleValidationError(parseResult.error);
   }
 
-  const { module, source, dryRun, name, description, environment } =
+  const { module, sourcemap, source, dryRun, name, description, environment } =
     parseResult.data;
 
   const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
@@ -247,7 +248,7 @@ agent.post("/agent/:id", async (c) => {
       );
     }
 
-    // Auth check: user token must have access to priority, or publisher token must match
+    // Integrations check: user token must have access to priority, or publisher token must match
     if (userToken && user) {
       // Check if user has access to the admin priority
       const { data: hasAccess, error: accessError } = await supabase.rpc(
@@ -296,7 +297,10 @@ agent.post("/agent/:id", async (c) => {
           ctx: c.executionCtx as ExecutionContext,
           supabase,
           adminId: adminId!,
-          input: module !== undefined ? { module } : { source: source! },
+          input:
+            module !== undefined
+              ? { module, sourcemap }
+              : { source: source! },
           environment,
           name: name!,
           description,
@@ -305,11 +309,12 @@ agent.post("/agent/:id", async (c) => {
           onProgress: (message) => stream.sendProgress(message),
         });
 
-        // If dryRun, return validation result
+        // If dryRun, return validation result with permissions
         if (dryRun) {
           stream.sendResult({
             success: !result.errors || result.errors.length === 0,
             errors: result.errors,
+            permissions: result.permissions,
           });
           return;
         }
@@ -332,7 +337,7 @@ agent.post("/agent/:id", async (c) => {
 
         stream.sendResult({
           ...finalAgent,
-          dependencies: result.dependencies,
+          permissions: result.permissions,
         });
       } catch (error) {
         console.error("Error deploying agent:", error);
@@ -347,23 +352,21 @@ agent.post("/agent/:id", async (c) => {
     return stream.toResponse();
   } else {
     // Non-streaming JSON response
-    let dependencies: string[];
-    let errors: string[] | undefined;
+    let result;
     try {
-      const result = await deployAgent({
+      result = await deployAgent({
         env: c.env,
         ctx: c.executionCtx as ExecutionContext,
         supabase,
         adminId: adminId!,
-        input: module !== undefined ? { module } : { source: source! },
+        input:
+          module !== undefined ? { module, sourcemap } : { source: source! },
         environment,
         name: name!,
         description,
         userId,
         dryRun,
       });
-      dependencies = result.dependencies;
-      errors = result.errors;
     } catch (error) {
       console.error("Error deploying agent:", error);
       return new Response(
@@ -374,11 +377,12 @@ agent.post("/agent/:id", async (c) => {
       );
     }
 
-    // If dryRun, return validation result
+    // If dryRun, return validation result with permissions
     if (dryRun) {
       return c.json({
-        success: !errors || errors.length === 0,
-        errors,
+        success: !result.errors || result.errors.length === 0,
+        errors: result.errors,
+        permissions: result.permissions,
       });
     }
 
@@ -402,7 +406,7 @@ agent.post("/agent/:id", async (c) => {
 
     return c.json({
       ...finalAgent,
-      dependencies,
+      permissions: result.permissions,
     });
   }
 });

@@ -1,0 +1,97 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "api-test",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "upload_source_maps": true,
+  "migrations": [
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "Storage",
+        "Broadcast",
+        "Usage",
+        "LogSubscriptions"
+      ]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": ["CallbacksState"]
+    },
+    {
+      "tag": "v7",
+      "new_sqlite_classes": ["AgentBuilder"]
+    },
+    {
+      "tag": "v8",
+      "new_sqlite_classes": ["LogStream"]
+    }
+  ],
+  "define": {
+    "ENV": "\"test\"",
+    "RELEASE": "\"test\"",
+    "PACKAGE": "\"api\""
+  },
+  "kv_namespaces": [
+    {
+      "binding": "AGENT_CONFIG",
+      "id": "test-agent-config",
+      "preview_id": "test-agent-config"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "queue": "run-test",
+        "binding": "RUN_QUEUE"
+      },
+      {
+        "queue": "updates-test",
+        "binding": "UPDATES_QUEUE"
+      },
+      {
+        "queue": "agent-logs-test",
+        "binding": "AGENT_LOGS_QUEUE"
+      }
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "STORAGE",
+        "class_name": "Storage"
+      },
+      {
+        "name": "CALLBACKS",
+        "class_name": "CallbacksState"
+      },
+      {
+        "name": "BROADCAST",
+        "class_name": "Broadcast"
+      },
+      {
+        "name": "USAGE",
+        "class_name": "Usage"
+      },
+      {
+        "name": "LOG_SUBSCRIPTIONS",
+        "class_name": "LogSubscriptions"
+      },
+      {
+        "name": "LOG_STREAM",
+        "class_name": "LogStream"
+      },
+      {
+        "name": "AGENT_BUILDER",
+        "class_name": "AgentBuilder"
+      }
+    ]
+  },
+  "r2_buckets": [
+    {
+      "binding": "AGENT_MODULES_BUCKET",
+      "bucket_name": "agent-modules-test"
+    }
+  ]
+}

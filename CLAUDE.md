@@ -22,12 +22,12 @@ The Supabase database schema is defined in "libs/db/schema/".
 - The main app, written in Flutter, is in "apps/plot/".
 - All other packages are written in Typescript and use pnpm for package management.
 - APIs and server tasks are implemented using Cloudflare Workers, located in "workers/".
-- The agent SDK is in a git submodule at `public/sdk/`. It includes the `plot` CLI tool and all SDK type definitions.
+- The Agent Builder is in a git submodule at `public/builder/`. It includes the `plot` CLI tool and all agent type definitions.
 - Agents are in "agents/".
 
-## SDK Entity Standards
+## Agent Builder Entity Standards
 
-For all entities in the sdk folder of the agent package (Activity, Priority, etc.), use the following type pattern:
+For all entities in the builder folder of the agent package (Activity, Priority, etc.), use the following type pattern:
 
 - **Required fields**: Defined without `?` and cannot be `undefined`
 - **Nullable fields**: Use `| null` instead of `| undefined` or optional (`?`)
@@ -55,37 +55,37 @@ This pattern allows functions to distinguish between:
 - Explicitly set to null (clearing a value)
 - Set to a value
 
-## SDK Development
+## Agent Builder Development
 
-The SDK repository (`public/sdk/`) contains all type definitions and is the single source of truth for SDK types. This repo uses it via pnpm workspace links.
+The Agent Builder repository (`public/builder/`) contains all type definitions and is the single source of truth for agent types. This repo uses it via pnpm workspace links.
 
-### SDK Location and Structure
+### Builder Location and Structure
 
-- **SDK Repository**: `public/sdk/` (git submodule)
-- **Type Definitions**: `public/sdk/src/` (agent.ts, plot.ts, tag.ts, tools/\*.ts, common/\*.ts)
-- **Workspace Link**: Configured in `pnpm-workspace.yaml` as `public/sdk`
-- **Import Pattern**: Use `@plotday/sdk`, `@plotday/sdk/plot`, `@plotday/sdk/tools/*`, etc.
+- **Builder Repository**: `public/builder/` (git submodule)
+- **Type Definitions**: `public/builder/src/` (agent.ts, plot.ts, tag.ts, tools/\*.ts, common/\*.ts)
+- **Workspace Link**: Configured in `pnpm-workspace.yaml` as `public/builder`
+- **Import Pattern**: Use `@plotday/agent`, `@plotday/agent/plot`, `@plotday/agent/tools/*`, etc.
 
-### Making Changes to SDK Types
+### Making Changes to Builder Types
 
-**IMPORTANT**: SDK types must be modified in the SDK submodule, never in this repo's main code.
+**IMPORTANT**: Builder types must be modified in the Builder submodule, never in this repo's main code.
 
-1. **Edit SDK files**: Make changes in `public/sdk/src/`
-2. **Rebuild SDK**: Run `cd public/sdk && pnpm build && cd ../..`
+1. **Edit Builder files**: Make changes in `public/builder/src/`
+2. **Rebuild Builder**: Run `pnpm build` in the builder folder
 3. **Test locally**: Changes are immediately available via workspace link
 4. **Verify builds**: Run `pnpm lint` in affected packages (workers/api, agents/\*)
 
-### Where SDK Types Are Used
+### Where Builder Types Are Used
 
-- **API Worker** (`workers/api/src/`): Built-in tools import SDK types
-  - Example: `import type { Activity } from "@plotday/sdk/plot"`
-  - Built-in tools (`workers/api/src/agent/tools/*`) implement SDK interfaces
-- **Agents** (`agents/*/src/`): Import SDK types directly
-  - Example: `import { Agent, type Priority } from "@plotday/sdk"`
+- **API Worker** (`workers/api/src/`): Built-in tools import builder types
+  - Example: `import type { Activity } from "@plotday/agent/plot"`
+  - Built-in tools (`workers/api/src/agent/tools/*`) implement builder interfaces
+- **Agents** (`agents/*/src/`): Import builder types directly
+  - Example: `import { Agent, type Priority } from "@plotday/agent"`
 
-### Adding New SDK Exports
+### Adding New Builder Exports
 
-When adding new top-level type files to the SDK, update `public/sdk/package.json` exports:
+When adding new top-level type files to the Builder, update `public/builder/package.json` exports:
 
 ```json
 {
@@ -98,22 +98,22 @@ When adding new top-level type files to the SDK, update `public/sdk/package.json
 }
 ```
 
-Then rebuild the SDK and run `pnpm install` in this repo to update the workspace link.
+Then rebuild the Builder and run `pnpm install` in this repo to update the workspace link.
 
-### Publishing SDK Updates
+### Publishing Builder Updates
 
 Only publish after testing locally:
 
-1. Update version in `public/sdk/package.json`
-2. Build: `cd public/sdk && pnpm build`
-3. Publish: `npm publish` (from `public/sdk` directory)
-4. Commit changes to the SDK submodule, then commit the submodule reference update in this repo
+1. Update version in `public/builder/package.json`
+2. Build: `cd public/builder && pnpm build`
+3. Publish: `npm publish` (from `public/builder` directory)
+4. Commit changes to the Builder submodule, then commit the submodule reference update in this repo
 
 ### Important Notes
 
 - **Never create or modify types in `workers/api/src/agent/types/`** - this directory no longer exists
-- **TypeScript Configuration**: Uses `moduleResolution: "bundler"` in `libs/tsconfig/base.json` to support SDK package exports
-- **Workspace Dependencies**: API and agents use `"@plotday/sdk": "workspace:*"` for local development
+- **TypeScript Configuration**: Uses `moduleResolution: "bundler"` in `libs/tsconfig/base.json` to support builder package exports
+- **Workspace Dependencies**: API and agents use `"@plotday/agent": "workspace:*"` for local development
 
 ## Agents and Tools
 
@@ -126,13 +126,13 @@ There are two types of tools for agents:
 - Located in `workers/api/src/agent/tools/*`
 - Extend the `BuiltInTool` class
 - Have access to internal API resources, database connections, and backend services as they run inside the API worker
-- Examples: `Plot`, `Auth`, `Store`
+- Examples: `Plot`, `Integrations`, `Store`
 - Use this pattern for tools that need direct access to the Plot backend infrastructure
 
 #### Regular Tools
 
 - Implemented in separate packages outside this monorepo
-- Extend the base `Tool` class from the agent SDK
+- Extend the base `Tool` class from the Agent Builder
 - Run in isolation, inside the agent worker, with access only to the other tools they request
 - These tools typically build on built-in tools and often implement integrations with external services
 
@@ -242,5 +242,7 @@ await this.callback.deleteAll();
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
 - To generate a migration, use "pnpm gen-migration MIGRATION_NAME".
-- **After modifying SDK types** in `public/sdk/src/`, always rebuild the SDK with `cd public/sdk && pnpm build && cd ../..` before running or testing code in this repo.
-- If you see import errors for `@plotday/sdk/*` after making SDK changes, ensure the SDK has been rebuilt and the package exports are configured correctly in `public/sdk/package.json`.
+- **After modifying builder types** in `public/builder/src/`, always rebuild the builder with `cd public/builder && pnpm build && cd ../..` before running or testing code in this repo.
+- If you see import errors for `@plotday/agent/*` after making builder changes, ensure the builder has been rebuilt and the package exports are configured correctly in `public/builder/package.json`.
+- Only work locally. Never deploy. This includes workers, which only run locally.
+- When creating Cloudflare Durable Objects via idFromName(), ctx.id.name IS NOT SET inside the DO. If the DO needs the name (often the priorityAgentId), you MUST add a separate init() method to the DO and ensure it's called after creation to set the name.

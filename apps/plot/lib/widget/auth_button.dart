@@ -286,8 +286,6 @@ class _AuthButtonState extends State<AuthButton> {
       },
     );
     final response = await api.get<Map<String, dynamic>>(uri.toString());
-    log.info("Auth URL response: $response");
-
     return _AuthUrlResult(response);
   }
 

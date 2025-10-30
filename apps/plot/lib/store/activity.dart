@@ -38,6 +38,7 @@ class Activities extends Table
   TextColumn get recurrenceDates =>
       text().nullable().map(const DateTimeListConverter())();
   TextColumn get links => text().nullable().map(const LinksConverter())();
+  TextColumn get mentions => text().nullable().map(const UuidListConverter())();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   BoolColumn get unreadUpdated => boolean().nullable()();
 }
@@ -384,6 +385,42 @@ class ActivitiesBase extends BaseTable {
 enum ActivityOrder { sorted, nested, reverse }
 
 class Activity extends Equatable implements Comparable<Activity> {
+  /// Parse @mentions from note and return list of agent UUIDs
+  static List<Uuid> parseMentionsFromNote(String? note, List<PriorityAgent> agents) {
+    if (note == null || note.isEmpty || agents.isEmpty) {
+      return [];
+    }
+
+    // Extract @mentions using regex (case-insensitive)
+    final mentionPattern = RegExp(r'@([\w_]+)', caseSensitive: false);
+    final matches = mentionPattern.allMatches(note);
+
+    if (matches.isEmpty) {
+      return [];
+    }
+
+    // Collect mentioned names (normalized to lowercase)
+    final mentionedNames = matches
+        .map((match) => match.group(1)?.toLowerCase())
+        .where((name) => name != null)
+        .cast<String>()
+        .toSet();
+
+    // Match against agent names (normalized)
+    final mentionedAgentIds = <Uuid>[];
+    for (final agent in agents) {
+      // Normalize agent name: lowercase and replace spaces with underscores
+      final normalizedAgentName = agent.name.toLowerCase().replaceAll(' ', '_');
+
+      if (mentionedNames.contains(normalizedAgentName)) {
+        mentionedAgentIds.add(Uuid.fromString(agent.id));
+      }
+    }
+
+    // Return unique agent IDs
+    return mentionedAgentIds.toSet().toList();
+  }
+
   static Future<bool> pull() async {
     return await Store.get.pull(
           PullType.updates,
@@ -1300,6 +1337,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     Activity? parent,
     Uuid? assigneeId,
     bool? unread,
+    Value<List<Uuid>?> mentions = const Value.absent(),
 
     // These fields update the exception if this is a recurrence, or the root activity otherwise
     Value<DateTimeRange?> at = const Value.absent(),
@@ -1335,6 +1373,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         private != null ||
         assigneeId != null ||
         unread != null ||
+        mentions.present ||
         recurrenceAt.present ||
         recurrenceOn.present ||
         recurrenceDoneAt.present ||
@@ -1407,6 +1446,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         assigneeId: assigneeId != null
             ? Value(assigneeId)
             : const Value.absent(),
+        mentions: mentions,
         updatedAt: now,
         pending: Value(ActivityPendingSync.full.value),
         startAt: rootStartAt,

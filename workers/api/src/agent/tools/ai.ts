@@ -10,20 +10,29 @@ import {
   type AIRequest,
   type AIResponse,
   type AIToolSet,
+  type AIUsage,
   type AI as IAI,
   type ModelPreferences,
-} from "@plotday/sdk/tools/ai";
+} from "@plotday/agent/tools/ai";
 
 import type { Bindings } from "../../env";
+import { Usage } from "../../state/usage";
 import { Tool } from "./tool";
 
 export class AI extends Tool implements IAI {
   private openai: ReturnType<typeof createOpenAI>;
   private anthropic: ReturnType<typeof createAnthropic>;
   private google: ReturnType<typeof createGoogleGenerativeAI>;
-  private workersai: ReturnType<typeof createWorkersAI>;
+  private cloudflare: ReturnType<typeof createWorkersAI>;
+  private usage: DurableObjectStub<Usage>;
 
-  constructor(env: Bindings) {
+  constructor({
+    env,
+    priorityAgentId,
+  }: {
+    env: Bindings;
+    priorityAgentId: string;
+  }) {
     super();
 
     const gatewayBaseUrl = `https://gateway.ai.cloudflare.com/v1/${env.AI_GATEWAY_ACCOUNT_ID}/${env.AI_GATEWAY_ID}`;
@@ -49,7 +58,10 @@ export class AI extends Tool implements IAI {
     });
 
     // Workers AI doesn't go through the gateway, it uses the binding directly
-    this.workersai = createWorkersAI({ binding: env.AI });
+    this.cloudflare = createWorkersAI({ binding: env.AI });
+
+    // Initialize usage tracking
+    this.usage = Usage.Get(env, priorityAgentId);
   }
 
   /**
@@ -164,7 +176,7 @@ export class AI extends Tool implements IAI {
       model = this.google(modelName);
     } else {
       // Workers AI models
-      model = this.workersai(`@cf/${modelStr}` as any);
+      model = this.cloudflare(`@cf/${modelStr}` as any);
     }
 
     // Prepare experimental_output if outputSchema is provided
@@ -204,6 +216,8 @@ export class AI extends Tool implements IAI {
       toolChoice,
     });
 
+    await this.trackUsage(modelEnum, result.usage);
+
     return {
       text: result.text,
       toolCalls: result.toolCalls,
@@ -223,5 +237,23 @@ export class AI extends Tool implements IAI {
           }
         : undefined,
     };
+  }
+
+  /**
+   * Track AI usage by recording token consumption
+   */
+  private async trackUsage(model: AIModel, usage: AIUsage) {
+    console.log("AI prompt usage:", usage);
+    if (!this.usage) return;
+
+    if (usage.inputTokens) {
+      this.usage.spend(`ai:${model}:input`, usage.inputTokens);
+    }
+    if (usage.outputTokens) {
+      this.usage.spend(`ai:${model}:output`, usage.outputTokens);
+    }
+    if (usage.reasoningTokens) {
+      this.usage.spend(`ai:${model}:reasoning`, usage.reasoningTokens);
+    }
   }
 }

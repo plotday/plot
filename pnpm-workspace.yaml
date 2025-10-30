@@ -3,7 +3,7 @@ packages:
   - workers/*
   - libs/*
   - agents/*
-  - public/sdk
+  - public/builder
   - public/tools/*
 onlyBuiltDependencies:
   - "@sentry/cli"

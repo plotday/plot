@@ -1,4 +1,4 @@
 {
-  "extends": "@plotday/sdk/tsconfig.base.json",
+  "extends": "@plotday/agent/tsconfig.base.json",
   "include": ["src/*.ts"]
 }

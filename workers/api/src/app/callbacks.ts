@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { CallbackTool } from "../agent/tools/callback";
+import { Callbacks } from "../agent/tools/callbacks";
 import type { Bindings } from "../env";
 
 const callbacks = new Hono<{ Bindings: Bindings }>();
@@ -18,7 +18,7 @@ callbacks.post("/callback/:token", async (c) => {
       return new Response("Bad request (missing link data)", { status: 400 });
     }
 
-    const result = await CallbackTool.HandleLinkCallback(
+    const result = await Callbacks.HandleLinkCallback(
       c.env.CALLBACKS,
       token,
       link

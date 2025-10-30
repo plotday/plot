@@ -1,21 +1,25 @@
-import { ActivityType, Agent, type Priority, type Tools } from "@plotday/sdk";
-import { Plot } from "@plotday/sdk/tools/plot";
+import {
+  ActivityType,
+  Agent,
+  type Priority,
+  type ToolBuilder,
+} from "@plotday/agent";
+import { Plot } from "@plotday/agent/tools/plot";
 
-export default class extends Agent {
-  private plot: Plot;
-
-  constructor(id: string, protected tools: Tools) {
-    super(id, tools);
-    this.plot = tools.get(Plot);
+class PlotAgent extends Agent<PlotAgent> {
+  build(build: ToolBuilder) {
+    return {
+      plot: build(Plot),
+    };
   }
 
   async activate(_priority: Pick<Priority, "id">) {
-    const onboardingPriority = await this.plot.createPriority({
+    const onboardingPriority = await this.tools.plot.createPriority({
       title: "Getting Started",
     });
 
     // Welcome note
-    await this.plot.createActivity({
+    await this.tools.plot.createActivity({
       title: "Welcome to Plot!",
       note: "Plot is your focused workspace for making progress on what matters to you most. We're excited to see what you'll do!",
       priority: onboardingPriority,
@@ -23,7 +27,7 @@ export default class extends Agent {
     });
 
     // Onboarding task
-    await this.plot.createActivity({
+    await this.tools.plot.createActivity({
       title: "Create your initial Priorities",
       note: "Priorities are contexts for focus and often correspond to roles (like VP Marketing and Parent) and goals (like Launch New Product and Run a Marathon). Nesting priorities is also helpful, so you can, for example, see everything related to work or zoom right in to a specific work project.",
       priority: onboardingPriority,
@@ -32,3 +36,5 @@ export default class extends Agent {
     });
   }
 }
+
+export default PlotAgent;

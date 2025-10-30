@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 
-import { Webhook } from "./agent/tools/webhook";
+import { Network } from "./agent/tools/network";
 import type { Bindings } from "./env";
 
 const webhook = new Hono<{ Bindings: Bindings }>();
 
 // Webhook endpoint - handles all HTTP methods for webhook URLs
-webhook.all(Webhook.PATH, async (c) => {
+webhook.all(Network.PATH, async (c) => {
   try {
     const token = c.req.param("token");
     if (!token) {
@@ -46,7 +46,7 @@ webhook.all(Webhook.PATH, async (c) => {
       }
     }
 
-    const result = await Webhook.Handle(c.env.CALLBACKS, token, {
+    const result = await Network.HandleWebhook(c.env.CALLBACKS, token, {
       method,
       headers,
       params,

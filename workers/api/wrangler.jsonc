@@ -10,11 +10,14 @@
       "tag": "v3",
       "new_sqlite_classes": [
         "Storage",
-        "Callbacks",
         "Broadcast",
         "Usage",
         "LogSubscriptions"
       ]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": ["CallbacksState"]
     },
     {
       "tag": "v7",
@@ -32,6 +35,12 @@
         "RELEASE": "\"dev\"",
         "PACKAGE": "\"api\""
       },
+      "kv_namespaces": [
+        {
+          "binding": "AGENT_CONFIG",
+          "id": "c169930baecb4bd58c7edc727022a15e"
+        }
+      ],
       "worker_loaders": [
         {
           "binding": "LOADER"
@@ -91,7 +100,7 @@
           },
           {
             "name": "CALLBACKS",
-            "class_name": "Callbacks"
+            "class_name": "CallbacksState"
           },
           {
             "name": "BROADCAST",
@@ -134,6 +143,12 @@
         "RELEASE": "\"prod\"",
         "PACKAGE": "\"api\""
       },
+      "kv_namespaces": [
+        {
+          "binding": "AGENT_CONFIG",
+          "id": "c413b23bb866493da4ee0596ade8b1e2"
+        }
+      ],
       "worker_loaders": [
         {
           "binding": "LOADER"
@@ -191,7 +206,7 @@
           },
           {
             "name": "CALLBACKS",
-            "class_name": "Callbacks"
+            "class_name": "CallbacksState"
           },
           {
             "name": "BROADCAST",
