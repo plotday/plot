@@ -1,5 +1,15 @@
 # @plotday/agent
 
+## 0.19.0
+
+### Added
+
+- Activity.threadRoot ([`bdbedca`](https://github.com/plotday/plot/commit/bdbedca3bd46a98a0892fa7d6710b1b2bfe82c5b))
+
+### Changed
+
+- BREAKING: Plot Activity intents now take an object that can include examples ([`431d8c7`](https://github.com/plotday/plot/commit/431d8c7c07965bbf893d1e19efce8007c4b786ff))
+
 ## 0.18.3
 
 ### Changed
