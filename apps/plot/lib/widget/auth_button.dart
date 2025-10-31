@@ -16,6 +16,7 @@ import 'package:plot/store/store.dart' show AuthLink;
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/api/api.dart' as api;
 import 'logging.dart';
+import 'spinner.dart';
 
 export 'package:plot/store/types.dart' show AuthProvider;
 
@@ -300,7 +301,7 @@ class _AuthButtonState extends State<AuthButton> {
       height: config.height,
       child: FButton(
         onPress: _isLoading ? null : _onPress,
-        style: _buildButtonStyle(config),
+        style: _buildButtonStyle(context, config),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
@@ -309,7 +310,7 @@ class _AuthButtonState extends State<AuthButton> {
               SizedBox(
                 width: config.iconSize,
                 height: config.iconSize,
-                child: FProgress(value: null),
+                child: Spinner(),
               )
             else
               _ProviderIcon(provider: widget.provider, size: config.iconSize),
@@ -329,7 +330,7 @@ class _AuthButtonState extends State<AuthButton> {
     );
   }
 
-  FButtonStyle _buildButtonStyle(_ProviderConfig config) {
+  FButtonStyle _buildButtonStyle(BuildContext context, _ProviderConfig config) {
     return FButtonStyle(
       decoration: FWidgetStateMap({
         WidgetState.any: BoxDecoration(
@@ -381,6 +382,7 @@ class _AuthButtonState extends State<AuthButton> {
           ),
         ),
         iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),
+        circularProgressStyle: FWidgetStateMap.all(context.theme.circularProgressStyle),
       ),
       iconContentStyle: FButtonIconContentStyle(
         iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),

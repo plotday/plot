@@ -22,11 +22,15 @@ class ActivityEditor extends StatelessWidget {
             hint: 'Add activity',
             autofocus: true,
             focusNode: focusNode,
+            agents: state.agents,
             onSubmitted: (body, {bool alt = false}) async {
               log.info('Adding new activity with body: $body ($alt)');
 
-              // Parse @mentions from the note
-              final mentions = Activity.parseMentionsFromNote(body, state.agents);
+              // Parse mentions from the note (stored as [#@ID])
+              final mentions = Activity.parseMentionsFromNote(
+                body,
+                state.agents,
+              );
 
               final activity = draft.copyWith(
                 note: Value(body),
@@ -38,6 +42,33 @@ class ActivityEditor extends StatelessWidget {
                 mentions: Value(mentions.isEmpty ? null : mentions),
               );
               await onAdd(activity);
+              // =======
+              //           builder: (context, focusNode) => FutureBuilder<List<Account>>(
+              //             future: Account.get(),
+              //             builder: (context, snapshot) {
+              //               // Get list of user emails for mentions
+              //               final users = snapshot.data?.map((account) => account.email).toList() ?? [];
+              //
+              //               return Editor(
+              //                 hint: 'Add activity',
+              //                 autofocus: true,
+              //                 focusNode: focusNode,
+              //                 users: users,
+              //                 onSubmitted: (body, {bool alt = false}) async {
+              //                   log.info(
+              //                     'Adding new activity with body: $body ($alt)',
+              //                   );
+              //                   final activity = state.draft.copyWith(
+              //                     note: Value(body),
+              //                     draft: false,
+              //                     doAt: alt
+              //                         ? Value(Date.today())
+              //                         : const Value.absent(),
+              //                   );
+              //                   await context.read<PriorityBloc>().add(activity);
+              //                 },
+              //               );
+              // >>>>>>> 1783849 (Editor mentions (wip))
             },
           ),
         );

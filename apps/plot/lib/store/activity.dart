@@ -385,43 +385,38 @@ class ActivitiesBase extends BaseTable {
 enum ActivityOrder { sorted, nested, reverse }
 
 class Activity extends Equatable implements Comparable<Activity> {
-  /// Parse @mentions from note and return list of agent UUIDs
+  /// Parse mentions from note and return list of agent UUIDs
+  /// Mentions are stored in the format [Name](#@{UUID}) in markdown
   static List<Uuid> parseMentionsFromNote(
     String? note,
     List<PriorityAgent> agents,
   ) {
-    if (note == null || note.isEmpty || agents.isEmpty) {
+    if (note == null || note.isEmpty) {
       return [];
     }
 
-    // Extract @mentions using regex (case-insensitive)
-    final mentionPattern = RegExp(r'@([\w_]+)', caseSensitive: false);
+    final mentionedAgentIds = <Uuid>{};
+
+    // Match mentions in format [Name](#@{UUID})
+    // UUID format: 8-4-4-4-12 hexadecimal characters
+    final mentionPattern = RegExp(
+      r'\[([^\]]+)\]\(#@([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)',
+    );
+
     final matches = mentionPattern.allMatches(note);
-
-    if (matches.isEmpty) {
-      return [];
-    }
-
-    // Collect mentioned names (normalized to lowercase)
-    final mentionedNames = matches
-        .map((match) => match.group(1)?.toLowerCase())
-        .where((name) => name != null)
-        .cast<String>()
-        .toSet();
-
-    // Match against agent names (normalized)
-    final mentionedAgentIds = <Uuid>[];
-    for (final agent in agents) {
-      // Normalize agent name: lowercase and replace spaces with underscores
-      final normalizedAgentName = agent.name.toLowerCase().replaceAll(' ', '_');
-
-      if (mentionedNames.contains(normalizedAgentName)) {
-        mentionedAgentIds.add(Uuid.fromString(agent.id));
+    for (final match in matches) {
+      final uuidString = match.group(2); // UUID is in group 2, name is in group 1
+      if (uuidString != null) {
+        try {
+          mentionedAgentIds.add(Uuid.fromString(uuidString));
+        } catch (e) {
+          // Skip invalid UUIDs
+          continue;
+        }
       }
     }
 
-    // Return unique agent IDs
-    return mentionedAgentIds.toSet().toList();
+    return mentionedAgentIds.toList();
   }
 
   static Future<bool> pull() async {
@@ -1284,14 +1279,34 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   String? get title => _exception?.title ?? _activity.title;
   String? get note => _exception?.note ?? _activity.note;
-  String? get noteText => (_exception?.note ?? _activity.note)
-      ?.removeMarkdown()
-      .replaceAll('\n', ' ')
-      .trim();
-  String get displayTitle =>
-      title ??
-      note?.split("\n").first.removeMarkdown().trim().truncate(50) ??
-      (draft ? '🤷' : 'Untitled');
+
+  /// Helper to replace mentions [Name](#@ID) with just Name for display
+  static String _replaceMentionsForDisplay(String text) {
+    // Replace [Name](#@UUID) with just Name
+    return text.replaceAllMapped(
+      RegExp(r'\[([^\]]+)\]\(#@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\)'),
+      (match) => match.group(1) ?? '',
+    );
+  }
+
+  String? get noteText {
+    final text = _exception?.note ?? _activity.note;
+    if (text == null) return null;
+    return _replaceMentionsForDisplay(text)
+        .removeMarkdown()
+        .replaceAll('\n', ' ')
+        .trim();
+  }
+
+  String get displayTitle {
+    if (title != null) return title!;
+    final noteFirstLine = note?.split("\n").first;
+    if (noteFirstLine == null) return draft ? '🤷' : 'Untitled';
+    return _replaceMentionsForDisplay(noteFirstLine)
+        .removeMarkdown()
+        .trim()
+        .truncate(50);
+  }
 
   DateTimeRange? get at =>
       (_exception?.startAt != null

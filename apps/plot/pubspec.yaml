@@ -71,13 +71,13 @@ dependencies:
     git:
       url: https://github.com/Ax0elz/figma_squircle
   b: ^0.2.0
-  super_editor: ^0.3.0-dev.33
+  super_editor: ^0.3.0-dev.36
   super_editor_markdown: ^0.2.0
   sliver_tools: ^0.2.12
   timeago: ^3.7.0
   stack_trace: ^1.12.0
   provider: ^6.1.2
-  forui: ^0.15.1
+  forui: ^0.16.0
   auto_route: ^10.0.1
   flutter_debouncer: ^2.0.0
   flutter_hooks: ^0.21.2
@@ -91,6 +91,7 @@ dependencies:
   flutter_svg: ^2.2.1
   google_sign_in_web: ^1.0.1
   web_socket_channel: ^3.0.1
+  follow_the_leader: ^0.5.1
 
 dev_dependencies:
   analyzer: ^7.5.7

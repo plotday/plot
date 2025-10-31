@@ -105,7 +105,6 @@ class ActivityDetailWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    bool isContext = activity == this.context;
     final hasVisibleLinks = activity.links.any(
       (link) => link.type != LinkType.hidden,
     );

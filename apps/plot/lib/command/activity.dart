@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'command.dart';
-import 'logging.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
@@ -59,9 +59,6 @@ class ChangeCurrentActivity extends ActivityCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     // HACK: We need to make the panel visible before navigating to it
-    log.info(
-      'ChangeCurrentActivity: ${activity!.priority.id.toShortString()} / ${activity!.id.toShortString()}',
-    );
     context.read<LayoutBloc>().setRightPanelVisible(true);
     return CommandRoute(
       ActivityRoute(activityIdString: activity!.id.toShortString()),
@@ -70,7 +67,12 @@ class ChangeCurrentActivity extends ActivityCommand {
 }
 
 class NewActivity extends Command {
-  NewActivity() : super(title: "New Activity", icon: PlotIcon.add);
+  NewActivity()
+    : super(
+        title: "New Activity",
+        icon: PlotIcon.add,
+        shortcut: SingleActivator(LogicalKeyboardKey.keyN, meta: true),
+      );
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

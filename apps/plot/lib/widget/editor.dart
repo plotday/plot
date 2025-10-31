@@ -5,10 +5,15 @@ import 'package:super_editor/super_editor.dart' as super_editor show Editor;
 import 'package:super_editor_markdown/super_editor_markdown.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:flutter_debouncer/flutter_debouncer.dart';
+import 'package:follow_the_leader/follow_the_leader.dart';
 
+import 'package:plot/api/agent_api.dart';
 import 'sliver.dart';
 import 'colour_scheme.dart';
 import 'bidirectional_list.dart';
+import 'editor_mention_plugin.dart';
+import 'editor_mention_detector.dart';
+import 'editor_mention_popover.dart';
 
 class Editor extends StatefulWidget {
   const Editor({
@@ -17,6 +22,7 @@ class Editor extends StatefulWidget {
     this.onSubmitted,
     this.onChange,
     this.focusNode,
+    this.agents = const [],
     super.key,
   });
 
@@ -25,6 +31,7 @@ class Editor extends StatefulWidget {
   final void Function(String value, {bool alt})? onSubmitted;
   final ValueChanged<String>? onChange;
   final FocusNode? focusNode;
+  final List<PriorityAgent> agents;
 
   @override
   State<Editor> createState() => EditorState();
@@ -39,6 +46,13 @@ class EditorState extends State<Editor> {
   late super_editor.Editor _editor;
   final Debouncer _debouncer = Debouncer();
   bool _isEmpty = true;
+
+  // User mention functionality
+  late EditorMentionDetector _mentionDetector;
+  late final LeaderLink _mentionLeaderLink;
+  final OverlayPortalController _mentionOverlayController =
+      OverlayPortalController();
+  bool _showMentionPopoverAbove = false;
 
   void clear() {
     setState(() {
@@ -55,8 +69,45 @@ class EditorState extends State<Editor> {
 
   void notify() {
     _debouncer.cancel();
-    final md = serializeDocumentToMarkdown(_document);
+    final md = _serializeWithMentions(_document);
     widget.onChange?.call(md);
+  }
+
+  /// Custom markdown serializer that converts mentions from name to [Name](#@ID)
+  String _serializeWithMentions(MutableDocument document) {
+    // First serialize normally
+    String markdown = serializeDocumentToMarkdown(document);
+
+    // Then walk through the document to find mention attributions and replace
+    for (int i = 0; i < document.nodeCount; i++) {
+      final node = document.getNodeAt(i);
+      if (node is! TextNode) continue;
+
+      final text = node.text;
+      if (text.length == 0) continue;
+
+      final spans = text.getAttributionSpansInRange(
+        attributionFilter: (attr) => attr is CommittedEditorMentionAttribution,
+        range: SpanRange(0, text.length - 1),
+      );
+
+      // Process spans in reverse order to maintain string positions
+      final spansList = spans.toList()
+        ..sort((a, b) => b.start.compareTo(a.start));
+
+      for (final span in spansList) {
+        final attribution =
+            span.attribution as CommittedEditorMentionAttribution;
+        final mentionText = text.substring(span.start, span.end + 1);
+
+        // Replace name with [Name](#@ID)
+        final name = attribution.username;
+        final replacement = '[$name](#@${attribution.priorityAgentId})';
+        markdown = markdown.replaceFirst(mentionText, replacement);
+      }
+    }
+
+    return markdown;
   }
 
   void _onFocusChange() {
@@ -90,6 +141,15 @@ class EditorState extends State<Editor> {
     );
     _editor.addListener(_documentChangeListener);
     _scrollController = ScrollController();
+
+    // Initialize user mention detector
+    _mentionDetector = EditorMentionDetector(
+      document: _document,
+      composer: _composer,
+      editor: _editor,
+    );
+    _mentionLeaderLink = LeaderLink();
+
     clear();
   }
 
@@ -97,9 +157,11 @@ class EditorState extends State<Editor> {
   void dispose() {
     _editor.removeListener(_documentChangeListener);
     _editorFocusNode.removeListener(_onFocusChange);
+    _mentionDetector.removeListener(_updateMentionOverlay);
     _debouncer.cancel();
     _scrollController.dispose();
     _editorFocusNode.dispose();
+    _mentionDetector.dispose();
     super.dispose();
   }
 
@@ -107,60 +169,71 @@ class EditorState extends State<Editor> {
   Widget build(BuildContext context) {
     bool isDark =
         MediaQuery.of(context).platformBrightness == material.Brightness.dark;
-    return Shortcuts(
-      shortcuts: _isEmpty
-          ? BidirectionalList.shortcuts
-          : {
-              const SingleActivator(LogicalKeyboardKey.enter): SubmitIntent(),
-              const SingleActivator(LogicalKeyboardKey.enter, meta: true):
-                  SubmitIntent(alt: true),
-            },
-      child: Actions(
-        actions: <Type, Action<Intent>>{
-          SubmitIntent: CallbackAction<SubmitIntent>(
-            onInvoke: (SubmitIntent intent) {
-              submit(intent.alt);
-              return KeyEventResult.handled;
-            },
-          ),
-        },
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () => _editorFocusNode.requestFocus(),
-          child: SuperEditor(
-            autofocus: widget.autofocus,
-            editor: _editor,
-            focusNode: _editorFocusNode,
-            shrinkWrap: true,
-            scrollController: _scrollController,
-            documentLayoutKey: _docLayoutKey,
-            documentOverlayBuilders: [
-              DefaultCaretOverlayBuilder(
-                caretStyle: CaretStyle().copyWith(color: context.colour.accent),
-              ),
-            ],
-            stylesheet: isDark ? _darkStyles : _styles,
-            selectionStyle: SelectionStyles(
-              selectionColor: context.colour.accentBackground,
+
+    return OverlayPortal(
+      controller: _mentionOverlayController,
+      overlayChildBuilder: _buildEditorMentionPopover,
+      child: Shortcuts(
+        shortcuts: _isEmpty
+            ? BidirectionalList.shortcuts
+            : {
+                const SingleActivator(LogicalKeyboardKey.enter): SubmitIntent(),
+                const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+                    SubmitIntent(alt: true),
+              },
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            SubmitIntent: CallbackAction<SubmitIntent>(
+              onInvoke: (SubmitIntent intent) {
+                submit(intent.alt);
+                return KeyEventResult.handled;
+              },
             ),
-            componentBuilders: [
-              if (widget.hint != null)
-                HintComponentBuilder(
-                  widget.hint!,
-                  (context) =>
-                      baseTextStyle.copyWith(color: context.colour.muted),
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => _editorFocusNode.requestFocus(),
+            child: SuperEditor(
+              autofocus: widget.autofocus,
+              editor: _editor,
+              focusNode: _editorFocusNode,
+              shrinkWrap: true,
+              scrollController: _scrollController,
+              documentLayoutKey: _docLayoutKey,
+              documentOverlayBuilders: [
+                DefaultCaretOverlayBuilder(
+                  caretStyle: CaretStyle().copyWith(
+                    color: context.colour.accent,
+                  ),
                 ),
-              TaskComponentBuilder(_editor),
-              ...defaultComponentBuilders,
-            ],
-            // TODO use defaultImeKeyboardActions on mobile
-            keyboardActions: [
-              _bubbleSpecialKeys,
-              if (_isEmpty) _bubbleArrowKeys,
-              _shiftEnterToInsertBlockNewline,
-              ...defaultKeyboardActions,
-            ],
-            // ),
+                // Position leader at caret for mention popover
+                _buildMentionLeaderOverlay,
+              ],
+              stylesheet: isDark ? _darkStyles : _styles,
+              selectionStyle: SelectionStyles(
+                selectionColor: context.colour.accentBackground,
+              ),
+              componentBuilders: [
+                if (widget.hint != null)
+                  HintComponentBuilder(
+                    widget.hint!,
+                    (context) =>
+                        baseTextStyle.copyWith(color: context.colour.muted),
+                  ),
+                TaskComponentBuilder(_editor),
+                ...defaultComponentBuilders,
+              ],
+              // TODO use defaultImeKeyboardActions on mobile
+              keyboardActions: [
+                _bubbleSpecialKeys,
+                if (_isEmpty) _bubbleArrowKeys,
+                _shiftEnterToInsertBlockNewline,
+                _handlePunctuationAfterMention,
+                _handleBackspaceOverMention,
+                ...defaultKeyboardActions,
+              ],
+              // ),
+            ),
           ),
         ),
       ),
@@ -168,23 +241,268 @@ class EditorState extends State<Editor> {
   }
 
   void submit(bool alt) {
-    final md = serializeDocumentToMarkdown(_document);
+    final md = _serializeWithMentions(_document);
     if (md.trim().isEmpty) return;
     widget.onSubmitted?.call(md, alt: alt);
     clear();
+  }
+
+  /// Builds a leader overlay at the caret position for the mention popover to follow
+  SuperEditorLayerBuilder get _buildMentionLeaderOverlay {
+    return MentionLeaderLayerBuilder(
+      mentionDetector: _mentionDetector,
+      composer: _composer,
+      leaderLink: _mentionLeaderLink,
+      onPositionChanged: (bool showAbove) {
+        if (_showMentionPopoverAbove != showAbove) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _showMentionPopoverAbove = showAbove;
+              });
+            }
+          });
+        }
+      },
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Listen to mention detector to show/hide overlay
+    _mentionDetector.addListener(_updateMentionOverlay);
+  }
+
+  void _updateMentionOverlay() {
+    final mention = _mentionDetector.composingMention;
+
+    // Filter agents based on composing text
+    final hasMatches = mention != null &&
+        widget.agents.any((agent) =>
+            agent.name.toLowerCase().contains(mention.text.toLowerCase()));
+
+    if (hasMatches && !_mentionOverlayController.isShowing) {
+      _mentionOverlayController.show();
+    } else if (!hasMatches && _mentionOverlayController.isShowing) {
+      _mentionOverlayController.hide();
+    }
+  }
+
+  /// Builds the user mention popover in the overlay
+  Widget _buildEditorMentionPopover(BuildContext context) {
+    final mentionBeingComposed = _mentionDetector.composingMention;
+    if (mentionBeingComposed == null || widget.agents.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return EditorMentionPopover(
+      editorFocusNode: _editorFocusNode,
+      leaderLink: _mentionLeaderLink,
+      agents: widget.agents,
+      composingText: mentionBeingComposed.text,
+      showAbove: _showMentionPopoverAbove,
+      onAgentSelected: (agent) {
+        _mentionDetector.completeMention(
+          priorityAgentId: agent.id,
+          username: agent.name,
+        );
+        _editorFocusNode.requestFocus();
+      },
+      onCancelRequested: () {
+        _mentionDetector.cancelMention();
+        _editorFocusNode.requestFocus();
+      },
+    );
+  }
+}
+
+/// Layer builder that positions a leader at the caret for the mention popover
+class MentionLeaderLayerBuilder implements SuperEditorLayerBuilder {
+  const MentionLeaderLayerBuilder({
+    required this.mentionDetector,
+    required this.composer,
+    required this.leaderLink,
+    required this.onPositionChanged,
+  });
+
+  final EditorMentionDetector mentionDetector;
+  final DocumentComposer composer;
+  final LeaderLink leaderLink;
+  final void Function(bool showAbove) onPositionChanged;
+
+  @override
+  ContentLayerWidget build(
+    BuildContext context,
+    SuperEditorContext editContext,
+  ) {
+    final mentionBeingComposed = mentionDetector.composingMention;
+    if (mentionBeingComposed == null) {
+      return ContentLayerProxyWidget(
+        key: const ValueKey('mention_leader_empty'),
+        child: const SizedBox.shrink(),
+      );
+    }
+
+    final selection = composer.selection;
+    if (selection == null) {
+      return ContentLayerProxyWidget(
+        key: const ValueKey('mention_leader_no_selection'),
+        child: const SizedBox.shrink(),
+      );
+    }
+
+    // Get the position of the @ trigger character (not the current caret)
+    final triggerPosition = DocumentPosition(
+      nodeId: selection.extent.nodeId,
+      nodePosition: TextNodePosition(
+        offset: mentionBeingComposed.triggerOffset,
+      ),
+    );
+
+    // Get rect for the @ trigger position
+    final docLayout = editContext.documentLayout;
+    final triggerRect = docLayout.getRectForPosition(triggerPosition);
+    if (triggerRect == null) {
+      return ContentLayerProxyWidget(
+        key: const ValueKey('mention_leader_no_trigger_rect'),
+        child: const SizedBox.shrink(),
+      );
+    }
+
+    // Find the RenderBox for the document layout
+    // The trigger rect is already in document-local coordinates, but we need to find
+    // what RenderBox to use for coordinate conversion
+    RenderBox? docLayoutBox;
+    if (docLayout is State) {
+      RenderObject? renderObject = (docLayout as State).context
+          .findRenderObject();
+
+      // If it's a sliver, traverse to find a RenderBox child
+      RenderObject? current = renderObject;
+      int depth = 0;
+      while (current != null && depth < 10) {
+        if (current is RenderBox) {
+          docLayoutBox = current;
+          break;
+        }
+
+        // Try to get first child
+        RenderObject? nextChild;
+        current.visitChildren((child) {
+          nextChild ??= child;
+        });
+        current = nextChild;
+        depth++;
+      }
+    }
+
+    if (docLayoutBox == null) {
+      // Fallback: use simple below positioning
+      return ContentLayerProxyWidget(
+        key: const ValueKey('mention_leader'),
+        child: Transform.translate(
+          offset: Offset(triggerRect.left, triggerRect.bottom + 4),
+          child: Leader(link: leaderLink, child: const SizedBox()),
+        ),
+      );
+    }
+
+    // Calculate global position to determine available space
+    final triggerGlobalOffset = docLayoutBox.localToGlobal(triggerRect.topLeft);
+
+    // Get viewport height
+    final viewportHeight = MediaQuery.of(context).size.height;
+
+    // Calculate available space below and above the trigger
+    const popoverMaxHeight = 200.0; // From EditorMentionPopover constraints
+    const spacing = 4.0;
+    final spaceBelow =
+        viewportHeight - triggerGlobalOffset.dy - triggerRect.height;
+    final spaceAbove = triggerGlobalOffset.dy;
+
+    // Determine vertical position: prefer below, flip to above if not enough space
+    final showAbove =
+        !(spaceBelow >= popoverMaxHeight + spacing || spaceBelow >= spaceAbove);
+
+    final verticalOffset = showAbove
+        ? triggerRect.top -
+              spacing // Place above (flip)
+        : triggerRect.bottom + spacing; // Place below
+
+    // Notify about position change
+    onPositionChanged(showAbove);
+
+    // Position the leader at the @ symbol (stays fixed as user types)
+    return ContentLayerProxyWidget(
+      key: const ValueKey('mention_leader'),
+      child: Transform.translate(
+        offset: Offset(triggerRect.left, verticalOffset),
+        child: Leader(link: leaderLink, child: const SizedBox()),
+      ),
+    );
   }
 }
 
 class Viewer extends StatefulWidget {
   Viewer({required this.markdown, super.key})
-    : document = deserializeMarkdownToDocument(markdown);
+    : _mentions = _extractMentions(markdown),
+      document = deserializeMarkdownToDocument(_preprocessMarkdown(markdown));
 
   final String markdown;
   // final void Function()? onTap;
   final Document document;
+  final List<_MentionInfo> _mentions;
+
+  /// Extract mention info before preprocessing
+  static List<_MentionInfo> _extractMentions(String markdown) {
+    final mentions = <_MentionInfo>[];
+    final mentionPattern = RegExp(
+      r'\[([^\]]+)\]\(#@([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)',
+    );
+
+    for (final match in mentionPattern.allMatches(markdown)) {
+      mentions.add(
+        _MentionInfo(
+          name: match.group(1) ?? '',
+          priorityAgentId: match.group(2) ?? '',
+        ),
+      );
+    }
+
+    return mentions;
+  }
+
+  /// Preprocess markdown to convert mention formats to plain names for display
+  static String _preprocessMarkdown(String markdown) {
+    // Convert [Name](#@UUID) format to just Name (no @ prefix)
+    String processed = markdown.replaceAllMapped(
+      RegExp(
+        r'\[([^\]]+)\]\(#@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\)',
+      ),
+      (match) => match.group(1) ?? '',
+    );
+
+    // Also handle old [#@UUID] format (in case there's old data)
+    processed = processed.replaceAllMapped(
+      RegExp(
+        r'\[#@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\]',
+      ),
+      (match) => 'mention', // Generic fallback for old format without name
+    );
+
+    return processed;
+  }
 
   @override
   ViewerState createState() => ViewerState();
+}
+
+class _MentionInfo {
+  const _MentionInfo({required this.name, required this.priorityAgentId});
+
+  final String name;
+  final String priorityAgentId;
 }
 
 class ViewerState extends State<Viewer> {
@@ -202,11 +520,67 @@ class ViewerState extends State<Viewer> {
 
   void _updateDocument() {
     setState(() {
+      final document = _createDocumentWithMentions();
       _editor = createDefaultDocumentEditor(
-        document: deserializeMarkdownToDocument(widget.markdown),
+        document: document,
         composer: MutableDocumentComposer(),
       );
     });
+  }
+
+  /// Create document with mention attributions
+  MutableDocument _createDocumentWithMentions() {
+    final baseDocument = deserializeMarkdownToDocument(
+      Viewer._preprocessMarkdown(widget.markdown),
+    );
+    final document = MutableDocument(
+      nodes: baseDocument
+          .toList(), // Document implements Iterable<DocumentNode>
+    );
+
+    // Add attributions for mentions
+    for (final mention in widget._mentions) {
+      _addMentionAttributions(document, mention);
+    }
+
+    return document;
+  }
+
+  /// Find and add attributions for a mention in the document
+  void _addMentionAttributions(MutableDocument document, _MentionInfo mention) {
+    for (int i = 0; i < document.nodeCount; i++) {
+      final node = document.getNodeAt(i);
+      if (node is! TextNode) continue;
+
+      final text = node.text.toPlainText();
+      int searchIndex = 0;
+
+      while (true) {
+        final index = text.indexOf(mention.name, searchIndex);
+        if (index == -1) break;
+
+        // Add attribution for this occurrence
+        final attribution = CommittedEditorMentionAttribution(
+          priorityAgentId: mention.priorityAgentId,
+          username: mention.name,
+        );
+
+        // Create a copy of the text and add the attribution
+        final newText = node.text.copy();
+        newText.addAttribution(
+          attribution,
+          SpanRange(index, index + mention.name.length - 1),
+        );
+
+        document.replaceNodeById(
+          node.id,
+          ParagraphNode(id: node.id, text: newText, metadata: node.metadata),
+        );
+
+        searchIndex = index + mention.name.length;
+        break; // Only attribute first occurrence per node
+      }
+    }
   }
 
   @override
@@ -251,6 +625,36 @@ const baseTextStyle = TextStyle(
   height: 1.4,
 );
 
+/// Custom inline text styler that applies styling to user mentions
+TextStyle _inlineTextStyler(
+  Set<Attribution> attributions,
+  TextStyle existingStyle,
+) {
+  TextStyle style = defaultInlineTextStyler(attributions, existingStyle);
+
+  // Style composing editor mentions (being typed)
+  if (attributions.contains(editorMentionComposingAttribution)) {
+    style = style.copyWith(
+      color: const Color(0xFF2563EB), // Blue color for composing mentions
+      fontWeight: FontWeight.w500,
+    );
+  }
+
+  // Style committed editor mentions
+  final committedMention = attributions
+      .whereType<CommittedEditorMentionAttribution>()
+      .firstOrNull;
+  if (committedMention != null) {
+    style = style.copyWith(
+      color: const Color(0xFF059669), // Green color for committed mentions
+      fontWeight: FontWeight.w600,
+      decoration: TextDecoration.none,
+    );
+  }
+
+  return style;
+}
+
 final _styles = Stylesheet(
   rules: [
     StyleRule(BlockSelector.all, (doc, docNode) {
@@ -266,7 +670,7 @@ final _styles = Stylesheet(
       return {Styles.padding: const CascadingPadding.only(bottom: 0)};
     }),
   ],
-  inlineTextStyler: defaultInlineTextStyler,
+  inlineTextStyler: _inlineTextStyler,
   inlineWidgetBuilders: defaultInlineWidgetBuilderChain,
 );
 
@@ -276,6 +680,20 @@ final _darkStyles = _styles.copyWith(
       return {Styles.textStyle: const TextStyle(color: Color(0xFFFFFFFF))};
     }),
   ],
+  inlineTextStyler: (attributions, existingStyle) {
+    // First apply the custom mention styling
+    TextStyle style = _inlineTextStyler(attributions, existingStyle);
+
+    // Then apply dark theme base styling if no specific attribution styling is applied
+    if (!attributions.contains(editorMentionComposingAttribution) &&
+        !attributions
+            .whereType<CommittedEditorMentionAttribution>()
+            .isNotEmpty) {
+      style = style.copyWith(color: const Color(0xFFFFFFFF));
+    }
+
+    return style;
+  },
 );
 
 class SubmitIntent extends Intent {
@@ -360,4 +778,151 @@ ExecutionInstruction _bubbleSpecialKeys({
   }
 
   return ExecutionInstruction.blocked;
+}
+
+ExecutionInstruction _handlePunctuationAfterMention({
+  required SuperEditorContext editContext,
+  required KeyEvent keyEvent,
+}) {
+  if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  // Check if this is a punctuation character
+  final character = keyEvent.character;
+  if (character == null || !['.', ',', ';'].contains(character)) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  // Get current selection
+  final selection = editContext.composer.selection;
+  if (selection == null || !selection.isCollapsed) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  // Get the current node
+  final nodePosition = selection.extent.nodePosition;
+  if (nodePosition is! TextNodePosition) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  final node = editContext.document.getNodeById(selection.extent.nodeId);
+  if (node is! TextNode) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  final caretOffset = nodePosition.offset;
+
+  // Check if there's a space before the caret
+  if (caretOffset < 1) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  final text = node.text.toPlainText();
+  if (caretOffset > text.length || text[caretOffset - 1] != ' ') {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  // Check if the character before the space has a mention attribution
+  if (caretOffset < 2) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  final attributionsAtPrevChar = node.text.getAttributionSpansInRange(
+    attributionFilter: (attr) => attr is CommittedEditorMentionAttribution,
+    range: SpanRange(caretOffset - 2, caretOffset - 2),
+  );
+
+  if (attributionsAtPrevChar.isEmpty) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  // Delete the space before inserting punctuation
+  editContext.editor.execute([
+    DeleteUpstreamCharacterRequest(),
+    InsertCharacterAtCaretRequest(
+      character: character,
+      ignoreComposerAttributions: true,
+    ),
+  ]);
+
+  return ExecutionInstruction.haltExecution;
+}
+
+ExecutionInstruction _handleBackspaceOverMention({
+  required SuperEditorContext editContext,
+  required KeyEvent keyEvent,
+}) {
+  if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  if (keyEvent.logicalKey != LogicalKeyboardKey.backspace) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  // Get current selection
+  final selection = editContext.composer.selection;
+  if (selection == null || !selection.isCollapsed) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  // Get the current node
+  final nodePosition = selection.extent.nodePosition;
+  if (nodePosition is! TextNodePosition) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  final node = editContext.document.getNodeById(selection.extent.nodeId);
+  if (node is! TextNode) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  final caretOffset = nodePosition.offset;
+
+  // Check if we're at the start of the text (nothing to delete)
+  if (caretOffset < 1) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  // Check if the character before the caret has a mention attribution
+  final attributionsAtPrevChar = node.text.getAttributionSpansInRange(
+    attributionFilter: (attr) => attr is CommittedEditorMentionAttribution,
+    range: SpanRange(caretOffset - 1, caretOffset - 1),
+  );
+
+  if (attributionsAtPrevChar.isEmpty) {
+    return ExecutionInstruction.continueExecution;
+  }
+
+  // Found a mention - get its full span
+  final mentionSpan = attributionsAtPrevChar.first;
+
+  // Delete the entire mention span and update caret position
+  editContext.editor.execute([
+    DeleteContentRequest(
+      documentRange: DocumentRange(
+        start: DocumentPosition(
+          nodeId: selection.extent.nodeId,
+          nodePosition: TextNodePosition(offset: mentionSpan.start),
+        ),
+        end: DocumentPosition(
+          nodeId: selection.extent.nodeId,
+          nodePosition: TextNodePosition(offset: mentionSpan.end + 1),
+        ),
+      ),
+    ),
+    ChangeSelectionRequest(
+      DocumentSelection.collapsed(
+        position: DocumentPosition(
+          nodeId: selection.extent.nodeId,
+          nodePosition: TextNodePosition(offset: mentionSpan.start),
+        ),
+      ),
+      SelectionChangeType.placeCaret,
+      SelectionReason.userInteraction,
+    ),
+  ]);
+
+  return ExecutionInstruction.haltExecution;
 }

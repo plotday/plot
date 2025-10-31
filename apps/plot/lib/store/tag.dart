@@ -200,13 +200,6 @@ enum Tag {
     this.shortcodes = const [],
   }) : _hidden = false;
 
-  const Tag._hide(this.id)
-    : _hidden = true,
-      icon = const IconData(0x003F, fontFamily: 'emoji'), // ?
-      name = 'Unknown',
-      type = TagType.toggle,
-      shortcodes = const [];
-
   // Get all tags
   static List<Tag> getAll() => Tag.values.where((tag) => !tag._hidden).toList();
 

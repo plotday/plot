@@ -243,7 +243,6 @@ export class AI extends Tool implements IAI {
    * Track AI usage by recording token consumption
    */
   private async trackUsage(model: AIModel, usage: AIUsage) {
-    console.log("AI prompt usage:", usage);
     if (!this.usage) return;
 
     if (usage.inputTokens) {

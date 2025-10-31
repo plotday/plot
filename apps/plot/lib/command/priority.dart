@@ -221,6 +221,7 @@ List<Command> priorityCommands(Priority priority) => [
 
 List<Command> currentPriorityCommands(Priority priority) => [
   ...prioritySecondaryCommands(priority),
+  NewActivity(),
 ];
 
 class SetTopPriority extends Command {

@@ -55,7 +55,7 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
       mainAxisSize: MainAxisSize.min,
       onPress: _isLoading ? null : () => _handleTap(),
       child: _isLoading
-          ? SizedBox(width: 16, height: 16, child: FProgress(value: null))
+          ? SizedBox(width: 16, height: 16, child: FCircularProgress())
           : Text(widget.link.title),
     );
   }

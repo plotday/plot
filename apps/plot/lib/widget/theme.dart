@@ -107,6 +107,13 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
         ),
       ),
     ),
+    tileStyle: theme.tileStyle.copyWith(
+      backgroundColor: FWidgetStateMap({
+        WidgetState.selected | WidgetState.hovered | WidgetState.pressed:
+            theme.colors.primary,
+        WidgetState.any: theme.colors.primary,
+      }),
+    ),
   );
   return theme;
 }

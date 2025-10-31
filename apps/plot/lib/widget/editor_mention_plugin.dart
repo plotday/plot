@@ -1,0 +1,42 @@
+import 'package:super_editor/super_editor.dart';
+
+/// Attribution for editor mentions that are being composed (typed)
+const editorMentionComposingAttribution = NamedAttribution('editorMentionComposing');
+
+/// Attribution for completed editor mentions
+class CommittedEditorMentionAttribution extends NamedAttribution {
+  const CommittedEditorMentionAttribution({
+    required this.priorityAgentId,
+    required this.username,
+  }) : super('editorMentionCommitted');
+
+  final String priorityAgentId;
+  final String username;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CommittedEditorMentionAttribution &&
+          priorityAgentId == other.priorityAgentId &&
+          username == other.username);
+
+  @override
+  int get hashCode => Object.hash(priorityAgentId, username);
+}
+
+/// A request to insert an editor mention at the current caret position
+class InsertEditorMentionRequest implements EditRequest {
+  const InsertEditorMentionRequest({
+    required this.username,
+  });
+
+  final String username;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is InsertEditorMentionRequest && username == other.username);
+
+  @override
+  int get hashCode => username.hashCode;
+}

@@ -599,13 +599,13 @@ packages:
     source: sdk
     version: "0.0.0"
   follow_the_leader:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: follow_the_leader
-      sha256: "798baf5211ca2461c8462d4c8e94f57bf989758f8204056d607eb9a20f1cf794"
+      sha256: "4fe0d2c22b6c88d023b9b91d70258e1ccfa806232c73bd8527eef22e8b793167"
       url: "https://pub.dev"
     source: hosted
-    version: "0.0.4+8"
+    version: "0.5.1"
   font_awesome_flutter:
     dependency: "direct main"
     description:
@@ -619,18 +619,18 @@ packages:
     dependency: "direct main"
     description:
       name: forui
-      sha256: ac105b51b21ea8b8670605bec7b5430be076b8e942a252283e346f8e4f5ac37b
+      sha256: "6cc43d4a07fefc8a6ff875483546babf614ec68ab091016399ab5526ac8124b9"
       url: "https://pub.dev"
     source: hosted
-    version: "0.15.1"
+    version: "0.16.0"
   forui_assets:
     dependency: transitive
     description:
       name: forui_assets
-      sha256: "1df308c405ac6eef740269d923e5693bcd85d1debafbc45f26937b25ba2df181"
+      sha256: "0f74f49250bca9076b5ee9ffb9c7f0476c436f9a8299aa68aa7f1cb3f1b429f4"
       url: "https://pub.dev"
     source: hosted
-    version: "0.15.0"
+    version: "0.16.0"
   freezed_annotation:
     dependency: transitive
     description:
@@ -1019,10 +1019,10 @@ packages:
     dependency: transitive
     description:
       name: overlord
-      sha256: "576256bc9ce3fb0ae3042bbb26eed67bdb26a5045dd7e3c851aae65b0bbab2f5"
+      sha256: "532f5685ac09ee805d97ce89794a4eeda41672c32955b4a835bdfce93e720a05"
       url: "https://pub.dev"
     source: hosted
-    version: "0.0.3+5"
+    version: "0.4.2"
   package_config:
     dependency: transitive
     description:
@@ -1568,10 +1568,10 @@ packages:
     dependency: "direct main"
     description:
       name: super_editor
-      sha256: "71419d91cdb2ab442dd8c21cbec6377a6b71af5652de27f95b882ac9647f27ef"
+      sha256: "52368ab52cc28710bdf4334c091cfa04eae229ca84a84f5696b02d4409af5b14"
       url: "https://pub.dev"
     source: hosted
-    version: "0.3.0-dev.34"
+    version: "0.3.0-dev.36"
   super_editor_markdown:
     dependency: "direct main"
     description:

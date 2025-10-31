@@ -80,20 +80,32 @@ class _PriorityWrapperContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocConsumer<LayoutBloc, LayoutState>(
-      listener: (context, layoutState) {
-        _handleRouteNavigation(context, layoutState.multiPanel);
-      },
-      builder: (context, layoutState) {
-        if (layoutState.multiPanel) {
-          return ResizablePanelLayout(
-            left: const PrioritiesPage(),
-            middle: const PriorityPage(),
-            child: AutoRouter(key: ValueKey("TheOne")),
-          );
-        } else {
-          return AutoRouter(key: ValueKey("TheOne"));
-        }
+    return BlocBuilder<PriorityBloc, PriorityState>(
+      builder: (context, priorityState) {
+        return CommandScope(
+          commands: [
+            StaticCommandGroup(
+              title: priorityState.context.title,
+              commands: currentPriorityCommands(priorityState.context),
+            ),
+          ],
+          child: BlocConsumer<LayoutBloc, LayoutState>(
+            listener: (context, layoutState) {
+              _handleRouteNavigation(context, layoutState.multiPanel);
+            },
+            builder: (context, layoutState) {
+              if (layoutState.multiPanel) {
+                return ResizablePanelLayout(
+                  left: const PrioritiesPage(),
+                  middle: const PriorityPage(),
+                  child: AutoRouter(key: ValueKey("TheOne")),
+                );
+              } else {
+                return AutoRouter(key: ValueKey("TheOne"));
+              }
+            },
+          ),
+        );
       },
     );
   }
@@ -110,18 +122,10 @@ class PriorityPage extends StatelessWidget {
         return BlocBuilder<PriorityBloc, PriorityState>(
           builder: (context, state) {
             // Extract the actual priority state
-            return CommandScope(
-              commands: [
-                StaticCommandGroup(
-                  title: state.context.title,
-                  commands: priorityCommands(state.context),
-                ),
-              ],
-              child:
-                  (state.agendaItems.isEmpty &&
-                      !(state.doneStart && state.doneEnd))
-                  ? const Center(child: Spinner())
-                  : BidirectionalListSelector(
+            return (state.agendaItems.isEmpty &&
+                    !(state.doneStart && state.doneEnd))
+                ? const Center(child: Spinner())
+                : BidirectionalListSelector(
                       onActivate: (index) {
                         final item =
                             index >= state.first &&
@@ -275,8 +279,7 @@ class PriorityPage extends StatelessWidget {
                               ),
                             ),
                           ),
-                    ),
-            );
+                    );
           },
         );
       },
