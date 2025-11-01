@@ -12,22 +12,11 @@ import 'package:plot/command/command.dart';
 @RoutePage(name: "ActivityRoute")
 class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
   ActivityWrapper({
-    Activity? activity,
-    ActivityId? activityId,
-    @PathParam("activityId") String? activityIdString,
+    @PathParam("activityId") required String activityIdString,
     super.key,
-  }) {
-    final resolvedActivityId =
-        activity?.id ??
-        activityId ??
-        (activityIdString != null
-            ? ActivityId.fromShortString(activityIdString)
-            : null);
-    assert(resolvedActivityId != null, 'An activity must be provided.');
-    this.activityId = resolvedActivityId!;
-  }
+  }) : activityId = ActivityId.fromShortString(activityIdString);
 
-  late final ActivityId activityId;
+  final ActivityId activityId;
 
   @override
   Widget wrappedRoute(BuildContext context) {

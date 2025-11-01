@@ -55,11 +55,13 @@ abstract class PriorityCommand extends Command {
 }
 
 class ChangeCurrentPriority extends PriorityCommand {
-  ChangeCurrentPriority(super.priority);
+  ChangeCurrentPriority(Priority priority) : super(priority);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    return CommandRoute(PriorityRoute(priorityId: priority?.id));
+    return CommandRoute(
+      PriorityRoute(priorityIdString: priority!.id.toShortString()),
+    );
   }
 }
 
@@ -86,7 +88,7 @@ class ChangeCurrentPriorityCommands extends Commands {
          groups: [
            PriorityGroup(
              title: 'Change Current Priority',
-             builder: (priority) => ChangeCurrentPriority(priority),
+             builder: (priority) => ChangeCurrentPriority(priority!),
            ),
          ],
          secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
@@ -105,7 +107,9 @@ class OpenPriority extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    return CommandRoute(PriorityRoute(priorityId: priorityId));
+    return CommandRoute(
+      PriorityRoute(priorityIdString: priorityId.toShortString()),
+    );
   }
 }
 
@@ -129,7 +133,10 @@ class AddPriority extends Command {
     final priority = await _priority;
     await priority.save();
     Posthog().capture(eventName: 'Priority Added');
-    return CommandRoute(PriorityRoute(priorityId: priority.id), replace: true);
+    return CommandRoute(
+      PriorityRoute(priorityIdString: priority.id.toShortString()),
+      replace: true,
+    );
   }
 }
 

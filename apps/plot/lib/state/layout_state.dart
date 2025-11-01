@@ -29,14 +29,15 @@ class LayoutState extends Equatable {
   static const double rightPanelMinWidth = 350.0;
 
   /// Minimum width for multi-panel layout
+  /// Buffer accounts for dividers and ensures min < max for resizable regions
   static final double multiPanelMinWidth = max(
-    leftPanelMinWidth + centerPanelMinWidth + 5,
-    centerPanelMinWidth + rightPanelMinWidth + 5,
+    leftPanelMinWidth + centerPanelMinWidth + 60,
+    centerPanelMinWidth + rightPanelMinWidth + 60,
   );
 
   /// Minimum width for three panel layout
   static final double threePanelMinWidth =
-      leftPanelMinWidth + centerPanelMinWidth + rightPanelMinWidth + 5 + 5;
+      leftPanelMinWidth + centerPanelMinWidth + rightPanelMinWidth + 60 + 60;
 
   /// Check if we should use multi-panel layout based on width
   static bool isMultiPanel(double width) {

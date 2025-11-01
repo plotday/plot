@@ -61,14 +61,16 @@ class AppRouter extends RootStackRouter {
                   .loadedState
                   .priority
                   .id;
-              resolver.redirectUntil(PriorityRoute(priorityId: priorityId));
+              resolver.redirectUntil(
+                PriorityRoute(priorityIdString: priorityId.toShortString()),
+              );
             }),
           ],
         ),
         AutoRoute(
           page: PrioritiesShellRoute.page,
           guards: [AuthGuard()],
-          path: '~',
+          path: '',
           children: [
             AutoRoute(
               page: PrioritiesRoute.page,
@@ -84,7 +86,9 @@ class AppRouter extends RootStackRouter {
                         .priority
                         .id;
                     resolver.redirectUntil(
-                      PriorityRoute(priorityId: priorityId),
+                      PriorityRoute(
+                        priorityIdString: priorityId.toShortString(),
+                      ),
                     );
                   }
                 }),
