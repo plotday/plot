@@ -1,0 +1,4 @@
+server:
+  headers:
+    - name: "Cross-Origin-Opener-Policy"
+      value: "same-origin-allow-popups"

@@ -191,6 +191,7 @@ class PriorityPage extends StatelessWidget {
                                 ...current.when(
                                   date: (date) => [
                                     DayHeader(
+                                      key: ValueKey('dayheader_${date.hashCode}'),
                                       date: date,
                                       now: date == Date.today(),
                                       selected: selected,
@@ -198,6 +199,7 @@ class PriorityPage extends StatelessWidget {
                                   ],
                                   priority: (priority) => [
                                     AgendaHeader(
+                                      key: ValueKey('agendaheader_priority_${priority.id}'),
                                       priority: priority,
                                       context: state.context,
                                       selected: selected,
@@ -206,12 +208,14 @@ class PriorityPage extends StatelessWidget {
                                   activity: (activity) => [
                                     if (activity.type == ActivityType.event)
                                       AgendaHeader(
+                                        key: ValueKey('agendaheader_activity_${activity.id}'),
                                         activity: activity,
                                         context: state.context,
                                         selected: selected,
                                       ),
                                     if (activity.type != ActivityType.event)
                                       ActivityWidget(
+                                        key: ValueKey('activitywidget_${activity.id}'),
                                         activity: activity,
                                         selected: selected,
                                         context: state.context,

@@ -83,7 +83,12 @@ class ActivityTags extends StatelessWidget {
       runSpacing: 4,
       children: relevantTags.map((tag) {
         final hasTag = activity.hasTag(tag);
-        return Button.icon(ToggleActivityTag(activity, tag), selected: hasTag);
+        final key = ValueKey(Object.hash(activity.id, tag.id));
+        return Button.icon(
+          ToggleActivityTag(activity, tag),
+          key: key,
+          selected: hasTag,
+        );
       }).toList(),
     );
   }

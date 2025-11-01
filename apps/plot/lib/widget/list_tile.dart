@@ -177,7 +177,10 @@ class _ListTileState extends State<ListTile> {
                     ],
                   ),
                 ),
-                ...widget.trailingCommands.map((c) => Button.icon(c)),
+                ...widget.trailingCommands.asMap().entries.map((entry) {
+                  final key = ValueKey(Object.hash(entry.value.hashCode, entry.key));
+                  return Button.icon(entry.value, key: key);
+                }),
               ],
             ),
           ),

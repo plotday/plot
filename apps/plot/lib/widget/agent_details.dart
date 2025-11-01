@@ -33,6 +33,7 @@ class AgentDetails extends StatelessWidget {
         // Add domain header
         permissionsList.add(
           Padding(
+            key: ValueKey('domain_$domain'),
             padding: const EdgeInsets.only(top: 8, bottom: 4),
             child: Text(
               domain,
@@ -50,6 +51,7 @@ class AgentDetails extends StatelessWidget {
           final flagsText = flags.map((f) => f.name).join(', ');
           permissionsList.add(
             Padding(
+              key: ValueKey('${domain}_$entity'),
               padding: const EdgeInsets.only(left: 12, bottom: 4),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,

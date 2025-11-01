@@ -155,7 +155,10 @@ class _HeaderState extends State<Header> with RouteAware {
 
         // Build suffixes with position-specific right buttons
         final suffixes = <Widget>[
-          ...widget.commands.map((command) => Button.icon(command)),
+          ...widget.commands.asMap().entries.map((entry) {
+            final key = ValueKey(Object.hash(entry.value.hashCode, entry.key));
+            return Button.icon(entry.value, key: key);
+          }),
           // Left sidebar toggle for left position
           if (position == HeaderPosition.left)
             FTappable(

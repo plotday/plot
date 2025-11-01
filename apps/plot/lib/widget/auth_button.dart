@@ -132,6 +132,7 @@ class AuthButton extends StatefulWidget {
 
 class _AuthButtonState extends State<AuthButton> {
   bool _isLoading = false;
+  Widget? _cachedWebButton;
 
   @override
   void initState() {
@@ -141,6 +142,9 @@ class _AuthButtonState extends State<AuthButton> {
 
       // On web, listen to the user stream to handle sign-in from the rendered button
       if (kIsWeb && !signIn.supportsAuthenticate()) {
+        // Cache the web button widget to prevent re-rendering
+        _cachedWebButton = web.buildGoogleSignInButton();
+
         signIn.authenticationEvents.listen((event) {
           log.info('Google sign-in event: $event');
           if (event is GoogleSignInAuthenticationEventSignIn) {
@@ -292,8 +296,9 @@ class _AuthButtonState extends State<AuthButton> {
 
   @override
   Widget build(BuildContext context) {
-    if (!GoogleSignIn.instance.supportsAuthenticate()) {
-      return web.buildGoogleSignInButton();
+    // Return cached web button to prevent re-rendering
+    if (_cachedWebButton != null) {
+      return _cachedWebButton!;
     }
 
     final config = _getProviderConfig(widget.provider);
@@ -382,7 +387,9 @@ class _AuthButtonState extends State<AuthButton> {
           ),
         ),
         iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),
-        circularProgressStyle: FWidgetStateMap.all(context.theme.circularProgressStyle),
+        circularProgressStyle: FWidgetStateMap.all(
+          context.theme.circularProgressStyle,
+        ),
       ),
       iconContentStyle: FButtonIconContentStyle(
         iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),

@@ -141,15 +141,24 @@ class ActivityLinksList extends StatelessWidget {
     }
 
     final widgets = visibleLinks.map((link) {
+      // Use stable, content-based keys instead of hashCode
+      final Key key;
       if (link.type == LinkType.auth) {
+        final authLink = link as AuthLink;
+        key = ValueKey('auth_${authLink.callback}');
         return AuthButton.authorize(
-          link: link as AuthLink,
+          key: key,
+          link: authLink,
           onAuth: onAuthComplete,
         );
       } else if (link.type == LinkType.callback) {
-        return CallbackLinkButton(link: link as CallbackLink);
+        final callbackLink = link as CallbackLink;
+        key = ValueKey('callback_${callbackLink.token}');
+        return CallbackLinkButton(key: key, link: callbackLink);
       } else {
-        return ExternalLinkButton(link: link as ExternalLink);
+        final externalLink = link as ExternalLink;
+        key = ValueKey('external_${externalLink.url}');
+        return ExternalLinkButton(key: key, link: externalLink);
       }
     }).toList();
 
