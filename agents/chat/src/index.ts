@@ -18,15 +18,17 @@ export default class ChatAgent extends Agent<ChatAgent> {
       plot: build(Plot, {
         activity: {
           access: ActivityAccess.Respond,
-          intents: [{
-            description: "Respond to general questions and requests",
-            examples: [
-              "What's the weather like?",
-              "Can you help me plan my day?",
-              "Write me a summary of this article"
-            ],
-            handler: this.responsd,
-          }],
+          intents: [
+            {
+              description: "Respond to general questions and requests",
+              examples: [
+                "What's the weather like?",
+                "Can you help me plan my day?",
+                "Write me a summary of this article",
+              ],
+              handler: this.responsd,
+            },
+          ],
         },
       }),
     };
@@ -93,7 +95,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
     });
 
     const response = await this.tools.ai.prompt({
-      model: { speed: "balanced", cost: "low" },
+      model: { speed: "balanced", cost: "medium" },
       messages,
       outputSchema: schema,
     });
