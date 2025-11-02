@@ -189,7 +189,7 @@ export function transformGoogleEvent(
     : null; // Timed events use Date objects
 
   const activity: Partial<Activity> = {
-    type: ActivityType.Event,
+    type: isAllDay ? ActivityType.Note : ActivityType.Event,
     title: event.summary || null,
     note: event.description || null,
     start,
