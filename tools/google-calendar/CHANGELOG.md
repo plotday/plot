@@ -1,5 +1,13 @@
 # @plotday/tool-google-calendar
 
+## 0.2.4
+
+### Changed
+
+- Create all-day events as notes rather than events ([`798f370`](https://github.com/plotday/plot/commit/798f37041733ddbd58909e8e46092f7ac4387d48))
+- Updated dependencies:
+- @plotday/agent@0.19.1
+
 ## 0.2.3
 
 ### Changed
