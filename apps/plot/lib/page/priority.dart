@@ -28,6 +28,7 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
       priorityId: priorityId,
       priority: null, // Let the bloc load the priority
       child: BlocConsumer<PriorityBloc, PriorityState>(
+        listenWhen: (previous, current) => previous.context.id != current.context.id,
         listener: (context, state) {
           context.read<NowBloc>().setPriority(state.context);
         },

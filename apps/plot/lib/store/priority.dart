@@ -70,8 +70,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   static $PrioritiesTable get table => Store.get.priorities;
 
   static Future<bool> push() => Store.get.push(table, PrioritiesBase());
-  static Future<bool> pull() async {
-    return await Store.get.pull(PullType.all, table, PrioritiesBase());
+  static Future<void> pull() async {
+    await Store.get.pull(PullType.all, table, PrioritiesBase());
   }
 
   static Future<List<Priority>> get({

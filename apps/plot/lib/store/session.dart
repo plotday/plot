@@ -61,37 +61,48 @@ class Session extends SessionRow {
   static TableInfo<Sessions, SessionRow> get table => Store.get.sessions;
 
   static Future<bool> push() => Store.get.push(table, SessionsBase());
-  static Future<bool> pull() =>
-      Store.get.pull(PullType.updates, table, SessionsBase());
+  static Future<void> pull() async =>
+      await Store.get.pull(PullType.updates, table, SessionsBase());
+
+  static final _resumeLock = Lock();
 
   static Future<Session> resume(
     Priority? priority, {
     required DateTime end,
   }) async {
-    var session = await _latest();
-    Session? previous;
-    if (session != null) {
-      if (session.at.isNow()) {
-        if (session.priority == priority) {
-          session = Session.fromStore(session.copyWith(end: end));
+    return await _resumeLock.synchronized(() async {
+      var session = await _latest();
+      Session? previous;
+      if (session != null) {
+        if (session.at.isNow()) {
+          if (session.priority == priority) {
+            session = Session.fromStore(session.copyWith(end: end));
+          } else {
+            session = Session.fromStore(session.copyWith(end: DateTime.now()));
+            await session.save();
+            session = null;
+          }
         } else {
-          session = Session.fromStore(session.copyWith(end: DateTime.now()));
-          await session.save();
+          if (session.priority == priority) {
+            previous = session;
+          }
           session = null;
         }
-      } else {
-        if (session.priority == priority) {
-          previous = session;
-        }
-        session = null;
       }
-    }
-    if (session == null) {
-      previous ??= await _latest(context: priority);
-      session = Session(priority: priority, end: end);
-    }
-    await session.save();
-    return session;
+      if (session == null) {
+        previous ??= await _latest(context: priority);
+        // Double-check if a session was just created for this priority
+        // to catch race conditions that slipped through
+        final latestForPriority = await _latest(context: priority);
+        if (latestForPriority != null && latestForPriority.at.isNow()) {
+          session = Session.fromStore(latestForPriority.copyWith(end: end));
+        } else {
+          session = Session(priority: priority, end: end);
+        }
+      }
+      await session.save();
+      return session;
+    });
   }
 
   static Future<Session?> _latest({Priority? context}) async {

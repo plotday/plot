@@ -293,6 +293,7 @@ class ActivitiesBase extends BaseTable {
         name: "activities",
         ascending:
             false, // Get latest items first for reverse chronological sync
+        limit: 200,
       );
 
   @override
@@ -405,7 +406,9 @@ class Activity extends Equatable implements Comparable<Activity> {
 
     final matches = mentionPattern.allMatches(note);
     for (final match in matches) {
-      final uuidString = match.group(2); // UUID is in group 2, name is in group 1
+      final uuidString = match.group(
+        2,
+      ); // UUID is in group 2, name is in group 1
       if (uuidString != null) {
         try {
           mentionedAgentIds.add(Uuid.fromString(uuidString));
@@ -419,43 +422,73 @@ class Activity extends Equatable implements Comparable<Activity> {
     return mentionedAgentIds.toList();
   }
 
-  static Future<bool> pull() async {
-    return await Store.get.pull(
-          PullType.updates,
-          Store.get.activities,
-          ActivitiesBase(),
-        ) &&
-        await Store.get.pull(
-          PullType.updates,
-          Store.get.activityExceptions,
-          ActivityExceptionsBase(),
-        ) &&
-        await Store.get.pull(
-          PullType.updates,
-          Store.get.activityTags,
-          ActivityTagsBase(),
-        );
+  static Future<void> pullInitial() async {
+    // Pull activities first (with limit of 200)
+    final activitiesRange = await Store.get.pull(
+      PullType.initial,
+      Store.get.activities,
+      ActivitiesBase(),
+    );
+
+    if (activitiesRange == null) return;
+
+    // Use the returned range for exceptions and tags
+    await Store.get.pull(
+      PullType.initial,
+      Store.get.activityExceptions,
+      ActivityExceptionsBase(),
+      range: activitiesRange,
+    );
+    await Store.get.pull(
+      PullType.initial,
+      Store.get.activityTags,
+      ActivityTagsBase(),
+      range: activitiesRange,
+    );
   }
 
-  static Future<bool> pullRange(DateRange range) async {
-    return (await Store.get.pull(
-          PullType.more,
-          Store.get.activities,
-          ActivitiesBase(),
-          range: (range.start?.toString(), range.end?.toString()),
-        )) &&
-        (await Store.get.pull(
-          PullType.more,
-          Store.get.activityExceptions,
-          ActivityExceptionsBase(),
-          range: (range.start?.toString(), range.end?.toString()),
-        )) &&
-        (await Store.get.pull(
-          PullType.more,
-          Store.get.activityTags,
-          ActivityTagsBase(),
-          range: (range.start?.toString(), range.end?.toString()),
-        ));
+  static Future<void> pull() async {
+    await Store.get.pull(
+      PullType.updates,
+      Store.get.activities,
+      ActivitiesBase(),
+    );
+    await Store.get.pull(
+      PullType.updates,
+      Store.get.activityExceptions,
+      ActivityExceptionsBase(),
+    );
+    await Store.get.pull(
+      PullType.updates,
+      Store.get.activityTags,
+      ActivityTagsBase(),
+    );
+  }
+
+  static Future<void> pullRange(DateRange range) async {
+    // Pull activities first (with limit of 200)
+    final activitiesRange = await Store.get.pull(
+      PullType.more,
+      Store.get.activities,
+      ActivitiesBase(),
+      range: (range.start?.toString(), range.end?.toString()),
+    );
+
+    if (activitiesRange == null) return;
+
+    // Use the returned range for exceptions and tags
+    await Store.get.pull(
+      PullType.more,
+      Store.get.activityExceptions,
+      ActivityExceptionsBase(),
+      range: activitiesRange,
+    );
+    await Store.get.pull(
+      PullType.more,
+      Store.get.activityTags,
+      ActivityTagsBase(),
+      range: activitiesRange,
+    );
   }
 
   static Future<bool> push() async {
@@ -1284,7 +1317,9 @@ class Activity extends Equatable implements Comparable<Activity> {
   static String _replaceMentionsForDisplay(String text) {
     // Replace [Name](#@UUID) with just Name
     return text.replaceAllMapped(
-      RegExp(r'\[([^\]]+)\]\(#@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\)'),
+      RegExp(
+        r'\[([^\]]+)\]\(#@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\)',
+      ),
       (match) => match.group(1) ?? '',
     );
   }
@@ -1292,20 +1327,18 @@ class Activity extends Equatable implements Comparable<Activity> {
   String? get noteText {
     final text = _exception?.note ?? _activity.note;
     if (text == null) return null;
-    return _replaceMentionsForDisplay(text)
-        .removeMarkdown()
-        .replaceAll('\n', ' ')
-        .trim();
+    return _replaceMentionsForDisplay(
+      text,
+    ).removeMarkdown().replaceAll('\n', ' ').trim();
   }
 
   String get displayTitle {
     if (title != null) return title!;
     final noteFirstLine = note?.split("\n").first;
     if (noteFirstLine == null) return draft ? '🤷' : 'Untitled';
-    return _replaceMentionsForDisplay(noteFirstLine)
-        .removeMarkdown()
-        .trim()
-        .truncate(50);
+    return _replaceMentionsForDisplay(
+      noteFirstLine,
+    ).removeMarkdown().trim().truncate(50);
   }
 
   DateTimeRange? get at =>

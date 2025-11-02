@@ -35,8 +35,8 @@ class ActorsBase extends BaseTable {
 class Actor extends ActorRow {
   static TableInfo<Actors, ActorRow> get table => Store.get.actors;
 
-  static Future<bool> pull() =>
-      Store.get.pull(PullType.all, table, ActorsBase());
+  static Future<void> pull() async =>
+      await Store.get.pull(PullType.all, table, ActorsBase());
 
   static Future<List<Actor>> get({bool? deleted = false}) async {
     return _get(deleted: deleted).get();

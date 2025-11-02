@@ -50,7 +50,7 @@ class NowBloc extends Cubit<NowState> {
   }
 
   void setPriority(Priority? priority) async {
-    if (loadedState.session?.priority == priority) return;
+    if (loadedState.session?.priority?.id == priority?.id) return;
     await loadedState.session?.copyWith(end: DateTime.now()).save();
     await Session.resume(
       priority,
