@@ -240,6 +240,13 @@ export type Activity = {
   /** Primary content for the activity */
   note: string | null;
   /**
+   * Format of the note content. Determines how the note is processed:
+   * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
+   * - 'markdown': Already in markdown format (default, no conversion)
+   * - 'html': HTML content that will be converted to markdown
+   */
+  noteType?: "text" | "markdown" | "html";
+  /**
    * Start time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the start of the first occurrence.
    * Can be a Date object for timed events or a date string in "YYYY-MM-DD" format for all-day events.
@@ -321,7 +328,10 @@ export type Activity = {
  */
 export type NewActivity = Pick<Activity, "type"> &
   Partial<
-    Omit<Activity, "id" | "author" | "type" | "parent" | "priority" | "threadRoot"> & {
+    Omit<
+      Activity,
+      "id" | "author" | "type" | "parent" | "priority" | "threadRoot"
+    > & {
       parent?: Pick<Activity, "id"> | null;
       priority?: Pick<Priority, "id">;
     }
@@ -336,6 +346,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
       | "end"
       | "doneAt"
       | "note"
+      | "noteType"
       | "title"
       | "meta"
       | "links"

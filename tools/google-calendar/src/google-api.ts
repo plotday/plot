@@ -1,4 +1,4 @@
-import type { Activity } from "@plotday/agent";
+import type { NewActivity } from "@plotday/agent";
 import { ActivityType } from "@plotday/agent";
 
 export type GoogleEvent = {
@@ -172,7 +172,7 @@ export function parseGoogleRecurrenceCount(
 export function transformGoogleEvent(
   event: GoogleEvent,
   calendarId: string
-): Partial<Activity> {
+): NewActivity {
   // Determine if this is an all-day event
   const isAllDay = event.start?.date && !event.start?.dateTime;
 
@@ -188,10 +188,11 @@ export function transformGoogleEvent(
     ? new Date(event.end?.dateTime)
     : null; // Timed events use Date objects
 
-  const activity: Partial<Activity> = {
+  const activity: NewActivity = {
     type: isAllDay ? ActivityType.Note : ActivityType.Event,
     title: event.summary || null,
     note: event.description || null,
+    noteType: "html",
     start,
     end,
     meta: {
