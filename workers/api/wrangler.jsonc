@@ -26,6 +26,15 @@
     {
       "tag": "v8",
       "new_sqlite_classes": ["LogStream"]
+    },
+    {
+      "tag": "v9",
+      "renamed_classes": [
+        {
+          "from": "Callbacks",
+          "to": "CallbacksState"
+        }
+      ]
     }
   ],
   "env": {
