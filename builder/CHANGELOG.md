@@ -1,5 +1,11 @@
 # @plotday/agent
 
+## 0.19.1
+
+### Added
+
+- Text and HTML (in addition to Markdown) note types ([`9516790`](https://github.com/plotday/plot/commit/95167908d414db8d92eddea83e85948482917d3d))
+
 ## 0.19.0
 
 ### Added

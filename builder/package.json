@@ -1,6 +1,6 @@
 {
   "name": "@plotday/agent",
-  "version": "0.19.0",
+  "version": "0.19.1",
   "description": "Plot Agent Builder - Build intelligent agents that organize and prioritize your activities",
   "packageManager": "pnpm@10.18.3",
   "type": "module",
