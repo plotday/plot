@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:rxdart/rxdart.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -50,18 +51,39 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> fetchMoreAgendaItems(int first, int count) async {
     if (state.range == null) return;
 
+    // Check if requested range is already within current loaded range
+    final currentFirst = state.first;
+    final currentLast = state.first + state.agendaItems.length;
+    final requestedLast = first + count;
+
+    if (first >= currentFirst && requestedLast <= currentLast) {
+      log.info(
+        'Requested range [$first, $requestedLast) already within current range [$currentFirst, $currentLast). Skipping fetch.',
+      );
+      return;
+    }
+
+    // Expand requested range by 15% in both directions
+    final buffer = (count * 0.15).ceil();
+    final expandedFirst = first - buffer;
+    final expandedCount = count + (2 * buffer);
+
+    log.info(
+      'Expanding requested range [$first, ${first + count}) by 15% to [$expandedFirst, ${expandedFirst + expandedCount})',
+    );
+
     final moveStart = state.doneStart
         ? 0
-        : first - state.first; // negative = need before
+        : expandedFirst - state.first; // negative = need before
     final moveEnd = state.doneEnd
         ? 0
-        : first -
+        : expandedFirst -
               state.first +
-              count -
+              expandedCount -
               state.agendaItems.length; // positive = need after
 
     log.info(
-      'Fetching more agenda items: first=$first, count=$count, moveStart=$moveStart, moveEnd=$moveEnd, doneStart=${state.doneStart}, doneEnd=${state.doneEnd}',
+      'Fetching more agenda items: expandedFirst=$expandedFirst, expandedCount=$expandedCount, moveStart=$moveStart, moveEnd=$moveEnd, doneStart=${state.doneStart}, doneEnd=${state.doneEnd}',
     );
 
     final currentRange = state.range!;
@@ -168,7 +190,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> _loadAgents() async {
     try {
       final agents = await AgentApi.getAgentsForPriority(state.context);
-      log.info('Loaded ${agents.length} agents for priority ${state.context.title}');
+      log.info(
+        'Loaded ${agents.length} agents for priority ${state.context.title}',
+      );
       emit(state.copyWith(agents: agents));
     } catch (e, t) {
       log.warning('Failed to load agents for priority', e, t);
@@ -262,7 +286,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           context: state.context,
           deleted: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
-        ).listen((schedule) {
+        ).debounceTime(const Duration(milliseconds: 100)).listen((schedule) {
           // Calculate the new first index based on date overlap
           int first = state.first;
           if (overlappingIndex != -1) {
@@ -290,6 +314,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           log.info(
             'Schedule updated (${range.start} to ${range.end}, first=$first, count=${schedule.days.length}, previous=${schedule.previous}, next=${schedule.next})',
           );
+
           emit(
             state.copyWith(
               range: range,

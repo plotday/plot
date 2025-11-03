@@ -112,6 +112,15 @@ export class Broadcast extends DurableObject<Bindings> {
     // Accept the WebSocket connection
     server.accept();
 
+    // Defensive cleanup: if a connection already exists for this clientId,
+    // close it before storing the new one. This handles edge cases where
+    // the old connection wasn't properly cleaned up.
+    const existingConnection = this.connections.get(clientId);
+    if (existingConnection) {
+      console.log(`Closing existing connection for clientId ${clientId}`);
+      existingConnection.close(1000, "Replaced by new connection");
+    }
+
     // Store the connection
     this.connections.set(clientId, server);
 
@@ -132,6 +141,10 @@ export class Broadcast extends DurableObject<Bindings> {
     return new Response(null, {
       status: 101,
       webSocket: client,
+      headers: {
+        // Echo back the selected protocol (required by Chrome for strict WebSocket compliance)
+        "Sec-WebSocket-Protocol": "plot-v1",
+      },
     });
   }
 

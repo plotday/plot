@@ -81,6 +81,7 @@ SELECT
     a.updated_by,
     a.deleted_at,
     a.priority_id,
+    p.path AS priority_path,
     a.type,
     a.path,
     a.order,
@@ -119,6 +120,7 @@ SELECT
     COALESCE(uau.unread, FALSE) AS unread
 FROM
     activity a
+    JOIN priority p ON p.id = a.priority_id
     JOIN user_priority up ON a.priority_id = up.id
     LEFT JOIN user_activity_unread uau ON uau.user_id = up.user_id
         AND uau.activity_id = a.id
@@ -133,6 +135,7 @@ SELECT
     ua.id,
     ae.occurrence,
     ae.updated_at,
+    ua.priority_path,
     ua.range_at,
     ua.range_on,
     -- exception overrides
@@ -168,6 +171,7 @@ SELECT
     ua.id,
     at.occurrence,
     at.updated_at,
+    ua.priority_path,
     ua.range_at,
     ua.range_on,
     at.tags

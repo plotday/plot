@@ -1,4 +1,3 @@
-import type { Database } from "@plotday/db";
 import {
   type Activity,
   type ActivityLink,
@@ -8,6 +7,7 @@ import {
   AuthorType,
   type Priority,
 } from "@plotday/agent/plot";
+import type { Database } from "@plotday/db";
 
 import {
   calculateRecurrenceUntil,

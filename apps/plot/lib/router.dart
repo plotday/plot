@@ -180,15 +180,16 @@ class AuthGuard extends AutoRouteGuard {
     } else if (userState is UserWaitlisted &&
         resolver.route.name != 'InvitationRoute') {
       resolver.redirectUntil(InvitationRoute());
-    } else if (userState is UserSignedOut && resolver.route is! SignInRoute) {
+    } else if (userState is UserSignedOut &&
+        resolver.route.name != 'SignInRoute') {
       // User is not authenticated, redirect to sign in with return path
-      final returnPath = resolver.route.path;
-      router.navigate(
+      resolver.redirectUntil(
         SignInRoute(
-          returnTo: returnPath is! SignInRoute ? returnPath : null,
+          returnTo: resolver.route.path,
           signOut: true,
         ),
       );
+      return;
     } else {
       // User state is loading, wait for authentication to complete
       // This will be handled by the UserBloc listener

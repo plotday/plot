@@ -10,7 +10,6 @@ import 'package:injector/injector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:remove_markdown/remove_markdown.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:equatable/equatable.dart';
 import 'package:rrule/rrule.dart';
 import 'package:synchronized/synchronized.dart';
@@ -135,13 +134,13 @@ abstract class BaseTable {
     (
       Iterable<Map<String, dynamic>> rows,
       DateTime? lastUpdated,
-      (String?, String?)? range,
+      DateTimeRange? range,
       bool more,
     )
   >
-  get({String? from, String? to, DateTime? updatedSince}) async {
+  get({DateTimeRange? range, DateTime? updatedSince}) async {
     var query = select();
-    query = filterRange(query, from, to);
+    query = filterRange(query, range);
     if (updatedSince != null) {
       query = query.gt("updated_at", updatedSince);
     }
@@ -151,33 +150,29 @@ abstract class BaseTable {
       query2 = sort(query);
       query2 = query2.limit(limit!);
     }
-    DateTime preQueryTimestamp = DateTime.now();
     final rows = await query2;
-    (String?, String?)? range;
-    if (from != null || to != null) {
-      range = (from, to);
+    DateTimeRange? returnRange;
+    if (range != null) {
+      returnRange = range;
     } else if (rows.isNotEmpty) {
-      range = (rows.first[order].toString(), rows.last[order].toString());
+      final firstTime = DateTime.parse(rows.first[order] as String);
+      final lastTime = DateTime.parse(rows.last[order] as String);
+      // For descending order, first row is newest, last row is oldest
+      // DateTimeRange expects start <= end, so we need to swap for descending
+      final start = ascending ? firstTime : lastTime;
+      final end = ascending ? lastTime : firstTime;
+      returnRange = DateTimeRange(start, end);
     }
-    DateTime lastUpdated;
-    if (rows.isEmpty) {
-      final localTimestamp = DateTime.now();
-      final serverTimestamp = DateTime.parse(
-        await Base.client.rpc<String>('server_timestamp'),
-      );
-      lastUpdated = preQueryTimestamp.add(
-        serverTimestamp.difference(localTimestamp),
-      );
-    } else {
+    DateTime? lastUpdated;
+    if (rows.isNotEmpty) {
       lastUpdated = rows
           .map((row) {
             return DateTime.parse(row['updated_at'] as String);
           })
           .reduce((value, last) => value.isAfter(last) ? value : last);
     }
-    final more =
-        (from != null || to != null) || (limit != null && rows.length < limit!);
-    return (rows, lastUpdated, range, more);
+    final more = limit != null && rows.length >= limit!;
+    return (rows, lastUpdated, returnRange, more);
   }
 
   PostgrestFilterBuilder<PostgrestList> select() {
@@ -186,19 +181,23 @@ abstract class BaseTable {
 
   PostgrestFilterBuilder<T2> filterRange<T2>(
     PostgrestFilterBuilder<T2> query,
-    String? from,
-    String? to,
+    DateTimeRange? range,
   ) {
+    if (range == null) return query;
+
+    DateTime? from = range.start;
+    DateTime? to = range.end;
+
     if (!ascending) {
       final tmp = from;
       from = to;
       to = tmp;
     }
     if (from != null) {
-      query = query.gte(order, from);
+      query = query.gte(order, from.toIso8601String());
     }
     if (to != null) {
-      query = query.lte(order, to);
+      query = query.lte(order, to.toIso8601String());
     }
     return query;
   }
@@ -249,37 +248,20 @@ class Store extends _$Store {
   // Client ID for tracking updates to prevent sync loops
   static int? _clientId;
   static int get clientId {
-    _clientId ??= 0; // Fallback if not loaded yet
+    final Random random = Random();
+    _clientId ??= random.nextInt(2147483647); // Max int value
     return _clientId!;
   }
 
-  static int _generateClientId() {
-    // Generate random 32-bit integer
-    final Random random = Random();
-    return random.nextInt(2147483647); // Max int value
-  }
-
-  static Future<void> _loadClientId() async {
-    final prefs = await SharedPreferences.getInstance();
-    _clientId = prefs.getInt('client_id');
-    if (_clientId == null) {
-      _clientId = _generateClientId();
-      await prefs.setInt('client_id', _clientId!);
-      log.info("Generated new client ID: $_clientId");
-    } else {
-      log.info("Loaded client ID: $_clientId");
+  static Future<void> stop() async {
+    if (Injector.appInstance.exists<Store>()) {
+      await get.close();
     }
+    Injector.appInstance.removeByKey<Store>();
   }
 
-  static Future<void> _regenerateClientId() async {
-    _clientId = _generateClientId();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('client_id', _clientId!);
-  }
-
-  static Future<void> init(User user) async {
+  static Future<void> start(User user) async {
     driftRuntimeOptions.defaultSerializer = const CustomSerializer();
-    await _loadClientId();
     if (Injector.appInstance.exists<Store>()) {
       await get.close();
     }
@@ -305,6 +287,7 @@ class Store extends _$Store {
   BroadcastClient? _broadcastClient;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isSyncing = false;
+  bool _isOnline = false;
 
   Future<DATA> add<TABLE extends SyncableTable, DATA extends DataClass>(
     TableInfo<TABLE, DATA> table,
@@ -469,19 +452,26 @@ class Store extends _$Store {
   ///
   /// Returns:
   /// - `null` if nothing was pulled (skipped, early exit, or no data)
-  /// - `(String?, String?)` tuple representing the range that was pulled:
+  /// - `(DateTime?, DateTime?)` tuple representing the range that was pulled:
   ///   - For descending tables: `(oldest_value, null)` representing "from oldest to now"
   ///   - For ascending tables: `(null, newest_value)` representing "from beginning to newest"
   ///
   /// The returned range can be used to synchronize related tables to ensure they
   /// cover the exact same data range.
-  Future<(String?, String?)?> pull<TABLE extends SyncableTable, DATA extends DataClass>(
+  Future<(DateTime?, DateTime?)?>
+  pull<TABLE extends SyncableTable, DATA extends DataClass>(
     PullType type,
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable, {
-    (String?, String?)? range,
+    (DateTime?, DateTime?)? range,
   }) async {
     log.info("pull($type, ${baseTable.table}, range: $range)");
+
+    // PullType.updates doesn't support range parameter
+    if (type == PullType.updates && range != null) {
+      throw ArgumentError('PullType.updates does not support range parameter');
+    }
+
     final paged =
         [PullType.initial, PullType.more].contains(type) && range == null;
     if (paged && !hasMore(baseTable)) {
@@ -491,59 +481,110 @@ class Store extends _$Store {
     final syncState = await (select(
       syncStates,
     )..where((row) => row.entity.equals(entity))).getSingleOrNull();
-    if (paged && syncState?.pulledAt != null && syncState?.last == null) {
-      _noMore.add(entity);
-      return null;
-    }
-    if (type == PullType.initial && syncState?.last != null) {
+    if (type == PullType.initial && syncState != null) {
       return null;
     }
     if (type == PullType.updates && syncState?.pulledAt == null) {
       return null;
     }
-    // Skip PullType.more if the requested range is already fetched
-    if (type == PullType.more && range != null && syncState?.last != null) {
-      // For descending tables, last represents the earliest value synced
-      // Skip if range.$2 >= last (range is newer than or equal to earliest synced)
-      // For ascending tables, last represents the latest value synced
-      // Skip if range.$1 <= last (range is older than or equal to latest synced)
-      final shouldSkip = baseTable.ascending
-          ? range.$1 != null && range.$1!.compareTo(syncState!.last!) <= 0
-          : range.$2 != null && range.$2!.compareTo(syncState!.last!) >= 0;
-      if (shouldSkip) {
-        log.info("Skipping PullType.more - range already fetched");
+
+    // Adjust range to exclude already-synced data
+    if (range != null && syncState?.last != null) {
+      final (rangeFrom, rangeTo) = range;
+      final lastSyncedMicros = syncState!.last!;
+      final lastSynced = DateTime.fromMicrosecondsSinceEpoch(
+        lastSyncedMicros,
+        isUtc: true,
+      );
+
+      if (baseTable.ascending) {
+        // For ascending order, synced range is (-∞, last]
+        // Check if entire range is already synced
+        if (rangeTo != null && !rangeTo.isAfter(lastSynced)) {
+          log.info(
+            "Range ($rangeFrom, $rangeTo) is already synced (last: $lastSynced), skipping pull",
+          );
+          return null;
+        }
+        // Adjust rangeFrom to exclude overlap - add 1 microsecond to avoid duplicate
+        range = (lastSynced.add(const Duration(microseconds: 1)), rangeTo);
+      } else {
+        // For descending order, synced range is [last, ∞)
+        // Check if entire range is already synced
+        if (rangeFrom != null && !rangeFrom.isBefore(lastSynced)) {
+          log.info(
+            "Range ($rangeFrom, $rangeTo) is already synced (last: $lastSynced), skipping pull",
+          );
+          return null;
+        }
+        // Adjust rangeTo to exclude overlap - subtract 1 microsecond to avoid duplicate
+        range = (
+          rangeFrom,
+          lastSynced.subtract(const Duration(microseconds: 1)),
+        );
+      }
+
+      // After adjustment, check if range is still valid
+      final (adjustedFrom, adjustedTo) = range;
+      if (adjustedFrom != null &&
+          adjustedTo != null &&
+          !adjustedFrom.isBefore(adjustedTo)) {
+        log.info(
+          "Adjusted range ($adjustedFrom, $adjustedTo) is empty, skipping pull",
+        );
         return null;
       }
     }
 
+    // For PullType.all: pull all rows on first pull (syncState?.pulledAt == null),
+    // then only pull updates on subsequent pulls (syncState?.pulledAt != null)
+    final pulledAtMicros =
+        (type == PullType.updates ||
+            (type == PullType.all && syncState?.pulledAt != null))
+        ? syncState?.pulledAt
+        : null;
+    // Convert microseconds to DateTime for baseTable.get()
+    final updatedSince = pulledAtMicros != null
+        ? DateTime.fromMicrosecondsSinceEpoch(pulledAtMicros, isUtc: true)
+        : null;
+
     // For PullType.updates, loop until all updates are fetched
     var totalRows = 0;
-    var currentLast = syncState?.last;
+    var currentLast = syncState?.last != null
+        ? DateTime.fromMicrosecondsSinceEpoch(
+            syncState!.last!,
+            isUtc: true,
+          ).toString()
+        : null;
     var more = false;
     DateTime? lastUpdated;
+    var upsertedInLoop = false;
 
     do {
-      final requestFrom = range != null
-          ? range.$1
-          : ((baseTable.ascending
-                    ? type == PullType.more
-                    : type == PullType.updates)
-                ? currentLast
-                : null);
-      final requestTo = range != null
-          ? range.$2
-          : ((baseTable.ascending
-                    ? type == PullType.updates
-                    : type == PullType.more)
-                ? currentLast
-                : null);
-      log.info("Requesting from $requestFrom to $requestTo");
-      var (baseRows, batchLastUpdated, newRange, batchMore) = (await baseTable.get(
-        from: requestFrom,
-        to: requestTo,
-        updatedSince: type == PullType.updates ? syncState?.pulledAt : null,
-      ));
-      final (from, to) = newRange ?? (null, null);
+      DateTimeRange? requestRange;
+      if (range != null) {
+        requestRange = DateTimeRange(range.$1, range.$2);
+      } else if (currentLast != null) {
+        final currentLastDateTime = DateTime.parse(currentLast);
+        final useAsFrom =
+            (baseTable.ascending && type == PullType.more) ||
+            (!baseTable.ascending && type == PullType.updates);
+        final useAsTo =
+            (baseTable.ascending && type == PullType.updates) ||
+            (!baseTable.ascending && type == PullType.more);
+
+        if (useAsFrom) {
+          requestRange = DateTimeRange(currentLastDateTime, null);
+        } else if (useAsTo) {
+          requestRange = DateTimeRange(null, currentLastDateTime);
+        }
+      }
+
+      log.info("Requesting range $requestRange");
+      var (baseRows, batchLastUpdated, newRange, batchMore) = (await baseTable
+          .get(range: requestRange, updatedSince: updatedSince));
+      final from = newRange?.start?.toString();
+      final to = newRange?.end?.toString();
       more = batchMore;
       if (batchLastUpdated != null) {
         lastUpdated = batchLastUpdated;
@@ -570,59 +611,112 @@ class Store extends _$Store {
 
       totalRows += baseRows.length;
 
-      if (!more) {
+      // Only set _noMore for range-extending pulls (initial/more), not for updates
+      if (!more && type != PullType.updates) {
         _noMore.add(entity);
+        log.info("No more data for entity $entity (type: $type)");
       }
-      final last = range != null
-          ? Value(baseTable.ascending ? range.$2 : range.$1)
-          : paged
-          ? (more ? Value(to) : const Value(null))
-          : const Value<String?>.absent();
-      log.info("Last is $last");
+
+      log.info("Last is $lastUpdated");
       if (lastUpdated != null) {
-        await into(syncStates).insert(
-          SyncStatesCompanion.insert(
-            entity: entity,
-            pulledAt: Value(lastUpdated),
-            last: last,
-          ),
-          onConflict: DoUpdate(
-            (old) => SyncStatesCompanion(
-              entity: Value(entity),
-              pulledAt: Value(lastUpdated),
-              last: last,
+        // For PullType.updates: only update pulledAt (last update timestamp)
+        // For PullType.initial/more: update both pulledAt and last (range boundary)
+        final lastMicros = lastUpdated.toUtc().microsecondsSinceEpoch;
+
+        if (type == PullType.updates) {
+          await into(syncStates).insert(
+            SyncStatesCompanion.insert(
+              entity: entity,
+              pulledAt: Value(lastMicros),
+              // Don't update 'last' for updates - it tracks range boundary, not update timestamp
             ),
-          ),
-        );
+            onConflict: DoUpdate(
+              (old) => SyncStatesCompanion(
+                entity: Value(entity),
+                pulledAt: Value(lastMicros),
+                // Preserve existing 'last' value
+              ),
+            ),
+          );
+        } else {
+          // For initial/more: update both pulledAt and last
+          await into(syncStates).insert(
+            SyncStatesCompanion.insert(
+              entity: entity,
+              pulledAt: Value(lastMicros),
+              last: Value(lastMicros),
+            ),
+            onConflict: DoUpdate(
+              (old) => SyncStatesCompanion(
+                entity: Value(entity),
+                pulledAt: Value(lastMicros),
+                last: Value(lastMicros),
+              ),
+            ),
+          );
+        }
+        upsertedInLoop = true;
       }
 
       // Update currentLast for next iteration
-      if (type == PullType.updates && more) {
+      if (type == PullType.updates && more && to != null) {
         currentLast = to;
       }
     } while (type == PullType.updates && more);
 
     log.info("Total rows pulled: $totalRows");
-    // If this is the first pull for the given type, we need to set its pulledAt
-    // so updates are synced from that point on.
-    if (baseTable.filterName != null) {
-      await into(syncStates).insert(
-        SyncStatesCompanion.insert(
-          entity: baseTable.name,
-          pulledAt: Value(lastUpdated),
-        ),
-        onConflict: DoNothing(),
-      );
+
+    // Skip final upsert if we already upserted in the loop
+    if (!upsertedInLoop && lastUpdated != null) {
+      // Convert DateTime to microseconds since epoch for storage
+      final pulledAtMicrosToStore = lastUpdated.toUtc().microsecondsSinceEpoch;
+
+      if (type == PullType.updates) {
+        await into(syncStates).insert(
+          SyncStatesCompanion.insert(
+            entity: entity,
+            pulledAt: Value(pulledAtMicrosToStore),
+            // Don't update 'last' for updates
+          ),
+          onConflict: DoUpdate(
+            (old) => SyncStatesCompanion(
+              entity: Value(entity),
+              pulledAt: Value(pulledAtMicrosToStore),
+              // Preserve existing 'last' value
+            ),
+          ),
+        );
+      } else {
+        await into(syncStates).insert(
+          SyncStatesCompanion.insert(
+            entity: entity,
+            pulledAt: Value(pulledAtMicrosToStore),
+            last: Value(pulledAtMicrosToStore),
+          ),
+          onConflict: DoUpdate(
+            (old) => SyncStatesCompanion(
+              entity: Value(entity),
+              pulledAt: Value(pulledAtMicrosToStore),
+              last: Value(pulledAtMicrosToStore),
+            ),
+          ),
+        );
+      }
     }
 
     // Return the range that was pulled
     // For descending tables, syncState.last is the oldest boundary
-    // Return (oldest, null) to represent the range from oldest to now
-    final finalSyncState = await (select(syncStates)
-      ..where((row) => row.entity.equals(entity))).getSingleOrNull();
+    // Return (oldest, null) to represent the range from oldest onwards
+    final finalSyncState = await (select(
+      syncStates,
+    )..where((row) => row.entity.equals(entity))).getSingleOrNull();
 
     if (finalSyncState?.last != null) {
-      return (finalSyncState!.last, null);
+      final lastDateTime = DateTime.fromMicrosecondsSinceEpoch(
+        finalSyncState!.last!,
+        isUtc: true,
+      );
+      return (lastDateTime, null);
     }
 
     return null;
@@ -688,8 +782,7 @@ class Store extends _$Store {
     _unsubscribeFromUpdates();
 
     _broadcastClient = BroadcastClient.instance;
-    _broadcastClient!.init(_handleBroadcastMessage, clientId);
-    await _broadcastClient!.connect();
+    await _broadcastClient!.connect(_handleBroadcastMessage, clientId);
   }
 
   Future<void> _handleBroadcastMessage(Map<String, dynamic> message) async {
@@ -753,25 +846,47 @@ class Store extends _$Store {
     }
   }
 
-  void _setupConnectivityListener() {
-    // Monitor connectivity changes throughout app lifecycle
-    _connectivitySubscription?.cancel();
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
-      results,
-    ) async {
-      final isOnline = results.any(
+  void _setupConnectivityListener() async {
+    try {
+      // Cancel any existing subscription
+      _connectivitySubscription?.cancel();
+
+      // Check initial connectivity state
+      final initialResults = await Connectivity().checkConnectivity();
+      _isOnline = initialResults.any(
         (result) => result != ConnectivityResult.none,
       );
-
-      if (isOnline && !_isSyncing) {
-        log.info("Connectivity restored, attempting to sync");
-        // Attempt sync when connectivity is restored (fire and forget)
-        _startSync().catchError((Object error, StackTrace stackTrace) {
-          log.warning("Connectivity-triggered sync failed", error, stackTrace);
-          return null;
-        });
+      if (_isOnline) {
+        await _startSync();
       }
-    });
+
+      // Monitor connectivity changes throughout app lifecycle
+      _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+        results,
+      ) async {
+        final wasOnline = _isOnline;
+        final isOnline = results.any(
+          (result) => result != ConnectivityResult.none,
+        );
+        _isOnline = isOnline;
+
+        // Only trigger sync when transitioning from offline to online
+        if (!wasOnline && isOnline && !_isSyncing) {
+          log.info("Connectivity restored, attempting to sync");
+          // Attempt sync when connectivity is restored (fire and forget)
+          _startSync().catchError((Object error, StackTrace stackTrace) {
+            log.warning(
+              "Connectivity-triggered sync failed",
+              error,
+              stackTrace,
+            );
+            return null;
+          });
+        }
+      });
+    } catch (e, t) {
+      log.warning("Error setting up connectivity listener", e, t);
+    }
   }
 
   Store._(User user)
@@ -786,26 +901,39 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 139;
+  int get schemaVersion => 143;
 
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
       onCreate: (Migrator m) async {
-        // Regenerate client ID on database creation to ensure clean sync state
-        await _regenerateClientId();
         await m.createAll();
       },
       onUpgrade: (Migrator m, int from, int to) async {
-        // Regenerate client ID on database upgrade to avoid issues with old sync state
-        await _regenerateClientId();
+        // For schema version 141, completely rebuild the database
+        // Drop views manually using raw SQL before dropping tables
+        final db = m.database;
+        for (final view in [
+          'priority_children',
+          'priority_ancestry',
+          'latest_priorities',
+        ]) {
+          try {
+            await db.customStatement('DROP VIEW IF EXISTS $view');
+          } catch (e) {
+            // View might not exist or might fail - ignore
+          }
+        }
+
+        // Drop all entities
         for (final entity in allSchemaEntities) {
           try {
             await m.drop(entity);
           } catch (e) {
-            // ignore
+            // Ignore errors - entity might not exist
           }
         }
+
         await m.createAll();
       },
     );

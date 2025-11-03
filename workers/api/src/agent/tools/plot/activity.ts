@@ -1,3 +1,5 @@
+import TurndownService from "turndown";
+
 import {
   type Activity,
   type ActivityMeta,
@@ -10,6 +12,65 @@ import { type Database, safeQuery } from "@plotday/db";
 import { fromDbActivity } from "./converters";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
 import type { Plot } from "./index";
+
+/**
+ * Converts note content to Markdown based on the specified noteType.
+ *
+ * @param note - The note content to convert
+ * @param noteType - The format of the input note ('text', 'markdown', 'html', or null)
+ * @returns The note content converted to Markdown
+ */
+function convertNoteToMarkdown(
+  note: string | null | undefined,
+  noteType?: "text" | "markdown" | "html"
+): string | null {
+  if (!note) return null;
+
+  // Default to 'markdown' if noteType is not specified
+  const type = noteType ?? "markdown";
+
+  switch (type) {
+    case "html": {
+      // Convert HTML to Markdown using Turndown
+      try {
+        const turndownService = new TurndownService({
+          headingStyle: "atx",
+          codeBlockStyle: "fenced",
+        });
+        return turndownService.turndown(note);
+      } catch (error) {
+        // If conversion fails, return original note
+        console.error("Failed to convert HTML to Markdown:", error);
+        return note;
+      }
+    }
+
+    case "text": {
+      // Decode HTML entities
+      let converted = note
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, " ");
+
+      // Auto-link URLs - match http(s):// URLs
+      converted = converted.replace(/(https?:\/\/[^\s]+)/g, "[$1]($1)");
+
+      // Preserve line breaks by converting single newlines to double newlines
+      // This ensures text line breaks are preserved in Markdown rendering
+      converted = converted.replace(/\n/g, "\n\n");
+
+      return converted;
+    }
+
+    case "markdown":
+    default:
+      // Already in Markdown format, return as-is
+      return note;
+  }
+}
 
 export async function createActivity(
   plot: Plot,
@@ -90,7 +151,7 @@ export async function createActivity(
     priority_id: targetPriorityId,
     type: dbActivityType,
     title: activity.title ?? null,
-    note: activity.note ?? null,
+    note: convertNoteToMarkdown(activity.note, activity.noteType),
     duration: duration ? formatInterval(duration) : null,
     done_at: activity.doneAt ? activity.doneAt.toISOString() : null,
     links: activity.links ?? null,
@@ -255,7 +316,7 @@ export async function updateActivity(
     dbUpdate.title = activity.title;
   }
   if (activity.note !== undefined) {
-    dbUpdate.note = activity.note;
+    dbUpdate.note = convertNoteToMarkdown(activity.note, activity.noteType);
   }
   if (activity.doneAt !== undefined) {
     dbUpdate.done_at = activity.doneAt ? activity.doneAt.toISOString() : null;
@@ -879,6 +940,7 @@ async function createActivityException(
     recurrenceCount: activity.recurrenceCount ?? null,
     doneAt: activity.doneAt ?? null,
     note: activity.note ?? null,
+    noteType: activity.noteType,
     title: activity.title ?? null,
     parent: null,
     links: activity.links ?? null,

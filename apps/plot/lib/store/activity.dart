@@ -286,29 +286,42 @@ class LinksConverter extends TypeConverter<List<Link>?, String?>
 }
 
 class ActivitiesBase extends BaseTable {
-  ActivitiesBase()
+  ActivitiesBase({this.priorityPath})
     : super(
         table: 'user_activity',
         writeTable: 'activity',
         name: "activities",
+        filterName: priorityPath,
         ascending:
             false, // Get latest items first for reverse chronological sync
         limit: 200,
       );
 
+  final String? priorityPath;
+
   @override
   PostgrestFilterBuilder<T2> filterRange<T2>(
     PostgrestFilterBuilder<T2> query,
-    String? from,
-    String? to,
+    DateTimeRange? range,
   ) {
-    final range = CustomDateRange(
-      from != null ? Date.fromString(from) : null,
-      to != null ? Date.fromString(to) : null,
-    );
+    if (range == null) return query;
+    final dateRange = range.toDateRange();
     query = query.or(
-      'range_at.ov."${range.toDb()}",range_on.ov."${range.toDb()}"',
+      'range_at.ov."${dateRange.toDb()}",range_on.ov."${dateRange.toDb()}"',
     );
+    return query;
+  }
+
+  @override
+  PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
+    query = super.filter(query); // Apply user_id filter
+
+    // Add priority path filtering if priorityPath is provided
+    // Use ltree 'cd' operator (contained in / descendant of)
+    if (priorityPath != null) {
+      query = query.filter('priority_path', 'cd', priorityPath);
+    }
+
     return query;
   }
 
@@ -465,13 +478,13 @@ class Activity extends Equatable implements Comparable<Activity> {
     );
   }
 
-  static Future<void> pullRange(DateRange range) async {
+  static Future<void> pullRange(DateRange range, Path? priorityPath) async {
     // Pull activities first (with limit of 200)
     final activitiesRange = await Store.get.pull(
       PullType.more,
       Store.get.activities,
-      ActivitiesBase(),
-      range: (range.start?.toString(), range.end?.toString()),
+      ActivitiesBase(priorityPath: priorityPath?.value ?? ''),
+      range: (range.start?.toDateTime(), range.end?.toDateTime()),
     );
 
     if (activitiesRange == null) return;
@@ -480,13 +493,13 @@ class Activity extends Equatable implements Comparable<Activity> {
     await Store.get.pull(
       PullType.more,
       Store.get.activityExceptions,
-      ActivityExceptionsBase(),
+      ActivityExceptionsBase(priorityPath: priorityPath?.value ?? ''),
       range: activitiesRange,
     );
     await Store.get.pull(
       PullType.more,
       Store.get.activityTags,
-      ActivityTagsBase(),
+      ActivityTagsBase(priorityPath: priorityPath?.value ?? ''),
       range: activitiesRange,
     );
   }
@@ -612,6 +625,10 @@ class Activity extends Equatable implements Comparable<Activity> {
       getParent: getParent,
       order: ActivityOrder.nested,
     );
+    if (activities.isEmpty) {
+      log.warning("Activity not found: $id");
+      throw Exception('Activity not found');
+    }
     return _asNested(activities, id: id).first;
   }
 
@@ -856,7 +873,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     bool getParent = true,
   }) {
     if (range != null) {
-      Activity.pullRange(range);
+      Activity.pullRange(range, priorityPath);
     }
 
     // Create a copy of filter to avoid mutating the original
@@ -1122,6 +1139,15 @@ class Activity extends Equatable implements Comparable<Activity> {
     return query;
   }
 
+  /// Maps database query results to Activity objects.
+  ///
+  /// This function handles both regular and recurring activities:
+  /// - For non-recurring activities: Returns them directly
+  /// - For recurring activities with a range: Generates occurrences within the range
+  /// - For recurring activities without a range: Returns the base recurring activity template
+  ///
+  /// Recurring activities can have exceptions (modified/deleted occurrences) stored in
+  /// the activity_exceptions table, which override generated occurrences.
   static Future<List<Activity>> _mapResultsToActivities(
     List<TypedResult> results, {
     bool? deleted = false,
@@ -1200,6 +1226,12 @@ class Activity extends Equatable implements Comparable<Activity> {
             "Error generating occurrences for activity ${baseActivity.id}: $e\n$t",
           );
         }
+        // Add generated occurrences to the activities list
+        activities.addAll(occurrences.values);
+      } else {
+        // No range provided - return the base recurring activity itself
+        // This allows viewing/editing the recurrence template
+        activities.add(baseActivity);
       }
     }
     return activities;
@@ -1774,8 +1806,15 @@ class Activity extends Equatable implements Comparable<Activity> {
       range.end.toDateTime(),
     );
 
-    // Generate instances within the range using the rrule package
+    // Get the event start time
     final start = (at?.start ?? on?.start?.toDateTime())!;
+
+    // If the range ends before the event starts, there are no occurrences
+    if (dateTimeRange.end.isBefore(start)) {
+      return [];
+    }
+
+    // Generate instances within the range using the rrule package
     final instances = recurrenceRule!.getInstances(
       start: start.copyWith(isUtc: true),
       after: (start.isAfter(dateTimeRange.start) ? start : dateTimeRange.start)
@@ -1856,12 +1895,21 @@ class Activity extends Equatable implements Comparable<Activity> {
       range.end.toDateTime(),
     );
 
+    // Get the event start time
+    final start = (at?.start ?? on?.start?.toDateTime())!;
+
+    // If the range ends before the event starts, there are no occurrences
+    if (dateTimeRange.end.isBefore(start)) {
+      return null;
+    }
+
     // Generate instances within the range using the rrule package
     final instances = recurrenceRule!.getInstances(
-      start: (at?.start ?? on?.start?.toDateTime())!.copyWith(isUtc: true),
-      after: dateTimeRange.start,
+      start: start.copyWith(isUtc: true),
+      after: (start.isAfter(dateTimeRange.start) ? start : dateTimeRange.start)
+          .copyWith(isUtc: true),
       includeAfter: true,
-      before: dateTimeRange.end,
+      before: dateTimeRange.end.copyWith(isUtc: true),
     );
 
     // Convert instances to check for overlaps

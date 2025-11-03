@@ -15,6 +15,7 @@ class UserBloc extends Cubit<UserState> {
       if (user == null) {
         if (state is UserSignedOut) return;
         log.info('User signed out');
+        await Store.stop();
         emit(const UserSignedOut());
         return;
       } else if (!user.isActive) {
@@ -28,7 +29,7 @@ class UserBloc extends Cubit<UserState> {
 
       log.info('User signed in: ${user.primaryEmail}');
       try {
-        await Store.init(user);
+        await Store.start(user);
         emit(UserReady(user));
       } catch (e, stackTrace) {
         log.warning('User init failed', e, stackTrace);

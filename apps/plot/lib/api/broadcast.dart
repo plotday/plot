@@ -29,33 +29,56 @@ class BroadcastClient {
 
   bool _isConnected = false;
   bool _shouldReconnect = false;
+  bool _hasConnectivity = false;
   MessageHandler? _messageHandler;
   int? _clientId;
 
   bool get isConnected => _isConnected;
 
   /// Initialize the broadcast client with a message handler
-  void init(MessageHandler messageHandler, int clientId) {
+  Future<void> connect(MessageHandler messageHandler, int clientId) async {
     _messageHandler = messageHandler;
     _clientId = clientId;
+
+    // Cancel any existing connectivity subscription to prevent leaks
+    await _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
+
+    // Check initial connectivity state
+    try {
+      final initialResults = await Connectivity().checkConnectivity();
+      _hasConnectivity = initialResults.any(
+        (result) => result != ConnectivityResult.none,
+      );
+      log.info("Initial connectivity: $_hasConnectivity");
+    } catch (e) {
+      log.warning("Error checking initial connectivity: $e");
+      _hasConnectivity = true;
+    }
+    if (_hasConnectivity) {
+      await _connect();
+    }
 
     // Listen for connectivity changes
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       List<ConnectivityResult> results,
     ) {
+      final hadConnectivity = _hasConnectivity;
       final hasConnection = results.any(
         (result) => result != ConnectivityResult.none,
       );
+      _hasConnectivity = hasConnection;
 
-      if (hasConnection && !_isConnected && _shouldReconnect) {
+      // Only attempt to reconnect when transitioning from offline to online
+      if (!hadConnectivity && hasConnection && !_isConnected) {
         log.info("Network connectivity restored, attempting to reconnect");
-        connect();
+        _connect();
       }
     });
   }
 
   /// Connect to the WebSocket endpoint
-  Future<void> connect() async {
+  Future<void> _connect() async {
     if (_isConnected || _channel != null) {
       return;
     }
@@ -119,17 +142,24 @@ class BroadcastClient {
 
   /// Disconnect from the WebSocket
   void disconnect() {
+    log.info("Disconnecting WebSocket");
+    _messageSubscription?.cancel();
+    _messageSubscription = null;
+
+    _channel?.sink.close();
+    _channel = null;
+
     _shouldReconnect = false;
     _reconnectTimer?.cancel();
+    _reconnectTimer = null;
 
-    if (_channel != null) {
-      log.info("Disconnecting WebSocket");
-      _messageSubscription?.cancel();
-      _channel?.sink.close();
-      _channel = null;
-    }
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
 
     _isConnected = false;
+    _messageHandler = null;
+    _clientId = null;
+    _instance = null;
   }
 
   /// Handle incoming WebSocket messages
@@ -202,7 +232,7 @@ class BroadcastClient {
 
     _reconnectTimer = Timer(totalDelay, () {
       _reconnectTimer = null;
-      connect();
+      _connect();
     });
   }
 
@@ -215,15 +245,5 @@ class BroadcastClient {
       // Optionally, throw or handle unexpected input.
       throw ArgumentError('API root must start with http:// or https://');
     }
-  }
-
-  /// Clean up resources
-  void dispose() {
-    disconnect();
-    _connectivitySubscription?.cancel();
-    _connectivitySubscription = null;
-    _messageHandler = null;
-    _clientId = null;
-    _instance = null;
   }
 }

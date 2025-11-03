@@ -12,25 +12,40 @@ class ActivityTags extends Table with SyncableTable, UuidTable {
 }
 
 class ActivityTagsBase extends BaseTable {
-  ActivityTagsBase()
+  ActivityTagsBase({this.priorityPath})
     : super(
         table: 'user_activity_tags',
         writeTable: 'activity_tag',
         name: "activity_tags",
+        filterName: priorityPath,
         ascending:
             false, // Get latest items first for reverse chronological sync
       );
 
+  final String? priorityPath;
+
+  @override
+  PostgrestFilterBuilder<T2> filter<T2>(PostgrestFilterBuilder<T2> query) {
+    query = super.filter(query); // Apply user_id filter
+
+    // Add priority path filtering if priorityPath is provided
+    // Use ltree 'cd' operator (contained in / descendant of)
+    if (priorityPath != null) {
+      query = query.filter('priority_path', 'cd', priorityPath);
+    }
+
+    return query;
+  }
+
   @override
   PostgrestFilterBuilder<T2> filterRange<T2>(
     PostgrestFilterBuilder<T2> query,
-    String? from,
-    String? to,
+    DateTimeRange? range,
   ) {
-    if (from != null && to != null) {
-      final dateRange = '[$from,$to)';
+    if (range != null && range.start != null && range.end != null) {
+      final dateRange = '[${range.start!.toDate()},${range.end!.toDate()})';
       final dateTimeRange =
-          '[${Date.fromString(from).toDateTime().toDb()},${Date.fromString(to).toDateTime().toDb()})';
+          '[${range.start!.toDb()},${range.end!.toDb()})';
       query = query.or('range_at.ov."$dateTimeRange",range_on.ov."$dateRange"');
     }
     return query;

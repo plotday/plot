@@ -1523,6 +1523,7 @@ export type Database = {
           order: number | null
           path: unknown | null
           priority_id: string | null
+          priority_path: unknown | null
           private: boolean | null
           range_at: unknown | null
           range_on: unknown | null
@@ -1588,6 +1589,7 @@ export type Database = {
           note: string | null
           occurrence: string | null
           on: unknown | null
+          priority_path: unknown | null
           range_at: unknown | null
           range_on: unknown | null
           title: string | null
@@ -1600,6 +1602,7 @@ export type Database = {
         Row: {
           id: string | null
           occurrence: string | null
+          priority_path: unknown | null
           range_at: unknown | null
           range_on: unknown | null
           tags: Json | null

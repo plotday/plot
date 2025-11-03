@@ -60,10 +60,6 @@ class Base {
     });
   }
 
-  Base.disconnected() : _client = null, _userId = Uuid.generate() {
-    _currentUserController.add(null);
-  }
-
   final supa.SupabaseClient? _client;
   bool _initialized = false;
   Uuid? _userId;

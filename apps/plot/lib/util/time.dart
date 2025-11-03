@@ -604,6 +604,21 @@ class DateTimeRange extends Equatable {
   bool isNow() {
     return includes(DateTime.now());
   }
+
+  CustomDateRange toDateRange() {
+    Date? startDate = start?.toDate();
+    Date? endDate;
+    if (end != null) {
+      final endAsDate = end!.toDate();
+      // Round up: if end has any time component, move to next day
+      if (end != endAsDate.toDateTime()) {
+        endDate = endAsDate.addDays(1);
+      } else {
+        endDate = endAsDate;
+      }
+    }
+    return CustomDateRange(startDate, endDate);
+  }
 }
 
 class BoundedDateTimeRange extends DateTimeRange {
