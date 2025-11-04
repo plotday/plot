@@ -91,11 +91,11 @@ export enum ActivityLinkType {
  */
 export enum ConferencingProvider {
   /** Google Meet */
-  google_meet = "google_meet",
+  googleMeet = "google_meet",
   /** Zoom */
   zoom = "zoom",
   /** Microsoft Teams */
-  microsoft_teams = "microsoft_teams",
+  microsoftTeams = "microsoft_teams",
   /** Cisco Webex */
   webex = "webex",
   /** Other or unknown conferencing provider */
