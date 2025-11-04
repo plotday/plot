@@ -89,6 +89,22 @@ export enum AuthProvider {
   Google = "google",
   /** Microsoft OAuth provider for Microsoft 365 services */
   Microsoft = "microsoft",
+  /** Notion OAuth provider for Notion workspaces */
+  Notion = "notion",
+  /** Slack OAuth provider for Slack workspaces */
+  Slack = "slack",
+  /** Atlassian OAuth provider for Jira and Confluence */
+  Atlassian = "atlassian",
+  /** Linear OAuth provider for Linear workspaces */
+  Linear = "linear",
+  /** Monday.com OAuth provider */
+  Monday = "monday",
+  /** GitHub OAuth provider for GitHub repositories and organizations */
+  GitHub = "github",
+  /** Asana OAuth provider for Asana workspaces */
+  Asana = "asana",
+  /** HubSpot OAuth provider for HubSpot CRM */
+  HubSpot = "hubspot",
 }
 
 /**
