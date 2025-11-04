@@ -227,14 +227,7 @@ export type Activity = {
   /** The type of activity (Note, Task, or Event) */
   type: ActivityType;
   /** Information about who created the activity */
-  author: {
-    /** Unique identifier for the author */
-    id: ActorId;
-    /** Display name for the author */
-    name: string | null;
-    /** Type of author (User, Contact, or Agent) */
-    type: AuthorType;
-  };
+  author: Actor;
   /** The display title/summary of the activity */
   title: string | null;
   /** Primary content for the activity */
@@ -366,21 +359,48 @@ export type ActivityUpdate = Pick<Activity, "id"> &
   };
 
 /**
- * Represents contact information for a person.
+ * Represents an actor in Plot - a user, contact, or agent.
+ *
+ * Actors can be associated with activities as authors, assignees, or mentions.
+ * The email field is only included when ContactAccess.Read permission is granted.
+ *
+ * @example
+ * ```typescript
+ * const actor: Actor = {
+ *   id: "f0ffd5f8-1635-4b13-9532-35f97446db90" as ActorId,
+ *   type: AuthorType.Contact,
+ *   email: "john.doe@example.com",  // Only if ContactAccess.Read
+ *   name: "John Doe"
+ * };
+ * ```
+ */
+export type Actor = {
+  /** Unique identifier for the actor */
+  id: ActorId;
+  /** Type of actor (User, Contact, or Agent) */
+  type: AuthorType;
+  /** Email address (only included with ContactAccess.Read permission) */
+  email?: string;
+  /** Display name (undefined if not included due to permissions, null if not set) */
+  name?: string | null;
+};
+
+/**
+ * Represents contact information for creating a new contact.
  *
  * Contacts are used throughout Plot for representing people associated
  * with activities, such as event attendees or task assignees.
  *
  * @example
  * ```typescript
- * const contact: Contact = {
+ * const newContact: NewContact = {
  *   email: "john.doe@example.com",
  *   name: "John Doe",
  *   avatar: "https://avatar.example.com/john.jpg"
  * };
  * ```
  */
-export type Contact = {
+export type NewContact = {
   /** Email address of the contact (required) */
   email: string;
   /** Optional display name for the contact */

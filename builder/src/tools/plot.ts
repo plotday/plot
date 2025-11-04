@@ -2,10 +2,11 @@ import {
   type Activity,
   type ActivityMeta,
   type ActivityUpdate,
+  type Actor,
   type ActorId,
-  type Contact,
   ITool,
   type NewActivity,
+  type NewContact,
   type NewPriority,
   type Priority,
   type Tag,
@@ -266,10 +267,23 @@ export abstract class Plot extends ITool {
    * Contacts are used for associating people with activities, such as
    * event attendees or task assignees. Duplicate contacts (by email)
    * will be merged or updated as appropriate.
+   * This method requires ContactAccess.Write permission.
    *
    * @param contacts - Array of contact information to add
-   * @returns Promise that resolves when all contacts have been processed
+   * @returns Promise resolving to array of created/updated actors
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract addContacts(contacts: Array<Contact>): Promise<void>;
+  abstract addContacts(contacts: Array<NewContact>): Promise<Actor[]>;
+
+  /**
+   * Retrieves actors by their IDs.
+   *
+   * Actors represent users, contacts, or agents in the Plot system.
+   * This method requires ContactAccess.Read permission.
+   *
+   * @param ids - Array of actor IDs to retrieve
+   * @returns Promise resolving to array of actors
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getActors(ids: ActorId[]): Promise<Actor[]>;
 }
