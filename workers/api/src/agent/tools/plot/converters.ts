@@ -3,6 +3,7 @@ import {
   type ActivityLink,
   type ActivityMeta,
   ActivityType,
+  type Actor,
   type ActorId,
   AuthorType,
   type Priority,
@@ -22,8 +23,10 @@ export function fromDbActivity(
       id: string;
       name: string;
       type: string;
+      email?: string;
     };
-  }
+  },
+  includeAuthorEmail: boolean = false
 ): Activity {
   // Map database activity_type to ActivityType enum
   let activityType: number;
@@ -88,14 +91,20 @@ export function fromDbActivity(
     }
   }
 
+  // Build author object with conditional email inclusion
+  const author: Actor = {
+    id: (dbActivity.author.id || dbActivity.author_id) as ActorId,
+    name: dbActivity.author.name || null,
+    type: authorType,
+    ...(includeAuthorEmail && dbActivity.author.email
+      ? { email: dbActivity.author.email }
+      : {}),
+  };
+
   return {
     id: dbActivity.id,
     type: activityType,
-    author: {
-      id: (dbActivity.author.id || dbActivity.author_id) as ActorId,
-      name: dbActivity.author.name || "Unknown",
-      type: authorType,
-    },
+    author,
     start,
     end: sdkEnd,
     recurrenceUntil,

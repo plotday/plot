@@ -7,6 +7,7 @@ import {
   type ActivityUpdate,
   type NewActivity,
 } from "@plotday/agent/plot";
+import { ContactAccess } from "@plotday/agent/tools/plot";
 import { type Database, safeQuery } from "@plotday/db";
 
 import { fromDbActivity } from "./converters";
@@ -238,7 +239,8 @@ export async function createActivity(
         author:actor!author_id(
           id,
           name,
-          type
+          type,
+          email
         )
       `
     )
@@ -256,16 +258,25 @@ export async function createActivity(
     .eq("activity_id", dbResult.id)
     .single();
 
-  return fromDbActivity({
-    ...activityWithAuthor,
-    tags: tagsData?.tags || null,
-  } as any as Database["public"]["Tables"]["activity"]["Row"] & {
-    author: {
-      id: string;
-      name: string;
-      type: string;
-    };
-  });
+  // Check if ContactAccess.Read permission is granted to include author email
+  const includeAuthorEmail =
+    plot.plotOptions?.contact?.access !== undefined &&
+    plot.plotOptions.contact.access >= ContactAccess.Read;
+
+  return fromDbActivity(
+    {
+      ...activityWithAuthor,
+      tags: tagsData?.tags || null,
+    } as any as Database["public"]["Tables"]["activity"]["Row"] & {
+      author: {
+        id: string;
+        name: string;
+        type: string;
+        email?: string;
+      };
+    },
+    includeAuthorEmail
+  );
 }
 
 export async function updateActivity(
@@ -507,7 +518,8 @@ export async function getThread(
           author:actor!author_id(
             id,
             name,
-            type
+            type,
+            email
           )
         `
       );
@@ -533,17 +545,26 @@ export async function getThread(
       }
     }
 
+    // Check if ContactAccess.Read permission is granted to include author email
+    const includeAuthorEmail =
+      plot.plotOptions?.contact?.access !== undefined &&
+      plot.plotOptions.contact.access >= ContactAccess.Read;
+
     return data.map((row) =>
-      fromDbActivity({
-        ...row,
-        tags: tagsMap.get(row.id) || null,
-      } as any as Database["public"]["Tables"]["activity"]["Row"] & {
-        author: {
-          id: string;
-          name: string;
-          type: string;
-        };
-      })
+      fromDbActivity(
+        {
+          ...row,
+          tags: tagsMap.get(row.id) || null,
+        } as any as Database["public"]["Tables"]["activity"]["Row"] & {
+          author: {
+            id: string;
+            name: string;
+            type: string;
+            email?: string;
+          };
+        },
+        includeAuthorEmail
+      )
     );
   } catch (err) {
     console.error("Failed to get activities:", err);
@@ -567,7 +588,8 @@ export async function getActivityByMeta(
           author:actor(
             id,
             name,
-            type
+            type,
+            email
           )
         `
       )
@@ -592,16 +614,25 @@ export async function getActivityByMeta(
           .single()
       : { data: null };
 
-    return fromDbActivity({
-      ...data,
-      tags: tagsData?.tags || null,
-    } as any as Database["public"]["Tables"]["activity"]["Row"] & {
-      author: {
-        id: string;
-        name: string;
-        type: string;
-      };
-    });
+    // Check if ContactAccess.Read permission is granted to include author email
+    const includeAuthorEmail =
+      plot.plotOptions?.contact?.access !== undefined &&
+      plot.plotOptions.contact.access >= ContactAccess.Read;
+
+    return fromDbActivity(
+      {
+        ...data,
+        tags: tagsData?.tags || null,
+      } as any as Database["public"]["Tables"]["activity"]["Row"] & {
+        author: {
+          id: string;
+          name: string;
+          type: string;
+          email?: string;
+        };
+      },
+      includeAuthorEmail
+    );
   } catch (err) {
     console.error("Failed to get activity by meta:", err);
     throw err;
@@ -788,7 +819,8 @@ export async function createActivities(
         author:actor!author_id(
           id,
           name,
-          type
+          type,
+          email
         )
       `
     )
@@ -816,17 +848,26 @@ export async function createActivities(
     }
   }
 
+  // Check if ContactAccess.Read permission is granted to include author email
+  const includeAuthorEmail =
+    plot.plotOptions?.contact?.access !== undefined &&
+    plot.plotOptions.contact.access >= ContactAccess.Read;
+
   return activitiesWithAuthor.map((activityWithAuthor) =>
-    fromDbActivity({
-      ...activityWithAuthor,
-      tags: tagsMap.get(activityWithAuthor.id) || null,
-    } as any as Database["public"]["Tables"]["activity"]["Row"] & {
-      author: {
-        id: string;
-        name: string;
-        type: string;
-      };
-    })
+    fromDbActivity(
+      {
+        ...activityWithAuthor,
+        tags: tagsMap.get(activityWithAuthor.id) || null,
+      } as any as Database["public"]["Tables"]["activity"]["Row"] & {
+        author: {
+          id: string;
+          name: string;
+          type: string;
+          email?: string;
+        };
+      },
+      includeAuthorEmail
+    )
   );
 }
 

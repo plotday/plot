@@ -2,6 +2,7 @@ import {
   type Activity,
   type ActivityMeta,
   type ActivityUpdate,
+  type Actor,
   type ActorId,
   type NewActivity,
   type NewPriority,
@@ -490,7 +491,11 @@ export class Plot extends Tool implements IPlot {
   // Contact operations
   async addContacts(
     contacts: Array<{ email: string; name?: string; avatar?: string }>
-  ): Promise<void> {
+  ): Promise<Actor[]> {
     return contactsOps.addContacts(this, contacts);
+  }
+
+  async getActors(ids: ActorId[]): Promise<Actor[]> {
+    return contactsOps.getActors(this, ids);
   }
 }
