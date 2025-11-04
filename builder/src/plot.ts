@@ -75,8 +75,6 @@ export enum ActivityLinkType {
   external = "external",
   /** Authentication flows for connecting services */
   auth = "auth",
-  /** Links that are not visible to users but can be used to track associations */
-  hidden = "hidden",
   /** Callback links that trigger agent methods when clicked */
   callback = "callback",
   /** Video conferencing links with provider-specific handling */
@@ -140,12 +138,6 @@ export enum ConferencingProvider {
  *   title: "📅 Primary Calendar",
  *   token: "callback-token-here"
  * };
- *
- * // Hidden link - invisible but functional
- * const hiddenLink: ActivityLink = {
- *   type: ActivityLinkType.hidden,
- *   metadata: { purpose: "tracking" }
- * };
  * ```
  */
 export type ActivityLink =
@@ -178,12 +170,6 @@ export type ActivityLink =
       scopes: string[];
       /** Callback token for auth completion notification */
       callback: string;
-    }
-  | {
-      /** Hidden link not visible to users but may trigger actions */
-      type: ActivityLinkType.hidden;
-      /** Arbitrary properties for hidden functionality */
-      [key: string]: any;
     }
   | {
       /** Callback link that triggers agent method when clicked */

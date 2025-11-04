@@ -279,7 +279,6 @@ await this.tools.plot.createActivity({
 
 - **external** - Opens URL in browser
 - **auth** - Initiates OAuth flow
-- **hidden** - Not visible to users (for tracking)
 - **callback** - Triggers agent method when clicked
 
 ---
