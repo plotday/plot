@@ -21,24 +21,48 @@ class PrioritiesShell extends StatefulWidget implements AutoRouteWrapper {
 
 class _PrioritiesShellState extends State<PrioritiesShell> {
   int _tabIndex = 1; // Default to Activities tab (current priority)
+  bool _previousMultiPanel = false;
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<LayoutBloc, LayoutState>(
-      builder: (context, layoutState) {
-        if (layoutState.multiPanel) {
-          // Multi-panel mode: use standard AutoRouter
-          return AutoRouter();
-        } else {
-          // Single-panel mode: use AutoTabsRouter with bottom navigation
-          return BlocBuilder<NowBloc, NowState>(
-            builder: (context, nowState) {
-              if (nowState is! NowLoaded) {
-                return AutoRouter();
-              }
+    return BlocBuilder<NowBloc, NowState>(
+      builder: (context, nowState) {
+        // Wait for NowBloc to be loaded before building any routes
+        if (nowState is! NowLoaded) {
+          return const SizedBox.shrink(); // Show nothing while loading
+        }
 
-              final priorityId = nowState.priority.id.toShortString();
+        return BlocBuilder<LayoutBloc, LayoutState>(
+          builder: (context, layoutState) {
+            final priorityId = nowState.priority.id.toShortString();
 
+            // Track mode changes
+            if (layoutState.multiPanel && !_previousMultiPanel) {
+              _previousMultiPanel = true;
+            } else if (!layoutState.multiPanel && _previousMultiPanel) {
+              _previousMultiPanel = false;
+            }
+
+            // In multi-panel mode, ensure we have a valid child route whenever panels are visible
+            if (layoutState.multiPanel &&
+                (layoutState.leftPanelVisible ||
+                    layoutState.rightPanelVisible)) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                final router = context.router;
+                final currentRoute = router.currentChild?.name;
+
+                // Check if we don't have a valid PriorityRoute child
+                if (currentRoute != 'PriorityRoute') {
+                  router.navigate(PriorityRoute(priorityIdString: priorityId));
+                }
+              });
+            }
+
+            if (layoutState.multiPanel) {
+              // Multi-panel mode: use standard AutoRouter
+              return AutoRouter();
+            } else {
+              // Single-panel mode: use AutoTabsRouter with bottom navigation
               return AutoTabsRouter(
                 routes: [
                   PrioritiesRoute(),
@@ -72,9 +96,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
                   );
                 },
               );
-            },
-          );
-        }
+            }
+          },
+        );
       },
     );
   }

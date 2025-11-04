@@ -8,6 +8,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/now.dart';
 
 abstract class ActivityCommand extends Command {
   ActivityCommand(this.activity)
@@ -61,7 +62,12 @@ class ChangeCurrentActivity extends ActivityCommand {
     // HACK: We need to make the panel visible before navigating to it
     context.read<LayoutBloc>().setRightPanelVisible(true);
     return CommandRoute(
-      ActivityRoute(activityIdString: activity!.id.toShortString()),
+      PriorityRoute(
+        priorityIdString: activity!.priority.id.toShortString(),
+        children: [
+          ActivityRoute(activityIdString: activity!.id.toShortString()),
+        ],
+      ),
     );
   }
 }
@@ -77,7 +83,14 @@ class NewActivity extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     context.read<LayoutBloc>().setRightPanelVisible(true);
-    return CommandRoute(NewActivityRoute());
+    final nowBloc = context.read<NowBloc>();
+    final priorityId = nowBloc.loadedState.priority.id;
+    return CommandRoute(
+      PriorityRoute(
+        priorityIdString: priorityId.toShortString(),
+        children: [NewActivityRoute()],
+      ),
+    );
   }
 }
 

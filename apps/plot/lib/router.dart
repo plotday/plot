@@ -78,6 +78,9 @@ class AppRouter extends RootStackRouter {
               guards: [
                 // If we're in a multi-panel layout, redirect to the current priority
                 AutoRouteGuardCallback((resolver, router) async {
+                  if (resolver.context.read<NowBloc>().loading) {
+                    return;
+                  }
                   final layout = resolver.context.read<LayoutBloc>().state;
                   if (layout.multiPanel) {
                     final priorityId = resolver.context
