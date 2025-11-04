@@ -1,9 +1,11 @@
 import {
   type Activity,
   type ActivityLink,
+  ActivityLinkType,
   type ActorId,
-  type Contact,
+  ConferencingProvider,
   type NewActivity,
+  type NewContact,
   Tag,
   Tool,
   type ToolBuilder,
@@ -32,6 +34,32 @@ import {
   transformOutlookEvent,
   type SyncState,
 } from "./graph-api";
+
+/**
+ * Detects the conferencing provider from a URL
+ */
+function detectConferencingProvider(url: string): ConferencingProvider {
+  const lowerUrl = url.toLowerCase();
+
+  if (lowerUrl.includes("zoom.us")) {
+    return ConferencingProvider.zoom;
+  }
+  if (
+    lowerUrl.includes("teams.microsoft.com") ||
+    lowerUrl.includes("teams.live.com")
+  ) {
+    return ConferencingProvider.microsoft_teams;
+  }
+  if (lowerUrl.includes("webex.com")) {
+    return ConferencingProvider.webex;
+  }
+  if (lowerUrl.includes("meet.google.com")) {
+    return ConferencingProvider.google_meet;
+  }
+
+  // Default to microsoft_teams for Outlook events
+  return ConferencingProvider.microsoft_teams;
+}
 
 type WatchState = {
   subscriptionId: string;
@@ -350,7 +378,7 @@ export class OutlookCalendar
 
             // Extract and create contacts from attendees
             if (outlookEvent.attendees && outlookEvent.attendees.length > 0) {
-              const contacts: Contact[] = outlookEvent.attendees
+              const contacts: NewContact[] = outlookEvent.attendees
                 .filter(
                   (att) =>
                     att.emailAddress?.address && att.type !== "resource"
@@ -397,6 +425,32 @@ export class OutlookCalendar
             // Add tags to the activity
             if (tags && Object.keys(tags).length > 0) {
               activity.tags = tags;
+            }
+
+            // Build links array for videoconferencing and calendar links
+            const links: ActivityLink[] = [];
+
+            if (outlookEvent.onlineMeeting?.joinUrl) {
+              const provider = detectConferencingProvider(
+                outlookEvent.onlineMeeting.joinUrl
+              );
+              links.push({
+                type: ActivityLinkType.conferencing,
+                url: outlookEvent.onlineMeeting.joinUrl,
+                provider,
+              });
+            }
+
+            if (outlookEvent.webLink) {
+              links.push({
+                type: ActivityLinkType.external,
+                title: "View in Calendar",
+                url: outlookEvent.webLink,
+              });
+            }
+
+            if (links.length > 0) {
+              activity.links = links;
             }
 
             // Call the event callback

@@ -1,5 +1,5 @@
 import type { NewActivity } from "@plotday/agent";
-import { ActivityType } from "@plotday/agent";
+import { ActivityType, ConferencingProvider } from "@plotday/agent";
 
 export type GoogleEvent = {
   id: string;
@@ -38,6 +38,26 @@ export type GoogleEvent = {
     resource?: boolean;
   }>;
   location?: string;
+  conferenceData?: {
+    conferenceId?: string;
+    conferenceSolution?: {
+      key: {
+        type: string;
+      };
+      name?: string;
+      iconUri?: string;
+    };
+    entryPoints?: Array<{
+      entryPointType: string;
+      uri?: string;
+      label?: string;
+      meetingCode?: string;
+      passcode?: string;
+      password?: string;
+      pin?: string;
+    }>;
+    notes?: string;
+  };
   hangoutLink?: string;
   htmlLink?: string;
   created?: string;
@@ -167,6 +187,110 @@ export function parseGoogleRecurrenceCount(
   }
 
   return null;
+}
+
+/**
+ * Represents an extracted conferencing link with provider information
+ */
+export type ConferencingLink = {
+  url: string;
+  provider: ConferencingProvider;
+};
+
+/**
+ * Detects the conferencing provider from a URL
+ */
+function detectConferencingProvider(url: string): ConferencingProvider | null {
+  const lowerUrl = url.toLowerCase();
+
+  if (lowerUrl.includes("zoom.us")) {
+    return ConferencingProvider.zoom;
+  }
+  if (
+    lowerUrl.includes("teams.microsoft.com") ||
+    lowerUrl.includes("teams.live.com")
+  ) {
+    return ConferencingProvider.microsoft_teams;
+  }
+  if (lowerUrl.includes("webex.com")) {
+    return ConferencingProvider.webex;
+  }
+  if (lowerUrl.includes("meet.google.com")) {
+    return ConferencingProvider.google_meet;
+  }
+
+  return null;
+}
+
+/**
+ * Extracts URLs from text using regex
+ */
+function extractUrlsFromText(text: string): string[] {
+  const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+  const matches = text.match(urlRegex);
+  return matches || [];
+}
+
+/**
+ * Extracts all conferencing links from a Google Calendar event
+ * Uses multi-layer extraction: conferenceData -> location -> description
+ */
+export function extractConferencingLinks(
+  event: GoogleEvent
+): ConferencingLink[] {
+  const links: ConferencingLink[] = [];
+  const seenUrls = new Set<string>();
+
+  // Layer 1: Extract from conferenceData.entryPoints (most reliable)
+  if (event.conferenceData?.entryPoints) {
+    for (const entryPoint of event.conferenceData.entryPoints) {
+      if (entryPoint.entryPointType === "video" && entryPoint.uri) {
+        const url = entryPoint.uri;
+        if (!seenUrls.has(url)) {
+          seenUrls.add(url);
+          const provider =
+            detectConferencingProvider(url) || ConferencingProvider.other;
+
+          links.push({
+            url,
+            provider,
+          });
+        }
+      }
+    }
+  }
+
+  // Layer 2: Extract from location field (fallback for manual entries)
+  if (event.location) {
+    const urls = extractUrlsFromText(event.location);
+    for (const url of urls) {
+      const provider = detectConferencingProvider(url);
+      if (provider && !seenUrls.has(url)) {
+        seenUrls.add(url);
+        links.push({
+          url,
+          provider,
+        });
+      }
+    }
+  }
+
+  // Layer 3: Extract from description field (last resort)
+  if (event.description) {
+    const urls = extractUrlsFromText(event.description);
+    for (const url of urls) {
+      const provider = detectConferencingProvider(url);
+      if (provider && !seenUrls.has(url)) {
+        seenUrls.add(url);
+        links.push({
+          url,
+          provider,
+        });
+      }
+    }
+  }
+
+  return links;
 }
 
 export function transformGoogleEvent(

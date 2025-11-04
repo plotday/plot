@@ -1,9 +1,11 @@
 import {
   type Activity,
   type ActivityLink,
+  ActivityLinkType,
   type ActorId,
-  type Contact,
+  ConferencingProvider,
   type NewActivity,
+  type NewContact,
   Tag,
   Tool,
   type ToolBuilder,
@@ -28,6 +30,7 @@ import {
 } from "@plotday/agent/tools/plot";
 
 import {
+  extractConferencingLinks,
   GoogleApi,
   type GoogleEvent,
   type SyncState,
@@ -416,7 +419,7 @@ export class GoogleCalendar
 
         // Extract and create contacts from attendees
         if (event.attendees && event.attendees.length > 0) {
-          const contacts: Contact[] = event.attendees
+          const contacts: NewContact[] = event.attendees
             .filter((att) => att.email && !att.resource) // Exclude resources
             .map((att) => ({
               email: att.email!,
@@ -458,6 +461,42 @@ export class GoogleCalendar
           // Convert to full Activity and call callback
           const callbackToken = await this.get<string>("event_callback_token");
           if (callbackToken && activityData.type) {
+            // Build links array for videoconferencing and calendar links
+            const links: ActivityLink[] = [];
+            const seenUrls = new Set<string>();
+
+            // Extract all conferencing links (Zoom, Teams, Webex, etc.)
+            const conferencingLinks = extractConferencingLinks(event);
+            for (const link of conferencingLinks) {
+              if (!seenUrls.has(link.url)) {
+                seenUrls.add(link.url);
+                links.push({
+                  type: ActivityLinkType.conferencing,
+                  url: link.url,
+                  provider: link.provider,
+                });
+              }
+            }
+
+            // Add Google Meet link from hangoutLink if not already added
+            if (event.hangoutLink && !seenUrls.has(event.hangoutLink)) {
+              seenUrls.add(event.hangoutLink);
+              links.push({
+                type: ActivityLinkType.conferencing,
+                url: event.hangoutLink,
+                provider: ConferencingProvider.google_meet,
+              });
+            }
+
+            // Add calendar link
+            if (event.htmlLink) {
+              links.push({
+                type: ActivityLinkType.external,
+                title: "View in Calendar",
+                url: event.htmlLink,
+              });
+            }
+
             const activity: NewActivity = {
               type: activityData.type,
               start: activityData.start || null,
@@ -468,7 +507,7 @@ export class GoogleCalendar
               note: activityData.note || null,
               title: activityData.title || null,
               parent: null,
-              links: null,
+              links: links.length > 0 ? links : null,
               recurrenceRule: activityData.recurrenceRule || null,
               recurrenceExdates: activityData.recurrenceExdates || null,
               recurrenceDates: activityData.recurrenceDates || null,

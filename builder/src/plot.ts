@@ -79,6 +79,27 @@ export enum ActivityLinkType {
   hidden = "hidden",
   /** Callback links that trigger agent methods when clicked */
   callback = "callback",
+  /** Video conferencing links with provider-specific handling */
+  conferencing = "conferencing",
+}
+
+/**
+ * Video conferencing providers for conferencing links.
+ *
+ * Used to identify the conferencing platform and provide
+ * provider-specific UI elements (titles, icons, etc.).
+ */
+export enum ConferencingProvider {
+  /** Google Meet */
+  google_meet = "google_meet",
+  /** Zoom */
+  zoom = "zoom",
+  /** Microsoft Teams */
+  microsoft_teams = "microsoft_teams",
+  /** Cisco Webex */
+  webex = "webex",
+  /** Other or unknown conferencing provider */
+  other = "other",
 }
 
 /**
@@ -94,6 +115,13 @@ export enum ActivityLinkType {
  *   type: ActivityLinkType.external,
  *   title: "Open in Google Calendar",
  *   url: "https://calendar.google.com/event/123",
+ * };
+ *
+ * // Conferencing link - opens video conference with provider info
+ * const conferencingLink: ActivityLink = {
+ *   type: ActivityLinkType.conferencing,
+ *   url: "https://meet.google.com/abc-defg-hij",
+ *   provider: ConferencingProvider.google_meet,
  * };
  *
  * // Integrations link - initiates OAuth flow
@@ -128,6 +156,14 @@ export type ActivityLink =
       title: string;
       /** URL to open when clicked */
       url: string;
+    }
+  | {
+      /** Video conferencing link with provider-specific handling */
+      type: ActivityLinkType.conferencing;
+      /** URL to join the conference */
+      url: string;
+      /** Conferencing provider for UI customization */
+      provider: ConferencingProvider;
     }
   | {
       /** Authentication link that initiates an OAuth flow */
