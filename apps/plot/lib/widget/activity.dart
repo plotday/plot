@@ -21,9 +21,7 @@ class ActivityWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext buildContext) {
-    final hasVisibleLinks = activity.links.any(
-      (link) => link.type != LinkType.hidden,
-    );
+    final hasVisibleLinks = activity.links.isNotEmpty;
 
     return ListTile(
       command: ChangeCurrentActivity(activity),
@@ -110,9 +108,7 @@ class ActivityDetailWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasVisibleLinks = activity.links.any(
-      (link) => link.type != LinkType.hidden,
-    );
+    final hasVisibleLinks = activity.links.isNotEmpty;
 
     return ListTile(
       body: Column(

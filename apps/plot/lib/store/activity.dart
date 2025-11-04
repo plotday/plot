@@ -89,7 +89,7 @@ class RecurrenceRuleConverter extends TypeConverter<RecurrenceRule?, String?>
   }
 }
 
-enum LinkType { external, auth, hidden, callback, conferencing }
+enum LinkType { external, auth, callback, conferencing }
 
 enum ConferencingProvider { googleMeet, zoom, microsoftTeams, webex, other }
 
@@ -109,8 +109,6 @@ abstract class Link extends Equatable {
         return ExternalLink.fromJson(json);
       case LinkType.auth:
         return AuthLink.fromJson(json);
-      case LinkType.hidden:
-        return HiddenLink.fromJson(json);
       case LinkType.callback:
         return CallbackLink.fromJson(json);
       case LinkType.conferencing:
@@ -186,31 +184,6 @@ class AuthLink extends Link {
 
   @override
   List<Object?> get props => [type, title, provider, level, scopes, callback];
-}
-
-class HiddenLink extends Link {
-  const HiddenLink({this.metadata = const {}}) : super(type: LinkType.hidden);
-
-  final Map<String, dynamic> metadata;
-
-  String get title => '';
-  Map<String, dynamic> get extras => metadata;
-
-  factory HiddenLink.fromJson(Map<String, dynamic> json) {
-    final metadata = Map<String, dynamic>.from(json);
-    metadata.remove('type');
-    return HiddenLink(metadata: metadata);
-  }
-
-  @override
-  Map<String, dynamic> toJson() {
-    final json = Map<String, dynamic>.from(metadata);
-    json['type'] = type.name;
-    return json;
-  }
-
-  @override
-  List<Object?> get props => [type, metadata];
 }
 
 class CallbackLink extends Link {

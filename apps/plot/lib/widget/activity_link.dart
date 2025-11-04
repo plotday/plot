@@ -31,8 +31,6 @@ class ActivityLinkWidget extends StatelessWidget {
         return ExternalLinkButton(link: link as ExternalLink);
       case LinkType.conferencing:
         return ConferencingLinkButton(link: link as ConferencingLink);
-      default:
-        return SizedBox.shrink();
     }
   }
 }
@@ -97,11 +95,6 @@ class ExternalLinkButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Don't display hidden links
-    if (link.type == LinkType.hidden) {
-      return const SizedBox.shrink();
-    }
-
     return FButton(onPress: () => _handleTap(), child: Text(link.title));
   }
 
@@ -170,16 +163,7 @@ class ActivityLinksList extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    // Filter out hidden links for display
-    final visibleLinks = activity.links
-        .where((link) => link.type != LinkType.hidden)
-        .toList();
-
-    if (visibleLinks.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final widgets = visibleLinks.map((link) {
+    final widgets = activity.links.map((link) {
       // Use stable, content-based keys instead of hashCode
       final Key key;
       if (link.type == LinkType.auth) {
