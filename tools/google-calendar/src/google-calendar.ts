@@ -484,7 +484,7 @@ export class GoogleCalendar
               links.push({
                 type: ActivityLinkType.conferencing,
                 url: event.hangoutLink,
-                provider: ConferencingProvider.google_meet,
+                provider: ConferencingProvider.googleMeet,
               });
             }
 

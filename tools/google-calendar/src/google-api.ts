@@ -210,13 +210,13 @@ function detectConferencingProvider(url: string): ConferencingProvider | null {
     lowerUrl.includes("teams.microsoft.com") ||
     lowerUrl.includes("teams.live.com")
   ) {
-    return ConferencingProvider.microsoft_teams;
+    return ConferencingProvider.microsoftTeams;
   }
   if (lowerUrl.includes("webex.com")) {
     return ConferencingProvider.webex;
   }
   if (lowerUrl.includes("meet.google.com")) {
-    return ConferencingProvider.google_meet;
+    return ConferencingProvider.googleMeet;
   }
 
   return null;

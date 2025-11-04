@@ -91,11 +91,11 @@ export enum ActivityLinkType {
  */
 export enum ConferencingProvider {
   /** Google Meet */
-  googleMeet = "google_meet",
+  googleMeet = "googleMeet",
   /** Zoom */
   zoom = "zoom",
   /** Microsoft Teams */
-  microsoftTeams = "microsoft_teams",
+  microsoftTeams = "microsoftTeams",
   /** Cisco Webex */
   webex = "webex",
   /** Other or unknown conferencing provider */
@@ -121,7 +121,7 @@ export enum ConferencingProvider {
  * const conferencingLink: ActivityLink = {
  *   type: ActivityLinkType.conferencing,
  *   url: "https://meet.google.com/abc-defg-hij",
- *   provider: ConferencingProvider.google_meet,
+ *   provider: ConferencingProvider.googleMeet,
  * };
  *
  * // Integrations link - initiates OAuth flow

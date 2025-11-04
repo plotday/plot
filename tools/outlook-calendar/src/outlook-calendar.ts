@@ -48,17 +48,17 @@ function detectConferencingProvider(url: string): ConferencingProvider {
     lowerUrl.includes("teams.microsoft.com") ||
     lowerUrl.includes("teams.live.com")
   ) {
-    return ConferencingProvider.microsoft_teams;
+    return ConferencingProvider.microsoftTeams;
   }
   if (lowerUrl.includes("webex.com")) {
     return ConferencingProvider.webex;
   }
   if (lowerUrl.includes("meet.google.com")) {
-    return ConferencingProvider.google_meet;
+    return ConferencingProvider.googleMeet;
   }
 
-  // Default to microsoft_teams for Outlook events
-  return ConferencingProvider.microsoft_teams;
+  // Default to microsoftTeams for Outlook events
+  return ConferencingProvider.microsoftTeams;
 }
 
 type WatchState = {
