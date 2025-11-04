@@ -1,8 +1,10 @@
 import {
   type Activity,
   type ActivityLink,
-  ActivityType,
+  type ActorId,
+  type Contact,
   type NewActivity,
+  Tag,
   Tool,
   type ToolBuilder,
 } from "@plotday/agent";
@@ -19,137 +21,22 @@ import {
   Integrations,
 } from "@plotday/agent/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/agent/tools/network";
-
-// Import types from the existing outlook.ts file
-type CalendarConfig = {
-  outlookClientId: string;
-  outlookOauthSecret: string;
-  webhookUrl: string;
-};
-
-type CalendarCredentials = {
-  access_token: string;
-  refresh_token: string;
-  email: string;
-};
-
-type OutlookSyncState = {
-  calendarId: string;
-  state?: string;
-  more: boolean;
-  min?: Date;
-  max?: Date;
-};
+import {
+  ActivityAccess,
+  ContactAccess,
+  Plot,
+} from "@plotday/agent/tools/plot";
+import {
+  GraphApi,
+  syncOutlookCalendar,
+  transformOutlookEvent,
+  type SyncState,
+} from "./graph-api";
 
 type WatchState = {
-  watchId: string;
+  subscriptionId: string;
   calendarId: string;
-  secret: string;
   expiry: Date;
-};
-
-type RawEvent = {
-  id: string;
-  data: any; // OutlookEvent type from outlook.ts
-};
-
-type Event = {
-  id: string;
-  name?: string;
-  description?: string;
-  startsAt?: Date;
-  endsAt?: Date;
-  data: any;
-};
-
-function fromMsDate(date?: any): Date | undefined {
-  if (!date) return undefined;
-  if (date.timeZone && date.timeZone !== "UTC") {
-    throw new Error(`Unsupported timezone ${date.timeZone}`);
-  }
-  let d = date.dateTime;
-  if (!d) return undefined;
-  if (d[d.length - 1] !== "Z") {
-    d = d + "Z";
-  }
-  return new Date(d);
-}
-
-function parseOutlookRecurrenceEnd(recurrenceData: any): Date | string | null {
-  if (!recurrenceData?.range) return null;
-
-  const range = recurrenceData.range;
-
-  if (range.type === "endDate" && range.endDate) {
-    // Outlook provides end date in ISO string format
-    const endDate = new Date(range.endDate);
-    // Return as Date object for datetime-based events, or date string for all-day events
-    // We'll assume datetime for now and let the plot tool handle conversion
-    return endDate;
-  }
-
-  return null;
-}
-
-function parseOutlookRecurrenceCount(recurrenceData: any): number | null {
-  if (!recurrenceData?.range) return null;
-
-  const range = recurrenceData.range;
-
-  if (range.type === "numbered" && range.numberOfOccurrences) {
-    const count = parseInt(range.numberOfOccurrences);
-    return isNaN(count) ? null : count;
-  }
-
-  return null;
-}
-
-// Simplified version of the cal.* functions from outlook.ts
-const outlookApi = {
-  sync: async (
-    _config: CalendarConfig,
-    _credentials: CalendarCredentials,
-    syncState: OutlookSyncState,
-    _limit: number
-  ) => {
-    // This would contain the actual Outlook API sync logic
-    // For now, return empty result
-    return {
-      events: [] as RawEvent[],
-      state: { ...syncState, more: false },
-    };
-  },
-
-  transform: (rawEvent: RawEvent, _accountEmail: string): Event => {
-    // This would contain the transformation logic from outlook.ts
-    const event = rawEvent.data;
-    const id = rawEvent.id;
-    const startsAt = fromMsDate(event.start);
-    const endsAt = fromMsDate(event.end);
-    return {
-      id,
-      name: event.subject || undefined,
-      description: event.body?.content || undefined,
-      startsAt,
-      endsAt,
-      data: event,
-    };
-  },
-
-  watch: async (
-    _config: CalendarConfig,
-    _credentials: CalendarCredentials,
-    _calendarId: string,
-    _existingWatch?: { watchId: string; watchSecret: string }
-  ) => {
-    // This would contain the webhook setup logic
-    return {
-      state: {
-        watchId: crypto.randomUUID(),
-        secret: crypto.randomUUID(),
-      },
-    };
-  },
 };
 
 /**
@@ -228,6 +115,15 @@ export class OutlookCalendar
       network: build(Network, {
         urls: ["https://graph.microsoft.com/*"],
       }),
+      plot: build(Plot, {
+        contact: {
+          access: ContactAccess.Write,
+        },
+        activity: {
+          access: ActivityAccess.Create,
+          updated: this.onActivityUpdated,
+        },
+      }),
     };
   }
 
@@ -256,10 +152,7 @@ export class OutlookCalendar
     );
   }
 
-  private async getApi(authToken: string): Promise<{
-    config: CalendarConfig;
-    credentials: CalendarCredentials;
-  }> {
+  private async getApi(authToken: string): Promise<GraphApi> {
     const authorization = await this.get<Authorization>(
       `authorization:${authToken}`
     );
@@ -272,35 +165,39 @@ export class OutlookCalendar
       throw new Error("Authorization no longer available");
     }
 
-    const config = {
-      outlookClientId: "client_id",
-      outlookOauthSecret: "client_secret",
-      webhookUrl: "webhook_url",
-    };
+    return new GraphApi(token.token);
+  }
 
-    const credentials = {
-      access_token: token.token,
-      refresh_token: token.token, // Using same token for both - this may need adjustment
-      email: "user@example.com", // This should be extracted from the authorization
-    };
+  private async getUserEmail(authToken: string): Promise<string> {
+    const api = await this.getApi(authToken);
+    const data = (await api.call(
+      "GET",
+      "https://graph.microsoft.com/v1.0/me"
+    )) as { mail?: string; userPrincipalName?: string };
 
-    return { config, credentials };
+    return data.mail || data.userPrincipalName || "";
+  }
+
+  private async ensureUserIdentity(authToken: string): Promise<string> {
+    // Check if we already have the user email stored
+    const stored = await this.get<string>("user_email");
+    if (stored) {
+      return stored;
+    }
+
+    // Fetch user email from Microsoft Graph
+    const email = await this.getUserEmail(authToken);
+
+    // Store for future use
+    await this.set("user_email", email);
+
+    console.log("Stored user email:", email);
+    return email;
   }
 
   async getCalendars(authToken: string): Promise<Calendar[]> {
-    // Verify authorization is available
-    await this.getApi(authToken);
-
-    // This would use Microsoft Graph API to get calendars
-    // For now, return a simple primary calendar
-    return [
-      {
-        id: "primary",
-        name: "Calendar",
-        description: "Primary Outlook Calendar",
-        primary: true,
-      },
-    ];
+    const api = await this.getApi(authToken);
+    return await api.getCalendars();
   }
 
   async startSync<
@@ -318,6 +215,9 @@ export class OutlookCalendar
     );
     await this.set("event_callback_token", callbackToken);
 
+    // Store auth token for calendar for later RSVP updates
+    await this.set(`auth_token_${calendarId}`, authToken);
+
     // Setup webhook for this calendar
     await this.setupOutlookWatch(authToken, calendarId, authToken);
 
@@ -330,11 +230,18 @@ export class OutlookCalendar
     await this.run(syncCallback);
   }
 
-  async stopSync(_authToken: string, calendarId: string): Promise<void> {
+  async stopSync(authToken: string, calendarId: string): Promise<void> {
     // Stop webhook
     const watchData = await this.get<WatchState>(`outlook_watch_${calendarId}`);
-    if (watchData) {
-      // Cancel the watch (would need Microsoft Graph API call)
+    if (watchData?.subscriptionId) {
+      try {
+        const api = await this.getApi(authToken);
+        await api.deleteSubscription(watchData.subscriptionId);
+        console.log("Deleted Outlook subscription:", watchData.subscriptionId);
+      } catch (error) {
+        console.error("Failed to delete Outlook subscription:", error);
+        // Continue to clear local state even if API call fails
+      }
       await this.clear(`outlook_watch_${calendarId}`);
     }
 
@@ -347,7 +254,7 @@ export class OutlookCalendar
     calendarId: string,
     opaqueAuthToken: string
   ): Promise<void> {
-    const { config, credentials } = await this.getApi(authToken);
+    const api = await this.getApi(authToken);
 
     const webhookUrl = await this.tools.network.createWebhook(
       this.onOutlookWebhook,
@@ -355,34 +262,40 @@ export class OutlookCalendar
       opaqueAuthToken
     );
 
-    config.webhookUrl = webhookUrl;
+    // Skip webhook setup for localhost (development mode)
+    if (webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1")) {
+      console.log("Skipping webhook setup for localhost URL:", webhookUrl);
+      return;
+    }
 
-    const existingWatchId = await this.get<string>(
-      `outlook_watch_id_${calendarId}`
-    );
-    const existingSecret = await this.get<string>(
-      `outlook_watch_secret_${calendarId}`
-    );
+    // Microsoft Graph subscriptions expire, so we set expiry for 3 days from now
+    const expirationDate = new Date();
+    expirationDate.setDate(expirationDate.getDate() + 3);
 
-    const watchResult = await outlookApi.watch(
-      config,
-      credentials,
-      calendarId,
-      existingWatchId && existingSecret
-        ? { watchId: existingWatchId, watchSecret: existingSecret }
-        : undefined
-    );
+    try {
+      const subscription = await api.createSubscription(
+        calendarId,
+        webhookUrl,
+        expirationDate
+      );
 
-    await this.set(`outlook_watch_id_${calendarId}`, watchResult.state.watchId);
-    await this.set(
-      `outlook_watch_secret_${calendarId}`,
-      watchResult.state.secret
-    );
+      const watchState: WatchState = {
+        subscriptionId: subscription.id,
+        calendarId,
+        expiry: new Date(subscription.expirationDateTime),
+      };
 
-    console.log("Outlook Calendar webhook configured", {
-      watchId: watchResult.state.watchId,
-      calendarId,
-    });
+      await this.set(`outlook_watch_${calendarId}`, watchState);
+
+      console.log("Outlook Calendar webhook configured", {
+        subscriptionId: subscription.id,
+        calendarId,
+        expiry: subscription.expirationDateTime,
+      });
+    } catch (error) {
+      console.error("Failed to setup Outlook webhook:", error);
+      // Continue without webhook - sync will still work via manual triggers
+    }
   }
 
   async syncOutlookBatch(
@@ -390,13 +303,10 @@ export class OutlookCalendar
     calendarId: string,
     authToken: string
   ): Promise<void> {
-    let config: CalendarConfig;
-    let credentials: CalendarCredentials;
+    let api: GraphApi;
 
     try {
-      const apiResult = await this.getApi(authToken);
-      config = apiResult.config;
-      credentials = apiResult.credentials;
+      api = await this.getApi(authToken);
     } catch (error) {
       console.error(
         "No Microsoft credentials found for the provided authToken:",
@@ -405,156 +315,123 @@ export class OutlookCalendar
       return;
     }
 
-    const lastSyncToken =
-      (await this.get<string>(`last_sync_token_${calendarId}`)) || undefined;
+    // Ensure we have the user's identity for RSVP tagging
+    await this.ensureUserIdentity(authToken);
 
-    const syncState: OutlookSyncState = {
+    // Get user email for RSVP tagging
+    const userEmail = await this.get<string>("user_email");
+
+    // Load existing sync state
+    const savedState = await this.get<SyncState>(
+      `outlook_sync_state_${calendarId}`
+    );
+
+    const syncState: SyncState = savedState || {
       calendarId,
-      state: lastSyncToken,
-      more: false,
+      sequence: 1,
     };
 
     let hasMore = true;
     let eventCount = 0;
+    const maxEvents = 10000;
 
-    while (hasMore && eventCount < 10000) {
-      const result = await outlookApi.sync(config, credentials, syncState, 500);
+    try {
+      while (hasMore && eventCount < maxEvents) {
+        // Use the syncOutlookCalendar function from graph-api
+        const result = await syncOutlookCalendar(api, calendarId, syncState);
 
-      for (const rawEvent of result.events) {
-        const event = outlookApi.transform(rawEvent, "user@example.com");
-
-        let recurrenceRule: string | undefined;
-
-        if (event.data && "recurrence" in event.data && event.data.recurrence) {
-          const pattern = event.data.recurrence.pattern;
-          const range = event.data.recurrence.range;
-
-          let freq = "";
-          switch (pattern?.type) {
-            case "daily":
-              freq = "DAILY";
-              break;
-            case "weekly":
-              freq = "WEEKLY";
-              break;
-            case "absoluteMonthly":
-              freq = "MONTHLY";
-              break;
-            case "relativeMonthly":
-              freq = "MONTHLY";
-              break;
-            case "absoluteYearly":
-              freq = "YEARLY";
-              break;
-            case "relativeYearly":
-              freq = "YEARLY";
-              break;
-            default:
-              freq = "DAILY";
-          }
-
-          let rrule = `FREQ=${freq}`;
-          if (pattern?.interval) rrule += `;INTERVAL=${pattern.interval}`;
-
-          if (pattern?.daysOfWeek?.length) {
-            const days = pattern.daysOfWeek
-              .map((d: string) => d.toUpperCase().substring(0, 2))
-              .join(",");
-            rrule += `;BYDAY=${days}`;
-          }
-
-          if (range?.type === "endDate" && range.endDate) {
-            rrule += `;UNTIL=${range.endDate
-              .replace(/[-:]/g, "")
-              .replace(/\.\d{3}Z$/, "Z")}`;
-          } else if (range?.type === "numbered" && range.numberOfOccurrences) {
-            rrule += `;COUNT=${range.numberOfOccurrences}`;
-          }
-
-          recurrenceRule = rrule;
-        }
-
-        // Create Activity from Outlook event
-        const activity: NewActivity = {
-          type: ActivityType.Event,
-          start: event.startsAt || null,
-          end: event.endsAt || null,
-          recurrenceUntil: null,
-          recurrenceCount: null,
-          doneAt: null,
-          note: event.description || null,
-          title: event.name || null,
-          parent: null,
-          links: null,
-          recurrenceRule: recurrenceRule || null,
-          recurrenceExdates: null,
-          recurrenceDates: null,
-          recurrence: null,
-          occurrence: null,
-          meta: {
-            source: `outlook-calendar:${event.id}`,
-            id: event.id,
-            calendarId: syncState.calendarId,
-          },
-          tags: null,
-        };
-
-        // For recurring activities, parse recurrenceCount or recurrenceUntil
-        if (recurrenceRule && event.data?.recurrence) {
-          // Parse recurrence count (takes precedence over end date)
-          const recurrenceCount = parseOutlookRecurrenceCount(
-            event.data.recurrence
-          );
-          if (recurrenceCount) {
-            activity.recurrenceCount = recurrenceCount;
-          } else {
-            // Parse recurrence end date if no count
-            const recurrenceUntil = parseOutlookRecurrenceEnd(
-              event.data.recurrence
-            );
-            if (recurrenceUntil) {
-              activity.recurrenceUntil = recurrenceUntil;
+        // Process each event
+        for (const outlookEvent of result.events) {
+          try {
+            // Skip deleted events
+            if (outlookEvent["@removed"]) {
+              continue;
             }
-          }
-        }
 
-        // Handle exceptions
-        if (
-          event.data &&
-          "type" in event.data &&
-          event.data.type === "exception"
-        ) {
-          const masterEventId = event.data.seriesMasterId;
-          if (masterEventId) {
-            const originalStart = fromMsDate(event.data.originalStart);
-            if (originalStart) {
-              // TODO: Set recurrence
-              activity.occurrence = originalStart;
+            // Extract and create contacts from attendees
+            if (outlookEvent.attendees && outlookEvent.attendees.length > 0) {
+              const contacts: Contact[] = outlookEvent.attendees
+                .filter(
+                  (att) =>
+                    att.emailAddress?.address && att.type !== "resource"
+                )
+                .map((att) => ({
+                  email: att.emailAddress!.address!,
+                  name: att.emailAddress!.name,
+                }));
+
+              if (contacts.length > 0) {
+                await this.tools.plot.addContacts(contacts);
+              }
             }
+
+            // Transform the Outlook event to a Plot activity
+            const activity = transformOutlookEvent(outlookEvent, calendarId);
+
+            // Skip deleted events (transformOutlookEvent returns null for deleted)
+            if (!activity) {
+              continue;
+            }
+
+            // Determine user's RSVP status and set tags
+            let tags: Partial<Record<Tag, any[]>> | null = null;
+            if (userEmail && outlookEvent.attendees) {
+              const userAttendee = outlookEvent.attendees.find(
+                (att) =>
+                  att.emailAddress?.address?.toLowerCase() ===
+                  userEmail.toLowerCase()
+              );
+
+              if (userAttendee) {
+                tags = {};
+                const response = userAttendee.status?.response;
+                if (response === "accepted") {
+                  tags[Tag.Yes] = []; // ActorId will be assigned by Plot tool
+                } else if (response === "declined") {
+                  tags[Tag.No] = []; // ActorId will be assigned by Plot tool
+                }
+                // tentativelyAccepted, none, notResponded, organizer have no tags
+              }
+            }
+
+            // Add tags to the activity
+            if (tags && Object.keys(tags).length > 0) {
+              activity.tags = tags;
+            }
+
+            // Call the event callback
+            const callbackToken = await this.get<string>("event_callback_token");
+            if (callbackToken) {
+              await this.run(callbackToken as any, activity);
+            }
+          } catch (error) {
+            console.error(`Error processing event ${outlookEvent.id}:`, error);
+            // Continue processing other events
           }
         }
 
-        // Call the event callback
-        const callbackToken = await this.get<string>("event_callback_token");
-        if (callbackToken) {
-          await this.run(callbackToken as any, activity);
-        }
+        // Save sync state
+        await this.set(`outlook_sync_state_${calendarId}`, result.state);
+
+        hasMore = result.state.more || false;
+        eventCount += result.events.length;
+
+        // Update syncState for next iteration
+        Object.assign(syncState, result.state);
+
+        console.log(
+          `Synced ${result.events.length} events, total: ${eventCount} for calendar ${calendarId}`
+        );
       }
 
-      await this.set(`last_sync_token_${calendarId}`, result.state.state);
-
-      hasMore = result.state.more;
-      eventCount += result.events.length;
-      syncState.state = result.state.state;
-
       console.log(
-        `Synced ${result.events.length} events, total: ${eventCount} for calendar ${calendarId}`
+        `Outlook Calendar sync completed: ${eventCount} events for calendar ${calendarId}`
       );
+    } catch (error) {
+      console.error(`Outlook Calendar sync failed for ${calendarId}:`, error);
+      // Re-throw to let the caller handle it
+      throw error;
     }
-
-    console.log(
-      `Outlook Calendar sync completed: ${eventCount} events for calendar ${calendarId}`
-    );
   }
 
   async onOutlookWebhook(
@@ -626,6 +503,140 @@ export class OutlookCalendar
     };
 
     await this.run(callbackToken, authSuccessResult);
+  }
+
+  async onActivityUpdated(
+    activity: Activity,
+    changes?: {
+      previous: Activity;
+      tagsAdded: Record<Tag, ActorId[]>;
+      tagsRemoved: Record<Tag, ActorId[]>;
+    }
+  ): Promise<void> {
+    if (!changes) return;
+    // Only process calendar events
+    if (
+      !activity.meta?.source ||
+      !activity.meta.source.startsWith("outlook-calendar:")
+    ) {
+      return;
+    }
+
+    // Check if Yes or No tags changed
+    const yesChanged = Tag.Yes in changes.tagsAdded || Tag.Yes in changes.tagsRemoved;
+    const noChanged = Tag.No in changes.tagsAdded || Tag.No in changes.tagsRemoved;
+
+    if (!yesChanged && !noChanged) {
+      return; // No RSVP-related tag changes
+    }
+
+    // Determine new RSVP status based on current tags
+    const hasYes = activity.tags?.[Tag.Yes] && activity.tags[Tag.Yes].length > 0;
+    const hasNo = activity.tags?.[Tag.No] && activity.tags[Tag.No].length > 0;
+
+    let newStatus: "accepted" | "declined" | "tentativelyAccepted";
+
+    if (hasYes && hasNo) {
+      // Both tags present - use most recent from tagsAdded
+      if (Tag.Yes in changes.tagsAdded) {
+        newStatus = "accepted";
+      } else if (Tag.No in changes.tagsAdded) {
+        newStatus = "declined";
+      } else {
+        // Both were already there, no change needed
+        return;
+      }
+    } else if (hasYes) {
+      newStatus = "accepted";
+    } else if (hasNo) {
+      newStatus = "declined";
+    } else {
+      // Neither tag present - reset to tentativelyAccepted (acts as "needsAction")
+      newStatus = "tentativelyAccepted";
+    }
+
+    // Extract calendar info from metadata
+    const eventId = activity.meta.id;
+    const calendarId = activity.meta.calendarId;
+
+    if (!eventId || !calendarId) {
+      console.warn("Missing event or calendar ID in activity metadata");
+      return;
+    }
+
+    // Get the auth token for this calendar
+    const authToken = await this.get<string>(`auth_token_${calendarId}`);
+
+    if (!authToken) {
+      console.warn("No auth token found for calendar", calendarId);
+      return;
+    }
+
+    try {
+      await this.updateEventRSVP(authToken, calendarId, eventId, newStatus);
+      console.log(`Updated RSVP for event ${eventId} to ${newStatus}`);
+    } catch (error) {
+      console.error(`Failed to update RSVP for event ${eventId}:`, error);
+    }
+  }
+
+  private async updateEventRSVP(
+    authToken: string,
+    calendarId: string,
+    eventId: string,
+    status: "accepted" | "declined" | "tentativelyAccepted"
+  ): Promise<void> {
+    const api = await this.getApi(authToken);
+
+    // First, fetch the current event to check if status already matches
+    const resource =
+      calendarId === "primary"
+        ? `/me/events/${eventId}`
+        : `/me/calendars/${calendarId}/events/${eventId}`;
+
+    const event = (await api.call(
+      "GET",
+      `https://graph.microsoft.com/v1.0${resource}`
+    )) as any;
+
+    if (!event) {
+      throw new Error(`Event ${eventId} not found`);
+    }
+
+    // Get user email to find which attendee to check
+    const userEmail = await this.get<string>("user_email");
+
+    if (!userEmail) {
+      throw new Error("User email not found");
+    }
+
+    // Check current user's response status to avoid infinite loops
+    const attendees = event.attendees || [];
+    const userAttendee = attendees.find(
+      (att: any) =>
+        att.emailAddress?.address?.toLowerCase() ===
+        userEmail.toLowerCase()
+    );
+
+    if (userAttendee && userAttendee.status?.response === status) {
+      console.log(`RSVP status already ${status}, skipping update`);
+      return;
+    }
+
+    // Use Microsoft Graph API response endpoints
+    const endpoint =
+      status === "accepted"
+        ? "accept"
+        : status === "declined"
+        ? "decline"
+        : "tentativelyAccept";
+
+    await api.call(
+      "POST",
+      `https://graph.microsoft.com/v1.0${resource}/${endpoint}`,
+      undefined,
+      {}
+    );
   }
 }
 
