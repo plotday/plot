@@ -59,4 +59,7 @@ class PlotIcon {
   static const clap = IconData(0x1F44F, fontFamily: 'emoji'); // 👏
   static const sunglasses = IconData(0x1F60E, fontFamily: 'emoji'); // 😎
   static const cry = IconData(0x1F622, fontFamily: 'emoji'); // 😢
+  static const attend = IconData(0x1F646, fontFamily: 'emoji'); // 🙆
+  static const skip = IconData(0x1F645, fontFamily: 'emoji'); // 🙅
+  static const undecided = IconData(0x1F937, fontFamily: 'emoji'); // 🤷
 }

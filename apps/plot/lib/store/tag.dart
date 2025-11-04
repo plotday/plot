@@ -183,6 +183,27 @@ enum Tag {
     'Sad',
     type: TagType.count,
     shortcodes: ['sad', 'cry'],
+  ),
+  attend(
+    1019,
+    PlotIcon.attend,
+    'Attend',
+    type: TagType.count,
+    shortcodes: ['attend', 'yes', 'person_gesturing_ok'],
+  ),
+  skip(
+    1020,
+    PlotIcon.skip,
+    'Skip',
+    type: TagType.count,
+    shortcodes: ['skip', 'no', 'no_good'],
+  ),
+  undecided(
+    1021,
+    PlotIcon.undecided,
+    'Undecided',
+    type: TagType.count,
+    shortcodes: ['undecided', 'shrug', 'person_shrugging'],
   );
 
   final int id;
