@@ -73,6 +73,22 @@ export type Bindings = {
   readonly AUTH_GOOGLE_SECRET: string;
   readonly AUTH_MICROSOFT_ID: string;
   readonly AUTH_MICROSOFT_SECRET: string;
+  readonly AUTH_NOTION_ID: string;
+  readonly AUTH_NOTION_SECRET: string;
+  readonly AUTH_SLACK_ID: string;
+  readonly AUTH_SLACK_SECRET: string;
+  readonly AUTH_ATLASSIAN_ID: string;
+  readonly AUTH_ATLASSIAN_SECRET: string;
+  readonly AUTH_LINEAR_ID: string;
+  readonly AUTH_LINEAR_SECRET: string;
+  readonly AUTH_MONDAY_ID: string;
+  readonly AUTH_MONDAY_SECRET: string;
+  readonly AUTH_GITHUB_ID: string;
+  readonly AUTH_GITHUB_SECRET: string;
+  readonly AUTH_ASANA_ID: string;
+  readonly AUTH_ASANA_SECRET: string;
+  readonly AUTH_HUBSPOT_ID: string;
+  readonly AUTH_HUBSPOT_SECRET: string;
 
   readonly STRIPE_SECRET_KEY: string;
   readonly STRIPE_WEBHOOK_SECRET: string;
