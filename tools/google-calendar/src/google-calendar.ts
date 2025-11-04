@@ -1,7 +1,10 @@
 import {
   type Activity,
   type ActivityLink,
+  type ActorId,
+  type Contact,
   type NewActivity,
+  Tag,
   Tool,
   type ToolBuilder,
 } from "@plotday/agent";
@@ -18,6 +21,11 @@ import {
   Integrations,
 } from "@plotday/agent/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/agent/tools/network";
+import {
+  ActivityAccess,
+  ContactAccess,
+  Plot,
+} from "@plotday/agent/tools/plot";
 
 import {
   GoogleApi,
@@ -104,6 +112,15 @@ export class GoogleCalendar
       network: build(Network, {
         urls: ["https://www.googleapis.com/calendar/*"],
       }),
+      plot: build(Plot, {
+        contact: {
+          access: ContactAccess.Write,
+        },
+        activity: {
+          access: ActivityAccess.Create,
+          updated: this.onActivityUpdated,
+        },
+      }),
     };
   }
 
@@ -153,6 +170,35 @@ export class GoogleCalendar
     return new GoogleApi(token.token);
   }
 
+  private async getUserEmail(authToken: string): Promise<string> {
+    const api = await this.getApi(authToken);
+
+    // Use the Calendar API's primary calendar to get the email
+    const calendarList = (await api.call(
+      "GET",
+      "https://www.googleapis.com/calendar/v3/users/me/calendarList/primary"
+    )) as { id: string };
+
+    return calendarList.id; // The primary calendar ID is the user's email
+  }
+
+  private async ensureUserIdentity(authToken: string): Promise<string> {
+    // Check if we already have the user email stored
+    const stored = await this.get<string>("user_email");
+    if (stored) {
+      return stored;
+    }
+
+    // Fetch user email from Google
+    const email = await this.getUserEmail(authToken);
+
+    // Store for future use
+    await this.set("user_email", email);
+
+    console.log("Stored user email:", email);
+    return email;
+  }
+
   async getCalendars(authToken: string): Promise<Calendar[]> {
     console.log("Fetching Google Calendar list");
     const api = await this.getApi(authToken);
@@ -193,6 +239,10 @@ export class GoogleCalendar
       ...extraArgs
     );
     await this.set("event_callback_token", callbackToken);
+
+    // Store auth token for calendar for later RSVP updates
+    await this.set(`auth_token_${calendarId}`, authToken);
+
     console.log("Setting up watch");
 
     // Setup webhook for this calendar
@@ -293,6 +343,11 @@ export class GoogleCalendar
     );
 
     try {
+      // Ensure we have the user's identity for RSVP tagging
+      if (batchNumber === 1) {
+        await this.ensureUserIdentity(authToken);
+      }
+
       const state = await this.get<SyncState>(`sync_state_${calendarId}`);
       if (!state) {
         throw new Error("No sync state found");
@@ -349,11 +404,28 @@ export class GoogleCalendar
     events: GoogleEvent[],
     calendarId: string
   ): Promise<void> {
+    // Get user email for RSVP tagging
+    const userEmail = await this.get<string>("user_email");
+
     for (const event of events) {
       try {
         if (event.status === "cancelled") {
           // TODO: Handle event cancellation
           continue;
+        }
+
+        // Extract and create contacts from attendees
+        if (event.attendees && event.attendees.length > 0) {
+          const contacts: Contact[] = event.attendees
+            .filter((att) => att.email && !att.resource) // Exclude resources
+            .map((att) => ({
+              email: att.email!,
+              name: att.displayName,
+            }));
+
+          if (contacts.length > 0) {
+            await this.tools.plot.addContacts(contacts);
+          }
         }
 
         // Check if this is a recurring event instance (exception)
@@ -362,6 +434,26 @@ export class GoogleCalendar
         } else {
           // Regular or master recurring event
           const activityData = transformGoogleEvent(event, calendarId);
+
+          // Determine user's RSVP status and set tags
+          let tags: Partial<Record<Tag, any[]>> | null = null;
+          if (userEmail && event.attendees) {
+            const userAttendee = event.attendees.find(
+              (att) =>
+                att.self === true ||
+                att.email?.toLowerCase() === userEmail.toLowerCase()
+            );
+
+            if (userAttendee) {
+              tags = {};
+              if (userAttendee.responseStatus === "accepted") {
+                tags[Tag.Yes] = []; // ActorId will be assigned by Plot tool
+              } else if (userAttendee.responseStatus === "declined") {
+                tags[Tag.No] = []; // ActorId will be assigned by Plot tool
+              }
+              // tentative and needsAction have no tags (neither Yes nor No)
+            }
+          }
 
           // Convert to full Activity and call callback
           const callbackToken = await this.get<string>("event_callback_token");
@@ -383,6 +475,7 @@ export class GoogleCalendar
               recurrence: null,
               occurrence: null,
               meta: activityData.meta ?? null,
+              tags,
             };
 
             await this.run(callbackToken as any, activity);
@@ -516,6 +609,137 @@ export class GoogleCalendar
 
     // Clean up the callback token
     await this.clear(`auth_callback_token:${authToken}`);
+  }
+
+  async onActivityUpdated(
+    activity: Activity,
+    changes?: {
+      previous: Activity;
+      tagsAdded: Record<Tag, ActorId[]>;
+      tagsRemoved: Record<Tag, ActorId[]>;
+    }
+  ): Promise<void> {
+    if (!changes) return;
+    // Only process calendar events
+    if (
+      !activity.meta?.source ||
+      !activity.meta.source.startsWith("google-calendar:")
+    ) {
+      return;
+    }
+
+    // Check if Yes or No tags changed
+    const yesChanged = Tag.Yes in changes.tagsAdded || Tag.Yes in changes.tagsRemoved;
+    const noChanged = Tag.No in changes.tagsAdded || Tag.No in changes.tagsRemoved;
+
+    if (!yesChanged && !noChanged) {
+      return; // No RSVP-related tag changes
+    }
+
+    // Determine new RSVP status based on current tags
+    const hasYes = activity.tags?.[Tag.Yes] && activity.tags[Tag.Yes].length > 0;
+    const hasNo = activity.tags?.[Tag.No] && activity.tags[Tag.No].length > 0;
+
+    let newStatus: "accepted" | "declined" | "needsAction";
+
+    if (hasYes && hasNo) {
+      // Both tags present - use most recent from tagsAdded
+      if (Tag.Yes in changes.tagsAdded) {
+        newStatus = "accepted";
+      } else if (Tag.No in changes.tagsAdded) {
+        newStatus = "declined";
+      } else {
+        // Both were already there, no change needed
+        return;
+      }
+    } else if (hasYes) {
+      newStatus = "accepted";
+    } else if (hasNo) {
+      newStatus = "declined";
+    } else {
+      // Neither tag present - reset to needsAction
+      newStatus = "needsAction";
+    }
+
+    // Extract calendar info from metadata
+    const eventId = activity.meta.id;
+    const calendarId = activity.meta.calendarId;
+
+    if (!eventId || !calendarId) {
+      console.warn("Missing event or calendar ID in activity metadata");
+      return;
+    }
+
+    // Get the auth token for this calendar
+    const authToken = await this.get<string>(`auth_token_${calendarId}`);
+
+    if (!authToken) {
+      console.warn("No auth token found for calendar", calendarId);
+      return;
+    }
+
+    try {
+      await this.updateEventRSVP(authToken, calendarId, eventId, newStatus);
+      console.log(`Updated RSVP for event ${eventId} to ${newStatus}`);
+    } catch (error) {
+      console.error(`Failed to update RSVP for event ${eventId}:`, error);
+    }
+  }
+
+  private async updateEventRSVP(
+    authToken: string,
+    calendarId: string,
+    eventId: string,
+    status: "accepted" | "declined" | "needsAction"
+  ): Promise<void> {
+    const api = await this.getApi(authToken);
+
+    // First, fetch the current event to get attendees list
+    const event = (await api.call(
+      "GET",
+      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`
+    )) as GoogleEvent | null;
+
+    if (!event) {
+      throw new Error(`Event ${eventId} not found`);
+    }
+
+    // Get user email to find which attendee to update
+    const userEmail = await this.get<string>("user_email");
+
+    if (!userEmail) {
+      throw new Error("User email not found");
+    }
+
+    // Find and update the user's attendee status
+    const attendees = event.attendees || [];
+    const userAttendeeIndex = attendees.findIndex(
+      (att) =>
+        att.self === true ||
+        att.email?.toLowerCase() === userEmail.toLowerCase()
+    );
+
+    if (userAttendeeIndex === -1) {
+      console.warn("User is not an attendee of this event");
+      return;
+    }
+
+    // Check if status already matches to avoid infinite loops
+    if (attendees[userAttendeeIndex].responseStatus === status) {
+      console.log(`RSVP status already ${status}, skipping update`);
+      return;
+    }
+
+    // Update the attendee's response status
+    attendees[userAttendeeIndex].responseStatus = status;
+
+    // Update the event with the new attendees list
+    await api.call(
+      "PATCH",
+      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`,
+      undefined,
+      { attendees }
+    );
   }
 }
 
