@@ -4,7 +4,7 @@ import {
   type ActivityMeta,
   ActivityType,
   type ActorId,
-  AuthorType,
+  ActorType,
 } from "@plotday/agent/plot";
 
 import { type ActivityItem } from "../../../types";
@@ -151,10 +151,10 @@ export function buildActivityFromDbRecord(
       name: activityRecord.author_name,
       type:
         activityRecord.author_type === "user"
-          ? AuthorType.User
+          ? ActorType.User
           : activityRecord.author_type === "priority_agent"
-          ? AuthorType.Agent
-          : AuthorType.Contact,
+          ? ActorType.Agent
+          : ActorType.Contact,
     },
     priority: {
       id: activityRecord.priority_id,

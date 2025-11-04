@@ -6,6 +6,7 @@ import {
   ActivityType,
   type ActivityUpdate,
   type NewActivity,
+  type PickPriorityConfig,
 } from "@plotday/agent/plot";
 import { ContactAccess } from "@plotday/agent/tools/plot";
 import { type Database, safeQuery } from "@plotday/db";
@@ -101,9 +102,81 @@ export async function createActivity(
     parent = null;
   }
 
-  // Validate priority access
-  const targetPriorityId =
-    parent?.priority_id ?? activity.priority?.id ?? plot.priorityId;
+  // Determine target priority, handling pickPriority for similarity-based selection
+  let targetPriorityId: string;
+  let embedding: number[] | null = null;
+
+  // Determine pickPriority config: explicit priority, provided config, or default
+  let pickPriorityConfig: PickPriorityConfig | undefined;
+  if ("priority" in activity) {
+    // Explicit priority provided, don't use pickPriority
+    pickPriorityConfig = undefined;
+  } else if ("pickPriority" in activity) {
+    // pickPriority key exists, use it (or default to {content: true} if undefined)
+    pickPriorityConfig = activity.pickPriority ?? { content: true };
+  } else {
+    // Neither priority nor pickPriority key exists, use default
+    pickPriorityConfig = { content: true };
+  }
+
+  // Apply pickPriority logic if config is defined
+  if (pickPriorityConfig) {
+    // Parse config into required filters and scored fields
+    const requiredFilters: Record<string, true> = {};
+    const scoredFields: Record<string, number> = {};
+
+    for (const [key, value] of Object.entries(pickPriorityConfig)) {
+      if (value === true) {
+        requiredFilters[key] = true;
+      } else if (typeof value === "number") {
+        scoredFields[key] = value;
+      }
+    }
+
+    // Generate embedding if content is in config
+    if (pickPriorityConfig.content !== undefined) {
+      const textToEmbed = [activity.title, activity.note]
+        .filter(Boolean)
+        .join(" ");
+
+      if (textToEmbed.trim().length > 0) {
+        embedding = await plot.ai.embed(textToEmbed);
+      }
+    }
+
+    // Build activity data for comparison
+    const activityData: any = {
+      type: activity.type,
+      mentions: activity.mentions || [],
+      meta: activity.meta || {},
+    };
+
+    // Call find_matching_activities_scored with configured filters and scoring
+    const matchResult = await plot.supabase.rpc(
+      "find_matching_activities_scored",
+      {
+        query_embedding: embedding ? JSON.stringify(embedding) : "[]",
+        created_by_id: plot.priorityAgentId,
+        required_filters: requiredFilters,
+        scored_fields: scoredFields,
+        activity_data: activityData,
+        similarity_threshold: 0.7, // Strong match threshold for required content
+      }
+    );
+
+    if (matchResult.data && Array.isArray(matchResult.data) && matchResult.data.length > 0) {
+      // Use the priority from the best matching activity
+      targetPriorityId = matchResult.data[0].priority_id;
+    } else {
+      // No matching activities found, use parent or default
+      targetPriorityId = parent?.priority_id ?? plot.priorityId;
+    }
+  } else {
+    // Explicit priority specified: parent > explicit > default
+    targetPriorityId =
+      parent?.priority_id ?? ("priority" in activity ? activity.priority.id : undefined) ?? plot.priorityId;
+  }
+
   await plot.validatePriorityAccess(targetPriorityId);
 
   // Validate activity create access permissions
@@ -165,6 +238,8 @@ export async function createActivity(
     mentions: activity.mentions ?? null,
     updated_by: plot.getUpdatedBy(),
     path,
+    embedding: embedding ? JSON.stringify(embedding) : null,
+    pick_priority: pickPriorityConfig ?? null,
   };
 
   // Handle scheduling fields using calculated dbEnd
@@ -286,10 +361,10 @@ export async function updateActivity(
   // Validate activity update access permissions
   await plot.validateActivityUpdateAccess(activity.id);
 
-  // Fetch activity priority to validate access
+  // Fetch activity priority and created_by to validate access
   const { data: existingActivity, error: fetchError } = await plot.supabase
     .from("activity")
-    .select("priority_id")
+    .select("priority_id, created_by")
     .eq("id", activity.id)
     .single();
 
@@ -488,13 +563,54 @@ export async function updateActivity(
     throw new Error(`Activity update failed: ${updateError.message}`);
   }
 
-  // Handle tags separately using RPC
-  if (activity.tags) {
+  // Handle full tags object replacement (only for activities created by this agent)
+  if (activity.tags !== undefined) {
+    if (existingActivity.created_by !== plot.priorityAgentId) {
+      throw new Error(
+        `Cannot update tags field: activity was not created by this agent (activity.createdBy: ${existingActivity.created_by}, agent: ${plot.priorityAgentId}). Use agentTags instead to add/remove tags for this agent.`
+      );
+    }
+
+    // Delete all existing tags for this activity
+    const { error: deleteError } = await plot.supabase
+      .from("activity_tag")
+      .delete()
+      .eq("activity_id", activity.id);
+
+    if (deleteError) {
+      throw new Error(`Failed to delete existing tags: ${deleteError.message}`);
+    }
+
+    // Insert new tags
+    const newTags = Object.entries(activity.tags)
+      .filter(([_, actorIds]) => actorIds && actorIds.length > 0)
+      .flatMap(([tagId, actorIds]) =>
+        actorIds!.map((actorId) => ({
+          activity_id: activity.id,
+          tag_id: parseInt(tagId),
+          actor_id: actorId,
+          updated_by: plot.getUpdatedBy(),
+        }))
+      );
+
+    if (newTags.length > 0) {
+      const { error: insertError } = await plot.supabase
+        .from("activity_tag")
+        .insert(newTags);
+
+      if (insertError) {
+        throw new Error(`Failed to insert new tags: ${insertError.message}`);
+      }
+    }
+  }
+
+  // Handle agent tags separately using RPC (for adding/removing caller's own tags)
+  if (activity.agentTags) {
     await plot.supabase.rpc("update_activity_tags", {
       p_activity_id: activity.id,
       p_user_id: plot.priorityAgentId,
       p_client_id: plot.getUpdatedBy(),
-      p_tag_updates: activity.tags,
+      p_tag_updates: activity.agentTags,
     });
   }
 }
@@ -660,8 +776,80 @@ export async function createActivities(
 
     await plot.validateActivityCreateAccess(activity);
 
-    // Validate priority access
-    const targetPriorityId = activity.priority?.id || plot.priorityId;
+    // Determine target priority, handling pickPriority for similarity-based selection
+    let targetPriorityId: string;
+    let embedding: number[] | null = null;
+
+    // Determine pickPriority config: explicit priority, provided config, or default
+    let pickPriorityConfig: PickPriorityConfig | undefined;
+    if ("priority" in activity) {
+      // Explicit priority provided, don't use pickPriority
+      pickPriorityConfig = undefined;
+    } else if ("pickPriority" in activity) {
+      // pickPriority key exists, use it (or default to {content: true} if undefined)
+      pickPriorityConfig = activity.pickPriority ?? { content: true };
+    } else {
+      // Neither priority nor pickPriority key exists, use default
+      pickPriorityConfig = { content: true };
+    }
+
+    // Apply pickPriority logic if config is defined
+    if (pickPriorityConfig) {
+      // Parse config into required filters and scored fields
+      const requiredFilters: Record<string, true> = {};
+      const scoredFields: Record<string, number> = {};
+
+      for (const [key, value] of Object.entries(pickPriorityConfig)) {
+        if (value === true) {
+          requiredFilters[key] = true;
+        } else if (typeof value === "number") {
+          scoredFields[key] = value;
+        }
+      }
+
+      // Generate embedding if content is in config
+      if (pickPriorityConfig.content !== undefined) {
+        const textToEmbed = [activity.title, activity.note]
+          .filter(Boolean)
+          .join(" ");
+
+        if (textToEmbed.trim().length > 0) {
+          embedding = await plot.ai.embed(textToEmbed);
+        }
+      }
+
+      // Build activity data for comparison
+      const activityData: any = {
+        type: activity.type,
+        mentions: activity.mentions || [],
+        meta: activity.meta || {},
+      };
+
+      // Call find_matching_activities_scored with configured filters and scoring
+      const matchResult = await plot.supabase.rpc(
+        "find_matching_activities_scored",
+        {
+          query_embedding: embedding ? JSON.stringify(embedding) : "[]",
+          created_by_id: plot.priorityAgentId,
+          required_filters: requiredFilters,
+          scored_fields: scoredFields,
+          activity_data: activityData,
+          similarity_threshold: 0.7, // Strong match threshold for required content
+        }
+      );
+
+      if (matchResult.data && Array.isArray(matchResult.data) && matchResult.data.length > 0) {
+        // Use the priority from the best matching activity
+        targetPriorityId = matchResult.data[0].priority_id;
+      } else {
+        // No matching activities found, use default
+        targetPriorityId = plot.priorityId;
+      }
+    } else {
+      // Explicit priority specified: explicit > default
+      targetPriorityId = ("priority" in activity ? activity.priority.id : undefined) ?? plot.priorityId;
+    }
+
     await plot.validatePriorityAccess(targetPriorityId);
 
     // Map ActivityType enum to database activity_type
@@ -708,6 +896,8 @@ export async function createActivities(
       meta: activity.meta ?? null,
       mentions: activity.mentions ?? null,
       updated_by: plot.getUpdatedBy(),
+      embedding: embedding ? JSON.stringify(embedding) : null,
+      pick_priority: pickPriorityConfig ?? null,
     };
 
     // Handle scheduling fields using calculated dbEnd
@@ -981,7 +1171,6 @@ async function createActivityException(
     recurrenceCount: activity.recurrenceCount ?? null,
     doneAt: activity.doneAt ?? null,
     note: activity.note ?? null,
-    noteType: activity.noteType,
     title: activity.title ?? null,
     parent: null,
     links: activity.links ?? null,

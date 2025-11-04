@@ -1,4 +1,4 @@
-import { type Actor, type ActorId, AuthorType } from "@plotday/agent/plot";
+import { type Actor, type ActorId, ActorType } from "@plotday/agent/plot";
 import { ContactAccess } from "@plotday/agent/tools/plot";
 
 import type { Plot } from "./index";
@@ -46,7 +46,7 @@ export async function addContacts(
   const actors: Actor[] = (result.data || []).map((contact) => {
     const actor: Actor = {
       id: contact.id as ActorId,
-      type: contact.user_id ? AuthorType.User : AuthorType.Contact,
+      type: contact.user_id ? ActorType.User : ActorType.Contact,
       name: contact.name || null,
     };
     // Email is always present for contacts (required field)
@@ -84,10 +84,10 @@ export async function getActors(
       id: actor.id as ActorId,
       type:
         actor.type === "user"
-          ? AuthorType.User
+          ? ActorType.User
           : actor.type === "priority_agent"
-          ? AuthorType.Agent
-          : AuthorType.Contact,
+          ? ActorType.Agent
+          : ActorType.Contact,
       name: actor.name || null,
     };
     // Only include email if it exists

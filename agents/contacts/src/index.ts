@@ -196,7 +196,7 @@ export default class ContactsAgent extends Agent<ContactsAgent> {
     provider: ContactProvider,
     authToken: string
   ): Promise<void> {
-    console.log("Sync selected:", link.title);
+    console.log("Sync selected:", "title" in link ? link.title : link.type);
 
     try {
       // Start sync for the contacts

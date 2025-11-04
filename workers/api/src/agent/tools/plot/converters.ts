@@ -5,7 +5,7 @@ import {
   ActivityType,
   type Actor,
   type ActorId,
-  AuthorType,
+  ActorType,
   type Priority,
 } from "@plotday/agent/plot";
 import type { Database } from "@plotday/db";
@@ -43,18 +43,18 @@ export function fromDbActivity(
       break;
   }
 
-  // Map actor type to AuthorType enum
-  let authorType: number = AuthorType.User; // Default to User
+  // Map actor type to ActorType enum
+  let authorType: number = ActorType.User; // Default to User
   if (dbActivity.author.type) {
     switch (dbActivity.author.type) {
       case "user":
-        authorType = AuthorType.User;
+        authorType = ActorType.User;
         break;
       case "contact":
-        authorType = AuthorType.Contact;
+        authorType = ActorType.Contact;
         break;
       case "priority_agent":
-        authorType = AuthorType.Agent;
+        authorType = ActorType.Agent;
         break;
     }
   }

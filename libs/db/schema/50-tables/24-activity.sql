@@ -32,8 +32,12 @@ CREATE TABLE "public"."activity" (
     "recurrence_exdates" timestamptz[],
     "recurrence_dates" timestamptz[],
     "meta" jsonb,
-    "mentions" uuid[]
+    "mentions" uuid[],
+    "embedding" halfvec (384),
+    "pick_priority" jsonb
 );
+
+CREATE INDEX ON activity USING hnsw (embedding halfvec_cosine_ops);
 
 CREATE TABLE "public"."activity_exception" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
@@ -58,6 +62,8 @@ COMMENT ON COLUMN "public"."activity"."author_id" IS 'The actor to credit with c
 COMMENT ON COLUMN "public"."activity"."created_by" IS 'The user_id or priority_agent_id that actually created this activity. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
 
 COMMENT ON COLUMN "public"."activity"."mentions" IS 'Array of actor IDs (user_id, contact_id, or priority_agent_id) that are mentioned in this activity via @-mentions.';
+
+COMMENT ON COLUMN "public"."activity"."pick_priority" IS 'The PickPriorityConfig used to automatically select this activity''s priority. Null if priority was explicitly specified. Used when moving activities to find similar activities to move. Not exposed to app or API.';
 
 COMMENT ON COLUMN "public"."activity_exception"."occurrence" IS 'Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM';
 

@@ -24,6 +24,7 @@ export class AI extends Tool implements IAI {
   private anthropic: ReturnType<typeof createAnthropic>;
   private google: ReturnType<typeof createGoogleGenerativeAI>;
   private cloudflare: ReturnType<typeof createWorkersAI>;
+  private workersAI: Bindings["AI"];
   private usage: DurableObjectStub<Usage>;
 
   constructor({
@@ -59,6 +60,7 @@ export class AI extends Tool implements IAI {
 
     // Workers AI doesn't go through the gateway, it uses the binding directly
     this.cloudflare = createWorkersAI({ binding: env.AI });
+    this.workersAI = env.AI;
 
     // Initialize usage tracking
     this.usage = Usage.Get(env, priorityAgentId);
@@ -237,6 +239,27 @@ export class AI extends Tool implements IAI {
           }
         : undefined,
     };
+  }
+
+  /**
+   * Generate embeddings for text using Cloudflare Workers AI.
+   * Returns a 384-dimensional vector for semantic similarity search.
+   *
+   * @param text - The text to embed
+   * @returns Promise resolving to a 384-dimension number array
+   */
+  async embed(text: string): Promise<number[]> {
+    if (!text || text.trim().length === 0) {
+      throw new Error("Cannot embed empty text");
+    }
+
+    // Use Workers AI binding directly for embeddings
+    const response = (await this.workersAI.run("@cf/baai/bge-small-en-v1.5", {
+      text,
+    })) as { data: number[][] };
+
+    // Response should contain the embedding array
+    return response.data[0];
   }
 
   /**

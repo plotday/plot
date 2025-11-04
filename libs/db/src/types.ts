@@ -45,6 +45,7 @@ export type Database = {
           done_at: string | null
           draft: boolean
           duration: unknown | null
+          embedding: unknown | null
           id: string
           links: Json | null
           mentions: string[] | null
@@ -53,6 +54,7 @@ export type Database = {
           on: unknown | null
           order: number
           path: unknown
+          pick_priority: Json | null
           priority_id: string
           private: boolean
           recurrence_dates: string[] | null
@@ -74,6 +76,7 @@ export type Database = {
           done_at?: string | null
           draft?: boolean
           duration?: unknown | null
+          embedding?: unknown | null
           id?: string
           links?: Json | null
           mentions?: string[] | null
@@ -82,6 +85,7 @@ export type Database = {
           on?: unknown | null
           order?: number
           path?: unknown
+          pick_priority?: Json | null
           priority_id: string
           private?: boolean
           recurrence_dates?: string[] | null
@@ -102,6 +106,7 @@ export type Database = {
           done_at?: string | null
           draft?: boolean
           duration?: unknown | null
+          embedding?: unknown | null
           id?: string
           links?: Json | null
           mentions?: string[] | null
@@ -110,6 +115,7 @@ export type Database = {
           on?: unknown | null
           order?: number
           path?: unknown
+          pick_priority?: Json | null
           priority_id?: string
           private?: boolean
           recurrence_dates?: string[] | null
@@ -1661,6 +1667,7 @@ export type Database = {
           done_at: string | null
           draft: boolean
           duration: unknown | null
+          embedding: unknown | null
           id: string
           links: Json | null
           mentions: string[] | null
@@ -1669,6 +1676,7 @@ export type Database = {
           on: unknown | null
           order: number
           path: unknown
+          pick_priority: Json | null
           priority_id: string
           private: boolean
           recurrence_dates: string[] | null
@@ -1708,6 +1716,36 @@ export type Database = {
       count_not_null: {
         Args: { val: unknown }
         Returns: number
+      }
+      find_matching_activities_scored: {
+        Args: {
+          activity_data?: Json
+          created_by_id: string
+          query_embedding: string
+          required_filters?: Json
+          scored_fields?: Json
+          similarity_threshold?: number
+        }
+        Returns: {
+          id: string
+          priority_id: string
+          title: string
+          total_score: number
+        }[]
+      }
+      find_similar_activities: {
+        Args: {
+          created_by_id: string
+          match_limit?: number
+          query_embedding: string
+          similarity_threshold?: number
+        }
+        Returns: {
+          id: string
+          priority_id: string
+          similarity: number
+          title: string
+        }[]
       }
       gen_random_uuid_v7: {
         Args: Record<PropertyKey, never>
@@ -2019,46 +2057,6 @@ export type Database = {
         Returns: boolean
       }
       user_timezone: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      uuid_generate_v1: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      uuid_generate_v1mc: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      uuid_generate_v3: {
-        Args: { name: string; namespace: string }
-        Returns: string
-      }
-      uuid_generate_v4: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      uuid_generate_v5: {
-        Args: { name: string; namespace: string }
-        Returns: string
-      }
-      uuid_nil: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      uuid_ns_dns: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      uuid_ns_oid: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      uuid_ns_url: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      uuid_ns_x500: {
         Args: Record<PropertyKey, never>
         Returns: string
       }
