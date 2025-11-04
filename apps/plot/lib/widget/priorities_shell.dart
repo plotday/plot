@@ -20,7 +20,6 @@ class PrioritiesShell extends StatefulWidget implements AutoRouteWrapper {
 }
 
 class _PrioritiesShellState extends State<PrioritiesShell> {
-  int _tabIndex = 1; // Default to Activities tab (current priority)
   bool _previousMultiPanel = false;
 
   @override
@@ -76,9 +75,6 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
                     footer: FBottomNavigationBar(
                       index: tabsRouter.activeIndex,
                       onChange: (index) {
-                        setState(() {
-                          _tabIndex = index;
-                        });
                         tabsRouter.setActiveIndex(index);
                       },
                       children: [
