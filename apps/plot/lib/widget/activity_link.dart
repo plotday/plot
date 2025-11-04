@@ -29,6 +29,8 @@ class ActivityLinkWidget extends StatelessWidget {
         return CallbackLinkButton(link: link as CallbackLink);
       case LinkType.external:
         return ExternalLinkButton(link: link as ExternalLink);
+      case LinkType.conferencing:
+        return ConferencingLinkButton(link: link as ConferencingLink);
       default:
         return SizedBox.shrink();
     }
@@ -114,6 +116,43 @@ class ExternalLinkButton extends StatelessWidget {
   }
 }
 
+/// A button widget for conferencing links with provider-specific titles
+class ConferencingLinkButton extends StatelessWidget {
+  const ConferencingLinkButton({required this.link, super.key});
+
+  final ConferencingLink link;
+
+  @override
+  Widget build(BuildContext context) {
+    return FButton(onPress: () => _handleTap(), child: Text(_getTitle()));
+  }
+
+  String _getTitle() {
+    switch (link.provider) {
+      case ConferencingProvider.googleMeet:
+        return 'Join Google Meet';
+      case ConferencingProvider.zoom:
+        return 'Join Zoom Meeting';
+      case ConferencingProvider.microsoftTeams:
+        return 'Join Teams Meeting';
+      case ConferencingProvider.webex:
+        return 'Join Webex Meeting';
+      case ConferencingProvider.other:
+        return 'Join Meeting';
+    }
+  }
+
+  void _handleTap() {
+    final url = link.url;
+    try {
+      final uri = Uri.parse(url);
+      launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('Failed to launch URL: $url - Error: $e');
+    }
+  }
+}
+
 /// Widget that displays all links for an activity with proper type-based rendering
 class ActivityLinksList extends StatelessWidget {
   const ActivityLinksList({
@@ -155,6 +194,10 @@ class ActivityLinksList extends StatelessWidget {
         final callbackLink = link as CallbackLink;
         key = ValueKey('callback_${callbackLink.token}');
         return CallbackLinkButton(key: key, link: callbackLink);
+      } else if (link.type == LinkType.conferencing) {
+        final conferencingLink = link as ConferencingLink;
+        key = ValueKey('conferencing_${conferencingLink.url}');
+        return ConferencingLinkButton(key: key, link: conferencingLink);
       } else {
         final externalLink = link as ExternalLink;
         key = ValueKey('external_${externalLink.url}');
