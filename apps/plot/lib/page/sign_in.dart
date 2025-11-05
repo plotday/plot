@@ -9,6 +9,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/router.dart' show InvitationRoute;
 import 'logging.dart';
 
 @RoutePage()
@@ -42,6 +43,9 @@ class _SignInPageState extends State<SignInPage> {
         // Navigate when user is ready (Store.init has completed)
         if (state is UserReady) {
           context.router.navigatePath(widget.returnTo ?? '/');
+        } else if (state is UserWaitlisted) {
+          // Navigate to invitation page for waitlisted users
+          context.router.navigate(const InvitationRoute());
         }
       },
       child: Scaffold(
