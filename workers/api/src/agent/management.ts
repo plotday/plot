@@ -1,7 +1,7 @@
 import { type Database, type SupabaseClient, safeQuery } from "@plotday/db";
 
-import { type AgentEnvironment } from "../env";
 import type { agentFactory as AgentFactory } from ".";
+import { type AgentEnvironment } from "../env";
 
 export async function add(
   supabase: SupabaseClient,
@@ -149,11 +149,11 @@ export async function getAll(supabase: SupabaseClient, priorityId: string) {
         // For personal agents, author is the user themselves
         if (agent.environment === "personal") {
           // Get user info from auth.users
-          const { data: userData } = await supabase.auth.getUser();
+          const { data: userData } = await supabase.auth.getClaims();
           return {
             ...agent,
-            author_name: userData?.user?.email || "You",
-            author_email: userData?.user?.email || null,
+            author_name: userData?.claims?.email || "You",
+            author_email: userData?.claims?.email || null,
             author_url: null,
           };
         }

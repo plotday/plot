@@ -47,3 +47,16 @@ CREATE OR REPLACE FUNCTION public.actor (activity)
         actor.id = $1.author_id
 $function$;
 
+CREATE OR REPLACE FUNCTION public.actor (user_activity)
+    RETURNS SETOF actor ROWS 1
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT
+        actor.*
+    FROM
+        actor
+    WHERE
+        actor.id = $1.author_id
+$function$;
+

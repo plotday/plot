@@ -37,21 +37,21 @@ export type Database = {
       activity: {
         Row: {
           assignee_id: string | null
-          at: unknown | null
+          at: unknown
           author_id: string
           created_at: string
           created_by: string
           deleted_at: string | null
           done_at: string | null
           draft: boolean
-          duration: unknown | null
-          embedding: unknown | null
+          duration: unknown
+          embedding: unknown
           id: string
           links: Json | null
           mentions: string[] | null
           meta: Json | null
           note: string | null
-          on: unknown | null
+          on: unknown
           order: number
           path: unknown
           pick_priority: Json | null
@@ -64,25 +64,34 @@ export type Database = {
           type: Database["public"]["Enums"]["activity_type"]
           updated_at: string
           updated_by: number
-          actor: unknown | null
+          actor: {
+            avatar_url: string | null
+            created_at: string | null
+            deleted_at: string | null
+            email: string | null
+            id: string | null
+            name: string | null
+            type: string | null
+            updated_at: string | null
+          } | null
         }
         Insert: {
           assignee_id?: string | null
-          at?: unknown | null
+          at?: unknown
           author_id: string
           created_at?: string
           created_by: string
           deleted_at?: string | null
           done_at?: string | null
           draft?: boolean
-          duration?: unknown | null
-          embedding?: unknown | null
+          duration?: unknown
+          embedding?: unknown
           id?: string
           links?: Json | null
           mentions?: string[] | null
           meta?: Json | null
           note?: string | null
-          on?: unknown | null
+          on?: unknown
           order?: number
           path?: unknown
           pick_priority?: Json | null
@@ -98,21 +107,21 @@ export type Database = {
         }
         Update: {
           assignee_id?: string | null
-          at?: unknown | null
+          at?: unknown
           author_id?: string
           created_at?: string
           created_by?: string
           deleted_at?: string | null
           done_at?: string | null
           draft?: boolean
-          duration?: unknown | null
-          embedding?: unknown | null
+          duration?: unknown
+          embedding?: unknown
           id?: string
           links?: Json | null
           mentions?: string[] | null
           meta?: Json | null
           note?: string | null
-          on?: unknown | null
+          on?: unknown
           order?: number
           path?: unknown
           pick_priority?: Json | null
@@ -174,48 +183,48 @@ export type Database = {
       activity_exception: {
         Row: {
           activity_id: string
-          at: unknown | null
+          at: unknown
           created_at: string
           deleted_at: string | null
           done_at: string | null
-          duration: unknown | null
+          duration: unknown
           id: string
           meta: Json | null
           note: string | null
           occurrence: string
-          on: unknown | null
+          on: unknown
           title: string | null
           updated_at: string
           updated_by: number
         }
         Insert: {
           activity_id: string
-          at?: unknown | null
+          at?: unknown
           created_at?: string
           deleted_at?: string | null
           done_at?: string | null
-          duration?: unknown | null
+          duration?: unknown
           id?: string
           meta?: Json | null
           note?: string | null
           occurrence: string
-          on?: unknown | null
+          on?: unknown
           title?: string | null
           updated_at?: string
           updated_by?: number
         }
         Update: {
           activity_id?: string
-          at?: unknown | null
+          at?: unknown
           created_at?: string
           deleted_at?: string | null
           done_at?: string | null
-          duration?: unknown | null
+          duration?: unknown
           id?: string
           meta?: Json | null
           note?: string | null
           occurrence?: string
-          on?: unknown | null
+          on?: unknown
           title?: string | null
           updated_at?: string
           updated_by?: number
@@ -507,9 +516,11 @@ export type Database = {
           name: string | null
           updated_at: string
           user_id: string | null
-          organization:
-            | Database["public"]["Tables"]["organization"]["Row"]
-            | null
+          organization: {
+            created_at: string
+            id: number
+            name: string
+          } | null
         }
         Insert: {
           avatar_url?: string | null
@@ -827,7 +838,7 @@ export type Database = {
       priority_settings: {
         Row: {
           color: number | null
-          path: unknown | null
+          path: unknown
           pomodoro: number | null
           priority_id: string
           top_order: number | null
@@ -836,7 +847,7 @@ export type Database = {
         }
         Insert: {
           color?: number | null
-          path?: unknown | null
+          path?: unknown
           pomodoro?: number | null
           priority_id: string
           top_order?: number | null
@@ -845,7 +856,7 @@ export type Database = {
         }
         Update: {
           color?: number | null
-          path?: unknown | null
+          path?: unknown
           pomodoro?: number | null
           priority_id?: string
           top_order?: number | null
@@ -1451,7 +1462,7 @@ export type Database = {
       priority_settings_inherited: {
         Row: {
           color: number | null
-          path: unknown | null
+          path: unknown
           pomodoro: number | null
           priority_id: string | null
           user_id: string | null
@@ -1513,26 +1524,26 @@ export type Database = {
       user_activity: {
         Row: {
           assignee_id: string | null
-          at: unknown | null
+          at: unknown
           author_id: string | null
           created_at: string | null
           deleted_at: string | null
           done_at: string | null
           draft: boolean | null
-          duration: unknown | null
+          duration: unknown
           id: string | null
           links: Json | null
           mentions: string[] | null
           meta: Json | null
           note: string | null
-          on: unknown | null
+          on: unknown
           order: number | null
-          path: unknown | null
+          path: unknown
           priority_id: string | null
-          priority_path: unknown | null
+          priority_path: unknown
           private: boolean | null
-          range_at: unknown | null
-          range_on: unknown | null
+          range_at: unknown
+          range_on: unknown
           recurrence_dates: string[] | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
@@ -1542,6 +1553,16 @@ export type Database = {
           updated_at: string | null
           updated_by: number | null
           user_id: string | null
+          actor: {
+            avatar_url: string | null
+            created_at: string | null
+            deleted_at: string | null
+            email: string | null
+            id: string | null
+            name: string | null
+            type: string | null
+            updated_at: string | null
+          } | null
         }
         Relationships: [
           {
@@ -1590,14 +1611,14 @@ export type Database = {
       }
       user_activity_exception: {
         Row: {
-          at: unknown | null
+          at: unknown
           id: string | null
           note: string | null
           occurrence: string | null
-          on: unknown | null
-          priority_path: unknown | null
-          range_at: unknown | null
-          range_on: unknown | null
+          on: unknown
+          priority_path: unknown
+          range_at: unknown
+          range_on: unknown
           title: string | null
           updated_at: string | null
           user_id: string | null
@@ -1608,9 +1629,9 @@ export type Database = {
         Row: {
           id: string | null
           occurrence: string | null
-          priority_path: unknown | null
-          range_at: unknown | null
-          range_on: unknown | null
+          priority_path: unknown
+          range_at: unknown
+          range_on: unknown
           tags: Json | null
           updated_at: string | null
           user_id: string | null
@@ -1633,7 +1654,7 @@ export type Database = {
           created_by: string | null
           deleted_at: string | null
           id: string | null
-          path: unknown | null
+          path: unknown
           pomodoro: number | null
           root: boolean | null
           title: string | null
@@ -1647,33 +1668,25 @@ export type Database = {
       }
     }
     Functions: {
-      _ltree_compress: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      _ltree_gist_options: {
-        Args: { "": unknown }
-        Returns: undefined
-      }
       activity_thread: {
         Args: { p_activity_id: string }
         Returns: {
           assignee_id: string | null
-          at: unknown | null
+          at: unknown
           author_id: string
           created_at: string
           created_by: string
           deleted_at: string | null
           done_at: string | null
           draft: boolean
-          duration: unknown | null
-          embedding: unknown | null
+          duration: unknown
+          embedding: unknown
           id: string
           links: Json | null
           mentions: string[] | null
           meta: Json | null
           note: string | null
-          on: unknown | null
+          on: unknown
           order: number
           path: unknown
           pick_priority: Json | null
@@ -1687,36 +1700,57 @@ export type Database = {
           updated_at: string
           updated_by: number
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "activity"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
-      actor: {
-        Args: { "": Database["public"]["Tables"]["activity"]["Row"] }
-        Returns: {
-          avatar_url: string | null
-          created_at: string | null
-          deleted_at: string | null
-          email: string | null
-          id: string | null
-          name: string | null
-          type: string | null
-          updated_at: string | null
-        }[]
-      }
-      all_views_secure: {
-        Args: Record<PropertyKey, never>
-        Returns: boolean
-      }
-      binary_quantize: {
-        Args: { "": string } | { "": unknown }
-        Returns: unknown
-      }
-      can_access_priority: {
-        Args: { _priority_id: string } | { _priority_path: unknown }
-        Returns: boolean
-      }
-      count_not_null: {
-        Args: { val: unknown }
-        Returns: number
-      }
+      actor:
+        | {
+            Args: { "": Database["public"]["Tables"]["activity"]["Row"] }
+            Returns: {
+              avatar_url: string | null
+              created_at: string | null
+              deleted_at: string | null
+              email: string | null
+              id: string | null
+              name: string | null
+              type: string | null
+              updated_at: string | null
+            }
+            SetofOptions: {
+              from: "activity"
+              to: "actor"
+              isOneToOne: true
+              isSetofReturn: true
+            }
+          }
+        | {
+            Args: { "": Database["public"]["Views"]["user_activity"]["Row"] }
+            Returns: {
+              avatar_url: string | null
+              created_at: string | null
+              deleted_at: string | null
+              email: string | null
+              id: string | null
+              name: string | null
+              type: string | null
+              updated_at: string | null
+            }
+            SetofOptions: {
+              from: "user_activity"
+              to: "actor"
+              isOneToOne: true
+              isSetofReturn: true
+            }
+          }
+      all_views_secure: { Args: never; Returns: boolean }
+      can_access_priority:
+        | { Args: { _priority_path: unknown }; Returns: boolean }
+        | { Args: { _priority_id: string }; Returns: boolean }
+      count_not_null: { Args: { val: unknown }; Returns: number }
       find_matching_activities_scored: {
         Args: {
           activity_data?: Json
@@ -1747,14 +1781,8 @@ export type Database = {
           title: string
         }[]
       }
-      gen_random_uuid_v7: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      generate_path: {
-        Args: { parent?: unknown }
-        Returns: unknown
-      }
+      gen_random_uuid_v7: { Args: never; Returns: string }
+      generate_path: { Args: { parent?: unknown }; Returns: unknown }
       get_accessible_agents: {
         Args: { p_priority_id: string }
         Returns: {
@@ -1769,15 +1797,15 @@ export type Database = {
           user_id: string | null
           version: string
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "agent"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
-      get_api_root: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      get_domain: {
-        Args: { email: string }
-        Returns: string
-      }
+      get_api_root: { Args: never; Returns: string }
+      get_domain: { Args: { email: string }; Returns: string }
       get_tag_type: {
         Args: { tag_id: number }
         Returns: Database["public"]["Enums"]["tag_type"]
@@ -1788,46 +1816,7 @@ export type Database = {
           user_id: string
         }[]
       }
-      halfvec_avg: {
-        Args: { "": number[] }
-        Returns: unknown
-      }
-      halfvec_out: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      halfvec_send: {
-        Args: { "": unknown }
-        Returns: string
-      }
-      halfvec_typmod_in: {
-        Args: { "": unknown[] }
-        Returns: number
-      }
-      hash_ltree: {
-        Args: { "": unknown }
-        Returns: number
-      }
-      hnsw_bit_support: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      hnsw_halfvec_support: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      hnsw_sparsevec_support: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      hnswhandler: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      insert_domain: {
-        Args: { email: string }
-        Returns: number
-      }
+      insert_domain: { Args: { email: string }; Returns: number }
       is_accessible_agent: {
         Args: {
           p_agent_environment: Database["public"]["Enums"]["agent_environment"]
@@ -1836,162 +1825,35 @@ export type Database = {
         }
         Returns: boolean
       }
-      is_finite: {
-        Args: { test: unknown }
-        Returns: boolean
-      }
-      is_lower: {
-        Args: { "": string }
-        Returns: boolean
-      }
-      ivfflat_bit_support: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ivfflat_halfvec_support: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ivfflathandler: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      l2_norm: {
-        Args: { "": unknown } | { "": unknown }
-        Returns: number
-      }
-      l2_normalize: {
-        Args: { "": string } | { "": unknown } | { "": unknown }
-        Returns: string
-      }
-      lca: {
-        Args: { "": unknown[] }
-        Returns: unknown
-      }
-      lquery_in: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      lquery_out: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      lquery_recv: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      lquery_send: {
-        Args: { "": unknown }
-        Returns: string
-      }
-      ltree_compress: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ltree_decompress: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ltree_gist_in: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ltree_gist_options: {
-        Args: { "": unknown }
-        Returns: undefined
-      }
-      ltree_gist_out: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ltree_in: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ltree_out: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ltree_recv: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ltree_send: {
-        Args: { "": unknown }
-        Returns: string
-      }
-      ltree2text: {
-        Args: { "": unknown }
-        Returns: string
-      }
-      ltxtq_in: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ltxtq_out: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ltxtq_recv: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      ltxtq_send: {
-        Args: { "": unknown }
-        Returns: string
-      }
-      migrate_existing_users_to_contacts: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
-      nlevel: {
-        Args: { "": unknown }
-        Returns: number
-      }
-      order_first: {
-        Args: Record<PropertyKey, never>
-        Returns: number
-      }
+      is_finite: { Args: { test: unknown }; Returns: boolean }
+      is_lower: { Args: { "": string }; Returns: boolean }
+      migrate_existing_users_to_contacts: { Args: never; Returns: undefined }
+      order_first: { Args: never; Returns: number }
       organization: {
         Args: { "": Database["public"]["Tables"]["contact"]["Row"] }
         Returns: {
           created_at: string
           id: number
           name: string
-        }[]
+        }
+        SetofOptions: {
+          from: "contact"
+          to: "organization"
+          isOneToOne: true
+          isSetofReturn: true
+        }
       }
-      parent_path: {
-        Args: { p: unknown }
-        Returns: unknown
-      }
+      parent_path: { Args: { p: unknown }; Returns: unknown }
       redeem_invitation_code: {
         Args: { invitation_code: string; user_id: string }
         Returns: Json
       }
-      server_timestamp: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
+      server_timestamp: { Args: never; Returns: string }
       set_user_status: {
         Args: { status: string; user_id: string }
         Returns: undefined
       }
-      sparsevec_out: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      sparsevec_send: {
-        Args: { "": unknown }
-        Returns: string
-      }
-      sparsevec_typmod_in: {
-        Args: { "": unknown[] }
-        Returns: number
-      }
-      text2ltree: {
-        Args: { "": string }
-        Returns: unknown
-      }
+      text2ltree: { Args: { "": string }; Returns: unknown }
       tstzrange_to_daterange: {
         Args: { p_range: unknown; p_timezone?: string }
         Returns: unknown
@@ -2046,48 +1908,18 @@ export type Database = {
         }
         Returns: string
       }
-      user_contact_id: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      user_has_priority_access: {
-        Args:
-          | { target_priority_id: string; user_id: string }
-          | { target_priority_path: unknown; user_id: string }
-        Returns: boolean
-      }
-      user_timezone: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      vector_avg: {
-        Args: { "": number[] }
-        Returns: string
-      }
-      vector_dims: {
-        Args: { "": string } | { "": unknown }
-        Returns: number
-      }
-      vector_norm: {
-        Args: { "": string }
-        Returns: number
-      }
-      vector_out: {
-        Args: { "": string }
-        Returns: unknown
-      }
-      vector_send: {
-        Args: { "": string }
-        Returns: string
-      }
-      vector_typmod_in: {
-        Args: { "": unknown[] }
-        Returns: number
-      }
-      week_from_date: {
-        Args: { d: string }
-        Returns: unknown
-      }
+      user_contact_id: { Args: never; Returns: string }
+      user_has_priority_access:
+        | {
+            Args: { target_priority_id: string; user_id: string }
+            Returns: boolean
+          }
+        | {
+            Args: { target_priority_path: unknown; user_id: string }
+            Returns: boolean
+          }
+      user_timezone: { Args: never; Returns: string }
+      week_from_date: { Args: { d: string }; Returns: unknown }
     }
     Enums: {
       activity_type: "task" | "event" | "note"
@@ -2485,32 +2317,14 @@ export type Database = {
         Args: { _bucket_id: string; _name: string }
         Returns: boolean
       }
-      extension: {
-        Args: { name: string }
-        Returns: string
-      }
-      filename: {
-        Args: { name: string }
-        Returns: string
-      }
-      foldername: {
-        Args: { name: string }
-        Returns: string[]
-      }
-      get_level: {
-        Args: { name: string }
-        Returns: number
-      }
-      get_prefix: {
-        Args: { name: string }
-        Returns: string
-      }
-      get_prefixes: {
-        Args: { name: string }
-        Returns: string[]
-      }
+      extension: { Args: { name: string }; Returns: string }
+      filename: { Args: { name: string }; Returns: string }
+      foldername: { Args: { name: string }; Returns: string[] }
+      get_level: { Args: { name: string }; Returns: number }
+      get_prefix: { Args: { name: string }; Returns: string }
+      get_prefixes: { Args: { name: string }; Returns: string[] }
       get_size_by_bucket: {
-        Args: Record<PropertyKey, never>
+        Args: never
         Returns: {
           bucket_id: string
           size: number
@@ -2551,10 +2365,7 @@ export type Database = {
         Args: { bucket_ids: string[]; names: string[] }
         Returns: undefined
       }
-      operation: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
+      operation: { Args: never; Returns: string }
       search: {
         Args: {
           bucketname: string

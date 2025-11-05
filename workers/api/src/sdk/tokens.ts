@@ -1,6 +1,6 @@
+import * as crypto from "crypto";
 import { Hono } from "hono";
 import { z } from "zod";
-import * as crypto from "crypto";
 
 import { createClient } from "@plotday/db";
 
@@ -10,7 +10,10 @@ import { handleValidationError } from "../utils/validation";
 const tokens = new Hono<{ Bindings: Bindings }>();
 
 // In-memory session storage (for MVP - could be moved to KV or Durable Object for persistence)
-const sessionStore = new Map<string, { token: string; userId: string; email: string }>();
+const sessionStore = new Map<
+  string,
+  { token: string; userId: string; email: string }
+>();
 
 const CreateTokenSchema = z.object({
   name: z.string().optional(),
@@ -149,20 +152,22 @@ tokens.post("/session/authorize", async (c) => {
   const accessToken = authHeader.replace("Bearer ", "");
 
   // Validate the Supabase session token
-  const supabaseAdmin = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
-  const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(
-    accessToken
+  const supabaseAdmin = createClient(
+    c.env.SUPABASE_URL,
+    c.env.SUPABASE_SERVICE_KEY
   );
+  const { data: userData, error: authError } =
+    await supabaseAdmin.auth.getClaims(accessToken);
 
-  if (authError || !userData?.user) {
+  if (authError || !userData?.claims) {
     console.error("Authentication error:", authError);
     return new Response("Unauthorized: Invalid or expired session", {
       status: 401,
     });
   }
 
-  const userId = userData.user.id;
-  const userEmail = userData.user.email || "unknown@plot.day";
+  const userId = userData.claims.id;
+  const userEmail = userData.claims.email || "unknown@plot.day";
 
   const rawBody = await c.req.json();
   const parseResult = AuthorizeSessionSchema.safeParse(rawBody);

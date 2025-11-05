@@ -42,11 +42,11 @@
   },
   "devDependencies": {
     "@plotday/tsconfig": "workspace:^",
-    "supabase": "^2.48.3"
+    "supabase": "^2.54.11"
   },
   "dependencies": {
     "@plotday/tz": "workspace:^",
-    "@supabase/supabase-js": "^2.38.4",
+    "@supabase/supabase-js": "^2.79.0",
     "date-fns": "^2.30.0",
     "parse-domain": "^8.0.1"
   },

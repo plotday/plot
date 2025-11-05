@@ -3,7 +3,6 @@ import { createClient as supabaseCreateClient } from "@supabase/supabase-js";
 
 import { toDate } from "@plotday/tz";
 
-import { safeQuery } from "./query";
 import type { Database } from "./types";
 
 export type { Database } from "./types";
@@ -17,14 +16,6 @@ export function createClient(supabaseUrl: string, supabaseKey: string) {
       persistSession: false,
     },
   });
-}
-
-export async function getAccount(supabase: SupabaseClient, accountId: number) {
-  const account = safeQuery(
-    await supabase.from("account").select().eq("id", accountId).single()
-  );
-  if (!account) throw new Error(`Account ${accountId} not found`);
-  return account;
 }
 
 export function parseDateRange(range: string | unknown) {

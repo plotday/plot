@@ -164,7 +164,11 @@ export async function createActivity(
       }
     );
 
-    if (matchResult.data && Array.isArray(matchResult.data) && matchResult.data.length > 0) {
+    if (
+      matchResult.data &&
+      Array.isArray(matchResult.data) &&
+      matchResult.data.length > 0
+    ) {
       // Use the priority from the best matching activity
       targetPriorityId = matchResult.data[0].priority_id;
     } else {
@@ -174,7 +178,9 @@ export async function createActivity(
   } else {
     // Explicit priority specified: parent > explicit > default
     targetPriorityId =
-      parent?.priority_id ?? ("priority" in activity ? activity.priority.id : undefined) ?? plot.priorityId;
+      parent?.priority_id ??
+      ("priority" in activity ? activity.priority.id : undefined) ??
+      plot.priorityId;
   }
 
   await plot.validatePriorityAccess(targetPriorityId);
@@ -711,14 +717,13 @@ export async function getActivityByMeta(
       )
       .contains("meta", meta)
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (error) {
-      if (error.code === "PGRST116") {
-        // No rows found
-        return null;
-      }
       throw error;
+    }
+    if (!data) {
+      return null;
     }
 
     // Fetch tags for the activity
@@ -838,7 +843,11 @@ export async function createActivities(
         }
       );
 
-      if (matchResult.data && Array.isArray(matchResult.data) && matchResult.data.length > 0) {
+      if (
+        matchResult.data &&
+        Array.isArray(matchResult.data) &&
+        matchResult.data.length > 0
+      ) {
         // Use the priority from the best matching activity
         targetPriorityId = matchResult.data[0].priority_id;
       } else {
@@ -847,7 +856,9 @@ export async function createActivities(
       }
     } else {
       // Explicit priority specified: explicit > default
-      targetPriorityId = ("priority" in activity ? activity.priority.id : undefined) ?? plot.priorityId;
+      targetPriorityId =
+        ("priority" in activity ? activity.priority.id : undefined) ??
+        plot.priorityId;
     }
 
     await plot.validatePriorityAccess(targetPriorityId);

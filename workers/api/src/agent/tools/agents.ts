@@ -177,9 +177,8 @@ export class Agents extends Tool implements IAgents {
     // Get user_id for personal environment
     let userId: string | null = null;
     if (environment === "personal") {
-      const {
-        data: { user },
-      } = await this.supabase.auth.getUser();
+      const { data } = await this.supabase.auth.getClaims();
+      const user = data?.claims;
       if (!user) {
         throw new Error("User not authenticated");
       }

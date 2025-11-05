@@ -53,7 +53,11 @@ export function createSupabaseServerClient(request: Request, env: SupabaseEnv) {
       }
     : {};
 
-  const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, options);
+  const supabase = createClient(
+    env.SUPABASE_URL,
+    env.SUPABASE_ANON_KEY,
+    options,
+  );
 
   return { supabase, headers: new Headers() };
 }
@@ -70,10 +74,8 @@ export async function getUser(request: Request, env: SupabaseEnv) {
   }
 
   // Verify the token by calling getUser with the access token
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser(accessToken);
+  const { data, error } = await supabase.auth.getClaims(accessToken);
+  const user = data?.claims ?? null;
 
   if (error || !user) {
     return { user: null, headers: new Headers() };
