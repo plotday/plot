@@ -136,10 +136,26 @@ export class Integrations extends Tool implements IAuth {
       level: AuthLevel;
       scopes: string[];
       client_id: string;
+      // Slack-specific fields
+      token_type?: string;
+      bot_user_id?: string;
+      team?: {
+        id: string;
+        name: string;
+      };
+      enterprise?: {
+        id: string;
+        name: string;
+      };
+      authed_user?: {
+        id: string;
+        access_token: string;
+        scope: string;
+      };
     },
     callbackToken: Callback
   ): Promise<void> {
-    // Generate unique ID for this.integrationsorization
+    // Generate unique ID for this authorization
     const authorizationId = crypto.randomUUID();
 
     const tokenKey = `auth_token:${authorizationId}`;
@@ -151,6 +167,11 @@ export class Integrations extends Tool implements IAuth {
       expires_at: tokenInfo.expires_in
         ? Date.now() + tokenInfo.expires_in * 1000
         : undefined,
+      token_type: tokenInfo.token_type,
+      bot_user_id: tokenInfo.bot_user_id,
+      team: tokenInfo.team,
+      enterprise: tokenInfo.enterprise,
+      authed_user: tokenInfo.authed_user,
     };
     await this.store.set(tokenKey, token);
 
@@ -160,6 +181,16 @@ export class Integrations extends Tool implements IAuth {
       provider: tokenInfo.provider,
       scopes: tokenInfo.scopes,
     };
+
+    // Add workspace metadata for Slack
+    if (tokenInfo.provider === AuthProvider.Slack && tokenInfo.team) {
+      authorization.workspace = {
+        id: tokenInfo.team.id,
+        name: tokenInfo.team.name,
+        enterpriseId: tokenInfo.enterprise?.id,
+        enterpriseName: tokenInfo.enterprise?.name,
+      };
+    }
 
     // Call original user callback with Authorization
     try {
@@ -178,6 +209,21 @@ export class Integrations extends Tool implements IAuth {
       scopes: string[];
       expires_at?: number;
       client_id?: string;
+      token_type?: string;
+      bot_user_id?: string;
+      team?: {
+        id: string;
+        name: string;
+      };
+      enterprise?: {
+        id: string;
+        name: string;
+      };
+      authed_user?: {
+        id: string;
+        access_token: string;
+        scope: string;
+      };
     }>(tokenKey);
 
     if (!tokenData) {
@@ -204,11 +250,18 @@ export class Integrations extends Tool implements IAuth {
             expires_at: refreshedToken.expires_in
               ? Date.now() + refreshedToken.expires_in * 1000
               : undefined,
+            token_type: tokenData.token_type,
+            bot_user_id: tokenData.bot_user_id,
+            team: tokenData.team,
+            enterprise: tokenData.enterprise,
+            authed_user: tokenData.authed_user,
           });
 
           return {
             token: refreshedToken.access_token,
             scopes: tokenData.scopes,
+            tokenType: tokenData.token_type,
+            botUserId: tokenData.bot_user_id,
           };
         } catch (error) {
           console.error("Failed to refresh token:", error);
@@ -226,6 +279,8 @@ export class Integrations extends Tool implements IAuth {
     return {
       token: tokenData.access_token,
       scopes: tokenData.scopes,
+      tokenType: tokenData.token_type,
+      botUserId: tokenData.bot_user_id,
     };
   }
 
@@ -340,6 +395,12 @@ export class Integrations extends Tool implements IAuth {
             level: authState.level,
             scopes: authState.scopes,
             client_id: clientId,
+            // Slack-specific fields
+            token_type: tokenResponse.token_type,
+            bot_user_id: tokenResponse.bot_user_id,
+            team: tokenResponse.team,
+            enterprise: tokenResponse.enterprise,
+            authed_user: tokenResponse.authed_user,
           });
         } catch (error) {
           console.error("Error executing auth callback:", error);
@@ -415,6 +476,22 @@ export class Integrations extends Tool implements IAuth {
     access_token: string;
     refresh_token?: string;
     expires_in?: number;
+    // Slack-specific fields
+    token_type?: string;
+    bot_user_id?: string;
+    team?: {
+      id: string;
+      name: string;
+    };
+    enterprise?: {
+      id: string;
+      name: string;
+    };
+    authed_user?: {
+      id: string;
+      access_token: string;
+      scope: string;
+    };
   }> {
     const config = PROVIDER_CONFIGS[provider];
     if (!config) {
@@ -445,11 +522,26 @@ export class Integrations extends Tool implements IAuth {
       throw new Error(`Token exchange failed: ${response.status} ${errorText}`);
     }
 
-    const tokenData = (await response.json()) as {
-      access_token: string;
-      refresh_token?: string;
-      expires_in?: number;
-    };
+    const tokenData = (await response.json()) as any;
+
+    // Handle Slack's OAuth V2 response format
+    if (provider === AuthProvider.Slack) {
+      if (!tokenData.ok) {
+        throw new Error(`Slack OAuth error: ${tokenData.error || 'Unknown error'}`);
+      }
+
+      return {
+        access_token: tokenData.access_token, // Bot token
+        token_type: tokenData.token_type,
+        bot_user_id: tokenData.bot_user_id,
+        team: tokenData.team,
+        enterprise: tokenData.enterprise,
+        authed_user: tokenData.authed_user,
+        expires_in: tokenData.expires_in,
+      };
+    }
+
+    // Standard OAuth response for other providers
     return {
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
