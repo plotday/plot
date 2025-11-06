@@ -9,12 +9,9 @@ typedef RegisterActionGroups = void Function(List<StaticActionGroup>? groups);
 /// A provider that maintains the current set of action groups
 class ActionRegistry extends ChangeNotifier {
   static ActionRegistry of(BuildContext context) {
-    final provider =
-        context
-            .dependOnInheritedWidgetOfExactType<
-              ActionRegistryInheritedNotifier
-            >()
-            ?.notifier;
+    final provider = context
+        .dependOnInheritedWidgetOfExactType<ActionRegistryInheritedNotifier>()
+        ?.notifier;
     assert(provider != null, 'No ActionRegistry found in context');
     return provider!;
   }
@@ -22,8 +19,7 @@ class ActionRegistry extends ChangeNotifier {
   final List<List<StaticActionGroup>> _actions = [];
 
   /// Gets all currently available action groups
-  List<StaticActionGroup> get actions =>
-      _actions.reversed.flattened.toList();
+  List<StaticActionGroup> get actions => _actions.reversed.flattened.toList();
 
   /// Pushes a list of action groups to the provider
   RegisterActionGroups register() {

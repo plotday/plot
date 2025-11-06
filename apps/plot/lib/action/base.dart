@@ -124,7 +124,10 @@ class ShowActions extends Action {
     try {
       final actionsInstance = await actions(context);
       if (!context.mounted) return const ActionSkipped();
-      return await ActionBar(actionsInstance, rootContext: context).run(context);
+      return await ActionBar(
+        actionsInstance,
+        rootContext: context,
+      ).run(context);
     } on Error catch (e, t) {
       log.warning('Action "$title" failed', e, t);
       rethrow;

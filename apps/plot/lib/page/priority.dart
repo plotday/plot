@@ -21,27 +21,6 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
 
   late final PriorityId priorityId;
 
-  @override
-  Widget wrappedRoute(BuildContext context) {
-    return PriorityBlocProvider(
-      priorityId: priorityId,
-      priority: null, // Let the bloc load the priority
-      child: BlocConsumer<PriorityBloc, PriorityState>(
-        listenWhen: (previous, current) => previous.context.id != current.context.id,
-        listener: (context, state) {
-          context.read<NowBloc>().setPriority(state.context);
-        },
-        builder: (context, state) {
-          return _PriorityWrapperContent();
-        },
-      ),
-    );
-  }
-}
-
-class _PriorityWrapperContent extends StatelessWidget {
-  const _PriorityWrapperContent();
-
   void _handleRouteNavigation(BuildContext context, bool isMultiPanel) {
     final router = context.router;
     final hasActivityRoute = router.stack.any(
@@ -69,34 +48,46 @@ class _PriorityWrapperContent extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return BlocBuilder<PriorityBloc, PriorityState>(
-      builder: (context, priorityState) {
-        return ActionScope(
-          actions: [
-            StaticActionGroup(
-              title: priorityState.context.title,
-              actions: currentPriorityActions(priorityState.context),
-            ),
-          ],
-          child: BlocConsumer<LayoutBloc, LayoutState>(
-            listener: (context, layoutState) {
-              _handleRouteNavigation(context, layoutState.multiPanel);
-            },
-            builder: (context, layoutState) {
-              if (layoutState.multiPanel) {
-                return ResizablePanelLayout(
-                  left: const PrioritiesPage(),
-                  middle: const PriorityPage(),
-                  child: AutoRouter(key: ValueKey("TheOne")),
+  Widget wrappedRoute(BuildContext context) {
+    return PriorityBlocProvider(
+      priorityId: priorityId,
+      child: BlocConsumer<PriorityBloc, PriorityState>(
+        listenWhen: (previous, current) =>
+            previous.context.id != current.context.id,
+        listener: (context, state) {
+          context.read<NowBloc>().setPriority(state.context);
+        },
+        builder: (context, state) {
+          return ActionScope(
+            actions: [
+              StaticActionGroup(
+                title: state.context.title,
+                actions: currentPriorityActions(state.context),
+              ),
+            ],
+            child: BlocBuilder<PriorityBloc, PriorityState>(
+              builder: (context, priorityState) {
+                return BlocConsumer<LayoutBloc, LayoutState>(
+                  listener: (context, layoutState) {
+                    _handleRouteNavigation(context, layoutState.multiPanel);
+                  },
+                  builder: (context, layoutState) {
+                    if (layoutState.multiPanel) {
+                      return ResizablePanelLayout(
+                        left: const PrioritiesPage(),
+                        middle: const PriorityPage(),
+                        child: AutoRouter(key: ValueKey("TheOne")),
+                      );
+                    } else {
+                      return AutoRouter(key: ValueKey("TheOne"));
+                    }
+                  },
                 );
-              } else {
-                return AutoRouter(key: ValueKey("TheOne"));
-              }
-            },
-          ),
-        );
-      },
+              },
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -191,7 +182,9 @@ class PriorityPage extends StatelessWidget {
                                 ...current.when(
                                   date: (date) => [
                                     DayHeader(
-                                      key: ValueKey('dayheader_${date.hashCode}'),
+                                      key: ValueKey(
+                                        'dayheader_${date.hashCode}',
+                                      ),
                                       date: date,
                                       now: date == Date.today(),
                                       selected: selected,
@@ -199,7 +192,9 @@ class PriorityPage extends StatelessWidget {
                                   ],
                                   priority: (priority) => [
                                     AgendaHeader(
-                                      key: ValueKey('agendaheader_priority_${priority.id}'),
+                                      key: ValueKey(
+                                        'agendaheader_priority_${priority.id}',
+                                      ),
                                       priority: priority,
                                       context: state.context,
                                       selected: selected,
@@ -208,14 +203,18 @@ class PriorityPage extends StatelessWidget {
                                   activity: (activity) => [
                                     if (activity.type == ActivityType.event)
                                       AgendaHeader(
-                                        key: ValueKey('agendaheader_activity_${activity.id}'),
+                                        key: ValueKey(
+                                          'agendaheader_activity_${activity.id}',
+                                        ),
                                         activity: activity,
                                         context: state.context,
                                         selected: selected,
                                       ),
                                     if (activity.type != ActivityType.event)
                                       ActivityWidget(
-                                        key: ValueKey('activitywidget_${activity.id}'),
+                                        key: ValueKey(
+                                          'activitywidget_${activity.id}',
+                                        ),
                                         activity: activity,
                                         selected: selected,
                                         context: state.context,
