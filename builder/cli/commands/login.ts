@@ -1,8 +1,9 @@
+import { exec } from "child_process";
 import * as crypto from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { exec } from "child_process";
+
 import * as out from "../utils/output";
 
 interface LoginOptions {
@@ -23,7 +24,8 @@ function getTokenPath(): string {
   const homeDir = os.homedir();
   if (process.platform === "win32") {
     // Windows: Use APPDATA
-    const appData = process.env.APPDATA || path.join(homeDir, "AppData", "Roaming");
+    const appData =
+      process.env.APPDATA || path.join(homeDir, "AppData", "Roaming");
     return path.join(appData, "plot", "token");
   } else {
     // Unix-like: Use ~/.config/plot/token
@@ -36,12 +38,14 @@ function openBrowser(url: string): void {
     process.platform === "win32"
       ? `start ${url}`
       : process.platform === "darwin"
-        ? `open ${url}`
-        : `xdg-open ${url}`;
+      ? `open ${url}`
+      : `xdg-open ${url}`;
 
   exec(command, (error) => {
     if (error) {
-      out.warning("Couldn't open browser automatically", [`Please open: ${url}`]);
+      out.warning("Couldn't open browser automatically", [
+        `Please open: ${url}`,
+      ]);
     }
   });
 }
@@ -84,7 +88,7 @@ export async function loginCommand(options: LoginOptions) {
   const sessionId = crypto.randomUUID();
 
   // Construct login URL
-  const loginUrl = `${options.siteUrl}/agent/login?session=${sessionId}`;
+  const loginUrl = `${options.siteUrl}/builder/login?session=${sessionId}`;
 
   // Open browser
   openBrowser(loginUrl);
