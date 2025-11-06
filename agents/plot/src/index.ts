@@ -4,12 +4,23 @@ import {
   type Priority,
   type ToolBuilder,
 } from "@plotday/agent";
-import { Plot } from "@plotday/agent/tools/plot";
+import {
+  ActivityAccess,
+  Plot,
+  PriorityAccess,
+} from "@plotday/agent/tools/plot";
 
 class PlotAgent extends Agent<PlotAgent> {
   build(build: ToolBuilder) {
     return {
-      plot: build(Plot),
+      plot: build(Plot, {
+        activity: {
+          access: ActivityAccess.Create,
+        },
+        priority: {
+          access: PriorityAccess.Create,
+        },
+      }),
     };
   }
 
