@@ -104,7 +104,7 @@ class PriorityAgent {
   final Map<String, dynamic> config;
   final DateTime? createdAt;
   final DateTime? updatedAt;
-  final DateTime? deletedAt;
+  final DateTime? archivedAt;
   final List<AgentTool>? tools;
   final AgentPermissions? permissions;
 
@@ -117,7 +117,7 @@ class PriorityAgent {
     required this.config,
     this.createdAt,
     this.updatedAt,
-    this.deletedAt,
+    this.archivedAt,
     this.tools,
     this.permissions,
   });
@@ -162,8 +162,8 @@ class PriorityAgent {
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
           : null,
-      deletedAt: json['deleted_at'] != null
-          ? DateTime.parse(json['deleted_at'] as String)
+      archivedAt: json['archived_at'] != null
+          ? DateTime.parse(json['archived_at'] as String)
           : null,
       tools: tools,
       permissions: permissions,

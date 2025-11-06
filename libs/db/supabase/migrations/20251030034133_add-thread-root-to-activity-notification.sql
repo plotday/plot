@@ -43,7 +43,7 @@ BEGIN
     WHERE
         priority_child_id = current_item.priority_id
         AND id != current_item.author_id
-        AND deleted_at IS NULL;
+        AND archived_at IS NULL;
     -- Get users who have access to this priority
     SELECT
         jsonb_agg(jsonb_build_object('user_id', user_id)) INTO users_data
@@ -55,7 +55,7 @@ BEGIN
     END IF;
     -- Build enriched item with author and priority information
     SELECT
-        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'created_by', current_item.created_by, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'deleted_at', current_item.deleted_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'path', current_item.path, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'note', current_item.note, 'links', current_item.links, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'meta', current_item.meta, 'mentions', current_item.mentions,
+        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'created_by', current_item.created_by, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'archived_at', current_item.archived_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'path', current_item.path, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'note', current_item.note, 'links', current_item.links, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'meta', current_item.meta, 'mentions', current_item.mentions,
             -- Enriched data from JOINs
             'author_name', a.name, 'author_type', a.type, 'priority_title', p.title) INTO enriched_item
     FROM
@@ -76,7 +76,7 @@ BEGIN
     -- Fetch thread root data if this activity is nested (path depth > 1)
     IF nlevel (current_item.path) > 1 THEN
         SELECT
-            jsonb_build_object('id', tr.id, 'created_at', tr.created_at, 'updated_at', tr.updated_at, 'author_id', tr.author_id, 'created_by', tr.created_by, 'assignee_id', tr.assignee_id, 'updated_by', tr.updated_by, 'deleted_at', tr.deleted_at, 'priority_id', tr.priority_id, 'type', tr.type, 'path', tr.path, 'order', tr.order, 'draft', tr.draft, 'private', tr.private, 'title', tr.title, 'note', tr.note, 'links', tr.links, 'at', tr.at, 'on', tr.on, 'duration', tr.duration, 'done_at', tr.done_at, 'recurrence_rule', tr.recurrence_rule, 'recurrence_exdates', tr.recurrence_exdates, 'recurrence_dates', tr.recurrence_dates, 'meta', tr.meta, 'mentions', tr.mentions,
+            jsonb_build_object('id', tr.id, 'created_at', tr.created_at, 'updated_at', tr.updated_at, 'author_id', tr.author_id, 'created_by', tr.created_by, 'assignee_id', tr.assignee_id, 'updated_by', tr.updated_by, 'archived_at', tr.archived_at, 'priority_id', tr.priority_id, 'type', tr.type, 'path', tr.path, 'order', tr.order, 'draft', tr.draft, 'private', tr.private, 'title', tr.title, 'note', tr.note, 'links', tr.links, 'at', tr.at, 'on', tr.on, 'duration', tr.duration, 'done_at', tr.done_at, 'recurrence_rule', tr.recurrence_rule, 'recurrence_exdates', tr.recurrence_exdates, 'recurrence_dates', tr.recurrence_dates, 'meta', tr.meta, 'mentions', tr.mentions,
                 -- Enriched data from JOINs
                 'author_name', tra.name, 'author_type', tra.type, 'priority_title', trp.title) INTO thread_root_data
         FROM
@@ -103,7 +103,7 @@ BEGIN
     -- Build previous enriched item for updates
     IF TG_OP = 'UPDATE' THEN
         SELECT
-            jsonb_build_object('id', previous_item.id, 'created_at', previous_item.created_at, 'updated_at', previous_item.updated_at, 'author_id', previous_item.author_id, 'created_by', previous_item.created_by, 'assignee_id', previous_item.assignee_id, 'updated_by', previous_item.updated_by, 'deleted_at', previous_item.deleted_at, 'priority_id', previous_item.priority_id, 'type', previous_item.type, 'path', previous_item.path, 'order', previous_item.order, 'draft', previous_item.draft, 'private', previous_item.private, 'title', previous_item.title, 'note', previous_item.note, 'links', previous_item.links, 'at', previous_item.at, 'on', previous_item.on, 'duration', previous_item.duration, 'done_at', previous_item.done_at, 'recurrence_rule', previous_item.recurrence_rule, 'recurrence_exdates', previous_item.recurrence_exdates, 'recurrence_dates', previous_item.recurrence_dates, 'meta', previous_item.meta, 'mentions', previous_item.mentions,
+            jsonb_build_object('id', previous_item.id, 'created_at', previous_item.created_at, 'updated_at', previous_item.updated_at, 'author_id', previous_item.author_id, 'created_by', previous_item.created_by, 'assignee_id', previous_item.assignee_id, 'updated_by', previous_item.updated_by, 'archived_at', previous_item.archived_at, 'priority_id', previous_item.priority_id, 'type', previous_item.type, 'path', previous_item.path, 'order', previous_item.order, 'draft', previous_item.draft, 'private', previous_item.private, 'title', previous_item.title, 'note', previous_item.note, 'links', previous_item.links, 'at', previous_item.at, 'on', previous_item.on, 'duration', previous_item.duration, 'done_at', previous_item.done_at, 'recurrence_rule', previous_item.recurrence_rule, 'recurrence_exdates', previous_item.recurrence_exdates, 'recurrence_dates', previous_item.recurrence_dates, 'meta', previous_item.meta, 'mentions', previous_item.mentions,
                 -- Enriched data from JOINs
                 'author_name', a.name, 'author_type', a.type, 'priority_title', p.title) INTO previous_enriched_item
         FROM
@@ -124,7 +124,7 @@ BEGIN
         -- Fetch thread root data for previous state if nested (path depth > 1)
         IF nlevel (previous_item.path) > 1 THEN
             SELECT
-                jsonb_build_object('id', tr.id, 'created_at', tr.created_at, 'updated_at', tr.updated_at, 'author_id', tr.author_id, 'created_by', tr.created_by, 'assignee_id', tr.assignee_id, 'updated_by', tr.updated_by, 'deleted_at', tr.deleted_at, 'priority_id', tr.priority_id, 'type', tr.type, 'path', tr.path, 'order', tr.order, 'draft', tr.draft, 'private', tr.private, 'title', tr.title, 'note', tr.note, 'links', tr.links, 'at', tr.at, 'on', tr.on, 'duration', tr.duration, 'done_at', tr.done_at, 'recurrence_rule', tr.recurrence_rule, 'recurrence_exdates', tr.recurrence_exdates, 'recurrence_dates', tr.recurrence_dates, 'meta', tr.meta, 'mentions', tr.mentions,
+                jsonb_build_object('id', tr.id, 'created_at', tr.created_at, 'updated_at', tr.updated_at, 'author_id', tr.author_id, 'created_by', tr.created_by, 'assignee_id', tr.assignee_id, 'updated_by', tr.updated_by, 'archived_at', tr.archived_at, 'priority_id', tr.priority_id, 'type', tr.type, 'path', tr.path, 'order', tr.order, 'draft', tr.draft, 'private', tr.private, 'title', tr.title, 'note', tr.note, 'links', tr.links, 'at', tr.at, 'on', tr.on, 'duration', tr.duration, 'done_at', tr.done_at, 'recurrence_rule', tr.recurrence_rule, 'recurrence_exdates', tr.recurrence_exdates, 'recurrence_dates', tr.recurrence_dates, 'meta', tr.meta, 'mentions', tr.mentions,
                     -- Enriched data from JOINs
                     'author_name', tra.name, 'author_type', tra.type, 'priority_title', trp.title) INTO previous_thread_root_data
             FROM

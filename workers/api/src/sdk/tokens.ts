@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createClient } from "@plotday/db";
 
 import type { Bindings } from "../env";
+import { getUser } from "../utils/auth";
 import { handleValidationError } from "../utils/validation";
 
 const tokens = new Hono<{ Bindings: Bindings }>();
@@ -75,7 +76,7 @@ tokens.get("/tokens", async (c) => {
     .from("token")
     .select("id, name, created_at, last_used_at")
     .eq("user_id", userId)
-    .is("deleted_at", null)
+    .is("archived_at", null)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -98,10 +99,10 @@ tokens.delete("/token/:id", async (c) => {
 
   const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
 
-  // Soft delete - set deleted_at
+  // Soft delete - set archived_at
   const { error } = await supabase
     .from("token")
-    .update({ deleted_at: new Date().toISOString() })
+    .update({ archived_at: new Date().toISOString() })
     .eq("id", tokenId)
     .eq("user_id", userId);
 
@@ -156,18 +157,17 @@ tokens.post("/session/authorize", async (c) => {
     c.env.SUPABASE_URL,
     c.env.SUPABASE_SERVICE_KEY
   );
-  const { data: userData, error: authError } =
-    await supabaseAdmin.auth.getClaims(accessToken);
-
-  if (authError || !userData?.claims) {
+  const { user, error: authError } = await getUser(supabaseAdmin, accessToken);
+  console.log("Authorized user:", user);
+  if (authError || !user) {
     console.error("Authentication error:", authError);
     return new Response("Unauthorized: Invalid or expired session", {
       status: 401,
     });
   }
 
-  const userId = userData.claims.id;
-  const userEmail = userData.claims.email || "unknown@plot.day";
+  const userId = user.id;
+  const userEmail = user.email || "unknown@plot.day";
 
   const rawBody = await c.req.json();
   const parseResult = AuthorizeSessionSchema.safeParse(rawBody);

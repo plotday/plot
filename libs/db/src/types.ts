@@ -36,12 +36,12 @@ export type Database = {
     Tables: {
       activity: {
         Row: {
+          archived_at: string | null
           assignee_id: string | null
           at: unknown
           author_id: string
           created_at: string
           created_by: string
-          deleted_at: string | null
           done_at: string | null
           draft: boolean
           duration: unknown
@@ -65,9 +65,9 @@ export type Database = {
           updated_at: string
           updated_by: number
           actor: {
+            archived_at: string | null
             avatar_url: string | null
             created_at: string | null
-            deleted_at: string | null
             email: string | null
             id: string | null
             name: string | null
@@ -76,12 +76,12 @@ export type Database = {
           } | null
         }
         Insert: {
+          archived_at?: string | null
           assignee_id?: string | null
           at?: unknown
           author_id: string
           created_at?: string
           created_by: string
-          deleted_at?: string | null
           done_at?: string | null
           draft?: boolean
           duration?: unknown
@@ -106,12 +106,12 @@ export type Database = {
           updated_by?: number
         }
         Update: {
+          archived_at?: string | null
           assignee_id?: string | null
           at?: unknown
           author_id?: string
           created_at?: string
           created_by?: string
-          deleted_at?: string | null
           done_at?: string | null
           draft?: boolean
           duration?: unknown
@@ -183,9 +183,9 @@ export type Database = {
       activity_exception: {
         Row: {
           activity_id: string
+          archived_at: string | null
           at: unknown
           created_at: string
-          deleted_at: string | null
           done_at: string | null
           duration: unknown
           id: string
@@ -199,9 +199,9 @@ export type Database = {
         }
         Insert: {
           activity_id: string
+          archived_at?: string | null
           at?: unknown
           created_at?: string
-          deleted_at?: string | null
           done_at?: string | null
           duration?: unknown
           id?: string
@@ -215,9 +215,9 @@ export type Database = {
         }
         Update: {
           activity_id?: string
+          archived_at?: string | null
           at?: unknown
           created_at?: string
-          deleted_at?: string | null
           done_at?: string | null
           duration?: unknown
           id?: string
@@ -306,7 +306,7 @@ export type Database = {
         Row: {
           activity_id: string
           actor_id: string
-          deleted_at: string | null
+          archived_at: string | null
           occurrence: string | null
           tag_id: number
           updated_at: string
@@ -315,7 +315,7 @@ export type Database = {
         Insert: {
           activity_id: string
           actor_id: string
-          deleted_at?: string | null
+          archived_at?: string | null
           occurrence?: string | null
           tag_id: number
           updated_at?: string
@@ -324,7 +324,7 @@ export type Database = {
         Update: {
           activity_id?: string
           actor_id?: string
-          deleted_at?: string | null
+          archived_at?: string | null
           occurrence?: string | null
           tag_id?: number
           updated_at?: string
@@ -384,8 +384,8 @@ export type Database = {
       }
       agent: {
         Row: {
+          archived_at: string | null
           created_at: string
-          deleted_at: string | null
           description: string | null
           environment: Database["public"]["Enums"]["agent_environment"]
           id: string
@@ -396,8 +396,8 @@ export type Database = {
           version: string
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
-          deleted_at?: string | null
           description?: string | null
           environment?: Database["public"]["Enums"]["agent_environment"]
           id: string
@@ -408,8 +408,8 @@ export type Database = {
           version: string
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
-          deleted_at?: string | null
           description?: string | null
           environment?: Database["public"]["Enums"]["agent_environment"]
           id?: string
@@ -508,9 +508,9 @@ export type Database = {
       }
       contact: {
         Row: {
+          archived_at: string | null
           avatar_url: string | null
           created_at: string
-          deleted_at: string | null
           email: string
           id: string
           name: string | null
@@ -523,9 +523,9 @@ export type Database = {
           } | null
         }
         Insert: {
+          archived_at?: string | null
           avatar_url?: string | null
           created_at?: string
-          deleted_at?: string | null
           email: string
           id?: string
           name?: string | null
@@ -533,9 +533,9 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          archived_at?: string | null
           avatar_url?: string | null
           created_at?: string
-          deleted_at?: string | null
           email?: string
           id?: string
           name?: string | null
@@ -638,9 +638,9 @@ export type Database = {
       }
       priority: {
         Row: {
+          archived_at: string | null
           created_at: string
           created_by: string
-          deleted_at: string | null
           id: string
           path: unknown
           root: boolean
@@ -649,9 +649,9 @@ export type Database = {
           updated_by: number
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
           created_by: string
-          deleted_at?: string | null
           id?: string
           path: unknown
           root?: boolean
@@ -660,9 +660,9 @@ export type Database = {
           updated_by?: number
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
           created_by?: string
-          deleted_at?: string | null
           id?: string
           path?: unknown
           root?: boolean
@@ -676,9 +676,9 @@ export type Database = {
         Row: {
           agent_environment: Database["public"]["Enums"]["agent_environment"]
           agent_id: string
+          archived_at: string | null
           config: Json
           created_at: string
-          deleted_at: string | null
           id: string
           name: string
           owner_id: string
@@ -688,9 +688,9 @@ export type Database = {
         Insert: {
           agent_environment: Database["public"]["Enums"]["agent_environment"]
           agent_id: string
+          archived_at?: string | null
           config?: Json
           created_at?: string
-          deleted_at?: string | null
           id?: string
           name: string
           owner_id: string
@@ -700,9 +700,9 @@ export type Database = {
         Update: {
           agent_environment?: Database["public"]["Enums"]["agent_environment"]
           agent_id?: string
+          archived_at?: string | null
           config?: Json
           created_at?: string
-          deleted_at?: string | null
           id?: string
           name?: string
           owner_id?: string
@@ -763,23 +763,23 @@ export type Database = {
       }
       priority_contact: {
         Row: {
+          archived_at: string | null
           contact_id: string
           created_at: string
-          deleted_at: string | null
           id: number
           priority_id: string
         }
         Insert: {
+          archived_at?: string | null
           contact_id: string
           created_at?: string
-          deleted_at?: string | null
           id?: never
           priority_id: string
         }
         Update: {
+          archived_at?: string | null
           contact_id?: string
           created_at?: string
-          deleted_at?: string | null
           id?: never
           priority_id?: string
         }
@@ -910,22 +910,22 @@ export type Database = {
       }
       priority_user: {
         Row: {
+          archived_at: string | null
           created_at: string
-          deleted_at: string | null
           priority_id: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
-          deleted_at?: string | null
           priority_id: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
-          deleted_at?: string | null
           priority_id?: string
           updated_at?: string
           user_id?: string
@@ -1080,9 +1080,9 @@ export type Database = {
       }
       session: {
         Row: {
+          archived_at: string | null
           at: unknown
           created_at: string
-          deleted_at: string | null
           id: string
           pomodoro: number | null
           pomodoro_at: string | null
@@ -1093,9 +1093,9 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          archived_at?: string | null
           at: unknown
           created_at?: string
-          deleted_at?: string | null
           id?: string
           pomodoro?: number | null
           pomodoro_at?: string | null
@@ -1106,9 +1106,9 @@ export type Database = {
           user_id: string
         }
         Update: {
+          archived_at?: string | null
           at?: unknown
           created_at?: string
-          deleted_at?: string | null
           id?: string
           pomodoro?: number | null
           pomodoro_at?: string | null
@@ -1165,8 +1165,8 @@ export type Database = {
       }
       token: {
         Row: {
+          archived_at: string | null
           created_at: string
-          deleted_at: string | null
           id: string
           last_used_at: string | null
           name: string | null
@@ -1176,8 +1176,8 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
-          deleted_at?: string | null
           id?: string
           last_used_at?: string | null
           name?: string | null
@@ -1187,8 +1187,8 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
-          deleted_at?: string | null
           id?: string
           last_used_at?: string | null
           name?: string | null
@@ -1369,9 +1369,9 @@ export type Database = {
       }
       actor: {
         Row: {
+          archived_at: string | null
           avatar_url: string | null
           created_at: string | null
-          deleted_at: string | null
           email: string | null
           id: string | null
           name: string | null
@@ -1393,12 +1393,12 @@ export type Database = {
             | Database["public"]["Enums"]["agent_environment"]
             | null
           agent_id: string | null
+          archived_at: string | null
           author_email: string | null
           author_name: string | null
           author_url: string | null
           config: Json | null
           created_at: string | null
-          deleted_at: string | null
           id: string | null
           name: string | null
           owner_id: string | null
@@ -1523,11 +1523,11 @@ export type Database = {
       }
       user_activity: {
         Row: {
+          archived_at: string | null
           assignee_id: string | null
           at: unknown
           author_id: string | null
           created_at: string | null
-          deleted_at: string | null
           done_at: string | null
           draft: boolean | null
           duration: unknown
@@ -1554,9 +1554,9 @@ export type Database = {
           updated_by: number | null
           user_id: string | null
           actor: {
+            archived_at: string | null
             avatar_url: string | null
             created_at: string | null
-            deleted_at: string | null
             email: string | null
             id: string | null
             name: string | null
@@ -1649,10 +1649,10 @@ export type Database = {
       }
       user_priority: {
         Row: {
+          archived_at: string | null
           color: number | null
           created_at: string | null
           created_by: string | null
-          deleted_at: string | null
           id: string | null
           path: unknown
           pomodoro: number | null
@@ -1671,12 +1671,12 @@ export type Database = {
       activity_thread: {
         Args: { p_activity_id: string }
         Returns: {
+          archived_at: string | null
           assignee_id: string | null
           at: unknown
           author_id: string
           created_at: string
           created_by: string
-          deleted_at: string | null
           done_at: string | null
           draft: boolean
           duration: unknown
@@ -1711,9 +1711,9 @@ export type Database = {
         | {
             Args: { "": Database["public"]["Tables"]["activity"]["Row"] }
             Returns: {
+              archived_at: string | null
               avatar_url: string | null
               created_at: string | null
-              deleted_at: string | null
               email: string | null
               id: string | null
               name: string | null
@@ -1730,9 +1730,9 @@ export type Database = {
         | {
             Args: { "": Database["public"]["Views"]["user_activity"]["Row"] }
             Returns: {
+              archived_at: string | null
               avatar_url: string | null
               created_at: string | null
-              deleted_at: string | null
               email: string | null
               id: string | null
               name: string | null
@@ -1786,8 +1786,8 @@ export type Database = {
       get_accessible_agents: {
         Args: { p_priority_id: string }
         Returns: {
+          archived_at: string | null
           created_at: string
-          deleted_at: string | null
           description: string | null
           environment: Database["public"]["Enums"]["agent_environment"]
           id: string
@@ -1869,8 +1869,8 @@ export type Database = {
       }
       upsert_activity: {
         Args: {
+          p_archived_at?: string
           p_at?: unknown
-          p_deleted_at?: string
           p_do_on?: string
           p_done_at?: string
           p_draft?: boolean
@@ -1919,6 +1919,22 @@ export type Database = {
             Returns: boolean
           }
       user_timezone: { Args: never; Returns: string }
+      uuid_generate_v1: { Args: never; Returns: string }
+      uuid_generate_v1mc: { Args: never; Returns: string }
+      uuid_generate_v3: {
+        Args: { name: string; namespace: string }
+        Returns: string
+      }
+      uuid_generate_v4: { Args: never; Returns: string }
+      uuid_generate_v5: {
+        Args: { name: string; namespace: string }
+        Returns: string
+      }
+      uuid_nil: { Args: never; Returns: string }
+      uuid_ns_dns: { Args: never; Returns: string }
+      uuid_ns_oid: { Args: never; Returns: string }
+      uuid_ns_url: { Args: never; Returns: string }
+      uuid_ns_x500: { Args: never; Returns: string }
       week_from_date: { Args: { d: string }; Returns: unknown }
     }
     Enums: {

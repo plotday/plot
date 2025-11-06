@@ -219,7 +219,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     ]);
 
     if (deleted != null) {
-      query.where(deleted ? p.deletedAt.isNotNull() : p.deletedAt.isNull());
+      query.where(deleted ? p.archivedAt.isNotNull() : p.archivedAt.isNull());
     }
     if (search?.isNotEmpty == true) {
       query.where(p.title.like('%$search%'));
@@ -275,7 +275,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   static SingleOrNullSelectable<Priority> _default() {
     return (Store.get.select(table)
-          ..where((t) => t.deletedAt.isNull())
+          ..where((t) => t.archivedAt.isNull())
           ..orderBy([
             (t) => OrderingTerm(expression: t.root, mode: OrderingMode.desc),
             // If no priority is marked default, fall back to the first one created
@@ -375,7 +375,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          id: row.id,
          createdAt: row.createdAt,
          updatedAt: row.updatedAt,
-         deletedAt: row.deletedAt,
+         archivedAt: row.archivedAt,
          title: row.title,
          topOrder: row.topOrder,
          pomodoro: row.pomodoro,
@@ -446,14 +446,14 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return result;
   }
 
-  Future<void> delete() => copyWith(deletedAt: Value(DateTime.now())).save();
+  Future<void> delete() => copyWith(archivedAt: Value(DateTime.now())).save();
 
   @override
   Priority copyWith({
     Uuid? id,
     DateTime? updatedAt,
     DateTime? createdAt,
-    Value<DateTime?> deletedAt = const Value.absent(),
+    Value<DateTime?> archivedAt = const Value.absent(),
     String? title,
     Path? path,
     Uuid? createdBy,
@@ -474,7 +474,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         pending: pending.present
             ? pending
             : Value(PriorityPendingSync.full.value),
-        deletedAt: deletedAt,
+        archivedAt: archivedAt,
         title: title ?? this.title,
         path: path ?? this.path,
         topOrder: topOrder,

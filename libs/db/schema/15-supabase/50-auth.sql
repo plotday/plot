@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS "auth"."users" (
     "email_change_token_current" character varying(255) NULL DEFAULT '', "email_change_confirm_status" smallint NULL DEFAULT 0, "banned_until" timestamptz NULL, "reauthentication_token" character varying(255) NULL DEFAULT '',
     "reauthentication_sent_at" timestamptz NULL,
     "is_sso_user" boolean NOT NULL DEFAULT FALSE,
-    "deleted_at" timestamptz NULL,
+    "archived_at" timestamptz NULL,
     PRIMARY KEY ("id"),
     CONSTRAINT "users_email_change_confirm_status_check" CHECK ((email_change_confirm_status >= 0) AND (email_change_confirm_status <= 2))
 );

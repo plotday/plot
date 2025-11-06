@@ -1,4 +1,5 @@
-import type { AgentSource, Priority, Activity } from "@plotday/db/schema";
+import type { Activity, AgentSource, Priority } from "@plotday/db/schema";
+
 import type { ToolPermission } from "../../permissions";
 
 /**
@@ -42,7 +43,6 @@ export const mockPriority: Priority = {
   icon: "📝",
   color: "#3b82f6",
   archived_at: null,
-  deleted_at: null,
   meta: {},
 };
 
@@ -62,7 +62,7 @@ export const mockActivity: Activity = {
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   completed_at: null,
-  deleted_at: null,
+  archived_at: null,
   recurrence: null,
   importance: 0,
   attachments: [],
@@ -110,7 +110,9 @@ export const mockNetworkPermissions: ToolPermission[] = [
 /**
  * Helper to create a custom AgentSource
  */
-export function createAgentSource(overrides?: Partial<AgentSource>): AgentSource {
+export function createAgentSource(
+  overrides?: Partial<AgentSource>
+): AgentSource {
   return {
     ...mockAgentSource,
     ...overrides,

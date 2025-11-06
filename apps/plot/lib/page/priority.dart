@@ -1,4 +1,3 @@
-import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 
@@ -7,7 +6,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
-import 'package:plot/command/command.dart';
+import 'package:plot/action/action.dart';
 import 'package:plot/widget/resizable_panel_layout.dart';
 import 'package:plot/router.dart' show PriorityMainRoute, NewActivityRoute;
 import 'priorities.dart';
@@ -73,11 +72,11 @@ class _PriorityWrapperContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, priorityState) {
-        return CommandScope(
-          commands: [
-            StaticCommandGroup(
+        return ActionScope(
+          actions: [
+            StaticActionGroup(
               title: priorityState.context.title,
-              commands: currentPriorityCommands(priorityState.context),
+              actions: currentPriorityActions(priorityState.context),
             ),
           ],
           child: BlocConsumer<LayoutBloc, LayoutState>(
@@ -128,8 +127,8 @@ class PriorityPage extends StatelessWidget {
                             context.run(ChangeCurrentActivity(activity)),
                       );
                     },
-                    builder: (context, listController) => SelectionCommandScope(
-                      commandBuilder: (index) {
+                    builder: (context, listController) => SelectionActionScope(
+                      actionBuilder: (index) {
                         final item =
                             index >= state.first &&
                                 index - state.first < state.agendaItems.length
@@ -137,16 +136,16 @@ class PriorityPage extends StatelessWidget {
                             : null;
                         return item?.iff(
                               activity: (activity) => [
-                                StaticCommandGroup(
+                                StaticActionGroup(
                                   title: activity.displayTitle,
-                                  commands: [
+                                  actions: [
                                     OpenActivity(activity),
-                                    ...activityCommands(activity),
+                                    ...activityActions(activity),
                                   ],
                                 ),
                               ],
                             ) ??
-                            <StaticCommandGroup>[];
+                            <StaticActionGroup>[];
                       },
                       listController: listController,
                       child: Scaffold(
@@ -158,10 +157,10 @@ class PriorityPage extends StatelessWidget {
                             onSelect: (p) =>
                                 context.run(ChangeCurrentPriority(p)),
                           ),
-                          commands: [
+                          actions: [
                             NewActivity(),
-                            PickFilterCommand(),
-                            ShowPriorityCommands(state.context, current: true),
+                            PickFilterAction(),
+                            ShowPriorityActions(state.context, current: true),
                           ],
                         ),
                         body: BidirectionalList(

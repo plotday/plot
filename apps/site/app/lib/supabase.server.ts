@@ -74,11 +74,17 @@ export async function getUser(request: Request, env: SupabaseEnv) {
   }
 
   // Verify the token by calling getUser with the access token
-  const { data, error } = await supabase.auth.getClaims(accessToken);
-  const user = data?.claims ?? null;
-
-  if (error || !user) {
-    return { user: null, headers: new Headers() };
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getClaims(accessToken);
+    user = data?.claims
+      ? {
+          ...data?.claims,
+          id: data.claims.sub,
+        }
+      : null;
+  } catch (error) {
+    console.error("Error fetching user claims:", error);
   }
 
   return { user, headers: new Headers() };

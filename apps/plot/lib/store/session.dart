@@ -140,7 +140,7 @@ class Session extends SessionRow {
     }
     if (deleted != null) {
       query.where(
-        (t) => deleted ? t.deletedAt.isNotNull() : t.deletedAt.isNull(),
+        (t) => deleted ? t.archivedAt.isNotNull() : t.archivedAt.isNull(),
       );
     }
     query.orderBy([
@@ -223,7 +223,7 @@ class Session extends SessionRow {
         id: row.id,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
+        archivedAt: row.archivedAt,
         priorityId: row.priorityId,
         start: row.start,
         end: row.end,
@@ -237,7 +237,7 @@ class Session extends SessionRow {
     Uuid? id,
     DateTime? createdAt,
     DateTime? updatedAt,
-    Value<DateTime?> deletedAt = const Value.absent(),
+    Value<DateTime?> archivedAt = const Value.absent(),
     Value<Uuid?> priorityId = const Value.absent(),
     DateTime? start,
     DateTime? end,
@@ -251,7 +251,7 @@ class Session extends SessionRow {
       createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
       pending: pending.present ? pending : Value(SessionPendingSync.full.value),
-      deletedAt: deletedAt,
+      archivedAt: archivedAt,
       priorityId: priorityId,
       start: start,
       end: end,

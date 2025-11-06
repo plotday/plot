@@ -1,4 +1,3 @@
-import 'package:flutter/widgets.dart';
 import 'package:plot/state/root_provider.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:adaptive_theme/adaptive_theme.dart';
@@ -7,7 +6,7 @@ import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'widget/window.dart';
 import 'widget/widget.dart';
-import 'command/command.dart';
+import 'action/action.dart';
 
 class App extends StatefulWidget {
   const App({super.key});
@@ -24,7 +23,7 @@ class AppState extends State<App> {
       child: ColourScheme(
         child: Builder(
           builder: (context) => Window(
-            child: CommandProvider(
+            child: ActionProvider(
               child: FTheme(
                 data: buildTheme(context.colour),
                 child: RootProvider(

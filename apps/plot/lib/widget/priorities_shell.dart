@@ -21,6 +21,9 @@ class PrioritiesShell extends StatefulWidget implements AutoRouteWrapper {
 
 class _PrioritiesShellState extends State<PrioritiesShell> {
   bool _previousMultiPanel = false;
+  String? _lastKnownPriorityId;
+  bool _isNavigating = false;
+  bool _hasNavigatedOnce = false;
 
   @override
   Widget build(BuildContext context) {
@@ -31,29 +34,56 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
           return const SizedBox.shrink(); // Show nothing while loading
         }
 
+        final priorityId = nowState.priority.id.toShortString();
+        final sessionPriorityId = nowState.session?.priority?.id.toShortString();
+        final sessionExists = nowState.session != null;
+
+        // Track the priority ID, but only update when we have a valid session
+        // This prevents flickering when the session temporarily becomes null during transitions
+        if (sessionExists) {
+          _lastKnownPriorityId = sessionPriorityId;
+        }
+
+        // Use the last known priority ID when session is null (during transition)
+        final stablePriorityId = sessionExists ? priorityId : (_lastKnownPriorityId ?? priorityId);
+
         return BlocBuilder<LayoutBloc, LayoutState>(
           builder: (context, layoutState) {
-            final priorityId = nowState.priority.id.toShortString();
 
             // Track mode changes
-            if (layoutState.multiPanel && !_previousMultiPanel) {
-              _previousMultiPanel = true;
-            } else if (!layoutState.multiPanel && _previousMultiPanel) {
-              _previousMultiPanel = false;
+            final modeChanged = layoutState.multiPanel != _previousMultiPanel;
+            if (modeChanged) {
+              _previousMultiPanel = layoutState.multiPanel;
+              // Reset navigation flags when mode changes
+              _hasNavigatedOnce = false;
             }
 
-            // In multi-panel mode, ensure we have a valid child route whenever panels are visible
+            // In multi-panel mode, ensure we have a valid child route
+            // Only navigate ONCE on initial mount or when mode changes
             if (layoutState.multiPanel &&
-                (layoutState.leftPanelVisible ||
-                    layoutState.rightPanelVisible)) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                final router = context.router;
-                final currentRoute = router.currentChild?.name;
+                (layoutState.leftPanelVisible || layoutState.rightPanelVisible) &&
+                !_isNavigating &&
+                !_hasNavigatedOnce) {
 
-                // Check if we don't have a valid PriorityRoute child
-                if (currentRoute != 'PriorityRoute') {
-                  router.navigate(PriorityRoute(priorityIdString: priorityId));
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                // Double-check we're still in a state where we should navigate
+                if (_isNavigating || _hasNavigatedOnce) {
+                  return;
                 }
+
+                _isNavigating = true;
+                _hasNavigatedOnce = true;
+
+                context.router.navigate(PriorityRoute(priorityIdString: stablePriorityId)).then((_) {
+                  // Clear the navigation flag after a short delay
+                  Future.microtask(() {
+                    if (mounted) {
+                      setState(() {
+                        _isNavigating = false;
+                      });
+                    }
+                  });
+                });
               });
             }
 

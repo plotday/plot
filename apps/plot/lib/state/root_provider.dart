@@ -10,6 +10,7 @@ import 'logging.dart';
 
 class _AuthChangeNotifier extends ChangeNotifier {
   void notify() {
+    log.info('_AuthChangeNotifier.notify()');
     notifyListeners();
   }
 }

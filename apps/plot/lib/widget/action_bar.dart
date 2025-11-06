@@ -1,7 +1,7 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart' hide Action, Actions;
 import 'package:forui/forui.dart';
 
-import 'package:plot/command/command.dart';
+import 'package:plot/action/action.dart';
 import 'package:plot/widget/bidirectional_list.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
@@ -10,38 +10,37 @@ import 'button.dart';
 import 'theme.dart';
 import 'logging.dart';
 
-class CommandBar extends Dialog {
-  CommandBar(
-    Commands commands, {
-    Command? Function(String promptValue)? secondaryCommand,
+class ActionBar extends Dialog {
+  ActionBar(
+    Actions actions, {
+    Action? Function(String promptValue)? secondaryAction,
   }) : super(
          padding: const EdgeInsets.all(0),
-         builder: (_) =>
-             _CommandBar(commands, secondaryCommand: secondaryCommand),
-         key: ObjectKey(commands),
+         builder: (_) => _ActionBar(actions, secondaryAction: secondaryAction),
+         key: ObjectKey(actions),
        );
 
-  Future<CommandReturn> run(BuildContext context) {
+  Future<ActionReturn> run(BuildContext context) {
     return super
-        .show<CommandReturn>(context)
-        .then((value) => value.present ? value.value : const CommandSkipped());
+        .show<ActionReturn>(context)
+        .then((value) => value.present ? value.value : const ActionSkipped());
   }
 }
 
-class _CommandBar extends StatefulWidget {
-  const _CommandBar(this.commands, {this.secondaryCommand});
+class _ActionBar extends StatefulWidget {
+  const _ActionBar(this.actions, {this.secondaryAction});
 
-  final Commands commands;
-  final Command? Function(String promptValue)? secondaryCommand;
+  final Actions actions;
+  final Action? Function(String promptValue)? secondaryAction;
 
   @override
-  CommandBarState createState() => CommandBarState();
+  ActionBarState createState() => ActionBarState();
 }
 
-class CommandBarState extends State<_CommandBar> {
+class ActionBarState extends State<_ActionBar> {
   final TextEditingController _controller = TextEditingController();
-  List<StaticCommandGroup> _filteredCommandGroups = [];
-  late Commands commands = widget.commands;
+  List<StaticActionGroup> _filteredActionGroups = [];
+  late Actions actions = widget.actions;
   Widget? _child;
   String? _error;
   bool _isDisposed = false;
@@ -50,37 +49,37 @@ class CommandBarState extends State<_CommandBar> {
   void initState() {
     super.initState();
 
-    _initCommands();
-    _controller.addListener(_initCommands);
+    _initActions();
+    _controller.addListener(_initActions);
   }
 
   @override
   void dispose() {
     _isDisposed = true;
-    _controller.removeListener(_initCommands);
+    _controller.removeListener(_initActions);
     super.dispose();
   }
 
-  void _initCommands() async {
+  void _initActions() async {
     try {
       setState(() {
         _error = null;
       });
       final searchText = _controller.text;
-      final commandsList = await commands.list(search: searchText);
+      final actionsList = await actions.list(search: searchText);
 
       if (_isDisposed) return;
 
       setState(() {
-        if (commandsList.isEmpty) {
+        if (actionsList.isEmpty) {
           _error = 'No matches';
         }
-        _filteredCommandGroups = commandsList;
-        // Reset selection when commands change
+        _filteredActionGroups = actionsList;
+        // Reset selection when actions change
         // _selectionController.reset();
       });
     } catch (e, t) {
-      log.warning('Error initializing commands', e, t);
+      log.warning('Error initializing actions', e, t);
       if (!_isDisposed) {
         setState(() {
           _error = 'Search failed.';
@@ -89,43 +88,43 @@ class CommandBarState extends State<_CommandBar> {
     }
   }
 
-  int _allCommandsCount() {
-    return _filteredCommandGroups.fold(
+  int _allActionsCount() {
+    return _filteredActionGroups.fold(
       0,
-      (total, group) => total + group.commands.length,
+      (total, group) => total + group.actions.length,
     );
   }
 
-  Future<CommandReturn> _executeCommand(Command command) async {
+  Future<ActionReturn> _executeAction(Action action) async {
     setState(() {
       _error = null;
     });
     try {
-      final result = await command.run(context);
-      if (!mounted) return const CommandSkipped();
-      if (result is CommandSkipped) {
+      final result = await action.run(context);
+      if (!mounted) return const ActionSkipped();
+      if (result is ActionSkipped) {
         return result;
-      } else if (result is CommandMessage) {
+      } else if (result is ActionMessage) {
         if (result.isError) {
           setState(() {
             _error = result.message;
           });
-          return const CommandDone();
+          return const ActionDone();
         } else {
           // TODO: Show success message in a non-intrusive way
         }
       }
       Dialog.popAll(context);
-      if (result is CommandRoute) {
+      if (result is ActionRoute) {
         result.go(context);
       }
     } catch (e, stackTrace) {
-      log.warning('Error executing command', e, stackTrace);
+      log.warning('Error executing action', e, stackTrace);
       setState(() {
         _error = 'Something went wrong';
       });
     }
-    return const CommandDone();
+    return const ActionDone();
   }
 
   @override
@@ -142,11 +141,11 @@ class CommandBarState extends State<_CommandBar> {
       );
     }
 
-    final secondaryCommand = widget.secondaryCommand?.call(_controller.text);
-    final totalCommandCount = _allCommandsCount();
+    final secondaryAction = widget.secondaryAction?.call(_controller.text);
+    final totalActionCount = _allActionsCount();
 
     return BidirectionalListSelector(
-      onActivate: (index) => _executeCommand(_getCommandAtIndex(index)),
+      onActivate: (index) => _executeAction(_getActionAtIndex(index)),
       builder: (context, listController) => Shortcuts(
         shortcuts: BidirectionalList.shortcuts,
         child: _child != null
@@ -166,16 +165,16 @@ class CommandBarState extends State<_CommandBar> {
                               style: TextFieldStyle.ghost,
                               controller: _controller,
                               autofocus: true,
-                              label: "${widget.commands.prompt}…",
+                              label: "${widget.actions.prompt}…",
                               focusNode: focusNode,
                             ),
                           ),
                         ),
-                        if (secondaryCommand != null)
+                        if (secondaryAction != null)
                           Button.icon(
-                            CommandWrapper(
-                              secondaryCommand,
-                              run: (_, _) => _executeCommand(secondaryCommand),
+                            ActionWrapper(
+                              secondaryAction,
+                              run: (_, _) => _executeAction(secondaryAction),
                             ),
                           ),
                       ],
@@ -186,11 +185,11 @@ class CommandBarState extends State<_CommandBar> {
                     child: BidirectionalList(
                       // shrinkWrap: true,
                       controller: listController,
-                      count: totalCommandCount,
+                      count: totalActionCount,
                       builder: (context, index, selected) {
                         final group = _getGroupAtIndex(index);
-                        final command = _getCommandAtIndex(index);
-                        final body = command.buildBody(context);
+                        final action = _getActionAtIndex(index);
+                        final body = action.buildBody(context);
                         Widget? header;
                         Widget? info;
                         if (group.title != null &&
@@ -230,7 +229,7 @@ class CommandBarState extends State<_CommandBar> {
                             if (header != null) header,
                             if (info != null) info,
                             ListTile(
-                              command: command,
+                              action: action,
                               body: body,
                               selected: listController.selected == index,
                             ),
@@ -245,30 +244,27 @@ class CommandBarState extends State<_CommandBar> {
     );
   }
 
-  StaticCommandGroup _getGroupAtIndex(int index) {
+  StaticActionGroup _getGroupAtIndex(int index) {
     int currentIndex = 0;
-    for (final group in _filteredCommandGroups) {
-      if (index < currentIndex + group.commands.length) {
+    for (final group in _filteredActionGroups) {
+      if (index < currentIndex + group.actions.length) {
         return group;
       }
-      currentIndex += group.commands.length;
+      currentIndex += group.actions.length;
     }
-    throw Exception('Command index out of range');
+    throw Exception('Action index out of range');
   }
 
-  Command _getCommandAtIndex(int index) {
+  Action _getActionAtIndex(int index) {
     int currentIndex = 0;
-    for (final group in _filteredCommandGroups) {
-      for (final command in group.commands) {
+    for (final group in _filteredActionGroups) {
+      for (final action in group.actions) {
         if (currentIndex == index) {
-          return CommandWrapper(
-            command,
-            run: (_, _) => _executeCommand(command),
-          );
+          return ActionWrapper(action, run: (_, _) => _executeAction(action));
         }
         currentIndex++;
       }
     }
-    throw Exception('Command index out of range');
+    throw Exception('Action index out of range');
   }
 }

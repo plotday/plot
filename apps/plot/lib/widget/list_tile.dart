@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart' hide Action, Actions;
 import 'package:forui/forui.dart';
 
-import 'package:plot/command/command.dart';
+import 'package:plot/action/action.dart';
 import 'theme.dart';
 import 'button.dart';
 import 'colour_scheme.dart';
@@ -12,14 +12,14 @@ enum ListTileStyle { item, header }
 
 class ListTile extends StatefulWidget {
   ListTile({
-    /// The primary command run when the tile is tapped.
-    this.command,
+    /// The primary action run when the tile is tapped.
+    this.action,
 
-    /// The command to run when the tile is double-tapped.
-    this.doubleTapCommand,
+    /// The action to run when the tile is double-tapped.
+    this.doubleTapAction,
 
-    /// Secondary commands visible on the right.
-    this.trailingCommands = const [],
+    /// Secondary actions visible on the right.
+    this.trailingActions = const [],
 
     /// Extra details shown below the title.
     this.details,
@@ -29,7 +29,7 @@ class ListTile extends StatefulWidget {
     this.selected = false,
     this.onHover,
 
-    /// Override the command title
+    /// Override the action title
     String? title,
 
     /// Override the body
@@ -38,14 +38,14 @@ class ListTile extends StatefulWidget {
     this.icon,
 
     super.key,
-  }) : title = title ?? command?.title ?? '';
+  }) : title = title ?? action?.title ?? '';
 
   final ListTileStyle style;
   final bool selected;
   final Widget? details;
-  final Command? command;
-  final Command? doubleTapCommand;
-  final List<Command> trailingCommands;
+  final Action? action;
+  final Action? doubleTapAction;
+  final List<Action> trailingActions;
   final String title;
   final Widget? body;
   final Widget? header;
@@ -72,23 +72,23 @@ class _ListTileState extends State<ListTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.command != null
+      onTap: widget.action != null
           ? () {
-              log.info("Running command: ${widget.command?.title}");
+              log.info("Running action: ${widget.action?.title}");
               try {
-                context.run(widget.command!);
+                context.run(widget.action!);
               } catch (e, t) {
-                log.warning("Command ${widget.command?.title} failed", e, t);
+                log.warning("Action ${widget.action?.title} failed", e, t);
               }
             }
           : null,
-      onDoubleTap: widget.doubleTapCommand != null
+      onDoubleTap: widget.doubleTapAction != null
           ? () {
               try {
-                context.run(widget.doubleTapCommand!);
+                context.run(widget.doubleTapAction!);
               } catch (e, t) {
                 log.warning(
-                  "Command ${widget.doubleTapCommand?.title} failed",
+                  "Action ${widget.doubleTapAction?.title} failed",
                   e,
                   t,
                 );
@@ -128,9 +128,9 @@ class _ListTileState extends State<ListTile> {
               crossAxisAlignment: CrossAxisAlignment.center,
               spacing: 10,
               children: [
-                if (widget.icon != null || widget.command?.icon != null)
+                if (widget.icon != null || widget.action?.icon != null)
                   Icon(
-                    widget.icon ?? widget.command?.icon,
+                    widget.icon ?? widget.action?.icon,
                     size: 16,
                     color: context.colour.muted,
                   ),
@@ -158,10 +158,10 @@ class _ListTileState extends State<ListTile> {
                                     ),
                                   ),
                                 ),
-                                if (widget.command?.subtitle != null)
+                                if (widget.action?.subtitle != null)
                                   Flexible(
                                     child: Text(
-                                      '  ${widget.command!.subtitle!}',
+                                      '  ${widget.action!.subtitle!}',
                                       overflow: TextOverflow.ellipsis,
                                       style: context.theme.typography.sm
                                           .copyWith(
@@ -171,14 +171,16 @@ class _ListTileState extends State<ListTile> {
                                   ),
                               ],
                             ),
-                      if (widget.command?.description != null)
-                        Text(widget.command!.description!),
+                      if (widget.action?.description != null)
+                        Text(widget.action!.description!),
                       if (widget.details != null) widget.details!,
                     ],
                   ),
                 ),
-                ...widget.trailingCommands.asMap().entries.map((entry) {
-                  final key = ValueKey(Object.hash(entry.value.hashCode, entry.key));
+                ...widget.trailingActions.asMap().entries.map((entry) {
+                  final key = ValueKey(
+                    Object.hash(entry.value.hashCode, entry.key),
+                  );
                   return Button.icon(entry.value, key: key);
                 }),
               ],

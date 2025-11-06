@@ -12,7 +12,7 @@ CREATE TABLE "public"."activity" (
     "created_by" uuid NOT NULL,
     "assignee_id" uuid,
     "updated_by" integer NOT NULL DEFAULT 0,
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "type" activity_type NOT NULL DEFAULT 'note' ::activity_type,
     "path" ltree NOT NULL DEFAULT generate_path (NULL),
@@ -44,7 +44,7 @@ CREATE TABLE "public"."activity_exception" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_by" integer NOT NULL DEFAULT 0,
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "activity_id" uuid NOT NULL REFERENCES public.activity (id),
     "occurrence" text NOT NULL,
     -- overrides the root activity's fields
@@ -149,7 +149,7 @@ BEGIN
     WHERE
         path = parent_path
         AND priority_id = NEW.priority_id
-        AND deleted_at IS NULL;
+        AND archived_at IS NULL;
     RETURN NEW;
 END;
 $function$;

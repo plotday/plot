@@ -29,7 +29,7 @@ CREATE TABLE "public"."agent" (
     "environment" agent_environment NOT NULL DEFAULT 'personal' ::agent_environment,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "name" text NOT NULL,
     "description" text,
     "user_id" uuid REFERENCES auth.users ON DELETE CASCADE,

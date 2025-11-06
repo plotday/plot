@@ -210,17 +210,17 @@ Write a brief, friendly paragraph (2-3 sentences) describing what this agent can
 
 /**
  * Handles the "Remove yourself" built-in intent.
- * Soft-deletes the priority_agent by setting deleted_at.
+ * Soft-deletes the priority_agent by setting archived_at.
  */
 async function handleRemoveAgent(
   plot: Plot,
   activity: Activity
 ): Promise<void> {
   try {
-    // Set deleted_at on the priority_agent record
+    // Set archived_at on the priority_agent record
     const { error } = await plot.supabase
       .from("priority_agent")
-      .update({ deleted_at: new Date().toISOString() })
+      .update({ archived_at: new Date().toISOString() })
       .eq("id", plot.priorityAgentId);
 
     if (error) {

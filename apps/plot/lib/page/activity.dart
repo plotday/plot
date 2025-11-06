@@ -1,4 +1,3 @@
-import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 
@@ -7,7 +6,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
-import 'package:plot/command/command.dart';
+import 'package:plot/action/action.dart';
 
 @RoutePage(name: "ActivityRoute")
 class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
@@ -43,11 +42,11 @@ class ActivityPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<ActivityBloc, ActivityState>(
       builder: (context, state) {
-        return CommandScope(
-          commands: [
-            StaticCommandGroup(
+        return ActionScope(
+          actions: [
+            StaticActionGroup(
               title: state.activity.displayTitle,
-              commands: activityCommands(state.activity),
+              actions: activityActions(state.activity),
             ),
           ],
           child: BidirectionalListSelector(
@@ -58,29 +57,29 @@ class ActivityPage extends StatelessWidget {
                 context.run(ChangeCurrentActivity(activity));
               }
             },
-            builder: (context, listController) => SelectionCommandScope(
-              commandBuilder: (index) {
+            builder: (context, listController) => SelectionActionScope(
+              actionBuilder: (index) {
                 final activity = _getActivityAtIndex(state, index);
                 return activity != null
                     ? [
-                        StaticCommandGroup(
+                        StaticActionGroup(
                           title: activity.displayTitle,
-                          commands: [
+                          actions: [
                             ChangeCurrentActivity(activity),
-                            ...activityCommands(activity),
+                            ...activityActions(activity),
                           ],
                         ),
                       ]
-                    : <StaticCommandGroup>[];
+                    : <StaticActionGroup>[];
               },
               listController: listController,
               child: Scaffold(
                 translucent: true,
                 header: Header(
                   title: state.activity.displayTitle,
-                  commands: [
-                    PickFilterCommand(),
-                    ShowActivityCommands(state.activity),
+                  actions: [
+                    PickFilterAction(),
+                    ShowActivityActions(state.activity),
                   ],
                 ),
                 body: LayoutBuilder(

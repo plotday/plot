@@ -56,7 +56,7 @@ CREATE TABLE "public"."agent" (
     "environment" agent_environment NOT NULL DEFAULT 'personal' ::agent_environment,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "name" text NOT NULL,
     "description" text,
     "user_id" uuid,
@@ -85,7 +85,7 @@ CREATE TABLE "public"."priority_agent" (
     "config" jsonb NOT NULL DEFAULT '{}' ::jsonb,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone
+    "archived_at" timestamp with time zone
 );
 
 ALTER TABLE "public"."priority_agent" ENABLE ROW LEVEL SECURITY;
@@ -284,7 +284,7 @@ SELECT
     pa.config,
     pa.created_at,
     pa.updated_at,
-    pa.deleted_at,
+    pa.archived_at,
     a.version,
     p.name AS author_name,
     p.email AS author_email,
@@ -342,7 +342,7 @@ BEGIN
     END IF;
     -- Build enriched item with author and priority information
     SELECT
-        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'deleted_at', current_item.deleted_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'path', current_item.path, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'note', current_item.note, 'links', current_item.links, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'source', current_item.source,
+        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'archived_at', current_item.archived_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'path', current_item.path, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'note', current_item.note, 'links', current_item.links, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'source', current_item.source,
             -- Enriched data from JOINs
             'author_name', a.name, 'author_type', a.type, 'priority_title', p.title) INTO enriched_item
     FROM

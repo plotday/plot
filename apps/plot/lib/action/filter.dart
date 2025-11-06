@@ -1,18 +1,21 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart' hide Action, Actions;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 
-import 'command.dart';
+import 'action.dart';
+import 'package:plot/analytics/analytics.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/widget/icon.dart';
 
-class SetActivityFilters extends Command {
+class SetActivityFilters extends Action {
   SetActivityFilters({required this.filters, String? title})
     : super(
         title: title ?? _generateTitle(filters),
         subtitle: _generateSubtitle(filters),
+        eventObject: EventObject.filter,
+        eventAction: EventAction.filtered,
       );
 
   final List<Tag> filters;
@@ -39,7 +42,7 @@ class SetActivityFilters extends Command {
   }
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     // Try to find PriorityBloc in scope
     try {
       final priorityBloc = context.read<PriorityBloc>();
@@ -56,13 +59,18 @@ class SetActivityFilters extends Command {
       // ActivityBloc not in scope, continue
     }
 
-    return const CommandDone();
+    return const ActionDone();
   }
 }
 
-class ToggleActivityFilter extends Command {
+class ToggleActivityFilter extends Action {
   ToggleActivityFilter._({required this.tag, super.on})
-    : super(title: tag.name, icon: tag.icon);
+    : super(
+        title: tag.name,
+        eventObject: EventObject.filter,
+        eventAction: EventAction.filtered,
+        icon: tag.icon,
+      );
 
   factory ToggleActivityFilter(Tag tag, {required BuildContext context}) {
     final isActive = _isTagActive(context, tag);
@@ -89,7 +97,7 @@ class ToggleActivityFilter extends Command {
   }
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     // Try to find ActivityBloc in scope
     try {
       final activityBloc = context.read<ActivityBloc>();
@@ -126,29 +134,29 @@ class ToggleActivityFilter extends Command {
       // PriorityBloc not in scope, continue
     }
 
-    return const CommandDone();
+    return const ActionDone();
   }
 }
 
-class PickFilterCommand extends ShowCommands {
-  PickFilterCommand()
+class PickFilterAction extends ShowActions {
+  PickFilterAction()
     : super(
         title: 'Pick Filter',
         icon: PlotIcon.filter,
         description: 'Select tags to filter activities',
-        commands: (context) async {
+        actions: (context) async {
           final tags = Tag.getAll();
-          final commands = tags
+          final actions = tags
               .map((tag) => ToggleActivityFilter(tag, context: context))
               .toList();
-          final remove = commands.where((cmd) => cmd.on == true).toList();
-          final add = commands.where((cmd) => cmd.on != true).toList();
+          final remove = actions.where((cmd) => cmd.on == true).toList();
+          final add = actions.where((cmd) => cmd.on != true).toList();
 
-          return Commands(
+          return Actions(
             prompt: 'Pick filters',
             groups: [
-              StaticCommandGroup(title: 'Remove Filter', commands: remove),
-              StaticCommandGroup(title: 'Add Filter', commands: add),
+              StaticActionGroup(title: 'Remove Filter', actions: remove),
+              StaticActionGroup(title: 'Add Filter', actions: add),
             ],
           );
         },

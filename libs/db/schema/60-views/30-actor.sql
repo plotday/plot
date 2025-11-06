@@ -15,7 +15,7 @@ SELECT
     COALESCE(c.name, c.email) AS name,
     c.email,
     c.avatar_url,
-    c.deleted_at
+    c.archived_at
 FROM
     "public"."contact" c
 UNION ALL
@@ -28,7 +28,7 @@ SELECT
     pa.name,
     NULL::text AS email,
     NULL::text AS avatar_url,
-    pa.deleted_at
+    pa.archived_at
 FROM
     "public"."priority_agent" pa;
 

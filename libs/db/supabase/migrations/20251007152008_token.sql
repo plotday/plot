@@ -2,7 +2,7 @@ CREATE TABLE "public"."token" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid (),
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "user_id" uuid NOT NULL,
     "token" text NOT NULL,
     "name" text,

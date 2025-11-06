@@ -27,7 +27,7 @@ BEGIN
     WHERE
         path = parent_path
         AND priority_id = NEW.priority_id
-        AND deleted_at IS NULL;
+        AND archived_at IS NULL;
     RETURN NEW;
 END;
 $function$;

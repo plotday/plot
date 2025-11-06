@@ -2,7 +2,7 @@ CREATE TABLE "public"."token" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "user_id" uuid REFERENCES auth.users ON DELETE CASCADE,
     "publisher_id" bigint REFERENCES "public"."publisher" ON DELETE CASCADE,
     "token" text UNIQUE NOT NULL,

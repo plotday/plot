@@ -57,7 +57,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     final requestedLast = first + count;
 
     if (first >= currentFirst && requestedLast <= currentLast) {
-      log.info(
+      log.fine(
         'Requested range [$first, $requestedLast) already within current range [$currentFirst, $currentLast). Skipping fetch.',
       );
       return;
@@ -68,7 +68,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     final expandedFirst = first - buffer;
     final expandedCount = count + (2 * buffer);
 
-    log.info(
+    log.fine(
       'Expanding requested range [$first, ${first + count}) by 15% to [$expandedFirst, ${expandedFirst + expandedCount})',
     );
 
@@ -82,7 +82,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               expandedCount -
               state.agendaItems.length; // positive = need after
 
-    log.info(
+    log.fine(
       'Fetching more agenda items: expandedFirst=$expandedFirst, expandedCount=$expandedCount, moveStart=$moveStart, moveEnd=$moveEnd, doneStart=${state.doneStart}, doneEnd=${state.doneEnd}',
     );
 
@@ -109,7 +109,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     final newRange = CustomBoundedDateRange(newStart, newEnd);
-    log.info(
+    log.fine(
       'Expanding range from ${currentRange.start}-${currentRange.end} to ${newRange.start}-${newRange.end}',
     );
     await _loadSchedule(newRange);
@@ -163,7 +163,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
     _subscriptions.add(
       Priority.watchOne(state.context.id).listen((priority) {
-        log.info('Priority updated');
+        log.fine('Priority updated');
         emit(state.copyWith(context: priority));
       }),
     );
@@ -199,7 +199,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
-  /// Public method to reload agents - can be called from commands
+  /// Public method to reload agents - can be called from actions
   Future<void> reloadAgents() async {
     await _loadAgents();
   }
@@ -208,7 +208,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Watch the activity
     _subscriptions.add(
       Activity.watchOne(activity.id).listen((watchedActivity) {
-        log.info('Activity updated');
+        log.fine('Activity updated');
         emit(state.copyWith(activity: watchedActivity));
       }),
     );
@@ -230,7 +230,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   Future<void> _loadSchedule(BoundedDateRange range, {Date? firstDate}) {
-    log.info('Loading schedule (${range.start} to ${range.end})');
+    log.fine('Loading schedule (${range.start} to ${range.end})');
     _agendaSubscription?.cancel();
 
     // Ensure the new range overlaps with the previous one by at least one day
@@ -248,7 +248,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
       if (overlappingDate != null && !range.includes(overlappingDate)) {
         if (overlappingDate >= range.end) {
-          log.info('Extending $range to include $overlappingDate');
+          log.fine('Extending $range to include $overlappingDate');
           // If the new range ends before the old range, extend it to overlap by one day
           range = CustomBoundedDateRange(
             range.start,
@@ -262,18 +262,18 @@ class PriorityBloc extends Cubit<PriorityState> {
             date: (date) => date,
           );
           if (overlappingDate != null && !range.includes(overlappingDate)) {
-            log.info('Extending $range to include $overlappingDate');
+            log.fine('Extending $range to include $overlappingDate');
             // If the new range starts after the old range, extend it to overlap by one day
             range = CustomBoundedDateRange(overlappingDate, range.end);
           }
         }
       }
     }
-    log.info(
+    log.fine(
       'Range: ${range.start} to ${range.end}, overlappingIndex: $overlappingIndex, overlappingDate: $overlappingDate',
     );
 
-    log.info(
+    log.fine(
       'Getting activities for priprity ${state.context.id} in range $range',
     );
 
@@ -301,7 +301,7 @@ class PriorityBloc extends Cubit<PriorityState> {
                 activity: (activity) => false,
               ),
             );
-            log.info(
+            log.fine(
               'First was $first, overlappingIndex is $overlappingIndex, newIndex is $newIndex newFirst = ${first + overlappingIndex - newIndex}',
             );
             if (newIndex != -1) {
@@ -311,7 +311,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             overlappingIndex = -1;
           }
 
-          log.info(
+          log.fine(
             'Schedule updated (${range.start} to ${range.end}, first=$first, count=${schedule.days.length}, previous=${schedule.previous}, next=${schedule.next})',
           );
 

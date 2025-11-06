@@ -197,7 +197,7 @@ class EditorMentionDetector extends ChangeNotifier {
       startOffset: replaceFromOffset + replacementText.length,
     );
 
-    // Replace the node and update selection through editor's command pipeline
+    // Replace the node and update selection through editor's action pipeline
     _editor.execute([
       ReplaceNodeRequest(
         existingNodeId: node.id,

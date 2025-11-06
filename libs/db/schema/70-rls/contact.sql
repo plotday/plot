@@ -9,5 +9,5 @@ CREATE POLICY "Users can view contacts linked to their priorities" ON "public"."
             FROM
                 public.priority_contact pc
             WHERE
-                pc.contact_id = contact.id AND pc.deleted_at IS NULL AND public.user_has_priority_access (auth.uid (), pc.priority_id)));
+                pc.contact_id = contact.id AND pc.archived_at IS NULL AND public.user_has_priority_access (auth.uid (), pc.priority_id)));
 

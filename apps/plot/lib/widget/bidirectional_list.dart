@@ -6,7 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'package:plot/widget/widget.dart';
-import 'package:plot/command/base.dart';
+import 'package:plot/action/base.dart' hide Action, Actions;
 import 'logging.dart';
 
 class BidirectionalListController extends ChangeNotifier {
@@ -454,31 +454,31 @@ class BidirectionalListState extends State<BidirectionalList> {
   }
 }
 
-class SelectionCommandScope extends StatefulWidget {
-  const SelectionCommandScope({
-    required this.commandBuilder,
+class SelectionActionScope extends StatefulWidget {
+  const SelectionActionScope({
+    required this.actionBuilder,
     required this.listController,
     required this.child,
     super.key,
   });
 
-  final List<StaticCommandGroup> Function(int index) commandBuilder;
+  final List<StaticActionGroup> Function(int index) actionBuilder;
   final BidirectionalListController listController;
   final Widget child;
 
   @override
-  SelectionCommandScopeState createState() => SelectionCommandScopeState();
+  SelectionActionScopeState createState() => SelectionActionScopeState();
 }
 
-class SelectionCommandScopeState extends State<SelectionCommandScope> {
+class SelectionActionScopeState extends State<SelectionActionScope> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: widget.listController,
-      builder: (context, child) => CommandScope(
-        commands: [
+      builder: (context, child) => ActionScope(
+        actions: [
           if (widget.listController.selected != null)
-            ...widget.commandBuilder(widget.listController.selected!),
+            ...widget.actionBuilder(widget.listController.selected!),
         ],
         child: widget.child,
       ),

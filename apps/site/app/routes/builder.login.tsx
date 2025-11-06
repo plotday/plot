@@ -14,7 +14,7 @@ import { IconInfoCircle } from "@tabler/icons-react";
 import { Form, Link, useActionData, useNavigation } from "react-router";
 
 import { getUser } from "../lib/supabase.server";
-import type { Route } from "./+types/sdk.login";
+import type { Route } from "./+types/builder.login";
 
 export function meta(_: Route.MetaArgs) {
   return [
@@ -104,7 +104,7 @@ export default function SdkLogin({ loaderData }: Route.ComponentProps) {
 
   // If not authenticated, redirect to auth with return URL
   if (!user) {
-    const returnUrl = `/sdk/login?session=${sessionId}`;
+    const returnUrl = `/builder/login?session=${sessionId}`;
     return (
       <Container size="xs" mt="xl">
         <Stack gap="md">
@@ -193,7 +193,7 @@ export default function SdkLogin({ loaderData }: Route.ComponentProps) {
             <Text fw={500}>{user.email}</Text>
             <Anchor
               size="sm"
-              href={`/signout?returnTo=${encodeURIComponent(`/sdk/login?session=${sessionId}`)}`}
+              href={`/signout?returnTo=${encodeURIComponent(`/builder/login?session=${sessionId}`)}`}
             >
               Sign in as different user
             </Anchor>

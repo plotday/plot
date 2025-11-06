@@ -23,7 +23,7 @@ BEGIN
             public.activity a
         WHERE
             a.created_by = created_by_id
-            AND a.deleted_at IS NULL
+            AND a.archived_at IS NULL
             -- Content similarity filter (when content is required)
             AND ((required_filters ? 'content'
                     AND a.embedding IS NOT NULL

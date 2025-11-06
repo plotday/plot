@@ -11,22 +11,22 @@ SELECT
     ua.priority_path,
     ua.range_at,
     ua.range_on,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.at
     ELSE
         NULL::tstzrange
     END AS at,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae."on"
     ELSE
         NULL::daterange
     END AS "on",
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.title
     ELSE
         NULL::text
     END AS title,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.note
     ELSE
         NULL::text

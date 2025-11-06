@@ -2,6 +2,7 @@ import { type Database, type SupabaseClient, safeQuery } from "@plotday/db";
 
 import type { agentFactory as AgentFactory } from ".";
 import { type AgentEnvironment } from "../env";
+import { getUser } from "../utils/auth";
 
 export async function add(
   supabase: SupabaseClient,
@@ -67,7 +68,7 @@ export async function add(
         .select("id")
         .eq("priority_id", priority_id)
         .eq("name", name)
-        .is("deleted_at", null)
+        .is("archived_at", null)
         .maybeSingle()
     );
     if (existingAgent) {
@@ -149,11 +150,11 @@ export async function getAll(supabase: SupabaseClient, priorityId: string) {
         // For personal agents, author is the user themselves
         if (agent.environment === "personal") {
           // Get user info from auth.users
-          const { data: userData } = await supabase.auth.getClaims();
+          const { user } = await getUser(supabase);
           return {
             ...agent,
-            author_name: userData?.claims?.email || "You",
-            author_email: userData?.claims?.email || null,
+            author_name: "You",
+            author_email: user?.email || null,
             author_url: null,
           };
         }
@@ -198,7 +199,7 @@ export async function getById(
       .from("priority_agent")
       .select("*, agent(permissions)")
       .eq("id", priority_agent_id)
-      .is("deleted_at", null)
+      .is("archived_at", null)
       .single();
 
     if (error) {
@@ -225,7 +226,7 @@ export async function getByPriority(
       .from("priority_child_agent")
       .select("*, agent(permissions)")
       .eq("priority_child_id", priority_id)
-      .is("deleted_at", null);
+      .is("archived_at", null);
 
     if (error) {
       throw error;
@@ -254,7 +255,7 @@ export async function update(
         .from("priority_agent")
         .select("priority_id, name")
         .eq("id", priority_agent_id)
-        .is("deleted_at", null)
+        .is("archived_at", null)
         .single();
 
       if (currentError) {
@@ -278,7 +279,7 @@ export async function update(
           .eq("priority_id", currentAgent.priority_id)
           .eq("name", agent.name)
           .neq("id", priority_agent_id) // Exclude the current record
-          .is("deleted_at", null);
+          .is("archived_at", null);
 
         if (duplicateError) {
           throw new Error(
@@ -328,7 +329,7 @@ export async function deleteAgent(
           .from("priority_agent")
           .select("agent_id, agent_environment, priority_id")
           .eq("id", priority_agent_id)
-          .is("deleted_at", null)
+          .is("archived_at", null)
           .single();
 
         if (fetchError || !priorityAgent) {
@@ -357,7 +358,7 @@ export async function deleteAgent(
     return safeQuery(
       await supabase
         .from("priority_agent")
-        .update({ deleted_at: new Date().toISOString() })
+        .update({ archived_at: new Date().toISOString() })
         .eq("id", priority_agent_id)
         .select()
         .single()

@@ -20,7 +20,7 @@ BEGIN
     WHERE
         a.created_by = created_by_id
         AND a.embedding IS NOT NULL
-        AND a.deleted_at IS NULL
+        AND a.archived_at IS NULL
         AND (1 - (a.embedding <=> query_embedding::vector)) >= similarity_threshold
     ORDER BY
         a.embedding <=> query_embedding::vector

@@ -13,8 +13,8 @@ FROM (
         at.activity_id,
         at.occurrence,
         at.tag_id,
-        jsonb_agg(at.actor_id) FILTER (WHERE at.deleted_at IS NULL) AS actor_ids,
-        MAX(COALESCE(at.deleted_at, at.updated_at)) AS updated_at,
+        jsonb_agg(at.actor_id) FILTER (WHERE at.archived_at IS NULL) AS actor_ids,
+        MAX(COALESCE(at.archived_at, at.updated_at)) AS updated_at,
         (array_agg(at.updated_by ORDER BY at.updated_at DESC))[1] AS updated_by
     FROM
         "public"."activity_tag" at
@@ -56,13 +56,13 @@ FROM
         FROM
             activity a2
         WHERE
-            a2.deleted_at IS NULL
+            a2.archived_at IS NULL
             AND a2.path <@ a.path
             AND a2.author_id <> c.id
             AND (ar.read_at IS NULL
                 OR a2.created_at > ar.read_at)) unread ON TRUE
 WHERE
-    up.deleted_at IS NULL
+    up.archived_at IS NULL
     AND nlevel (a.path) = 1;
 
 -- To filter on a date range, use both the `range_at` and `range_on` columns.
@@ -79,7 +79,7 @@ SELECT
     a.author_id,
     a.assignee_id,
     a.updated_by,
-    a.deleted_at,
+    a.archived_at,
     a.priority_id,
     p.path AS priority_path,
     a.type,
@@ -125,7 +125,7 @@ FROM
     LEFT JOIN user_activity_unread uau ON uau.user_id = up.user_id
         AND uau.activity_id = a.id
 WHERE
-    up.deleted_at IS NULL;
+    up.archived_at IS NULL;
 
 CREATE OR REPLACE VIEW "public"."user_activity_exception" WITH ( security_invoker = TRUE)
 --
@@ -139,22 +139,22 @@ SELECT
     ua.range_at,
     ua.range_on,
     -- exception overrides
-    CASE WHEN ae.deleted_at IS NULL THEN
+    CASE WHEN ae.archived_at IS NULL THEN
         ae.at
     ELSE
         NULL
     END AS at,
-    CASE WHEN ae.deleted_at IS NULL THEN
+    CASE WHEN ae.archived_at IS NULL THEN
         ae.on
     ELSE
         NULL
     END AS ON,
-    CASE WHEN ae.deleted_at IS NULL THEN
+    CASE WHEN ae.archived_at IS NULL THEN
         ae.title
     ELSE
         NULL
     END AS title,
-    CASE WHEN ae.deleted_at IS NULL THEN
+    CASE WHEN ae.archived_at IS NULL THEN
         ae.note
     ELSE
         NULL

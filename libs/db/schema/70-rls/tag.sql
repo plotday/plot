@@ -23,7 +23,7 @@ CREATE POLICY "Users can insert activity_tag for activities in their accessible 
 
 REVOKE UPDATE ON TABLE public.activity_tag FROM authenticated;
 
-GRANT UPDATE (updated_at, updated_by, deleted_at) ON TABLE public.activity_tag TO authenticated;
+GRANT UPDATE (updated_at, updated_by, archived_at) ON TABLE public.activity_tag TO authenticated;
 
 CREATE POLICY "Users can update activity_tag for activities in their accessible priorities" ON "public"."activity_tag"
     FOR UPDATE

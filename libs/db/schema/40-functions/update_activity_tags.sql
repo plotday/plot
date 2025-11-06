@@ -24,11 +24,11 @@ BEGIN
             current_tag_type := get_tag_type (tag_id_int);
             IF is_adding THEN
                 -- Adding a tag - use upsert to create or reactivate
-                INSERT INTO activity_tag (actor_id, activity_id, tag_id, updated_at, deleted_at, updated_by)
+                INSERT INTO activity_tag (actor_id, activity_id, tag_id, updated_at, archived_at, updated_by)
                     VALUES (p_user_id, p_activity_id, tag_id_int, now(), NULL, p_client_id)
                 ON CONFLICT (actor_id, activity_id, tag_id)
                     DO UPDATE SET
-                        deleted_at = NULL,
+                        archived_at = NULL,
                         updated_at = now(),
                         updated_by = p_client_id;
             ELSE
@@ -38,24 +38,24 @@ BEGIN
                     UPDATE
                         activity_tag
                     SET
-                        deleted_at = now(),
+                        archived_at = now(),
                         updated_by = p_client_id
                     WHERE
                         activity_id = p_activity_id
                         AND tag_id = tag_id_int
-                        AND deleted_at IS NULL;
+                        AND archived_at IS NULL;
                 ELSE
                     -- For count/compute tags, only remove current user's tag
                     UPDATE
                         activity_tag
                     SET
-                        deleted_at = now(),
+                        archived_at = now(),
                         updated_by = p_client_id
                     WHERE
                         activity_id = p_activity_id
                         AND tag_id = tag_id_int
                         AND actor_id = p_user_id
-                        AND deleted_at IS NULL;
+                        AND archived_at IS NULL;
                 END IF;
             END IF;
         END LOOP;

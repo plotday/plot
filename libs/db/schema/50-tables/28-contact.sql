@@ -2,7 +2,7 @@ CREATE TABLE "public"."contact" (
     "id" uuid PRIMARY KEY DEFAULT gen_random_uuid_v7 () NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "email" text NOT NULL CHECK (is_lower (email)),
     "name" text,
     "avatar_url" text,

@@ -1,3 +1,4 @@
+export 'package:flutter/widgets.dart' hide Action, Actions;
 export 'package:forui/forui.dart';
 
 export 'activity.dart';
@@ -6,7 +7,7 @@ export 'badge.dart';
 export 'bidirectional_list.dart';
 export 'button.dart';
 export 'colour_scheme.dart';
-export 'command_bar.dart';
+export 'action_bar.dart';
 export 'dialog.dart';
 export 'dropdown.dart';
 export 'editor.dart';

@@ -1,9 +1,8 @@
-import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/command/command.dart';
+import 'package:plot/action/action.dart';
 import 'package:plot/util/hooks.dart';
 import 'package:plot/state/priorities.dart';
 
@@ -28,21 +27,21 @@ class EditPriorityPage extends HookWidget {
       if (title.isEmpty) return;
 
       final buildContext = context;
-      CommandReturn? result;
+      ActionReturn? result;
       if (isEditing) {
         // Edit existing priority
-        final command = EditPriority(
+        final action = EditPriority(
           Future.value(_priority!.copyWith(title: title)),
         );
-        result = await command.run(buildContext);
+        result = await action.run(buildContext);
       } else {
         // Create new priority
         final prioritiesBloc = buildContext.read<PrioritiesBloc>();
         final effectiveParent = parent.value ?? prioritiesBloc.state.root!;
-        final command = AddPriority(
+        final action = AddPriority(
           Future.value(Priority(title: title, parent: effectiveParent)),
         );
-        result = await command.run(buildContext);
+        result = await action.run(buildContext);
       }
 
       if (buildContext.mounted) {
@@ -70,7 +69,7 @@ class EditPriorityPage extends HookWidget {
               builder: (context) {
                 final prioritiesBloc = context.read<PrioritiesBloc>();
                 return Button.primary(
-                  CommandWrapper(
+                  ActionWrapper(
                     isEditing
                         ? EditPriority(
                             Future.value(_priority!.copyWith(title: title)),
@@ -87,9 +86,9 @@ class EditPriorityPage extends HookWidget {
                               );
                             }),
                           ),
-                    run: (command, context) async {
+                    run: (action, context) async {
                       await submitPriority();
-                      return const CommandDone();
+                      return const ActionDone();
                     },
                   ),
                   enabled: title.isNotEmpty,

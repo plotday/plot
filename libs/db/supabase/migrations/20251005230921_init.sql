@@ -1,3 +1,5 @@
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+
 CREATE SCHEMA IF NOT EXISTS "admin";
 
 CREATE SCHEMA IF NOT EXISTS "extensions";
@@ -141,7 +143,7 @@ CREATE TABLE "public"."activity" (
     "author_id" uuid NOT NULL,
     "assignee_id" uuid,
     "updated_by" integer NOT NULL DEFAULT 0,
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "priority_id" uuid NOT NULL,
     "type" activity_type NOT NULL DEFAULT 'note' ::activity_type,
     "path" ltree NOT NULL DEFAULT generate_path (NULL::LTREE),
@@ -168,7 +170,7 @@ CREATE TABLE "public"."activity_exception" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_by" integer NOT NULL DEFAULT 0,
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "activity_id" uuid NOT NULL,
     "occurrence" text NOT NULL,
     "at" tstzrange,
@@ -184,7 +186,7 @@ ALTER TABLE "public"."activity_exception" ENABLE ROW LEVEL SECURITY;
 
 CREATE TABLE "public"."activity_tag" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "actor_id" uuid NOT NULL,
     "activity_id" uuid NOT NULL,
     "occurrence" text,
@@ -198,7 +200,7 @@ CREATE TABLE "public"."agent" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid (),
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "root_id" uuid NOT NULL,
     "name" text NOT NULL,
     "description" text NOT NULL,
@@ -233,7 +235,7 @@ ALTER TABLE "public"."agent_author" ENABLE ROW LEVEL SECURITY;
 CREATE TABLE "public"."agent_token" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "agent_id" uuid,
     "token" text NOT NULL,
     "priority_id" uuid
@@ -245,7 +247,7 @@ CREATE TABLE "public"."contact" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid_v7 (),
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "email" text NOT NULL,
     "name" text,
     "avatar_url" text,
@@ -286,7 +288,7 @@ CREATE TABLE "public"."priority" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "created_by" uuid NOT NULL,
     "root" boolean NOT NULL DEFAULT FALSE,
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "title" text NOT NULL,
     "path" ltree NOT NULL,
     "updated_by" integer NOT NULL DEFAULT 0
@@ -303,7 +305,7 @@ CREATE TABLE "public"."priority_agent" (
     "config" jsonb NOT NULL DEFAULT '{}' ::jsonb,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone
+    "archived_at" timestamp with time zone
 );
 
 ALTER TABLE "public"."priority_agent" ENABLE ROW LEVEL SECURITY;
@@ -311,7 +313,7 @@ ALTER TABLE "public"."priority_agent" ENABLE ROW LEVEL SECURITY;
 CREATE TABLE "public"."priority_contact" (
     "id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "priority_id" uuid NOT NULL,
     "contact_id" uuid NOT NULL
 );
@@ -335,7 +337,7 @@ CREATE TABLE "public"."priority_user" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL,
     "priority_id" uuid NOT NULL,
-    "deleted_at" timestamp with time zone
+    "archived_at" timestamp with time zone
 );
 
 ALTER TABLE "public"."priority_user" ENABLE ROW LEVEL SECURITY;
@@ -357,7 +359,7 @@ CREATE TABLE "public"."session" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid_v7 (),
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "user_id" uuid NOT NULL,
     "priority_id" uuid,
     "at" tstzrange NOT NULL,
@@ -374,7 +376,7 @@ CREATE UNIQUE INDEX activity_exception_pkey ON public.activity_exception USING b
 CREATE UNIQUE INDEX activity_pkey ON public.activity USING btree (id);
 
 CREATE INDEX activity_tag_activity_id_tag_id_idx ON public.activity_tag USING btree (activity_id, tag_id)
-WHERE (deleted_at IS NULL);
+WHERE (archived_at IS NULL);
 
 CREATE UNIQUE INDEX activity_tag_actor_id_activity_id_tag_id_key ON public.activity_tag USING btree (actor_id, activity_id, tag_id);
 
@@ -738,8 +740,8 @@ FROM (
         at.activity_id,
         at.occurrence,
         at.tag_id,
-        jsonb_agg(at.actor_id) FILTER (WHERE (at.deleted_at IS NULL)) AS actor_ids,
-    max(COALESCE(at.deleted_at, at.updated_at)) AS updated_at,
+        jsonb_agg(at.actor_id) FILTER (WHERE (at.archived_at IS NULL)) AS actor_ids,
+    max(COALESCE(at.archived_at, at.updated_at)) AS updated_at,
     (array_agg(at.updated_by ORDER BY at.updated_at DESC))[1] AS updated_by
 FROM
     activity_tag at
@@ -988,7 +990,7 @@ BEGIN
                 WHERE
                     id = pu.priority_id))
     WHERE
-        pu.deleted_at IS NULL
+        pu.archived_at IS NULL
         AND p.id = get_users_with_priority_access.target_priority_id;
 END;
 $function$;
@@ -1001,12 +1003,12 @@ DECLARE
     _priority_id uuid;
 BEGIN
     _priority_id := NEW.id;
-    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.updated_by IS DISTINCT FROM OLD.updated_by) THEN
-        INSERT INTO priority (id, deleted_at, title, path, created_by, updated_by)
-            VALUES (NEW.id, NEW.deleted_at, NEW.title, NEW.path, NEW.created_by, NEW.updated_by)
+    IF (OLD IS NULL OR NEW.archived_at IS DISTINCT FROM OLD.archived_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.updated_by IS DISTINCT FROM OLD.updated_by) THEN
+        INSERT INTO priority (id, archived_at, title, path, created_by, updated_by)
+            VALUES (NEW.id, NEW.archived_at, NEW.title, NEW.path, NEW.created_by, NEW.updated_by)
         ON CONFLICT (id)
             DO UPDATE SET
-                deleted_at = NEW.deleted_at,
+                archived_at = NEW.archived_at,
                 title = NEW.title,
                 path = NEW.path,
                 updated_by = NEW.updated_by
@@ -1176,7 +1178,7 @@ BEGIN
     END IF;
     -- Build enriched item with author and priority information
     SELECT
-        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'deleted_at', current_item.deleted_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'path', current_item.path, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'note', current_item.note, 'links', current_item.links, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'source', current_item.source,
+        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'archived_at', current_item.archived_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'path', current_item.path, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'note', current_item.note, 'links', current_item.links, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'source', current_item.source,
             -- Enriched data from JOINs
             'author_name', a.name, 'author_type', a.type, 'priority_title', p.title) INTO enriched_item
     FROM
@@ -1229,7 +1231,7 @@ BEGIN
         RETURN COALESCE(NEW, OLD);
     END IF;
     -- Build enriched item
-    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'created_by', current_item.created_by, 'root', current_item.root, 'deleted_at', current_item.deleted_at, 'title', current_item.title, 'path', current_item.path, 'updated_by', current_item.updated_by);
+    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'created_by', current_item.created_by, 'root', current_item.root, 'archived_at', current_item.archived_at, 'title', current_item.title, 'path', current_item.path, 'updated_by', current_item.updated_by);
     -- Build the payload (no agents for priority)
     payload := jsonb_build_object('type', 'priority', 'event', event_type, 'item', enriched_item, 'agents', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'priority');
     api_url := get_api_root () || '/update';
@@ -1274,7 +1276,7 @@ BEGIN
         RETURN COALESCE(NEW, OLD);
     END IF;
     -- Build enriched item
-    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'deleted_at', current_item.deleted_at, 'user_id', current_item.user_id, 'priority_id', current_item.priority_id, 'at', current_item.at, 'precedence', current_item.precedence, 'pomodoro', current_item.pomodoro, 'pomodoro_at', current_item.pomodoro_at, 'updated_by', current_item.updated_by);
+    enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'archived_at', current_item.archived_at, 'user_id', current_item.user_id, 'priority_id', current_item.priority_id, 'at', current_item.at, 'precedence', current_item.precedence, 'pomodoro', current_item.pomodoro, 'pomodoro_at', current_item.pomodoro_at, 'updated_by', current_item.updated_by);
     -- Build the payload (no agents for session)
     payload := jsonb_build_object('type', 'session', 'event', event_type, 'item', enriched_item, 'agents', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'session');
     api_url := get_api_root () || '/update';
@@ -1330,7 +1332,7 @@ SELECT
     pa.config,
     pa.created_at,
     pa.updated_at,
-    pa.deleted_at,
+    pa.archived_at,
     a.version,
     aa.name AS author_name,
     aa.email AS author_email,
@@ -1368,11 +1370,11 @@ SELECT
     a.priority_id,
     at.tag_id,
     count(*) AS count,
-    max(COALESCE(at.deleted_at, at.updated_at)) AS updated_at
+    max(COALESCE(at.archived_at, at.updated_at)) AS updated_at
 FROM (activity_tag at
     JOIN activity a ON (at.activity_id = a.id))
-WHERE ((at.deleted_at IS NULL)
-    AND (a.deleted_at IS NULL)
+WHERE ((at.archived_at IS NULL)
+    AND (a.archived_at IS NULL)
     AND (nlevel (a.path) = 1))
 GROUP BY
     a.priority_id,
@@ -1485,11 +1487,11 @@ BEGIN
             current_tag_type := get_tag_type (tag_id_int);
             IF is_adding THEN
                 -- Adding a tag - use upsert to create or reactivate
-                INSERT INTO activity_tag (user_id, activity_id, tag_id, updated_at, deleted_at, updated_by)
+                INSERT INTO activity_tag (user_id, activity_id, tag_id, updated_at, archived_at, updated_by)
                     VALUES (p_user_id, p_activity_id, tag_id_int, now(), NULL, p_client_id)
                 ON CONFLICT (user_id, activity_id, tag_id)
                     DO UPDATE SET
-                        deleted_at = NULL,
+                        archived_at = NULL,
                         updated_at = now(),
                         updated_by = p_client_id;
             ELSE
@@ -1499,24 +1501,24 @@ BEGIN
                     UPDATE
                         activity_tag
                     SET
-                        deleted_at = now(),
+                        archived_at = now(),
                         updated_by = p_client_id
                     WHERE
                         activity_id = p_activity_id
                         AND tag_id = tag_id_int
-                        AND deleted_at IS NULL;
+                        AND archived_at IS NULL;
                 ELSE
                     -- For count/compute tags, only remove current user's tag
                     UPDATE
                         activity_tag
                     SET
-                        deleted_at = now(),
+                        archived_at = now(),
                         updated_by = p_client_id
                     WHERE
                         activity_id = p_activity_id
                         AND tag_id = tag_id_int
                         AND user_id = p_user_id
-                        AND deleted_at IS NULL;
+                        AND archived_at IS NULL;
                 END IF;
             END IF;
         END LOOP;
@@ -1553,7 +1555,7 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.upsert_activity (p_id uuid, p_user_id uuid, p_updated_by integer, p_deleted_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_priority_id uuid DEFAULT NULL::uuid, p_path ltree DEFAULT NULL::LTREE, p_draft boolean DEFAULT NULL::boolean, p_private boolean DEFAULT NULL::boolean, p_do_on date DEFAULT NULL::date, p_at tstzrange DEFAULT NULL::tstzrange, p_on daterange DEFAULT NULL::dateRANGE, p_duration interval DEFAULT NULL::interval, p_done_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_title text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_order double precision DEFAULT NULL::double precision, p_recurrence_rule text DEFAULT NULL::text, p_recurrence_exdates timestamp with time zone[] DEFAULT NULL::timestamp with time zone[], p_recurrence_dates timestamp with time zone[] DEFAULT NULL::timestamp with time zone[], p_series uuid DEFAULT NULL::uuid, p_occurrence_start timestamp with time zone DEFAULT NULL::timestamp with time zone)
+CREATE OR REPLACE FUNCTION public.upsert_activity (p_id uuid, p_user_id uuid, p_updated_by integer, p_archived_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_priority_id uuid DEFAULT NULL::uuid, p_path ltree DEFAULT NULL::LTREE, p_draft boolean DEFAULT NULL::boolean, p_private boolean DEFAULT NULL::boolean, p_do_on date DEFAULT NULL::date, p_at tstzrange DEFAULT NULL::tstzrange, p_on daterange DEFAULT NULL::dateRANGE, p_duration interval DEFAULT NULL::interval, p_done_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_title text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_order double precision DEFAULT NULL::double precision, p_recurrence_rule text DEFAULT NULL::text, p_recurrence_exdates timestamp with time zone[] DEFAULT NULL::timestamp with time zone[], p_recurrence_dates timestamp with time zone[] DEFAULT NULL::timestamp with time zone[], p_series uuid DEFAULT NULL::uuid, p_occurrence_start timestamp with time zone DEFAULT NULL::timestamp with time zone)
     RETURNS uuid
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -1591,8 +1593,8 @@ BEGIN
             p_path := _existing_path;
         END IF;
         -- Insert new exception activity
-        INSERT INTO activity (id, updated_by, deleted_at, priority_id, path, draft, private, do_on, at, "on", duration, done_at, title, note, "order", recurrence_rule, recurrence_exdates, recurrence_dates, occurrence_root_id, occurrence_original_start)
-            VALUES (_activity_id, p_updated_by, p_deleted_at, COALESCE(p_priority_id, (
+        INSERT INTO activity (id, updated_by, archived_at, priority_id, path, draft, private, do_on, at, "on", duration, done_at, title, note, "order", recurrence_rule, recurrence_exdates, recurrence_dates, occurrence_root_id, occurrence_original_start)
+            VALUES (_activity_id, p_updated_by, p_archived_at, COALESCE(p_priority_id, (
                         SELECT
                             priority_id
                         FROM activity
@@ -1631,13 +1633,13 @@ BEGIN
         p_path := NULL;
     END IF;
     -- Standard upsert for regular activities or existing exception records
-    INSERT INTO activity (id, updated_by, deleted_at, priority_id, path, draft, private, do_on, at, "on", duration, done_at, title, note, "order", recurrence_rule, recurrence_exdates, recurrence_dates, occurrence_root_id, occurrence_original_start)
-        VALUES (COALESCE(p_id, gen_random_uuid_v7 ()), p_updated_by, p_deleted_at, p_priority_id, p_path, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_do_on, p_at, p_on, p_duration, p_done_at, p_title, p_note, COALESCE(p_order, public.order_first ()), p_recurrence_rule, p_recurrence_exdates, p_recurrence_dates, _occurrence_root_id, _occurrence_original_start)
+    INSERT INTO activity (id, updated_by, archived_at, priority_id, path, draft, private, do_on, at, "on", duration, done_at, title, note, "order", recurrence_rule, recurrence_exdates, recurrence_dates, occurrence_root_id, occurrence_original_start)
+        VALUES (COALESCE(p_id, gen_random_uuid_v7 ()), p_updated_by, p_archived_at, p_priority_id, p_path, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_do_on, p_at, p_on, p_duration, p_done_at, p_title, p_note, COALESCE(p_order, public.order_first ()), p_recurrence_rule, p_recurrence_exdates, p_recurrence_dates, _occurrence_root_id, _occurrence_original_start)
     ON CONFLICT (id)
         DO UPDATE SET
             updated_by = EXCLUDED.updated_by,
             updated_at = now(),
-            deleted_at = COALESCE(EXCLUDED.deleted_at, activity.deleted_at),
+            archived_at = COALESCE(EXCLUDED.archived_at, activity.archived_at),
             priority_id = COALESCE(EXCLUDED.priority_id, activity.priority_id),
             path = COALESCE(EXCLUDED.path, activity.path),
             draft = COALESCE(EXCLUDED.draft, activity.draft),
@@ -1743,7 +1745,7 @@ BEGIN
                         id = pu.priority_id))
             WHERE
                 pu.user_id = user_has_priority_access.user_id
-                AND pu.deleted_at IS NULL
+                AND pu.archived_at IS NULL
                 AND p.id = user_has_priority_access.target_priority_id);
 END;
 $function$;
@@ -1766,7 +1768,7 @@ BEGIN
             JOIN priority p ON p.path <@ pp.path
         WHERE
             pu.user_id = user_has_priority_access.user_id
-            AND pu.deleted_at IS NULL
+            AND pu.archived_at IS NULL
             AND p.path = user_has_priority_access.target_priority_path);
 END;
 $function$;
@@ -1777,7 +1779,7 @@ SELECT
     p.id,
     p.created_at,
     GREATEST (settings.updated_at, pu.updated_at, p.updated_at) AS updated_at,
-    GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
+    GREATEST (pu.archived_at, p.archived_at) AS archived_at,
     p.created_by,
     p.updated_by,
     (root.root
@@ -1802,7 +1804,7 @@ FROM (((((priority_user pu
                     AND (p.id = settings.priority_id))))
     LEFT JOIN priority_settings_inherited inherited_settings ON (((inherited_settings.user_id = pu.user_id)
                 AND (p.id = inherited_settings.priority_id))))
-WHERE (pu.deleted_at IS NULL);
+WHERE (pu.archived_at IS NULL);
 
 CREATE OR REPLACE FUNCTION public.user_timezone ()
     RETURNS text
@@ -1835,7 +1837,7 @@ SELECT
     a.author_id,
     a.assignee_id,
     a.updated_by,
-    a.deleted_at,
+    a.archived_at,
     a.priority_id,
     a.type,
     a.path,
@@ -1873,7 +1875,7 @@ SELECT
     END AS range_on
 FROM (activity a
     JOIN user_priority up ON (a.priority_id = up.id))
-WHERE (up.deleted_at IS NULL);
+WHERE (up.archived_at IS NULL);
 
 CREATE OR REPLACE VIEW "public"."user_activity_exception" AS
 SELECT
@@ -1883,22 +1885,22 @@ SELECT
     ae.updated_at,
     ua.range_at,
     ua.range_on,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.at
     ELSE
         NULL::tstzrange
     END AS at,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae."on"
     ELSE
         NULL::daterange
     END AS "on",
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.title
     ELSE
         NULL::text
     END AS title,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.note
     ELSE
         NULL::text
@@ -2005,7 +2007,7 @@ CREATE POLICY "Users can view contacts linked to their priorities" ON "public"."
                 1
             FROM
                 priority_contact pc
-            WHERE ((pc.contact_id = contact.id) AND (pc.deleted_at IS NULL) AND user_has_priority_access (auth.uid (), pc.priority_id)))));
+            WHERE ((pc.contact_id = contact.id) AND (pc.archived_at IS NULL) AND user_has_priority_access (auth.uid (), pc.priority_id)))));
 
 CREATE POLICY "Everyone can view all domains" ON "public"."domain" AS permissive
     FOR SELECT TO authenticated
@@ -2029,7 +2031,7 @@ CREATE POLICY "Users can create new priorities in their priorities" ON "public".
 
 CREATE POLICY "Users can update their priorities" ON "public"."priority" AS permissive
     FOR UPDATE TO authenticated
-        USING ((can_access_priority (id) AND ((deleted_at IS NULL) OR (root = FALSE))))
+        USING ((can_access_priority (id) AND ((archived_at IS NULL) OR (root = FALSE))))
         WITH CHECK (((nlevel (path) = 1) OR can_access_priority (parent_path (path))));
 
 CREATE POLICY "Users can delete agents in their accessible priorities" ON "public"."priority_agent" AS permissive

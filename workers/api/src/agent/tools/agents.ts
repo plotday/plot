@@ -7,6 +7,7 @@ import type { SupabaseClient } from "@plotday/db";
 
 import { type AgentEnvironment, type Bindings } from "../../env";
 import { type LogSubscriptions } from "../../state/log-subscriptions";
+import { getUser } from "../../utils/auth";
 import { deployAgent } from "../deployment";
 import { generateAgent } from "../generator";
 import type { AgentSource } from "../types";
@@ -43,7 +44,7 @@ export class Agents extends Tool implements IAgents {
       .from("priority_agent")
       .select("priority_id")
       .eq("id", this.priorityAgentId)
-      .is("deleted_at", null)
+      .is("archived_at", null)
       .single();
 
     if (fetchError || !priorityAgent) {
@@ -88,7 +89,7 @@ export class Agents extends Tool implements IAgents {
       .from("priority_agent")
       .select("priority_id")
       .eq("id", this.priorityAgentId)
-      .is("deleted_at", null)
+      .is("archived_at", null)
       .single();
 
     if (fetchError || !priorityAgent) {
@@ -177,8 +178,7 @@ export class Agents extends Tool implements IAgents {
     // Get user_id for personal environment
     let userId: string | null = null;
     if (environment === "personal") {
-      const { data } = await this.supabase.auth.getClaims();
-      const user = data?.claims;
+      const { user } = await getUser(this.supabase);
       if (!user) {
         throw new Error("User not authenticated");
       }

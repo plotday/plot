@@ -1,21 +1,23 @@
-import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:posthog_flutter/posthog_flutter.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'command.dart';
+import 'action.dart';
+import 'package:plot/analytics/analytics.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 
-abstract class ActivityCommand extends Command {
-  ActivityCommand(this.activity)
-    : super(
-        title: activity?.displayTitle ?? 'None',
-        subtitle: activity?.parent?.displayTitle ?? '',
-      );
+abstract class ActivityAction extends Action {
+  ActivityAction(
+    this.activity, {
+    required super.eventObject,
+    required super.eventAction,
+  }) : super(
+         title: activity?.displayTitle ?? 'None',
+         subtitle: activity?.parent?.displayTitle ?? '',
+       );
 
   final Activity? activity;
 
@@ -54,14 +56,15 @@ abstract class ActivityCommand extends Command {
   }
 }
 
-class ChangeCurrentActivity extends ActivityCommand {
-  ChangeCurrentActivity(super.activity);
+class ChangeCurrentActivity extends ActivityAction {
+  ChangeCurrentActivity(super.activity)
+    : super(eventObject: EventObject.activity, eventAction: EventAction.viewed);
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     // HACK: We need to make the panel visible before navigating to it
     context.read<LayoutBloc>().setRightPanelVisible(true);
-    return CommandRoute(
+    return ActionRoute(
       PriorityRoute(
         priorityIdString: activity!.priority.id.toShortString(),
         children: [
@@ -72,20 +75,22 @@ class ChangeCurrentActivity extends ActivityCommand {
   }
 }
 
-class NewActivity extends Command {
+class NewActivity extends Action {
   NewActivity()
     : super(
         title: "New Activity",
+        eventObject: EventObject.activity,
+        eventAction: EventAction.opened,
         icon: PlotIcon.add,
         shortcut: SingleActivator(LogicalKeyboardKey.keyN, meta: true),
       );
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     context.read<LayoutBloc>().setRightPanelVisible(true);
     final nowBloc = context.read<NowBloc>();
     final priorityId = nowBloc.loadedState.priority.id;
-    return CommandRoute(
+    return ActionRoute(
       PriorityRoute(
         priorityIdString: priorityId.toShortString(),
         children: [NewActivityRoute()],
@@ -94,17 +99,22 @@ class NewActivity extends Command {
   }
 }
 
-class OpenActivity extends Command {
+class OpenActivity extends Action {
   OpenActivity(Activity activity)
     // ignore: prefer_initializing_formals
     : activity = activity,
-      super(title: "Open", icon: PlotIcon.open);
+      super(
+        title: "Open",
+        eventObject: EventObject.activity,
+        eventAction: EventAction.opened,
+        icon: PlotIcon.open,
+      );
 
   final Activity activity;
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandRoute(
+  Future<ActionReturn> run(BuildContext context) async {
+    return ActionRoute(
       PriorityRoute(
         priorityIdString: activity.priority.id.toShortString(),
         children: [
@@ -116,17 +126,21 @@ class OpenActivity extends Command {
   }
 }
 
-class AddActivity extends Command {
-  AddActivity(this._activity) : super(title: 'Add');
+class AddActivity extends Action {
+  AddActivity(this._activity)
+    : super(
+        title: 'Add',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.added,
+      );
 
   final Future<Activity> _activity;
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     final activity = await _activity;
     await activity.copyWith(draft: false).save();
-    Posthog().capture(eventName: 'Activity Added');
-    return CommandRoute(
+    return ActionRoute(
       PriorityRoute(
         priorityIdString: activity.priority.id.toShortString(),
         children: [
@@ -138,42 +152,51 @@ class AddActivity extends Command {
   }
 }
 
-class ArchiveActivity extends Command {
+class ArchiveActivity extends Action {
   ArchiveActivity(Activity activity)
     : _activity = Future.value(activity),
       super(
-        title: activity.deletedAt != null ? 'Un-archive' : 'Archive',
+        title: activity.archivedAt != null ? 'Un-archive' : 'Archive',
+        eventObject: EventObject.activity,
+        eventAction: activity.archivedAt != null
+            ? EventAction.unarchived
+            : EventAction.archived,
         icon: PlotIcon.archived,
       );
 
   ArchiveActivity.future(this._activity)
-    : super(title: 'Archive', icon: PlotIcon.archived);
+    : super(
+        title: 'Archive',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.archived,
+        icon: PlotIcon.archived,
+      );
 
   final Future<Activity> _activity;
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     final activity = await _activity;
-    final isArchived = activity.deletedAt != null;
+    final isArchived = activity.archivedAt != null;
 
     if (isArchived) {
-      // Un-archive: set deletedAt to null
-      await activity.copyWith(deletedAt: const Value(null)).save();
-      Posthog().capture(eventName: 'Activity Un-archived');
+      // Un-archive: set archivedAt to null
+      await activity.copyWith(archivedAt: const Value(null)).save();
     } else {
-      // Archive: set deletedAt to current time
+      // Archive: set archivedAt to current time
       await activity.delete();
-      Posthog().capture(eventName: 'Activity Archived');
     }
-    return const CommandDone();
+    return const ActionDone();
   }
 }
 
-abstract class _UpdateActivityCommand extends Command {
-  _UpdateActivityCommand(
+abstract class _UpdateActivityAction extends Action {
+  _UpdateActivityAction(
     this.activity, {
     Future<void> Function(Activity)? onUpdate,
     required super.title,
+    required super.eventObject,
+    required super.eventAction,
     super.icon,
   }) : onUpdate = onUpdate ?? ((activity) => activity.save());
 
@@ -181,12 +204,17 @@ abstract class _UpdateActivityCommand extends Command {
   final Future<void> Function(Activity) onUpdate;
 }
 
-class StartActivity extends _UpdateActivityCommand {
+class StartActivity extends _UpdateActivityAction {
   StartActivity(super.activity, {super.onUpdate})
-    : super(title: 'Do Now', icon: PlotIcon.now);
+    : super(
+        title: 'Do Now',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.started,
+        icon: PlotIcon.now,
+      );
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     final start = !activity.doNow;
 
     if (start) {
@@ -217,36 +245,41 @@ class StartActivity extends _UpdateActivityCommand {
       );
     }
 
-    Posthog().capture(
-      eventName: start ? 'Activity Started' : 'Activity Finished',
-    );
-    return const CommandDone();
+    return const ActionDone();
   }
 }
 
-class FinishActivity extends _UpdateActivityCommand {
+class FinishActivity extends _UpdateActivityAction {
   FinishActivity(super.activity, {super.onUpdate})
-    : super(title: 'Finish', icon: PlotIcon.done);
+    : super(
+        title: 'Finish',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.finished,
+        icon: PlotIcon.done,
+      );
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     await onUpdate(activity.copyWith(doneAt: Value(DateTime.now())));
-    Posthog().capture(eventName: 'Activity Finished');
-    return const CommandDone();
+    return const ActionDone();
   }
 }
 
-class ScheduleActivity extends _UpdateActivityCommand {
+class ScheduleActivity extends _UpdateActivityAction {
   ScheduleActivity(super.activity, {required this.when, super.onUpdate})
     : super(
         title: activity.todo ? 'Reschedule' : 'Schedule',
+        eventObject: EventObject.activity,
+        eventAction: activity.todo
+            ? EventAction.rescheduled
+            : EventAction.scheduled,
         icon: PlotIcon.later,
       );
 
   final Date when;
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     await onUpdate(
       activity.copyWith(
         type: ActivityType.task,
@@ -254,10 +287,7 @@ class ScheduleActivity extends _UpdateActivityCommand {
         at: const Value(null), // Clear any existing datetime scheduling
       ),
     );
-    Posthog().capture(
-      eventName: activity.todo ? 'Activity Rescheduled' : 'Activity Scheduled',
-    );
-    return const CommandDone();
+    return const ActionDone();
   }
 }
 
@@ -269,33 +299,41 @@ class PickScheduleActivity extends ShowPage {
         builder: (context) => FCalendar(
           controller: FCalendarController.date(),
           onPress: (date) async {
-            final commandReturn = await ScheduleActivity(
+            final actionReturn = await ScheduleActivity(
               activity,
               when: date.toDate(),
             ).run(context);
             if (!context.mounted) return;
-            Dialog.pop(context, Value(commandReturn));
+            Dialog.pop(context, Value(actionReturn));
           },
         ),
       );
 }
 
-class MarkActivityIncomplete extends _UpdateActivityCommand {
+class MarkActivityIncomplete extends _UpdateActivityAction {
   MarkActivityIncomplete(super.activity, {super.onUpdate})
-    : super(title: 'Mark Activity Not Finished', icon: PlotIcon.done);
+    : super(
+        title: 'Mark Activity Not Finished',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.unfinished,
+        icon: PlotIcon.done,
+      );
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     await onUpdate(activity.copyWith(doneAt: const Value(null)));
-    Posthog().capture(eventName: 'Activity Marked Not Finished');
-    return const CommandDone();
+    return const ActionDone();
   }
 }
 
-class PinActivity extends _UpdateActivityCommand {
+class PinActivity extends _UpdateActivityAction {
   PinActivity(super.activity, {super.onUpdate})
     : super(
         title: _isPinned(activity) ? 'Unpin' : 'Pin',
+        eventObject: EventObject.activity,
+        eventAction: _isPinned(activity)
+            ? EventAction.unpinned
+            : EventAction.pinned,
         icon: PlotIcon.pinned,
       );
 
@@ -304,90 +342,87 @@ class PinActivity extends _UpdateActivityCommand {
   }
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     final updatedActivity = activity.toggleTag(Tag.pinned);
     await onUpdate(updatedActivity);
-
-    Posthog().capture(
-      eventName: _isPinned(activity) ? 'Activity Un-pinned' : 'Activity Pinned',
-    );
-    return const CommandDone();
+    return const ActionDone();
   }
 }
 
-class ToggleActivityTag extends _UpdateActivityCommand {
+class ToggleActivityTag extends _UpdateActivityAction {
   ToggleActivityTag(super.activity, this.tag, {super.onUpdate})
-    : super(title: tag.name, icon: tag.icon);
+    : super(
+        title: tag.name,
+        eventObject: EventObject.activity,
+        eventAction: activity.hasTag(tag)
+            ? EventAction.untagged
+            : EventAction.tagged,
+        icon: tag.icon,
+      );
 
   final Tag tag;
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<ActionReturn> run(BuildContext context) async {
     if (tag == Tag.later) {
       await PickScheduleActivity(activity).run(context);
-      return const CommandDone();
+      return const ActionDone();
     }
 
-    final hadTag = activity.hasTag(tag);
     final updatedActivity = activity.toggleTag(tag);
     await onUpdate(updatedActivity);
-
-    Posthog().capture(
-      eventName: hadTag ? 'Activity Tag Removed' : 'Activity Tag Added',
-      properties: {'tag': tag.name},
-    );
-    return const CommandDone();
+    return const ActionDone();
   }
 }
 
-class ShowActivityCommands extends ShowCommands {
-  ShowActivityCommands(Activity activity)
+class ShowActivityActions extends ShowActions {
+  ShowActivityActions(Activity activity)
     : super(
-        title: 'More Commands',
+        title: 'More Actions',
         icon: PlotIcon.menu,
-        commands: (context) =>
-            Future.value(Commands(groups: activityCommandGroups(activity))),
+        actions: (context) =>
+            Future.value(Actions(groups: activityActionGroups(activity))),
       );
 }
 
-Command activityPrimaryCommand(Activity activity) => switch (activity) {
+Action activityPrimaryAction(Activity activity) => switch (activity) {
   _ when PinActivity._isPinned(activity) => PinActivity(activity),
   _ when activity.todo => FinishActivity(activity),
   _ when activity.done => MarkActivityIncomplete(activity),
   _ => StartActivity(activity),
 };
 
-List<Command> activitySecondaryCommands(Activity activity) => [
+List<Action> activitySecondaryActions(Activity activity) => [
   if (activity.path.isRoot) PickScheduleActivity(activity),
   if (!PinActivity._isPinned(activity)) PinActivity(activity),
   ArchiveActivity(activity),
 ];
 
-List<CommandGroup> activityCommandGroups(Activity activity) {
-  final commands = Tag.getAll()
+List<ActionGroup> activityActionGroups(Activity activity) {
+  final tags = Tag.getAll()
       .map((tag) => ToggleActivityTag(activity, tag))
       .toList();
-  final actions = activityCommands(activity);
-  final remove = commands
+  final actions = activityActions(activity);
+  final remove = tags
       .where(
         (cmd) => cmd.tag.type != TagType.compute && activity.hasTag(cmd.tag),
       )
       .toList();
-  final add = commands
+  final add = tags
       .where(
         (cmd) => cmd.tag.type != TagType.compute && !activity.hasTag(cmd.tag),
       )
       .toList();
   return [
     if (actions.isNotEmpty)
-      StaticCommandGroup(title: 'Actions', commands: actions),
+      StaticActionGroup(title: 'Actions', actions: actions),
     if (remove.isNotEmpty)
-      StaticCommandGroup(title: 'Remove Tag', commands: remove),
-    if (add.isNotEmpty) StaticCommandGroup(title: 'Add Tag', commands: add),
+      StaticActionGroup(title: 'Remove Tag', actions: remove),
+    if (add.isNotEmpty) StaticActionGroup(title: 'Add Tag', actions: add),
   ];
 }
 
-List<Command> activityCommands(Activity activity) {
+List<Action> activityActions(Activity activity) {
   final actions = Tag.getAll()
       .where((tag) => tag.type == TagType.compute)
       .map((tag) => ToggleActivityTag(activity, tag))

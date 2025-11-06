@@ -37,7 +37,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     .from("token")
     .select("id, user_id, publisher_id")
     .eq("token", tokenValue)
-    .is("deleted_at", null)
+    .is("archived_at", null)
     .single();
 
   if (tokenError || !tokenData) {

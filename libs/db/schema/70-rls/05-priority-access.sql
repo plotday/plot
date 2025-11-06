@@ -22,7 +22,7 @@ BEGIN
                         id = pu.priority_id))
             WHERE
                 pu.user_id = user_has_priority_access.user_id
-                AND pu.deleted_at IS NULL
+                AND pu.archived_at IS NULL
                 AND p.id = user_has_priority_access.target_priority_id);
 END;
 $$;
@@ -50,7 +50,7 @@ BEGIN
                 WHERE
                     id = pu.priority_id))
     WHERE
-        pu.deleted_at IS NULL
+        pu.archived_at IS NULL
         AND p.id = get_users_with_priority_access.target_priority_id;
 END;
 $$;
@@ -73,7 +73,7 @@ BEGIN
             JOIN priority p ON p.path <@ pp.path
         WHERE
             pu.user_id = user_has_priority_access.user_id
-            AND pu.deleted_at IS NULL
+            AND pu.archived_at IS NULL
             AND p.path = user_has_priority_access.target_priority_path);
 END;
 $$;

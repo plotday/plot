@@ -2,13 +2,13 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 
 import 'package:plot/router.dart';
-import 'command.dart';
+import 'action.dart';
 
 class GlobalShortcuts extends StatelessWidget {
   GlobalShortcuts({required this.child, super.key});
 
   final Widget child;
-  final List<StaticCommandGroup> commands = [settingsCommands];
+  final List<StaticActionGroup> actions = [settingsActions];
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +18,7 @@ class GlobalShortcuts extends StatelessWidget {
           context.focusedRouter.maybePop();
         },
       },
-      child: CommandScope(commands: commands, child: child),
+      child: ActionScope(actions: actions, child: child),
     );
   }
 }

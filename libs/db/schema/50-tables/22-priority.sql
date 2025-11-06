@@ -5,7 +5,7 @@ CREATE TABLE "public"."priority" (
     "created_by" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "root" boolean NOT NULL DEFAULT FALSE,
     -- All fields added below must be handled in handle_user_priority_upsert
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "title" text NOT NULL,
     "path" ltree NOT NULL UNIQUE,
     "updated_by" integer NOT NULL DEFAULT 0
@@ -33,7 +33,7 @@ CREATE TABLE "public"."priority_user" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     CONSTRAINT priority_user_unique UNIQUE (user_id, priority_id)
 );
 

@@ -16,11 +16,16 @@ Future<void> run() async {
   try {
     hierarchicalLoggingEnabled = true;
     recordStackTraceAtLevel = Level.SEVERE;
+
+    // Configure log levels: INFO in production, FINE in debug for detailed logs
+    Logger.root.level = kDebugMode ? Level.FINE : Level.INFO;
+
     Logger.root.onRecord.listen((record) {
       if ([
             LogNames.editor,
             LogNames.infrastructure,
             LogNames.textField,
+            'attributions',
             'super_text',
           ].any((prefix) => record.loggerName.startsWith(prefix)) &&
           record.level < Level.WARNING) {

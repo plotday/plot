@@ -81,11 +81,11 @@ SELECT
     a.priority_id,
     at.tag_id,
     count(*) AS count,
-    max(COALESCE(at.deleted_at, at.updated_at)) AS updated_at
+    max(COALESCE(at.archived_at, at.updated_at)) AS updated_at
 FROM (activity_tag at
     JOIN activity a ON (at.activity_id = a.id))
-WHERE ((at.deleted_at IS NULL)
-    AND (a.deleted_at IS NULL)
+WHERE ((at.archived_at IS NULL)
+    AND (a.archived_at IS NULL)
     AND (nlevel (a.path) = 1))
 GROUP BY
     a.priority_id,
@@ -97,7 +97,7 @@ SELECT
     p.id,
     p.created_at,
     GREATEST (settings.updated_at, pu.updated_at, p.updated_at, COALESCE(activity_max.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone), COALESCE(ar_max.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) AS updated_at,
-    GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
+    GREATEST (pu.archived_at, p.archived_at) AS archived_at,
     p.created_by,
     p.updated_by,
     (root.root
@@ -130,7 +130,7 @@ FROM (((((((((priority_user pu
             FROM (activity a
                 JOIN priority ap ON (ap.id = a.priority_id))
         WHERE ((ap.path <@ p.path)
-            AND (a.deleted_at IS NULL))) activity_max ON (TRUE))
+            AND (a.archived_at IS NULL))) activity_max ON (TRUE))
     LEFT JOIN LATERAL (
         SELECT
             max(ar.updated_at) AS updated_at
@@ -146,12 +146,12 @@ FROM (((((((((priority_user pu
             LEFT JOIN activity_read ar ON (((ar.user_id = pu.user_id)
                         AND (ar.activity_path = subpath (a.path, 0, 1)))))
     WHERE ((ap.path <@ p.path)
-        AND (a.deleted_at IS NULL)
+        AND (a.archived_at IS NULL)
         AND (a.author_id <> c.id)
         AND ((ar.read_at IS NULL)
             OR (a.created_at > ar.read_at)))
 LIMIT 1) unread ON (TRUE))
-WHERE (pu.deleted_at IS NULL);
+WHERE (pu.archived_at IS NULL);
 
 CREATE OR REPLACE VIEW "public"."user_activity_unread" AS
 SELECT
@@ -169,12 +169,12 @@ FROM ((((user_priority up
             max(a2.updated_at) AS updated_at
         FROM
             activity a2
-        WHERE ((a2.deleted_at IS NULL)
+        WHERE ((a2.archived_at IS NULL)
             AND (a2.path <@ a.path)
             AND (a2.author_id <> c.id)
             AND ((ar.read_at IS NULL)
                 OR (a2.created_at > ar.read_at)))) unread ON (TRUE))
-WHERE ((up.deleted_at IS NULL)
+WHERE ((up.archived_at IS NULL)
     AND (nlevel (a.path) = 1));
 
 CREATE OR REPLACE VIEW "public"."user_activity" AS
@@ -186,7 +186,7 @@ SELECT
     a.author_id,
     a.assignee_id,
     a.updated_by,
-    a.deleted_at,
+    a.archived_at,
     a.priority_id,
     a.type,
     a.path,
@@ -228,7 +228,7 @@ FROM ((activity a
         JOIN user_priority up ON (a.priority_id = up.id))
     LEFT JOIN user_activity_unread uau ON (((uau.user_id = up.user_id)
                 AND (uau.activity_id = a.id))))
-WHERE (up.deleted_at IS NULL);
+WHERE (up.archived_at IS NULL);
 
 CREATE OR REPLACE VIEW "public"."user_activity_exception" AS
 SELECT
@@ -238,22 +238,22 @@ SELECT
     ae.updated_at,
     ua.range_at,
     ua.range_on,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.at
     ELSE
         NULL::tstzrange
     END AS at,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae."on"
     ELSE
         NULL::daterange
     END AS "on",
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.title
     ELSE
         NULL::text
     END AS title,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.note
     ELSE
         NULL::text
@@ -317,7 +317,7 @@ BEGIN
     WHERE
         priority_child_id = current_item.priority_id
         AND id != current_item.author_id
-        AND deleted_at IS NULL;
+        AND archived_at IS NULL;
     -- Get users who have access to this priority
     SELECT
         jsonb_agg(jsonb_build_object('user_id', user_id)) INTO users_data
@@ -329,7 +329,7 @@ BEGIN
     END IF;
     -- Build enriched item with author and priority information
     SELECT
-        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'created_by', current_item.created_by, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'deleted_at', current_item.deleted_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'path', current_item.path, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'note', current_item.note, 'links', current_item.links, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'meta', current_item.meta, 'mentions', current_item.mentions,
+        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'created_by', current_item.created_by, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'archived_at', current_item.archived_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'path', current_item.path, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'note', current_item.note, 'links', current_item.links, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'meta', current_item.meta, 'mentions', current_item.mentions,
             -- Enriched data from JOINs
             'author_name', a.name, 'author_type', a.type, 'priority_title', p.title) INTO enriched_item
     FROM
@@ -350,7 +350,7 @@ BEGIN
     -- Build previous enriched item for updates
     IF TG_OP = 'UPDATE' THEN
         SELECT
-            jsonb_build_object('id', previous_item.id, 'created_at', previous_item.created_at, 'updated_at', previous_item.updated_at, 'author_id', previous_item.author_id, 'created_by', previous_item.created_by, 'assignee_id', previous_item.assignee_id, 'updated_by', previous_item.updated_by, 'deleted_at', previous_item.deleted_at, 'priority_id', previous_item.priority_id, 'type', previous_item.type, 'path', previous_item.path, 'order', previous_item.order, 'draft', previous_item.draft, 'private', previous_item.private, 'title', previous_item.title, 'note', previous_item.note, 'links', previous_item.links, 'at', previous_item.at, 'on', previous_item.on, 'duration', previous_item.duration, 'done_at', previous_item.done_at, 'recurrence_rule', previous_item.recurrence_rule, 'recurrence_exdates', previous_item.recurrence_exdates, 'recurrence_dates', previous_item.recurrence_dates, 'meta', previous_item.meta, 'mentions', previous_item.mentions,
+            jsonb_build_object('id', previous_item.id, 'created_at', previous_item.created_at, 'updated_at', previous_item.updated_at, 'author_id', previous_item.author_id, 'created_by', previous_item.created_by, 'assignee_id', previous_item.assignee_id, 'updated_by', previous_item.updated_by, 'archived_at', previous_item.archived_at, 'priority_id', previous_item.priority_id, 'type', previous_item.type, 'path', previous_item.path, 'order', previous_item.order, 'draft', previous_item.draft, 'private', previous_item.private, 'title', previous_item.title, 'note', previous_item.note, 'links', previous_item.links, 'at', previous_item.at, 'on', previous_item.on, 'duration', previous_item.duration, 'done_at', previous_item.done_at, 'recurrence_rule', previous_item.recurrence_rule, 'recurrence_exdates', previous_item.recurrence_exdates, 'recurrence_dates', previous_item.recurrence_dates, 'meta', previous_item.meta, 'mentions', previous_item.mentions,
                 -- Enriched data from JOINs
                 'author_name', a.name, 'author_type', a.type, 'priority_title', p.title) INTO previous_enriched_item
         FROM

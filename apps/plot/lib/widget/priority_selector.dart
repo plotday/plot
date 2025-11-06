@@ -1,5 +1,3 @@
-import 'package:flutter/widgets.dart';
-
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 

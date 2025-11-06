@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:plot/command/command.dart';
+import 'package:plot/action/action.dart';
 
 enum MenuSelection { settings }
 

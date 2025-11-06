@@ -1,5 +1,5 @@
 -- Function to upsert activities, handling recurrence series conversion
-CREATE OR REPLACE FUNCTION public.upsert_activity (p_id uuid, p_user_id uuid, p_updated_by integer, p_deleted_at timestamptz DEFAULT NULL, p_priority_id uuid DEFAULT NULL, p_path ltree DEFAULT NULL, p_draft boolean DEFAULT NULL, p_private boolean DEFAULT NULL, p_do_on date DEFAULT NULL, p_at tstzrange DEFAULT NULL, p_on daterange DEFAULT NULL, p_duration interval DEFAULT NULL, p_done_at timestamptz DEFAULT NULL, p_title text DEFAULT NULL, p_note text DEFAULT NULL, p_order double precision DEFAULT NULL, p_recurrence_rule text DEFAULT NULL, p_recurrence_exdates timestamptz[] DEFAULT NULL, p_recurrence_dates timestamptz[] DEFAULT NULL, p_series uuid DEFAULT NULL, -- This maps to occurrence_root_id
+CREATE OR REPLACE FUNCTION public.upsert_activity (p_id uuid, p_user_id uuid, p_updated_by integer, p_archived_at timestamptz DEFAULT NULL, p_priority_id uuid DEFAULT NULL, p_path ltree DEFAULT NULL, p_draft boolean DEFAULT NULL, p_private boolean DEFAULT NULL, p_do_on date DEFAULT NULL, p_at tstzrange DEFAULT NULL, p_on daterange DEFAULT NULL, p_duration interval DEFAULT NULL, p_done_at timestamptz DEFAULT NULL, p_title text DEFAULT NULL, p_note text DEFAULT NULL, p_order double precision DEFAULT NULL, p_recurrence_rule text DEFAULT NULL, p_recurrence_exdates timestamptz[] DEFAULT NULL, p_recurrence_dates timestamptz[] DEFAULT NULL, p_series uuid DEFAULT NULL, -- This maps to occurrence_root_id
 p_occurrence_start timestamptz DEFAULT NULL -- This maps to occurrence_original_start
 )
     RETURNS uuid
@@ -39,8 +39,8 @@ BEGIN
             p_path := _existing_path;
         END IF;
         -- Insert new exception activity
-        INSERT INTO activity (id, updated_by, deleted_at, priority_id, path, draft, private, do_on, at, "on", duration, done_at, title, note, "order", recurrence_rule, recurrence_exdates, recurrence_dates, occurrence_root_id, occurrence_original_start)
-            VALUES (_activity_id, p_updated_by, p_deleted_at, COALESCE(p_priority_id, (
+        INSERT INTO activity (id, updated_by, archived_at, priority_id, path, draft, private, do_on, at, "on", duration, done_at, title, note, "order", recurrence_rule, recurrence_exdates, recurrence_dates, occurrence_root_id, occurrence_original_start)
+            VALUES (_activity_id, p_updated_by, p_archived_at, COALESCE(p_priority_id, (
                         SELECT
                             priority_id
                         FROM activity
@@ -79,13 +79,13 @@ BEGIN
         p_path := NULL;
     END IF;
     -- Standard upsert for regular activities or existing exception records
-    INSERT INTO activity (id, updated_by, deleted_at, priority_id, path, draft, private, do_on, at, "on", duration, done_at, title, note, "order", recurrence_rule, recurrence_exdates, recurrence_dates, occurrence_root_id, occurrence_original_start)
-        VALUES (COALESCE(p_id, gen_random_uuid_v7 ()), p_updated_by, p_deleted_at, p_priority_id, p_path, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_do_on, p_at, p_on, p_duration, p_done_at, p_title, p_note, COALESCE(p_order, public.order_first ()), p_recurrence_rule, p_recurrence_exdates, p_recurrence_dates, _occurrence_root_id, _occurrence_original_start)
+    INSERT INTO activity (id, updated_by, archived_at, priority_id, path, draft, private, do_on, at, "on", duration, done_at, title, note, "order", recurrence_rule, recurrence_exdates, recurrence_dates, occurrence_root_id, occurrence_original_start)
+        VALUES (COALESCE(p_id, gen_random_uuid_v7 ()), p_updated_by, p_archived_at, p_priority_id, p_path, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_do_on, p_at, p_on, p_duration, p_done_at, p_title, p_note, COALESCE(p_order, public.order_first ()), p_recurrence_rule, p_recurrence_exdates, p_recurrence_dates, _occurrence_root_id, _occurrence_original_start)
     ON CONFLICT (id)
         DO UPDATE SET
             updated_by = EXCLUDED.updated_by,
             updated_at = now(),
-            deleted_at = COALESCE(EXCLUDED.deleted_at, activity.deleted_at),
+            archived_at = COALESCE(EXCLUDED.archived_at, activity.archived_at),
             priority_id = COALESCE(EXCLUDED.priority_id, activity.priority_id),
             path = COALESCE(EXCLUDED.path, activity.path),
             draft = COALESCE(EXCLUDED.draft, activity.draft),

@@ -29,7 +29,7 @@ priority.get("/priorities", async (c) => {
     .from("user_priority")
     .select("id, title, path")
     .eq("user_id", user.id)
-    .is("deleted_at", null)
+    .is("archived_at", null)
     .order("path", { ascending: true });
 
   if (error) {

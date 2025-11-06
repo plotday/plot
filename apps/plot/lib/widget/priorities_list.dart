@@ -1,6 +1,5 @@
-import 'package:flutter/widgets.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/command/command.dart';
+import 'package:plot/action/action.dart';
 import 'package:plot/widget/widget.dart';
 
 class PrioritiesList extends StatelessWidget {

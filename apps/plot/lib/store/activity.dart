@@ -1000,7 +1000,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       query.where(a.doneAt.isNotNull());
     }
     if (deleted != null) {
-      query.where(deleted ? a.deletedAt.isNotNull() : a.deletedAt.isNull());
+      query.where(deleted ? a.archivedAt.isNotNull() : a.archivedAt.isNull());
     }
     if (search?.isNotEmpty == true) {
       query.where(a.title.like('%$search%') | a.note.like('%$search%'));
@@ -1330,7 +1330,7 @@ class Activity extends Equatable implements Comparable<Activity> {
   Order get order => _activity.order;
   DateTime get createdAt => _activity.createdAt;
   DateTime get updatedAt => _activity.updatedAt;
-  DateTime? get deletedAt => _activity.deletedAt;
+  DateTime? get archivedAt => _activity.archivedAt;
   bool get draft => _activity.draft;
   bool get private => _activity.private;
   Uuid get authorId => _activity.authorId;
@@ -1432,7 +1432,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     Value<String?> note = const Value.absent(),
     Value<String?> title = const Value.absent(),
     Value<Duration?> duration = const Value.absent(),
-    Value<DateTime?> deletedAt = const Value.absent(),
+    Value<DateTime?> archivedAt = const Value.absent(),
 
     // These fields update the root activity
     Value<DateTimeRange?> recurrenceAt = const Value.absent(),
@@ -1478,7 +1478,7 @@ class Activity extends Equatable implements Comparable<Activity> {
                 note.present ||
                 title.present ||
                 duration.present ||
-                deletedAt.present))) {
+                archivedAt.present))) {
       // Determine which fields to update on the root activity
       Value<DateTime?> rootStartAt = const Value.absent();
       Value<DateTime?> rootEndAt = const Value.absent();
@@ -1516,7 +1516,7 @@ class Activity extends Equatable implements Comparable<Activity> {
           rootEndOn = Value(on.value?.end);
         }
         if (doneAt.present) rootDoneAt = doneAt;
-        if (deletedAt.present) rootDeletedAt = deletedAt;
+        if (archivedAt.present) rootDeletedAt = archivedAt;
         if (note.present) rootNote = note;
         if (title.present) rootTitle = title;
         if (duration.present) rootDuration = duration;
@@ -1541,7 +1541,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         startOn: rootStartOn,
         endOn: rootEndOn,
         doneAt: rootDoneAt,
-        deletedAt: rootDeletedAt,
+        archivedAt: rootDeletedAt,
         recurrenceRule: recurrenceRule,
         recurrenceExdates: recurrenceExdates,
         recurrenceDates: recurrenceDates,
@@ -1563,7 +1563,7 @@ class Activity extends Equatable implements Comparable<Activity> {
             note.present ||
             title.present ||
             duration.present ||
-            deletedAt.present)) {
+            archivedAt.present)) {
       exception = exception!.copyWith(
         startAt: at.present ? Value(at.value?.start) : const Value.absent(),
         endAt: at.present ? Value(at.value?.end) : const Value.absent(),
@@ -1573,7 +1573,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         title: title,
         note: note,
         duration: duration,
-        // Note: exceptions don't have deletedAt, so we ignore that field
+        // Note: exceptions don't have archivedAt, so we ignore that field
       );
     }
 
@@ -1591,7 +1591,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     switch (tag) {
       case Tag.archived:
         return copyWith(
-          deletedAt: Value(deletedAt == null ? DateTime.now() : null),
+          archivedAt: Value(archivedAt == null ? DateTime.now() : null),
         );
       case Tag.now:
         if (doNow) {
@@ -1750,12 +1750,12 @@ class Activity extends Equatable implements Comparable<Activity> {
     }
   }
 
-  Future<void> delete() => copyWith(deletedAt: Value(DateTime.now())).save();
+  Future<void> delete() => copyWith(archivedAt: Value(DateTime.now())).save();
 
   bool hasTag(Tag tag) {
     switch (tag) {
       case Tag.archived:
-        return deletedAt != null;
+        return archivedAt != null;
       case Tag.now:
         return doNow;
       case Tag.done:
@@ -2017,8 +2017,8 @@ class Activity extends Equatable implements Comparable<Activity> {
       buffer.write('todo: true, ');
     }
 
-    if (deletedAt != null) {
-      buffer.write('deleted: $deletedAt, ');
+    if (archivedAt != null) {
+      buffer.write('deleted: $archivedAt, ');
     }
 
     if (draft) {

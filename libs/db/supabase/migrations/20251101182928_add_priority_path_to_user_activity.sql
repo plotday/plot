@@ -13,7 +13,7 @@ SELECT
     a.author_id,
     a.assignee_id,
     a.updated_by,
-    a.deleted_at,
+    a.archived_at,
     a.priority_id,
     p.path AS priority_path,
     a.type,
@@ -57,7 +57,7 @@ FROM (((activity a
         JOIN user_priority up ON (a.priority_id = up.id))
     LEFT JOIN user_activity_unread uau ON (((uau.user_id = up.user_id)
                 AND (uau.activity_id = a.id))))
-WHERE (up.deleted_at IS NULL);
+WHERE (up.archived_at IS NULL);
 
 CREATE OR REPLACE VIEW "public"."user_activity_exception" AS
 SELECT
@@ -67,22 +67,22 @@ SELECT
     ae.updated_at,
     ua.range_at,
     ua.range_on,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.at
     ELSE
         NULL::tstzrange
     END AS at,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae."on"
     ELSE
         NULL::daterange
     END AS "on",
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.title
     ELSE
         NULL::text
     END AS title,
-    CASE WHEN (ae.deleted_at IS NULL) THEN
+    CASE WHEN (ae.archived_at IS NULL) THEN
         ae.note
     ELSE
         NULL::text

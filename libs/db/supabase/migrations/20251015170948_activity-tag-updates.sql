@@ -50,7 +50,7 @@ BEGIN
     END IF;
     -- Build enriched item with author and priority information
     SELECT
-        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'deleted_at', current_item.deleted_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'path', current_item.path, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'note', current_item.note, 'links', current_item.links, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'source', current_item.source,
+        jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'author_id', current_item.author_id, 'assignee_id', current_item.assignee_id, 'updated_by', current_item.updated_by, 'archived_at', current_item.archived_at, 'priority_id', current_item.priority_id, 'type', current_item.type, 'path', current_item.path, 'order', current_item.order, 'draft', current_item.draft, 'private', current_item.private, 'title', current_item.title, 'note', current_item.note, 'links', current_item.links, 'at', current_item.at, 'on', current_item.on, 'duration', current_item.duration, 'done_at', current_item.done_at, 'recurrence_rule', current_item.recurrence_rule, 'recurrence_exdates', current_item.recurrence_exdates, 'recurrence_dates', current_item.recurrence_dates, 'source', current_item.source,
             -- Enriched data from JOINs
             'author_name', a.name, 'author_type', a.type, 'priority_title', p.title) INTO enriched_item
     FROM
@@ -71,7 +71,7 @@ BEGIN
     -- Build previous enriched item for updates
     IF TG_OP = 'UPDATE' THEN
         SELECT
-            jsonb_build_object('id', previous_item.id, 'created_at', previous_item.created_at, 'updated_at', previous_item.updated_at, 'author_id', previous_item.author_id, 'assignee_id', previous_item.assignee_id, 'updated_by', previous_item.updated_by, 'deleted_at', previous_item.deleted_at, 'priority_id', previous_item.priority_id, 'type', previous_item.type, 'path', previous_item.path, 'order', previous_item.order, 'draft', previous_item.draft, 'private', previous_item.private, 'title', previous_item.title, 'note', previous_item.note, 'links', previous_item.links, 'at', previous_item.at, 'on', previous_item.on, 'duration', previous_item.duration, 'done_at', previous_item.done_at, 'recurrence_rule', previous_item.recurrence_rule, 'recurrence_exdates', previous_item.recurrence_exdates, 'recurrence_dates', previous_item.recurrence_dates, 'source', previous_item.source,
+            jsonb_build_object('id', previous_item.id, 'created_at', previous_item.created_at, 'updated_at', previous_item.updated_at, 'author_id', previous_item.author_id, 'assignee_id', previous_item.assignee_id, 'updated_by', previous_item.updated_by, 'archived_at', previous_item.archived_at, 'priority_id', previous_item.priority_id, 'type', previous_item.type, 'path', previous_item.path, 'order', previous_item.order, 'draft', previous_item.draft, 'private', previous_item.private, 'title', previous_item.title, 'note', previous_item.note, 'links', previous_item.links, 'at', previous_item.at, 'on', previous_item.on, 'duration', previous_item.duration, 'done_at', previous_item.done_at, 'recurrence_rule', previous_item.recurrence_rule, 'recurrence_exdates', previous_item.recurrence_exdates, 'recurrence_dates', previous_item.recurrence_dates, 'source', previous_item.source,
                 -- Enriched data from JOINs
                 'author_name', a.name, 'author_type', a.type, 'priority_title', p.title) INTO previous_enriched_item
         FROM
@@ -131,11 +131,11 @@ BEGIN
             current_tag_type := get_tag_type (tag_id_int);
             IF is_adding THEN
                 -- Adding a tag - use upsert to create or reactivate
-                INSERT INTO activity_tag (actor_id, activity_id, tag_id, updated_at, deleted_at, updated_by)
+                INSERT INTO activity_tag (actor_id, activity_id, tag_id, updated_at, archived_at, updated_by)
                     VALUES (p_user_id, p_activity_id, tag_id_int, now(), NULL, p_client_id)
                 ON CONFLICT (actor_id, activity_id, tag_id)
                     DO UPDATE SET
-                        deleted_at = NULL,
+                        archived_at = NULL,
                         updated_at = now(),
                         updated_by = p_client_id;
             ELSE
@@ -145,24 +145,24 @@ BEGIN
                     UPDATE
                         activity_tag
                     SET
-                        deleted_at = now(),
+                        archived_at = now(),
                         updated_by = p_client_id
                     WHERE
                         activity_id = p_activity_id
                         AND tag_id = tag_id_int
-                        AND deleted_at IS NULL;
+                        AND archived_at IS NULL;
                 ELSE
                     -- For count/compute tags, only remove current user's tag
                     UPDATE
                         activity_tag
                     SET
-                        deleted_at = now(),
+                        archived_at = now(),
                         updated_by = p_client_id
                     WHERE
                         activity_id = p_activity_id
                         AND tag_id = tag_id_int
                         AND actor_id = p_user_id
-                        AND deleted_at IS NULL;
+                        AND archived_at IS NULL;
                 END IF;
             END IF;
         END LOOP;

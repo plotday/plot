@@ -69,7 +69,7 @@ mixin DraftTable on Table {
 }
 
 mixin DeletableTable on Table {
-  DateTimeColumn get deletedAt =>
+  DateTimeColumn get archivedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
 }
 
@@ -145,9 +145,8 @@ abstract class BaseTable {
       query = query.gt("updated_at", updatedSince);
     }
     query = filter(query);
-    PostgrestTransformBuilder<PostgrestList> query2 = query;
+    PostgrestTransformBuilder<PostgrestList> query2 = sort(query);
     if (limit != null) {
-      query2 = sort(query);
       query2 = query2.limit(limit!);
     }
     final rows = await query2;
@@ -273,12 +272,7 @@ class Store extends _$Store {
       inst._setupConnectivityListener();
     } else {
       // New user or no local data - need to sync before app can be used
-      // Check if we're offline first to provide better error message
-      if (!(await inst._hasNetworkConnectivity())) {
-        throw Exception(
-          "No local data available. Please connect to the internet to set up your account.",
-        );
-      }
+      await inst._waitForNetworkConnectivity();
       await inst._startSync();
       assert(await Priority.hasDefault(), "No default priority");
     }
@@ -322,7 +316,7 @@ class Store extends _$Store {
     Insertable<DATA> data,
     BaseTable baseTable,
   ) async {
-    log.info("Saving to ${table.actualTableName}:", data);
+    log.fine("Saving to ${table.actualTableName}:", data);
     try {
       await add(table, data);
     } catch (e, t) {
@@ -465,7 +459,7 @@ class Store extends _$Store {
     BaseTable baseTable, {
     (DateTime?, DateTime?)? range,
   }) async {
-    log.info("pull($type, ${baseTable.table}, range: $range)");
+    log.fine("pull($type, ${baseTable.table}, range: $range)");
 
     // PullType.updates doesn't support range parameter
     if (type == PullType.updates && range != null) {
@@ -501,7 +495,7 @@ class Store extends _$Store {
         // For ascending order, synced range is (-∞, last]
         // Check if entire range is already synced
         if (rangeTo != null && !rangeTo.isAfter(lastSynced)) {
-          log.info(
+          log.fine(
             "Range ($rangeFrom, $rangeTo) is already synced (last: $lastSynced), skipping pull",
           );
           return null;
@@ -512,7 +506,7 @@ class Store extends _$Store {
         // For descending order, synced range is [last, ∞)
         // Check if entire range is already synced
         if (rangeFrom != null && !rangeFrom.isBefore(lastSynced)) {
-          log.info(
+          log.fine(
             "Range ($rangeFrom, $rangeTo) is already synced (last: $lastSynced), skipping pull",
           );
           return null;
@@ -529,7 +523,7 @@ class Store extends _$Store {
       if (adjustedFrom != null &&
           adjustedTo != null &&
           !adjustedFrom.isBefore(adjustedTo)) {
-        log.info(
+        log.fine(
           "Adjusted range ($adjustedFrom, $adjustedTo) is empty, skipping pull",
         );
         return null;
@@ -580,7 +574,7 @@ class Store extends _$Store {
         }
       }
 
-      log.info("Requesting range $requestRange");
+      log.fine("Requesting range $requestRange");
       var (baseRows, batchLastUpdated, newRange, batchMore) = (await baseTable
           .get(range: requestRange, updatedSince: updatedSince));
       final from = newRange?.start?.toString();
@@ -590,9 +584,13 @@ class Store extends _$Store {
         lastUpdated = batchLastUpdated;
       }
 
-      log.info(
-        "Pulling ${baseRows.length} rows from ${baseTable.table} (type: $type, from: $from, to: $to, more: $more)",
-      );
+      if (baseRows.isNotEmpty) {
+        log.info("Pulled ${baseRows.length} rows from ${baseTable.table}");
+      } else {
+        log.fine(
+          "Pulling ${baseRows.length} rows from ${baseTable.table} (type: $type, from: $from, to: $to, more: $more)",
+        );
+      }
       final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
         try {
           return [baseTable.fromBase(r)];
@@ -614,10 +612,9 @@ class Store extends _$Store {
       // Only set _noMore for range-extending pulls (initial/more), not for updates
       if (!more && type != PullType.updates) {
         _noMore.add(entity);
-        log.info("No more data for entity $entity (type: $type)");
+        log.fine("No more data for entity $entity (type: $type)");
       }
 
-      log.info("Last is $lastUpdated");
       if (lastUpdated != null) {
         // For PullType.updates: only update pulledAt (last update timestamp)
         // For PullType.initial/more: update both pulledAt and last (range boundary)
@@ -664,7 +661,9 @@ class Store extends _$Store {
       }
     } while (type == PullType.updates && more);
 
-    log.info("Total rows pulled: $totalRows");
+    if (totalRows > 0) {
+      log.info("Synced ${baseTable.name}: $totalRows rows");
+    }
 
     // Skip final upsert if we already upserted in the loop
     if (!upsertedInLoop && lastUpdated != null) {
@@ -749,7 +748,7 @@ class Store extends _$Store {
   }
 
   Future<void> _handleTableSync(String table) async {
-    log.info("Syncing $table");
+    log.fine("Syncing $table");
     try {
       switch (table) {
         case 'priority':
@@ -829,7 +828,7 @@ class Store extends _$Store {
   Future<void> _startSync() async {
     // Prevent concurrent sync attempts
     if (_isSyncing) {
-      log.info("Sync already in progress, skipping");
+      log.fine("Sync already in progress, skipping");
       return;
     }
 
@@ -901,7 +900,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 143;
+  int get schemaVersion => 144;
 
   @override
   MigrationStrategy get migration {

@@ -1,6 +1,6 @@
 CREATE TABLE "public"."activity_tag" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     "actor_id" uuid NOT NULL,
     "activity_id" uuid NOT NULL REFERENCES activity ON DELETE CASCADE,
     "occurrence" text,
@@ -15,7 +15,7 @@ ALTER TABLE "public"."activity_tag" ENABLE ROW LEVEL SECURITY;
 
 CREATE INDEX ON "public"."activity_tag" (activity_id, tag_id)
 WHERE
-    deleted_at IS NULL;
+    archived_at IS NULL;
 
 CREATE TRIGGER set_activity_tag_updated_at
     BEFORE UPDATE ON "public"."activity_tag"

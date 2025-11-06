@@ -51,8 +51,8 @@ class Actor extends ActorRow {
           (t) => deleted == null
               ? const Constant(true)
               : deleted
-              ? t.deletedAt.isNotNull()
-              : t.deletedAt.isNull(),
+              ? t.archivedAt.isNotNull()
+              : t.archivedAt.isNull(),
         ))
         .map((row) => Actor.fromStore(row));
   }
@@ -62,7 +62,7 @@ class Actor extends ActorRow {
         id: row.id,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
+        archivedAt: row.archivedAt,
         type: row.type,
         name: row.name,
         email: row.email,
@@ -74,7 +74,7 @@ class Actor extends ActorRow {
     ActorId? id,
     DateTime? createdAt,
     DateTime? updatedAt,
-    Value<DateTime?> deletedAt = const Value.absent(),
+    Value<DateTime?> archivedAt = const Value.absent(),
     ActorType? type,
     String? name,
     Value<String?> email = const Value.absent(),
@@ -85,7 +85,7 @@ class Actor extends ActorRow {
       id: id,
       createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
-      deletedAt: deletedAt,
+      archivedAt: archivedAt,
       type: type,
       name: name,
       email: email,

@@ -8,6 +8,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'package:plot/util/uuid.dart';
+import 'package:plot/analytics/analytics.dart';
 import 'env.dart';
 import 'logging.dart';
 
@@ -63,6 +64,7 @@ class Base {
   final supa.SupabaseClient? _client;
   bool _initialized = false;
   Uuid? _userId;
+  DateTime? _signInTime;
   final _currentUserController = BehaviorSubject<User?>();
 
   // Dispose of the StreamController
@@ -85,10 +87,28 @@ class Base {
     _userId = user == null ? null : Uuid.fromString(user.id);
     _initialized = true;
     if (user == null) {
+      // User signing out
       await Sentry.configureScope((scope) => scope.setUser(null));
+
+      // Track sign out event with session duration
+      if (_signInTime != null) {
+        final sessionDurationMs =
+            DateTime.now().difference(_signInTime!).inMilliseconds;
+        await Analytics.instance.trackSession(
+          EventAction.signedOut,
+          {
+            PropertyKey.sessionDurationMs: sessionDurationMs,
+          },
+        );
+      } else {
+        await Analytics.instance.trackSession(EventAction.signedOut);
+      }
+
       await Posthog().flush();
       await Posthog().reset();
+      _signInTime = null;
     } else {
+      // User signing in
       await Sentry.configureScope(
         (scope) =>
             scope.setUser(SentryUser(id: user.id, email: user.primaryEmail)),
@@ -103,6 +123,10 @@ class Base {
           "signed_up_time": DateTime.now().toUtc().toIso8601String(),
         },
       );
+
+      // Track sign in event
+      _signInTime = DateTime.now();
+      await Analytics.instance.trackSession(EventAction.signedIn);
     }
     _currentUserController.add(user);
   }

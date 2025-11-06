@@ -15,5 +15,5 @@ FROM
     LEFT JOIN agent_admin aa ON a.id = aa.id
     LEFT JOIN publisher p ON aa.publisher_id = p.id
 WHERE
-    pa.deleted_at IS NULL;
+    pa.archived_at IS NULL;
 

@@ -187,7 +187,7 @@ export async function deployAgent({
         .select("id, priority_id")
         .eq("agent_id", adminId)
         .eq("agent_environment", environment)
-        .is("deleted_at", null);
+        .is("archived_at", null);
 
       if (fetchError) {
         console.error(

@@ -17,6 +17,7 @@ class UserBloc extends Cubit<UserState> {
         log.info('User signed out');
         await Store.stop();
         emit(const UserSignedOut());
+        log.info('Sign out state emitted');
         return;
       } else if (!user.isActive) {
         if (state is UserWaitlisted) return;

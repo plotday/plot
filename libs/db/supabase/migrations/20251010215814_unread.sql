@@ -30,7 +30,7 @@ SELECT
     p.id,
     p.created_at,
     GREATEST (settings.updated_at, pu.updated_at, p.updated_at, COALESCE(activity_max.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone), COALESCE(ar_max.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) AS updated_at,
-    GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
+    GREATEST (pu.archived_at, p.archived_at) AS archived_at,
     p.created_by,
     p.updated_by,
     (root.root
@@ -63,7 +63,7 @@ FROM (((((((((priority_user pu
             FROM (activity a
                 JOIN priority ap ON (ap.id = a.priority_id))
         WHERE ((ap.path <@ p.path)
-            AND (a.deleted_at IS NULL))) activity_max ON (TRUE))
+            AND (a.archived_at IS NULL))) activity_max ON (TRUE))
     LEFT JOIN LATERAL (
         SELECT
             max(ar.updated_at) AS updated_at
@@ -79,12 +79,12 @@ FROM (((((((((priority_user pu
             LEFT JOIN activity_read ar ON (((ar.user_id = pu.user_id)
                         AND (ar.activity_path = subpath (a.path, 0, 1)))))
     WHERE ((ap.path <@ p.path)
-        AND (a.deleted_at IS NULL)
+        AND (a.archived_at IS NULL)
         AND (a.author_id <> c.id)
         AND ((ar.read_at IS NULL)
             OR (a.created_at > ar.read_at)))
 LIMIT 1) unread ON (TRUE))
-WHERE (pu.deleted_at IS NULL);
+WHERE (pu.archived_at IS NULL);
 
 CREATE OR REPLACE VIEW "public"."user_activity_unread" AS
 SELECT
@@ -102,12 +102,12 @@ FROM ((((user_priority up
             max(a2.updated_at) AS updated_at
         FROM
             activity a2
-        WHERE ((a2.deleted_at IS NULL)
+        WHERE ((a2.archived_at IS NULL)
             AND (a2.path <@ a.path)
             AND (a2.author_id <> c.id)
             AND ((ar.read_at IS NULL)
                 OR (a2.created_at > ar.read_at)))) unread ON (TRUE))
-WHERE ((up.deleted_at IS NULL)
+WHERE ((up.archived_at IS NULL)
     AND (nlevel (a.path) = 1));
 
 CREATE OR REPLACE VIEW "public"."user_activity" AS
@@ -119,7 +119,7 @@ SELECT
     a.author_id,
     a.assignee_id,
     a.updated_by,
-    a.deleted_at,
+    a.archived_at,
     a.priority_id,
     a.type,
     a.path,
@@ -160,7 +160,7 @@ FROM ((activity a
         JOIN user_priority up ON (a.priority_id = up.id))
     LEFT JOIN user_activity_unread uau ON (((uau.user_id = up.user_id)
                 AND (uau.activity_id = a.id))))
-WHERE (up.deleted_at IS NULL);
+WHERE (up.archived_at IS NULL);
 
 CREATE POLICY "Users can delete their own activity read records" ON "public"."activity_read" AS permissive
     FOR DELETE TO public

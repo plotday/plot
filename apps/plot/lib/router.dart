@@ -5,13 +5,13 @@ import 'package:platform_builder/platform_builder.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
 
-import 'store/store.dart';
 import 'state/now.dart';
 import 'state/user.dart';
 import 'state/layout.dart';
 import 'page/page.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
+import 'analytics/analytics.dart';
 
 export 'package:auto_route/auto_route.dart';
 
@@ -176,21 +176,22 @@ class AuthGuard extends AutoRouteGuard {
   @override
   void onNavigation(NavigationResolver resolver, StackRouter router) {
     final userState = resolver.context.read<UserBloc>().state;
+    _logger.fine(
+      'AuthGuard checking user state: $userState, ${resolver.route.name}',
+    );
 
     if (userState is UserReady) {
       // User is authenticated and active, proceed with navigation
       resolver.next();
     } else if (userState is UserWaitlisted &&
         resolver.route.name != 'InvitationRoute') {
+      _logger.info('Redirecting to InvitationRoute for waitlisted user');
       resolver.redirectUntil(InvitationRoute());
     } else if (userState is UserSignedOut &&
         resolver.route.name != 'SignInRoute') {
       // User is not authenticated, redirect to sign in with return path
       resolver.redirectUntil(
-        SignInRoute(
-          returnTo: resolver.route.path,
-          signOut: true,
-        ),
+        SignInRoute(returnTo: resolver.route.path, signOut: true),
       );
       return;
     } else {
@@ -202,27 +203,124 @@ class AuthGuard extends AutoRouteGuard {
 }
 
 class RouteLogger extends AutoRouterObserver {
-  void _log(Route<dynamic> route) {
+  String? _lastLoggedRoute;
+  DateTime? _lastNavigationTime;
+
+  void _log(
+    Route<dynamic> route,
+    String navigationType,
+    Route<dynamic>? previousRoute,
+  ) {
     if (route.settings.name != null) {
-      _logger.info(
-        'Navigated to ${route.settings.name}${route.settings.arguments == null ? '' : ' (${route.settings.arguments})'}',
-      );
+      final routeInfo =
+          '${route.settings.name}${route.settings.arguments == null ? '' : ' (${route.settings.arguments})'}';
+
+      // Only log and track if different from last logged route to avoid duplicates
+      if (routeInfo != _lastLoggedRoute) {
+        _logger.info('Navigated to $routeInfo');
+
+        // Calculate time on previous screen
+        int? timeOnPreviousScreenMs;
+        if (_lastNavigationTime != null) {
+          timeOnPreviousScreenMs =
+              DateTime.now().difference(_lastNavigationTime!).inMilliseconds;
+        }
+
+        // Extract screen name from route (normalize by removing "Route" suffix)
+        final screenName = _normalizeScreenName(route.settings.name!);
+
+        // Extract previous screen name
+        String? previousScreenName;
+        if (previousRoute?.settings.name != null) {
+          previousScreenName =
+              _normalizeScreenName(previousRoute!.settings.name!);
+        }
+
+        // Track navigation to PostHog
+        Analytics.instance.trackNavigation(
+          screenName,
+          buildNavigationProperties(
+            screenName: screenName,
+            routeParams: route.settings.arguments?.toString(),
+            previousScreen: previousScreenName,
+            navigationType: navigationType,
+            timeOnPreviousScreenMs: timeOnPreviousScreenMs,
+          ),
+        );
+
+        // Track slow navigation as performance issue
+        const navigationThresholdMs = 1000;
+        if (timeOnPreviousScreenMs != null &&
+            timeOnPreviousScreenMs > navigationThresholdMs) {
+          Analytics.instance.trackPerformance(
+            object: EventObject.navigation,
+            durationMs: timeOnPreviousScreenMs,
+            thresholdMs: navigationThresholdMs,
+            operationType: 'navigation_to_$screenName',
+          );
+        }
+
+        _lastLoggedRoute = routeInfo;
+        _lastNavigationTime = DateTime.now();
+      }
     }
+  }
+
+  /// Normalize route names to screen names
+  /// Examples:
+  /// - PriorityRoute -> priority_detail
+  /// - ActivityRoute -> activity_detail
+  /// - NewActivityRoute -> new_activity
+  /// - PrioritiesRoute -> priorities_list
+  String _normalizeScreenName(String routeName) {
+    // Remove "Route" suffix
+    String name = routeName.replaceAll('Route', '');
+
+    // Convert PascalCase to snake_case
+    String snakeCase = name.replaceAllMapped(
+      RegExp(r'([A-Z])'),
+      (match) => '_${match.group(0)!.toLowerCase()}',
+    );
+
+    // Remove leading underscore
+    if (snakeCase.startsWith('_')) {
+      snakeCase = snakeCase.substring(1);
+    }
+
+    // Map common patterns
+    if (snakeCase == 'priority') {
+      return 'priority_detail';
+    } else if (snakeCase == 'activity') {
+      return 'activity_detail';
+    } else if (snakeCase == 'priorities') {
+      return 'priorities_list';
+    } else if (snakeCase == 'sign_in') {
+      return 'sign_in';
+    } else if (snakeCase == 'invitation') {
+      return 'invitation';
+    } else if (snakeCase == 'new_activity') {
+      return 'new_activity';
+    }
+
+    return snakeCase;
   }
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _log(route);
+    _log(route, NavigationType.push, previousRoute);
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _log(route);
+    // When popping, the previousRoute is what we're navigating to
+    if (previousRoute != null) {
+      _log(previousRoute, NavigationType.pop, route);
+    }
   }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     if (newRoute == null) return;
-    _log(newRoute);
+    _log(newRoute, NavigationType.replace, oldRoute);
   }
 }

@@ -8,7 +8,7 @@ CREATE TABLE "public"."priority_agent" (
     "config" jsonb NOT NULL DEFAULT '{}' ::jsonb,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "deleted_at" timestamp with time zone,
+    "archived_at" timestamp with time zone,
     FOREIGN KEY (agent_id, agent_environment) REFERENCES public.agent (id, environment) ON DELETE CASCADE
 );
 

@@ -1,11 +1,10 @@
-import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/command/command.dart';
+import 'package:plot/action/action.dart';
 
 @RoutePage(name: "NewActivityRoute")
 class NewActivityPage extends StatelessWidget {

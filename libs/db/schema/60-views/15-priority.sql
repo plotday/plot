@@ -5,13 +5,13 @@ SELECT
     a.priority_id,
     at.tag_id,
     COUNT(*) AS count,
-    MAX(COALESCE(at.deleted_at, at.updated_at)) AS updated_at
+    MAX(COALESCE(at.archived_at, at.updated_at)) AS updated_at
 FROM
     "public"."activity_tag" at
     JOIN "public"."activity" a ON at.activity_id = a.id
 WHERE
-    at.deleted_at IS NULL
-    AND a.deleted_at IS NULL
+    at.archived_at IS NULL
+    AND a.archived_at IS NULL
     AND nlevel (a.path) = 1
 GROUP BY
     a.priority_id,
@@ -65,7 +65,7 @@ SELECT
     p.id,
     p.created_at,
     GREATEST (settings.updated_at, pu.updated_at, p.updated_at, coalesce(activity_max.updated_at, 'epoch'), coalesce(ar_max.updated_at, 'epoch')) AS updated_at,
-    GREATEST (pu.deleted_at, p.deleted_at) AS deleted_at,
+    GREATEST (pu.archived_at, p.archived_at) AS archived_at,
     p.created_by,
     p.updated_by,
     root.root
@@ -102,7 +102,7 @@ FROM
             JOIN priority ap ON ap.id = a.priority_id
         WHERE
             ap.path <@ p.path
-            AND a.deleted_at IS NULL) activity_max ON TRUE
+            AND a.archived_at IS NULL) activity_max ON TRUE
     -- Latest updated_at in user's activity_reads
     LEFT JOIN LATERAL (
         SELECT
@@ -123,13 +123,13 @@ FROM
                 AND ar.activity_path = subpath (a.path, 0, 1)
         WHERE
             ap.path <@ p.path
-            AND a.deleted_at IS NULL
+            AND a.archived_at IS NULL
             AND a.author_id <> c.id
             AND (ar.read_at IS NULL
                 OR a.created_at > ar.read_at)
         LIMIT 1) unread ON TRUE
 WHERE
-    pu.deleted_at IS NULL;
+    pu.archived_at IS NULL;
 
 CREATE OR REPLACE FUNCTION public.handle_user_priority_upsert ()
     RETURNS TRIGGER
@@ -139,12 +139,12 @@ DECLARE
     _priority_id uuid;
 BEGIN
     _priority_id := NEW.id;
-    IF (OLD IS NULL OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.updated_by IS DISTINCT FROM OLD.updated_by) THEN
-        INSERT INTO priority (id, deleted_at, title, path, created_by, updated_by)
-            VALUES (NEW.id, NEW.deleted_at, NEW.title, NEW.path, NEW.created_by, NEW.updated_by)
+    IF (OLD IS NULL OR NEW.archived_at IS DISTINCT FROM OLD.archived_at OR NEW.title IS DISTINCT FROM OLD.title OR NEW.path IS DISTINCT FROM OLD.path OR NEW.updated_by IS DISTINCT FROM OLD.updated_by) THEN
+        INSERT INTO priority (id, archived_at, title, path, created_by, updated_by)
+            VALUES (NEW.id, NEW.archived_at, NEW.title, NEW.path, NEW.created_by, NEW.updated_by)
         ON CONFLICT (id)
             DO UPDATE SET
-                deleted_at = NEW.deleted_at,
+                archived_at = NEW.archived_at,
                 title = NEW.title,
                 path = NEW.path,
                 updated_by = NEW.updated_by

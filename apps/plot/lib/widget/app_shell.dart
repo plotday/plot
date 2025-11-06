@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:auto_route/auto_route.dart';
 
-import 'package:plot/command/global.dart';
+import 'package:plot/action/global.dart';
 import 'global_menu.dart';
 import 'dialog.dart';
 

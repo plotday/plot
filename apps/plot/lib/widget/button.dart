@@ -1,16 +1,16 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart' hide Action, Actions;
 import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
 import 'package:plot/widget/colour_scheme.dart';
-import 'package:plot/command/command.dart';
+import 'package:plot/action/action.dart';
 import 'spinner.dart';
 
 enum ButtonStyle { primary, secondary, ghost }
 
 class Button extends StatelessWidget {
   const Button(
-    this.command, {
+    this.action, {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
@@ -19,7 +19,7 @@ class Button extends StatelessWidget {
        style = ButtonStyle.secondary;
 
   const Button.primary(
-    this.command, {
+    this.action, {
     this.loading = false,
     this.enabled = true,
     super.key,
@@ -28,7 +28,7 @@ class Button extends StatelessWidget {
        selected = false;
 
   const Button.ghost(
-    this.command, {
+    this.action, {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
@@ -37,7 +37,7 @@ class Button extends StatelessWidget {
        iconOnly = false;
 
   const Button.icon(
-    this.command, {
+    this.action, {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
@@ -50,7 +50,7 @@ class Button extends StatelessWidget {
   final bool enabled;
   final bool selected;
   final bool iconOnly;
-  final Command command;
+  final Action action;
 
   @override
   Widget build(BuildContext context) {
@@ -82,10 +82,10 @@ class Button extends StatelessWidget {
       };
     }
 
-    final onPress = enabled ? () => context.run(command) : null;
+    final onPress = enabled ? () => context.run(action) : null;
     final button = PlatformBuilder(
       builder: (_) {
-        final icon = command.icon;
+        final icon = action.icon;
         return iconOnly
             ? FButton.icon(
                 style: fStyle,
@@ -93,7 +93,7 @@ class Button extends StatelessWidget {
                 child: icon != null
                     ? Icon(icon, size: 12, color: context.colour.muted)
                     : Text(
-                        command.title,
+                        action.title,
                         style: context.theme.typography.xs.copyWith(
                           fontSize: 12,
                           height: 1,
@@ -107,7 +107,7 @@ class Button extends StatelessWidget {
                 prefix: icon != null
                     ? Icon(icon, size: 12, color: context.colour.muted)
                     : null,
-                child: Text(command.title),
+                child: Text(action.title),
               );
       },
     );
@@ -122,9 +122,9 @@ class Button extends StatelessWidget {
 
     Widget result = stack;
 
-    if (command.subtitle != null && command.subtitle!.isNotEmpty) {
+    if (action.subtitle != null && action.subtitle!.isNotEmpty) {
       result = FTooltip(
-        tipBuilder: (context, controller) => Text(command.subtitle!),
+        tipBuilder: (context, controller) => Text(action.subtitle!),
         child: result,
       );
     }
