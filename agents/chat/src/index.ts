@@ -4,7 +4,7 @@ import {
   type Activity,
   ActivityType,
   Agent,
-  AuthorType,
+  ActorType,
   Tag,
   type ToolBuilder,
 } from "@plotday/agent";
@@ -40,7 +40,7 @@ export default class ChatAgent extends Agent<ChatAgent> {
     // Add Thinking tag to indicate processing has started
     await this.tools.plot.updateActivity({
       id: activity.id,
-      tags: {
+      agentTags: {
         [Tag.Agent]: true,
       },
     });
@@ -58,7 +58,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
           (prevActivity) =>
             ({
               role:
-                prevActivity.author.type === AuthorType.Agent
+                prevActivity.author.type === ActorType.Agent
                   ? "assistant"
                   : "user",
               content: (prevActivity.note ?? prevActivity.title)!,
@@ -123,7 +123,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
     // Remove Thinking tag after response is created
     await this.tools.plot.updateActivity({
       id: activity.id,
-      tags: {
+      agentTags: {
         [Tag.Agent]: false,
       },
     });

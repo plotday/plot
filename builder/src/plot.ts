@@ -50,21 +50,6 @@ export enum ActivityType {
 }
 
 /**
- * Enumeration of author types that can create activities.
- *
- * The author type affects how activities are displayed and processed
- * within the Plot system.
- */
-export enum AuthorType {
-  /** Activities created by human users */
-  User,
-  /** Activities created by external contacts */
-  Contact,
-  /** Activities created by automated agents */
-  Agent,
-}
-
-/**
  * Enumeration of supported activity link types.
  *
  * Different link types have different behaviors when clicked by users
@@ -218,7 +203,7 @@ export type ActivityMeta = {
  *   type: ActivityType.Note,
  *   title: "New campaign brainstorming ideas",
  *   note: "We could rent a bouncy castle...",
- *   author: { id: "user-1", name: "John Doe", type: AuthorType.User },
+ *   author: { id: "user-1", name: "John Doe", type: ActorType.User },
  *   priority: { id: "work", title: "Work" },
  *   // ... other fields
  * };
@@ -227,7 +212,7 @@ export type ActivityMeta = {
  * const task: Activity = {
  *   type: ActivityType.Task,
  *   title: "Review budget proposal",
- *   author: { id: "user-1", name: "John Doe", type: AuthorType.User },
+ *   author: { id: "user-1", name: "John Doe", type: ActorType.User },
  *   end: null,
  *   priority: { id: "work", title: "Work" },
  *   // ... other fields
@@ -254,13 +239,6 @@ export type Activity = {
   title: string | null;
   /** Primary content for the activity */
   note: string | null;
-  /**
-   * Format of the note content. Determines how the note is processed:
-   * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
-   * - 'markdown': Already in markdown format (default, no conversion)
-   * - 'html': HTML content that will be converted to markdown
-   */
-  noteType?: "text" | "markdown" | "html";
   /**
    * Start time of a scheduled activity. Notes are not typically scheduled unless they're about specific times.
    * For recurring events, this represents the start of the first occurrence.
@@ -322,22 +300,74 @@ export type Activity = {
 };
 
 /**
+ * Configuration for automatic priority selection based on activity similarity.
+ *
+ * Maps activity fields to scoring weights or required exact matches:
+ * - Number value: Maximum score for similarity matching on this field
+ * - `true` value: Required exact match - activities must match exactly or be excluded
+ *
+ * Scoring rules:
+ * - content: Uses vector similarity on activity embedding (cosine similarity)
+ * - type: Exact match on ActivityType
+ * - mentions: Percentage of existing activity's mentions that appear in new activity
+ * - meta.field: Exact match on top-level meta fields (e.g., "meta.sourceId")
+ *
+ * When content is `true`, applies a strong similarity threshold to ensure only close matches.
+ * Default (when neither priority nor pickPriority specified): `{content: true}`
+ *
+ * @example
+ * ```typescript
+ * // Require exact content match with strong similarity
+ * pickPriority: { content: true }
+ *
+ * // Score based on content (max 100 points) and require exact type match
+ * pickPriority: { content: 100, type: true }
+ *
+ * // Match on meta source and score content
+ * pickPriority: { "meta.source": true, content: 50 }
+ * ```
+ */
+export type PickPriorityConfig = {
+  content?: number | true;
+  type?: number | true;
+  mentions?: number | true;
+  [key: `meta.${string}`]: number | true;
+};
+
+/**
  * Type for creating new activities.
  *
  * Requires only the activity type, with all other fields optional.
  * The ID and author will be automatically assigned by the Plot system
  * based on the current execution context.
  *
+ * Priority can be specified in three ways:
+ * 1. Explicit priority: `priority: { id: "..." }` - Use specific priority (disables pickPriority)
+ * 2. Pick priority config: `pickPriority: { ... }` - Auto-select based on similarity
+ * 3. Neither: Defaults to `pickPriority: { content: true }` for automatic matching
+ *
  * @example
  * ```typescript
+ * // Explicit priority (disables automatic matching)
  * const newTask: NewActivity = {
  *   type: ActivityType.Task,
  *   title: "Review pull request",
- *   links: [{
- *     title: "View PR",
- *     type: ActivityLinkType.external,
- *     url: "https://github.com/org/repo/pull/123"
- *   }]
+ *   priority: { id: "work-project-123" }
+ * };
+ *
+ * // Automatic priority matching (default behavior)
+ * const newNote: NewActivity = {
+ *   type: ActivityType.Note,
+ *   title: "Meeting notes",
+ *   note: "Discussed Q4 roadmap..."
+ *   // Defaults to pickPriority: { content: true }
+ * };
+ *
+ * // Custom priority matching
+ * const newEvent: NewActivity = {
+ *   type: ActivityType.Event,
+ *   title: "Team standup",
+ *   pickPriority: { type: true, content: 50 }
  * };
  * ```
  */
@@ -348,9 +378,27 @@ export type NewActivity = Pick<Activity, "type"> &
       "id" | "author" | "type" | "parent" | "priority" | "threadRoot"
     > & {
       parent?: Pick<Activity, "id"> | null;
-      priority?: Pick<Priority, "id">;
+
+      /**
+       * Format of the note content. Determines how the note is processed:
+       * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
+       * - 'markdown': Already in markdown format (default, no conversion)
+       * - 'html': HTML content that will be converted to markdown
+       */
+      noteType?: NoteType;
     }
-  >;
+  > &
+  (
+    | {
+        /** Explicit priority (required when specified) - disables automatic priority matching */
+        priority: Pick<Priority, "id">;
+      }
+    | {
+        /** Configuration for automatic priority selection based on similarity */
+        pickPriority?: PickPriorityConfig;
+      }
+    | {}
+  );
 
 export type ActivityUpdate = Pick<Activity, "id"> &
   Partial<
@@ -361,7 +409,6 @@ export type ActivityUpdate = Pick<Activity, "id"> &
       | "end"
       | "doneAt"
       | "note"
-      | "noteType"
       | "title"
       | "meta"
       | "links"
@@ -375,9 +422,28 @@ export type ActivityUpdate = Pick<Activity, "id"> &
     >
   > & {
     parent?: Pick<Activity, "id"> | null;
-  } & {
-    // Add or remove tags by ID (others are unchanged)
-    tags?: Partial<Record<Tag, boolean>>;
+
+    /**
+     * Format of the note content. Determines how the note is processed:
+     * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
+     * - 'markdown': Already in markdown format (default, no conversion)
+     * - 'html': HTML content that will be converted to markdown
+     */
+    noteType?: NoteType;
+
+    /**
+     * Full tags object from Activity. Maps tag ID to array of actor IDs who added that tag.
+     * Only allowed for activities created by the agent.
+     * Use agentTags instead for adding/removing the agent's tags on other activities.
+     */
+    tags?: Partial<Record<Tag, ActorId[]>>;
+
+    /**
+     * Add or remove the agent's tags.
+     * Maps tag ID to boolean: true = add tag, false = remove tag.
+     * This is allowed on all activities the agent has access to.
+     */
+    agentTags?: Partial<Record<Tag, boolean>>;
   };
 
 /**
@@ -390,7 +456,7 @@ export type ActivityUpdate = Pick<Activity, "id"> &
  * ```typescript
  * const actor: Actor = {
  *   id: "f0ffd5f8-1635-4b13-9532-35f97446db90" as ActorId,
- *   type: AuthorType.Contact,
+ *   type: ActorType.Contact,
  *   email: "john.doe@example.com",  // Only if ContactAccess.Read
  *   name: "John Doe"
  * };
@@ -400,12 +466,27 @@ export type Actor = {
   /** Unique identifier for the actor */
   id: ActorId;
   /** Type of actor (User, Contact, or Agent) */
-  type: AuthorType;
+  type: ActorType;
   /** Email address (only included with ContactAccess.Read permission) */
   email?: string;
   /** Display name (undefined if not included due to permissions, null if not set) */
   name?: string | null;
 };
+
+/**
+ * Enumeration of author types that can create activities.
+ *
+ * The author type affects how activities are displayed and processed
+ * within the Plot system.
+ */
+export enum ActorType {
+  /** Activities created by human users */
+  User,
+  /** Activities created by external contacts */
+  Contact,
+  /** Activities created by automated agents */
+  Agent,
+}
 
 /**
  * Represents contact information for creating a new contact.
@@ -430,3 +511,5 @@ export type NewContact = {
   /** Optional avatar image URL for the contact */
   avatar?: string;
 };
+
+export type NoteType = "text" | "markdown" | "html";

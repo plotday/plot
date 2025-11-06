@@ -67,7 +67,7 @@ Explore the complete API documentation using the navigation on the left:
 
 - **Classes** - Agent, Tool, and all built-in tool classes
 - **Interfaces** - Activity, Priority, Contact, and data structures
-- **Enums** - ActivityType, AuthorType, and other enumerations
+- **Enums** - ActivityType, ActorType, and other enumerations
 - **Type Aliases** - Helper types and utilities
 
 ## Quick Links

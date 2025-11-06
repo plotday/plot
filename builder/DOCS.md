@@ -64,7 +64,7 @@ The generated documentation includes:
 
 - **Classes** - Agent, Tool, and built-in tool classes
 - **Interfaces** - Activity, Priority, Contact, and other data types
-- **Enums** - ActivityType, AuthorType, ActivityLinkType, etc.
+- **Enums** - ActivityType, ActorType, ActivityLinkType, etc.
 - **Type Aliases** - NewActivity, NewPriority, and utility types
 - **Modules** - Organized by functionality (tools, common, utils)
 
