@@ -14,9 +14,14 @@ class ActionBar extends Dialog {
   ActionBar(
     Actions actions, {
     Action? Function(String promptValue)? secondaryAction,
+    required BuildContext rootContext,
   }) : super(
          padding: const EdgeInsets.all(0),
-         builder: (_) => _ActionBar(actions, secondaryAction: secondaryAction),
+         builder: (_) => _ActionBar(
+           actions,
+           secondaryAction: secondaryAction,
+           rootContext: rootContext,
+         ),
          key: ObjectKey(actions),
        );
 
@@ -28,10 +33,15 @@ class ActionBar extends Dialog {
 }
 
 class _ActionBar extends StatefulWidget {
-  const _ActionBar(this.actions, {this.secondaryAction});
+  const _ActionBar(
+    this.actions, {
+    this.secondaryAction,
+    required this.rootContext,
+  });
 
   final Actions actions;
   final Action? Function(String promptValue)? secondaryAction;
+  final BuildContext rootContext;
 
   @override
   ActionBarState createState() => ActionBarState();
@@ -100,7 +110,8 @@ class ActionBarState extends State<_ActionBar> {
       _error = null;
     });
     try {
-      final result = await action.run(context);
+      // Use rootContext which has access to providers
+      final result = await action.run(widget.rootContext);
       if (!mounted) return const ActionSkipped();
       if (result is ActionSkipped) {
         return result;
@@ -116,7 +127,7 @@ class ActionBarState extends State<_ActionBar> {
       }
       Dialog.popAll(context);
       if (result is ActionRoute) {
-        result.go(context);
+        result.go(widget.rootContext);
       }
     } catch (e, stackTrace) {
       log.warning('Error executing action', e, stackTrace);
@@ -150,9 +161,10 @@ class ActionBarState extends State<_ActionBar> {
         shortcuts: BidirectionalList.shortcuts,
         child: _child != null
             ? _child!
-            : Column(
-                children: [
-                  EditableArea(
+            : SizedBox.expand(
+                child: Column(
+                  children: [
+                    EditableArea(
                     position: EditableAreaPosition.top,
                     padding: false,
                     builder: (context, focusNode) => Row(
@@ -240,6 +252,7 @@ class ActionBarState extends State<_ActionBar> {
                   ),
                 ],
               ),
+            ),
       ),
     );
   }
