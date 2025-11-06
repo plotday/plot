@@ -18,6 +18,7 @@ class ActivityTagsBase extends BaseTable {
         writeTable: 'activity_tag',
         name: "activity_tags",
         filterName: priorityPath,
+        order: 'updated_at',
         ascending:
             false, // Get latest items first for reverse chronological sync
       );
@@ -44,8 +45,7 @@ class ActivityTagsBase extends BaseTable {
   ) {
     if (range != null && range.start != null && range.end != null) {
       final dateRange = '[${range.start!.toDate()},${range.end!.toDate()})';
-      final dateTimeRange =
-          '[${range.start!.toDb()},${range.end!.toDb()})';
+      final dateTimeRange = '[${range.start!.toDb()},${range.end!.toDb()})';
       query = query.or('range_at.ov."$dateTimeRange",range_on.ov."$dateRange"');
     }
     return query;
