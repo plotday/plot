@@ -68,6 +68,8 @@ class PriorityWrapper extends AutoRouter implements AutoRouteWrapper {
             child: BlocBuilder<PriorityBloc, PriorityState>(
               builder: (context, priorityState) {
                 return BlocConsumer<LayoutBloc, LayoutState>(
+                  listenWhen: (previous, current) =>
+                      previous.multiPanel != current.multiPanel,
                   listener: (context, layoutState) {
                     _handleRouteNavigation(context, layoutState.multiPanel);
                   },
