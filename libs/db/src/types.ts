@@ -550,6 +550,7 @@ export type Database = {
           created_at: string
           id: number
           name: string
+          start: string
           updated_at: string
         }
         Insert: {
@@ -557,6 +558,7 @@ export type Database = {
           created_at?: string
           id?: never
           name: string
+          start: string
           updated_at?: string
         }
         Update: {
@@ -564,6 +566,7 @@ export type Database = {
           created_at?: string
           id?: never
           name?: string
+          start?: string
           updated_at?: string
         }
         Relationships: []
@@ -1919,22 +1922,6 @@ export type Database = {
             Returns: boolean
           }
       user_timezone: { Args: never; Returns: string }
-      uuid_generate_v1: { Args: never; Returns: string }
-      uuid_generate_v1mc: { Args: never; Returns: string }
-      uuid_generate_v3: {
-        Args: { name: string; namespace: string }
-        Returns: string
-      }
-      uuid_generate_v4: { Args: never; Returns: string }
-      uuid_generate_v5: {
-        Args: { name: string; namespace: string }
-        Returns: string
-      }
-      uuid_nil: { Args: never; Returns: string }
-      uuid_ns_dns: { Args: never; Returns: string }
-      uuid_ns_oid: { Args: never; Returns: string }
-      uuid_ns_url: { Args: never; Returns: string }
-      uuid_ns_x500: { Args: never; Returns: string }
       week_from_date: { Args: { d: string }; Returns: unknown }
     }
     Enums: {

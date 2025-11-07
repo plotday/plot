@@ -2,8 +2,10 @@ CREATE TABLE "public"."cost" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "name" text NOT NULL UNIQUE,
-    "amount" numeric
+    "name" text NOT NULL,
+    "start" timestamp with time zone NOT NULL,
+    "amount" numeric,
+    UNIQUE ("name", "start")
 );
 
 ALTER TABLE "public"."cost" ENABLE ROW LEVEL SECURITY;

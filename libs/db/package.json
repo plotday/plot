@@ -53,5 +53,14 @@
   "exports": {
     ".": "./src/index.ts",
     "./event": "./src/event.ts"
+  },
+  "nx": {
+    "targets": {
+      "test": {
+        "dependsOn": [
+          "start"
+        ]
+      }
+    }
   }
 }
