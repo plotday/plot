@@ -29,9 +29,6 @@
       "cache": true
     },
     "test": {
-      "dependsOn": [
-        "@plotday/db#start"
-      ],
       "cache": true
     },
     "start": {

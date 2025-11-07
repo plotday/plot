@@ -1,0 +1,46 @@
+name: Test API
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'workers/api/**'
+      - 'libs/**'
+      - 'public/builder/**'
+      - '.github/workflows/test-api.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Build SDK
+        run: |
+          cd public/builder
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run API Tests
+        run: pnpm --filter @plotday/api run test:all
