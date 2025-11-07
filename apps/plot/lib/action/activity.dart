@@ -375,6 +375,54 @@ class ToggleActivityTag extends _UpdateActivityAction {
   }
 }
 
+class MoveToPriority extends PriorityAction {
+  MoveToPriority(this.activity, Priority priority)
+    : super(
+        priority,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.moved,
+      );
+
+  final Activity activity;
+
+  @override
+  Future<ActionReturn> run(BuildContext context) async {
+    await activity.copyWith(priority: priority!).save();
+    return const ActionDone();
+  }
+}
+
+class MoveActivityToPriority extends ShowActions {
+  MoveActivityToPriority(this.activity)
+    : super(
+        title: 'Move',
+        icon: PlotIcon.move,
+        actions: (context) => _getMoveActions(activity),
+      );
+
+  final Activity activity;
+
+  static Future<Actions> _getMoveActions(Activity activity) async {
+    final priorities = await Priority.get(order: PriorityOrder.recent);
+    final filteredPriorities = priorities
+        .where((p) => p.id != activity.priority.id)
+        .toList();
+
+    return Actions(
+      prompt: 'Move to Priority',
+      groups: [
+        StaticActionGroup(
+          title: 'Priorities',
+          actions: filteredPriorities
+              .map((priority) => MoveToPriority(activity, priority))
+              .toList(),
+        ),
+      ],
+      secondaryAction: (prompt) => NewPriority(parent: activity.priority),
+    );
+  }
+}
+
 class ShowActivityActions extends ShowActions {
   ShowActivityActions(Activity activity)
     : super(
@@ -427,5 +475,5 @@ List<Action> activityActions(Activity activity) {
       .where((tag) => tag.type == TagType.compute)
       .map((tag) => ToggleActivityTag(activity, tag))
       .toList();
-  return [OpenActivity(activity), ...actions];
+  return [OpenActivity(activity), MoveActivityToPriority(activity), ...actions];
 }

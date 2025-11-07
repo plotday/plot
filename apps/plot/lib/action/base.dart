@@ -123,7 +123,10 @@ class ShowActions extends Action {
   Future<ActionReturn> run(BuildContext context) async {
     try {
       final actionsInstance = await actions(context);
-      if (!context.mounted) return const ActionSkipped();
+      if (!context.mounted) {
+        log.info('Context no longer mounted, skipping ActionBar for "$title"');
+        return const ActionSkipped();
+      }
       return await ActionBar(
         actionsInstance,
         rootContext: context,

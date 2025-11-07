@@ -35,6 +35,7 @@
 /// - tagged: Tag added to entity
 /// - untagged: Tag removed from entity
 /// - unfinished: Activity marked incomplete
+/// - moved: Entity moved to different container/priority
 ///
 /// Navigation Verbs:
 /// - viewed: Screen/page/entity viewed
@@ -122,6 +123,7 @@ enum EventAction {
   tagged('tagged'),
   untagged('untagged'),
   unfinished('unfinished'),
+  moved('moved'),
 
   // Navigation
   viewed('viewed'),

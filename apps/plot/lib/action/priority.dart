@@ -258,6 +258,7 @@ List<Action> priorityActions(Priority priority) => [
 List<Action> currentPriorityActions(Priority priority) => [
   ...prioritySecondaryActions(priority),
   NewActivity(),
+  PickCurrentPriority(),
 ];
 
 class SetTopPriority extends Action {

@@ -20,6 +20,7 @@ class PlotIcon {
   static const signOut = FontAwesomeIcons.rightFromBracket;
   static const sync = FontAwesomeIcons.arrowsRotate;
   static const filter = FontAwesomeIcons.filter;
+  static const move = FontAwesomeIcons.rightLeft;
 
   // Emoji icons using system font
   static const now = IconData(0x25B6, fontFamily: 'emoji'); // ▶︎
