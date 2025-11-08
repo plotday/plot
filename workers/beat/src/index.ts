@@ -2,7 +2,7 @@
 declare const caches: CacheStorage & { default: Cache };
 
 export interface Env {
-  readonly POSTHOG_HOST: string;
+  readonly POSTHOG_API_HOST: string;
   readonly POSTHOG_ASSET_HOST: string;
 }
 
@@ -45,7 +45,7 @@ async function forwardRequest(
 ): Promise<Response> {
   const originRequest = new Request(request);
   originRequest.headers.delete("cookie");
-  return await fetch(`${env.POSTHOG_HOST}${pathWithSearch}`, originRequest);
+  return await fetch(`${env.POSTHOG_API_HOST}${pathWithSearch}`, originRequest);
 }
 
 export default {
