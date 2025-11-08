@@ -82,6 +82,19 @@ app.onError(async (err, c) => {
     console.error("Failed to capture exception in PostHog:", e);
   }
 
+  // Set CORS headers for error responses to prevent CORS errors in browser
+  const origin = c.req.header("Origin");
+  const allowedOrigins = [
+    "http://localhost:8788",
+    "https://preview.plot.day",
+    "https://app.plot.day",
+  ];
+
+  if (origin && allowedOrigins.includes(origin)) {
+    c.header("Access-Control-Allow-Origin", origin);
+    c.header("Access-Control-Allow-Credentials", "true");
+  }
+
   return c.json({ error: "Internal Server Error" }, 500);
 });
 
