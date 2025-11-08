@@ -50,7 +50,8 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1",
     "vitest": "^0.33.0",
-    "wrangler": "^4.46.0"
+    "wrangler": "^4.46.0",
+    "@posthog/cl": "0.5.10"
   },
   "python": {
     "dependencies": {

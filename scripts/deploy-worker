@@ -13,5 +13,14 @@ else
   VARS="--keep-vars"
 fi
 
+export POSTHOG_CLI_ENV_ID=$POSTHOG_PROJECT
+export POSTHOG_CLI_TOKEN=$POSTHOG_CLI_KEY
+
 wrangler deploy --dry-run --outdir build --define $definitions --env $ENV
+if [[ -v POSTHOG_CLI_KEY ]]; then
+  posthog-cli sourcemap inject --directory build --project $PACKAGE
+fi
 wrangler deploy --no-bundle build/index.js --define $definitions $VARS --env $ENV
+if [[ -v POSTHOG_CLI_KEY ]]; then
+  posthog-cli sourcemap upload --directory build
+fi
