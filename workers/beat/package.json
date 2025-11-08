@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "config": {
-    "deploy_vars": "POSTHOG_API_HOST POSTHOG_ASSET_HOST"
+    "deploy_vars": "POSTHOG_HOST POSTHOG_ASSET_HOST"
   },
   "scripts": {
     "env": "../../scripts/gen-env development $npm_package_config_deploy_vars > .dev.vars",
