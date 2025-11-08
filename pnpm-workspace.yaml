@@ -5,8 +5,9 @@ packages:
   - agents/*
   - public/builder
   - public/tools/*
+
 onlyBuiltDependencies:
-  - "@sentry/cli"
+  - "@posthog/cli"
   - bufferutil
   - es5-ext
   - esbuild
