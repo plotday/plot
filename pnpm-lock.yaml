@@ -53,6 +53,22 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  agents/message-tasks:
+    dependencies:
+      '@plotday/agent':
+        specifier: workspace:^
+        version: link:../../builder
+      '@plotday/tool-slack':
+        specifier: workspace:^
+        version: link:../../tools/slack
+      typebox:
+        specifier: ^1.0.35
+        version: 1.0.35
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   builder:
     dependencies:
       chalk:
@@ -111,6 +127,16 @@ importers:
         version: 5.9.3
 
   tools/outlook-calendar:
+    dependencies:
+      '@plotday/agent':
+        specifier: workspace:^
+        version: link:../../builder
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  tools/slack:
     dependencies:
       '@plotday/agent':
         specifier: workspace:^

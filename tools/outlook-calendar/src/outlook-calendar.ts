@@ -284,11 +284,10 @@ export class OutlookCalendar
   ): Promise<void> {
     const api = await this.getApi(authToken);
 
-    const webhookUrl = await this.tools.network.createWebhook(
-      this.onOutlookWebhook,
-      calendarId,
-      opaqueAuthToken
-    );
+    const webhookUrl = await this.tools.network.createWebhook({
+      callback: this.onOutlookWebhook,
+      extraArgs: [calendarId, opaqueAuthToken],
+    });
 
     // Skip webhook setup for localhost (development mode)
     if (webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1")) {
@@ -377,6 +376,7 @@ export class OutlookCalendar
             }
 
             // Extract and create contacts from attendees
+            let actorIds: ActorId[] = [];
             if (outlookEvent.attendees && outlookEvent.attendees.length > 0) {
               const contacts: NewContact[] = outlookEvent.attendees
                 .filter(
@@ -389,7 +389,8 @@ export class OutlookCalendar
                 }));
 
               if (contacts.length > 0) {
-                await this.tools.plot.addContacts(contacts);
+                const actors = await this.tools.plot.addContacts(contacts);
+                actorIds = actors.map((actor) => actor.id);
               }
             }
 
@@ -402,7 +403,7 @@ export class OutlookCalendar
             }
 
             // Determine user's RSVP status and set tags
-            let tags: Partial<Record<Tag, any[]>> | null = null;
+            let tags: Partial<Record<Tag, ActorId[]>> | null = null;
             if (userEmail && outlookEvent.attendees) {
               const userAttendee = outlookEvent.attendees.find(
                 (att) =>
@@ -411,20 +412,42 @@ export class OutlookCalendar
               );
 
               if (userAttendee) {
-                tags = {};
-                const response = userAttendee.status?.response;
-                if (response === "accepted") {
-                  tags[Tag.Yes] = []; // ActorId will be assigned by Plot tool
-                } else if (response === "declined") {
-                  tags[Tag.No] = []; // ActorId will be assigned by Plot tool
+                // Find the user's ActorId from the contacts we just created
+                const userActorId = actorIds.find((actorId, index) => {
+                  const attendee = outlookEvent.attendees![index];
+                  return (
+                    attendee.emailAddress?.address?.toLowerCase() ===
+                    userEmail.toLowerCase()
+                  );
+                });
+
+                if (userActorId) {
+                  tags = {};
+                  const response = userAttendee.status?.response;
+                  if (response === "accepted") {
+                    tags[Tag.Attend] = [userActorId];
+                  } else if (response === "declined") {
+                    tags[Tag.Skip] = [userActorId];
+                  } else if (
+                    response === "tentativelyAccepted" ||
+                    response === "none" ||
+                    response === "notResponded"
+                  ) {
+                    tags[Tag.Undecided] = [userActorId];
+                  }
+                  // organizer has no tags
                 }
-                // tentativelyAccepted, none, notResponded, organizer have no tags
               }
             }
 
             // Add tags to the activity
             if (tags && Object.keys(tags).length > 0) {
               activity.tags = tags;
+            }
+
+            // Add mentions to the activity (all invitees)
+            if (actorIds.length > 0) {
+              activity.mentions = actorIds;
             }
 
             // Build links array for videoconferencing and calendar links
@@ -576,36 +599,57 @@ export class OutlookCalendar
       return;
     }
 
-    // Check if Yes or No tags changed
-    const yesChanged = Tag.Yes in changes.tagsAdded || Tag.Yes in changes.tagsRemoved;
-    const noChanged = Tag.No in changes.tagsAdded || Tag.No in changes.tagsRemoved;
+    // Check if RSVP tags changed
+    const attendChanged =
+      Tag.Attend in changes.tagsAdded || Tag.Attend in changes.tagsRemoved;
+    const skipChanged =
+      Tag.Skip in changes.tagsAdded || Tag.Skip in changes.tagsRemoved;
+    const undecidedChanged =
+      Tag.Undecided in changes.tagsAdded || Tag.Undecided in changes.tagsRemoved;
 
-    if (!yesChanged && !noChanged) {
+    if (!attendChanged && !skipChanged && !undecidedChanged) {
       return; // No RSVP-related tag changes
     }
 
     // Determine new RSVP status based on current tags
-    const hasYes = activity.tags?.[Tag.Yes] && activity.tags[Tag.Yes].length > 0;
-    const hasNo = activity.tags?.[Tag.No] && activity.tags[Tag.No].length > 0;
+    const hasAttend =
+      activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
+    const hasSkip = activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
+    const hasUndecided =
+      activity.tags?.[Tag.Undecided] && activity.tags[Tag.Undecided].length > 0;
 
     let newStatus: "accepted" | "declined" | "tentativelyAccepted";
 
-    if (hasYes && hasNo) {
-      // Both tags present - use most recent from tagsAdded
-      if (Tag.Yes in changes.tagsAdded) {
+    // Priority: Attend > Skip > Undecided, using most recent from tagsAdded
+    if (hasAttend && (hasSkip || hasUndecided)) {
+      // Multiple tags present - use most recent from tagsAdded
+      if (Tag.Attend in changes.tagsAdded) {
         newStatus = "accepted";
-      } else if (Tag.No in changes.tagsAdded) {
+      } else if (Tag.Skip in changes.tagsAdded) {
         newStatus = "declined";
+      } else if (Tag.Undecided in changes.tagsAdded) {
+        newStatus = "tentativelyAccepted";
       } else {
-        // Both were already there, no change needed
+        // Multiple were already there, no change needed
         return;
       }
-    } else if (hasYes) {
+    } else if (hasSkip && hasUndecided) {
+      // Skip and Undecided present - use most recent
+      if (Tag.Skip in changes.tagsAdded) {
+        newStatus = "declined";
+      } else if (Tag.Undecided in changes.tagsAdded) {
+        newStatus = "tentativelyAccepted";
+      } else {
+        return;
+      }
+    } else if (hasAttend) {
       newStatus = "accepted";
-    } else if (hasNo) {
+    } else if (hasSkip) {
       newStatus = "declined";
+    } else if (hasUndecided) {
+      newStatus = "tentativelyAccepted";
     } else {
-      // Neither tag present - reset to tentativelyAccepted (acts as "needsAction")
+      // No RSVP tags present - reset to tentativelyAccepted (acts as "needsAction")
       newStatus = "tentativelyAccepted";
     }
 

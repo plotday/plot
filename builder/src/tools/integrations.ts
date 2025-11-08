@@ -126,11 +126,11 @@ export enum AuthLevel {
  * based on provider, scopes, and authorization ID.
  */
 export type Authorization = {
-  /** Unique identifier for this.integrationsorization */
+  /** Unique identifier for this authorization */
   id: string;
-  /** The OAuth provider this.integrationsorization is for */
+  /** The OAuth provider this authorization is for */
   provider: AuthProvider;
-  /** Array of OAuth scopes this.integrationsorization covers */
+  /** Array of OAuth scopes this authorization covers */
   scopes: string[];
 };
 
@@ -145,4 +145,13 @@ export type AuthToken = {
   token: string;
   /** Array of granted OAuth scopes */
   scopes: string[];
+  /**
+   * Provider-specific metadata as key-value pairs.
+   *
+   * For Slack (AuthProvider.Slack):
+   * - authed_user_id: The authenticated user's Slack ID
+   * - bot_user_id: The bot user's Slack ID
+   * - team_name: The Slack workspace/team name
+   */
+  provider?: Record<string, string>;
 };

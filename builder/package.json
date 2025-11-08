@@ -70,6 +70,10 @@
       "types": "./dist/common/calendar.d.ts",
       "default": "./dist/common/calendar.js"
     },
+    "./common/messaging": {
+      "types": "./dist/common/messaging.d.ts",
+      "default": "./dist/common/messaging.js"
+    },
     "./agents-guide": {
       "types": "./dist/agents-guide.d.ts",
       "default": "./dist/agents-guide.js"

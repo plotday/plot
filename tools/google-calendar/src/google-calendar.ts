@@ -294,11 +294,10 @@ export class GoogleCalendar
     calendarId: string,
     opaqueAuthToken: string
   ): Promise<void> {
-    const webhookUrl = await this.tools.network.createWebhook(
-      this.onCalendarWebhook,
-      calendarId,
-      opaqueAuthToken
-    );
+    const webhookUrl = await this.tools.network.createWebhook({
+      callback: this.onCalendarWebhook,
+      extraArgs: [calendarId, opaqueAuthToken],
+    });
 
     // Check if webhook URL is localhost
     if (URL.parse(webhookUrl)?.hostname === "localhost") {
@@ -418,6 +417,7 @@ export class GoogleCalendar
         }
 
         // Extract and create contacts from attendees
+        let actorIds: ActorId[] = [];
         if (event.attendees && event.attendees.length > 0) {
           const contacts: NewContact[] = event.attendees
             .filter((att) => att.email && !att.resource) // Exclude resources
@@ -427,7 +427,8 @@ export class GoogleCalendar
             }));
 
           if (contacts.length > 0) {
-            await this.tools.plot.addContacts(contacts);
+            const actors = await this.tools.plot.addContacts(contacts);
+            actorIds = actors.map((actor) => actor.id);
           }
         }
 
@@ -439,7 +440,7 @@ export class GoogleCalendar
           const activityData = transformGoogleEvent(event, calendarId);
 
           // Determine user's RSVP status and set tags
-          let tags: Partial<Record<Tag, any[]>> | null = null;
+          let tags: Partial<Record<Tag, ActorId[]>> | null = null;
           if (userEmail && event.attendees) {
             const userAttendee = event.attendees.find(
               (att) =>
@@ -448,13 +449,28 @@ export class GoogleCalendar
             );
 
             if (userAttendee) {
-              tags = {};
-              if (userAttendee.responseStatus === "accepted") {
-                tags[Tag.Yes] = []; // ActorId will be assigned by Plot tool
-              } else if (userAttendee.responseStatus === "declined") {
-                tags[Tag.No] = []; // ActorId will be assigned by Plot tool
+              // Find the user's ActorId from the contacts we just created
+              const userActorId = actorIds.find((actorId, index) => {
+                const attendee = event.attendees![index];
+                return (
+                  attendee.self === true ||
+                  attendee.email?.toLowerCase() === userEmail.toLowerCase()
+                );
+              });
+
+              if (userActorId) {
+                tags = {};
+                if (userAttendee.responseStatus === "accepted") {
+                  tags[Tag.Attend] = [userActorId];
+                } else if (userAttendee.responseStatus === "declined") {
+                  tags[Tag.Skip] = [userActorId];
+                } else if (
+                  userAttendee.responseStatus === "tentative" ||
+                  userAttendee.responseStatus === "needsAction"
+                ) {
+                  tags[Tag.Undecided] = [userActorId];
+                }
               }
-              // tentative and needsAction have no tags (neither Yes nor No)
             }
           }
 
@@ -515,6 +531,7 @@ export class GoogleCalendar
               occurrence: null,
               meta: activityData.meta ?? null,
               tags,
+              mentions: actorIds.length > 0 ? actorIds : null,
             };
 
             await this.run(callbackToken as any, activity);
@@ -667,36 +684,57 @@ export class GoogleCalendar
       return;
     }
 
-    // Check if Yes or No tags changed
-    const yesChanged = Tag.Yes in changes.tagsAdded || Tag.Yes in changes.tagsRemoved;
-    const noChanged = Tag.No in changes.tagsAdded || Tag.No in changes.tagsRemoved;
+    // Check if RSVP tags changed
+    const attendChanged =
+      Tag.Attend in changes.tagsAdded || Tag.Attend in changes.tagsRemoved;
+    const skipChanged =
+      Tag.Skip in changes.tagsAdded || Tag.Skip in changes.tagsRemoved;
+    const undecidedChanged =
+      Tag.Undecided in changes.tagsAdded || Tag.Undecided in changes.tagsRemoved;
 
-    if (!yesChanged && !noChanged) {
+    if (!attendChanged && !skipChanged && !undecidedChanged) {
       return; // No RSVP-related tag changes
     }
 
     // Determine new RSVP status based on current tags
-    const hasYes = activity.tags?.[Tag.Yes] && activity.tags[Tag.Yes].length > 0;
-    const hasNo = activity.tags?.[Tag.No] && activity.tags[Tag.No].length > 0;
+    const hasAttend =
+      activity.tags?.[Tag.Attend] && activity.tags[Tag.Attend].length > 0;
+    const hasSkip = activity.tags?.[Tag.Skip] && activity.tags[Tag.Skip].length > 0;
+    const hasUndecided =
+      activity.tags?.[Tag.Undecided] && activity.tags[Tag.Undecided].length > 0;
 
-    let newStatus: "accepted" | "declined" | "needsAction";
+    let newStatus: "accepted" | "declined" | "tentative" | "needsAction";
 
-    if (hasYes && hasNo) {
-      // Both tags present - use most recent from tagsAdded
-      if (Tag.Yes in changes.tagsAdded) {
+    // Priority: Attend > Skip > Undecided, using most recent from tagsAdded
+    if (hasAttend && (hasSkip || hasUndecided)) {
+      // Multiple tags present - use most recent from tagsAdded
+      if (Tag.Attend in changes.tagsAdded) {
         newStatus = "accepted";
-      } else if (Tag.No in changes.tagsAdded) {
+      } else if (Tag.Skip in changes.tagsAdded) {
         newStatus = "declined";
+      } else if (Tag.Undecided in changes.tagsAdded) {
+        newStatus = "tentative";
       } else {
-        // Both were already there, no change needed
+        // Multiple were already there, no change needed
         return;
       }
-    } else if (hasYes) {
+    } else if (hasSkip && hasUndecided) {
+      // Skip and Undecided present - use most recent
+      if (Tag.Skip in changes.tagsAdded) {
+        newStatus = "declined";
+      } else if (Tag.Undecided in changes.tagsAdded) {
+        newStatus = "tentative";
+      } else {
+        return;
+      }
+    } else if (hasAttend) {
       newStatus = "accepted";
-    } else if (hasNo) {
+    } else if (hasSkip) {
       newStatus = "declined";
+    } else if (hasUndecided) {
+      newStatus = "tentative";
     } else {
-      // Neither tag present - reset to needsAction
+      // No RSVP tags present - reset to needsAction
       newStatus = "needsAction";
     }
 
@@ -729,7 +767,7 @@ export class GoogleCalendar
     authToken: string,
     calendarId: string,
     eventId: string,
-    status: "accepted" | "declined" | "needsAction"
+    status: "accepted" | "declined" | "needsAction" | "tentative"
   ): Promise<void> {
     const api = await this.getApi(authToken);
 

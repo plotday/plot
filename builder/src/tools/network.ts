@@ -81,9 +81,9 @@ export type WebhookRequest = {
  *
  *   async setupCalendarWebhook(calendarId: string) {
  *     // Create webhook URL that will call onCalendarEvent
- *     const webhookUrl = await this.tools.network.createWebhook("onCalendarEvent", {
- *       calendarId,
- *       provider: "google"
+ *     const webhookUrl = await this.tools.network.createWebhook({
+ *       callback: this.onCalendarEvent,
+ *       extraArgs: [calendarId, "google"]
  *     });
  *
  *     // Register webhook with Google Calendar API
@@ -92,10 +92,11 @@ export type WebhookRequest = {
  *     return webhookUrl;
  *   }
  *
- *   async onCalendarEvent(request: WebhookRequest, context: any) {
+ *   async onCalendarEvent(request: WebhookRequest, calendarId: string, provider: string) {
  *     console.log("Calendar event received:", {
  *       method: request.method,
- *       calendarId: context.calendarId,
+ *       calendarId,
+ *       provider,
  *       body: request.body
  *     });
  *
@@ -124,19 +125,25 @@ export abstract class Network extends ITool {
    * Generates a unique HTTP endpoint that will invoke the callback function
    * when requests are received. The callback receives the WebhookRequest plus any extraArgs.
    *
-   * @param callback - Function receiving (request, ...extraArgs)
-   * @param extraArgs - Additional arguments to pass to the callback (type-checked)
+   * For provider-specific webhooks (e.g., Slack), use the provider and authorization
+   * parameters to enable automatic routing based on provider-specific identifiers.
+   *
+   * @param options - Webhook creation options
+   * @param options.callback - Function receiving (request, ...extraArgs)
+   * @param options.extraArgs - Additional arguments to pass to the callback (type-checked)
+   * @param options.provider - Optional provider for provider-specific webhook routing
+   * @param options.authorization - Optional authorization for provider-specific webhooks (required for Slack)
    * @returns Promise resolving to the webhook URL
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createWebhook<
     TCallback extends (request: WebhookRequest, ...args: any[]) => any
-  >(
-    callback: TCallback,
-    ...extraArgs: TCallback extends (req: any, ...rest: infer R) => any
-      ? R
-      : []
-  ): Promise<string>;
+  >(options: {
+    callback: TCallback;
+    extraArgs?: TCallback extends (req: any, ...rest: infer R) => any ? R : [];
+    provider?: any; // AuthProvider from integrations, but we can't import it here
+    authorization?: any; // Authorization from integrations
+  }): Promise<string>;
 
   /**
    * Deletes an existing webhook endpoint.
