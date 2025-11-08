@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 import 'package:equatable/equatable.dart';
 import 'package:forui/forui.dart';
+import '../state/theme.dart';
 
 class ColourSchemeData extends Equatable {
   final HSLColor base;
@@ -86,7 +88,7 @@ class ColourSchemeData extends Equatable {
   List<Object?> get props => [base, brightness];
 }
 
-class ColourScheme extends StatelessWidget {
+class ColourScheme extends StatefulWidget {
   static const Color brand = Color.fromARGB(255, 35, 152, 112);
 
   final Widget child;
@@ -95,11 +97,47 @@ class ColourScheme extends StatelessWidget {
   const ColourScheme({this.base = brand, required this.child, super.key});
 
   @override
+  State<ColourScheme> createState() => _ColourSchemeState();
+}
+
+class _ColourSchemeState extends State<ColourScheme> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    super.didChangePlatformBrightness();
+    // Trigger rebuild when system theme changes
+    setState(() {});
+  }
+
+  Brightness _getEffectiveBrightness(BuildContext context, AppThemeMode mode) {
+    return switch (mode) {
+      AppThemeMode.light => Brightness.light,
+      AppThemeMode.dark => Brightness.dark,
+      AppThemeMode.system => MediaQuery.platformBrightnessOf(context),
+    };
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final brightness = MediaQuery.platformBrightnessOf(context);
-    return ProxyProvider0(
-      update: (_, _) => ColourSchemeData(base, brightness),
-      child: child,
+    return BlocBuilder<ThemeBloc, ThemeState>(
+      builder: (context, themeState) {
+        final brightness = _getEffectiveBrightness(context, themeState.mode);
+        return ProxyProvider0(
+          update: (_, _) => ColourSchemeData(widget.base, brightness),
+          child: widget.child,
+        );
+      },
     );
   }
 }

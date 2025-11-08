@@ -24,6 +24,12 @@ class GlobalMenu extends StatelessWidget {
                   },
                   label: "Settings",
                 ),
+                PlatformMenuItem(
+                  onSelected: () {
+                    context.run(SignOut());
+                  },
+                  label: "Sign Out",
+                ),
               ],
             ),
             if (PlatformProvidedMenuItem.hasMenu(
