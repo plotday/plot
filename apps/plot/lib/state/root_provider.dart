@@ -54,7 +54,7 @@ class RootProviderState extends State<RootProvider> {
             case UserSignedOut _:
               prioritiesBloc.stop();
               nowBloc.stop();
-              context.router.replaceAll([SignInRoute()]);
+              await router.replaceAll([SignInRoute()]);
               break;
             default:
               break;

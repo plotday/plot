@@ -55,24 +55,10 @@ class Base {
   }
 
   Base() : _client = supa.Supabase.instance.client, _userId = null {
-    _client!.auth.onAuthStateChange.listen((data) async {
-      final event = data.event;
-      log.info('Auth state change: $event');
-
-      switch (event) {
-        case supa.AuthChangeEvent.signedIn:
-        case supa.AuthChangeEvent.tokenRefreshed:
-        case supa.AuthChangeEvent.userUpdated:
-          await _updateUser(data.session?.user);
-          break;
-        case supa.AuthChangeEvent.signedOut:
-        case supa.AuthChangeEvent.userDeleted:
-          await _updateUser(null);
-          break;
-        default:
-          // Handle other events if needed
-          break;
-      }
+    _client!.auth.onAuthStateChange.listen((data) {
+      log.info('Auth state change: ${data.event}');
+      // Intentionally not awaiting to avoid blocking the listener
+      _updateUser(data.session?.user);
     });
   }
 
