@@ -56,7 +56,23 @@ class Base {
 
   Base() : _client = supa.Supabase.instance.client, _userId = null {
     _client!.auth.onAuthStateChange.listen((data) async {
-      await _updateUser(data.session?.user);
+      final event = data.event;
+      log.info('Auth state change: $event');
+
+      switch (event) {
+        case supa.AuthChangeEvent.signedIn:
+        case supa.AuthChangeEvent.tokenRefreshed:
+        case supa.AuthChangeEvent.userUpdated:
+          await _updateUser(data.session?.user);
+          break;
+        case supa.AuthChangeEvent.signedOut:
+        case supa.AuthChangeEvent.userDeleted:
+          await _updateUser(null);
+          break;
+        default:
+          // Handle other events if needed
+          break;
+      }
     });
   }
 
@@ -72,6 +88,7 @@ class Base {
   }
 
   Future<void> _updateUser(supa.User? supaUser) async {
+    log.info('Updating user: ${supaUser?.id ?? 'null'}');
     final currentUser = _currentUserController.valueOrNull;
     final newUser = supaUser == null ? null : User(supaUser);
 
@@ -89,14 +106,12 @@ class Base {
       // User signing out
       // Track sign out event with session duration
       if (_signInTime != null) {
-        final sessionDurationMs =
-            DateTime.now().difference(_signInTime!).inMilliseconds;
-        await Analytics.instance.trackSession(
-          EventAction.signedOut,
-          {
-            PropertyKey.sessionDurationMs: sessionDurationMs,
-          },
-        );
+        final sessionDurationMs = DateTime.now()
+            .difference(_signInTime!)
+            .inMilliseconds;
+        await Analytics.instance.trackSession(EventAction.signedOut, {
+          PropertyKey.sessionDurationMs: sessionDurationMs,
+        });
       } else {
         await Analytics.instance.trackSession(EventAction.signedOut);
       }
