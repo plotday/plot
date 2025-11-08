@@ -8,13 +8,6 @@ import 'package:plot/page/loading.dart';
 import 'package:plot/router.dart';
 import 'logging.dart';
 
-class _AuthChangeNotifier extends ChangeNotifier {
-  void notify() {
-    log.info('_AuthChangeNotifier.notify()');
-    notifyListeners();
-  }
-}
-
 class RootProvider extends StatefulWidget {
   const RootProvider({required this.builder, super.key});
 
@@ -29,21 +22,17 @@ class RootProviderState extends State<RootProvider> {
   final NowBloc nowBloc = NowBloc();
   final PrioritiesBloc prioritiesBloc = PrioritiesBloc();
   final AppRouter router = AppRouter();
-  final _authChangeNotifier = _AuthChangeNotifier();
   late final RouterConfig<UrlState> routerConfig;
 
   @override
   void initState() {
     Bloc.observer = BlocLogger();
-    routerConfig = router.config(
-      reevaluateListenable: _authChangeNotifier,
-    );
+    routerConfig = router.config();
     super.initState();
   }
 
   @override
   void dispose() {
-    _authChangeNotifier.dispose();
     super.dispose();
   }
 
@@ -61,15 +50,13 @@ class RootProviderState extends State<RootProvider> {
             case UserReady _:
               await prioritiesBloc.start();
               await nowBloc.start();
-              _authChangeNotifier.notify();
               break;
-            case UserWaitlisted _:
             case UserSignedOut _:
-              _authChangeNotifier.notify();
               prioritiesBloc.stop();
               nowBloc.stop();
+              context.router.replaceAll([SignInRoute()]);
               break;
-            case UserLoading _:
+            default:
               break;
           }
         },
