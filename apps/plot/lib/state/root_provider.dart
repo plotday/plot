@@ -30,10 +30,14 @@ class RootProviderState extends State<RootProvider> {
   final PrioritiesBloc prioritiesBloc = PrioritiesBloc();
   final AppRouter router = AppRouter();
   final _authChangeNotifier = _AuthChangeNotifier();
+  late final RouterConfig<UrlState> routerConfig;
 
   @override
   void initState() {
     Bloc.observer = BlocLogger();
+    routerConfig = router.config(
+      reevaluateListenable: _authChangeNotifier,
+    );
     super.initState();
   }
 
@@ -71,9 +75,6 @@ class RootProviderState extends State<RootProvider> {
         },
         child: BlocBuilder<UserBloc, UserState>(
           builder: (context, state) {
-            final routerConfig = router.config(
-              reevaluateListenable: _authChangeNotifier,
-            );
             return switch (state) {
               UserLoading _ => const LoadingPage(),
               UserWaitlisted _ => widget.builder(routerConfig),

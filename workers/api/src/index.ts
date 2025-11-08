@@ -1,6 +1,6 @@
 import { Container } from "@cloudflare/containers";
-import { withSentry } from "@sentry/cloudflare";
 import { Hono } from "hono";
+import { PostHog } from "posthog-node";
 
 import account from "./app/account";
 import agents from "./app/agents";
@@ -54,6 +54,37 @@ export type { DatabaseUpdateRequest } from "./sync/database";
 // Create main app
 const app = new Hono<{ Bindings: Bindings }>();
 
+app.use("*", async (c, next) => {
+  const postHog = new PostHog(c.env.POSTHOG_API_KEY, {
+    host: c.env.POSTHOG_HOST,
+    flushAt: 5,
+    flushInterval: 10,
+  });
+  c.set("postHog", postHog);
+  try {
+    await next();
+  } finally {
+    // This runs after response, even if there's an error
+    c.executionCtx.waitUntil(postHog.shutdown());
+  }
+});
+
+// Add error handler for PostHog error tracking
+app.onError(async (err, c) => {
+  try {
+    console.error(err);
+    c.var.postHog.captureException(err, undefined, {
+      path: c.req.path,
+      method: c.req.method,
+      url: c.req.url,
+    });
+  } catch (e) {
+    console.error("Failed to capture exception in PostHog:", e);
+  }
+
+  return c.json({ error: "Internal Server Error" }, 500);
+});
+
 // App section - endpoints called by the Flutter app
 const appSection = new Hono<{ Bindings: Bindings }>();
 appSection.use(appCorsMiddleware);
@@ -91,17 +122,8 @@ app.route("/stripe", stripeSection);
 // Mount webhook route at top level
 app.route("/", webhook);
 
-// Export with Sentry wrapping
-export default withSentry(
-  (env) => ({
-    dsn: (env as Bindings).SENTRY_DSN,
-    release: RELEASE,
-    dist: PACKAGE,
-    environment: ENV,
-    enabled: ENV !== "development",
-  }),
-  {
-    ...(app as any),
-    queue,
-  }
-);
+// Export app with queue handler
+export default {
+  ...(app as any),
+  queue,
+};

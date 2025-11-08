@@ -3,12 +3,12 @@ import {
   type Callback,
   type NoFunctions,
 } from "@plotday/agent/tools/callbacks";
-import type {
-  AuthLevel,
+import {
+  type AuthLevel,
   AuthProvider,
-  AuthToken,
-  Authorization,
-  Integrations as IAuth,
+  type AuthToken,
+  type Authorization,
+  type Integrations as IAuth,
 } from "@plotday/agent/tools/integrations";
 import type { Store as IStore } from "@plotday/agent/tools/store";
 
@@ -182,16 +182,6 @@ export class Integrations extends Tool implements IAuth {
       scopes: tokenInfo.scopes,
     };
 
-    // Add workspace metadata for Slack
-    if (tokenInfo.provider === AuthProvider.Slack && tokenInfo.team) {
-      authorization.workspace = {
-        id: tokenInfo.team.id,
-        name: tokenInfo.team.name,
-        enterpriseId: tokenInfo.enterprise?.id,
-        enterpriseName: tokenInfo.enterprise?.name,
-      };
-    }
-
     // Call original user callback with Authorization
     try {
       await this.callbacks.callCallback(callbackToken, authorization);
@@ -260,8 +250,10 @@ export class Integrations extends Tool implements IAuth {
           return {
             token: refreshedToken.access_token,
             scopes: tokenData.scopes,
-            tokenType: tokenData.token_type,
-            botUserId: tokenData.bot_user_id,
+            provider: tokenData.token_type || tokenData.bot_user_id ? {
+              ...(tokenData.token_type && { token_type: tokenData.token_type }),
+              ...(tokenData.bot_user_id && { bot_user_id: tokenData.bot_user_id }),
+            } : undefined,
           };
         } catch (error) {
           console.error("Failed to refresh token:", error);
@@ -279,8 +271,10 @@ export class Integrations extends Tool implements IAuth {
     return {
       token: tokenData.access_token,
       scopes: tokenData.scopes,
-      tokenType: tokenData.token_type,
-      botUserId: tokenData.bot_user_id,
+      provider: tokenData.token_type || tokenData.bot_user_id ? {
+        ...(tokenData.token_type && { token_type: tokenData.token_type }),
+        ...(tokenData.bot_user_id && { bot_user_id: tokenData.bot_user_id }),
+      } : undefined,
     };
   }
 

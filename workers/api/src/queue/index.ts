@@ -1,4 +1,6 @@
-import { Tasks, type RunMessage } from "../agent/tools/tasks";
+import { PostHog } from "posthog-node";
+
+import { type RunMessage, Tasks } from "../agent/tools/tasks";
 import {
   type Bindings,
   type LogMessage,
@@ -16,27 +18,50 @@ export async function queue(
   env: Bindings,
   ctx: ExecutionContext
 ): Promise<void> {
-  // Use batch.queue to distinguish between queues
-  switch (batch.queue) {
-    case "run-development":
-    case "run-production":
-      await Tasks.processQueue(env, batch as MessageBatch<RunMessage>);
-      break;
+  const postHog = new PostHog(env.POSTHOG_API_KEY, {
+    host: env.POSTHOG_HOST,
+    flushAt: 10,
+    flushInterval: 10,
+  });
+  try {
+    // Use batch.queue to distinguish between queues
+    switch (batch.queue) {
+      case "run-development":
+      case "run-production":
+        await Tasks.processQueue(
+          env,
+          batch as MessageBatch<RunMessage>,
+          postHog
+        );
+        break;
 
-    case "updates-development":
-    case "updates-production":
-      await processUpdates(batch as MessageBatch<UpdateMessage>, env, ctx);
-      break;
+      case "updates-development":
+      case "updates-production":
+        await processUpdates(
+          batch as MessageBatch<UpdateMessage>,
+          env,
+          ctx,
+          postHog
+        );
+        break;
 
-    case "agent-logs-development":
-    case "agent-logs-production":
-      await processLogs(batch as MessageBatch<LogMessage>, env);
-      break;
+      case "agent-logs-development":
+      case "agent-logs-production":
+        await processLogs(batch as MessageBatch<LogMessage>, env, postHog);
+        break;
 
-    default:
-      console.error(`Unknown queue: ${batch.queue}`, {
-        queue: batch.queue,
-        messageCount: batch.messages.length,
-      });
+      default:
+        console.error(`Unknown queue: ${batch.queue}`, {
+          queue: batch.queue,
+          messageCount: batch.messages.length,
+        });
+    }
+  } catch (error) {
+    console.error(error);
+    postHog.captureException(error, undefined, {
+      queue: batch.queue,
+    });
+  } finally {
+    ctx.waitUntil(postHog.shutdown());
   }
 }

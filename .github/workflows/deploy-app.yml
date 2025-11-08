@@ -19,7 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -41,9 +40,10 @@ jobs:
           CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
           SUPABASE_URL: op://Production/Supabase/API/url
           SUPABASE_ANON_KEY: op://Production/Supabase/API/public key
-          SENTRY_AUTH_TOKEN: op://Development/Sentry/credential
-          SENTRY_ORG: op://Development/Sentry/org
-          SENTRY_DSN: op://Development/Sentry/app/dsn
+          POSTHOG_HOST: op://Production/PostHog/hostname
+          POSTHOG_PROJECT: op://Production/PostHog/username
+          POSTHOG_CLI_KEY: op://Production/PostHog/sourcemaps/credential
+          POSTHOG_API_KEY: op://Production/PostHog/credential
           GOOGLE_URL: op://Production/Google OAuth/url
           GOOGLE_CLIENT_ID: op://Production/Google OAuth/username
           GOOGLE_IOS_CLIENT_ID: op://Production/Google OAuth/iOS/client ID
@@ -56,10 +56,8 @@ jobs:
           SUPABASE_URL=${{ env.SUPABASE_URL }}
           SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }}
           API_ROOT=https://api.plot.day
-          SENTRY_PROJECT=app
-          SENTRY_AUTH_TOKEN=${{ env.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG=${{ env.SENTRY_ORG }}
-          SENTRY_DSN=${{ env.SENTRY_DSN }}
+          POSTHOG_API_KEY=${{ env.POSTHOG_API_KEY }}
+          POSTHOG_HOST=${{ env.POSTHOG_HOST }}
           AUTH_GOOGLE_URI=${{ env.GOOGLE_URL }}
           AUTH_GOOGLE_ID=${{ env.GOOGLE_CLIENT_ID }}
           AUTH_GOOGLE_IOS_ID=${{ env.GOOGLE_IOS_CLIENT_ID }}

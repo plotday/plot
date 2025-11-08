@@ -1,3 +1,5 @@
+import type { PostHog } from "posthog-node";
+
 import { type Callback } from "@plotday/agent/tools/callbacks";
 import type { Tasks as IRun } from "@plotday/agent/tools/tasks";
 
@@ -91,7 +93,11 @@ export class Tasks extends Tool implements IRun {
     await this.send(token);
   }
 
-  static async processQueue(env: Bindings, batch: MessageBatch<RunMessage>) {
+  static async processQueue(
+    env: Bindings,
+    batch: MessageBatch<RunMessage>,
+    postHog: PostHog
+  ) {
     for (const message of batch.messages) {
       try {
         const callbacks = Tasks.GetStub(
@@ -103,6 +109,11 @@ export class Tasks extends Tool implements IRun {
         message.ack();
       } catch (error) {
         console.error(`Failed to execute callback ${message.body}:`, error);
+        postHog.captureException(error as Error, undefined, {
+          priority_agent_id: message.body.priorityAgentId,
+          path: message.body.path.join("/"),
+          queue: batch.queue,
+        });
         message.retry();
       }
     }

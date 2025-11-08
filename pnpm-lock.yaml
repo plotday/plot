@@ -17,9 +17,6 @@ importers:
       '@plotday/eslint-config-custom':
         specifier: workspace:*
         version: link:libs/eslint-config-custom
-      '@sentry/cli':
-        specifier: ^2.46.0
-        version: 2.46.0
       '@trivago/prettier-plugin-sort-imports':
         specifier: ^4.1.1
         version: 4.1.1(@vue/compiler-sfc@3.5.13)(prettier@2.8.8)
@@ -314,6 +311,16 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  public/tools/slack:
+    dependencies:
+      '@plotday/agent':
+        specifier: workspace:^
+        version: link:../../builder
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   workers/api:
     dependencies:
       '@ai-sdk/anthropic':
@@ -337,9 +344,6 @@ importers:
       '@plotday/db':
         specifier: workspace:^
         version: link:../../libs/db
-      '@sentry/cloudflare':
-        specifier: ^10.12.0
-        version: 10.12.0(@cloudflare/workers-types@4.20250415.0)
       '@supabase/supabase-js':
         specifier: ^2.79.0
         version: 2.79.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)
@@ -349,6 +353,9 @@ importers:
       hono:
         specifier: ^4.6.15
         version: 4.6.15
+      posthog-node:
+        specifier: ^5.11.0
+        version: 5.11.2
       stripe:
         specifier: ^17.5.0
         version: 17.7.0
@@ -401,9 +408,9 @@ importers:
       '@plotday/email':
         specifier: workspace:^
         version: link:../../libs/email
-      '@sentry/cloudflare':
-        specifier: ^9.19.0
-        version: 9.19.0(@cloudflare/workers-types@4.20250415.0)
+      posthog-node:
+        specifier: ^5.11.0
+        version: 5.11.2
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.0.0
@@ -2819,6 +2826,9 @@ packages:
   '@poppinss/exception@1.2.2':
     resolution: {integrity: sha512-m7bpKCD4QMlFCjA/nKTs23fuvoVFoA83brRKmObCUNmi/9tVu8Ve3w4YQAnJu4q3Tjf5fr685HYIC/IA2zHRSg==}
 
+  '@posthog/core@1.5.2':
+    resolution: {integrity: sha512-iedUP3EnOPPxTA2VaIrsrd29lSZnUV+ZrMnvY56timRVeZAXoYCkmjfIs3KBAsF8OUT5h1GXLSkoQdrV0r31OQ==}
+
   '@react-email/body@0.1.0':
     resolution: {integrity: sha512-o1bcSAmDYNNHECbkeyceCVPGmVsYvT+O3sSO/Ct7apKUu3JphTi31hu+0Nwqr/pgV5QFqdoT5vdS3SW5DJFHgQ==}
     peerDependencies:
@@ -3133,84 +3143,6 @@ packages:
 
   '@selderee/plugin-htmlparser2@0.11.0':
     resolution: {integrity: sha512-P33hHGdldxGabLFjPPpaTxVolMrzrcegejx+0GxjrIb9Zv48D8yAIA/QTDR2dFl7Uz7urX8aX6+5bCZslr+gWQ==}
-
-  '@sentry/cli-darwin@2.46.0':
-    resolution: {integrity: sha512-5Ll+e5KAdIk9OYiZO8aifMBRNWmNyPjSqdjaHlBC1Qfh7pE3b1zyzoHlsUazG0bv0sNrSGea8e7kF5wIO1hvyg==}
-    engines: {node: '>=10'}
-    os: [darwin]
-
-  '@sentry/cli-linux-arm64@2.46.0':
-    resolution: {integrity: sha512-OEJN8yAjI9y5B4telyqzu27Hi3+S4T8VxZCqJz1+z2Mp0Q/MZ622AahVPpcrVq/5bxrnlZR16+lKh8L1QwNFPg==}
-    engines: {node: '>=10'}
-    cpu: [arm64]
-    os: [linux, freebsd, android]
-
-  '@sentry/cli-linux-arm@2.46.0':
-    resolution: {integrity: sha512-WRrLNq/TEX/TNJkGqq6Ad0tGyapd5dwlxtsPbVBrIdryuL1mA7VCBoaHBr3kcwJLsgBHFH0lmkMee2ubNZZdkg==}
-    engines: {node: '>=10'}
-    cpu: [arm]
-    os: [linux, freebsd, android]
-
-  '@sentry/cli-linux-i686@2.46.0':
-    resolution: {integrity: sha512-xko3/BVa4LX8EmRxVOCipV+PwfcK5Xs8lP6lgF+7NeuAHMNL4DqF6iV9rrN8gkGUHCUI9RXSve37uuZnFy55+Q==}
-    engines: {node: '>=10'}
-    cpu: [x86, ia32]
-    os: [linux, freebsd, android]
-
-  '@sentry/cli-linux-x64@2.46.0':
-    resolution: {integrity: sha512-hJ1g5UEboYcOuRia96LxjJ0jhnmk8EWLDvlGnXLnYHkwy3ree/L7sNgdp/QsY8Z4j2PGO5f22Va+UDhSjhzlfQ==}
-    engines: {node: '>=10'}
-    cpu: [x64]
-    os: [linux, freebsd, android]
-
-  '@sentry/cli-win32-arm64@2.46.0':
-    resolution: {integrity: sha512-mN7cpPoCv2VExFRGHt+IoK11yx4pM4ADZQGEso5BAUZ5duViXB2WrAXCLd8DrwMnP0OE978a7N8OtzsFqjkbNA==}
-    engines: {node: '>=10'}
-    cpu: [arm64]
-    os: [win32]
-
-  '@sentry/cli-win32-i686@2.46.0':
-    resolution: {integrity: sha512-6F73AUE3lm71BISUO19OmlnkFD5WVe4/wA1YivtLZTc1RU3eUYJLYxhDfaH3P77+ycDppQ2yCgemLRaA4A8mNQ==}
-    engines: {node: '>=10'}
-    cpu: [x86, ia32]
-    os: [win32]
-
-  '@sentry/cli-win32-x64@2.46.0':
-    resolution: {integrity: sha512-yuGVcfepnNL84LGA0GjHzdMIcOzMe0bjPhq/rwPsPN+zu11N+nPR2wV2Bum4U0eQdqYH3iAlMdL5/BEQfuLJww==}
-    engines: {node: '>=10'}
-    cpu: [x64]
-    os: [win32]
-
-  '@sentry/cli@2.46.0':
-    resolution: {integrity: sha512-nqoPl7UCr446QFkylrsRrUXF51x8Z9dGquyf4jaQU+OzbOJMqclnYEvU6iwbwvaw3tu/2DnoZE/Og+Nq1h63sA==}
-    engines: {node: '>= 10'}
-    hasBin: true
-
-  '@sentry/cloudflare@10.12.0':
-    resolution: {integrity: sha512-At1eX7eUUzCza8jhcyHvdC3mlLwF03lEhT4rfWA8B+MO7R5e9wNOBiCOLpxXq0XkfYOYHNw+q9tRwAvK7xt29w==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      '@cloudflare/workers-types': ^4.x
-    peerDependenciesMeta:
-      '@cloudflare/workers-types':
-        optional: true
-
-  '@sentry/cloudflare@9.19.0':
-    resolution: {integrity: sha512-WQ20xZ7PTiXiycSY0PG9MWyCsytxIqZ7v7IQ27U62O0I6iqeCZsW8ueQJ4EQNm6U9OYQughYurI26oOB15j5GQ==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      '@cloudflare/workers-types': ^4.x
-    peerDependenciesMeta:
-      '@cloudflare/workers-types':
-        optional: true
-
-  '@sentry/core@10.12.0':
-    resolution: {integrity: sha512-Jrf0Yo7DvmI/ZQcvBnA0xKNAFkJlVC/fMlvcin+5IrFNRcqOToZ2vtF+XqTgjRZymXQNE8s1QTD7IomPHk0TAw==}
-    engines: {node: '>=18'}
-
-  '@sentry/core@9.19.0':
-    resolution: {integrity: sha512-I41rKpMJHHZb0z0Nja+Lxto6IkEEmX3uWjnECypF8Z1HIjeJB0+PXl8p/7TeaKYqw2J2GYcRTg7jQZDmvKle1w==}
-    engines: {node: '>=18'}
 
   '@shikijs/engine-oniguruma@3.14.0':
     resolution: {integrity: sha512-TNcYTYMbJyy+ZjzWtt0bG5y4YyMIWC2nyePz+CFMWqm+HnZZyy9SWMgo8Z6KBJVIZnx8XUXS8U2afO6Y0g1Oug==}
@@ -3601,10 +3533,6 @@ packages:
   address@1.2.2:
     resolution: {integrity: sha512-4B/qKCfeE/ODUaAUpSwfzazo5x29WD4r3vXiWsB7I2mSDAihwEqKO+g8GELZUQSSAo5e1XTYh3ZVfLyxBc12nA==}
     engines: {node: '>= 10.0.0'}
-
-  agent-base@6.0.2:
-    resolution: {integrity: sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==}
-    engines: {node: '>= 6.0.0'}
 
   agent-base@7.1.3:
     resolution: {integrity: sha512-jRR5wdylq8CkOe6hei19GGZnxM6rBGwFl3Bg0YItGDimvjGtAvdZk4Pu6Cl4u4Igsws4a1fd1Vq3ezrhn4KmFw==}
@@ -5128,10 +5056,6 @@ packages:
     resolution: {integrity: sha512-FtwrG/euBzaEjYeRqOgly7G0qviiXoJWnvEH2Z1plBdXgbyjv34pHTSb9zoeHMyDy33+DWy5Wt9Wo+TURtOYSQ==}
     engines: {node: '>= 0.8'}
 
-  https-proxy-agent@5.0.1:
-    resolution: {integrity: sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA==}
-    engines: {node: '>= 6'}
-
   https-proxy-agent@7.0.6:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
@@ -6232,6 +6156,10 @@ packages:
     resolution: {integrity: sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg==}
     engines: {node: ^10 || ^12 || >=14}
 
+  posthog-node@5.11.2:
+    resolution: {integrity: sha512-z+XekcBUmGePMsjPlGaEF2bJFiDHKHYPQjS4OEw4YPDQz8s7Owuim/L7xNX+6UJkyIRniBza9iC7bW8yrGTv1g==}
+    engines: {node: '>=20'}
+
   prelude-ls@1.2.1:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
     engines: {node: '>= 0.8.0'}
@@ -6283,10 +6211,6 @@ packages:
 
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
-
-  progress@2.0.3:
-    resolution: {integrity: sha512-7PiHtLll5LdnKIMw100I+8xJXR5gW2QwWYkT6iJva0bXitZKa/XMrSbdmg3r2Xnaidz9Qumd0VPaMrZlF9V9sA==}
-    engines: {node: '>=0.4.0'}
 
   promise-inflight@1.0.1:
     resolution: {integrity: sha512-6zWPyEOFaQBJYcGMHBKTKJ3u6TBsnMFOIZSa6ce1e/ZrrsOlnHRHbabMjLiBYKp+n44X9eUI6VUPaukCXHuG4g==}
@@ -10060,6 +9984,10 @@ snapshots:
 
   '@poppinss/exception@1.2.2': {}
 
+  '@posthog/core@1.5.2':
+    dependencies:
+      cross-spawn: 7.0.6
+
   '@react-email/body@0.1.0(react@19.0.0)':
     dependencies:
       react: 19.0.0
@@ -10369,67 +10297,6 @@ snapshots:
     dependencies:
       domhandler: 5.0.3
       selderee: 0.11.0
-
-  '@sentry/cli-darwin@2.46.0':
-    optional: true
-
-  '@sentry/cli-linux-arm64@2.46.0':
-    optional: true
-
-  '@sentry/cli-linux-arm@2.46.0':
-    optional: true
-
-  '@sentry/cli-linux-i686@2.46.0':
-    optional: true
-
-  '@sentry/cli-linux-x64@2.46.0':
-    optional: true
-
-  '@sentry/cli-win32-arm64@2.46.0':
-    optional: true
-
-  '@sentry/cli-win32-i686@2.46.0':
-    optional: true
-
-  '@sentry/cli-win32-x64@2.46.0':
-    optional: true
-
-  '@sentry/cli@2.46.0':
-    dependencies:
-      https-proxy-agent: 5.0.1
-      node-fetch: 2.7.0
-      progress: 2.0.3
-      proxy-from-env: 1.1.0
-      which: 2.0.2
-    optionalDependencies:
-      '@sentry/cli-darwin': 2.46.0
-      '@sentry/cli-linux-arm': 2.46.0
-      '@sentry/cli-linux-arm64': 2.46.0
-      '@sentry/cli-linux-i686': 2.46.0
-      '@sentry/cli-linux-x64': 2.46.0
-      '@sentry/cli-win32-arm64': 2.46.0
-      '@sentry/cli-win32-i686': 2.46.0
-      '@sentry/cli-win32-x64': 2.46.0
-    transitivePeerDependencies:
-      - encoding
-      - supports-color
-
-  '@sentry/cloudflare@10.12.0(@cloudflare/workers-types@4.20250415.0)':
-    dependencies:
-      '@opentelemetry/api': 1.9.0
-      '@sentry/core': 10.12.0
-    optionalDependencies:
-      '@cloudflare/workers-types': 4.20250415.0
-
-  '@sentry/cloudflare@9.19.0(@cloudflare/workers-types@4.20250415.0)':
-    dependencies:
-      '@sentry/core': 9.19.0
-    optionalDependencies:
-      '@cloudflare/workers-types': 4.20250415.0
-
-  '@sentry/core@10.12.0': {}
-
-  '@sentry/core@9.19.0': {}
 
   '@shikijs/engine-oniguruma@3.14.0':
     dependencies:
@@ -10928,12 +10795,6 @@ snapshots:
   acorn@8.15.0: {}
 
   address@1.2.2: {}
-
-  agent-base@6.0.2:
-    dependencies:
-      debug: 4.4.1
-    transitivePeerDependencies:
-      - supports-color
 
   agent-base@7.1.3: {}
 
@@ -12483,7 +12344,7 @@ snapshots:
 
   execa@5.1.1:
     dependencies:
-      cross-spawn: 7.0.3
+      cross-spawn: 7.0.6
       get-stream: 6.0.1
       human-signals: 2.1.0
       is-stream: 2.0.1
@@ -12904,13 +12765,6 @@ snapshots:
       setprototypeof: 1.2.0
       statuses: 2.0.1
       toidentifier: 1.0.1
-
-  https-proxy-agent@5.0.1:
-    dependencies:
-      agent-base: 6.0.2
-      debug: 4.4.1
-    transitivePeerDependencies:
-      - supports-color
 
   https-proxy-agent@7.0.6:
     dependencies:
@@ -14036,6 +13890,10 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
+  posthog-node@5.11.2:
+    dependencies:
+      '@posthog/core': 1.5.2
+
   prelude-ls@1.2.1: {}
 
   prettier@2.8.8: {}
@@ -14077,8 +13935,6 @@ snapshots:
   proc-log@6.0.0: {}
 
   process-nextick-args@2.0.1: {}
-
-  progress@2.0.3: {}
 
   promise-inflight@1.0.1: {}
 

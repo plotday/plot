@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 
 import type { MiddlewareHandler } from "hono";
+import type { PostHog } from "posthog-node";
 
 import { type SupabaseClient, createClient } from "@plotday/db";
 
@@ -8,6 +9,7 @@ import type { Bindings } from "../env";
 
 declare module "hono" {
   interface ContextVariableMap {
+    postHog: PostHog;
     supabase: SupabaseClient;
     supabaseAdmin: SupabaseClient;
     user: User;

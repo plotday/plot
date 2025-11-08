@@ -4,7 +4,6 @@ import 'package:injector/injector.dart';
 import 'package:rxdart/rxdart.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
-import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'package:plot/util/uuid.dart';
@@ -88,8 +87,6 @@ class Base {
     _initialized = true;
     if (user == null) {
       // User signing out
-      await Sentry.configureScope((scope) => scope.setUser(null));
-
       // Track sign out event with session duration
       if (_signInTime != null) {
         final sessionDurationMs =
@@ -109,10 +106,6 @@ class Base {
       _signInTime = null;
     } else {
       // User signing in
-      await Sentry.configureScope(
-        (scope) =>
-            scope.setUser(SentryUser(id: user.id, email: user.primaryEmail)),
-      );
       await Posthog().identify(
         userId: user.id,
         userProperties: {

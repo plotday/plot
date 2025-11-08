@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:logging/logging.dart';
 import 'package:super_editor/super_editor.dart' show LogNames;
+import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'app.dart';
 import 'env.dart';
@@ -47,6 +47,15 @@ Future<void> run() async {
     WidgetsFlutterBinding.ensureInitialized();
     await Window.init();
     await Env.init();
+
+    // Initialize PostHog with environment variables
+    final config = PostHogConfig(Env.posthogApiKey)
+      ..host = Env.posthogHost
+      ..captureApplicationLifecycleEvents = true
+      ..errorTrackingConfig.captureFlutterErrors = true
+      ..personProfiles = PostHogPersonProfiles.identifiedOnly;
+    await Posthog().setup(config);
+
     await Base.init();
     await AuthButton.init();
     usePathUrlStrategy();
@@ -59,12 +68,15 @@ Future<void> run() async {
 }
 
 Future<void> main() async {
-  if (kDebugMode) {
-    await run();
-  } else {
-    await SentryFlutter.init((options) {
-      options.dsn =
-          "https://08fa5e400fac463fb57de5e33405db0b@o338620.ingest.sentry.io/4505551857057792";
-    }, appRunner: run);
-  }
+  // Initialize PostHog with error tracking enabled
+  FlutterError.onError = (FlutterErrorDetails details) async {
+    log.severe('Uncaught Flutter error', details.exception, details.stack);
+    await Posthog().captureException(
+      error: details.exception,
+      stackTrace: details.stack,
+    );
+    FlutterError.presentError(details);
+  };
+
+  await run();
 }

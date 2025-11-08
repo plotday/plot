@@ -4,7 +4,7 @@
   "sideEffects": false,
   "private": true,
   "config": {
-    "deploy_vars": "SENTRY_DSN:SENTRY_WORKERS_DSN RESEND_API_KEY"
+    "deploy_vars": "POSTHOG_API_KEY POSTHOG_HOST RESEND_API_KEY"
   },
   "scripts": {
     "env": "../../scripts/gen-env development $npm_package_config_deploy_vars > .dev.vars",
@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@plotday/email": "workspace:^",
-    "@sentry/cloudflare": "^9.19.0"
+    "posthog-node": "^5.11.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/cloudflare";
+import type { PostHog } from "posthog-node";
 
 import { type SupabaseClient, createClient } from "@plotday/db";
 
@@ -9,12 +9,13 @@ import { truncateUuidForUpdatedBy } from "../utils/uuid";
 export async function processUpdates(
   batch: MessageBatch<UpdateMessage>,
   env: Bindings,
-  ctx: ExecutionContext
+  ctx: ExecutionContext,
+  postHog: PostHog
 ): Promise<void> {
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
   for (const message of batch.messages) {
-    await processUpdate(message.body, env, ctx, supabase);
+    await processUpdate(message.body, env, ctx, supabase, batch.queue, postHog);
   }
 }
 
@@ -22,18 +23,15 @@ async function processUpdate(
   updateData: UpdateMessage,
   env: Bindings,
   ctx: ExecutionContext,
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  queue: string,
+  postHog: PostHog
 ): Promise<void> {
   const { type, item, previous, agents, users } = updateData;
 
   // Only activities have agents to process
   if (type === "activity") {
     for (const agent of agents) {
-      Sentry.withScope((scope) => {
-        scope.setExtra("agent-id", agent.id);
-        Sentry.captureMessage(agent.id, "error");
-      });
-
       try {
         // Type guard to ensure we have an activity item
         if (!("priority_id" in item) || !("author_id" in item)) {
@@ -89,7 +87,16 @@ async function processUpdate(
             error instanceof Error ? `${error.message}\n${error.stack}` : error
           }`
         );
-        // TODO Capture error in Sentry
+        postHog.captureException(error as Error, undefined, {
+          agent_id: agent.id,
+          priority_agent_id: agent.priority_agent_id,
+          priority_id: String(item.priority_id),
+          environment: agent.environment,
+          version: agent.version,
+          type: type,
+          event: updateData.event,
+          queue,
+        });
       }
     }
   }
@@ -122,7 +129,12 @@ async function processUpdate(
             error instanceof Error ? `${error.message}\n${error.stack}` : error
           }`
         );
-        // TODO Capture error in Sentry
+        postHog.captureException(error as Error, undefined, {
+          user_id: user.user_id,
+          type: type,
+          updated_by: updatedBy,
+          queue: queue,
+        });
       }
     }
   }

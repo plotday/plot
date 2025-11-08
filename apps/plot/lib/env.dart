@@ -8,7 +8,8 @@ abstract class Env {
     inAndroidEmulator = await _inAndroidEmuilator();
     await dotenv.load(fileName: ".env");
 
-    sentryDsn = dotenv.env['SENTRY_DSN']!;
+    posthogApiKey = dotenv.env['POSTHOG_API_KEY']!;
+    posthogHost = dotenv.env['POSTHOG_HOST']!;
 
     supabaseUrl = _translateUrl(dotenv.env['SUPABASE_URL']!);
     supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
@@ -40,7 +41,8 @@ abstract class Env {
     return !androidInfo.isPhysicalDevice;
   }
 
-  static late final String sentryDsn;
+  static late final String posthogApiKey;
+  static late final String posthogHost;
 
   static late final String supabaseUrl;
   static late final String supabaseAnonKey;

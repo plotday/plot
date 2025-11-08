@@ -85,8 +85,14 @@ export class Network extends Tool implements INetwork {
   }
 
   async createWebhook<TCallback extends (request: any, ...args: any[]) => any>(
-    callback: TCallback,
-    ...extraArgs: any[]
+    options: {
+      callback: TCallback;
+      extraArgs?: TCallback extends (req: any, ...rest: infer R) => any
+        ? R
+        : [];
+      provider?: any;
+      authorization?: any;
+    }
   ): Promise<string> {
     if (
       !this.callbacks ||
@@ -101,7 +107,7 @@ export class Network extends Tool implements INetwork {
 
     // Create callback token from the provided function
     // The callback is to a function on the parent, so use parent path
-    const callbackFunctionName = await getRpcFunctionName(callback);
+    const callbackFunctionName = await getRpcFunctionName(options.callback);
     if (!callbackFunctionName) {
       throw new Error(
         "Cannot create callback: function has no name. Use named functions or methods."
@@ -113,7 +119,7 @@ export class Network extends Tool implements INetwork {
       environment: this.environment,
       path: this.path.slice(0, -1), // Remove this tool from path to target parent
       functionName: callbackFunctionName,
-      extraArgs,
+      extraArgs: options.extraArgs || [],
     });
     return this.tokenToUrl(token);
   }

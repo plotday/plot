@@ -244,6 +244,7 @@ export class Usage extends DurableObject<Bindings> {
     if (missingCostNames.length > 0) {
       const newCosts = missingCostNames.map((name) => ({
         name,
+        start: new Date(hour).toISOString(),
         amount: 0,
       }));
 

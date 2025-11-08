@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+import type { PostHog } from "posthog-node";
 
 import { createClient } from "@plotday/db";
 
@@ -106,6 +107,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
 
 declare module "hono" {
   interface ContextVariableMap {
+    postHog: PostHog;
     userToken: {
       id: string;
       user_id: string;

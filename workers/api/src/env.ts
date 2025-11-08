@@ -61,7 +61,8 @@ export type QueueMessage = RunMessage | UpdateMessage | LogMessage;
 
 export type Bindings = {
   readonly API_HMAC_SECRET?: string;
-  readonly SENTRY_DSN: string;
+  readonly POSTHOG_API_KEY: string;
+  readonly POSTHOG_HOST: string;
 
   readonly SUPABASE_URL: string;
   readonly SUPABASE_ANON_KEY: string;

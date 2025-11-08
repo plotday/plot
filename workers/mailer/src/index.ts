@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/cloudflare";
+import { PostHog } from "posthog-node";
 
 import { type EmailType, render } from "@plotday/email";
 
@@ -12,7 +12,8 @@ export type MailRequest = {
 };
 
 export interface Env {
-  readonly SENTRY_DSN: string;
+  readonly POSTHOG_API_KEY: string;
+  readonly POSTHOG_HOST: string;
   readonly RESEND_API_KEY: string;
 
   readonly QUEUE: Queue<MailRequest>;
@@ -42,58 +43,54 @@ async function resend(apiKey: string, request: MailRequest) {
   }
 }
 
-export default Sentry.withSentry(
-  (env) => ({
-    dsn: env.SENTRY_DSN,
-    environment: ENV,
-    release: RELEASE,
-    dist: PACKAGE,
-    enabled: ENV !== "development",
-  }),
+export default {
+  async fetch(req, env: Env) {
+    if (req.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+    if (ENV !== "development") {
+      return new Response("Forbidden", { status: 403 });
+    }
+    const body = (await req.json()) as
+      | MailRequest
+      | MessageSendRequest<MailRequest>[];
+    if (body instanceof Array) {
+      await env.QUEUE.sendBatch(body);
+    } else {
+      await env.QUEUE.send(body);
+    }
 
-  {
-    async fetch(req, env) {
-      if (req.method !== "POST") {
-        return new Response("Method Not Allowed", { status: 405 });
-      }
-      if (ENV !== "development") {
-        return new Response("Forbidden", { status: 403 });
-      }
-      const body = (await req.json()) as
-        | MailRequest
-        | MessageSendRequest<MailRequest>[];
-      if (body instanceof Array) {
-        await env.QUEUE.sendBatch(body);
-      } else {
-        await env.QUEUE.send(body);
-      }
+    return new Response("Sync queued");
+  },
 
-      return new Response("Sync queued");
-    },
-
-    async queue(unknownBatch, env) {
-      const batch = unknownBatch as MessageBatch<MailRequest>;
-      try {
-        let messageNum = 1;
-        for (let message of batch.messages) {
-          try {
-            console.log(`Processing ${messageNum} of ${batch.messages.length}`);
-            await resend(env.RESEND_API_KEY, message.body);
-            message.ack();
-          } catch (e) {
-            console.error(e);
-            Sentry.withScope((scope) => {
-              scope.setExtra("email", message.body.to);
-              Sentry.captureException(e);
-            });
-            message.retry();
-          }
-          messageNum += 1;
+  async queue(unknownBatch, env, ctx) {
+    const posthog = new PostHog(env.POSTHOG_API_KEY, {
+      host: env.POSTHOG_HOST,
+      flushAt: 5,
+      flushInterval: 10,
+    });
+    const batch = unknownBatch as MessageBatch<MailRequest>;
+    try {
+      let messageNum = 1;
+      for (let message of batch.messages) {
+        try {
+          console.log(`Processing ${messageNum} of ${batch.messages.length}`);
+          await resend(env.RESEND_API_KEY, message.body);
+          message.ack();
+        } catch (e) {
+          console.error(e);
+          posthog.captureException(e as Error, undefined, {
+            to: message.body.to,
+          });
+          message.retry();
         }
-      } catch (e) {
-        console.error(e);
-        Sentry.captureException(e);
+        messageNum += 1;
       }
-    },
-  } satisfies ExportedHandler<Env>
-);
+    } catch (e) {
+      console.error(e);
+      posthog.captureException(e as Error);
+    } finally {
+      ctx.waitUntil(posthog.shutdown());
+    }
+  },
+} satisfies ExportedHandler<Env>;

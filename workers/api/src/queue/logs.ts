@@ -1,3 +1,5 @@
+import type { PostHog } from "posthog-node";
+
 import type { Callback } from "@plotday/agent/tools/callbacks";
 
 import { Callbacks } from "../agent/tools/callbacks";
@@ -5,7 +7,8 @@ import { type Bindings, type LogMessage } from "../env";
 
 export async function processLogs(
   batch: MessageBatch<LogMessage>,
-  env: Bindings
+  env: Bindings,
+  postHog: PostHog
 ): Promise<void> {
   // Group logs by agent_root_id
   const logsByAgent = new Map<string, LogMessage[]>();
@@ -50,6 +53,10 @@ export async function processLogs(
               `Failed to call log callback ${callbackToken}:`,
               error
             );
+            postHog.captureException(error as Error, undefined, {
+              agent_root_id: agentRootId,
+              queue: batch.queue,
+            });
           }
         }
       }
@@ -64,9 +71,17 @@ export async function processLogs(
           `Failed to send logs to stream for agent ${agentRootId}:`,
           error
         );
+        postHog.captureException(error as Error, undefined, {
+          agent_root_id: agentRootId,
+          queue: batch.queue,
+        });
       }
     } catch (error) {
       console.error(`Error processing logs for agent ${agentRootId}:`, error);
+      postHog.captureException(error as Error, undefined, {
+        agent_root_id: agentRootId,
+        queue: batch.queue,
+      });
     }
   }
 }
