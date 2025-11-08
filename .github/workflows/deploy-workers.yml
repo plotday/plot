@@ -44,8 +44,10 @@ jobs:
         run: |
           WORKERS=()
 
-          # Check each worker for changes
-          for worker in api calendar-webhook contact-sync event-sync mailer onboarding sync; do
+          # Dynamically discover workers from workers/ directory
+          for worker_dir in workers/*/; do
+            worker=$(basename "$worker_dir")
+
             # Check if worker has changes by looking at affected projects
             AFFECTED_OUTPUT=$(pnpm exec nx show projects --affected --base=HEAD~1 --head=HEAD --json 2>/dev/null || echo "[]")
             if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/$worker$"; then
