@@ -1,0 +1,40 @@
+{
+  "name": "beat",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "upload_source_maps": true,
+  "env": {
+    "development": {
+      "define": {
+        "ENV": "\"development\"",
+        "RELEASE": "\"dev\"",
+        "PACKAGE": "\"beat\""
+      }
+    },
+    "production": {
+      "routes": [
+        {
+          "pattern": "beat.plot.day",
+          "custom_domain": true
+        }
+      ],
+      "define": {
+        "ENV": "\"production\"",
+        "RELEASE": "\"$RELEASE\"",
+        "PACKAGE": "\"beat\""
+      }
+    }
+  },
+  "placement": {
+    "mode": "smart"
+  },
+  "dev": {
+    "port": 8785
+  },
+  "observability": {
+    "logs": {
+      "enabled": true
+    }
+  }
+}
