@@ -1,5 +1,5 @@
 ---
-"@plotday/agent": minor
+"@plotday/twist": minor
 ---
 
 Added: Common Messaging interface
