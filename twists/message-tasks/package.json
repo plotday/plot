@@ -1,0 +1,24 @@
+{
+  "name": "@plotday/twist-message-tasks",
+  "plotTwistId": "0193c8a0-0000-7000-8000-000000000001",
+  "displayName": "Message Tasks",
+  "description": "Create tasks from actionable message threads",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "deploy": "plot deploy",
+    "lint": "plot lint",
+    "logs": "plot logs"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^",
+    "@plotday/tool-slack": "workspace:^",
+    "typebox": "^1.0.35"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

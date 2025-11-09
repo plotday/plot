@@ -4,9 +4,9 @@ This repository uses [Changesets](https://github.com/changesets/changesets) to m
 
 ## Package Versioning Strategy
 
-- **Agent Builder** (`@plotday/agent`): Independent versioning
+- **Twist Creator** (`@plotday/twister`): Independent versioning
 - **Tools** (`@plotday/tool-*`): Independent versioning
-- **Agents** (`@plotday/agent-*`): Not published, excluded from releases
+- **Twists** (`@plotday/twist-*`): Not published, excluded from releases
 
 Each package maintains its own version and can be released independently.
 
@@ -25,7 +25,7 @@ This will prompt you with:
 1. **Which packages would you like to include?**
 
    - Select the packages you've modified (use space to select, enter to confirm)
-   - Only builder and tools packages can be selected (agents are excluded)
+   - Only builder and tools packages can be selected (twists are excluded)
 
 2. **What kind of change is this?**
 
@@ -79,7 +79,7 @@ The changeset file will be created in `.changeset/` with a random name like `.ch
      - Builds all packages
      - Publishes changed packages to npm
      - Creates GitHub releases with changelogs
-     - Tags each release (e.g., `agent@0.9.1`, `tool-google-calendar@0.1.0`)
+     - Tags each release (e.g., `twister@0.9.1`, `tool-google-calendar@0.1.0`)
 
 ## GitHub Releases
 
@@ -89,7 +89,7 @@ When packages are published, GitHub releases are automatically created with the 
 
 Each package gets its own tag based on its directory structure:
 
-- **Agent Builder**: `agent@0.9.1`
+- **Twist Creator**: `twister@0.9.1`
 - **Tools**: `tool-google-calendar@0.1.0`, `tool-outlook-calendar@0.1.0`, etc.
 
 This tagging convention allows you to:
@@ -102,7 +102,7 @@ This tagging convention allows you to:
 
 Each GitHub release includes:
 
-- **Title**: Package name and version (e.g., `@plotday/agent@0.9.1`)
+- **Title**: Package name and version (e.g., `@plotday/twister@0.9.1`)
 - **Release Notes**: Automatically extracted from the package's CHANGELOG.md for that version
 - **Assets**: None (packages are distributed via npm)
 
@@ -112,7 +112,7 @@ View all releases at: `https://github.com/plotday/plot/releases`
 
 Or filter by package:
 
-- Builder releases: Search for tags starting with `agent@`
+- Builder releases: Search for tags starting with `twister@`
 - Tool releases: Search for tags starting with `tool-`
 
 ### Manual GitHub Release
@@ -120,8 +120,8 @@ Or filter by package:
 If you need to create a GitHub release manually after publishing:
 
 ```bash
-# For Agent Builder
-gh release create agent@0.9.1 --title "@plotday/agent@0.9.1" --notes "Release notes here"
+# For Twist Creator
+gh release create twister@0.9.1 --title "@plotday/twister@0.9.1" --notes "Release notes here"
 
 # For a tool
 gh release create tool-google-calendar@0.1.0 --title "@plotday/tool-google-calendar@0.1.0" --notes "Release notes here"
@@ -136,7 +136,7 @@ gh release create tool-google-calendar@0.1.0 --title "@plotday/tool-google-calen
 ```
 - Fix calendar sync race condition causing duplicate events
 - Add support for recurring events in Google Calendar integration
-- BREAKING: Remove deprecated `createAgent()` function
+- BREAKING: Remove deprecated `createTwist()` function
 ```
 
 **Bad examples:**
@@ -198,7 +198,7 @@ git push
 pnpm release
 
 # 5. (Optional) Create GitHub release manually
-gh release create agent@0.9.1 --title "@plotday/agent@0.9.1" --notes "Release notes"
+gh release create twister@0.9.1 --title "@plotday/twister@0.9.1" --notes "Release notes"
 ```
 
 ⚠️ This should only be done in emergencies. The automated workflow is preferred.
@@ -211,8 +211,8 @@ gh release create agent@0.9.1 --title "@plotday/agent@0.9.1" --notes "Release no
 
 ### Changeset not detecting my package
 
-**Problem:** You modified an agent package.
-**Solution:** Agents are excluded from releases. No changeset needed for agent-only changes.
+**Problem:** You modified a twist package.
+**Solution:** Twists are excluded from releases. No changeset needed for twist-only changes.
 
 ### Version Packages PR has conflicts
 

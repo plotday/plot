@@ -1,0 +1,24 @@
+{
+  "name": "@plotday/twist-calendar-sync",
+  "plotTwistId": "0199b6f4-85b8-7b21-aeb2-ac4169e351af",
+  "displayName": "Calendar Sync",
+  "description": "Sync calendar events",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "deploy": "plot deploy",
+    "lint": "plot lint",
+    "logs": "plot logs"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^",
+    "@plotday/tool-google-calendar": "workspace:^",
+    "@plotday/tool-outlook-calendar": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

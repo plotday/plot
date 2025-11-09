@@ -5,17 +5,17 @@ A Plot tool for syncing with Microsoft Outlook Calendar (Microsoft 365).
 ## Installation
 
 ```bash
-npm install @plotday/tool-outlook-calendar @plotday/agent
+npm install @plotday/tool-outlook-calendar @plotday/twister
 ```
 
 ## Usage
 
 ```typescript
-import { Agent, Tools } from "@plotday/agent";
+import { Twist, Tools } from "@plotday/twister";
 import { OutlookCalendar } from "@plotday/tool-outlook-calendar";
-import { Integrations, AuthLevel, AuthProvider } from "@plotday/agent/tools/integrations";
+import { Integrations, AuthLevel, AuthProvider } from "@plotday/twister/tools/integrations";
 
-export default class extends Agent {
+export default class extends Twist {
   private outlookCalendar: OutlookCalendar;
   private auth: Integrations;
 

@@ -1,12 +1,12 @@
-import { Tool, type ToolBuilder } from "@plotday/agent";
-import { type Callback } from "@plotday/agent/tools/callbacks";
+import { Tool, type ToolBuilder } from "@plotday/twister";
+import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   AuthLevel,
   AuthProvider,
   type AuthToken,
   type Authorization,
   Integrations,
-} from "@plotday/agent/tools/integrations";
+} from "@plotday/twister/tools/integrations";
 
 import type {
   Contact,

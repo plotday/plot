@@ -1,5 +1,5 @@
-import type { NewActivity, ActorId } from "@plotday/agent";
-import { ActivityType } from "@plotday/agent";
+import type { NewActivity, ActorId } from "@plotday/twister";
+import { ActivityType } from "@plotday/twister";
 
 export type SlackChannel = {
   id: string;

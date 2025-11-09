@@ -1,5 +1,5 @@
-import type { NewActivity } from "@plotday/agent";
-import { ActivityType, ConferencingProvider } from "@plotday/agent";
+import type { NewActivity } from "@plotday/twister";
+import { ActivityType, ConferencingProvider } from "@plotday/twister";
 
 export type GoogleEvent = {
   id: string;
