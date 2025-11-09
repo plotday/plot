@@ -24,52 +24,57 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  agents/chat:
+  tools/gmail:
     dependencies:
-      '@plotday/agent':
+      '@plotday/twister':
         specifier: workspace:^
-        version: link:../../builder
-      typebox:
-        specifier: ^1.0.35
-        version: 1.0.35
+        version: link:../../twister
     devDependencies:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
 
-  agents/events:
+  tools/google-calendar:
     dependencies:
-      '@plotday/agent':
+      '@plotday/twister':
         specifier: workspace:^
-        version: link:../../builder
-      '@plotday/tool-google-calendar':
-        specifier: workspace:^
-        version: link:../../tools/google-calendar
-      '@plotday/tool-outlook-calendar':
-        specifier: workspace:^
-        version: link:../../tools/outlook-calendar
+        version: link:../../twister
     devDependencies:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
 
-  agents/message-tasks:
+  tools/google-contacts:
     dependencies:
-      '@plotday/agent':
+      '@plotday/twister':
         specifier: workspace:^
-        version: link:../../builder
-      '@plotday/tool-slack':
-        specifier: workspace:^
-        version: link:../../tools/slack
-      typebox:
-        specifier: ^1.0.35
-        version: 1.0.35
+        version: link:../../twister
     devDependencies:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
 
-  builder:
+  tools/outlook-calendar:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  tools/slack:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  twister:
     dependencies:
       chalk:
         specifier: ^4.1.2
@@ -106,51 +111,46 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/gmail:
+  twists/calendar-sync:
     dependencies:
-      '@plotday/agent':
+      '@plotday/tool-google-calendar':
         specifier: workspace:^
-        version: link:../../builder
+        version: link:../../tools/google-calendar
+      '@plotday/tool-outlook-calendar':
+        specifier: workspace:^
+        version: link:../../tools/outlook-calendar
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
     devDependencies:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/google-calendar:
+  twists/chat:
     dependencies:
-      '@plotday/agent':
+      '@plotday/twister':
         specifier: workspace:^
-        version: link:../../builder
+        version: link:../../twister
+      typebox:
+        specifier: ^1.0.35
+        version: 1.0.35
     devDependencies:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
 
-  tools/google-contacts:
+  twists/message-tasks:
     dependencies:
-      '@plotday/agent':
+      '@plotday/tool-slack':
         specifier: workspace:^
-        version: link:../../builder
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  tools/outlook-calendar:
-    dependencies:
-      '@plotday/agent':
+        version: link:../../tools/slack
+      '@plotday/twister':
         specifier: workspace:^
-        version: link:../../builder
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  tools/slack:
-    dependencies:
-      '@plotday/agent':
-        specifier: workspace:^
-        version: link:../../builder
+        version: link:../../twister
+      typebox:
+        specifier: ^1.0.35
+        version: 1.0.35
     devDependencies:
       typescript:
         specifier: ^5.9.3

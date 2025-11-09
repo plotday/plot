@@ -1,5 +1,5 @@
-import type { NewActivity } from "@plotday/agent";
-import { ActivityLinkType, ActivityType } from "@plotday/agent";
+import type { NewActivity } from "@plotday/twister";
+import { ActivityLinkType, ActivityType } from "@plotday/twister";
 
 export type GmailLabel = {
   id: string;

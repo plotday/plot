@@ -9,25 +9,25 @@ import {
   Tag,
   Tool,
   type ToolBuilder,
-} from "@plotday/agent";
+} from "@plotday/twister";
 import type {
   Calendar,
   CalendarAuth,
   CalendarTool,
-} from "@plotday/agent/common/calendar";
-import { type Callback } from "@plotday/agent/tools/callbacks";
+} from "@plotday/twister/common/calendar";
+import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   AuthLevel,
   AuthProvider,
   type Authorization,
   Integrations,
-} from "@plotday/agent/tools/integrations";
-import { Network, type WebhookRequest } from "@plotday/agent/tools/network";
+} from "@plotday/twister/tools/integrations";
+import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
   ActivityAccess,
   ContactAccess,
   Plot,
-} from "@plotday/agent/tools/plot";
+} from "@plotday/twister/tools/plot";
 import {
   GraphApi,
   syncOutlookCalendar,
@@ -87,7 +87,7 @@ type WatchState = {
  *
  * @example
  * ```typescript
- * class EventsAgent extends Agent {
+ * class CalendarSyncTwist extends Twist {
  *   private outlookCalendar: OutlookCalendar;
  *
  *   constructor(id: string, tools: Tools) {

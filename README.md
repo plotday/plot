@@ -4,42 +4,42 @@
   </a>
 </p>
 <h1 align="center">
-  Plot Agent Builder
+  🌪️ Twister, the Plot Twist Creator
 </h1>
 <p align="center">
-  The official package for building <a href="https://plot.day">Plot</a> agents -<br/>
-  custom code that organizes and prioritizes all your messages, tasks, and apps.
+  The official package for building <a href="https://plot.day">Plot</a> twists -<br/>
+  smart automations that organize and prioritize all your tasks, messages, and documents from all your apps and agents.
 </p>
 
 ## Packages
 
-- **[@plotday/agent](./builder)** - Core agent builder package with the `plot` command, agent and tool SDK, and built-in tools
-- **[tools/](./tools)** - Additional tools for building agents, including integrations with popular services
-- **[agents/](./agents)** - Full source code for several agents
+- **[@plotday/twister](./twister)** - Core twist creator package with the `plot` command, twist and tool SDK, and built-in tools
+- **[tools/](./tools)** - Additional tools for building twists, including integrations with popular services
+- **[twists/](./twists)** - Full source code for several twists
 
 ## Quick Start
 
-You'll need a [Plot account](https://plot.day) to deploy agents.
+You'll need a [Plot account](https://plot.day) to deploy twists.
 
 ```bash
-# Create a new agent
-npx @plotday/agent create
+# Create a new twist
+npx @plotday/twister create
 
 # Connect your Plot account
-npx @plotday/agent login
+npx @plotday/twister login
 
-# Deploy your agent
-cd my-agent
+# Deploy your twist
+cd my-twist
 npm run deploy
 ```
 
 ## Documentation
 
-See the [Agent Builder documentation](https://build.plot.day) for detailed guides and API reference.
+See the [Twist Creator documentation](https://build.plot.day) for detailed guides and API reference.
 
 ## Changelog
 
-See the [Agent Builder changelog](./builder/CHANGELOG.md) for version history and release notes.
+See the [Twister changelog](./twister/CHANGELOG.md) for version history and release notes.
 
 ## License
 

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/index.ts",
+    "src/twist.ts",
+    "src/tool.ts",
+    "src/plot.ts",
+    "src/tag.ts",
+    "src/tools/twists.ts",
+    "src/tools/ai.ts",
+    "src/tools/callbacks.ts",
+    "src/tools/integrations.ts",
+    "src/tools/network.ts",
+    "src/tools/plot.ts",
+    "src/tools/store.ts",
+    "src/tools/tasks.ts",
+    "src/common/calendar.ts",
+    "src/utils/types.ts"
+  ],
+  "out": "dist/docs",
+  "tsconfig": "./tsconfig.json",
+  "exclude": [
+    "**/*+(.spec|.test).ts",
+    "**/llm-docs/**",
+    "**/cli/**",
+    "src/twist-guide.ts",
+    "src/creator-docs.ts",
+    "prebuild.ts",
+    "postbuild.js"
+  ],
+  "excludePrivate": true,
+  "excludeProtected": false,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "readme": "docs/index.md",
+  "projectDocuments": [
+    "docs/GETTING_STARTED.md",
+    "docs/CORE_CONCEPTS.md",
+    "docs/TOOLS_GUIDE.md",
+    "docs/BUILDING_TOOLS.md",
+    "docs/CLI_REFERENCE.md",
+    "docs/RUNTIME.md",
+    "docs/ADVANCED.md"
+  ],
+  "name": "Plot Twist Creator",
+  "includeVersion": false,
+  "disableSources": false,
+  "sourceLinkTemplate": "https://github.com/plotday/plot/blob/main/twist/{path}#L{line}",
+  "navigation": {
+    "includeCategories": true,
+    "includeGroups": true
+  },
+  "categorizeByGroup": true,
+  "categoryOrder": [
+    "Twist",
+    "Tool",
+    "Data Types",
+    "Tools",
+    "Utilities",
+    "*"
+  ],
+  "groupOrder": [
+    "Classes",
+    "Interfaces",
+    "Type Aliases",
+    "Enumerations",
+    "Functions",
+    "*"
+  ],
+  "sort": [
+    "source-order",
+    "required-first",
+    "kind"
+  ],
+  "kindSortOrder": [
+    "Class",
+    "Interface",
+    "TypeAlias",
+    "Enum",
+    "Function",
+    "Variable"
+  ],
+  "searchInComments": true,
+  "searchInDocuments": true,
+  "cleanOutputDir": true,
+  "sidebarLinks": {},
+  "navigationLinks": {
+    "Plot": "https://plot.day",
+    "GitHub": "https://github.com/plotday/plot",
+    "NPM": "https://www.npmjs.com/package/@plotday/twister"
+  },
+  "titleLink": "/",
+  "favicon": "assets/favicon.svg",
+  "highlightLanguages": [
+    "bash",
+    "json",
+    "typescript",
+    "markdown"
+  ]
+}

@@ -1,6 +1,6 @@
-import type { NewActivity } from "@plotday/agent";
-import { ActivityType } from "@plotday/agent";
-import type { Calendar } from "@plotday/agent/common/calendar";
+import type { NewActivity } from "@plotday/twister";
+import { ActivityType } from "@plotday/twister";
+import type { Calendar } from "@plotday/twister/common/calendar";
 
 /**
  * Microsoft Graph API event type

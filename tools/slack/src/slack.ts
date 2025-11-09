@@ -4,26 +4,26 @@ import {
   type NewActivity,
   Tool,
   type ToolBuilder,
-} from "@plotday/agent";
+} from "@plotday/twister";
 import {
   type MessageChannel,
   type MessagingAuth,
   type MessageSyncOptions,
   type MessagingTool,
-} from "@plotday/agent/common/messaging";
-import { type Callback } from "@plotday/agent/tools/callbacks";
+} from "@plotday/twister/common/messaging";
+import { type Callback } from "@plotday/twister/tools/callbacks";
 import {
   AuthLevel,
   AuthProvider,
   type Authorization,
   Integrations,
-} from "@plotday/agent/tools/integrations";
-import { Network, type WebhookRequest } from "@plotday/agent/tools/network";
+} from "@plotday/twister/tools/integrations";
+import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
   ActivityAccess,
   ContactAccess,
   Plot,
-} from "@plotday/agent/tools/plot";
+} from "@plotday/twister/tools/plot";
 
 import {
   SlackApi,
@@ -63,7 +63,7 @@ import {
  *
  * @example
  * ```typescript
- * class MessagesAgent extends Agent {
+ * class MessagesTwist extends Twist {
  *   private slack: Slack;
  *
  *   constructor(id: string, tools: Tools) {
