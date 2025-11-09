@@ -28,7 +28,7 @@ importers:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
-        version: link:../../twist
+        version: link:../../twister
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -38,7 +38,7 @@ importers:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
-        version: link:../../twist
+        version: link:../../twister
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -48,7 +48,7 @@ importers:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
-        version: link:../../twist
+        version: link:../../twister
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -58,7 +58,7 @@ importers:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
-        version: link:../../twist
+        version: link:../../twister
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -68,13 +68,13 @@ importers:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
-        version: link:../../twist
+        version: link:../../twister
     devDependencies:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
 
-  twist:
+  twister:
     dependencies:
       chalk:
         specifier: ^4.1.2
@@ -111,20 +111,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  twists/chat:
-    dependencies:
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twist
-      typebox:
-        specifier: ^1.0.35
-        version: 1.0.35
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  twists/events:
+  twists/calendar-sync:
     dependencies:
       '@plotday/tool-google-calendar':
         specifier: workspace:^
@@ -134,7 +121,20 @@ importers:
         version: link:../../tools/outlook-calendar
       '@plotday/twister':
         specifier: workspace:^
-        version: link:../../twist
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  twists/chat:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+      typebox:
+        specifier: ^1.0.35
+        version: 1.0.35
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -147,7 +147,7 @@ importers:
         version: link:../../tools/slack
       '@plotday/twister':
         specifier: workspace:^
-        version: link:../../twist
+        version: link:../../twister
       typebox:
         specifier: ^1.0.35
         version: 1.0.35
