@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://build.plot.day"><strong>📚 Full Documentation →</strong></a>
+  <a href="https://twist.plot.day"><strong>📚 Full Documentation →</strong></a>
 </p>
 
 ## Quick Start
@@ -45,7 +45,7 @@ npx @plotday/twister login
 npx @plotday/twister deploy
 ```
 
-That's it! [Learn more →](https://build.plot.day/documents/Getting_Started.html#no-code-twists)
+That's it! [Learn more →](https://twist.plot.day/documents/Getting_Started.html#no-code-twists)
 
 ### Developer Quick Start
 
@@ -91,7 +91,7 @@ npm run plot login
 npm run deploy
 ```
 
-[Complete guide →](https://build.plot.day/documents/Getting_Started.html)
+[Complete guide →](https://twist.plot.day/documents/Getting_Started.html)
 
 ---
 
@@ -122,7 +122,7 @@ Twist tools provide capabilities to twists. They are usually unopinionated and d
 - **Tasks** - Background task execution
 - **Callbacks** - Persistent function references
 
-[View all tools →](https://build.plot.day/documents/Built-in_Tools.html)
+[View all tools →](https://twist.plot.day/documents/Built-in_Tools.html)
 
 ### Activities
 
@@ -142,7 +142,7 @@ await this.tools.plot.createActivity({
 });
 ```
 
-[Learn more →](https://build.plot.day/documents/Core_Concepts.html)
+[Learn more →](https://twist.plot.day/documents/Core_Concepts.html)
 
 ---
 
@@ -163,27 +163,27 @@ plot priority list             # List all priorities
 plot priority create           # Create new priority
 ```
 
-[Complete CLI reference →](https://build.plot.day/documents/CLI_Reference.html)
+[Complete CLI reference →](https://twist.plot.day/documents/CLI_Reference.html)
 
 ---
 
 ## Documentation
 
-**[📚 Full Documentation at build.plot.day](https://build.plot.day)**
+**[📚 Full Documentation at twist.plot.day](https://twist.plot.day)**
 
 ### Guides
 
-- [Getting Started](https://build.plot.day/documents/Getting_Started.html) - Complete walkthrough
-- [Core Concepts](https://build.plot.day/documents/Core_Concepts.html) - Twists, tools, and architecture
-- [Built-in Tools](https://build.plot.day/documents/Built-in_Tools.html) - Plot, Store, AI, and more
-- [Building Custom Tools](https://build.plot.day/documents/Building_Custom_Tools.html) - Create reusable twist tools
-- [Runtime Environment](https://build.plot.day/documents/Runtime_Environment.html) - Execution constraints and optimization
-- [Advanced Topics](https://build.plot.day/documents/Advanced.html) - Complex patterns and techniques
+- [Getting Started](https://twist.plot.day/documents/Getting_Started.html) - Complete walkthrough
+- [Core Concepts](https://twist.plot.day/documents/Core_Concepts.html) - Twists, tools, and architecture
+- [Built-in Tools](https://twist.plot.day/documents/Built-in_Tools.html) - Plot, Store, AI, and more
+- [Building Custom Tools](https://twist.plot.day/documents/Building_Custom_Tools.html) - Create reusable twist tools
+- [Runtime Environment](https://twist.plot.day/documents/Runtime_Environment.html) - Execution constraints and optimization
+- [Advanced Topics](https://twist.plot.day/documents/Advanced.html) - Complex patterns and techniques
 
 ### Reference
 
-- [CLI Reference](https://build.plot.day/documents/CLI_Reference.html) - Complete command documentation
-- [API Reference](https://build.plot.day) - TypeDoc-generated API docs
+- [CLI Reference](https://twist.plot.day/documents/CLI_Reference.html) - Complete command documentation
+- [API Reference](https://twist.plot.day) - TypeDoc-generated API docs
 
 ---
 
@@ -231,7 +231,7 @@ export default class GitHubTwist extends Twist<GitHubTwist> {
 }
 ```
 
-[More examples →](https://build.plot.day/documents/Getting_Started.html)
+[More examples →](https://twist.plot.day/documents/Getting_Started.html)
 
 ---
 
@@ -250,7 +250,7 @@ Extend the Twist Creator's base configuration in your `tsconfig.json`:
 
 ## Support
 
-- **Documentation**: [build.plot.day](https://build.plot.day)
+- **Documentation**: [twist.plot.day](https://twist.plot.day)
 - **Issues**: [github.com/plotday/plot/issues](https://github.com/plotday/plot/issues)
 - **Website**: [plot.day](https://plot.day)
 

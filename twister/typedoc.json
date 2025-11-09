@@ -42,7 +42,7 @@
     "docs/RUNTIME.md",
     "docs/ADVANCED.md"
   ],
-  "name": "Plot Twist Creator",
+  "name": "Creating Plot Twists",
   "includeVersion": false,
   "disableSources": false,
   "sourceLinkTemplate": "https://github.com/plotday/plot/blob/main/twist/{path}#L{line}",

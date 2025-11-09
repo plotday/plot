@@ -35,7 +35,7 @@ npm run deploy
 
 ## Documentation
 
-See the [Twist Creator documentation](https://build.plot.day) for detailed guides and API reference.
+See the [Twist Creator documentation](https://twist.plot.day) for detailed guides and API reference.
 
 ## Changelog
 
