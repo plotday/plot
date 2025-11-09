@@ -106,6 +106,16 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  tools/gmail:
+    dependencies:
+      '@plotday/agent':
+        specifier: workspace:^
+        version: link:../../builder
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   tools/google-calendar:
     dependencies:
       '@plotday/agent':

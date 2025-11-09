@@ -1,4 +1,5 @@
 import { ITool } from "..";
+import { type AuthProvider, type Authorization } from "./integrations";
 
 /**
  * Represents an incoming webhook request.
@@ -125,35 +126,68 @@ export abstract class Network extends ITool {
    * Generates a unique HTTP endpoint that will invoke the callback function
    * when requests are received. The callback receives the WebhookRequest plus any extraArgs.
    *
-   * For provider-specific webhooks (e.g., Slack), use the provider and authorization
-   * parameters to enable automatic routing based on provider-specific identifiers.
+   * **Provider-Specific Behavior:**
+   * - **Slack**: Uses provider-specific routing via team_id. Requires `authorization` parameter.
+   * - **Gmail** (Google with Gmail scopes): Returns a Google Pub/Sub topic name instead of a webhook URL.
+   *   The topic name (e.g., "projects/plot-prod/topics/gmail-webhook-abc123") should be passed
+   *   to the Gmail API's `users.watch` endpoint. Requires `authorization` parameter with Gmail scopes.
+   * - **Default**: Returns a standard webhook URL for all other cases.
    *
    * @param options - Webhook creation options
    * @param options.callback - Function receiving (request, ...extraArgs)
    * @param options.extraArgs - Additional arguments to pass to the callback (type-checked)
    * @param options.provider - Optional provider for provider-specific webhook routing
-   * @param options.authorization - Optional authorization for provider-specific webhooks (required for Slack)
-   * @returns Promise resolving to the webhook URL
+   * @param options.authorization - Optional authorization for provider-specific webhooks (required for Slack and Gmail)
+   * @returns Promise resolving to the webhook URL, or for Gmail, a Pub/Sub topic name
+   *
+   * @example
+   * ```typescript
+   * // Gmail webhook - returns Pub/Sub topic name
+   * const topicName = await this.tools.network.createWebhook({
+   *   callback: this.onGmailNotification,
+   *   provider: AuthProvider.Google,
+   *   authorization: gmailAuth,
+   *   extraArgs: ["inbox"]
+   * });
+   * // topicName: "projects/plot-prod/topics/gmail-webhook-abc123"
+   *
+   * // Pass topic name to Gmail API
+   * await gmailApi.users.watch({
+   *   userId: 'me',
+   *   requestBody: {
+   *     topicName: topicName,  // Use the returned topic name
+   *     labelIds: ['INBOX']
+   *   }
+   * });
+   * ```
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract createWebhook<
     TCallback extends (request: WebhookRequest, ...args: any[]) => any
   >(options: {
     callback: TCallback;
     extraArgs?: TCallback extends (req: any, ...rest: infer R) => any ? R : [];
-    provider?: any; // AuthProvider from integrations, but we can't import it here
-    authorization?: any; // Authorization from integrations
+    provider?: AuthProvider;
+    authorization?: Authorization;
   }): Promise<string>;
 
   /**
    * Deletes an existing webhook endpoint.
    *
-   * Removes the webhook endpoint and stops processing requests to that URL.
-   * Any subsequent requests to the deleted webhook will return 404.
+   * Removes the webhook endpoint and stops processing requests.
+   * Works with all webhook types (standard, Slack, and Gmail).
    *
-   * @param url - The webhook URL to delete
+   * **For Gmail webhooks:** Also deletes the associated Google Pub/Sub topic and subscription.
+   *
+   * **For Slack webhooks:** Removes the callback registration for the specific team.
+   *
+   * **For standard webhooks:** Removes the webhook endpoint. Any subsequent requests
+   * to the deleted webhook will return 404.
+   *
+   * @param url - The webhook identifier returned from `createWebhook()`.
+   *              This can be a URL (standard webhooks), a Pub/Sub topic name (Gmail),
+   *              or an opaque identifier (Slack). Always pass the exact value returned
+   *              from `createWebhook()`.
    * @returns Promise that resolves when the webhook is deleted
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract deleteWebhook(url: string): Promise<void>;
 }
