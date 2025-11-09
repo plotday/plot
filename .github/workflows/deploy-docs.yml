@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "builder/**"
+      - "twister/**"
       - ".github/workflows/deploy-docs.yml"
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
@@ -39,10 +39,10 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter=./builder
+        run: pnpm install --frozen-lockfile --filter=./twister
 
       - name: Build
-        run: cd builder && pnpm build
+        run: cd twister && pnpm build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -50,7 +50,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "builder/dist/docs"
+          path: "twister/dist/docs"
 
   deploy:
     environment:

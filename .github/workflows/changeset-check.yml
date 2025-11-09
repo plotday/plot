@@ -24,28 +24,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check if SDK or tools were modified
+      - name: Check if Twister or tools were modified
         id: check-changes
         run: |
           # Get list of changed files
           git fetch origin main
           CHANGED_FILES=$(git diff --name-only origin/main...HEAD)
 
-          # Check if SDK or tools directories were modified
-          SDK_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^sdk/' || true)
+          # Check if Twister or tools directories were modified
+          TWISTER_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^twister/' || true)
           TOOLS_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^tools/' || true)
 
-          if [ -n "$SDK_CHANGED" ] || [ -n "$TOOLS_CHANGED" ]; then
+          if [ -n "$TWISTER_CHANGED" ] || [ -n "$TOOLS_CHANGED" ]; then
             echo "needs-changeset=true" >> $GITHUB_OUTPUT
-            echo "SDK or tools packages were modified"
+            echo "Twister or tools packages were modified"
           else
             echo "needs-changeset=false" >> $GITHUB_OUTPUT
-            echo "No SDK or tools changes detected"
+            echo "No Twister or tools changes detected"
           fi
 
       - name: Check for changesets
@@ -55,7 +55,7 @@ jobs:
           CHANGESET_COUNT=$(ls -1 .changeset/*.md 2>/dev/null | grep -v README.md | wc -l | tr -d ' ')
 
           if [ "$CHANGESET_COUNT" -eq 0 ]; then
-            echo "❌ Error: Changes detected in SDK or tools packages, but no changeset found."
+            echo "❌ Error: Changes detected in Twister or tools packages, but no changeset found."
             echo ""
             echo "Please add a changeset by running:"
             echo "  pnpm changeset"
