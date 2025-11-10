@@ -12,6 +12,7 @@ class Schedule extends Equatable {
     Priority? context,
     bool? deleted = false,
     List<Tag>? filter,
+    String? search,
   }) {
     return Date.current().switchMap((today) {
       final includesCurrentDay = range.includes(today);
@@ -22,6 +23,7 @@ class Schedule extends Equatable {
               context: context,
               deleted: deleted,
               filter: filter,
+              search: search,
             )
           : Stream.value(null);
 
@@ -32,6 +34,7 @@ class Schedule extends Equatable {
           context: context,
           deleted: deleted,
           filter: filter,
+          search: search,
         ),
         todayStream,
         Activity.watchPrevious(
@@ -140,6 +143,7 @@ class Schedule extends Equatable {
     Priority? context,
     bool? deleted = false,
     List<Tag>? filter,
+    String? search,
   }) {
     return Rx.combineLatest2(
       Activity.watch(
@@ -148,6 +152,7 @@ class Schedule extends Equatable {
         depth: 0,
         deleted: deleted,
         filter: filter,
+        search: search,
       ),
       Priority.watchDefault(),
       (List<Activity> allActivities, Priority defaultPriority) {
@@ -207,6 +212,7 @@ class ScheduledDay extends Equatable {
     Priority? context,
     bool? deleted = false,
     List<Tag>? filter,
+    String? search,
   }) {
     return Rx.combineLatest2(
       Activity.watch(
@@ -215,6 +221,7 @@ class ScheduledDay extends Equatable {
         depth: 0,
         deleted: deleted,
         filter: filter,
+        search: search,
       ),
       Priority.watchDefault(),
       (List<Activity> allActivities, Priority defaultPriority) =>

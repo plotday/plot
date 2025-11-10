@@ -150,6 +150,9 @@ class PriorityPage extends StatelessWidget {
                             onSelect: (p) =>
                                 context.run(ChangeCurrentPriority(p)),
                           ),
+                          customSuffixes: const [
+                            SearchWidget(),
+                          ],
                           actions: [
                             NewActivity(),
                             PickFilterAction(),

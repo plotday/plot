@@ -22,6 +22,7 @@ export 'priority.dart';
 export 'reorderable_list_view.dart';
 export 'scaffold.dart';
 export 'scroll_context.dart';
+export 'search.dart';
 export 'segmented_line.dart';
 export 'select.dart';
 export 'selectable_text.dart';

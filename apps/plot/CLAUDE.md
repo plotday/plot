@@ -11,7 +11,7 @@
 -"lib/state/" contains Bloc state
 -"lib/widget/" contains UI components that are stateless unless local UI state is needed; Bloc state is passed in by pages and should not be referenced in widgets
 -"lib/page/" contains views, dialogs, and pages, and is responsible for connecting Bloc state to widgets
--"lib/command/" contains classes defining all actions a user can perform; these can be triggered through the UI or keyboard shortcuts
+-"lib/action/" contains classes defining all actions a user can perform; these can be triggered through the UI or keyboard shortcuts
 
 # Drift schema changes
 

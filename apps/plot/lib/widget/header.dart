@@ -37,6 +37,7 @@ class Header extends StatefulWidget {
     this.main,
     this.title,
     this.actions = const [],
+    this.customSuffixes = const [],
     this.modal = false,
     this.position,
     super.key,
@@ -45,6 +46,7 @@ class Header extends StatefulWidget {
   final Widget? main;
   final String? title;
   final List<Action> actions;
+  final List<Widget> customSuffixes;
   final bool modal;
   final HeaderPosition? position;
 
@@ -155,6 +157,7 @@ class _HeaderState extends State<Header> with RouteAware {
 
         // Build suffixes with position-specific right buttons
         final suffixes = <Widget>[
+          ...widget.customSuffixes,
           ...widget.actions.asMap().entries.map((entry) {
             final key = ValueKey(Object.hash(entry.value.hashCode, entry.key));
             return Button.icon(entry.value, key: key);

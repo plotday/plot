@@ -15,6 +15,7 @@ class PriorityState extends Equatable {
     bool showArchived = false,
     List<AgendaItem>? agendaItems,
     List<Tag> filter = const [],
+    String search = '',
     List<PriorityTwist> twists = const [],
   }) {
     final agenda = agendaItems ?? _makeAgenda(schedule, context: context);
@@ -50,6 +51,7 @@ class PriorityState extends Equatable {
       previous: previous,
       showArchived: showArchived,
       filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
+      search: search,
       twists: twists.isNotEmpty ? List.unmodifiable(twists) : twists,
     );
   }
@@ -66,6 +68,7 @@ class PriorityState extends Equatable {
     this.first = 0,
     this.showArchived = false,
     this.filter = const [],
+    this.search = '',
     this.twists = const [],
   });
 
@@ -80,6 +83,7 @@ class PriorityState extends Equatable {
   final bool showArchived;
   final List<AgendaItem> agendaItems;
   final List<Tag> filter;
+  final String search;
   final List<PriorityTwist> twists;
 
   bool get doneStart => range != null && previous == null;
@@ -163,6 +167,7 @@ class PriorityState extends Equatable {
     bool? showArchived,
     List<AgendaItem>? agendaItems,
     List<Tag>? filter,
+    String? search,
     List<PriorityTwist>? twists,
   }) {
     return PriorityState(
@@ -186,6 +191,7 @@ class PriorityState extends Equatable {
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
           : this.filter,
+      search: search ?? this.search,
       twists: twists != null
           ? (twists.isNotEmpty ? List.unmodifiable(twists) : twists)
           : this.twists,
@@ -205,12 +211,13 @@ class PriorityState extends Equatable {
     showArchived,
     agendaItems,
     filter,
+    search,
     twists,
   ];
 
   @override
   String toString() {
-    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, draft: $draft, first: $first, range: $range, showArchived: $showArchived, filter: $filter, twists: ${twists.length})';
+    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, draft: $draft, first: $first, range: $range, showArchived: $showArchived, filter: $filter, search: $search, twists: ${twists.length})';
   }
 
   /// Returns the index of the first DateAgendaItem on or after the given date.

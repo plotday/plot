@@ -38,6 +38,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     _loadPriority();
   }
 
+  void updateSearch(String search) {
+    log.info('Updating search to "$search"');
+    emit(state.copyWith(search: search));
+
+    // Reload agenda items with new search
+    _loadPriority();
+  }
+
   void moveAgendaItem(int oldIndex, int newIndex) {
     if (oldIndex == newIndex) return;
 
@@ -286,6 +294,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           context: state.context,
           deleted: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
+          search: state.search.isNotEmpty ? state.search : null,
         ).debounceTime(const Duration(milliseconds: 100)).listen((schedule) {
           // Calculate the new first index based on date overlap
           int first = state.first;

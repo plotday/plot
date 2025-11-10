@@ -43,9 +43,11 @@ export 'enums.dart';
 part 'sync.dart';
 part 'actor.dart';
 part 'priority.dart';
+part 'activity_link.dart';
 part 'activity.dart';
 part 'activity_exception.dart';
 part 'activity_tags.dart';
+part 'activity_fts.dart';
 part 'session.dart';
 part 'tag.dart';
 
@@ -232,6 +234,7 @@ abstract class BaseTable {
     Actors,
     Priorities,
     Activities,
+    ActivityFts,
     ActivityExceptions,
     ActivityTags,
     Sessions,
@@ -900,13 +903,14 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 144;
+  int get schemaVersion => 145;
 
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
       onCreate: (Migrator m) async {
         await m.createAll();
+        await ActivityFts.createTable(m.database);
       },
       onUpgrade: (Migrator m, int from, int to) async {
         // For schema version 141, completely rebuild the database
@@ -934,6 +938,7 @@ class Store extends _$Store {
         }
 
         await m.createAll();
+        await ActivityFts.createTable(db);
       },
     );
   }
