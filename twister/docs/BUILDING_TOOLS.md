@@ -65,7 +65,7 @@ import { twist, type ToolBuilder } from "@plotday/twister";
 
 import { HelloTool } from "./tools/hello";
 
-export default class MyTwist extends twist<MyTwist> {
+export default class MyTwist extends Twist<MyTwist> {
   build(build: ToolBuilder) {
     return {
       hello: build(HelloTool),
@@ -588,7 +588,7 @@ import { Plot } from "@plotday/twister/tools/plot";
 
 import { GitHubTool } from "./github-tool";
 
-class TestTwist extends twist<TestTwist> {
+class TestTwist extends Twist<TestTwist> {
   build(build: ToolBuilder) {
     return {
       plot: build(Plot),

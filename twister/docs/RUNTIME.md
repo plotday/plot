@@ -57,7 +57,7 @@ Instance variables don't survive between invocations:
 
 ```typescript
 // ❌ WRONG - This doesn't work!
-class MyTwist extends twist<MyTwist> {
+class MyTwist extends Twist<MyTwist> {
   private syncToken: string = "";  // Lost after execution!
 
   async activate() {
@@ -70,7 +70,7 @@ class MyTwist extends twist<MyTwist> {
 }
 
 // ✅ CORRECT - Use Store
-class MyTwist extends twist<MyTwist> {
+class MyTwist extends Twist<MyTwist> {
   async activate() {
     await this.set("sync_token", "abc123");  // Persisted
   }

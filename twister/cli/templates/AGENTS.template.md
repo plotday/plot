@@ -28,7 +28,7 @@ import {
 } from "@plotday/twister";
 import { Plot } from "@plotday/twister/tools/plot";
 
-export default class MyTwist extends twist<MyTwist> {
+export default class MyTwist extends Twist<MyTwist> {
   build(build: ToolBuilder) {
     return {
       plot: build(Plot),

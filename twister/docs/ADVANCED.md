@@ -32,7 +32,7 @@ import { SlackTool } from "@mycompany/plot-slack-tool";
 import { twist, type Priority, type ToolBuilder } from "@plotday/twister";
 import { Plot } from "@plotday/twister/tools/plot";
 
-export default class DevOpsTwist extends twist<DevOpsTwist> {
+export default class DevOpsTwist extends Twist<DevOpsTwist> {
   build(build: ToolBuilder) {
     return {
       plot: build(Plot),
@@ -77,7 +77,7 @@ interface WorkflowData {
   metadata: Record<string, any>;
 }
 
-class WorkflowTwist extends twist<WorkflowTwist> {
+class WorkflowTwist extends Twist<WorkflowTwist> {
   async transitionTo(workflowId: string, newState: WorkflowState) {
     const workflow = await this.get<WorkflowData>(`workflow:${workflowId}`);
     if (!workflow) throw new Error("Workflow not found");
@@ -248,7 +248,7 @@ interface LogContext {
   [key: string]: any;
 }
 
-class MyTwist extends twist<MyTwist> {
+class MyTwist extends Twist<MyTwist> {
   private log(
     level: "info" | "warn" | "error",
     message: string,
@@ -289,7 +289,7 @@ class MyTwist extends twist<MyTwist> {
 Add debug flag for verbose logging:
 
 ```typescript
-class MyTwist extends twist<MyTwist> {
+class MyTwist extends Twist<MyTwist> {
   private get debugMode(): Promise<boolean> {
     return this.get<boolean>("debug_mode").then((v) => v ?? false);
   }
@@ -514,7 +514,7 @@ async upgrade() {
 Load data only when needed:
 
 ```typescript
-class MyTwist extends twist<MyTwist> {
+class MyTwist extends Twist<MyTwist> {
   private _config: Config | null = null;
 
   private async getConfig(): Promise<Config> {
