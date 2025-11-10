@@ -4,10 +4,10 @@
   </a>
 </p>
 <h1 align="center">
-  Plot Twist Creator
+  🌪️ Twister, the Plot Twist Creator
 </h1>
 <p align="center">
-  The official Creator for building <a href="https://plot.day">Plot</a> Twists -<br/>
+  The official package for building <a href="https://plot.day">Plot</a> Twists -<br/>
   smart automations that connect, organize, and prioritize your work.
 </p>
 
@@ -24,7 +24,7 @@ Choose your path:
 
 ### No-Code Quick Start
 
-Create twists using natural language - no programming required!
+Describe your twist and Plot will do the rest.
 
 **1. Create `plot-twist.md`:**
 
@@ -62,9 +62,9 @@ npx @plotday/twister create
 ```typescript
 import {
   ActivityType,
-  Twist,
   type Priority,
   type ToolBuilder,
+  Twist,
 } from "@plotday/twister";
 import { Plot } from "@plotday/twister/tools/plot";
 

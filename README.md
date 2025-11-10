@@ -4,16 +4,16 @@
   </a>
 </p>
 <h1 align="center">
-  🌪️ Twister, the Plot Twist Creator
+  Plot Twist Packages
 </h1>
 <p align="center">
-  The official package for building <a href="https://plot.day">Plot</a> twists -<br/>
+  The official repo for building <a href="https://plot.day">Plot</a> twists -<br/>
   smart automations that organize and prioritize all your tasks, messages, and documents from all your apps and agents.
 </p>
 
 ## Packages
 
-- **[@plotday/twister](./twister)** - Core twist creator package with the `plot` command, twist and tool SDK, and built-in tools
+- **[@plotday/twister](./twister)** - Core twist creator package with the `plot` command, and library for building twists and tools
 - **[tools/](./tools)** - Additional tools for building twists, including integrations with popular services
 - **[twists/](./twists)** - Full source code for several twists
 
