@@ -36,6 +36,15 @@
           "to": "CallbacksState"
         }
       ]
+    },
+    {
+      "tag": "v10",
+      "renamed_classes": [
+        {
+          "from": "AgentBuilder",
+          "to": "TwistBuilder"
+        }
+      ]
     }
   ],
   "env": {
