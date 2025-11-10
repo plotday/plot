@@ -1,5 +1,5 @@
 ---
-"@plotday/twist": minor
+"@plotday/twister": minor
 ---
 
 Added: Plot.getActors() to retrieve name, email, and type for people and twists.

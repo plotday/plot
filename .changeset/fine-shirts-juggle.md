@@ -1,7 +1,7 @@
 ---
 "@plotday/tool-outlook-calendar": minor
 "@plotday/tool-google-calendar": minor
-"@plotday/twist": minor
+"@plotday/twister": minor
 ---
 
 Added: Conferencing links
