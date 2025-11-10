@@ -67,7 +67,7 @@
       ],
       "containers": [
         {
-          "name": "twist_builder",
+          "name": "agent_builder",
           "class_name": "TwistBuilder",
           "image": "./containers/twist-builder/Dockerfile",
           "instance_type": "basic",
@@ -175,7 +175,7 @@
       ],
       "containers": [
         {
-          "name": "twist_builder",
+          "name": "agent_builder",
           "class_name": "TwistBuilder",
           "image": "./containers/twist-builder/Dockerfile",
           "max_instances": 3
