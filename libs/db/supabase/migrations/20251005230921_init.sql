@@ -2638,10 +2638,6 @@ CREATE POLICY "Everyone can view all domains" ON "public"."domain" AS permissive
     FOR SELECT TO authenticated
         USING (TRUE);
 
-CREATE POLICY "internal_admin can access all invitations" ON "public"."invitation" AS permissive
-    FOR ALL TO internal_admin
-        USING (TRUE);
-
 CREATE POLICY "Everyone can view all organizations" ON "public"."organization" AS permissive
     FOR SELECT TO authenticated
         USING (TRUE);
