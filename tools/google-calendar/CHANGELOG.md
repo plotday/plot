@@ -1,5 +1,18 @@
 # @plotday/tool-google-calendar
 
+## 0.3.0
+
+### Added
+
+- Conferencing links ([`e8349dd`](https://github.com/plotday/plot/commit/e8349ddb79f7afd914728e93366a1525086911b1))
+- RSVP tags ([`0c3fa6a`](https://github.com/plotday/plot/commit/0c3fa6a9e2f83c8e090372fde77b8cfaf10fc7b6))
+
+### Changed
+
+- Updated builder ([`d6f6a08`](https://github.com/plotday/plot/commit/d6f6a0804cb74b9647473d1ed8ebfaf24d36539c))
+- Updated dependencies:
+- @plotday/twister@0.20.0
+
 ## 0.2.4
 
 ### Changed

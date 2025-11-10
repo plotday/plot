@@ -1,5 +1,18 @@
 # @plotday/tool-outlook-calendar
 
+## 0.3.0
+
+### Added
+
+- Coompleted base functionality. ([`c32b608`](https://github.com/plotday/plot/commit/c32b6086bfe429180d91696e3b4e334abc6dab7e))
+- Conferencing links ([`e8349dd`](https://github.com/plotday/plot/commit/e8349ddb79f7afd914728e93366a1525086911b1))
+
+### Changed
+
+- Updated builder ([`d6f6a08`](https://github.com/plotday/plot/commit/d6f6a0804cb74b9647473d1ed8ebfaf24d36539c))
+- Updated dependencies:
+- @plotday/twister@0.20.0
+
 ## 0.2.3
 
 ### Changed
