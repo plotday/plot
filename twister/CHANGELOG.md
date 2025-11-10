@@ -1,5 +1,26 @@
 # @plotday/twister
 
+## 0.20.0
+
+### Added
+
+- Hints for routing new Activity into the correct Priority ([`765487b`](https://github.com/plotday/plot/commit/765487b0ea2acadf8ce47e887f4494548dfdca83))
+- Conferencing links ([`e8349dd`](https://github.com/plotday/plot/commit/e8349ddb79f7afd914728e93366a1525086911b1))
+- Common Messaging interface
+- Notion, Slack, Atlassian, Linear, Monday, GitHub, Asana, and HubSpot integrations ([`bc6eac1`](https://github.com/plotday/plot/commit/bc6eac16283f3fbfbd92cdd0f041e1adde3bbff3))
+- Plot.getActors() to retrieve name, email, and type for people and twists.
+- Slack and Gmail webhook support ([`4e262a0`](https://github.com/plotday/plot/commit/4e262a04cd506cb679840fc1ae83fef3130e142e))
+- Attend, Skip, Undecided tags ([`34a5860`](https://github.com/plotday/plot/commit/34a5860c389debc30c876fea933feb3ba87b719b))
+- NoteType with support for HTML and text notes in addition to the default (Markdown) ([`765487b`](https://github.com/plotday/plot/commit/765487b0ea2acadf8ce47e887f4494548dfdca83))
+
+### Changed
+
+- BREAKING: Renamed to @plotday/twister ([#65](https://github.com/plotday/plot/pull/65) [`ba7469d`](https://github.com/plotday/plot/commit/ba7469d22d8412a6ff4f17ee7d5d9c3b18ec59e7))
+
+### Fixed
+
+- login path error ([`cd8c1de`](https://github.com/plotday/plot/commit/cd8c1de84c07957c6189babd900479a1c7cd582a))
+
 ## 0.19.1
 
 ### Added
