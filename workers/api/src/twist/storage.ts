@@ -1,0 +1,62 @@
+import { type SupabaseClient } from "@plotday/db";
+
+import { type TwistEnvironment, type Bindings } from "../env";
+import { twistFactory } from "./factory";
+
+export async function storeTwistModule({
+  env,
+  ctx,
+  id,
+  module,
+  sourcemap,
+  environment,
+  supabase,
+  dryRun = false,
+}: {
+  env: Bindings;
+  ctx: { exports: ExecutionContext["exports"] };
+  id: string;
+  module: string;
+  sourcemap?: string;
+  environment: TwistEnvironment;
+  supabase: SupabaseClient;
+  dryRun?: boolean;
+}) {
+  // Generate timestamp version (or placeholder for dry-run)
+  const version = dryRun ? "dry-run" : Date.now().toString();
+
+  // Initialize twist to collect permissions
+  const { permissions, toolPermissions } = await twistFactory({
+    env,
+    ctx,
+    supabase,
+    checkPermissions: false,
+    module,
+  })({ id, environment, version, priorityId: "", priorityTwistId: "" });
+
+  // Only store to R2 and KV if not in dry-run mode
+  if (!dryRun) {
+    await env.TWIST_MODULES_BUCKET.put(
+      `twists/${id}/${version}/modules`,
+      module
+    );
+
+    // Store sourcemap if provided (for stack trace translation)
+    if (sourcemap) {
+      await env.TWIST_MODULES_BUCKET.put(
+        `twists/${id}/${version}/sourcemaps`,
+        sourcemap
+      );
+    }
+
+    await env.TWIST_CONFIG.put(
+      `${id}:${version}`,
+      JSON.stringify({ permissions, toolPermissions })
+    );
+  }
+
+  return {
+    version,
+    permissions,
+  };
+}

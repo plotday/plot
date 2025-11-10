@@ -1,5 +1,5 @@
 CREATE OR REPLACE VIEW "public"."actor" WITH ( security_invoker = TRUE)
--- Aggregates contacts and priority_agents into a unified actor view
+-- Aggregates contacts and priority_twists into a unified actor view
 -- Users are now represented through the contacts table via user_id
 AS
 -- Contacts from public.contact (includes both regular contacts and user-linked contacts)
@@ -19,18 +19,18 @@ SELECT
 FROM
     "public"."contact" c
 UNION ALL
--- Agents from public.priority_agent
+-- Twists from public.priority_twist
 SELECT
-    pa.id AS id,
-    pa.created_at,
-    pa.updated_at,
-    'priority_agent'::text AS type,
-    pa.name,
+    pt.id AS id,
+    pt.created_at,
+    pt.updated_at,
+    'priority_twist'::text AS type,
+    pt.name,
     NULL::text AS email,
     NULL::text AS avatar_url,
-    pa.archived_at
+    pt.archived_at
 FROM
-    "public"."priority_agent" pa;
+    "public"."priority_twist" pt;
 
 -- Define a computed relation for PostgREST joins
 -- https://postgrest.org/en/stable/references/api/resource_embedding.html#computed-relationships

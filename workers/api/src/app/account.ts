@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { agentFactory } from "../agent";
-import * as agentManagement from "../agent/management";
+import { twistFactory } from "../twist";
+import * as twistManagement from "../twist/management";
 import type { Bindings } from "../env";
 import {
   createFreeSubscription,
@@ -185,44 +185,44 @@ account.post("/activate", async (c) => {
     );
   }
 
-  // Step 7: Install and activate Plot agent
+  // Step 7: Install and activate Plot twist
   try {
-    const { data: plotAgent, error: plotAgentError } = await c.var.supabase
-      .from("agent")
+    const { data: plotTwist, error: plotTwistError } = await c.var.supabase
+      .from("twist")
       .select("id,version")
       .eq("id", "0199b6f4-ae64-7718-8a02-44716f30358f")
       .eq("environment", "public")
       .maybeSingle();
 
-    if (plotAgentError) {
+    if (plotTwistError) {
       throw new Error(
-        `Plot agent not found: ${plotAgentError?.message || "Unknown error"}`
+        `Plot twist not found: ${plotTwistError?.message || "Unknown error"}`
       );
     }
 
-    if (plotAgent) {
-      await agentManagement.add(
+    if (plotTwist) {
+      await twistManagement.add(
         c.var.supabase,
         c.var.supabaseAdmin,
         priority.id,
-        plotAgent.id,
+        plotTwist.id,
         "public",
         "Plot",
         undefined,
         {
-          agentFactory: agentFactory({
+          twistFactory: twistFactory({
             env: c.env,
             ctx: c.executionCtx as ExecutionContext,
             supabase: c.var.supabaseAdmin,
           }),
-          version: plotAgent.version,
+          version: plotTwist.version,
         }
       );
     } else {
-      console.warn("Plot agent not found, skipping installation.");
+      console.warn("Plot twist not found, skipping installation.");
     }
   } catch (error) {
-    console.error("Failed to add Plot agent:", error);
+    console.error("Failed to add Plot twist:", error);
   }
 
   // Step 8: Set user status to active

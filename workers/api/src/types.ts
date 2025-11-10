@@ -30,7 +30,7 @@ const BaseActivityItemSchema = z.object({
   mentions: z.array(z.string()).nullable(),
   // Enriched fields from database JOINs
   author_name: z.string().nullable(),
-  author_type: z.enum(["user", "contact", "priority_agent"]),
+  author_type: z.enum(["user", "contact", "priority_twist"]),
   priority_title: z.string(),
   tags: z.record(z.string(), z.any()).nullable(),
 });

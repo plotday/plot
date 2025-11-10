@@ -62,7 +62,7 @@ export type RpcMethod<M> = M extends (...args: infer P) => infer R
  *
  * Recursively transforms all methods in an interface, converting function
  * parameters to RPC stubs. This is useful for typing built-in tool implementations
- * that receive RPC-transformed parameters from agents.
+ * that receive RPC-transformed parameters from twists.
  *
  * @example
  * ```typescript

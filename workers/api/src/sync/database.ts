@@ -23,12 +23,12 @@ const DatabaseUpdateRequestSchema = z.object({
   event: z.enum(["created", "updated", "deleted"]),
   item: ItemSchema,
   previous: ItemSchema.optional(),
-  agents: z.array(
+  twists: z.array(
     z.object({
       id: z.string(),
       environment: z.enum(["personal", "private", "review", "public"]),
       version: z.string(),
-      priority_agent_id: z.string(),
+      priority_twist_id: z.string(),
       config: z.record(z.string(), z.any()).optional(),
     })
   ),
@@ -59,7 +59,7 @@ database.post("/update", async (c) => {
     event: body.event,
     item: body.item,
     previous: body.previous,
-    agents: body.agents,
+    twists: body.twists,
     users: body.users,
     timestamp: body.timestamp,
   });

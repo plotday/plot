@@ -402,17 +402,17 @@ class ActivitiesBase extends BaseTable {
 enum ActivityOrder { sorted, nested, reverse }
 
 class Activity extends Equatable implements Comparable<Activity> {
-  /// Parse mentions from note and return list of agent UUIDs
+  /// Parse mentions from note and return list of twist UUIDs
   /// Mentions are stored in the format [Name](#@{UUID}) in markdown
   static List<Uuid> parseMentionsFromNote(
     String? note,
-    List<PriorityAgent> agents,
+    List<PriorityTwist> twists,
   ) {
     if (note == null || note.isEmpty) {
       return [];
     }
 
-    final mentionedAgentIds = <Uuid>{};
+    final mentionedTwistIds = <Uuid>{};
 
     // Match mentions in format [Name](#@{UUID})
     // UUID format: 8-4-4-4-12 hexadecimal characters
@@ -427,7 +427,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       ); // UUID is in group 2, name is in group 1
       if (uuidString != null) {
         try {
-          mentionedAgentIds.add(Uuid.fromString(uuidString));
+          mentionedTwistIds.add(Uuid.fromString(uuidString));
         } catch (e) {
           // Skip invalid UUIDs
           continue;
@@ -435,7 +435,7 @@ class Activity extends Equatable implements Comparable<Activity> {
       }
     }
 
-    return mentionedAgentIds.toList();
+    return mentionedTwistIds.toList();
   }
 
   static Future<void> pullInitial() async {

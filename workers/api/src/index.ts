@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { PostHog } from "posthog-node";
 
 import account from "./app/account";
-import agents from "./app/agents";
+import twists from "./app/twists";
 // Import app routes and middleware
 import { authMiddleware as appAuthMiddleware } from "./app/auth";
 import authRoutes from "./app/authRoutes";
@@ -13,7 +13,7 @@ import summary from "./app/summary";
 import updates from "./app/updates";
 import type { Bindings } from "./env";
 import { queue } from "./queue";
-import agent from "./sdk/agent";
+import twist from "./sdk/twist";
 // Import SDK routes and middleware
 import { authMiddleware as sdkAuthMiddleware } from "./sdk/auth";
 import priority from "./sdk/priority";
@@ -33,11 +33,11 @@ export { CallbacksState } from "./state/callbacks";
 export { Broadcast } from "./state/broadcast";
 export { Usage } from "./state/usage";
 export { LogSubscriptions } from "./state/log-subscriptions";
-export { HttpProxy } from "./agent/http-proxy";
+export { HttpProxy } from "./twist/http-proxy";
 export { LogStream } from "./state/log-stream";
-export { AgentTail } from "./agent/tail";
+export { TwistTail } from "./twist/tail";
 
-export class AgentBuilder extends Container {
+export class TwistBuilder extends Container {
   defaultPort = 3000;
   sleepAfter = "60m";
 }
@@ -103,7 +103,7 @@ const appSection = new Hono<{ Bindings: Bindings }>();
 appSection.use(appCorsMiddleware);
 appSection.use("*", appAuthMiddleware);
 appSection.route("/", account);
-appSection.route("/", agents);
+appSection.route("/", twists);
 appSection.route("/", authRoutes);
 appSection.route("/", callbacks);
 appSection.route("/", summary);
@@ -117,7 +117,7 @@ syncSection.route("/", database);
 // SDK section - endpoints called by plot CLI
 const sdkSection = new Hono<{ Bindings: Bindings }>();
 sdkSection.use("*", sdkAuthMiddleware);
-sdkSection.route("/", agent);
+sdkSection.route("/", twist);
 sdkSection.route("/", priority);
 sdkSection.route("/", tokens);
 

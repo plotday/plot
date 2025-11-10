@@ -8,7 +8,7 @@ import 'package:equatable/equatable.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/page/loading.dart';
-import 'package:plot/api/agent_api.dart';
+import 'package:plot/api/twist_api.dart';
 import 'logging.dart';
 
 part 'priority_state.dart';
@@ -171,8 +171,8 @@ class PriorityBloc extends Cubit<PriorityState> {
       _loadActivity(state.activity!);
     }
 
-    // Load agents for the priority
-    _loadAgents();
+    // Load twists for the priority
+    _loadTwists();
 
     _loadSchedule(
       state.range ??
@@ -187,21 +187,21 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
-  Future<void> _loadAgents() async {
+  Future<void> _loadTwists() async {
     try {
-      final agents = await AgentApi.getAgentsForPriority(state.context);
+      final twists = await TwistApi.getTwistsForPriority(state.context);
       log.info(
-        'Loaded ${agents.length} agents for priority ${state.context.title}',
+        'Loaded ${twists.length} twists for priority ${state.context.title}',
       );
-      emit(state.copyWith(agents: agents));
+      emit(state.copyWith(twists: twists));
     } catch (e, t) {
-      log.warning('Failed to load agents for priority', e, t);
+      log.warning('Failed to load twists for priority', e, t);
     }
   }
 
-  /// Public method to reload agents - can be called from actions
-  Future<void> reloadAgents() async {
-    await _loadAgents();
+  /// Public method to reload twists - can be called from actions
+  Future<void> reloadTwists() async {
+    await _loadTwists();
   }
 
   void _loadActivity(Activity activity) {

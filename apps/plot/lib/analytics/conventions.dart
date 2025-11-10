@@ -10,7 +10,7 @@
 /// - session: Authentication and session events
 ///
 /// Objects:
-/// - activity, priority, agent, tag, filter, etc.
+/// - activity, priority, twist, tag, filter, etc.
 /// - screen names: priority_detail, activity_list, settings, etc.
 ///
 /// Actions:
@@ -89,7 +89,7 @@ enum EventCategory {
 enum EventObject {
   activity('activity'),
   priority('priority'),
-  agent('agent'),
+  twist('twist'),
   tag('tag'),
   filter('filter'),
   archived('archived'),

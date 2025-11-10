@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import type { Callback } from "@plotday/agent/tools/callbacks";
-import type { AuthProvider } from "@plotday/agent/tools/integrations";
+import type { Callback } from "@plotday/twister/tools/callbacks";
+import type { AuthProvider } from "@plotday/twister/tools/integrations";
 
-import { Integrations } from "../agent/tools/integrations";
+import { Integrations } from "../twist/tools/integrations";
 import type { Bindings } from "../env";
 import { handleValidationError } from "../utils/validation";
 

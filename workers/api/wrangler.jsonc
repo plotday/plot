@@ -22,7 +22,7 @@
     },
     {
       "tag": "v7",
-      "new_sqlite_classes": ["AgentBuilder"]
+      "new_sqlite_classes": ["TwistBuilder"]
     },
     {
       "tag": "v8",
@@ -47,7 +47,7 @@
       },
       "kv_namespaces": [
         {
-          "binding": "AGENT_CONFIG",
+          "binding": "TWIST_CONFIG",
           "id": "c169930baecb4bd58c7edc727022a15e"
         }
       ],
@@ -58,9 +58,9 @@
       ],
       "containers": [
         {
-          "name": "agent_builder",
-          "class_name": "AgentBuilder",
-          "image": "./containers/agent-builder/Dockerfile",
+          "name": "twist_builder",
+          "class_name": "TwistBuilder",
+          "image": "./containers/twist-builder/Dockerfile",
           "instance_type": "basic",
           "max_instances": 1
         }
@@ -76,8 +76,8 @@
             "binding": "UPDATES_QUEUE"
           },
           {
-            "queue": "agent-logs-development",
-            "binding": "AGENT_LOGS_QUEUE"
+            "queue": "twist-logs-development",
+            "binding": "TWIST_LOGS_QUEUE"
           }
         ],
         "consumers": [
@@ -92,7 +92,7 @@
             "max_batch_timeout": 0
           },
           {
-            "queue": "agent-logs-development",
+            "queue": "twist-logs-development",
             "max_batch_size": 100,
             "max_batch_timeout": 1
           }
@@ -129,15 +129,15 @@
             "class_name": "LogStream"
           },
           {
-            "name": "AGENT_BUILDER",
-            "class_name": "AgentBuilder"
+            "name": "TWIST_BUILDER",
+            "class_name": "TwistBuilder"
           }
         ]
       },
       "r2_buckets": [
         {
-          "binding": "AGENT_MODULES_BUCKET",
-          "bucket_name": "agent-modules-development"
+          "binding": "TWIST_MODULES_BUCKET",
+          "bucket_name": "twist-modules-development"
         }
       ]
     },
@@ -155,7 +155,7 @@
       },
       "kv_namespaces": [
         {
-          "binding": "AGENT_CONFIG",
+          "binding": "TWIST_CONFIG",
           "id": "c413b23bb866493da4ee0596ade8b1e2"
         }
       ],
@@ -166,9 +166,9 @@
       ],
       "containers": [
         {
-          "name": "agent_builder",
-          "class_name": "AgentBuilder",
-          "image": "./containers/agent-builder/Dockerfile",
+          "name": "twist_builder",
+          "class_name": "TwistBuilder",
+          "image": "./containers/twist-builder/Dockerfile",
           "max_instances": 3
         }
       ],
@@ -183,8 +183,8 @@
             "binding": "UPDATES_QUEUE"
           },
           {
-            "queue": "agent-logs-production",
-            "binding": "AGENT_LOGS_QUEUE"
+            "queue": "twist-logs-production",
+            "binding": "TWIST_LOGS_QUEUE"
           }
         ],
         "consumers": [
@@ -199,7 +199,7 @@
             "max_batch_timeout": 0
           },
           {
-            "queue": "agent-logs-production",
+            "queue": "twist-logs-production",
             "max_batch_size": 100,
             "max_batch_timeout": 1
           }
@@ -235,15 +235,15 @@
             "class_name": "LogStream"
           },
           {
-            "name": "AGENT_BUILDER",
-            "class_name": "AgentBuilder"
+            "name": "TWIST_BUILDER",
+            "class_name": "TwistBuilder"
           }
         ]
       },
       "r2_buckets": [
         {
-          "binding": "AGENT_MODULES_BUCKET",
-          "bucket_name": "agent-modules-production"
+          "binding": "TWIST_MODULES_BUCKET",
+          "bucket_name": "twist-modules-production"
         }
       ]
     }

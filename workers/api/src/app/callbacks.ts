@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { Callbacks } from "../agent/tools/callbacks";
+import { Callbacks } from "../twist/tools/callbacks";
 import type { Bindings } from "../env";
 
 const callbacks = new Hono<{ Bindings: Bindings }>();

@@ -3,8 +3,8 @@ import { DurableObject } from "cloudflare:workers";
 import type { Bindings, LogMessage } from "../env";
 
 /**
- * Durable Object for streaming agent logs via SSE.
- * Each instance manages SSE streams for a specific agent.
+ * Durable Object for streaming twist logs via SSE.
+ * Each instance manages SSE streams for a specific twist.
  */
 export class LogStream extends DurableObject<Bindings> {
   private streams: Map<string, ReadableStreamDefaultController> = new Map();

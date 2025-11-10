@@ -2,13 +2,22 @@
 
 ## Overview
 
-Plot is multi-platform app with everything from all your apps and messages, organized and prioritized by agents. When you choose a focus, you have the context and actions you need to make progress on what matters.
+Plot is multi-platform app with tasks, messages, and links to documents from all your apps, organized and prioritized. When you choose a focus, you have the context and actions you need to make progress on what matters.
 
 Supported platforms:
 
 - Web
 - Desktop: macOS, Windows
 - Mobile: Android, iOS
+
+## Definitions
+
+- Activity: A single item in Plot, such as a task, message, or document link.
+- Thread: A top-level Activity (with a top-level path) and all Activity with child paths.
+- Priority: Similar to a project or folder for Activity. Priorities are nested using paths, and display all Activity related to them and their descendants.
+- Twist: The Plot version of an extension/plugin/app/agent. Users add them to a Priority where they have access to that Priority and its descendants. They tend to implement opinionated workflows (e.g. create tasks from emails).
+- Tool: Provide capabilities to twists. Some are built-in and implemented in the API, while others are available as separate packages. They tend to be unopinionated building blocks (e.g. watch and send Gmail messages).
+- Twist Creator aka Twister: The SDK for building twists and tools. Sometimes represented with 🌪️.
 
 ## Data
 
@@ -19,15 +28,23 @@ The Supabase database schema is defined in "libs/db/schema/".
 
 ## Code Structure
 
-- The main app, written in Flutter, is in "apps/plot/".
-- All other packages are written in Typescript and use pnpm for package management.
-- APIs and server tasks are implemented using Cloudflare Workers, located in "workers/".
-- The Agent Builder is in a git submodule at `public/builder/`. It includes the `plot` CLI tool and all agent type definitions.
-- Agents are in "agents/".
+- This is a private monorepo containing:
+  - The main app, written in Flutter, is in "apps/plot/".
+  - All other packages are written in Typescript and use pnpm for package management.
+  - The website (mostly marketing, plus some Twist management) is in "apps/site/".
+  - APIs and server tasks are implemented using Cloudflare Workers, located in "workers/".
+    - The API also implements the twist runtime including built-in tools.
+  - Non-open-source twists (particularly the default Plot twist) are in "twists/".
+- There is a public monorepo mounted as a git submodule at `public/` containing:
+  - The Plot Twist Creator aka Twister is at `public/twister/`. It's the SDK for building twists and twist tools, but with a name that's friendly for non-developers.
+    - Twister includes all type definitions for building twists and tool, including type definitions for built-in tools (which are implemented in the api).
+    - The CLI is also in the twister package.
+  - Public twist tools at `public/tools/`.
+  - Public twists at `public/twists/`.
 
-## Agent Builder Entity Standards
+## Twister Entity Standards
 
-For all entities in the builder folder of the agent package (Activity, Priority, etc.), use the following type pattern:
+For all entities in Twister (Activity, Priority, etc.), use the following type pattern:
 
 - **Required fields**: Defined without `?` and cannot be `undefined`
 - **Nullable fields**: Use `| null` instead of `| undefined` or optional (`?`)
@@ -55,37 +72,37 @@ This pattern allows functions to distinguish between:
 - Explicitly set to null (clearing a value)
 - Set to a value
 
-## Agent Builder Development
+## Twist Creator Development
 
-The Agent Builder repository (`public/builder/`) contains all type definitions and is the single source of truth for agent types. This repo uses it via pnpm workspace links.
+The Twist Creator repository (`public/twist/`) contains all type definitions and is the single source of truth for twist types. This repo uses it via pnpm workspace links.
 
-### Builder Location and Structure
+### Creator Location and Structure
 
-- **Builder Repository**: `public/builder/` (git submodule)
-- **Type Definitions**: `public/builder/src/` (agent.ts, plot.ts, tag.ts, tools/\*.ts, common/\*.ts)
-- **Workspace Link**: Configured in `pnpm-workspace.yaml` as `public/builder`
-- **Import Pattern**: Use `@plotday/agent`, `@plotday/agent/plot`, `@plotday/agent/tools/*`, etc.
+- **Creator Repository**: `public/twist/` (git submodule)
+- **Type Definitions**: `public/twist/src/` (twist.ts, plot.ts, tag.ts, tools/\*.ts, common/\*.ts)
+- **Workspace Link**: Configured in `pnpm-workspace.yaml` as `public/twist`
+- **Import Pattern**: Use `@plotday/twister`, `@plotday/twister/plot`, `@plotday/twister/tools/*`, etc.
 
-### Making Changes to Builder Types
+### Making Changes to SDK Types
 
-**IMPORTANT**: Builder types must be modified in the Builder submodule, never in this repo's main code.
+**IMPORTANT**: Twister types must be modified in the Twister submodule, never in this repo's main code.
 
-1. **Edit Builder files**: Make changes in `public/builder/src/`
-2. **Rebuild Builder**: Run `pnpm build` in the builder folder
+1. **Edit Twister files**: Make changes in `public/twist/src/`
+2. **Rebuild Twister**: Run `pnpm build` in the Twister folder
 3. **Test locally**: Changes are immediately available via workspace link
-4. **Verify builds**: Run `pnpm lint` in affected packages (workers/api, agents/\*)
+4. **Verify builds**: Run `pnpm lint` in affected packages (workers/api, twists/\*)
 
-### Where Builder Types Are Used
+### Where Twister Types Are Used
 
-- **API Worker** (`workers/api/src/`): Built-in tools import builder types
-  - Example: `import type { Activity } from "@plotday/agent/plot"`
-  - Built-in tools (`workers/api/src/agent/tools/*`) implement builder interfaces
-- **Agents** (`agents/*/src/`): Import builder types directly
-  - Example: `import { Agent, type Priority } from "@plotday/agent"`
+- **API Worker** (`workers/api/src/`): Built-in tools import Twister types
+  - Example: `import type { Activity } from "@plotday/twister/plot"`
+  - Built-in tools (`workers/api/src/twist/tools/*`) implement Twister interfaces
+- **Twists** (`twists/*/src/`): Import Twister types directly
+  - Example: `import { Twist, type Priority } from "@plotday/twister"`
 
-### Adding New Builder Exports
+### Adding New Twister Exports
 
-When adding new top-level type files to the Builder, update `public/builder/package.json` exports:
+When adding new top-level type files to Twister, update `public/twist/package.json` exports:
 
 ```json
 {
@@ -98,32 +115,32 @@ When adding new top-level type files to the Builder, update `public/builder/pack
 }
 ```
 
-Then rebuild the Builder and run `pnpm install` in this repo to update the workspace link.
+Then rebuild Twister and run `pnpm install` in this repo to update the workspace link.
 
-### Publishing Builder Updates
+### Publishing Twister Updates
 
 Only publish after testing locally:
 
-1. Update version in `public/builder/package.json`
-2. Build: `cd public/builder && pnpm build`
-3. Publish: `npm publish` (from `public/builder` directory)
-4. Commit changes to the Builder submodule, then commit the submodule reference update in this repo
+1. Update version in `public/twist/package.json`
+2. Build: `cd public/twist && pnpm build`
+3. Publish: `npm publish` (from `public/twist` directory)
+4. Commit changes to the Twister submodule, then commit the submodule reference update in this repo
 
 ### Important Notes
 
-- **Never create or modify types in `workers/api/src/agent/types/`** - this directory no longer exists
-- **TypeScript Configuration**: Uses `moduleResolution: "bundler"` in `libs/tsconfig/base.json` to support builder package exports
-- **Workspace Dependencies**: API and agents use `"@plotday/agent": "workspace:*"` for local development
+- **Never create or modify types in `workers/api/src/twist/types/`** - this directory no longer exists
+- **TypeScript Configuration**: Uses `moduleResolution: "bundler"` in `libs/tsconfig/base.json` to support Twister package exports
+- **Workspace Dependencies**: API and twists use `"@plotday/twister": "workspace:*"` for local development
 
-## Agents and Tools
+## Twists and Tools
 
-### Agent Tool Types
+### Twist Tool Types
 
-There are two types of tools for agents:
+There are two types of tools for twists:
 
-#### BuiltInTools (workers/api/src/agent/tools/\*)
+#### BuiltInTools (workers/api/src/twist/tools/\*)
 
-- Located in `workers/api/src/agent/tools/*`
+- Located in `workers/api/src/twist/tools/*`
 - Extend the `BuiltInTool` class
 - Have access to internal API resources, database connections, and backend services as they run inside the API worker
 - Examples: `Plot`, `Integrations`, `Store`
@@ -132,15 +149,15 @@ There are two types of tools for agents:
 #### Regular Tools
 
 - Implemented in separate packages outside this monorepo
-- Extend the base `Tool` class from the Agent Builder
-- Run in isolation, inside the agent worker, with access only to the other tools they request
+- Extend the base `Tool` class from the Twist Creator
+- Run in isolation, inside the twist worker, with access only to the other tools they request
 - These tools typically build on built-in tools and often implement integrations with external services
 
 ### Runtime Limitations
 
-All agent and tool functions are executed in a sandboxed, ephemeral environment with limited resources. This means:
+All twist and tool functions are executed in a sandboxed, ephemeral environment with limited resources. This means:
 
-- Anything stored in memory (e.g. as a variable in the agent/tool object) is lost
+- Anything stored in memory (e.g. as a variable in the twist/tool object) is lost
   after the function completes. Use the store tool instead. Only use memory for
   temporary caching.
 - Each execution has limited CPU time
@@ -190,7 +207,7 @@ When tools need to pass function references that persist across worker invocatio
 
 #### Using the Callback Tool
 
-All agents and tools have access to the `callback` tool. It provides a simple interface for creating persistent function references:
+All twists and tools have access to the `callback` tool. It provides a simple interface for creating persistent function references:
 
 ```typescript
 // Create a persistent callback
@@ -218,7 +235,7 @@ await this.callback.deleteAll();
 
 - **`create(functionName, context?)`**: Creates a callback to the tool's parent
 
-  - `functionName`: Name of the function to call on the parent tool/agent
+  - `functionName`: Name of the function to call on the parent tool/twist
   - `context`: Optional data to pass as context to the callback
   - Returns: Promise resolving to a callback token
 
@@ -242,7 +259,8 @@ await this.callback.deleteAll();
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
 - To generate a migration, use "pnpm gen-migration MIGRATION_NAME".
-- **After modifying builder types** in `public/builder/src/`, always rebuild the builder with `cd public/builder && pnpm build && cd ../..` before running or testing code in this repo.
-- If you see import errors for `@plotday/agent/*` after making builder changes, ensure the builder has been rebuilt and the package exports are configured correctly in `public/builder/package.json`.
+- **After modifying Twister types** in `public/twist/src/`, always rebuild Twister with `cd public/twist && pnpm build && cd ../..` before running or testing code in this repo.
+- If you see import errors for `@plotday/twister/*` after making Twister changes, ensure Twister has been rebuilt and the package exports are configured correctly in `public/twist/package.json`.
 - Only work locally. Never deploy. This includes workers, which only run locally.
-- When creating Cloudflare Durable Objects via idFromName(), ctx.id.name IS NOT SET inside the DO. If the DO needs the name (often the priorityAgentId), you MUST add a separate init() method to the DO and ensure it's called after creation to set the name.
+- When creating Cloudflare Durable Objects via idFromName(), ctx.id.name IS NOT SET inside the DO. If the DO needs the name (often the priorityTwistId), you MUST add a separate init() method to the DO and ensure it's called after creation to set the name.
+- In TypeScript, use static imports at the top of the file wherever possible.

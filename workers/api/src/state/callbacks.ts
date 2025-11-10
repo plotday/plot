@@ -2,22 +2,24 @@ import { DurableObject } from "cloudflare:workers";
 
 import { type SupabaseClient, createClient, safeQuery } from "@plotday/db";
 
-import { agentFactory } from "../agent";
-import { validateSerializable } from "../agent/tools/validation";
-import { type AgentEnvironment, type Bindings } from "../env";
+import { twistFactory } from "../twist";
+import { validateSerializable } from "../twist/tools/validation";
+import { type TwistEnvironment, type Bindings } from "../env";
 
 export type CallbackData = {
   token: string;
-  priorityAgentId: string;
-  agentId: string;
-  environment: AgentEnvironment;
+  priorityTwistId: string;
+  twistId: string;
+  environment: TwistEnvironment;
   path: string[]; // tool hierarchy only
-  version: string; // agent version
+  version: string; // twist version
   functionName: string;
   extraArgs?: any[];
   callAt?: Date;
   callOnce?: boolean;
   expires?: Date;
+  key?: string;
+  meta?: Record<string, any>;
 };
 
 export class CallbacksState extends DurableObject<Bindings> {
@@ -42,8 +44,8 @@ export class CallbacksState extends DurableObject<Bindings> {
     this.sql.exec(`
         CREATE TABLE IF NOT EXISTS callbacks (
           token TEXT PRIMARY KEY,
-          priority_agent_id TEXT NOT NULL,
-          agent_id TEXT NOT NULL,
+          priority_twist_id TEXT NOT NULL,
+          twist_id TEXT NOT NULL,
           environment TEXT NOT NULL,
           path TEXT NOT NULL,
           version TEXT NOT NULL,
@@ -55,18 +57,34 @@ export class CallbacksState extends DurableObject<Bindings> {
         )
       `);
     this.sql.exec(`
-        CREATE INDEX IF NOT EXISTS idx_callbacks_priority_agent
-        ON callbacks(priority_agent_id)
+        CREATE INDEX IF NOT EXISTS idx_callbacks_priority_twist
+        ON callbacks(priority_twist_id)
       `);
     this.sql.exec(`
         CREATE INDEX IF NOT EXISTS idx_callbacks_call_at
         ON callbacks(call_at) WHERE call_at IS NOT NULL
       `);
+
+    // Add key and meta columns for provider-specific routing (migration-safe)
+    try {
+      this.sql.exec("ALTER TABLE callbacks ADD COLUMN key TEXT");
+    } catch (e) {
+      // Column already exists
+    }
+    try {
+      this.sql.exec("ALTER TABLE callbacks ADD COLUMN meta TEXT");
+    } catch (e) {
+      // Column already exists
+    }
+    this.sql.exec(`
+        CREATE INDEX IF NOT EXISTS idx_callbacks_key
+        ON callbacks(key) WHERE key IS NOT NULL
+      `);
   }
 
   async create({
-    priorityAgentId,
-    agentId,
+    priorityTwistId,
+    twistId,
     environment,
     path,
     version,
@@ -75,10 +93,12 @@ export class CallbacksState extends DurableObject<Bindings> {
     callAt,
     callOnce,
     expires,
+    key,
+    meta,
   }: {
-    priorityAgentId: string;
-    agentId: string;
-    environment: AgentEnvironment;
+    priorityTwistId: string;
+    twistId: string;
+    environment: TwistEnvironment;
     path: string[]; // tool hierarchy only
     version?: string;
     functionName: string;
@@ -86,6 +106,8 @@ export class CallbacksState extends DurableObject<Bindings> {
     callAt?: Date;
     callOnce?: boolean;
     expires?: Date;
+    key?: string;
+    meta?: Record<string, any>;
   }): Promise<string> {
     if (extraArgs !== undefined) {
       validateSerializable(
@@ -97,15 +119,15 @@ export class CallbacksState extends DurableObject<Bindings> {
     // Fetch version from database if not provided
     if (!version) {
       const { data, error } = await this.supabase
-        .from("agent")
+        .from("twist")
         .select("version")
-        .eq("id", agentId)
+        .eq("id", twistId)
         .eq("environment", environment)
         .single();
 
       if (error || !data?.version) {
         throw new Error(
-          `Failed to fetch version for agent ${agentId} (${environment}): ${
+          `Failed to fetch version for twist ${twistId} (${environment}): ${
             error?.message || "No version found"
           }`
         );
@@ -121,12 +143,12 @@ export class CallbacksState extends DurableObject<Bindings> {
     this.sql.exec(
       `
         INSERT INTO callbacks (
-          token, priority_agent_id, agent_id, environment, path, version, function_name, extra_args, call_at, call_once, expires
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          token, priority_twist_id, twist_id, environment, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       token,
-      priorityAgentId,
-      agentId,
+      priorityTwistId,
+      twistId,
       environment,
       JSON.stringify(path),
       version,
@@ -134,7 +156,9 @@ export class CallbacksState extends DurableObject<Bindings> {
       extraArgs ? JSON.stringify(extraArgs) : null,
       callAt ? callAt.getTime() : null,
       callOnce ? 1 : 0,
-      expires ? expires.getTime() : null
+      expires ? expires.getTime() : null,
+      key ?? null,
+      meta ? JSON.stringify(meta) : null
     );
 
     // Update alarm if this is a scheduled callback
@@ -157,7 +181,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     const result = this.sql
       .exec(
         `
-          SELECT token, priority_agent_id, agent_id, environment, path, version, function_name, extra_args, call_at, call_once, expires
+          SELECT token, priority_twist_id, twist_id, environment, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
           FROM callbacks
           WHERE token = ?
           `,
@@ -171,8 +195,8 @@ export class CallbacksState extends DurableObject<Bindings> {
     const rawCallback = result.value as any;
     const callback: CallbackData = {
       token: rawCallback.token,
-      priorityAgentId: rawCallback.priority_agent_id,
-      agentId: rawCallback.agent_id,
+      priorityTwistId: rawCallback.priority_twist_id,
+      twistId: rawCallback.twist_id,
       environment: rawCallback.environment,
       path: JSON.parse(rawCallback.path),
       version: rawCallback.version,
@@ -183,6 +207,8 @@ export class CallbacksState extends DurableObject<Bindings> {
       callAt: rawCallback.call_at ? new Date(rawCallback.call_at) : undefined,
       callOnce: Boolean(rawCallback.call_once),
       expires: rawCallback.expires ? new Date(rawCallback.expires) : undefined,
+      key: rawCallback.key ?? undefined,
+      meta: rawCallback.meta ? JSON.parse(rawCallback.meta) : undefined,
     };
 
     // Check if callback has expired
@@ -191,31 +217,31 @@ export class CallbacksState extends DurableObject<Bindings> {
       return Promise.reject("Callback has expired");
     }
 
-    const { agentId, environment, path } = callback;
+    const { twistId, environment, path } = callback;
 
-    const agent = safeQuery(
+    const twist = safeQuery(
       await this.supabase
-        .from("priority_agent")
+        .from("priority_twist")
         .select("priority_id")
-        .eq("id", callback.priorityAgentId)
+        .eq("id", callback.priorityTwistId)
         .single()
     );
 
-    const factory = agentFactory({
+    const factory = twistFactory({
       env: this.env,
       ctx: this.ctx,
       supabase: this.supabase,
     });
-    const agentWrapper = await factory({
-      id: agentId,
+    const twistWrapper = await factory({
+      id: twistId,
       environment,
       version: callback.version,
-      priorityId: agent.priority_id,
-      priorityAgentId: callback.priorityAgentId,
+      priorityId: twist.priority_id,
+      priorityTwistId: callback.priorityTwistId,
     });
 
-    // Call the callback (works for both agents and tools via path parameter)
-    const callResult = await agentWrapper.callCallback(
+    // Call the callback (works for both twists and tools via path parameter)
+    const callResult = await twistWrapper.callCallback(
       path,
       callback.functionName,
       ...(args ?? []),
@@ -229,6 +255,27 @@ export class CallbacksState extends DurableObject<Bindings> {
     return callResult;
   }
 
+  get(key: string): Array<{ callback: string; meta?: Record<string, any> }> {
+    const results = this.sql.exec(
+      `
+        SELECT token, meta
+        FROM callbacks
+        WHERE key = ?
+        `,
+      [key]
+    );
+
+    const callbacks: Array<{ callback: string; meta?: Record<string, any> }> =
+      [];
+    for (const row of results) {
+      callbacks.push({
+        callback: `${this.ctx.id}:${row.token}`,
+        meta: row.meta ? JSON.parse(row.meta as string) : undefined,
+      });
+    }
+    return callbacks;
+  }
+
   delete(token: string): void {
     [, token] = token.split(":");
     this.sql.exec("DELETE FROM callbacks WHERE token = ?", token);
@@ -237,9 +284,9 @@ export class CallbacksState extends DurableObject<Bindings> {
   deleteAll(
     args:
       | {
-          priorityAgentId: string;
-          agentId: string;
-          environment: AgentEnvironment;
+          priorityTwistId: string;
+          twistId: string;
+          environment: TwistEnvironment;
           path?: string[];
           reallyDeleteEverything?: boolean;
         }
@@ -249,13 +296,13 @@ export class CallbacksState extends DurableObject<Bindings> {
       this.sql.exec("DELETE FROM callbacks");
       return;
     }
-    const { priorityAgentId, agentId, environment, path } = args;
+    const { priorityTwistId, twistId, environment, path } = args;
     this.sql.exec(
-      "DELETE FROM callbacks WHERE priority_agent_id = ? AND agent_id = ? AND environment = ?" +
+      "DELETE FROM callbacks WHERE priority_twist_id = ? AND twist_id = ? AND environment = ?" +
         (path ? " AND path = ?" : ""),
       ...(path
-        ? [priorityAgentId, agentId, environment, JSON.stringify(path)]
-        : [priorityAgentId, agentId, environment])
+        ? [priorityTwistId, twistId, environment, JSON.stringify(path)]
+        : [priorityTwistId, twistId, environment])
     );
   }
 
@@ -333,7 +380,7 @@ export class CallbacksState extends DurableObject<Bindings> {
 
   /**
    * Static method to call a callback by token.
-   * Parses the token to extract priorityAgentId, gets the correct DO stub,
+   * Parses the token to extract priorityTwistId, gets the correct DO stub,
    * and executes the callback.
    */
   static async CallCallback(

@@ -2,7 +2,7 @@ import type { PostHog } from "posthog-node";
 
 import { type SupabaseClient, createClient } from "@plotday/db";
 
-import { agentFactory } from "../agent";
+import { twistFactory } from "../twist";
 import { type Bindings, type UpdateMessage } from "../env";
 import { truncateUuidForUpdatedBy } from "../utils/uuid";
 
@@ -27,11 +27,11 @@ async function processUpdate(
   queue: string,
   postHog: PostHog
 ): Promise<void> {
-  const { type, item, previous, agents, users } = updateData;
+  const { type, item, previous, twists, users } = updateData;
 
-  // Only activities have agents to process
+  // Only activities have twists to process
   if (type === "activity") {
-    for (const agent of agents) {
+    for (const twist of twists) {
       try {
         // Type guard to ensure we have an activity item
         if (!("priority_id" in item) || !("author_id" in item)) {
@@ -41,23 +41,23 @@ async function processUpdate(
           continue;
         }
 
-        // Skip processing if this agent triggered the update
+        // Skip processing if this twist triggered the update
         const itemUpdatedBy =
           "updated_by" in item ? item.updated_by : undefined;
         if (itemUpdatedBy !== undefined) {
           try {
-            const agentUpdatedBy = truncateUuidForUpdatedBy(
-              agent.priority_agent_id
+            const twistUpdatedBy = truncateUuidForUpdatedBy(
+              twist.priority_twist_id
             );
-            if (itemUpdatedBy === agentUpdatedBy) {
+            if (itemUpdatedBy === twistUpdatedBy) {
               console.log(
-                `Skipping agent processing for ${agent.id} (${agent.priority_agent_id}) - self-triggered update (updated_by: ${itemUpdatedBy})`
+                `Skipping twist processing for ${twist.id} (${twist.priority_twist_id}) - self-triggered update (updated_by: ${itemUpdatedBy})`
               );
               continue;
             }
           } catch (error) {
             console.warn(
-              `Failed to process UUID truncation for agent ${agent.id}: ${
+              `Failed to process UUID truncation for twist ${twist.id}: ${
                 error instanceof Error ? error.message : error
               }. Continuing with processing.`
             );
@@ -65,34 +65,34 @@ async function processUpdate(
           }
         }
 
-        // Get agent and tools dynamically
-        const factory = agentFactory({
+        // Get twist and tools dynamically
+        const factory = twistFactory({
           env,
           ctx,
           supabase,
         });
-        const agentWrapper = await factory({
-          id: agent.id,
-          environment: agent.environment,
-          version: agent.version,
+        const twistWrapper = await factory({
+          id: twist.id,
+          environment: twist.environment,
+          version: twist.version,
           priorityId: String(item.priority_id),
-          priorityAgentId: agent.priority_agent_id,
+          priorityTwistId: twist.priority_twist_id,
         });
 
         // Dispatch to Plot tool - it will handle all filtering and processing logic
-        await agentWrapper.dispatch("Plot", item, previous);
+        await twistWrapper.dispatch("Plot", item, previous);
       } catch (error) {
         console.error(
-          `Error processing activity for agent ${agent.id}: ${
+          `Error processing activity for twist ${twist.id}: ${
             error instanceof Error ? `${error.message}\n${error.stack}` : error
           }`
         );
         postHog.captureException(error as Error, undefined, {
-          agent_id: agent.id,
-          priority_agent_id: agent.priority_agent_id,
+          twist_id: twist.id,
+          priority_twist_id: twist.priority_twist_id,
           priority_id: String(item.priority_id),
-          environment: agent.environment,
-          version: agent.version,
+          environment: twist.environment,
+          version: twist.version,
           type: type,
           event: updateData.event,
           queue,

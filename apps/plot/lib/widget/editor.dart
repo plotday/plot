@@ -7,7 +7,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:flutter_debouncer/flutter_debouncer.dart';
 import 'package:follow_the_leader/follow_the_leader.dart';
 
-import 'package:plot/api/agent_api.dart';
+import 'package:plot/api/twist_api.dart';
 import 'sliver.dart';
 import 'colour_scheme.dart';
 import 'bidirectional_list.dart';
@@ -22,7 +22,7 @@ class Editor extends StatefulWidget {
     this.onSubmitted,
     this.onChange,
     this.focusNode,
-    this.agents = const [],
+    this.twists = const [],
     super.key,
   });
 
@@ -31,7 +31,7 @@ class Editor extends StatefulWidget {
   final void Function(String value, {bool alt})? onSubmitted;
   final ValueChanged<String>? onChange;
   final FocusNode? focusNode;
-  final List<PriorityAgent> agents;
+  final List<PriorityTwist> twists;
 
   @override
   State<Editor> createState() => EditorState();
@@ -102,7 +102,7 @@ class EditorState extends State<Editor> {
 
         // Replace name with [Name](#@ID)
         final name = attribution.username;
-        final replacement = '[$name](#@${attribution.priorityAgentId})';
+        final replacement = '[$name](#@${attribution.priorityTwistId})';
         markdown = markdown.replaceFirst(mentionText, replacement);
       }
     }
@@ -277,10 +277,10 @@ class EditorState extends State<Editor> {
   void _updateMentionOverlay() {
     final mention = _mentionDetector.composingMention;
 
-    // Filter agents based on composing text
+    // Filter twists based on composing text
     final hasMatches = mention != null &&
-        widget.agents.any((agent) =>
-            agent.name.toLowerCase().contains(mention.text.toLowerCase()));
+        widget.twists.any((twist) =>
+            twist.name.toLowerCase().contains(mention.text.toLowerCase()));
 
     if (hasMatches && !_mentionOverlayController.isShowing) {
       _mentionOverlayController.show();
@@ -292,20 +292,20 @@ class EditorState extends State<Editor> {
   /// Builds the user mention popover in the overlay
   Widget _buildEditorMentionPopover(BuildContext context) {
     final mentionBeingComposed = _mentionDetector.composingMention;
-    if (mentionBeingComposed == null || widget.agents.isEmpty) {
+    if (mentionBeingComposed == null || widget.twists.isEmpty) {
       return const SizedBox.shrink();
     }
 
     return EditorMentionPopover(
       editorFocusNode: _editorFocusNode,
       leaderLink: _mentionLeaderLink,
-      agents: widget.agents,
+      twists: widget.twists,
       composingText: mentionBeingComposed.text,
       showAbove: _showMentionPopoverAbove,
-      onAgentSelected: (agent) {
+      onAgentSelected: (twist) {
         _mentionDetector.completeMention(
-          priorityAgentId: agent.id,
-          username: agent.name,
+          priorityTwistId: twist.id,
+          username: twist.name,
         );
         _editorFocusNode.requestFocus();
       },
@@ -465,7 +465,7 @@ class Viewer extends StatefulWidget {
       mentions.add(
         _MentionInfo(
           name: match.group(1) ?? '',
-          priorityAgentId: match.group(2) ?? '',
+          priorityTwistId: match.group(2) ?? '',
         ),
       );
     }
@@ -499,10 +499,10 @@ class Viewer extends StatefulWidget {
 }
 
 class _MentionInfo {
-  const _MentionInfo({required this.name, required this.priorityAgentId});
+  const _MentionInfo({required this.name, required this.priorityTwistId});
 
   final String name;
-  final String priorityAgentId;
+  final String priorityTwistId;
 }
 
 class ViewerState extends State<Viewer> {
@@ -561,7 +561,7 @@ class ViewerState extends State<Viewer> {
 
         // Add attribution for this occurrence
         final attribution = CommittedEditorMentionAttribution(
-          priorityAgentId: mention.priorityAgentId,
+          priorityTwistId: mention.priorityTwistId,
           username: mention.name,
         );
 

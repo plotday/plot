@@ -244,7 +244,7 @@ class ShowPriorityActions extends ShowActions {
 
 List<Action> prioritySecondaryActions(Priority priority) => [
   EditPriorityAction(priority),
-  ManageAgents(priority),
+  ManageTwists(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.root) ArchivePriority(Future.value(priority)),
   NewPriority(parent: priority),

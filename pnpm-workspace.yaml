@@ -2,9 +2,10 @@ packages:
   - apps/*
   - workers/*
   - libs/*
-  - agents/*
-  - public/builder
+  - twists/*
+  - public/twister
   - public/tools/*
+  - public/twists/*
 
 onlyBuiltDependencies:
   - "@posthog/cli"

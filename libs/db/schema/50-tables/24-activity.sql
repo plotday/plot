@@ -57,11 +57,11 @@ CREATE TABLE "public"."activity_exception" (
     "meta" jsonb
 );
 
-COMMENT ON COLUMN "public"."activity"."author_id" IS 'The actor to credit with creating this activity. For activities created by agents on behalf of contacts or users, this is the contact/user. For activities created directly by users or agents, this is the user/agent ID.';
+COMMENT ON COLUMN "public"."activity"."author_id" IS 'The actor to credit with creating this activity. For activities created by twists on behalf of contacts or users, this is the contact/user. For activities created directly by users or twists, this is the user/twist ID.';
 
-COMMENT ON COLUMN "public"."activity"."created_by" IS 'The user_id or priority_agent_id that actually created this activity. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
+COMMENT ON COLUMN "public"."activity"."created_by" IS 'The user_id or priority_twist_id that actually created this activity. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
 
-COMMENT ON COLUMN "public"."activity"."mentions" IS 'Array of actor IDs (user_id, contact_id, or priority_agent_id) that are mentioned in this activity via @-mentions.';
+COMMENT ON COLUMN "public"."activity"."mentions" IS 'Array of actor IDs (user_id, contact_id, or priority_twist_id) that are mentioned in this activity via @-mentions.';
 
 COMMENT ON COLUMN "public"."activity"."pick_priority" IS 'The PickPriorityConfig used to automatically select this activity''s priority. Null if priority was explicitly specified. Used when moving activities to find similar activities to move. Not exposed to app or API.';
 

@@ -6,22 +6,22 @@ const editorMentionComposingAttribution = NamedAttribution('editorMentionComposi
 /// Attribution for completed editor mentions
 class CommittedEditorMentionAttribution extends NamedAttribution {
   const CommittedEditorMentionAttribution({
-    required this.priorityAgentId,
+    required this.priorityTwistId,
     required this.username,
   }) : super('editorMentionCommitted');
 
-  final String priorityAgentId;
+  final String priorityTwistId;
   final String username;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is CommittedEditorMentionAttribution &&
-          priorityAgentId == other.priorityAgentId &&
+          priorityTwistId == other.priorityTwistId &&
           username == other.username);
 
   @override
-  int get hashCode => Object.hash(priorityAgentId, username);
+  int get hashCode => Object.hash(priorityTwistId, username);
 }
 
 /// A request to insert an editor mention at the current caret position

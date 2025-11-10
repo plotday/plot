@@ -611,10 +611,10 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "52f4f330273bdcf727714f4c051684cc8c8c7f95"
+      resolved-ref: "6e252a97a62003c30179277f9a810917443a3a57"
       url: "git@github.com:plotday/font_awesome_flutter.git"
     source: git
-    version: "10.8.0"
+    version: "10.12.0"
   forui:
     dependency: "direct main"
     description:

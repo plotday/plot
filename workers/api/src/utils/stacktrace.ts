@@ -180,14 +180,14 @@ export function formatStackTrace(frames: StackFrame[]): string {
  *
  * @param error - Error object with stack property
  * @param sourcemap - Optional sourcemap content for translation
- * @returns Processed stack trace string with only agent code
+ * @returns Processed stack trace string with only twist code
  *
  * @example
  * ```typescript
  * try {
- *   await agent.activate();
+ *   await twist.activate();
  * } catch (error) {
- *   const sourcemap = await getAgentSourcemap(agentId);
+ *   const sourcemap = await getTwistSourcemap(twistId);
  *   const cleanStack = await processStackTrace(error, sourcemap);
  *   console.error(`Error: ${error.message}\n${cleanStack}`);
  * }

@@ -21,7 +21,7 @@
     },
     {
       "tag": "v7",
-      "new_sqlite_classes": ["AgentBuilder"]
+      "new_sqlite_classes": ["TwistBuilder"]
     },
     {
       "tag": "v8",
@@ -35,7 +35,7 @@
   },
   "kv_namespaces": [
     {
-      "binding": "AGENT_CONFIG",
+      "binding": "TWIST_CONFIG",
       "id": "test-agent-config",
       "preview_id": "test-agent-config"
     }
@@ -52,7 +52,7 @@
       },
       {
         "queue": "agent-logs-test",
-        "binding": "AGENT_LOGS_QUEUE"
+        "binding": "TWIST_LOGS_QUEUE"
       }
     ]
   },
@@ -83,15 +83,15 @@
         "class_name": "LogStream"
       },
       {
-        "name": "AGENT_BUILDER",
-        "class_name": "AgentBuilder"
+        "name": "TWIST_BUILDER",
+        "class_name": "TwistBuilder"
       }
     ]
   },
   "r2_buckets": [
     {
-      "binding": "AGENT_MODULES_BUCKET",
-      "bucket_name": "agent-modules-test"
+      "binding": "TWIST_MODULES_BUCKET",
+      "bucket_name": "twist-modules-test"
     }
   ]
 }

@@ -172,25 +172,25 @@ CREATE TRIGGER upsert_user_priority
 
 SET check_function_bodies = OFF;
 
-CREATE OR REPLACE FUNCTION public.get_accessible_agents (p_priority_id uuid)
-    RETURNS SETOF agent
+CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid)
+    RETURNS SETOF twist
     LANGUAGE sql
     STABLE
     SECURITY DEFINER
     AS $function$
     SELECT DISTINCT
-        agent.*
+        twist.*
     FROM
-        agent
-    LEFT JOIN agent_admin ON agent.id = agent_admin.id
+        twist
+    LEFT JOIN twist_admin ON twist.id = twist_admin.id
 WHERE
-    agent.environment = 'public'
-    OR (agent.environment = 'personal'
-        AND agent.user_id = auth.uid ())
-    OR can_access_priority (agent_admin.priority_id)
+    twist.environment = 'public'
+    OR (twist.environment = 'personal'
+        AND twist.user_id = auth.uid ())
+    OR can_access_priority (twist_admin.priority_id)
 $function$;
 
-CREATE OR REPLACE FUNCTION public.is_accessible_agent (p_agent_id uuid, p_agent_environment agent_environment, p_priority_id uuid)
+CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id uuid, p_twist_environment twist_environment, p_priority_id uuid)
     RETURNS boolean
     LANGUAGE sql
     STABLE
@@ -201,14 +201,14 @@ CREATE OR REPLACE FUNCTION public.is_accessible_agent (p_agent_id uuid, p_agent_
             SELECT
                 1
             FROM
-                agent
-            LEFT JOIN agent_admin ON agent.id = agent_admin.id
+                twist
+            LEFT JOIN twist_admin ON twist.id = twist_admin.id
         WHERE
-            agent.id = p_agent_id
-            AND agent.environment = p_agent_environment
-            AND (agent.environment = 'public'
-                OR (agent.environment = 'personal'
-                    AND agent.user_id = auth.uid ())
-                OR can_access_priority (agent_admin.priority_id)))
+            twist.id = p_twist_id
+            AND twist.environment = p_twist_environment
+            AND (twist.environment = 'public'
+                OR (twist.environment = 'personal'
+                    AND twist.user_id = auth.uid ())
+                OR can_access_priority (twist_admin.priority_id)))
 $function$;
 

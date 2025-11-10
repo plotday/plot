@@ -15,6 +15,6 @@ export default [
     route("signin", "routes/signin.tsx"),
     route("signout", "routes/signout.tsx"),
     route("auth/callback", "routes/auth.callback.tsx"),
-    route("builder/login", "routes/builder.login.tsx"),
+    route("twister/login", "routes/twister.login.tsx"),
   ]),
 ] satisfies RouteConfig;

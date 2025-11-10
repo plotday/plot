@@ -30,7 +30,7 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Plot is a workspace that pulls in everything from all your apps, chats, and agents, and organizes them around your roles and goals. When you choose a focus, everything you need is in one place so you make steady progress on what matters to you.",
+        "Plot is a workspace for your tasks, messages, and documents from all your apps and agents, and organized and prioritized. When you choose a focus, everything you need is in one place so you make steady progress on what matters to you.",
     },
     {
       "og:image": "https://plot.day/assets/p.png",

@@ -1,0 +1,18 @@
+{
+  "name": "@plotday/twist-plot",
+  "plotTwistId": "0199b6f4-ae64-7718-8a02-44716f30358f",
+  "displayName": "Plot",
+  "description": "Support setting up, using, and automating Plot",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "deploy": "plot deploy",
+    "lint": "plot lint"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:*"
+  }
+}

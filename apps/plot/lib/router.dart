@@ -22,6 +22,7 @@ final Logger _logger = Logger('plot.route');
 @AutoRouterConfig(generateForDir: ['lib', 'lib/page'])
 class AppRouter extends RootStackRouter {
   AppRouter();
+
   @override
   RouteType get defaultRouteType => PlatformResolver.current(
     iOSResolver: () => RouteType.cupertino(),
@@ -222,8 +223,9 @@ class RouteLogger extends AutoRouterObserver {
         // Calculate time on previous screen
         int? timeOnPreviousScreenMs;
         if (_lastNavigationTime != null) {
-          timeOnPreviousScreenMs =
-              DateTime.now().difference(_lastNavigationTime!).inMilliseconds;
+          timeOnPreviousScreenMs = DateTime.now()
+              .difference(_lastNavigationTime!)
+              .inMilliseconds;
         }
 
         // Extract screen name from route (normalize by removing "Route" suffix)
@@ -232,8 +234,9 @@ class RouteLogger extends AutoRouterObserver {
         // Extract previous screen name
         String? previousScreenName;
         if (previousRoute?.settings.name != null) {
-          previousScreenName =
-              _normalizeScreenName(previousRoute!.settings.name!);
+          previousScreenName = _normalizeScreenName(
+            previousRoute!.settings.name!,
+          );
         }
 
         // Track navigation to PostHog

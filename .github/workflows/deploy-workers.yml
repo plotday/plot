@@ -6,6 +6,7 @@ on:
     paths:
       - "workers/**"
       - "libs/**"
+      - "public/twister/**"
       - ".github/workflows/deploy-workers.yml"
   workflow_dispatch:
 
@@ -32,7 +33,7 @@ jobs:
 
       - name: Build SDK
         run: |
-          cd public/builder
+          cd public/twister
           pnpm install --frozen-lockfile
           pnpm build
 
@@ -104,9 +105,9 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Build SDK
+      - name: Build Twister
         run: |
-          cd public/builder
+          cd public/twister
           pnpm install --frozen-lockfile
           pnpm build
 

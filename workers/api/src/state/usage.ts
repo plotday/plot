@@ -16,7 +16,7 @@ type UsageRow = {
 export class Usage extends DurableObject<Bindings> {
   private sql: SqlStorage;
   private supabase: SupabaseClient;
-  private priorityAgentId?: string;
+  private priorityTwistId?: string;
   private isDirty: boolean = false;
   private nextFlushTime: number | null = null;
 
@@ -24,10 +24,10 @@ export class Usage extends DurableObject<Bindings> {
     env: {
       readonly USAGE: DurableObjectNamespace<Usage>;
     },
-    priorityAgentId: string
+    priorityTwistId: string
   ) {
-    const usage = env.USAGE.get(env.USAGE.idFromName(priorityAgentId));
-    usage.init(priorityAgentId);
+    const usage = env.USAGE.get(env.USAGE.idFromName(priorityTwistId));
+    usage.init(priorityTwistId);
     return usage;
   }
 
@@ -42,16 +42,16 @@ export class Usage extends DurableObject<Bindings> {
     this.loadState();
   }
 
-  public init(priorityAgentId: string) {
-    this.priorityAgentId = priorityAgentId;
+  public init(priorityTwistId: string) {
+    this.priorityTwistId = priorityTwistId;
     this.persistState();
   }
 
-  private getPriorityAgentId() {
-    if (!this.priorityAgentId) {
+  private getPriorityTwistId() {
+    if (!this.priorityTwistId) {
       throw new Error("Usage used before init()");
     }
-    return this.priorityAgentId;
+    return this.priorityTwistId;
   }
 
   private initializeTable() {
@@ -66,7 +66,7 @@ export class Usage extends DurableObject<Bindings> {
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS state (
         id INTEGER PRIMARY KEY DEFAULT 1,
-        priorityAgentId TEXT,
+        priorityTwistId TEXT,
         isDirty INTEGER DEFAULT 0,
         nextFlushTime INTEGER
       ) STRICT
@@ -77,11 +77,11 @@ export class Usage extends DurableObject<Bindings> {
     const result = this.sql.exec("SELECT * FROM state WHERE id = 1").next();
     if (!result.done && result.value) {
       const row = result.value as {
-        priorityAgentId: string | null;
+        priorityTwistId: string | null;
         isDirty: number;
         nextFlushTime: number | null;
       };
-      this.priorityAgentId = row.priorityAgentId ?? undefined;
+      this.priorityTwistId = row.priorityTwistId ?? undefined;
       this.isDirty = row.isDirty === 1;
       this.nextFlushTime = row.nextFlushTime ?? null;
     }
@@ -89,13 +89,13 @@ export class Usage extends DurableObject<Bindings> {
 
   private persistState() {
     this.sql.exec(
-      `INSERT INTO state (id, priorityAgentId, isDirty, nextFlushTime)
+      `INSERT INTO state (id, priorityTwistId, isDirty, nextFlushTime)
        VALUES (1, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-         priorityAgentId = excluded.priorityAgentId,
+         priorityTwistId = excluded.priorityTwistId,
          isDirty = excluded.isDirty,
          nextFlushTime = excluded.nextFlushTime`,
-      this.priorityAgentId ?? null,
+      this.priorityTwistId ?? null,
       this.isDirty ? 1 : 0,
       this.nextFlushTime ?? null
     );
@@ -105,7 +105,7 @@ export class Usage extends DurableObject<Bindings> {
    * Increment usage for the given cost type by the specified amount
    */
   spend(costType: string, amount: number) {
-    this.getPriorityAgentId();
+    this.getPriorityTwistId();
 
     const currentHour = this.getCurrentHour();
 
@@ -216,11 +216,11 @@ export class Usage extends DurableObject<Bindings> {
     hour: number,
     records: UsageRow[]
   ): Promise<void> {
-    const priorityAgentId = this.getPriorityAgentId();
+    const priorityTwistId = this.getPriorityTwistId();
     console.log(
       `[Usage DO] Flushing ${
         records.length
-      } records for ${priorityAgentId} at ${new Date(hour).toISOString()}`
+      } records for ${priorityTwistId} at ${new Date(hour).toISOString()}`
     );
     // Get ALL cost types from the database
     const { data: costs, error: costsError } = await this.supabase
@@ -284,7 +284,7 @@ export class Usage extends DurableObject<Bindings> {
       const amount = recordAmountMap.get(cost.name) ?? 0;
 
       return {
-        priority_agent_id: priorityAgentId,
+        priority_twist_id: priorityTwistId,
         hour: new Date(hour).toISOString(),
         cost_id: cost.id,
         amount,
@@ -299,7 +299,7 @@ export class Usage extends DurableObject<Bindings> {
     const { data, error: upsertError } = await this.supabase
       .from("usage")
       .upsert(usageRows, {
-        onConflict: "priority_agent_id,hour,cost_id",
+        onConflict: "priority_twist_id,hour,cost_id",
         ignoreDuplicates: false,
       })
       .select();

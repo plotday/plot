@@ -121,7 +121,7 @@ class EditorMentionDetector extends ChangeNotifier {
       }
 
       // Stop if we hit a newline or tab (not a valid mention)
-      // Allow single spaces to support multi-word agent names
+      // Allow single spaces to support multi-word twist names
       if (char == '\n' || char == '\t') {
         break;
       }
@@ -144,10 +144,10 @@ class EditorMentionDetector extends ChangeNotifier {
     }
   }
 
-  /// Completes the current mention by replacing the composing text with the selected agent
-  /// Displays name in the editor, but serializes to [Name](#@{priorityAgentId}] in markdown
+  /// Completes the current mention by replacing the composing text with the selected twist
+  /// Displays name in the editor, but serializes to [Name](#@{priorityTwistId}] in markdown
   void completeMention({
-    required String priorityAgentId,
+    required String priorityTwistId,
     required String username,
   }) {
     final mention = _composingMention;
@@ -164,7 +164,7 @@ class EditorMentionDetector extends ChangeNotifier {
     final replaceToOffset = mention.triggerOffset + 1 + mention.text.length;
 
     final attribution = CommittedEditorMentionAttribution(
-      priorityAgentId: priorityAgentId,
+      priorityTwistId: priorityTwistId,
       username: username,
     );
     // Display as username in the editor (will convert to [Name](#@ID) when serializing)

@@ -4,18 +4,18 @@ import 'package:forui/forui.dart';
 import 'package:super_editor/super_editor.dart';
 import 'package:follow_the_leader/follow_the_leader.dart';
 
-import 'package:plot/api/agent_api.dart';
+import 'package:plot/api/twist_api.dart';
 
-/// A popover that displays a list of agents for editor mentions.
+/// A popover that displays a list of twists for editor mentions.
 ///
 /// This widget appears when a user types "@" and shows a filtered list
-/// of agents that can be selected for mentioning.
+/// of twists that can be selected for mentioning.
 class EditorMentionPopover extends StatefulWidget {
   const EditorMentionPopover({
     super.key,
     required this.editorFocusNode,
     required this.leaderLink,
-    required this.agents,
+    required this.twists,
     required this.composingText,
     required this.onAgentSelected,
     required this.onCancelRequested,
@@ -28,8 +28,8 @@ class EditorMentionPopover extends StatefulWidget {
   /// Link to the widget that this popover follows
   final LeaderLink leaderLink;
 
-  /// The list of all available agents
-  final List<PriorityAgent> agents;
+  /// The list of all available twists
+  final List<PriorityTwist> twists;
 
   /// The current text being composed (after "@")
   final String composingText;
@@ -37,8 +37,8 @@ class EditorMentionPopover extends StatefulWidget {
   /// Whether to show the popover above the trigger (true) or below (false)
   final bool showAbove;
 
-  /// Callback when an agent is selected
-  final void Function(PriorityAgent agent) onAgentSelected;
+  /// Callback when an twist is selected
+  final void Function(PriorityTwist twist) onAgentSelected;
 
   /// Callback when the user cancels the mention (e.g., presses ESC)
   final VoidCallback onCancelRequested;
@@ -51,7 +51,7 @@ class _EditorMentionPopoverState extends State<EditorMentionPopover> {
   late final FocusNode _focusNode;
   late final ScrollController _scrollController;
 
-  List<PriorityAgent> _filteredAgents = [];
+  List<PriorityTwist> _filteredAgents = [];
   int _selectedIndex = 0;
 
   @override
@@ -71,7 +71,7 @@ class _EditorMentionPopoverState extends State<EditorMentionPopover> {
   void didUpdateWidget(EditorMentionPopover oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.composingText != widget.composingText ||
-        oldWidget.agents != widget.agents) {
+        oldWidget.twists != widget.twists) {
       _updateFilteredAgents();
     }
   }
@@ -85,9 +85,9 @@ class _EditorMentionPopoverState extends State<EditorMentionPopover> {
 
   void _updateFilteredAgents() {
     setState(() {
-      _filteredAgents = widget.agents
+      _filteredAgents = widget.twists
           .where(
-            (agent) => agent.name.toLowerCase().contains(
+            (twist) => twist.name.toLowerCase().contains(
               widget.composingText.toLowerCase(),
             ),
           )
@@ -243,12 +243,12 @@ class _EditorMentionPopoverState extends State<EditorMentionPopover> {
       divider: FItemDivider.none,
       count: _filteredAgents.length,
       tileBuilder: (context, index) {
-        final agent = _filteredAgents[index];
+        final twist = _filteredAgents[index];
         final isSelected = index == _selectedIndex;
         return FTile(
-          title: Text(agent.name),
+          title: Text(twist.name),
           selected: isSelected,
-          onPress: () => widget.onAgentSelected(agent),
+          onPress: () => widget.onAgentSelected(twist),
           style: context.theme.tileStyle.copyWith(
             decoration: FWidgetStateMap({
               WidgetState.any: BoxDecoration(

@@ -1,6 +1,6 @@
 import { PostHog } from "posthog-node";
 
-import { type RunMessage, Tasks } from "../agent/tools/tasks";
+import { type RunMessage, Tasks } from "../twist/tools/tasks";
 import {
   type Bindings,
   type LogMessage,
@@ -45,8 +45,8 @@ export async function queue(
         );
         break;
 
-      case "agent-logs-development":
-      case "agent-logs-production":
+      case "twist-logs-development":
+      case "twist-logs-production":
         await processLogs(batch as MessageBatch<LogMessage>, env, postHog);
         break;
 

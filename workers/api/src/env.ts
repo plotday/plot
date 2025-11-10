@@ -1,5 +1,5 @@
-import { type AgentBuilder } from "../";
-import { type RunMessage } from "./agent/tools/tasks";
+import { type TwistBuilder } from "../";
+import { type RunMessage } from "./twist/tools/tasks";
 import { type Broadcast } from "./state/broadcast";
 import { type CallbacksState } from "./state/callbacks";
 import { type LogStream } from "./state/log-stream";
@@ -13,17 +13,17 @@ import {
   type UpdateItem,
 } from "./types";
 
-export type AgentEnvironment = "personal" | "private" | "review" | "public";
+export type TwistEnvironment = "personal" | "private" | "review" | "public";
 
 export type UpdateMessage = {
   type: "activity" | "priority" | "session";
   event?: "created" | "updated" | "deleted";
   item: UpdateItem;
   previous?: UpdateItem;
-  agents: {
+  twists: {
     id: string;
-    environment: AgentEnvironment;
-    priority_agent_id: string;
+    environment: TwistEnvironment;
+    priority_twist_id: string;
     config?: any;
     version?: string;
   }[];
@@ -49,8 +49,8 @@ export type SessionUpdateMessage = Omit<UpdateMessage, "type" | "item"> & {
 };
 
 export type LogMessage = {
-  agentRootId: string;
-  environment: AgentEnvironment;
+  twistRootId: string;
+  environment: TwistEnvironment;
   severity: "log" | "error" | "warn" | "info";
   message: string;
   timestamp: number;
@@ -78,6 +78,7 @@ export type Bindings = {
   readonly AUTH_NOTION_SECRET: string;
   readonly AUTH_SLACK_ID: string;
   readonly AUTH_SLACK_SECRET: string;
+  readonly AUTH_SLACK_SIGNING_SECRET: string;
   readonly AUTH_ATLASSIAN_ID: string;
   readonly AUTH_ATLASSIAN_SECRET: string;
   readonly AUTH_LINEAR_ID: string;
@@ -91,6 +92,10 @@ export type Bindings = {
   readonly AUTH_HUBSPOT_ID: string;
   readonly AUTH_HUBSPOT_SECRET: string;
 
+  readonly GCP_PROJECT_ID: string;
+  readonly GCP_SERVICE_ACCOUNT_EMAIL: string;
+  readonly GCP_SERVICE_ACCOUNT_KEY: string;
+
   readonly STRIPE_SECRET_KEY: string;
   readonly STRIPE_WEBHOOK_SECRET: string;
 
@@ -102,13 +107,13 @@ export type Bindings = {
   // Can hopefully remove this once we can use the Vercel AI SDK with Cloudflare AI Gateway without requiring an API key.
   readonly ANTHROPIC_API_KEY: string;
 
-  readonly AGENT_CONFIG: KVNamespace;
+  readonly TWIST_CONFIG: KVNamespace;
 
-  readonly AGENT_BUILDER: DurableObjectNamespace<AgentBuilder>;
+  readonly TWIST_BUILDER: DurableObjectNamespace<TwistBuilder>;
   readonly LOADER: WorkerLoader;
   readonly RUN_QUEUE: Queue<RunMessage>;
   readonly UPDATES_QUEUE: Queue<UpdateMessage>;
-  readonly AGENT_LOGS_QUEUE: Queue<LogMessage>;
+  readonly TWIST_LOGS_QUEUE: Queue<LogMessage>;
   readonly AI: Ai;
   readonly STORAGE: DurableObjectNamespace<Storage>;
   readonly CALLBACKS: DurableObjectNamespace<CallbacksState>;
@@ -116,5 +121,5 @@ export type Bindings = {
   readonly USAGE: DurableObjectNamespace<Usage>;
   readonly LOG_SUBSCRIPTIONS: DurableObjectNamespace<LogSubscriptions>;
   readonly LOG_STREAM: DurableObjectNamespace<LogStream>;
-  readonly AGENT_MODULES_BUCKET: R2Bucket;
+  readonly TWIST_MODULES_BUCKET: R2Bucket;
 };

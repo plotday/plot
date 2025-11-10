@@ -1,0 +1,28 @@
+{
+  "name": "twist-plot",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-07-05",
+  "compatibility_flags": ["nodejs_compat"],
+  "upload_source_maps": true,
+  "env": {
+    "development": {
+      "define": {
+        "ENV": "\"development\"",
+        "RELEASE": "\"dev\"",
+        "PACKAGE": "\"twist-plot\""
+      }
+    },
+    "production": {
+      "define": {
+        "ENV": "\"production\"",
+        "RELEASE": "\"prod\"",
+        "PACKAGE": "\"twist-plot\""
+      }
+    }
+  },
+  "observability": {
+    "logs": {
+      "enabled": true
+    }
+  }
+}

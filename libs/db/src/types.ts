@@ -161,7 +161,7 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child_agent"
+            referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
           {
@@ -382,130 +382,6 @@ export type Database = {
           },
         ]
       }
-      agent: {
-        Row: {
-          archived_at: string | null
-          created_at: string
-          description: string | null
-          environment: Database["public"]["Enums"]["agent_environment"]
-          id: string
-          name: string
-          permissions: Json | null
-          updated_at: string
-          user_id: string | null
-          version: string
-        }
-        Insert: {
-          archived_at?: string | null
-          created_at?: string
-          description?: string | null
-          environment?: Database["public"]["Enums"]["agent_environment"]
-          id: string
-          name: string
-          permissions?: Json | null
-          updated_at?: string
-          user_id?: string | null
-          version: string
-        }
-        Update: {
-          archived_at?: string | null
-          created_at?: string
-          description?: string | null
-          environment?: Database["public"]["Enums"]["agent_environment"]
-          id?: string
-          name?: string
-          permissions?: Json | null
-          updated_at?: string
-          user_id?: string | null
-          version?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "agent_id_fkey"
-            columns: ["id"]
-            isOneToOne: false
-            referencedRelation: "agent_admin"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      agent_admin: {
-        Row: {
-          auto_approve: boolean
-          created_at: string
-          id: string
-          priority_id: string | null
-          publisher_id: number | null
-          updated_at: string
-        }
-        Insert: {
-          auto_approve?: boolean
-          created_at?: string
-          id?: string
-          priority_id?: string | null
-          publisher_id?: number | null
-          updated_at?: string
-        }
-        Update: {
-          auto_approve?: boolean
-          created_at?: string
-          id?: string
-          priority_id?: string | null
-          publisher_id?: number | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "agent_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agent_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "agent_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "agent_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child_agent"
-            referencedColumns: ["priority_child_id"]
-          },
-          {
-            foreignKeyName: "agent_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_settings_inherited"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "agent_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agent_admin_publisher_id_fkey"
-            columns: ["publisher_id"]
-            isOneToOne: false
-            referencedRelation: "publisher"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       contact: {
         Row: {
           archived_at: string | null
@@ -675,95 +551,6 @@ export type Database = {
         }
         Relationships: []
       }
-      priority_agent: {
-        Row: {
-          agent_environment: Database["public"]["Enums"]["agent_environment"]
-          agent_id: string
-          archived_at: string | null
-          config: Json
-          created_at: string
-          id: string
-          name: string
-          owner_id: string
-          priority_id: string
-          updated_at: string
-        }
-        Insert: {
-          agent_environment: Database["public"]["Enums"]["agent_environment"]
-          agent_id: string
-          archived_at?: string | null
-          config?: Json
-          created_at?: string
-          id?: string
-          name: string
-          owner_id: string
-          priority_id: string
-          updated_at?: string
-        }
-        Update: {
-          agent_environment?: Database["public"]["Enums"]["agent_environment"]
-          agent_id?: string
-          archived_at?: string | null
-          config?: Json
-          created_at?: string
-          id?: string
-          name?: string
-          owner_id?: string
-          priority_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "priority_agent_agent_id_agent_environment_fkey"
-            columns: ["agent_id", "agent_environment"]
-            isOneToOne: false
-            referencedRelation: "agent"
-            referencedColumns: ["id", "environment"]
-          },
-          {
-            foreignKeyName: "priority_agent_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_agent_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "priority_agent_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_agent_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_child_agent"
-            referencedColumns: ["priority_child_id"]
-          },
-          {
-            foreignKeyName: "priority_agent_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "priority_settings_inherited"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_agent_priority_id_fkey"
-            columns: ["priority_id"]
-            isOneToOne: false
-            referencedRelation: "user_priority"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       priority_contact: {
         Row: {
           archived_at: string | null
@@ -819,7 +606,7 @@ export type Database = {
             foreignKeyName: "priority_contact_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child_agent"
+            referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
           {
@@ -892,7 +679,7 @@ export type Database = {
             foreignKeyName: "priority_settings_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child_agent"
+            referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
           {
@@ -908,6 +695,95 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      priority_twist: {
+        Row: {
+          archived_at: string | null
+          config: Json
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+          priority_id: string
+          twist_environment: Database["public"]["Enums"]["twist_environment"]
+          twist_id: string
+          updated_at: string
+        }
+        Insert: {
+          archived_at?: string | null
+          config?: Json
+          created_at?: string
+          id?: string
+          name: string
+          owner_id: string
+          priority_id: string
+          twist_environment: Database["public"]["Enums"]["twist_environment"]
+          twist_id: string
+          updated_at?: string
+        }
+        Update: {
+          archived_at?: string | null
+          config?: Json
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
+          priority_id?: string
+          twist_environment?: Database["public"]["Enums"]["twist_environment"]
+          twist_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_twist_id_twist_environment_fkey"
+            columns: ["twist_id", "twist_environment"]
+            isOneToOne: false
+            referencedRelation: "twist"
+            referencedColumns: ["id", "environment"]
           },
         ]
       }
@@ -959,7 +835,7 @@ export type Database = {
             foreignKeyName: "priority_user_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child_agent"
+            referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
           {
@@ -1062,7 +938,7 @@ export type Database = {
             foreignKeyName: "series_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child_agent"
+            referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
           {
@@ -1147,7 +1023,7 @@ export type Database = {
             foreignKeyName: "session_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child_agent"
+            referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
           {
@@ -1210,6 +1086,130 @@ export type Database = {
           },
         ]
       }
+      twist: {
+        Row: {
+          archived_at: string | null
+          created_at: string
+          description: string | null
+          environment: Database["public"]["Enums"]["twist_environment"]
+          id: string
+          name: string
+          permissions: Json | null
+          updated_at: string
+          user_id: string | null
+          version: string
+        }
+        Insert: {
+          archived_at?: string | null
+          created_at?: string
+          description?: string | null
+          environment?: Database["public"]["Enums"]["twist_environment"]
+          id: string
+          name: string
+          permissions?: Json | null
+          updated_at?: string
+          user_id?: string | null
+          version: string
+        }
+        Update: {
+          archived_at?: string | null
+          created_at?: string
+          description?: string | null
+          environment?: Database["public"]["Enums"]["twist_environment"]
+          id?: string
+          name?: string
+          permissions?: Json | null
+          updated_at?: string
+          user_id?: string | null
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "twist_id_fkey"
+            columns: ["id"]
+            isOneToOne: false
+            referencedRelation: "twist_admin"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      twist_admin: {
+        Row: {
+          auto_approve: boolean
+          created_at: string
+          id: string
+          priority_id: string | null
+          publisher_id: number | null
+          updated_at: string
+        }
+        Insert: {
+          auto_approve?: boolean
+          created_at?: string
+          id?: string
+          priority_id?: string | null
+          publisher_id?: number | null
+          updated_at?: string
+        }
+        Update: {
+          auto_approve?: boolean
+          created_at?: string
+          id?: string
+          priority_id?: string | null
+          publisher_id?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "twist_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "twist_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "twist_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "twist_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
+            foreignKeyName: "twist_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "priority_settings_inherited"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "twist_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            isOneToOne: false
+            referencedRelation: "user_priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "twist_admin_publisher_id_fkey"
+            columns: ["publisher_id"]
+            isOneToOne: false
+            referencedRelation: "publisher"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       usage: {
         Row: {
           amount: number
@@ -1217,7 +1217,7 @@ export type Database = {
           created_at: string
           hour: string
           id: number
-          priority_agent_id: string
+          priority_twist_id: string
           updated_at: string
         }
         Insert: {
@@ -1226,7 +1226,7 @@ export type Database = {
           created_at?: string
           hour: string
           id?: never
-          priority_agent_id: string
+          priority_twist_id: string
           updated_at?: string
         }
         Update: {
@@ -1235,7 +1235,7 @@ export type Database = {
           created_at?: string
           hour?: string
           id?: never
-          priority_agent_id?: string
+          priority_twist_id?: string
           updated_at?: string
         }
         Relationships: [
@@ -1247,17 +1247,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "usage_priority_agent_id_fkey"
-            columns: ["priority_agent_id"]
+            foreignKeyName: "usage_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
             isOneToOne: false
-            referencedRelation: "priority_agent"
+            referencedRelation: "priority_child_twist"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "usage_priority_agent_id_fkey"
-            columns: ["priority_agent_id"]
+            foreignKeyName: "usage_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
             isOneToOne: false
-            referencedRelation: "priority_child_agent"
+            referencedRelation: "priority_twist"
             referencedColumns: ["id"]
           },
         ]
@@ -1390,12 +1390,8 @@ export type Database = {
         }
         Relationships: []
       }
-      priority_child_agent: {
+      priority_child_twist: {
         Row: {
-          agent_environment:
-            | Database["public"]["Enums"]["agent_environment"]
-            | null
-          agent_id: string | null
           archived_at: string | null
           author_email: string | null
           author_name: string | null
@@ -1407,58 +1403,62 @@ export type Database = {
           owner_id: string | null
           priority_child_id: string | null
           priority_id: string | null
+          twist_environment:
+            | Database["public"]["Enums"]["twist_environment"]
+            | null
+          twist_id: string | null
           updated_at: string | null
           version: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "priority_agent_agent_id_agent_environment_fkey"
-            columns: ["agent_id", "agent_environment"]
-            isOneToOne: false
-            referencedRelation: "agent"
-            referencedColumns: ["id", "environment"]
-          },
-          {
-            foreignKeyName: "priority_agent_priority_id_fkey"
+            foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "priority_agent_priority_id_fkey"
+            foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
             referencedColumns: ["child_id"]
           },
           {
-            foreignKeyName: "priority_agent_priority_id_fkey"
+            foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
           },
           {
-            foreignKeyName: "priority_agent_priority_id_fkey"
+            foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child_agent"
+            referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
           {
-            foreignKeyName: "priority_agent_priority_id_fkey"
+            foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "priority_settings_inherited"
             referencedColumns: ["priority_id"]
           },
           {
-            foreignKeyName: "priority_agent_priority_id_fkey"
+            foreignKeyName: "priority_twist_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
             referencedRelation: "user_priority"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_twist_id_twist_environment_fkey"
+            columns: ["twist_id", "twist_environment"]
+            isOneToOne: false
+            referencedRelation: "twist"
+            referencedColumns: ["id", "environment"]
           },
         ]
       }
@@ -1505,7 +1505,7 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child_agent"
+            referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
           {
@@ -1593,7 +1593,7 @@ export type Database = {
             foreignKeyName: "activity_priority_id_fkey"
             columns: ["priority_id"]
             isOneToOne: false
-            referencedRelation: "priority_child_agent"
+            referencedRelation: "priority_child_twist"
             referencedColumns: ["priority_child_id"]
           },
           {
@@ -1786,13 +1786,13 @@ export type Database = {
       }
       gen_random_uuid_v7: { Args: never; Returns: string }
       generate_path: { Args: { parent?: unknown }; Returns: unknown }
-      get_accessible_agents: {
+      get_accessible_twists: {
         Args: { p_priority_id: string }
         Returns: {
           archived_at: string | null
           created_at: string
           description: string | null
-          environment: Database["public"]["Enums"]["agent_environment"]
+          environment: Database["public"]["Enums"]["twist_environment"]
           id: string
           name: string
           permissions: Json | null
@@ -1802,7 +1802,7 @@ export type Database = {
         }[]
         SetofOptions: {
           from: "*"
-          to: "agent"
+          to: "twist"
           isOneToOne: false
           isSetofReturn: true
         }
@@ -1820,11 +1820,11 @@ export type Database = {
         }[]
       }
       insert_domain: { Args: { email: string }; Returns: number }
-      is_accessible_agent: {
+      is_accessible_twist: {
         Args: {
-          p_agent_environment: Database["public"]["Enums"]["agent_environment"]
-          p_agent_id: string
           p_priority_id: string
+          p_twist_environment: Database["public"]["Enums"]["twist_environment"]
+          p_twist_id: string
         }
         Returns: boolean
       }
@@ -1926,7 +1926,6 @@ export type Database = {
     }
     Enums: {
       activity_type: "task" | "event" | "note"
-      agent_environment: "personal" | "private" | "review" | "public"
       subscription_plan: "free"
       subscription_status:
         | "active"
@@ -1937,6 +1936,7 @@ export type Database = {
         | "incomplete_expired"
         | "unpaid"
       tag_type: "toggle" | "count" | "compute"
+      twist_environment: "personal" | "private" | "review" | "public"
     }
     CompositeTypes: {
       contact_upsert: {
@@ -2584,7 +2584,6 @@ export const Constants = {
   public: {
     Enums: {
       activity_type: ["task", "event", "note"],
-      agent_environment: ["personal", "private", "review", "public"],
       subscription_plan: ["free"],
       subscription_status: [
         "active",
@@ -2596,6 +2595,7 @@ export const Constants = {
         "unpaid",
       ],
       tag_type: ["toggle", "count", "compute"],
+      twist_environment: ["personal", "private", "review", "public"],
     },
   },
   storage: {

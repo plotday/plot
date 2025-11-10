@@ -57,7 +57,7 @@ enum Tag {
   blocked(106, PlotIcon.blocked, 'Blocked', shortcodes: ['blocked', 'x']),
   warning(107, PlotIcon.warning, 'Warning', shortcodes: ['warning']),
   question(108, PlotIcon.question, 'Question', shortcodes: ['question']),
-  agent(109, PlotIcon.agent, 'Agent', shortcodes: ['agent', 'robot_face']),
+  twist(109, PlotIcon.twist, 'Twist', shortcodes: ['twist']),
   star(110, PlotIcon.star, 'Star', shortcodes: ['star']),
   idea(111, PlotIcon.idea, 'Idea', shortcodes: ['idea', 'bulb', 'lightbulb']),
   attachment(
@@ -107,7 +107,7 @@ enum Tag {
   ),
   looking(
     1006,
-    PlotIcon.eyes,
+    PlotIcon.looking,
     'Looking',
     type: TagType.count,
     shortcodes: ['looking', 'eyes'],
@@ -135,7 +135,7 @@ enum Tag {
   ),
   thanks(
     1010,
-    PlotIcon.pray,
+    PlotIcon.thanks,
     'Thanks',
     type: TagType.count,
     shortcodes: ['thanks', 'pray'],
@@ -148,14 +148,6 @@ enum Tag {
     shortcodes: ['smiley'],
   ),
   wave(1012, PlotIcon.wave, 'Wave', type: TagType.count, shortcodes: ['wave']),
-  praise(
-    1013,
-    PlotIcon.raisedHands,
-    'Praise',
-    type: TagType.count,
-    shortcodes: ['praise', 'raised_hands'],
-  ),
-  joy(1014, PlotIcon.joy, 'Joy', type: TagType.count, shortcodes: ['joy']),
   admiration(
     1015,
     PlotIcon.heartEyes,
@@ -165,14 +157,14 @@ enum Tag {
   ),
   applause(
     1016,
-    PlotIcon.clap,
-    'Applause',
+    PlotIcon.praise,
+    'Praise',
     type: TagType.count,
-    shortcodes: ['applause', 'clap'],
+    shortcodes: ['praise', 'applause', 'clap'],
   ),
   cool(
     1017,
-    PlotIcon.sunglasses,
+    PlotIcon.cool,
     'Cool',
     type: TagType.count,
     shortcodes: ['cool', 'sunglasses'],

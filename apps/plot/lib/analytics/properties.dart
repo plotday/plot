@@ -39,7 +39,7 @@ class PropertyKey {
   static const String depthLevel = 'depth_level';
   static const String hasParent = 'has_parent';
   static const String childCount = 'child_count';
-  static const String agentCount = 'agent_count';
+  static const String twistCount = 'twist_count';
 
   // Filter properties
   static const String filterType = 'filter_type';
@@ -82,7 +82,7 @@ class LayoutMode {
 class ActivitySource {
   static const String userCreated = 'user_created';
   static const String synced = 'synced';
-  static const String agent = 'agent';
+  static const String twist = 'twist';
 }
 
 /// Build action execution properties
@@ -222,7 +222,7 @@ Map<String, dynamic> buildPriorityProperties({
   int? depthLevel,
   bool? hasParent,
   int? childCount,
-  int? agentCount,
+  int? twistCount,
 }) {
   final properties = <String, dynamic>{};
 
@@ -238,8 +238,8 @@ Map<String, dynamic> buildPriorityProperties({
     properties[PropertyKey.childCount] = childCount;
   }
 
-  if (agentCount != null) {
-    properties[PropertyKey.agentCount] = agentCount;
+  if (twistCount != null) {
+    properties[PropertyKey.twistCount] = twistCount;
   }
 
   return properties;

@@ -15,7 +15,7 @@ CREATE OR REPLACE FUNCTION public.notify_internal_api_for_activity ()
     AS $function$
 DECLARE
     event_type text;
-    agents_data jsonb;
+    twists_data jsonb;
     users_data jsonb;
     enriched_item jsonb;
     previous_enriched_item jsonb;
@@ -43,11 +43,11 @@ BEGIN
         event_type := 'deleted';
         current_item := OLD;
     END IF;
-    -- Extract agents query into a variable
+    -- Extract twists query into a variable
     SELECT
-        jsonb_agg(jsonb_build_object('id', agent_id, 'environment', agent_environment, 'version', version, 'priority_agent_id', id, 'config', config)) INTO agents_data
+        jsonb_agg(jsonb_build_object('id', twist_id, 'environment', twist_environment, 'version', version, 'priority_twist_id', id, 'config', config)) INTO twists_data
     FROM
-        priority_child_agent
+        priority_child_twist
     WHERE
         priority_child_id = current_item.priority_id
         AND id != current_item.author_id
@@ -57,8 +57,8 @@ BEGIN
         jsonb_agg(jsonb_build_object('user_id', user_id)) INTO users_data
     FROM
         public.get_users_with_priority_access (current_item.priority_id);
-    -- Exit early if no agents or users found
-    IF (agents_data IS NULL OR jsonb_array_length(agents_data) = 0) AND (users_data IS NULL OR jsonb_array_length(users_data) = 0) THEN
+    -- Exit early if no twists or users found
+    IF (twists_data IS NULL OR jsonb_array_length(twists_data) = 0) AND (users_data IS NULL OR jsonb_array_length(users_data) = 0) THEN
         RETURN COALESCE(NEW, OLD);
     END IF;
     -- Build enriched item with author and priority information
@@ -159,9 +159,9 @@ BEGIN
     END IF;
     -- Build the payload
     IF TG_OP = 'UPDATE' THEN
-        payload := jsonb_build_object('type', 'activity', 'event', event_type, 'item', enriched_item, 'previous', previous_enriched_item, 'agents', COALESCE(agents_data, '[]'::jsonb), 'users', COALESCE(users_data, '[]'::jsonb), 'timestamp', extract(epoch FROM now()), 'table', 'activity');
+        payload := jsonb_build_object('type', 'activity', 'event', event_type, 'item', enriched_item, 'previous', previous_enriched_item, 'twists', COALESCE(twists_data, '[]'::jsonb), 'users', COALESCE(users_data, '[]'::jsonb), 'timestamp', extract(epoch FROM now()), 'table', 'activity');
     ELSE
-        payload := jsonb_build_object('type', 'activity', 'event', event_type, 'item', enriched_item, 'agents', COALESCE(agents_data, '[]'::jsonb), 'users', COALESCE(users_data, '[]'::jsonb), 'timestamp', extract(epoch FROM now()), 'table', 'activity');
+        payload := jsonb_build_object('type', 'activity', 'event', event_type, 'item', enriched_item, 'twists', COALESCE(twists_data, '[]'::jsonb), 'users', COALESCE(users_data, '[]'::jsonb), 'timestamp', extract(epoch FROM now()), 'table', 'activity');
     END IF;
     api_url := get_api_root () || '/update';
     hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
@@ -206,8 +206,8 @@ BEGIN
     END IF;
     -- Build enriched item
     enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'created_by', current_item.created_by, 'root', current_item.root, 'archived_at', current_item.archived_at, 'title', current_item.title, 'path', current_item.path, 'updated_by', current_item.updated_by);
-    -- Build the payload (no agents for priority)
-    payload := jsonb_build_object('type', 'priority', 'event', event_type, 'item', enriched_item, 'agents', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'priority');
+    -- Build the payload (no twists for priority)
+    payload := jsonb_build_object('type', 'priority', 'event', event_type, 'item', enriched_item, 'twists', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'priority');
     api_url := get_api_root () || '/update';
     hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
     signature := encode(extensions.hmac(convert_to(payload::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');
@@ -251,8 +251,8 @@ BEGIN
     END IF;
     -- Build enriched item
     enriched_item := jsonb_build_object('id', current_item.id, 'created_at', current_item.created_at, 'updated_at', current_item.updated_at, 'archived_at', current_item.archived_at, 'user_id', current_item.user_id, 'priority_id', current_item.priority_id, 'at', current_item.at, 'precedence', current_item.precedence, 'pomodoro', current_item.pomodoro, 'pomodoro_at', current_item.pomodoro_at, 'updated_by', current_item.updated_by);
-    -- Build the payload (no agents for session)
-    payload := jsonb_build_object('type', 'session', 'event', event_type, 'item', enriched_item, 'agents', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'session');
+    -- Build the payload (no twists for session)
+    payload := jsonb_build_object('type', 'session', 'event', event_type, 'item', enriched_item, 'twists', '[]'::jsonb, 'users', users_data, 'timestamp', extract(epoch FROM now()), 'table', 'session');
     api_url := get_api_root () || '/update';
     hmac_secret := COALESCE(current_setting('plot.api_hmac_secret', TRUE), 'dev-not-secret');
     signature := encode(extensions.hmac(convert_to(payload::text, 'UTF8'), hmac_secret::bytea, 'sha256'), 'hex');

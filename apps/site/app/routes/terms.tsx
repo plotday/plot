@@ -185,26 +185,26 @@ export default function Terms() {
           performance of any Software. You may not reproduce or redistribute any
           software except in accordance with the EULA or these Terms of Use.
         </p>
-        <h2 id="agents">AGENTS</h2>
+        <h2 id="extnesions">EXTENSIONS</h2>
         <p>
-          Plot allows you to optionally install agents to extend functionality.
-          Agents come in three types: (1) agents provided by Plot, (2) agents
-          you create yourself, and (3) agents published by other users
-          ("Published Agents"). Installing an agent is always your choice and
-          requires your explicit action.
+          Plot allows you to optionally install extensions called Twists to
+          extend functionality. Twists come in three types: (1) Twists provided
+          by Plot, (2) Twists you create yourself, and (3) Twists published by
+          other users ("Published Twists"). Installing a Twist is always your
+          choice and requires your explicit action.
         </p>
         <p>
-          When you install an agent, it may access your data within Plot and
-          may synchronize information between Plot and external systems. For
-          example, a project management agent might create items in Plot for
+          When you install a Twist, it may access your data within Plot and may
+          synchronize information between Plot and external systems. For
+          example, a project management Twist might create items in Plot for
           each task in your project management app, and when you add a response
           in Plot, it might add that response in the external app. You grant
-          these permissions when you install the agent.
+          these permissions when you install the Twist.
         </p>
-        <h3 id="published-agents">Published Agents</h3>
+        <h3 id="published-extensions">Published Extensions</h3>
         <p>
-          If you create and publish an agent for others to use, you agree that
-          your agent will not:
+          If you create and publish a Twist for others to use, you agree that
+          your Twist will not:
         </p>
         <ul>
           <li>
@@ -236,24 +236,24 @@ export default function Terms() {
           </li>
         </ul>
         <p>
-          As a publisher of an agent, you are responsible for its behavior and
-          any consequences of its use. As a user installing an agent, you
-          acknowledge that the agent will operate according to the permissions
-          you grant it, and you should review what an agent does before
+          As a publisher of a Twist, you are responsible for its behavior and
+          any consequences of its use. As a user installing a Twist, you
+          acknowledge that the Twist will operate according to the permissions
+          you grant it, and you should review what a Twist does before
           installing it.
         </p>
         <p>
-          We reserve the right to review, disable, or remove any Published
-          Agent that violates these terms or poses risks to users or the
-          Service. We are not responsible for reviewing all Published Agents
-          before they are made available, and we make no guarantees about their
-          safety, functionality, or compliance with these terms. Published
-          Agents are provided "as is" and your use of them is at your own risk.
+          We reserve the right to review, disable, or remove any Published Twist
+          that violates these terms or poses risks to users or the Service. We
+          are not responsible for reviewing all Published Twists before they are
+          made available, and we make no guarantees about their safety,
+          functionality, or compliance with these terms. Published Twists are
+          provided "as is" and your use of them is at your own risk.
         </p>
         <p>
           To the maximum extent permitted by law, Plot is not liable for any
-          damages, losses, or issues caused by agents created or published by
-          users, including Published Agents you install or create.
+          damages, losses, or issues caused by Twists created or published by
+          users, including Published Twists you install or create.
         </p>
         <p>
           <strong>PROHIBITED ACTIVITIES</strong>
@@ -299,7 +299,7 @@ export default function Terms() {
           </li>
           <li>
             <p>
-              Publish or distribute agents that engage in illegal activity,
+              Publish or distribute Twists that engage in illegal activity,
               cause harm to users or systems, behave deceptively, or violate
               these Terms of Use or the terms of any third-party services.
             </p>
@@ -368,7 +368,7 @@ export default function Terms() {
           <li>
             <p>
               Harass, annoy, intimidate, or threaten any of our employees or
-              agents engaged in providing any portion of the Service to you.
+              Twists engaged in providing any portion of the Service to you.
             </p>
           </li>
           <li>
@@ -753,11 +753,12 @@ export default function Terms() {
           PARTY TO OR IN ANY WAY BE RESPONSIBLE FOR MONITORING ANY TRANSACTION
           BETWEEN YOU AND ANY THIRD-PARTY PROVIDERS OF PRODUCTS OR SERVICES.
           SIMILARLY, WE DO NOT WARRANT, ENDORSE, GUARANTEE, OR ASSUME
-          RESPONSIBILITY FOR ANY AGENTS CREATED OR PUBLISHED BY USERS, AND WE
-          ARE NOT RESPONSIBLE FOR THEIR BEHAVIOR, FUNCTIONALITY, SAFETY, OR ANY
-          DAMAGES OR LOSSES RESULTING FROM THEIR USE. AS WITH THE PURCHASE OF A
-          PRODUCT OR SERVICE THROUGH ANY MEDIUM OR IN ANY ENVIRONMENT, YOU
-          SHOULD USE YOUR BEST JUDGMENT AND EXERCISE CAUTION WHERE APPROPRIATE.
+          RESPONSIBILITY FOR ANY EXTENSIONS (TWISTS) CREATED OR PUBLISHED BY
+          USERS, AND WE ARE NOT RESPONSIBLE FOR THEIR BEHAVIOR, FUNCTIONALITY,
+          SAFETY, OR ANY DAMAGES OR LOSSES RESULTING FROM THEIR USE. AS WITH THE
+          PURCHASE OF A PRODUCT OR SERVICE THROUGH ANY MEDIUM OR IN ANY
+          ENVIRONMENT, YOU SHOULD USE YOUR BEST JUDGMENT AND EXERCISE CAUTION
+          WHERE APPROPRIATE.
         </p>
         <h2 id="limitations-of-liability">LIMITATIONS OF LIABILITY</h2>
         <p>
@@ -788,7 +789,7 @@ export default function Terms() {
           in these Terms of Use; (5) your violation of the rights of a third
           party, including but not limited to intellectual property rights; (6)
           any overt harmful act toward any other user of the Service with whom
-          you connected via the Service; or (7) any agents you create or
+          you connected via the Service; or (7) any Twists you create or
           publish, including their behavior, functionality, and any consequences
           of their use by you or others. Notwithstanding the foregoing, we
           reserve the right, at your expense, to assume the exclusive defense
@@ -873,7 +874,7 @@ export default function Terms() {
         </p>
         <p>Waterloo, Ontario, Canada</p>
         <p>info@plot.day</p>
-        <p>These terms are effective as of February 29, 2020.</p>
+        <p>These terms are effective as of November 9, 2025.</p>
       </TypographyStylesProvider>
     </Container>
   );

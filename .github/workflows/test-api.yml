@@ -5,10 +5,10 @@ on:
     branches:
       - main
     paths:
-      - 'workers/api/**'
-      - 'libs/**'
-      - 'public/builder/**'
-      - '.github/workflows/test-api.yml'
+      - "workers/api/**"
+      - "libs/**"
+      - "public/twister/**"
+      - ".github/workflows/test-api.yml"
 
 jobs:
   test:
@@ -33,9 +33,9 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Build SDK
+      - name: Build Twister
         run: |
-          cd public/builder
+          cd public/twister
           pnpm install --frozen-lockfile
           pnpm build
 

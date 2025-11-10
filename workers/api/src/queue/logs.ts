@@ -1,8 +1,8 @@
 import type { PostHog } from "posthog-node";
 
-import type { Callback } from "@plotday/agent/tools/callbacks";
+import type { Callback } from "@plotday/twister/tools/callbacks";
 
-import { Callbacks } from "../agent/tools/callbacks";
+import { Callbacks } from "../twist/tools/callbacks";
 import { type Bindings, type LogMessage } from "../env";
 
 export async function processLogs(
@@ -10,26 +10,26 @@ export async function processLogs(
   env: Bindings,
   postHog: PostHog
 ): Promise<void> {
-  // Group logs by agent_root_id
-  const logsByAgent = new Map<string, LogMessage[]>();
+  // Group logs by twist_root_id
+  const logsByTwist = new Map<string, LogMessage[]>();
 
   for (const message of batch.messages) {
-    const { agentRootId } = message.body;
-    if (!logsByAgent.has(agentRootId)) {
-      logsByAgent.set(agentRootId, []);
+    const { twistRootId } = message.body;
+    if (!logsByTwist.has(twistRootId)) {
+      logsByTwist.set(twistRootId, []);
     }
-    logsByAgent.get(agentRootId)!.push(message.body);
+    logsByTwist.get(twistRootId)!.push(message.body);
   }
 
-  // Process each agent's logs
-  for (const [agentRootId, logs] of logsByAgent.entries()) {
+  // Process each twist's logs
+  for (const [twistRootId, logs] of logsByTwist.entries()) {
     try {
-      // Get the LogSubscriptions Durable Object for this agent (sharded by agentRootId)
-      const logSubscriptionsId = env.LOG_SUBSCRIPTIONS.idFromName(agentRootId);
+      // Get the LogSubscriptions Durable Object for this twist (sharded by twistRootId)
+      const logSubscriptionsId = env.LOG_SUBSCRIPTIONS.idFromName(twistRootId);
       const logSubscriptions = env.LOG_SUBSCRIPTIONS.get(logSubscriptionsId);
 
-      // Get subscribers for this agent
-      const subscribers = await logSubscriptions.getSubscribers(agentRootId);
+      // Get subscribers for this twist
+      const subscribers = await logSubscriptions.getSubscribers(twistRootId);
 
       // Convert logs to the format expected by the callback
       const formattedLogs = logs.map((log) => ({
@@ -54,7 +54,7 @@ export async function processLogs(
               error
             );
             postHog.captureException(error as Error, undefined, {
-              agent_root_id: agentRootId,
+              twist_root_id: twistRootId,
               queue: batch.queue,
             });
           }
@@ -63,23 +63,23 @@ export async function processLogs(
 
       // Also send to any active log streams (for API clients)
       try {
-        const logStreamId = env.LOG_STREAM.idFromName(agentRootId);
+        const logStreamId = env.LOG_STREAM.idFromName(twistRootId);
         const logStream = env.LOG_STREAM.get(logStreamId);
         await logStream.sendLogs(logs);
       } catch (error) {
         console.error(
-          `Failed to send logs to stream for agent ${agentRootId}:`,
+          `Failed to send logs to stream for twist ${twistRootId}:`,
           error
         );
         postHog.captureException(error as Error, undefined, {
-          agent_root_id: agentRootId,
+          twist_root_id: twistRootId,
           queue: batch.queue,
         });
       }
     } catch (error) {
-      console.error(`Error processing logs for agent ${agentRootId}:`, error);
+      console.error(`Error processing logs for twist ${twistRootId}:`, error);
       postHog.captureException(error as Error, undefined, {
-        agent_root_id: agentRootId,
+        twist_root_id: twistRootId,
         queue: batch.queue,
       });
     }

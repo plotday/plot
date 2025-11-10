@@ -15,7 +15,7 @@ class PriorityState extends Equatable {
     bool showArchived = false,
     List<AgendaItem>? agendaItems,
     List<Tag> filter = const [],
-    List<PriorityAgent> agents = const [],
+    List<PriorityTwist> twists = const [],
   }) {
     final agenda = agendaItems ?? _makeAgenda(schedule, context: context);
 
@@ -50,7 +50,7 @@ class PriorityState extends Equatable {
       previous: previous,
       showArchived: showArchived,
       filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
-      agents: agents.isNotEmpty ? List.unmodifiable(agents) : agents,
+      twists: twists.isNotEmpty ? List.unmodifiable(twists) : twists,
     );
   }
 
@@ -66,7 +66,7 @@ class PriorityState extends Equatable {
     this.first = 0,
     this.showArchived = false,
     this.filter = const [],
-    this.agents = const [],
+    this.twists = const [],
   });
 
   final Priority context;
@@ -80,7 +80,7 @@ class PriorityState extends Equatable {
   final bool showArchived;
   final List<AgendaItem> agendaItems;
   final List<Tag> filter;
-  final List<PriorityAgent> agents;
+  final List<PriorityTwist> twists;
 
   bool get doneStart => range != null && previous == null;
   bool get doneEnd => range != null && next == null;
@@ -163,7 +163,7 @@ class PriorityState extends Equatable {
     bool? showArchived,
     List<AgendaItem>? agendaItems,
     List<Tag>? filter,
-    List<PriorityAgent>? agents,
+    List<PriorityTwist>? twists,
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -186,9 +186,9 @@ class PriorityState extends Equatable {
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
           : this.filter,
-      agents: agents != null
-          ? (agents.isNotEmpty ? List.unmodifiable(agents) : agents)
-          : this.agents,
+      twists: twists != null
+          ? (twists.isNotEmpty ? List.unmodifiable(twists) : twists)
+          : this.twists,
     );
   }
 
@@ -205,12 +205,12 @@ class PriorityState extends Equatable {
     showArchived,
     agendaItems,
     filter,
-    agents,
+    twists,
   ];
 
   @override
   String toString() {
-    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, draft: $draft, first: $first, range: $range, showArchived: $showArchived, filter: $filter, agents: ${agents.length})';
+    return 'PriorityState(context: ${context.title}, activity: ${activity?.title}, draft: $draft, first: $first, range: $range, showArchived: $showArchived, filter: $filter, twists: ${twists.length})';
   }
 
   /// Returns the index of the first DateAgendaItem on or after the given date.

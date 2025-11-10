@@ -1,0 +1,120 @@
+name: Deploy Twists
+
+env:
+  TWISTS: "plot"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "twists/**"
+      - "libs/**"
+      - "public/twister/**"
+      - ".github/workflows/deploy-twists.yml"
+  workflow_dispatch:
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      twists: ${{ steps.filter.outputs.twists }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          submodules: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Detect if workflow file changed
+        id: workflow_changed
+        run: |
+          if git diff --name-only HEAD~1 | grep -q "^.github/workflows/deploy-twists.yml$"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for affected twists
+        id: filter
+        run: |
+          TWIST_LIST=(${TWISTS//,/ })
+
+          # Deploy all twists when manually triggered
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TWISTS_JSON=$(printf '%s\n' "${TWIST_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
+            echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
+            echo "Manual trigger detected, deploying all twists: $TWISTS_JSON"
+            exit 0
+          fi
+
+          if [ "${{ steps.workflow_changed.outputs.changed }}" = "true" ]; then
+            TWISTS_JSON=$(printf '%s\n' "${TWIST_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
+            echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
+            echo "Workflow file changed, deploying all twists: $TWISTS_JSON"
+            exit 0
+          fi
+
+          TWISTS=()
+          for twist in "${TWIST_LIST[@]}"; do
+            AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=HEAD~1 --head=HEAD --json 2>/dev/null || echo "[]")
+            if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/twist-$twist$"; then
+              TWISTS+=("\"$twist\"")
+            fi
+          done
+
+          if [ ${#TWISTS[@]} -eq 0 ]; then
+            echo "twists=[]" >> $GITHUB_OUTPUT
+            echo "No twists have changes"
+          else
+            TWISTS_JSON=$(printf '%s\n' "${TWISTS[@]}" | jq -s . | tr -d '\n')
+            echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
+            echo "Changed twists: ${TWISTS[*]}"
+          fi
+
+  deploy:
+    needs: check-changes
+    runs-on: ubuntu-latest
+    if: needs.check-changes.outputs.twists != '[]'
+    strategy:
+      matrix:
+        twist: ${{ fromJson(needs.check-changes.outputs.twists) }}
+
+    env:
+      PLOT_DEPLOY_TOKEN: ${{ secrets.PLOT_DEPLOY_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Build Twister
+        run: |
+          cd public/twister
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Install dependencies for ${{ matrix.twist }}
+        run: |
+          cd twists/${{ matrix.twist }}
+          pnpm install --filter="."
+
+      - name: Deploy ${{ matrix.twist }} twist
+        run: |
+          cd twists/${{ matrix.twist }}
+          pnpm plot twist deploy -e review
+        continue-on-error: true

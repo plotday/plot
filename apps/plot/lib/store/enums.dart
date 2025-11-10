@@ -5,7 +5,7 @@ enum TagType { toggle, count, compute }
 
 enum ActivityType { task, event, note }
 
-enum ActorType { user, contact, priorityAgent }
+enum ActorType { user, contact, twistAgent }
 
 
 extension StringToEnum on String {

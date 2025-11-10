@@ -37,26 +37,26 @@ export default function Terms() {
           meeting) are visible to other users with access to that space (e.g.
           other attendees of that meeting).
         </p>
-        <h3 id="agents-and-integrations">Agents and integrations</h3>
+        <h3 id="extensions-and-integrations">Extensions and integrations</h3>
         <p>
-          You may optionally install agents to extend Plot's functionality.
-          These can be agents provided by Plot, agents you create yourself, or
-          agents published by other users. When you install an agent, you
-          explicitly grant it permission to operate.
+          You may optionally install extensions called Twists to extend Plot's
+          functionality. Twists can provided by Plot, created by yourself, or
+          published by other users. When you install a Twist, you explicitly
+          grant it permission to operate.
         </p>
         <p>
-          Agents may access your data within Plot according to the permissions
+          Twists may access your data within Plot according to the permissions
           they request. They may also synchronize information between Plot and
           external systems you authorize. For example, a project management
-          agent might read your tasks from an external app and create
+          Twist might read your tasks from an external app and create
           corresponding items in Plot, and when you update something in Plot, it
           might update the external app as well.
         </p>
         <p>
-          You control which agents you install and can remove them at any time.
-          Only agents you explicitly install have access to your data. We
-          recommend reviewing what an agent does and what permissions it
-          requests before installing it.
+          You control which Twists you install and can remove them at any time.
+          Only Twists you explicitly install have access to your data. We
+          recommend reviewing what a Twist does and what permissions it requests
+          before installing it.
         </p>
         <h3 id="data-from-third-party-services-you-authorize">
           Data from third-party services you authorize
@@ -68,9 +68,9 @@ export default function Terms() {
           processing and fast access.
         </p>
         <p>
-          Additionally, agents you install may connect to third-party services
+          Additionally, Twists you install may connect to third-party services
           you authorize, reading and synchronizing data between those services
-          and Plot. The data accessed depends on the specific agent and the
+          and Plot. The data accessed depends on the specific Twist and the
           permissions you grant when connecting to those services.
         </p>
         <h3 id="information-we-collect-automatically">
@@ -349,7 +349,7 @@ export default function Terms() {
           <br />
           privacy@plot.day
         </p>
-        <p>This policy is effective as of February 29, 2020.</p>
+        <p>This policy is effective as of November 9, 2025.</p>
       </TypographyStylesProvider>
     </Container>
   );

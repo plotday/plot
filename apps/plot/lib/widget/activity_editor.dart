@@ -21,14 +21,14 @@ class ActivityEditor extends StatelessWidget {
             hint: 'Add activity',
             autofocus: true,
             focusNode: focusNode,
-            agents: state.agents,
+            twists: state.twists,
             onSubmitted: (body, {bool alt = false}) async {
               log.info('Adding new activity with body: $body ($alt)');
 
               // Parse mentions from the note (stored as [#@ID])
               final mentions = Activity.parseMentionsFromNote(
                 body,
-                state.agents,
+                state.twists,
               );
 
               final activity = draft.copyWith(
