@@ -13,7 +13,8 @@
         "Broadcast",
         "Usage",
         "Callbacks",
-        "LogSubscriptions"
+        "LogSubscriptions",
+        "AgentBuilder"
       ]
     },
     {
