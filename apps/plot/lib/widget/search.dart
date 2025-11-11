@@ -7,13 +7,16 @@ import 'icon.dart';
 
 /// Toggleable search widget that displays a search icon or input field.
 /// Uses debouncing to avoid excessive queries.
+/// When expanded, it takes the full width of the header.
 class SearchWidget extends StatefulWidget {
   const SearchWidget({
     required this.onSearchChanged,
+    this.onExpandChanged,
     super.key,
   });
 
   final void Function(String) onSearchChanged;
+  final void Function(bool)? onExpandChanged;
 
   @override
   State<SearchWidget> createState() => _SearchWidgetState();
@@ -55,6 +58,7 @@ class _SearchWidgetState extends State<SearchWidget> {
   void _toggle() {
     setState(() {
       _isExpanded = !_isExpanded;
+      widget.onExpandChanged?.call(_isExpanded);
       if (_isExpanded) {
         // Focus the text field when expanding
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -78,8 +82,7 @@ class _SearchWidgetState extends State<SearchWidget> {
   @override
   Widget build(BuildContext context) {
     if (_isExpanded) {
-      return SizedBox(
-        width: 200,
+      return Expanded(
         child: Row(
           children: [
             Expanded(

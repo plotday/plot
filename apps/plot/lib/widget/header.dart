@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' hide Action, Actions;
 import 'package:forui/forui.dart';
 import 'package:auto_route/auto_route.dart';
@@ -37,7 +39,7 @@ class Header extends StatefulWidget {
     this.main,
     this.title,
     this.actions = const [],
-    this.customSuffixes = const [],
+    this.onSearchChanged,
     this.modal = false,
     this.position,
     super.key,
@@ -46,7 +48,7 @@ class Header extends StatefulWidget {
   final Widget? main;
   final String? title;
   final List<Action> actions;
-  final List<Widget> customSuffixes;
+  final void Function(String)? onSearchChanged;
   final bool modal;
   final HeaderPosition? position;
 
@@ -57,11 +59,27 @@ class Header extends StatefulWidget {
 class _HeaderState extends State<Header> with RouteAware {
   late final RouteObserver<ModalRoute<dynamic>> _routeObserver;
   bool _canPop = false;
+  bool _searchExpanded = false;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  Timer? _debounceTimer;
 
   @override
   void initState() {
     super.initState();
     _routeObserver = RouteObserver<ModalRoute<dynamic>>();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    // Cancel previous timer
+    _debounceTimer?.cancel();
+
+    // Create new timer with 250ms delay
+    _debounceTimer = Timer(const Duration(milliseconds: 250), () {
+      final search = _searchController.text;
+      widget.onSearchChanged?.call(search);
+    });
   }
 
   @override
@@ -77,6 +95,10 @@ class _HeaderState extends State<Header> with RouteAware {
   @override
   void dispose() {
     _routeObserver.unsubscribe(this);
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
@@ -144,8 +166,35 @@ class _HeaderState extends State<Header> with RouteAware {
               onPress: () => context.router.maybePop(),
               child: Icon(PlotIcon.back, size: 14),
             ),
-          // Main content or title
-          if ((widget.main ?? widget.title) != null)
+          // If search is expanded, show the search field here
+          if (_searchExpanded && widget.onSearchChanged != null)
+            Expanded(
+              child: Focus(
+                onKeyEvent: (node, event) {
+                  if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+                    setState(() {
+                      _searchExpanded = false;
+                    });
+                    widget.onSearchChanged!('');
+                    return KeyEventResult.handled;
+                  }
+                  return KeyEventResult.ignored;
+                },
+                child: FTextField(
+                  controller: _searchController,
+                  focusNode: _searchFocusNode,
+                  hint: 'Search...',
+                  style: (style) => style.copyWith(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          // Main content or title (hidden when search is expanded)
+          if (!_searchExpanded && (widget.main ?? widget.title) != null)
             Expanded(
               child:
                   widget.main ??
@@ -159,7 +208,27 @@ class _HeaderState extends State<Header> with RouteAware {
 
         // Build suffixes with position-specific right buttons
         final suffixes = <Widget>[
-          ...widget.customSuffixes,
+          // Add search button/close button if onSearchChanged is provided
+          if (widget.onSearchChanged != null)
+            FButton.icon(
+              style: FButtonStyle.ghost(),
+              onPress: () {
+                setState(() {
+                  _searchExpanded = !_searchExpanded;
+                  if (_searchExpanded) {
+                    // Focus the text field when expanding
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _searchFocusNode.requestFocus();
+                    });
+                  } else {
+                    // Clear search when collapsing
+                    _searchController.clear();
+                    widget.onSearchChanged!('');
+                  }
+                });
+              },
+              child: Icon(_searchExpanded ? PlotIcon.close : PlotIcon.search, size: 14),
+            ),
           ...widget.actions.asMap().entries.map((entry) {
             final key = ValueKey(Object.hash(entry.value.hashCode, entry.key));
             return Button.icon(entry.value, key: key);
