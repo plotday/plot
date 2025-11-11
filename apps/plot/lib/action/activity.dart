@@ -8,6 +8,8 @@ import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/state/priority.dart';
+import 'logging.dart';
 
 abstract class ActivityAction extends Action {
   ActivityAction(
@@ -64,6 +66,8 @@ class ChangeCurrentActivity extends ActivityAction {
   Future<ActionReturn> run(BuildContext context) async {
     // HACK: We need to make the panel visible before navigating to it
     context.read<LayoutBloc>().setRightPanelVisible(true);
+    // Update PriorityBloc to track current activity for navigation
+    context.read<PriorityBloc>().setActivity(activity!);
     return ActionRoute(
       PriorityRoute(
         priorityIdString: activity!.priority.id.toShortString(),
@@ -96,6 +100,87 @@ class NewActivity extends Action {
         children: [NewActivityRoute()],
       ),
     );
+  }
+}
+
+class NextActivityThread extends Action {
+  NextActivityThread()
+    : super(
+        title: 'Next Activity Thread',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.viewed,
+        shortcut: const SingleActivator(
+          LogicalKeyboardKey.arrowDown,
+          meta: true,
+        ),
+        icon: PlotIcon.next,
+      );
+
+  @override
+  Future<ActionReturn> run(BuildContext context) async {
+    try {
+      final priorityBloc = context.read<PriorityBloc>();
+
+      // Search for next root activity
+      int offset = 1;
+      while (offset < 100) {
+        // Safety limit
+        final item = priorityBloc.getAgendaItem(offset);
+        if (item == null) {
+          return const ActionSkipped();
+        }
+
+        final activity = item.iff<Activity>(activity: (a) => a);
+        if (activity != null && activity.path.isRoot) {
+          return ChangeCurrentActivity(activity).run(context);
+        }
+        offset++;
+      }
+
+      return const ActionSkipped();
+    } catch (e, stackTrace) {
+      log.severe('Error in NextActivityThread: $e', e, stackTrace);
+      return const ActionSkipped();
+    }
+  }
+}
+
+class PreviousActivityThread extends Action {
+  PreviousActivityThread()
+    : super(
+        title: 'Previous Activity Thread',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.viewed,
+        shortcut: const SingleActivator(LogicalKeyboardKey.arrowUp, meta: true),
+        icon: PlotIcon.previous,
+      );
+
+  @override
+  Future<ActionReturn> run(BuildContext context) async {
+    try {
+      final priorityBloc = context.read<PriorityBloc>();
+
+      // Search for previous root activity
+      int offset = -1;
+      while (offset > -100) {
+        // Safety limit
+        final item = priorityBloc.getAgendaItem(offset);
+        if (item == null) {
+          return const ActionSkipped();
+        }
+
+        final activity = item.iff<Activity>(activity: (a) => a);
+        if (activity != null && activity.path.isRoot) {
+          return ChangeCurrentActivity(activity).run(context);
+        }
+        offset--;
+      }
+
+      return const ActionSkipped();
+    } catch (e, stackTrace) {
+      log.severe('Error in PreviousActivityThread: $e', e, stackTrace);
+      return const ActionSkipped();
+    }
   }
 }
 

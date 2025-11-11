@@ -27,6 +27,10 @@ class PlotIcon {
   static const sidebarLeft = FontAwesomeIcons.sidebar;
   static const sidebarRight = FontAwesomeIcons.sidebarFlip;
   static const search = FontAwesomeIcons.magnifyingGlass;
+  static const pin = FontAwesomeIcons.thumbtackAngle;
+  static const unpin = FontAwesomeIcons.thumbtackAngleSlash;
+  static const next = FontAwesomeIcons.arrowDownToLine;
+  static const previous = FontAwesomeIcons.arrowUpToLine;
 
   // Tags
   static const now = FontAwesomeIcons.play;

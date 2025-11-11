@@ -298,7 +298,7 @@ class StaticActionGroup extends ActionGroup {
 
 class Actions {
   const Actions({String? prompt, required this.groups, this.secondaryAction})
-    : prompt = prompt ?? 'Run a action';
+    : prompt = prompt ?? 'Run an action';
 
   final String prompt;
   final List<ActionGroup> groups;
@@ -362,7 +362,7 @@ class ActionScopeState extends State<ActionScope> {
         <ShortcutActivator, VoidCallback>{
           const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
               Actions(
-                prompt: 'Run a action',
+                prompt: 'Run an action',
                 groups: ActionRegistry.of(context).actions,
               ).show(context),
         },

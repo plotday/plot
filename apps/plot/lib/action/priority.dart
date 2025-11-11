@@ -258,6 +258,8 @@ List<Action> priorityActions(Priority priority) => [
 List<Action> currentPriorityActions(Priority priority) => [
   ...prioritySecondaryActions(priority),
   NewActivity(),
+  NextActivityThread(),
+  PreviousActivityThread(),
   PickCurrentPriority(),
 ];
 
@@ -267,7 +269,7 @@ class SetTopPriority extends Action {
         title: add ? 'Add to Top Priorities' : 'Remove From Top Priorities',
         eventObject: EventObject.priority,
         eventAction: add ? EventAction.pinned : EventAction.unpinned,
-        icon: add ? PlotIcon.add : PlotIcon.remove,
+        icon: add ? PlotIcon.pin : PlotIcon.unpin,
       );
 
   final Priority priority;

@@ -278,9 +278,12 @@ class EditorState extends State<Editor> {
     final mention = _mentionDetector.composingMention;
 
     // Filter twists based on composing text
-    final hasMatches = mention != null &&
-        widget.twists.any((twist) =>
-            twist.name.toLowerCase().contains(mention.text.toLowerCase()));
+    final hasMatches =
+        mention != null &&
+        widget.twists.any(
+          (twist) =>
+              twist.name.toLowerCase().contains(mention.text.toLowerCase()),
+        );
 
     if (hasMatches && !_mentionOverlayController.isShowing) {
       _mentionOverlayController.show();
@@ -773,11 +776,21 @@ ExecutionInstruction _bubbleSpecialKeys({
     return ExecutionInstruction.continueExecution;
   }
 
-  if (keyEvent.logicalKey != LogicalKeyboardKey.escape) {
-    return ExecutionInstruction.continueExecution;
+  if (keyEvent.logicalKey == LogicalKeyboardKey.escape) {
+    return ExecutionInstruction.blocked;
   }
 
-  return ExecutionInstruction.blocked;
+  // Check if this is Cmd+Arrow (meta key on macOS, ctrl on Windows/Linux)
+  final isMetaPressed =
+      HardwareKeyboard.instance.isMetaPressed ||
+      HardwareKeyboard.instance.isControlPressed;
+  if (isMetaPressed &&
+      (keyEvent.logicalKey == LogicalKeyboardKey.arrowUp ||
+          keyEvent.logicalKey == LogicalKeyboardKey.arrowDown)) {
+    return ExecutionInstruction.blocked;
+  }
+
+  return ExecutionInstruction.continueExecution;
 }
 
 ExecutionInstruction _handlePunctuationAfterMention({

@@ -161,8 +161,87 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   void setActivity(Activity activity) {
-    if (state.activity == activity) return;
+    if (state.activity == activity) {
+      return;
+    }
     emit(state.copyWith(activity: activity));
+  }
+
+  /// Gets an agenda item relative to the current activity by offset.
+  ///
+  /// [offset] - Positive for forward, negative for backward (e.g., +1 = next, -1 = previous)
+  /// [includeActivity] - Include ActivityAgendaItem in navigation (default: true)
+  /// [includePriority] - Include PriorityAgendaItem in navigation (default: false)
+  /// [includeDate] - Include DateAgendaItem in navigation (default: false)
+  ///
+  /// Returns the agenda item at the offset position. Boundary behavior:
+  /// - If offset would go out of bounds but items exist in that direction, returns the furthest item
+  /// - If already at the furthest item and trying to move further, returns null
+  /// - Returns null if no current activity is set
+  AgendaItem? getAgendaItem(
+    int offset, {
+    bool includeActivity = true,
+    bool includePriority = false,
+    bool includeDate = false,
+  }) {
+    if (state.activity == null) {
+      return null;
+    }
+
+    // Find current activity index in agendaItems
+    int currentIndex = -1;
+    for (int i = 0; i < state.agendaItems.length; i++) {
+      final activity = state.agendaItems[i].iff<Activity>(activity: (a) => a);
+      if (activity?.id == state.activity!.id) {
+        currentIndex = i;
+        break;
+      }
+    }
+
+    if (currentIndex == -1) {
+      return null;
+    }
+
+    // Helper to check if an item matches the filter criteria
+    bool matchesFilter(AgendaItem item) {
+      return item.iff<bool>(
+            activity: (_) => includeActivity,
+            priority: (_) => includePriority,
+            date: (_) => includeDate,
+          ) ==
+          true;
+    }
+
+    // Find the furthest valid item in the direction of offset
+    final direction = offset > 0 ? 1 : -1;
+    int targetIndex = currentIndex;
+    int moved = 0;
+    int? lastValidIndex;
+
+    while (moved != offset) {
+      final nextIndex = targetIndex + direction;
+
+      // Check if we've reached the bounds
+      if (nextIndex < 0 || nextIndex >= state.agendaItems.length) {
+        // If we found at least one valid item, return it
+        if (lastValidIndex != null && lastValidIndex != currentIndex) {
+          return state.agendaItems[lastValidIndex];
+        }
+        // If we're already at the boundary and trying to move further, return null
+        return null;
+      }
+
+      targetIndex = nextIndex;
+
+      // Check if this item matches our filter
+      if (matchesFilter(state.agendaItems[targetIndex])) {
+        lastValidIndex = targetIndex;
+        moved += direction;
+      }
+    }
+
+    // Successfully moved the full offset
+    return state.agendaItems[targetIndex];
   }
 
   void _loadPriority() {
