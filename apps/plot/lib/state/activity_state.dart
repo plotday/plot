@@ -8,6 +8,7 @@ class ActivityState extends Equatable {
     List<ActivityDateGroup> activityGroups = const [],
     this.showArchived = false,
     List<Tag> filter = const [],
+    this.search = '',
   }) : activityGroups = activityGroups.isNotEmpty
            ? List.unmodifiable(activityGroups)
            : activityGroups,
@@ -21,6 +22,7 @@ class ActivityState extends Equatable {
   final List<ActivityDateGroup> activityGroups;
   final bool showArchived;
   final List<Tag> filter;
+  final String search;
 
   ActivityState copyWith({
     Priority? context,
@@ -29,6 +31,7 @@ class ActivityState extends Equatable {
     List<ActivityDateGroup>? activityGroups,
     bool? showArchived,
     List<Tag>? filter,
+    String? search,
   }) {
     return ActivityState(
       activity: activity ?? this.activity,
@@ -42,6 +45,7 @@ class ActivityState extends Equatable {
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
           : this.filter,
+      search: search ?? this.search,
     );
   }
 
@@ -52,11 +56,12 @@ class ActivityState extends Equatable {
     activityGroups,
     showArchived,
     filter,
+    search,
   ];
 
   @override
   String toString() {
-    return 'ActivityState(activity: ${activity.title}, draft: $draft, activityGroups: ${activityGroups.length}, showArchived: $showArchived, filter: $filter)';
+    return 'ActivityState(activity: ${activity.title}, draft: $draft, activityGroups: ${activityGroups.length}, showArchived: $showArchived, filter: $filter, search: $search)';
   }
 }
 

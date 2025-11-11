@@ -30,6 +30,12 @@ class ActivityBloc extends Cubit<ActivityState> {
     _loadActivities();
   }
 
+  void updateSearch(String search) {
+    log.info('Updating search to "$search"');
+    emit(state.copyWith(search: search));
+    _loadActivities();
+  }
+
   @override
   Future<void> close() {
     for (final subscription in _subscriptions) {
@@ -81,6 +87,7 @@ class ActivityBloc extends Cubit<ActivityState> {
         path: state.activity.path,
         deleted: state.showArchived,
         filter: state.filter.isNotEmpty ? state.filter : null,
+        search: state.search.isNotEmpty ? state.search : null,
       ).listen((activities) {
         // Sort activities by creation/completion date in reverse chronological order
         final sortedActivities = List<Activity>.from(activities);

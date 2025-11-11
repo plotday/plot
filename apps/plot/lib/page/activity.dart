@@ -77,6 +77,12 @@ class ActivityPage extends StatelessWidget {
                 translucent: true,
                 header: Header(
                   title: state.activity.displayTitle,
+                  customSuffixes: [
+                    SearchWidget(
+                      onSearchChanged: (search) =>
+                          context.read<ActivityBloc>().updateSearch(search),
+                    ),
+                  ],
                   actions: [
                     PickFilterAction(),
                     ShowActivityActions(state.activity),

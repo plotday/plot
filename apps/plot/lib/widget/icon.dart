@@ -15,12 +15,18 @@ class PlotIcon {
   static const activity = FontAwesomeIcons.listCheck;
   static const open = FontAwesomeIcons.arrowRight;
   static const menu = FontAwesomeIcons.ellipsisVertical;
+  static const hamburgerMenu = FontAwesomeIcons.bars;
+  static const close = FontAwesomeIcons.xmark;
+  static const back = FontAwesomeIcons.arrowLeft;
   static const settings = FontAwesomeIcons.gear;
   static const event = FontAwesomeIcons.calendar;
   static const signOut = FontAwesomeIcons.rightFromBracket;
   static const sync = FontAwesomeIcons.arrowsRotate;
   static const filter = FontAwesomeIcons.filter;
   static const move = FontAwesomeIcons.rightLeft;
+  static const sidebarLeft = FontAwesomeIcons.sidebar;
+  static const sidebarRight = FontAwesomeIcons.sidebarFlip;
+  static const search = FontAwesomeIcons.magnifyingGlass;
 
   // Tags
   static const now = FontAwesomeIcons.play;
@@ -37,7 +43,7 @@ class PlotIcon {
   static const volunteer = FontAwesomeIcons.hand;
   static const celebration = FontAwesomeIcons.partyHorn;
   static const waiting = FontAwesomeIcons.hourglassHalf;
-  static const blocked = FontAwesomeIcons.xmark;
+  static const blocked = FontAwesomeIcons.octagonXmark;
   static const warning = FontAwesomeIcons.triangleExclamation;
   static const twist = FontAwesomeIcons.wavesSine;
   static const star = FontAwesomeIcons.star;

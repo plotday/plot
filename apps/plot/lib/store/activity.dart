@@ -804,22 +804,30 @@ class Activity extends Equatable implements Comparable<Activity> {
       query.where(deleted ? a.archivedAt.isNotNull() : a.archivedAt.isNull());
     }
     if (search?.isNotEmpty == true) {
-      // Use FTS5 for full-text search
+      // Use FTS5 for full-text search with prefix matching
       final fts = Store.get.alias(Store.get.activityFts, 'fts');
-      // Escape FTS5 special characters and SQL quotes to prevent syntax errors
-      final escapedSearch = search!
-          .replaceAll("'", "''") // Escape single quotes for SQL
-          .replaceAll('"', '""') // Escape double quotes for FTS5
-          .replaceAll('*', ' ')
-          .replaceAll('(', ' ')
-          .replaceAll(')', ' ');
-      query = query.join([
-        innerJoin(
-          fts,
-          fts.activityId.equalsExp(a.id) &
-              CustomExpression<bool>("activity_fts MATCH '$escapedSearch'"),
-        ),
-      ]);
+      // Split search into words, escape special characters, and add prefix matching
+      final words = search!
+          .split(RegExp(r'\s+'))
+          .where((word) => word.isNotEmpty)
+          .map((word) => word
+              .replaceAll("'", "''") // Escape single quotes for SQL
+              .replaceAll('"', '""') // Escape double quotes for FTS5
+              .replaceAll('*', '') // Remove asterisks
+              .replaceAll('(', '') // Remove parentheses
+              .replaceAll(')', ''))
+          .where((word) => word.isNotEmpty)
+          .map((word) => '$word*') // Add prefix matching to each word
+          .join(' '); // AND multiple words together
+      if (words.isNotEmpty) {
+        query = query.join([
+          innerJoin(
+            fts,
+            fts.activityId.equalsExp(a.id) &
+                CustomExpression<bool>("activity_fts MATCH '$words'"),
+          ),
+        ]);
+      }
     }
     if (self == false) {
       if (id != null) {

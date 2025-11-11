@@ -1,12 +1,12 @@
 import 'package:flutter/widgets.dart' hide Action, Actions;
 import 'package:forui/forui.dart';
 import 'package:auto_route/auto_route.dart';
-import 'package:flutter/material.dart' show Icons;
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/action/action.dart';
 import 'package:plot/state/layout.dart';
 import 'button.dart';
+import 'icon.dart';
 import 'window.dart';
 
 enum HeaderPosition { left, middle, right }
@@ -132,15 +132,17 @@ class _HeaderState extends State<Header> with RouteAware {
           if (layoutState.multiPanel &&
               position == HeaderPosition.middle &&
               !layoutState.leftPanelVisible)
-            FTappable(
+            FButton.icon(
+              style: FButtonStyle.ghost(),
               onPress: () => layoutBloc.setLeftPanelVisible(true),
-              child: Icon(Icons.menu, size: 14),
+              child: Icon(PlotIcon.sidebarLeft, size: 14),
             ),
           // Back button for modal/navigation
           if (!widget.modal && _canPop && layoutState.showBackButton)
-            FTappable(
+            FButton.icon(
+              style: FButtonStyle.ghost(),
               onPress: () => context.router.maybePop(),
-              child: Icon(Icons.arrow_back, size: 14),
+              child: Icon(PlotIcon.back, size: 14),
             ),
           // Main content or title
           if ((widget.main ?? widget.title) != null)
@@ -164,25 +166,28 @@ class _HeaderState extends State<Header> with RouteAware {
           }),
           // Left sidebar toggle for left position
           if (position == HeaderPosition.left)
-            FTappable(
+            FButton.icon(
+              style: FButtonStyle.ghost(),
               onPress: () => layoutBloc.setLeftPanelVisible(false),
-              child: Icon(Icons.close, size: 14),
+              child: Icon(PlotIcon.sidebarLeft, size: 14),
             ),
           // Right sidebar toggle for right position
           if (position == HeaderPosition.right)
-            FTappable(
+            FButton.icon(
+              style: FButtonStyle.ghost(),
               onPress: () async {
                 context.read<LayoutBloc>().setRightPanelVisible(false);
                 // Navigate to the parent PriorityRoute by popping the current ActivityRoute
                 await context.router.maybePop();
               },
-              child: Icon(Icons.close, size: 14),
+              child: Icon(PlotIcon.sidebarRight, size: 14),
             ),
           // Modal close button
           if (widget.modal && _canPop)
-            FTappable(
+            FButton.icon(
+              style: FButtonStyle.ghost(),
               onPress: () => context.router.maybePop(),
-              child: Icon(Icons.close, size: 14),
+              child: Icon(PlotIcon.close, size: 14),
             ),
         ];
 

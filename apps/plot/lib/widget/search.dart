@@ -1,16 +1,19 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' show Icons;
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:provider/provider.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/state/priority.dart';
+import 'icon.dart';
 
 /// Toggleable search widget that displays a search icon or input field.
 /// Uses debouncing to avoid excessive queries.
 class SearchWidget extends StatefulWidget {
-  const SearchWidget({super.key});
+  const SearchWidget({
+    required this.onSearchChanged,
+    super.key,
+  });
+
+  final void Function(String) onSearchChanged;
 
   @override
   State<SearchWidget> createState() => _SearchWidgetState();
@@ -45,12 +48,7 @@ class _SearchWidgetState extends State<SearchWidget> {
     // Create new timer with 250ms delay
     _debounceTimer = Timer(const Duration(milliseconds: 250), () {
       final search = _controller.text;
-      try {
-        final priorityBloc = context.read<PriorityBloc>();
-        priorityBloc.updateSearch(search);
-      } on ProviderNotFoundException {
-        // PriorityBloc not in scope
-      }
+      widget.onSearchChanged(search);
     });
   }
 
@@ -69,6 +67,14 @@ class _SearchWidgetState extends State<SearchWidget> {
     });
   }
 
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+      _toggle();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isExpanded) {
@@ -77,31 +83,36 @@ class _SearchWidgetState extends State<SearchWidget> {
         child: Row(
           children: [
             Expanded(
-              child: FTextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                hint: 'Search...',
-                style: (style) => style.copyWith(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+              child: Focus(
+                onKeyEvent: _handleKeyEvent,
+                child: FTextField(
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  hint: 'Search...',
+                  style: (style) => style.copyWith(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                   ),
                 ),
               ),
             ),
             const SizedBox(width: 4),
-            FTappable(
+            FButton.icon(
+              style: FButtonStyle.ghost(),
               onPress: _toggle,
-              child: Icon(Icons.close, size: 14),
+              child: Icon(PlotIcon.close, size: 14),
             ),
           ],
         ),
       );
     }
 
-    return FTappable(
+    return FButton.icon(
+      style: FButtonStyle.ghost(),
       onPress: _toggle,
-      child: Icon(Icons.search, size: 14),
+      child: Icon(PlotIcon.search, size: 14),
     );
   }
 }
