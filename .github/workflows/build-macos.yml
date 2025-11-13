@@ -1,0 +1,307 @@
+name: Build macOS App
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/plot/**"
+      - ".env"
+      - ".github/workflows/build-macos.yml"
+  workflow_dispatch:
+    inputs:
+      skip_notarization:
+        description: "Skip notarization (for testing)"
+        required: false
+        default: "false"
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          SUPABASE_URL: op://Production/Supabase/API/url
+          SUPABASE_ANON_KEY: op://Production/Supabase/API/public key
+          POSTHOG_HOST: op://Production/PostHog/hostname
+          POSTHOG_PROJECT: op://Production/PostHog/username
+          POSTHOG_CLI_KEY: op://Production/PostHog/sourcemaps/credential
+          POSTHOG_API_KEY: op://Production/PostHog/credential
+          GOOGLE_URL: op://Production/Google OAuth/url
+          GOOGLE_CLIENT_ID: op://Production/Google OAuth/username
+          GOOGLE_IOS_CLIENT_ID: op://Production/Google OAuth/iOS/client ID
+          GOOGLE_ANDROID_CLIENT_ID: op://Production/Google OAuth/Android/client ID
+          MICROSOFT_CLIENT_ID: op://Production/Microsoft OAuth/username
+
+          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
+          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
+          R2_ACCESS_KEY_ID: op://Production/cloudflare/build uploads/r2 access key id
+          R2_SECRET_ACCESS_KEY: op://Production/cloudflare/build uploads/r2 secret access key
+          R2_BUCKET_NAME: op://Production/cloudflare/build uploads/r2 bucket name
+
+          APPLE_ID: op://Production/Apple/Signing/apple id
+          APPLE_TEAM_ID: op://Production/Apple/Signing/team id
+          APPLE_APP_SPECIFIC_PASSWORD: op://Production/Apple/Signing/app specific password
+          MACOS_CERTIFICATE_BASE64: op://Production/Apple/Signing/p12
+          MACOS_CERTIFICATE_PASSWORD: op://Production/Apple/Signing/password
+
+      - name: Get current version and increment build number
+        id: version
+        run: |
+          cd apps/plot
+          CURRENT_VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
+          NEW_BUILD_NUMBER=$((BUILD_NUMBER + 1))
+          NEW_VERSION="${VERSION_NAME}+${NEW_BUILD_NUMBER}"
+
+          {
+            echo "current_version=$CURRENT_VERSION"
+            echo "version_name=$VERSION_NAME"
+            echo "build_number=$NEW_BUILD_NUMBER"
+            echo "new_version=$NEW_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Current version: $CURRENT_VERSION"
+          echo "New version: $NEW_VERSION"
+
+      - name: Update version in pubspec.yaml
+        run: |
+          cd apps/plot
+          sed -i '' "s/version: .*/version: ${{ steps.version.outputs.new_version }}/" pubspec.yaml
+          echo "Updated pubspec.yaml to version ${{ steps.version.outputs.new_version }}"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.35.5"
+          channel: "stable"
+
+      - name: Create .env file
+        run: |
+          cd apps/plot
+          cat > .env << EOF
+          SUPABASE_URL=$SUPABASE_URL
+          SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+          API_ROOT=https://api.plot.day
+          POSTHOG_API_KEY=${{ env.POSTHOG_API_KEY }}
+          POSTHOG_HOST=${{ env.POSTHOG_HOST }}
+          AUTH_GOOGLE_URI=${{ env.GOOGLE_URL }}
+          AUTH_GOOGLE_ID=${{ env.GOOGLE_CLIENT_ID }}
+          AUTH_GOOGLE_IOS_ID=${{ env.GOOGLE_IOS_CLIENT_ID }}
+          AUTH_GOOGLE_ANDROID_ID=${{ env.GOOGLE_ANDROID_CLIENT_ID }}
+          AUTH_MICROSOFT_ID=${{ env.MICROSOFT_CLIENT_ID }}
+          AUTH_CALLBACK_URL=https://app.plot.day/auth.html
+          EOF
+
+      - name: Install dependencies
+        run: |
+          cd apps/plot
+          flutter pub get
+
+      - name: Install derry
+        run: dart pub global activate derry
+
+      - name: Run build_runner
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Build macOS app
+        run: |
+          cd apps/plot
+          flutter build macos --release
+
+      - name: Import code signing certificate
+        run: |
+          # Create temporary keychain
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import certificate
+          CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
+          echo "$MACOS_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          security import "$CERTIFICATE_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+
+          # Add to keychain search list
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          # Set key partition list (allows codesign to access the key)
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Verify certificate is available
+          security find-identity -v -p codesigning
+
+      - name: Code sign macOS app
+        run: |
+          cd apps/plot/build/macos/Build/Products/Release
+
+          # Get the Developer ID Application identity
+          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+
+          if [ -z "$IDENTITY" ]; then
+            echo "Error: Developer ID Application certificate not found"
+            exit 1
+          fi
+
+          echo "Signing with identity: $IDENTITY"
+
+          # Sign all frameworks and libraries first
+          find Plot.app/Contents/Frameworks -name "*.dylib" -o -name "*.framework" | while read -r file; do
+            codesign --force --sign "$IDENTITY" --timestamp --options runtime "$file" || true
+          done
+
+          # Sign the app bundle
+          codesign --force --sign "$IDENTITY" --timestamp --options runtime --deep Plot.app
+
+          # Verify signature
+          codesign -dvv Plot.app
+          codesign --verify --verbose Plot.app
+
+      - name: Create DMG installer
+        run: |
+          cd apps/plot/build/macos/Build/Products/Release
+
+          # Install create-dmg if not available
+          brew install create-dmg || true
+
+          # Create DMG
+          create-dmg \
+            --volname "Plot Installer" \
+            --volicon "Plot.app/Contents/Resources/AppIcon.icns" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "Plot.app" 200 190 \
+            --hide-extension "Plot.app" \
+            --app-drop-link 600 185 \
+            "Plot-${{ steps.version.outputs.new_version }}.dmg" \
+            "Plot.app" || true
+
+          # Fallback: If create-dmg fails, create simple DMG
+          if [ ! -f "Plot-${{ steps.version.outputs.new_version }}.dmg" ]; then
+            echo "create-dmg failed, using hdiutil fallback"
+            hdiutil create -volname "Plot" -srcfolder "Plot.app" -ov -format UDZO "Plot-${{ steps.version.outputs.new_version }}.dmg"
+          fi
+
+          ls -lh "Plot-${{ steps.version.outputs.new_version }}.dmg"
+
+      - name: Notarize DMG with Apple
+        if: github.event.inputs.skip_notarization != 'true'
+        run: |
+          cd apps/plot/build/macos/Build/Products/Release
+
+          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}.dmg"
+
+          echo "Submitting $DMG_FILE for notarization..."
+          xcrun notarytool submit "$DMG_FILE" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+
+          echo "Stapling notarization ticket to DMG..."
+          xcrun stapler staple "$DMG_FILE"
+
+          echo "Verifying notarization..."
+          spctl -a -vv -t install "$DMG_FILE"
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Upload DMG to R2
+        run: |
+          cd apps/plot/build/macos/Build/Products/Release
+
+          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}.dmg"
+          R2_PATH="releases/${{ steps.version.outputs.new_version }}/macos/$DMG_FILE"
+
+          # Configure wrangler with R2 credentials
+          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
+          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
+
+          echo "Uploading $DMG_FILE to R2 at $R2_PATH"
+          wrangler r2 object put "${R2_BUCKET_NAME}/${R2_PATH}" --file="$DMG_FILE"
+
+          echo "DMG uploaded successfully!"
+          echo "Download URL: https://downloads.plot.day/${R2_PATH}"
+
+      - name: Create and upload version manifest
+        run: |
+          cd apps/plot/build/macos/Build/Products/Release
+
+          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}.dmg"
+          FILE_SIZE=$(stat -f%z "$DMG_FILE")
+          FILE_HASH=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')
+
+          # Create manifest JSON
+          cat > latest-macos.json << EOF
+          {
+            "version": "${{ steps.version.outputs.new_version }}",
+            "versionName": "${{ steps.version.outputs.version_name }}",
+            "buildNumber": ${{ steps.version.outputs.build_number }},
+            "platform": "macos",
+            "url": "https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/macos/$DMG_FILE",
+            "size": $FILE_SIZE,
+            "sha256": "$FILE_HASH",
+            "releaseDate": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "minOSVersion": "10.14"
+          }
+          EOF
+
+          cat latest-macos.json
+
+          # Upload manifest
+          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
+          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
+
+          wrangler r2 object put "${R2_BUCKET_NAME}/latest-macos.json" --file="latest-macos.json"
+
+          echo "Manifest uploaded successfully!"
+          echo "Manifest URL: https://downloads.plot.day/latest-macos.json"
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build-${{ steps.version.outputs.new_version }}
+          path: |
+            apps/plot/build/macos/Build/Products/Release/Plot-${{ steps.version.outputs.new_version }}.dmg
+            apps/plot/build/macos/Build/Products/Release/latest-macos.json
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          {
+            echo "## ✅ macOS Build Complete"
+            echo ""
+            echo "**Version:** ${{ steps.version.outputs.new_version }}"
+            echo "**Platform:** macOS"
+            echo "**File:** Plot-${{ steps.version.outputs.new_version }}.dmg"
+            echo ""
+            echo "### Download URLs"
+            echo "- DMG: https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/macos/Plot-${{ steps.version.outputs.new_version }}.dmg"
+            echo "- Manifest: https://downloads.plot.day/latest-macos.json"
+          } >> "$GITHUB_STEP_SUMMARY"
