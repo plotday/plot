@@ -65,11 +65,21 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
                       children: [
                         FBottomNavigationBarItem(
                           icon: Icon(FIcons.list),
-                          label: const Text('Priorities'),
+                          label: Builder(
+                            builder: (context) => DefaultTextStyle(
+                              style: context.theme.typography.sm,
+                              child: const Text('Priorities'),
+                            ),
+                          ),
                         ),
                         FBottomNavigationBarItem(
                           icon: Icon(FIcons.calendar),
-                          label: const Text('Activities'),
+                          label: Builder(
+                            builder: (context) => DefaultTextStyle(
+                              style: context.theme.typography.sm,
+                              child: const Text('Activities'),
+                            ),
+                          ),
                         ),
                       ],
                     ),
