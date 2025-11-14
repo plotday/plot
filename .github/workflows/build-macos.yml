@@ -126,7 +126,7 @@ jobs:
       - name: Build macOS app
         run: |
           cd apps/plot
-          flutter build macos --release
+          flutter build macos --release --no-codesign
 
       - name: Import code signing certificate
         run: |
