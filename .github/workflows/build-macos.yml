@@ -87,6 +87,17 @@ jobs:
           sed -i '' "s/version: .*/version: ${{ steps.version.outputs.new_version }}/" pubspec.yaml
           echo "Updated pubspec.yaml to version ${{ steps.version.outputs.new_version }}"
 
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/plot/pubspec.yaml
+          git commit -m "$(cat <<'EOF'
+          Bump macOS build to ${{ steps.version.outputs.new_version }}
+          EOF
+          )"
+          git push
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -349,6 +360,54 @@ jobs:
             apps/plot/build/macos/Build/Products/Release/latest-macos.json
           retention-days: 30
 
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd apps/plot/build/macos/Build/Products/Release
+
+          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}.dmg"
+          TAG_NAME="macos@${{ steps.version.outputs.new_version }}"
+          RELEASE_TITLE="Plot macOS ${{ steps.version.outputs.new_version }}"
+
+          # Read manifest for file metadata
+          FILE_SIZE=$(cat latest-macos.json | grep '"size"' | sed 's/.*: \([0-9]*\).*/\1/')
+          FILE_HASH=$(cat latest-macos.json | grep '"sha256"' | sed 's/.*: "\(.*\)".*/\1/')
+          RELEASE_DATE=$(cat latest-macos.json | grep '"releaseDate"' | sed 's/.*: "\(.*\)".*/\1/')
+
+          # Create release notes
+          cat > release-notes.md << EOF
+          ## Plot macOS ${{ steps.version.outputs.new_version }}
+
+          **Version:** ${{ steps.version.outputs.version_name }}
+          **Build Number:** ${{ steps.version.outputs.build_number }}
+          **Platform:** macOS
+          **Release Date:** ${RELEASE_DATE}
+
+          ### Download
+
+          - **DMG**: [Plot-${{ steps.version.outputs.new_version }}.dmg](https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/macos/Plot-${{ steps.version.outputs.new_version }}.dmg)
+          - **Size**: ${FILE_SIZE} bytes
+          - **SHA256**: \`${FILE_HASH}\`
+
+          ### Requirements
+
+          - **Minimum macOS Version:** 10.14 (Mojave)
+
+          ### Auto-Update
+
+          For auto-update systems, see the [manifest JSON](https://download.plot.day/latest-macos.json).
+          EOF
+
+          # Create release
+          gh release create "$TAG_NAME" \
+            --title "$RELEASE_TITLE" \
+            --notes-file release-notes.md \
+            --latest \
+            "$DMG_FILE"
+
+          echo "Release created: $TAG_NAME"
+
       - name: Build summary
         run: |
           {
@@ -359,6 +418,6 @@ jobs:
             echo "**File:** Plot-${{ steps.version.outputs.new_version }}.dmg"
             echo ""
             echo "### Download URLs"
-            echo "- DMG: https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/macos/Plot-${{ steps.version.outputs.new_version }}.dmg"
-            echo "- Manifest: https://downloads.plot.day/latest-macos.json"
+            echo "- DMG: https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/macos/Plot-${{ steps.version.outputs.new_version }}.dmg"
+            echo "- Manifest: https://download.plot.day/latest-macos.json"
           } >> "$GITHUB_STEP_SUMMARY"
