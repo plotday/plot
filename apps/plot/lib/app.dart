@@ -84,20 +84,24 @@ class ErrorApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PlatformBuilder(
-      builder: (context) => material.MaterialApp(
-        home: ColourScheme(
-          child: material.Scaffold(
-            body: Directionality(
-              textDirection: TextDirection.ltr,
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('Failed to start Plot.'),
-                    Text('Error: $error'),
-                    Button(SignOut()),
-                  ],
+    return BlocProvider(
+      create: (_) => ThemeBloc(),
+      child: PlatformBuilder(
+        builder: (context) => material.MaterialApp(
+          home: ColourScheme(
+            child: material.Scaffold(
+              body: Directionality(
+                textDirection: TextDirection.ltr,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    spacing: 8,
+                    children: [
+                      const Text('Failed to start Plot.'),
+                      Text('Error: $error'),
+                      Button(SignOut(), expand: false),
+                    ],
+                  ),
                 ),
               ),
             ),
