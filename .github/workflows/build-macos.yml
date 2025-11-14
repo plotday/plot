@@ -236,6 +236,28 @@ jobs:
 
           ls -lh "Plot-${{ steps.version.outputs.new_version }}.dmg"
 
+      - name: Code sign DMG
+        run: |
+          cd apps/plot/build/macos/Build/Products/Release
+
+          # Get the Developer ID Application identity
+          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+
+          if [ -z "$IDENTITY" ]; then
+            echo "Error: Developer ID Application certificate not found"
+            exit 1
+          fi
+
+          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}.dmg"
+          echo "Signing DMG with identity: $IDENTITY"
+
+          # Sign the DMG
+          codesign --force --sign "$IDENTITY" --timestamp "$DMG_FILE"
+
+          # Verify DMG signature
+          codesign -dvv "$DMG_FILE"
+          codesign --verify --verbose "$DMG_FILE"
+
       - name: Notarize DMG with Apple
         if: github.event.inputs.skip_notarization != 'true'
         run: |
