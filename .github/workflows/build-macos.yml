@@ -92,6 +92,7 @@ jobs:
         with:
           flutter-version: "3.35.5"
           channel: "stable"
+          cache: true
 
       - name: Create .env file
         run: |
@@ -110,6 +111,16 @@ jobs:
           AUTH_CALLBACK_URL=https://app.plot.day/auth.html
           EOF
 
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/plot/.dart_tool
+          key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-deps-
+
       - name: Install dependencies
         run: |
           cd apps/plot
@@ -117,6 +128,17 @@ jobs:
 
       - name: Install derry
         run: dart pub global activate derry
+
+      - name: Cache build_runner outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/plot/.dart_tool/build
+            apps/plot/**/*.g.dart
+            apps/plot/**/*.freezed.dart
+          key: ${{ runner.os }}-build-runner-${{ hashFiles('apps/plot/**/*.dart', 'apps/plot/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-runner-
 
       - name: Run build_runner
         run: |
@@ -177,6 +199,14 @@ jobs:
           # Verify signature
           codesign -dvv Plot.app
           codesign --verify --verbose Plot.app
+
+      - name: Cache Homebrew packages
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/Homebrew
+          key: ${{ runner.os }}-homebrew-create-dmg
+          restore-keys: |
+            ${{ runner.os }}-homebrew-
 
       - name: Create DMG installer
         run: |
