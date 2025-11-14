@@ -293,7 +293,7 @@ jobs:
           export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
 
           echo "Uploading $DMG_FILE to R2 at $R2_PATH"
-          wrangler r2 object put "${R2_BUCKET_NAME}/${R2_PATH}" --file="$DMG_FILE"
+          wrangler r2 object put "${R2_BUCKET_NAME}/${R2_PATH}" --file="$DMG_FILE" --remote
 
           echo "DMG uploaded successfully!"
           echo "Download URL: https://downloads.plot.day/${R2_PATH}"
@@ -327,7 +327,7 @@ jobs:
           export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
           export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
 
-          wrangler r2 object put "${R2_BUCKET_NAME}/latest-macos.json" --file="latest-macos.json"
+          wrangler r2 object put "${R2_BUCKET_NAME}/latest-macos.json" --file="latest-macos.json" --remote
 
           echo "Manifest uploaded successfully!"
           echo "Manifest URL: https://downloads.plot.day/latest-macos.json"
