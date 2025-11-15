@@ -17,6 +17,7 @@ on:
 jobs:
   build-macos:
     runs-on: macos-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - name: Generate GitHub App Token
@@ -75,7 +76,7 @@ jobs:
         id: version
         run: |
           cd apps/plot
-          CURRENT_VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
           VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
           BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
 

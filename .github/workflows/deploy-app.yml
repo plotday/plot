@@ -16,6 +16,7 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     env:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
@@ -45,7 +46,7 @@ jobs:
         id: version
         run: |
           cd apps/plot
-          CURRENT_VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
           VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
           BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
 

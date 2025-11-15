@@ -45,7 +45,7 @@ jobs:
         id: version
         run: |
           cd apps/plot
-          CURRENT_VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
           VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
           BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
           NEW_BUILD_NUMBER=$((BUILD_NUMBER + 1))
