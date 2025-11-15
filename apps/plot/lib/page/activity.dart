@@ -85,33 +85,15 @@ class ActivityPage extends StatelessWidget {
                     ShowActivityActions(state.activity),
                   ],
                 ),
-                body: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final maxActivityEditorHeight = constraints.maxHeight * 0.4;
-                    return Column(
-                      children: [
-                        Flexible(
-                          flex: 1,
-                          fit: FlexFit.tight,
-                          child: _buildActivityList(
-                            state,
-                            listController,
-                            context,
-                          ),
-                        ),
-                        Container(
-                          constraints: BoxConstraints(
-                            maxHeight: maxActivityEditorHeight,
-                          ),
-                          child: ActivityEditor(
-                            onAdd: (activity) =>
-                                context.read<ActivityBloc>().add(activity),
-                            draft: state.draft,
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                body: Column(
+                  children: [
+                    Flexible(
+                      flex: 1,
+                      fit: FlexFit.tight,
+                      child: _buildActivityList(state, listController, context),
+                    ),
+                    ActivityEditor(draft: state.draft, expandVertically: false),
+                  ],
                 ),
               ),
             ),

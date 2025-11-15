@@ -212,19 +212,24 @@ class OpenActivity extends Action {
 }
 
 class AddActivity extends Action {
-  AddActivity(this._activity)
+  AddActivity(this._activity, {this.navigate = true})
     : super(
         title: 'Add',
         eventObject: EventObject.activity,
         eventAction: EventAction.added,
+        icon: PlotIcon.addActivity,
       );
 
   final Future<Activity> _activity;
+  final bool navigate;
 
   @override
   Future<ActionReturn> run(BuildContext context) async {
     final activity = await _activity;
     await activity.copyWith(draft: false).save();
+    if (!navigate) {
+      return const ActionDone();
+    }
     return ActionRoute(
       PriorityRoute(
         priorityIdString: activity.priority.id.toShortString(),

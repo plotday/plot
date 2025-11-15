@@ -7,6 +7,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/router.dart';
 import 'package:plot/action/base.dart';
 import 'package:plot/action/provider.dart';
+import 'package:plot/widget/bottom_navigation_provider.dart';
 
 @RoutePage(name: "PrioritiesShellRoute")
 class PrioritiesShell extends StatefulWidget implements AutoRouteWrapper {
@@ -57,52 +58,52 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
                 transitionBuilder: (context, child, animation) => child,
                 builder: (context, child) {
                   final tabsRouter = AutoTabsRouter.of(context);
-                  return FScaffold(
-                    childPad: false,
-                    resizeToAvoidBottomInset: false,
-                    footer: FBottomNavigationBar(
-                      index: tabsRouter.activeIndex,
-                      onChange: (index) {
-                        if (index == 2) {
-                          // Show command palette (same as Cmd-K)
-                          Actions(
-                            prompt: 'Run an action',
-                            groups: ActionRegistry.of(context).actions,
-                          ).show(context);
-                        } else {
-                          tabsRouter.setActiveIndex(index);
-                        }
-                      },
-                      children: [
-                        FBottomNavigationBarItem(
-                          icon: Icon(FIcons.list),
-                          label: Builder(
-                            builder: (context) => DefaultTextStyle(
-                              style: context.theme.typography.sm,
-                              child: const Text('Priorities'),
-                            ),
+                  final config = BottomNavigationConfig(
+                    currentIndex: tabsRouter.activeIndex,
+                    onChange: (index) {
+                      if (index == 2) {
+                        // Show command palette (same as Cmd-K)
+                        Actions(
+                          prompt: 'Run an action',
+                          groups: ActionRegistry.of(context).actions,
+                        ).show(context);
+                      } else {
+                        tabsRouter.setActiveIndex(index);
+                      }
+                    },
+                    items: [
+                      FBottomNavigationBarItem(
+                        icon: Icon(FIcons.list),
+                        label: Builder(
+                          builder: (context) => DefaultTextStyle(
+                            style: context.theme.typography.sm,
+                            child: const Text('Priorities'),
                           ),
                         ),
-                        FBottomNavigationBarItem(
-                          icon: Icon(FIcons.calendar),
-                          label: Builder(
-                            builder: (context) => DefaultTextStyle(
-                              style: context.theme.typography.sm,
-                              child: const Text('Activities'),
-                            ),
+                      ),
+                      FBottomNavigationBarItem(
+                        icon: Icon(FIcons.calendar),
+                        label: Builder(
+                          builder: (context) => DefaultTextStyle(
+                            style: context.theme.typography.sm,
+                            child: const Text('Activities'),
                           ),
                         ),
-                        FBottomNavigationBarItem(
-                          icon: Icon(FIcons.command),
-                          label: Builder(
-                            builder: (context) => DefaultTextStyle(
-                              style: context.theme.typography.sm,
-                              child: const Text('More'),
-                            ),
+                      ),
+                      FBottomNavigationBarItem(
+                        icon: Icon(FIcons.command),
+                        label: Builder(
+                          builder: (context) => DefaultTextStyle(
+                            style: context.theme.typography.sm,
+                            child: const Text('More'),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
+                  );
+
+                  return BottomNavigationScope(
+                    config: config,
                     child: child,
                   );
                 },

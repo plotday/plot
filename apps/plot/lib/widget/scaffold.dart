@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
 import 'colour_scheme.dart';
+import 'bottom_navigation_provider.dart';
 
 class Scaffold extends StatelessWidget {
   const Scaffold({
@@ -26,19 +27,30 @@ class Scaffold extends StatelessWidget {
       return body;
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SafeArea(child: SingleChildScrollView(child: body));
-      },
+    return SafeArea(child: SingleChildScrollView(child: body));
+  }
+
+  Widget? _buildFooter(BuildContext context) {
+    final config = BottomNavigationProvider.of(context);
+    if (config == null) {
+      return null;
+    }
+
+    return FBottomNavigationBar(
+      index: config.currentIndex,
+      onChange: config.onChange,
+      children: config.items,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final wrappedBody = _buildBody(context);
+    final footer = _buildFooter(context);
     final scaffold = FScaffold(
       header: header,
       sidebar: sidebar,
+      footer: footer,
       childPad: false,
       child: wrappedBody,
     );

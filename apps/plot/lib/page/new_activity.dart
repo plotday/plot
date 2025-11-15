@@ -4,7 +4,6 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/action/action.dart';
 
 @RoutePage(name: "NewActivityRoute")
 class NewActivityPage extends StatelessWidget {
@@ -19,12 +18,8 @@ class NewActivityPage extends StatelessWidget {
           scrollable: false,
           header: Header(title: 'New Activity'),
           body: ActivityEditor(
-            onAdd: (activity) async {
-              await context.read<PriorityBloc>().add(activity);
-              if (!context.mounted) return;
-              await context.run(ChangeCurrentActivity(activity));
-            },
             draft: state.draft,
+            expandVertically: true,
           ),
         );
       },

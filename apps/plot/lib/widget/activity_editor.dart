@@ -3,13 +3,25 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
-import 'logging.dart';
+import 'package:plot/action/action.dart';
+import 'package:plot/api/twist_api.dart';
 
-class ActivityEditor extends StatelessWidget {
-  const ActivityEditor({required this.onAdd, required this.draft, super.key});
+class ActivityEditor extends StatefulWidget {
+  const ActivityEditor({
+    required this.draft,
+    this.expandVertically = false,
+    super.key,
+  });
 
-  final Future<void> Function(Activity activity) onAdd;
   final Activity draft;
+  final bool expandVertically;
+
+  @override
+  State<ActivityEditor> createState() => _ActivityEditorState();
+}
+
+class _ActivityEditorState extends State<ActivityEditor> {
+  final GlobalKey<EditorState> _editorKey = GlobalKey<EditorState>();
 
   @override
   Widget build(BuildContext context) {
@@ -17,61 +29,70 @@ class ActivityEditor extends StatelessWidget {
       builder: (context, state) {
         return EditableArea(
           position: EditableAreaPosition.bottom,
-          builder: (context, focusNode) => Editor(
-            hint: 'Add activity',
-            autofocus: true,
-            focusNode: focusNode,
-            twists: state.twists,
-            onSubmitted: (body, {bool alt = false}) async {
-              log.info('Adding new activity with body: $body ($alt)');
+          builder: (context, focusNode) {
+            final column = Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 8,
+              children: [
+                Editor(
+                  key: _editorKey,
+                  hint: 'Add activity',
+                  autofocus: true,
+                  focusNode: focusNode,
+                  twists: state.twists,
+                  onSubmitted: (body, {bool alt = false}) async {
+                    await context.run(StartActivity(widget.draft));
+                    if (!context.mounted) return;
+                    await context.run(
+                      AddActivity(finalizeDraft(body, twists: state.twists)),
+                    );
+                  },
+                ),
+                // Bottom bar - stays at bottom, above keyboard
+                Row(
+                  children: [
+                    // Left side: Do Now toggle
+                    Button.icon(
+                      StartActivity(widget.draft),
+                      selected: widget.draft.doNow,
+                      expand: false,
+                    ),
+                    const Spacer(),
+                    // Right side: Save button
+                    Button.icon(
+                      ActionWrapper(
+                        AddActivity(Future.value(widget.draft)),
+                        run: (action, context) async {
+                          _editorKey.currentState?.submit(false);
+                          return const ActionDone();
+                        },
+                      ),
+                      expand: false,
+                    ),
+                  ],
+                ),
+              ],
+            );
 
-              // Parse mentions from the note (stored as [#@ID])
-              final mentions = Activity.parseMentionsFromNote(
-                body,
-                state.twists,
-              );
-
-              final activity = draft.copyWith(
-                note: Value(body),
-                draft: false,
-                type: alt ? ActivityType.task : draft.type,
-                on: alt
-                    ? Value(CustomDateRange(Date.today(), null))
-                    : const Value.absent(),
-                mentions: Value(mentions.isEmpty ? null : mentions),
-              );
-              await onAdd(activity);
-              // =======
-              //           builder: (context, focusNode) => FutureBuilder<List<Account>>(
-              //             future: Account.get(),
-              //             builder: (context, snapshot) {
-              //               // Get list of user emails for mentions
-              //               final users = snapshot.data?.map((account) => account.email).toList() ?? [];
-              //
-              //               return Editor(
-              //                 hint: 'Add activity',
-              //                 autofocus: true,
-              //                 focusNode: focusNode,
-              //                 users: users,
-              //                 onSubmitted: (body, {bool alt = false}) async {
-              //                   log.info(
-              //                     'Adding new activity with body: $body ($alt)',
-              //                   );
-              //                   final activity = state.draft.copyWith(
-              //                     note: Value(body),
-              //                     draft: false,
-              //                     doAt: alt
-              //                         ? Value(Date.today())
-              //                         : const Value.absent(),
-              //                   );
-              //                   await context.read<PriorityBloc>().add(activity);
-              //                 },
-              //               );
-              // >>>>>>> 1783849 (Editor mentions (wip))
-            },
-          ),
+            return widget.expandVertically ? Expanded(child: column) : column;
+          },
         );
       },
+    );
+  }
+
+  Future<Activity> finalizeDraft(
+    String body, {
+    required List<PriorityTwist> twists,
+  }) async {
+    // Parse mentions from the note (stored as [#@ID])
+    final mentions = Activity.parseMentionsFromNote(body, twists);
+
+    return widget.draft.copyWith(
+      note: Value(body),
+      draft: false,
+      mentions: Value(mentions.isEmpty ? null : mentions),
     );
   }
 }
