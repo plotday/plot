@@ -41,6 +41,7 @@ dependencies:
   bloc_concurrency: ^0.3.0
   adaptive_theme: ^3.4.1
   google_sign_in: ^7.1.1
+  sign_in_with_apple: ^6.1.2
   dart_date: ^1.4.0
   http: ^1.2.0
   intl: ^0.20.2
@@ -109,6 +110,7 @@ dev_dependencies:
   test: ^1.25.2
   drift_dev: ^2.26.0
   auto_route_generator: ^10.0.1
+  msix: ^3.16.7
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -151,7 +153,7 @@ flutter:
   # see https://flutter.dev/custom-fonts/#from-packages
 
 scripts:
-  env: ../../scripts/gen-env development SUPABASE_URL SUPABASE_ANON_KEY API_ROOT POSTHOG_API_KEY POSTHOG_HOST AUTH_GOOGLE_ID AUTH_GOOGLE_URI AUTH_GOOGLE_IOS_ID AUTH_GOOGLE_ANDROID_ID AUTH_MICROSOFT_ID > .env
+  env: ../../scripts/gen-env development SUPABASE_URL SUPABASE_ANON_KEY API_ROOT POSTHOG_API_KEY POSTHOG_HOST AUTH_GOOGLE_ID AUTH_GOOGLE_URI AUTH_GOOGLE_IOS_ID AUTH_GOOGLE_ANDROID_ID AUTH_MICROSOFT_ID AUTH_APPLE_CLIENT_ID > .env
   build:
     watch: flutter pub run build_runner watch
     build: flutter pub run build_runner build
@@ -181,3 +183,11 @@ flutter_launcher_icons:
     icon_size: 48
   macos:
     generate: true
+
+msix_config:
+  display_name: Plot
+  publisher_display_name: Plot Technologies Inc.
+  identity_name: com.plottechnologies.plot
+  msix_version: 1.0.0.0
+  logo_path: assets/plot-512x512.png
+  capabilities: internetClient

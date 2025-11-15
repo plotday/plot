@@ -1,8 +1,10 @@
 export 'activity.dart';
 export 'edit_priority.dart';
+export 'email_auth.dart';
 export 'invitation.dart';
 export 'loading.dart';
 export 'new_activity.dart';
+export 'password_setup.dart';
 export 'priorities.dart';
 export 'priority.dart';
 export 'sign_in.dart';

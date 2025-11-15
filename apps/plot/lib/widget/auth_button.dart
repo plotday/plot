@@ -6,6 +6,7 @@ import 'package:flutter/material.dart' show Colors;
 import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -231,6 +232,60 @@ class _AuthButtonState extends State<AuthButton> {
     }
   }
 
+  void _startAppleAuth() async {
+    setState(() => _isLoading = true);
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        webAuthenticationOptions: kIsWeb
+            ? WebAuthenticationOptions(
+                clientId: Env.appleClientId,
+                redirectUri: Uri.parse(Env.authCallbackUrl),
+              )
+            : null,
+      );
+
+      await widget.onComplete(
+        clientId: Env.appleClientId,
+        redirectUri: Env.authCallbackUrl,
+        idToken: credential.identityToken,
+        code: credential.authorizationCode,
+      );
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) {
+        log.info('Apple sign-in cancelled by user');
+        return;
+      }
+      log.warning('Apple sign-in failed: ${e.code} - ${e.message}');
+      final message = e.message.isEmpty ? 'Apple sign-in failed' : e.message;
+      if (widget.onError != null) {
+        widget.onError!(message);
+      } else {
+        if (mounted) {
+          Alert.show(context, message);
+        }
+      }
+      return;
+    } catch (e, t) {
+      log.warning('Apple sign-in failed', e, t);
+      if (widget.onError != null) {
+        widget.onError!('Apple sign-in failed: $e');
+      } else {
+        if (mounted) {
+          Alert.show(context, 'Apple sign-in failed: $e');
+        }
+      }
+      return;
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   void _startOAuth() async {
     setState(() => _isLoading = true);
 
@@ -406,6 +461,8 @@ class _AuthButtonState extends State<AuthButton> {
     if (_isLoading) return;
     if (widget.provider == AuthProvider.google) {
       _startGoogleAuth();
+    } else if (widget.provider == AuthProvider.apple) {
+      _startAppleAuth();
     } else {
       _startOAuth();
     }
@@ -499,9 +556,9 @@ class _AuthButtonState extends State<AuthButton> {
 
       case AuthProvider.apple:
         return _ProviderConfig(
-          backgroundColor: Colors.black,
-          textColor: Colors.white,
-          borderColor: Colors.black,
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
+          borderColor: const Color(0xFFDADBDD),
           borderWidth: 1,
           borderRadius: 6, // Apple uses 6px radius
           horizontalPadding: 16,
@@ -683,16 +740,9 @@ class _ProviderIcon extends StatelessWidget {
 
   Color _getIconColor() {
     switch (provider) {
-      case AuthProvider.google:
-        return Colors.transparent;
-      case AuthProvider.microsoft:
-        return Colors.transparent;
       case AuthProvider.slack:
-        return Colors.white;
       case AuthProvider.apple:
-        return Colors.white;
       case AuthProvider.github:
-        return Colors.white;
       case AuthProvider.discord:
         return Colors.white;
       default:

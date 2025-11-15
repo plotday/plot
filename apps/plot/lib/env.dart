@@ -14,7 +14,7 @@ abstract class Env {
     supabaseUrl = _translateUrl(dotenv.env['SUPABASE_URL']!);
     supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
 
-    apiRoot = '${dotenv.env['API_ROOT']!}/app';
+    apiRoot = _translateUrl('${dotenv.env['API_ROOT']!}/app');
     authServerCallbackUrl = dotenv.env['AUTH_GOOGLE_URI']!;
     authCallbackUrl = kIsWeb
         ? Uri.base.resolve('/auth.html').toString()
@@ -23,6 +23,7 @@ abstract class Env {
     googleClientId = dotenv.env['AUTH_GOOGLE_ID']!;
     googleIosClientId = dotenv.env['AUTH_GOOGLE_IOS_ID']!;
     googleAndroidClientId = dotenv.env['AUTH_GOOGLE_ANDROID_ID']!;
+    appleClientId = dotenv.env['AUTH_APPLE_CLIENT_ID']!;
   }
 
   static late final bool inAndroidEmulator;
@@ -54,4 +55,5 @@ abstract class Env {
   static late final String googleClientId;
   static late final String googleIosClientId;
   static late final String googleAndroidClientId;
+  static late final String appleClientId;
 }

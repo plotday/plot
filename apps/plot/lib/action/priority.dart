@@ -57,12 +57,8 @@ abstract class PriorityAction extends Action {
 }
 
 class ChangeCurrentPriority extends PriorityAction {
-  ChangeCurrentPriority(Priority priority)
-    : super(
-        priority,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.viewed,
-      );
+  ChangeCurrentPriority(Priority super.priority)
+    : super(eventObject: EventObject.priority, eventAction: EventAction.viewed);
 
   @override
   Future<ActionReturn> run(BuildContext context) async {
