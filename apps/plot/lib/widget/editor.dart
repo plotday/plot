@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
 import 'package:super_editor_markdown/super_editor_markdown.dart';
@@ -53,6 +54,29 @@ class EditorState extends State<Editor> {
   final OverlayPortalController _mentionOverlayController =
       OverlayPortalController();
   bool _showMentionPopoverAbove = false;
+
+  /// Returns the appropriate gesture mode based on the current platform
+  DocumentGestureMode get _gestureMode {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return DocumentGestureMode.android;
+      case TargetPlatform.iOS:
+        return DocumentGestureMode.iOS;
+      default:
+        return DocumentGestureMode.mouse;
+    }
+  }
+
+  /// Returns the appropriate input source based on the current platform
+  TextInputSource get _inputSource {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+        return TextInputSource.ime;
+      default:
+        return TextInputSource.keyboard;
+    }
+  }
 
   void clear() {
     setState(() {
@@ -200,12 +224,23 @@ class EditorState extends State<Editor> {
               shrinkWrap: true,
               scrollController: _scrollController,
               documentLayoutKey: _docLayoutKey,
+              inputSource: _inputSource,
+              gestureMode: _gestureMode,
               documentOverlayBuilders: [
-                DefaultCaretOverlayBuilder(
-                  caretStyle: CaretStyle().copyWith(
-                    color: context.colour.accent,
+                // Platform-specific overlays for mobile
+                if (defaultTargetPlatform == TargetPlatform.android) ...[
+                  SuperEditorAndroidHandlesDocumentLayerBuilder(),
+                  SuperEditorAndroidToolbarFocalPointDocumentLayerBuilder(),
+                ] else if (defaultTargetPlatform == TargetPlatform.iOS) ...[
+                  SuperEditorIosHandlesDocumentLayerBuilder(),
+                  SuperEditorIosToolbarFocalPointDocumentLayerBuilder(),
+                ] else ...[
+                  DefaultCaretOverlayBuilder(
+                    caretStyle: CaretStyle().copyWith(
+                      color: context.colour.accent,
+                    ),
                   ),
-                ),
+                ],
                 // Position leader at caret for mention popover
                 _buildMentionLeaderOverlay,
               ],
@@ -223,16 +258,17 @@ class EditorState extends State<Editor> {
                 TaskComponentBuilder(_editor),
                 ...defaultComponentBuilders,
               ],
-              // TODO use defaultImeKeyboardActions on mobile
               keyboardActions: [
                 _bubbleSpecialKeys,
                 if (_isEmpty) _bubbleArrowKeys,
                 _shiftEnterToInsertBlockNewline,
                 _handlePunctuationAfterMention,
                 _handleBackspaceOverMention,
-                ...defaultKeyboardActions,
+                // Use IME keyboard actions on mobile, regular keyboard actions on desktop
+                ...(_inputSource == TextInputSource.ime
+                    ? defaultImeKeyboardActions
+                    : defaultKeyboardActions),
               ],
-              // ),
             ),
           ),
         ),
