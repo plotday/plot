@@ -12,7 +12,7 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "bash -c 'if [[ -v DEPLOY_VARS ]]; then wrangler deploy --var $DEPLOY_VARS; else wrangler deploy --keep-vars; fi'",
     "types": "react-router typegen && tsc",
     "lint": "tsc && eslint ."
   },

@@ -41,5 +41,47 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
           CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
 
+      - name: Deploy secrets and variables for site
+        working-directory: apps/site
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          # Read deploy_vars from package.json
+          DEPLOY_VARS=$(node -pe "require('./package.json').config?.deploy_vars || ''")
+
+          if [ -z "$DEPLOY_VARS" ]; then
+            echo "No deploy_vars configured for site"
+            exit 0
+          fi
+
+          echo "Deploying variables: $DEPLOY_VARS"
+
+          # Generate all variables from .env files + 1Password
+          ALL=$(../../scripts/gen-env production $DEPLOY_VARS)
+
+          # Split into secrets (containing SECRET, KEY, or TOKEN)
+          SECRETS=$(echo "$ALL" | grep -E 'SECRET|KEY|TOKEN' || true)
+          SECRETS_JSON=$(echo "$SECRETS" | ../../scripts/env-to-json)
+
+          # Split into regular variables (not containing SECRET, KEY, or TOKEN)
+          VARS=$(echo "$ALL" | grep -Ev 'SECRET|KEY|TOKEN' || true)
+          VARS_FORMATTED=$(echo "$VARS" | sed 's/=/:/g')
+
+          # Deploy secrets via wrangler secret bulk (no --env flag for site)
+          if [ -n "$SECRETS_JSON" ] && [ "$SECRETS_JSON" != "{}" ]; then
+            echo "Deploying secrets..."
+            echo "$SECRETS_JSON" | wrangler secret bulk
+          else
+            echo "No secrets to deploy"
+          fi
+
+          # Export variables for deploy step
+          if [ -n "$VARS_FORMATTED" ]; then
+            echo "DEPLOY_VARS=$VARS_FORMATTED" >> $GITHUB_ENV
+            echo "Variables to deploy: $VARS_FORMATTED"
+          else
+            echo "No regular variables to deploy"
+          fi
+
       - name: Deploy
         run: pnpm exec nx deploy:site
