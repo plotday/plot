@@ -1,10 +1,12 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart' hide Actions;
 import 'package:forui/forui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/router.dart';
+import 'package:plot/action/base.dart';
+import 'package:plot/action/provider.dart';
 
 @RoutePage(name: "PrioritiesShellRoute")
 class PrioritiesShell extends StatefulWidget implements AutoRouteWrapper {
@@ -57,10 +59,19 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
                   final tabsRouter = AutoTabsRouter.of(context);
                   return FScaffold(
                     childPad: false,
+                    resizeToAvoidBottomInset: false,
                     footer: FBottomNavigationBar(
                       index: tabsRouter.activeIndex,
                       onChange: (index) {
-                        tabsRouter.setActiveIndex(index);
+                        if (index == 2) {
+                          // Show command palette (same as Cmd-K)
+                          Actions(
+                            prompt: 'Run an action',
+                            groups: ActionRegistry.of(context).actions,
+                          ).show(context);
+                        } else {
+                          tabsRouter.setActiveIndex(index);
+                        }
                       },
                       children: [
                         FBottomNavigationBarItem(
@@ -78,6 +89,15 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
                             builder: (context) => DefaultTextStyle(
                               style: context.theme.typography.sm,
                               child: const Text('Activities'),
+                            ),
+                          ),
+                        ),
+                        FBottomNavigationBarItem(
+                          icon: Icon(FIcons.command),
+                          label: Builder(
+                            builder: (context) => DefaultTextStyle(
+                              style: context.theme.typography.sm,
+                              child: const Text('More'),
                             ),
                           ),
                         ),
