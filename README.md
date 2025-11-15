@@ -4,10 +4,10 @@
   </a>
 </p>
 <h1 align="center">
-  Plot Twist Packages
+  Plot Twist!<br/>Extend, Integrate, and Automate Plot
 </h1>
-<p align="center">
-  The official repo for building <a href="https://plot.day">Plot</a> twists -<br/>
+<p>
+  The official repo for building <a href="https://plot.day">Plot</a> twists &mdash;
   smart automations that organize and prioritize all your tasks, messages, and documents from all your apps and agents.
 </p>
 
