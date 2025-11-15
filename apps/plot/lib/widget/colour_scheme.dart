@@ -23,10 +23,10 @@ class ColourSchemeData extends Equatable {
 
   Color get barrier => pureBackground.withAlpha(0.6).toColor();
   Color get canvas => brightness == Brightness.light
-      ? base.withLightness(0.9).withAlpha(0.9).toColor()
+      ? base.withLightness(0.98).withAlpha(0.9).toColor()
       : base.withLightness(0.15).withAlpha(0.25).toColor();
   Color get background => brightness == Brightness.light
-      ? base.withLightness(0.9).withAlpha(0.9).toColor()
+      ? base.withLightness(0.98).withAlpha(0.9).toColor()
       : base.withSaturation(0.2).withLightness(0.08).toColor();
   Color get modalBackground => brightness == Brightness.light
       ? base.withLightness(0.9).withAlpha(0.9).toColor()
@@ -38,7 +38,7 @@ class ColourSchemeData extends Equatable {
       ? base.withLightness(0.6).toColor()
       : base.withLightness(0.4).toColor();
   Color get accentBackground => brightness == Brightness.light
-      ? base.withLightness(0.7).toColor()
+      ? base.withLightness(0.85).toColor()
       : base.withLightness(0.15).toColor();
   Color get highlight => brightness == Brightness.light
       ? base.withLightness(0.9).toColor()
@@ -100,7 +100,8 @@ class ColourScheme extends StatefulWidget {
   State<ColourScheme> createState() => _ColourSchemeState();
 }
 
-class _ColourSchemeState extends State<ColourScheme> with WidgetsBindingObserver {
+class _ColourSchemeState extends State<ColourScheme>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
