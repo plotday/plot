@@ -7,14 +7,10 @@ import 'package:plot/action/action.dart';
 import 'package:plot/api/twist_api.dart';
 
 class ActivityEditor extends StatefulWidget {
-  const ActivityEditor({
-    required this.draft,
-    this.expandVertically = false,
-    super.key,
-  });
+  const ActivityEditor({required this.draft, this.expand = false, super.key});
 
   final Activity draft;
-  final bool expandVertically;
+  final bool expand;
 
   @override
   State<ActivityEditor> createState() => _ActivityEditorState();
@@ -31,24 +27,43 @@ class _ActivityEditorState extends State<ActivityEditor> {
           position: EditableAreaPosition.bottom,
           builder: (context, focusNode) {
             final column = Column(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               spacing: 8,
               children: [
-                Editor(
-                  key: _editorKey,
-                  hint: 'Add activity',
-                  autofocus: true,
-                  focusNode: focusNode,
-                  twists: state.twists,
-                  onSubmitted: (body, {bool alt = false}) async {
-                    await context.run(StartActivity(widget.draft));
-                    if (!context.mounted) return;
-                    await context.run(
-                      AddActivity(finalizeDraft(body, twists: state.twists)),
-                    );
-                  },
-                ),
+                if (widget.expand)
+                  Flexible(
+                    child: Editor(
+                      key: _editorKey,
+                      hint: 'Add activity',
+                      autofocus: true,
+                      focusNode: focusNode,
+                      twists: state.twists,
+                      shrinkWrap: false,
+                      onSubmitted: (body, {bool alt = false}) async {
+                        await context.run(StartActivity(widget.draft));
+                        if (!context.mounted) return;
+                        await context.run(
+                          AddActivity(finalizeDraft(body, twists: state.twists)),
+                        );
+                      },
+                    ),
+                  )
+                else
+                  Editor(
+                    key: _editorKey,
+                    hint: 'Add activity',
+                    autofocus: true,
+                    focusNode: focusNode,
+                    twists: state.twists,
+                    onSubmitted: (body, {bool alt = false}) async {
+                      await context.run(StartActivity(widget.draft));
+                      if (!context.mounted) return;
+                      await context.run(
+                        AddActivity(finalizeDraft(body, twists: state.twists)),
+                      );
+                    },
+                  ),
                 // Bottom bar - stays at bottom, above keyboard
                 Row(
                   children: [
@@ -75,7 +90,7 @@ class _ActivityEditorState extends State<ActivityEditor> {
               ],
             );
 
-            return widget.expandVertically ? Expanded(child: column) : column;
+            return widget.expand ? Expanded(child: column) : column;
           },
         );
       },

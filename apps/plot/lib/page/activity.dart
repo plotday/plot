@@ -92,7 +92,7 @@ class ActivityPage extends StatelessWidget {
                       fit: FlexFit.tight,
                       child: _buildActivityList(state, listController, context),
                     ),
-                    ActivityEditor(draft: state.draft, expandVertically: false),
+                    ActivityEditor(draft: state.draft),
                   ],
                 ),
               ),

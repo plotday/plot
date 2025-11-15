@@ -17,10 +17,7 @@ class NewActivityPage extends StatelessWidget {
           translucent: true,
           scrollable: false,
           header: Header(title: 'New Activity'),
-          body: ActivityEditor(
-            draft: state.draft,
-            expandVertically: true,
-          ),
+          body: ActivityEditor(draft: state.draft, expand: true),
         );
       },
     );

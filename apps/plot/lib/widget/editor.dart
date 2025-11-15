@@ -24,6 +24,7 @@ class Editor extends StatefulWidget {
     this.onChange,
     this.focusNode,
     this.twists = const [],
+    this.shrinkWrap = true,
     super.key,
   });
 
@@ -33,6 +34,7 @@ class Editor extends StatefulWidget {
   final ValueChanged<String>? onChange;
   final FocusNode? focusNode;
   final List<PriorityTwist> twists;
+  final bool shrinkWrap;
 
   @override
   State<Editor> createState() => EditorState();
@@ -221,7 +223,7 @@ class EditorState extends State<Editor> {
               autofocus: widget.autofocus,
               editor: _editor,
               focusNode: _editorFocusNode,
-              shrinkWrap: true,
+              shrinkWrap: widget.shrinkWrap,
               scrollController: _scrollController,
               documentLayoutKey: _docLayoutKey,
               inputSource: _inputSource,
