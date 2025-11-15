@@ -1,14 +1,12 @@
 name: Build macOS App
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Version Bump"]
+    types:
+      - completed
     branches:
       - main
-    paths:
-      - "apps/plot/**"
-      - ".env"
-      - ".env.production"
-      - ".github/workflows/build-macos.yml"
   workflow_dispatch:
     inputs:
       skip_notarization:
@@ -21,14 +19,26 @@ jobs:
     runs-on: macos-latest
 
     steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Load secrets from 1Password
         uses: 1password/load-secrets-action@v2
@@ -61,42 +71,21 @@ jobs:
           MACOS_CERTIFICATE_BASE64: op://Production/Apple/Signing/p12
           MACOS_CERTIFICATE_PASSWORD: op://Production/Apple/Signing/password
 
-      - name: Get current version and increment build number
+      - name: Get version from pubspec.yaml
         id: version
         run: |
           cd apps/plot
           CURRENT_VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
           VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
           BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
-          NEW_BUILD_NUMBER=$((BUILD_NUMBER + 1))
-          NEW_VERSION="${VERSION_NAME}+${NEW_BUILD_NUMBER}"
 
           {
-            echo "current_version=$CURRENT_VERSION"
+            echo "new_version=$CURRENT_VERSION"
             echo "version_name=$VERSION_NAME"
-            echo "build_number=$NEW_BUILD_NUMBER"
-            echo "new_version=$NEW_VERSION"
+            echo "build_number=$BUILD_NUMBER"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Current version: $CURRENT_VERSION"
-          echo "New version: $NEW_VERSION"
-
-      - name: Update version in pubspec.yaml
-        run: |
-          cd apps/plot
-          sed -i '' "s/version: .*/version: ${{ steps.version.outputs.new_version }}/" pubspec.yaml
-          echo "Updated pubspec.yaml to version ${{ steps.version.outputs.new_version }}"
-
-      - name: Commit version bump
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/plot/pubspec.yaml
-          git commit -m "$(cat <<'EOF'
-          Bump macOS build to ${{ steps.version.outputs.new_version }}
-          EOF
-          )"
-          git push
+          echo "Building version: $CURRENT_VERSION"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
