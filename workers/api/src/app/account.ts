@@ -241,4 +241,113 @@ account.post("/activate", async (c) => {
   return c.json({ success: true });
 });
 
+// DELETE /account - Delete user account
+account.delete("/", async (c) => {
+  const user = c.var.user;
+
+  if (!user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  try {
+    // Step 1: Get user subscription to find Stripe info
+    const { data: subscription, error: subError } = await c.var.supabase
+      .from("user_subscription")
+      .select("stripe_subscription_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (subError) {
+      console.error("Failed to fetch user subscription:", subError);
+    }
+
+    // Step 2: Cancel Stripe subscription if it exists
+    if (subscription?.stripe_subscription_id) {
+      try {
+        const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
+        await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
+        console.log(
+          `Canceled Stripe subscription: ${subscription.stripe_subscription_id}`
+        );
+      } catch (stripeError) {
+        console.error("Failed to cancel Stripe subscription:", stripeError);
+        // Continue with deletion even if Stripe fails
+      }
+    }
+
+    // Step 3: Ban the user account for 14 days
+    // Set banned_until to 14 days from now
+    const bannedUntil = new Date();
+    bannedUntil.setDate(bannedUntil.getDate() + 14);
+
+    const { error: banError } = await c.var.supabaseAdmin.auth.admin.updateUserById(
+      user.id,
+      {
+        ban_duration: "336h", // 14 days in hours
+      }
+    );
+
+    if (banError) {
+      console.error("Failed to ban user:", banError);
+      // Continue with other deletion steps
+    }
+
+    // Step 4: Set user status to deleted
+    const { error: statusError } = await c.var.supabase.rpc("set_user_status", {
+      user_id: user.id,
+      status: "deleted",
+    });
+
+    if (statusError) {
+      console.error("Failed to set user status:", statusError);
+    }
+
+    // Step 5: Send notification email to team@plot.day
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${c.env.RESEND_API_KEY}`,
+        },
+        body: JSON.stringify({
+          from: "Plot <info@xn--4bi.plot.day>",
+          to: ["team@plot.day"],
+          subject: "Account Deletion Request",
+          html: `
+            <h2>Account Deletion Request</h2>
+            <p>A user has requested account deletion:</p>
+            <ul>
+              <li><strong>User ID:</strong> ${user.id}</li>
+              <li><strong>Email:</strong> ${user.email}</li>
+              <li><strong>Deletion Requested:</strong> ${new Date().toISOString()}</li>
+              <li><strong>Permanent Deletion Scheduled:</strong> ${bannedUntil.toISOString()}</li>
+            </ul>
+            <p>The account has been deactivated. Please complete manual data deletion within 14 days.</p>
+          `,
+          text: `
+Account Deletion Request
+
+A user has requested account deletion:
+- User ID: ${user.id}
+- Email: ${user.email}
+- Deletion Requested: ${new Date().toISOString()}
+- Permanent Deletion Scheduled: ${bannedUntil.toISOString()}
+
+The account has been deactivated. Please complete manual data deletion within 14 days.
+          `,
+        }),
+      });
+    } catch (emailError) {
+      console.error("Failed to send notification email:", emailError);
+      // Don't fail the request if email fails
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Account deletion error:", error);
+    return new Response("Failed to delete account", { status: 500 });
+  }
+});
+
 export default account;

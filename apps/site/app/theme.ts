@@ -27,12 +27,12 @@ const variantColorResolver: VariantColorsResolver = (input) => {
       ...defaultResolvedColors,
       background: `var(${parsedColor.variable.replace(
         "-filled",
-        "-background"
+        "-background",
       )})`,
       hover: `var(${parsedColor.variable.replace("-filled", "-hover")})`,
       color: `var(${parsedColor.variable.replace(
         "-filled",
-        "-filled-foreground"
+        "-filled-foreground",
       )})`,
     };
   }
@@ -136,7 +136,7 @@ export const resolver: CSSVariablesResolver = (theme) => ({
     "--mantine-color-secondary-hover": theme.colors.secondary[2],
     "--mantine-color-secondary-light-hover": rgba(
       theme.colors.secondary[6],
-      0.16
+      0.16,
     ),
     "--mantine-color-secondary-filled-foreground": theme.colors.secondary[9],
     "--mantine-color-secondary-border": theme.colors.secondary[2],
@@ -153,6 +153,8 @@ export const resolver: CSSVariablesResolver = (theme) => ({
   dark: {
     "--mantine-color-brand-background": theme.colors.brand[8],
     "--mantine-color-brand-hover": theme.colors.brand[7],
+    "--mantine-color-brand-filled": theme.colors.brand[6],
+    "--mantine-color-brand-filled-hover": theme.colors.brand[7],
     "--mantine-color-brand-filled-foreground": theme.white,
     "--mantine-color-brand-border": theme.colors.brand[9],
     "--mantine-color-brand-dimmed": theme.colors.brand[6],

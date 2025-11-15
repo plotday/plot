@@ -14,6 +14,7 @@ export default [
     route("privacy", "routes/privacy.tsx"),
     route("signin", "routes/signin.tsx"),
     route("signout", "routes/signout.tsx"),
+    route("delete-account", "routes/delete-account.tsx"),
     route("auth/callback", "routes/auth.callback.tsx"),
     route("twister/login", "routes/twister.login.tsx"),
   ]),

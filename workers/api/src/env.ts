@@ -99,6 +99,8 @@ export type Bindings = {
   readonly STRIPE_SECRET_KEY: string;
   readonly STRIPE_WEBHOOK_SECRET: string;
 
+  readonly RESEND_API_KEY: string;
+
   readonly API_ROOT: string;
 
   readonly AI_GATEWAY_ACCOUNT_ID: string;

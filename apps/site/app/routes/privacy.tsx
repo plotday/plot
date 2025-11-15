@@ -274,6 +274,17 @@ export default function Terms() {
           this personal information to another third party.
         </p>
         <p>
+          <strong>Account deletion:</strong> You can delete your Plot account
+          and associated data at any time by visiting our{" "}
+          <a href="/delete-account">account deletion page</a>. When you request
+          account deletion, your account will be immediately deactivated and you
+          will no longer be able to sign in. Your data will be retained for 14
+          days to allow for account recovery, after which it will be permanently
+          deleted. Some data may be retained for legal or accounting purposes
+          (such as transaction records). To recover your account within the
+          14-day period, please contact us at privacy@plot.day.
+        </p>
+        <p>
           <strong>Correction:</strong> If you believe that any information we
           hold about you is inaccurate, out of date, incomplete, irrelevant or
           misleading, please contact us using the details below. We will take
