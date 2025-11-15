@@ -1,0 +1,68 @@
+name: Update Email Templates
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "libs/email/**"
+      - ".github/workflows/update-email-templates.yml"
+
+jobs:
+  update-templates:
+    runs-on: ubuntu-latest
+    name: Update Supabase Email Templates
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter=@plotday/email
+
+      - name: Build email templates
+        run: pnpm --filter=@plotday/email build
+
+      - name: Load secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: op://Production/Supabase/access_token
+          SUPABASE_PROJECT_ID: op://Production/Supabase/project_id
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Update email confirmation template
+        run: |
+          supabase projects update-email-template \
+            --project-ref $SUPABASE_PROJECT_ID \
+            --template confirmation \
+            --subject "Confirm your email address for Plot" \
+            --content-path libs/email/dist/email-confirmation.html
+
+      - name: Update password reset template
+        run: |
+          supabase projects update-email-template \
+            --project-ref $SUPABASE_PROJECT_ID \
+            --template recovery \
+            --subject "Reset your Plot password" \
+            --content-path libs/email/dist/password-reset.html
+
+      - name: Update email change template
+        run: |
+          supabase projects update-email-template \
+            --project-ref $SUPABASE_PROJECT_ID \
+            --template email_change \
+            --subject "Confirm your new email address" \
+            --content-path libs/email/dist/email-change.html

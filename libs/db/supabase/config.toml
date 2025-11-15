@@ -49,7 +49,12 @@ file_size_limit = "50MiB"
 # in emails.
 site_url = "http://localhost:5173"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["http://localhost:8788/login/callback", "http://localhost:8788/sync/callback", "http://localhost:5173/auth/callback"]
+additional_redirect_urls = [
+  "http://localhost:8788/login/callback",
+  "http://localhost:8788/sync/callback",
+  "http://localhost:8788/password-setup",
+  "http://localhost:5173/auth/callback",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # If disabled, the refresh token will never expire.
@@ -73,12 +78,25 @@ secret = "env(AUTH_MICROSOFT_SECRET)"
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
-enable_signup = false
+enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = false
+enable_confirmations = true
+
+# Email templates
+[auth.email.template.confirmation]
+subject = "Confirm your email address for Plot"
+content_path = "../email/dist/email-confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Reset your Plot password"
+content_path = "../email/dist/password-reset.html"
+
+[auth.email.template.email_change]
+subject = "Confirm your new email address"
+content_path = "../email/dist/email-change.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
@@ -102,8 +120,8 @@ auth_token = "env(SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN)"
 # `discord`, `facebook`, `github`, `gitlab`, `google`, `keycloak`, `linkedin`, `notion`, `twitch`,
 # `twitter`, `slack`, `spotify`, `workos`, `zoom`.
 [auth.external.apple]
-enabled = false
-client_id = ""
+enabled = true
+client_id = "env(AUTH_APPLE_CLIENT_ID)"
 # DO NOT commit your OAuth provider secret to git. Use environment variable substitution instead:
 secret = "env(SUPABASE_AUTH_EXTERNAL_APPLE_SECRET)"
 # Overrides the default auth redirectUrl.
