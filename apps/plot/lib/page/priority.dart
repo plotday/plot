@@ -142,6 +142,7 @@ class PriorityPage extends StatelessWidget {
                       },
                       listController: listController,
                       child: Scaffold(
+                        scrollable: false,
                         translucent: true,
                         header: Header(
                           title: state.context.title,

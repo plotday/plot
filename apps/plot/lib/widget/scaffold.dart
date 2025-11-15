@@ -11,6 +11,7 @@ class Scaffold extends StatelessWidget {
     this.header,
     this.sidebar,
     this.translucent = false,
+    this.scrollable = true,
     super.key,
   });
 
@@ -18,36 +19,38 @@ class Scaffold extends StatelessWidget {
   final Widget? header;
   final Widget? sidebar;
   final bool translucent;
+  final bool scrollable;
+
+  Widget _buildBody(BuildContext context) {
+    if (!scrollable) {
+      return body;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SafeArea(child: SingleChildScrollView(child: body));
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final wrappedBody = _buildBody(context);
+    final scaffold = FScaffold(
+      header: header,
+      sidebar: sidebar,
+      childPad: false,
+      child: wrappedBody,
+    );
+
     return PlatformBuilder(
-      androidBuilder: (_) => material.Material(
-        child: FScaffold(
-          header: header,
-          sidebar: sidebar,
-          childPad: false,
-          child: body,
-        ),
-      ),
-      webBuilder: (_) => material.Material(
-        child: FScaffold(
-          header: header,
-          sidebar: sidebar,
-          childPad: false,
-          child: body,
-        ),
-      ),
+      androidBuilder: (_) => material.Material(child: scaffold),
+      webBuilder: (_) => material.Material(child: scaffold),
       builder: (_) => Directionality(
         textDirection: TextDirection.ltr,
         child: Container(
           color: translucent ? null : context.colour.background,
-          child: FScaffold(
-            header: header,
-            sidebar: sidebar,
-            childPad: false,
-            child: body,
-          ),
+          child: scaffold,
         ),
       ),
     );

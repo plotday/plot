@@ -15,6 +15,7 @@ class PrioritiesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      scrollable: false,
       header: Header(title: 'Priorities', actions: [NewPriority()]),
       body: BlocBuilder<PrioritiesBloc, PrioritiesState>(
         builder: (builderContext, state) {

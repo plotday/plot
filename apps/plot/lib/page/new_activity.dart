@@ -16,6 +16,7 @@ class NewActivityPage extends StatelessWidget {
       builder: (context, state) {
         return Scaffold(
           translucent: true,
+          scrollable: false,
           header: Header(title: 'New Activity'),
           body: ActivityEditor(
             onAdd: (activity) async {

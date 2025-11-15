@@ -14,6 +14,7 @@ class Button extends StatelessWidget {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
+    this.expand = true,
     super.key,
   }) : iconOnly = false,
        style = ButtonStyle.secondary;
@@ -22,6 +23,7 @@ class Button extends StatelessWidget {
     this.action, {
     this.loading = false,
     this.enabled = true,
+    this.expand = true,
     super.key,
   }) : style = ButtonStyle.primary,
        iconOnly = false,
@@ -32,6 +34,7 @@ class Button extends StatelessWidget {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
+    this.expand = true,
     super.key,
   }) : style = ButtonStyle.ghost,
        iconOnly = false;
@@ -41,6 +44,7 @@ class Button extends StatelessWidget {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
+    this.expand = true,
     super.key,
   }) : style = ButtonStyle.ghost,
        iconOnly = true;
@@ -50,6 +54,7 @@ class Button extends StatelessWidget {
   final bool enabled;
   final bool selected;
   final bool iconOnly;
+  final bool expand;
   final Action action;
 
   @override
@@ -126,6 +131,13 @@ class Button extends StatelessWidget {
       result = FTooltip(
         tipBuilder: (context, controller) => Text(action.subtitle!),
         child: result,
+      );
+    }
+
+    if (!expand) {
+      result = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [result],
       );
     }
 
