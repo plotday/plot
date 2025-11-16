@@ -42,31 +42,38 @@ jobs:
           SUPABASE_ACCESS_TOKEN: op://Production/Supabase/Admin/access token
           SUPABASE_PROJECT_ID: op://Production/Supabase/project id
 
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
       - name: Update email confirmation template
         run: |
-          supabase projects update-email-template \
-            --project-ref $SUPABASE_PROJECT_ID \
-            --template confirmation \
-            --subject "Confirm your email address for Plot" \
-            --content-path libs/email/dist/email-confirmation.html
+          CONTENT=$(cat libs/email/dist/email-confirmation.html | jq -Rs .)
+          curl -X PATCH \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"MAILER_SUBJECTS_CONFIRMATION\": \"Confirm your email address for Plot\",
+              \"MAILER_TEMPLATES_CONFIRMATION_CONTENT\": $CONTENT
+            }"
 
       - name: Update password reset template
         run: |
-          supabase projects update-email-template \
-            --project-ref $SUPABASE_PROJECT_ID \
-            --template recovery \
-            --subject "Reset your Plot password" \
-            --content-path libs/email/dist/password-reset.html
+          CONTENT=$(cat libs/email/dist/password-reset.html | jq -Rs .)
+          curl -X PATCH \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"MAILER_SUBJECTS_RECOVERY\": \"Reset your Plot password\",
+              \"MAILER_TEMPLATES_RECOVERY_CONTENT\": $CONTENT
+            }"
 
       - name: Update email change template
         run: |
-          supabase projects update-email-template \
-            --project-ref $SUPABASE_PROJECT_ID \
-            --template email_change \
-            --subject "Confirm your new email address" \
-            --content-path libs/email/dist/email-change.html
+          CONTENT=$(cat libs/email/dist/email-change.html | jq -Rs .)
+          curl -X PATCH \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"MAILER_SUBJECTS_EMAIL_CHANGE\": \"Confirm your new email address\",
+              \"MAILER_TEMPLATES_EMAIL_CHANGE_CONTENT\": $CONTENT
+            }"
