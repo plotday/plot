@@ -69,7 +69,7 @@ jobs:
 
           # Split into regular variables (not containing SECRET, KEY, or TOKEN)
           VARS=$(echo "$ALL" | grep -Ev 'SECRET|KEY|TOKEN' || true)
-          VARS_FORMATTED=$(echo "$VARS" | sed 's/=/:/g')
+          VARS_FORMATTED=$(echo "$VARS" | sed 's/=/:/g' | tr '\n' ' ' | sed 's/ $//')
 
           # Deploy secrets via wrangler secret bulk (no --env flag for site)
           if [ -n "$SECRETS_JSON" ] && [ "$SECRETS_JSON" != "{}" ]; then
