@@ -11,9 +11,16 @@ on:
       - ".github/workflows/build-*.yml"
   workflow_dispatch:
 
+concurrency:
+  group: version-bump
+  cancel-in-progress: true
+
 jobs:
   bump-version:
     runs-on: ubuntu-latest
+    if: |
+      !contains(github.event.head_commit.message, '[skip ci]') &&
+      !contains(github.event.head_commit.message, '[skip version]')
     outputs:
       new_version: ${{ steps.version.outputs.new_version }}
       version_name: ${{ steps.version.outputs.version_name }}
@@ -72,7 +79,7 @@ jobs:
           git config user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
           git config user.email '${{ steps.app-user.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
           git add apps/plot/pubspec.yaml
-          git commit -m "Bump version to ${{ steps.version.outputs.new_version }}"
+          git commit -m "Bump version to ${{ steps.version.outputs.new_version }} [skip ci]"
           git push
 
       - name: Summary

@@ -7,6 +7,10 @@ on:
       - "libs/email/**"
       - ".github/workflows/update-email-templates.yml"
 
+concurrency:
+  group: update-email-templates-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   update-templates:
     runs-on: ubuntu-latest
