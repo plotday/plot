@@ -50,8 +50,8 @@ jobs:
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{
-              \"MAILER_SUBJECTS_CONFIRMATION\": \"Confirm your email address for Plot\",
-              \"MAILER_TEMPLATES_CONFIRMATION_CONTENT\": $CONTENT
+              \"mailer_subjects_confirmation\": \"Confirm your email address for Plot\",
+              \"mailer_templates_confirmation_content\": $CONTENT
             }"
 
       - name: Update password reset template
@@ -62,8 +62,8 @@ jobs:
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{
-              \"MAILER_SUBJECTS_RECOVERY\": \"Reset your Plot password\",
-              \"MAILER_TEMPLATES_RECOVERY_CONTENT\": $CONTENT
+              \"mailer_subjects_recovery\": \"Reset your Plot password\",
+              \"mailer_templates_recovery_content\": $CONTENT
             }"
 
       - name: Update email change template
@@ -74,6 +74,6 @@ jobs:
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{
-              \"MAILER_SUBJECTS_EMAIL_CHANGE\": \"Confirm your new email address\",
-              \"MAILER_TEMPLATES_EMAIL_CHANGE_CONTENT\": $CONTENT
+              \"mailer_subjects_email_change\": \"Confirm your new email address\",
+              \"mailer_templates_email_change_content\": $CONTENT
             }"
