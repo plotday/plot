@@ -39,8 +39,8 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          SUPABASE_ACCESS_TOKEN: op://Production/Supabase/access_token
-          SUPABASE_PROJECT_ID: op://Production/Supabase/project_id
+          SUPABASE_ACCESS_TOKEN: op://Production/Supabase/Admin/access token
+          SUPABASE_PROJECT_ID: op://Production/Supabase/project id
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
