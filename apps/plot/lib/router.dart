@@ -7,8 +7,7 @@ import 'package:logging/logging.dart';
 
 import 'state/now.dart';
 import 'state/user.dart';
-import 'state/layout.dart';
-import 'store/store.dart';
+import 'state/priority.dart';
 import 'page/page.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
@@ -87,6 +86,14 @@ class AppRouter extends RootStackRouter {
                     AutoRoute(
                       page: NewActivityRoute.page,
                       initial: true,
+                      guards: [
+                        AutoRouteGuardCallback((resolver, router) async {
+                          resolver.context.read<PriorityBloc>().setActivity(
+                            null,
+                          );
+                          resolver.next();
+                        }),
+                      ],
                       path: 'new',
                     ),
                     AutoRoute(page: ActivityRoute.page, path: ':activityId'),
