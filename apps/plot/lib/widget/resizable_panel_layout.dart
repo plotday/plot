@@ -198,23 +198,38 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                         divider: FResizableDivider.divider,
                         onChange: (regions) async {
                           final prefs = await SharedPreferences.getInstance();
+                          double? newLeftWidth;
+                          double? newMiddleRatio;
+
                           if (layoutState.leftPanelVisible &&
                               regions[0].index == 0) {
+                            newLeftWidth = regions[0].extent.current;
                             prefs.setDouble(
                               'layout_left_panel_width',
-                              regions[0].extent.current,
+                              newLeftWidth,
                             );
                             regions = regions.sublist(1);
                           }
                           if (layoutState.middlePanelVisible &&
                               regions.length == 2) {
+                            newMiddleRatio = regions[0].extent.current /
+                                (regions[0].extent.current +
+                                    regions[1].extent.current);
                             prefs.setDouble(
                               'layout_middle_panel_ratio',
-                              regions[0].extent.current /
-                                  (regions[0].extent.current +
-                                      regions[1].extent.current),
+                              newMiddleRatio,
                             );
                           }
+
+                          // Update state variables to prevent jumping on rebuild
+                          setState(() {
+                            if (newLeftWidth != null) {
+                              _leftPanelWidth = newLeftWidth;
+                            }
+                            if (newMiddleRatio != null) {
+                              _middlePanelRatio = newMiddleRatio;
+                            }
+                          });
                         },
                         children: regions,
                       ),
