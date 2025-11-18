@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart' hide Action, Actions;
 import 'package:forui/forui.dart';
 
 import 'package:plot/action/action.dart';
+import 'package:plot/util/shortcut.dart';
+import 'package:plot/util/platform.dart';
 import 'theme.dart';
 import 'button.dart';
 import 'colour_scheme.dart';
@@ -204,6 +206,16 @@ class _ListTileState extends State<ListTile> {
                     ],
                   ),
                 ),
+                if (widget.action?.shortcut != null && hasPhysicalKeyboard())
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8.0),
+                    child: Text(
+                      formatShortcut(widget.action?.shortcut),
+                      style: context.theme.typography.sm.copyWith(
+                        color: context.colour.muted,
+                      ),
+                    ),
+                  ),
                 ...widget.trailingActions.asMap().entries.map((entry) {
                   final key = ValueKey(
                     Object.hash(entry.value.hashCode, entry.key),
