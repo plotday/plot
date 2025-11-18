@@ -25,8 +25,8 @@ class PlotIcon {
   static const sync = FontAwesomeIcons.arrowsRotate;
   static const filter = FontAwesomeIcons.filter;
   static const move = FontAwesomeIcons.rightLeft;
-  static const sidebarLeft = FontAwesomeIcons.sidebar;
-  static const sidebarRight = FontAwesomeIcons.sidebarFlip;
+  static const sidebarOpen = FontAwesomeIcons.arrowRightFromLine;
+  static const sidebarClose = FontAwesomeIcons.arrowLeftToLine;
   static const search = FontAwesomeIcons.magnifyingGlass;
   static const pin = FontAwesomeIcons.thumbtackAngle;
   static const unpin = FontAwesomeIcons.thumbtackAngleSlash;

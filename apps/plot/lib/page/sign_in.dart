@@ -8,7 +8,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
 import 'package:plot/state/user.dart';
-import 'package:plot/router.dart' show InvitationRoute, EmailAuthRoute;
+import 'package:plot/router.dart' show InvitationRoute, EmailSignInRoute;
 import 'logging.dart';
 
 @RoutePage()
@@ -48,16 +48,16 @@ class _SignInPageState extends State<SignInPage> {
         }
       },
       child: Scaffold(
-        body: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                spacing: 16,
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+        center: true,
+        body: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              spacing: 16,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                   Center(
                     child: SvgPicture.asset(
                       "assets/p.svg",
@@ -88,6 +88,12 @@ class _SignInPageState extends State<SignInPage> {
                           idToken: idToken,
                           accessToken: accessToken,
                         );
+
+                        // Clear password setup flag for OAuth sign-ins
+                        // (they already have a password via OAuth provider)
+                        if (mounted) {
+                          await context.read<UserBloc>().clearPasswordSetupRequired();
+                        }
                       } on AuthException catch (e, t) {
                         log.warning('Error signing into Google', e, t);
                         if (!mounted) return;
@@ -121,6 +127,12 @@ class _SignInPageState extends State<SignInPage> {
                           idToken: idToken,
                           accessToken: accessToken,
                         );
+
+                        // Clear password setup flag for OAuth sign-ins
+                        // (they already have a password via OAuth provider)
+                        if (mounted) {
+                          await context.read<UserBloc>().clearPasswordSetupRequired();
+                        }
                       } on AuthException catch (e, t) {
                         log.warning('Error signing into Apple', e, t);
                         if (!mounted) return;
@@ -142,7 +154,7 @@ class _SignInPageState extends State<SignInPage> {
                   FButton(
                     onPress: () {
                       context.router.navigate(
-                        EmailAuthRoute(returnTo: widget.returnTo),
+                        EmailSignInRoute(returnTo: widget.returnTo),
                       );
                     },
                     style: FButtonStyle.secondary(),
@@ -169,43 +181,8 @@ class _SignInPageState extends State<SignInPage> {
                   ],
 
                   const SizedBox(height: 16),
-                  DefaultTextStyle(
-                    style: const TextStyle(
-                      fontSize: 12,
-                      height: 1.2,
-                      color: Color(0xFF6B7280),
-                    ),
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          const TextSpan(
-                            text: 'By signing in, you agree to our ',
-                          ),
-                          WidgetSpan(
-                            alignment: PlaceholderAlignment.baseline,
-                            baseline: TextBaseline.alphabetic,
-                            child: HoverableLink(
-                              text: 'Terms of Service',
-                              uri: Uri.parse('https://plot.day/terms'),
-                            ),
-                          ),
-                          const TextSpan(text: ' and '),
-                          WidgetSpan(
-                            alignment: PlaceholderAlignment.baseline,
-                            baseline: TextBaseline.alphabetic,
-                            child: HoverableLink(
-                              text: 'Privacy Policy',
-                              uri: Uri.parse('https://plot.day/privacy'),
-                            ),
-                          ),
-                          const TextSpan(text: '.'),
-                        ],
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
+                  const TermsAgreement(),
                 ],
-              ),
             ),
           ),
         ),

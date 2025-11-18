@@ -13,6 +13,8 @@
 -"lib/page/" contains views, dialogs, and pages, and is responsible for connecting Bloc state to widgets
 -"lib/action/" contains classes defining all actions a user can perform; these can be triggered through the UI or keyboard shortcuts
 
+An overview of layout (including tabs and panels) can be found in "docs/layout.md".
+
 # Drift schema changes
 
 When making changes to the Drift schema, follow these steps:

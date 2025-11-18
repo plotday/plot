@@ -25,6 +25,15 @@ final class UserWaitlisted extends UserState {
   List<Object?> get props => [user];
 }
 
+final class UserPasswordRequired extends UserState {
+  const UserPasswordRequired(this.user);
+
+  final User user;
+
+  @override
+  List<Object?> get props => [user];
+}
+
 final class UserReady extends UserState {
   const UserReady(this.user);
 

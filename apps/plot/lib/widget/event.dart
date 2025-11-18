@@ -6,13 +6,13 @@ class DayHeader extends StatelessWidget {
   const DayHeader({
     this.date,
     this.now = false,
-    this.selected = false,
+    this.highlighted = false,
     super.key,
   });
 
   final Date? date;
   final bool now;
-  final bool selected;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +28,7 @@ class DayHeader extends StatelessWidget {
           ),
         ),
       ),
-      selected: selected,
+      highlighted: highlighted,
     );
   }
 }
@@ -39,7 +39,7 @@ class AgendaHeader extends StatelessWidget {
     this.context,
     this.activity,
     this.now = false,
-    this.selected = false,
+    this.highlighted = false,
     super.key,
   });
 
@@ -48,7 +48,7 @@ class AgendaHeader extends StatelessWidget {
   final Priority? priority;
   final Priority? context;
 
-  final bool selected;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +70,7 @@ class AgendaHeader extends StatelessWidget {
               icon: Value(null),
             )
           : null,
-      selected: selected,
+      highlighted: highlighted,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         spacing: 8.0,

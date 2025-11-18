@@ -10,12 +10,11 @@ part 'layout_state.dart';
 class LayoutBloc extends Cubit<LayoutState> {
   LayoutBloc()
     : leftPanelRequested = true,
-      rightPanelAvailable = true,
+      middlePanelRequested = true,
       super(
         const LayoutState(
           leftPanelVisible: false,
-          rightPanelVisible: false,
-          rightPanelPossible: false,
+          middlePanelVisible: false,
           multiPanel: false,
         ),
       ) {
@@ -26,9 +25,9 @@ class LayoutBloc extends Cubit<LayoutState> {
   // User has requested left panel visibility.
   // if there's insufficient width, it will still be hidden.
   bool leftPanelRequested;
-  // Right panel is available.
+  // User has requested middle panel visibility.
   // If there's insufficient width, it will still be hidden.
-  bool rightPanelAvailable;
+  bool middlePanelRequested;
 
   /// Update layout based on available width
   void _setWidth(double width) {
@@ -36,50 +35,59 @@ class LayoutBloc extends Cubit<LayoutState> {
     _recalculate();
   }
 
-  void _recalculate() {
+  void _recalculate({bool preferMiddle = false, bool explicit = false}) {
     final isMulti = LayoutState.isMultiPanel(width);
     bool effectiveLeftVisible = false;
-    bool effectiveRightVisible = false;
-    bool rightPanelPossible = false;
+    bool effectiveMiddleVisible = false;
     if (isMulti) {
       effectiveLeftVisible = leftPanelRequested;
-      effectiveRightVisible = rightPanelAvailable;
+      effectiveMiddleVisible = middlePanelRequested;
       // Check if there's enough space for both panels when both are preferred
       final canShowBoth = width >= LayoutState.threePanelMinWidth;
-      if (!canShowBoth && leftPanelRequested && rightPanelAvailable) {
-        // Not enough space for both panels, prefer left panel
-        effectiveRightVisible = false;
+      if (!canShowBoth && leftPanelRequested && middlePanelRequested) {
+        if (preferMiddle) {
+          // Not enough space for both panels, prefer middle panel
+          effectiveLeftVisible = false;
+        } else {
+          // Not enough space for both panels, prefer left panel
+          effectiveMiddleVisible = false;
+        }
+        if (explicit) {
+          // Update requested states to match effective states
+          leftPanelRequested = effectiveLeftVisible;
+          middlePanelRequested = effectiveMiddleVisible;
+        }
       }
-      rightPanelPossible = canShowBoth || !leftPanelRequested;
     } else {
-      rightPanelAvailable = false;
+      effectiveMiddleVisible = false;
     }
 
     emit(
       state.copyWith(
         multiPanel: isMulti,
         leftPanelVisible: effectiveLeftVisible,
-        rightPanelVisible: effectiveRightVisible,
-        rightPanelPossible: rightPanelPossible,
+        middlePanelVisible: effectiveMiddleVisible,
       ),
     );
   }
 
   void setLeftPanelVisible(bool visible) {
     leftPanelRequested = visible;
-    _recalculate();
+    _recalculate(explicit: true);
     _persistState();
   }
 
-  void setRightPanelVisible(bool visible) {
-    rightPanelAvailable = visible;
-    _recalculate();
+  void setMiddlePanelVisible(bool visible) {
+    middlePanelRequested = visible;
+    _recalculate(explicit: true, preferMiddle: true);
+    _persistState();
   }
 
   /// Load state from shared preferences
   Future<void> _loadFromPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     leftPanelRequested = prefs.getBool('layout_left_panel_visible') ?? true;
+    middlePanelRequested = prefs.getBool('layout_middle_panel_visible') ?? true;
     _recalculate();
   }
 
@@ -88,6 +96,7 @@ class LayoutBloc extends Cubit<LayoutState> {
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
       prefs.setBool('layout_left_panel_visible', leftPanelRequested),
+      prefs.setBool('layout_middle_panel_visible', middlePanelRequested),
     ]);
   }
 }

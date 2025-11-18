@@ -1,23 +1,18 @@
-import React from "react";
-import { Heading, Hr, Text } from "@react-email/components";
-import EmailButton from "./components/email-button";
+import { Heading, Text } from "@react-email/components";
+
 import EmailLayout from "./components/email-layout";
 
 export default function EmailConfirmation() {
   return (
     <EmailLayout preview="Confirm your email address for Plot">
-      <Heading style={h1}>Confirm your email</Heading>
+      <Heading style={h1}>Welcome to Plot!</Heading>
       <Text style={text}>
-        Welcome to Plot! Please confirm your email address to get started.
+        Please confirm your email address by entering the code below in the app:
       </Text>
-      <EmailButton href="{{ .ConfirmationURL }}">
-        Confirm email address
-      </EmailButton>
-      <Hr style={divider} />
-      <Text style={otpLabel}>Or enter this code in the app:</Text>
       <Text style={otpCode}>{"{{ .Token }}"}</Text>
       <Text style={hint}>
         If you didn't create a Plot account, you can safely ignore this email.
+        This code will expire in one hour for security your security.
       </Text>
     </EmailLayout>
   );
@@ -36,19 +31,6 @@ const text = {
   fontSize: "16px",
   lineHeight: "24px",
   margin: "0 0 24px",
-};
-
-const divider = {
-  borderColor: "#e5e7eb",
-  margin: "32px 0 24px",
-};
-
-const otpLabel = {
-  color: "#6b7280",
-  fontSize: "14px",
-  lineHeight: "20px",
-  margin: "0 0 12px",
-  textAlign: "center" as const,
 };
 
 const otpCode = {

@@ -48,7 +48,6 @@ class Schedule extends Equatable {
           return activity?.agendaAt.toDate();
         }),
         (rangeMap, todaySchedule, previous, next) {
-          log.fine("Range = $range, Previous = $previous, Next = $next");
           final result = Map<Date, ScheduledDay>.from(rangeMap);
           // Only include today if it has events or activities and we have a schedule
           if (todaySchedule != null &&
@@ -92,7 +91,9 @@ class Schedule extends Equatable {
 
           return Schedule(days: days, previous: previous, next: next);
         },
-      );
+      ).distinct().doOnData((schedule) {
+        log.fine("Range = $range, Previous = ${schedule.previous}, Next = ${schedule.next}");
+      });
     });
   }
 

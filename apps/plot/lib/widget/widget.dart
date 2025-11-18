@@ -31,6 +31,7 @@ export 'spinner.dart';
 export 'squiggle.dart';
 export 'switch.dart';
 export 'tapable.dart';
+export 'terms_agreement.dart';
 export 'text_field.dart';
 export 'theme.dart';
 export 'time_picker.dart';

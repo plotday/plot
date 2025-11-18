@@ -4,40 +4,36 @@ part of 'layout.dart';
 class LayoutState extends Equatable {
   const LayoutState({
     required this.leftPanelVisible,
-    required this.rightPanelVisible,
-    required this.rightPanelPossible,
+    required this.middlePanelVisible,
     required this.multiPanel,
   });
 
   /// Whether left panel is visible
   final bool leftPanelVisible;
 
-  /// Whether right panel is visible
-  final bool rightPanelVisible;
+  /// Whether middle panel is visible
+  final bool middlePanelVisible;
 
   /// Whether layout supports multiple panels (based on screen width)
   final bool multiPanel;
 
-  /// Whether there's enough width to show right panel if requested
-  final bool rightPanelPossible;
-
-  bool get showBackButton => !multiPanel || !rightPanelVisible;
+  bool get showBackButton => !multiPanel || !middlePanelVisible;
 
   /// Minimum width constraints per spec
   static const double leftPanelMinWidth = 250.0;
-  static const double centerPanelMinWidth = 350.0;
+  static const double middlePanelMinWidth = 350.0;
   static const double rightPanelMinWidth = 350.0;
 
   /// Minimum width for multi-panel layout
   /// Buffer accounts for dividers and ensures min < max for resizable regions
   static final double multiPanelMinWidth = max(
-    leftPanelMinWidth + centerPanelMinWidth + 60,
-    centerPanelMinWidth + rightPanelMinWidth + 60,
+    leftPanelMinWidth + middlePanelMinWidth + 60,
+    middlePanelMinWidth + rightPanelMinWidth + 60,
   );
 
   /// Minimum width for three panel layout
   static final double threePanelMinWidth =
-      leftPanelMinWidth + centerPanelMinWidth + rightPanelMinWidth + 60 + 60;
+      leftPanelMinWidth + middlePanelMinWidth + rightPanelMinWidth + 60 + 60;
 
   /// Check if we should use multi-panel layout based on width
   static bool isMultiPanel(double width) {
@@ -47,23 +43,16 @@ class LayoutState extends Equatable {
   /// Create a copy with updated properties
   LayoutState copyWith({
     bool? leftPanelVisible,
-    bool? rightPanelVisible,
-    bool? rightPanelPossible,
+    bool? middlePanelVisible,
     bool? multiPanel,
   }) {
     return LayoutState(
       leftPanelVisible: leftPanelVisible ?? this.leftPanelVisible,
-      rightPanelVisible: rightPanelVisible ?? this.rightPanelVisible,
-      rightPanelPossible: rightPanelPossible ?? this.rightPanelPossible,
+      middlePanelVisible: middlePanelVisible ?? this.middlePanelVisible,
       multiPanel: multiPanel ?? this.multiPanel,
     );
   }
 
   @override
-  List<Object?> get props => [
-    leftPanelVisible,
-    rightPanelVisible,
-    rightPanelPossible,
-    multiPanel,
-  ];
+  List<Object?> get props => [leftPanelVisible, middlePanelVisible, multiPanel];
 }

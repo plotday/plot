@@ -26,13 +26,14 @@ class _ActivityEditorState extends State<ActivityEditor> {
         return EditableArea(
           position: EditableAreaPosition.bottom,
           builder: (context, focusNode) {
-            final column = Column(
+            return Column(
               mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               spacing: 8,
               children: [
                 if (widget.expand)
-                  Flexible(
+                  Expanded(
+                    key: const ValueKey('editor_expanded'),
                     child: Editor(
                       key: _editorKey,
                       hint: 'Add activity',
@@ -89,8 +90,6 @@ class _ActivityEditorState extends State<ActivityEditor> {
                 ),
               ],
             );
-
-            return widget.expand ? Expanded(child: column) : column;
           },
         );
       },

@@ -16,57 +16,53 @@ class PrioritiesList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FSidebar(
-      // ignore: unused_result
-      style: context.theme.sidebarStyle.copyWith(
-        decoration: BoxDecoration(),
-        constraints: BoxConstraints(),
-        headerPadding: EdgeInsets.zero,
-        contentPadding: EdgeInsets.zero,
-        footerPadding: EdgeInsets.zero,
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // First group: Everything root priority
-        FSidebarGroup(
-          children: [
-            FSidebarItem(
-              label: Text(root.title),
-              selected: selected?.id == root.id,
-              onPress: () => context.run(ChangeCurrentPriority(root)),
-            ),
-          ],
+        ListTile(
+          title: root.title,
+          action: ChangeCurrentPriority(root),
+          selected: selected?.id == root.id,
         ),
 
         // Second group: Top Priorities
-        if (topPriorities.isNotEmpty)
-          FSidebarGroup(
-            label: const Text('Top Priorities'),
-            children: topPriorities
-                .map((priority) => _buildPriorityItem(context, priority))
-                .toList(),
+        if (topPriorities.isNotEmpty) ...[
+          ListTile(
+            title: 'Top Priorities',
+            style: ListTileStyle.header,
           ),
+          ...topPriorities
+              .expand((priority) => _buildPriorityItems(context, priority, 0)),
+        ],
 
-        // Third group: All Priorities with + button
-        FSidebarGroup(
-          label: const Text('All Priorities'),
-          children: root.children
-              .map((priority) => _buildPriorityItem(context, priority))
-              .toList(),
+        // Third group: All Priorities
+        ListTile(
+          title: 'All Priorities',
+          style: ListTileStyle.header,
         ),
+        ...root.children
+            .expand((priority) => _buildPriorityItems(context, priority, 0)),
       ],
     );
   }
 
-  FSidebarItem _buildPriorityItem(BuildContext context, Priority priority) {
-    return FSidebarItem(
-      key: ValueKey(priority.id),
-      label: Text(priority.title),
-      selected: selected?.id == priority.id,
-      initiallyExpanded: false,
-      onPress: () => context.run(ChangeCurrentPriority(priority)),
-      children: priority.children
-          .map((child) => _buildPriorityItem(context, child))
-          .toList(),
-    );
+  List<Widget> _buildPriorityItems(
+    BuildContext context,
+    Priority priority,
+    int indentLevel,
+  ) {
+    return [
+      ListTile(
+        key: ValueKey(priority.id),
+        title: priority.title,
+        action: ChangeCurrentPriority(priority),
+        selected: selected?.id == priority.id,
+        indentLevel: indentLevel,
+      ),
+      ...priority.children.expand(
+        (child) => _buildPriorityItems(context, child, indentLevel + 1),
+      ),
+    ];
   }
 }

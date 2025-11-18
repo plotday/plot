@@ -5,8 +5,8 @@ import EmailConfirmation from "./emails/email-confirmation";
 import PasswordReset from "./emails/password-reset";
 import EmailChange from "./emails/email-change";
 
-// Create dist directory if it doesn't exist
-const distDir = join(__dirname, "dist");
+// Create email-templates directory if it doesn't exist
+const distDir = join(__dirname, "../db/supabase/email-templates");
 mkdirSync(distDir, { recursive: true });
 
 // Template configurations

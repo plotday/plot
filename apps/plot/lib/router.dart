@@ -8,6 +8,7 @@ import 'package:logging/logging.dart';
 import 'state/now.dart';
 import 'state/user.dart';
 import 'state/layout.dart';
+import 'store/store.dart';
 import 'page/page.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
@@ -43,6 +44,8 @@ class AppRouter extends RootStackRouter {
       path: '/',
       children: [
         AutoRoute(page: SignInRoute.page, path: 'login'),
+        AutoRoute(page: EmailSignInRoute.page, path: 'login/email'),
+        AutoRoute(page: PasswordSetupRoute.page, path: 'account/password'),
         AutoRoute(
           page: InvitationRoute.page,
           path: 'invitation',
@@ -74,57 +77,24 @@ class AppRouter extends RootStackRouter {
           path: '',
           children: [
             AutoRoute(
-              page: PrioritiesRoute.page,
+              page: EmptyShellRoute("PriorityShell"),
               path: '',
-              guards: [
-                // If we're in a multi-panel layout, redirect to the current priority
-                AutoRouteGuardCallback((resolver, router) async {
-                  if (resolver.context.read<NowBloc>().loading) {
-                    return;
-                  }
-                  final layout = resolver.context.read<LayoutBloc>().state;
-                  if (layout.multiPanel) {
-                    final priorityId = resolver.context
-                        .read<NowBloc>()
-                        .loadedState
-                        .priority
-                        .id;
-                    resolver.redirectUntil(
-                      PriorityRoute(
-                        priorityIdString: priorityId.toShortString(),
-                      ),
-                    );
-                  }
-                }),
-              ],
-            ),
-            AutoRoute(
-              page: PriorityRoute.page,
-              path: ':priorityId',
               children: [
                 AutoRoute(
-                  page: PriorityMainRoute.page,
-                  path: '',
-                  guards: [
-                    // In multi-panel mode, redirect to NewActivityRoute
-                    AutoRouteGuardCallback((resolver, router) async {
-                      final layout = resolver.context.read<LayoutBloc>().state;
-                      if (layout.multiPanel) {
-                        resolver.redirectUntil(const NewActivityRoute());
-                      } else {
-                        resolver.next();
-                      }
-                    }),
+                  page: PriorityRoute.page,
+                  path: ':priorityId',
+                  children: [
+                    AutoRoute(
+                      page: NewActivityRoute.page,
+                      initial: true,
+                      path: 'new',
+                    ),
+                    AutoRoute(page: ActivityRoute.page, path: ':activityId'),
                   ],
-                ),
-                AutoRoute(page: NewActivityRoute.page, path: 'new'),
-                AutoRoute(
-                  page: ActivityRoute.page,
-                  path: ':activityId',
-                  children: [AutoRoute(page: ActivityMainRoute.page, path: '')],
                 ),
               ],
             ),
+            AutoRoute(page: PrioritiesRoute.page, path: 'priorities'),
           ],
         ),
       ],
@@ -181,24 +151,23 @@ class AuthGuard extends AutoRouteGuard {
       'AuthGuard checking user state: $userState, ${resolver.route.name}',
     );
 
-    if (userState is UserReady) {
-      // User is authenticated and active, proceed with navigation
-      resolver.next();
-    } else if (userState is UserWaitlisted &&
-        resolver.route.name != 'InvitationRoute') {
-      _logger.info('Redirecting to InvitationRoute for waitlisted user');
-      resolver.redirectUntil(InvitationRoute());
-    } else if (userState is UserSignedOut &&
-        resolver.route.name != 'SignInRoute') {
-      // User is not authenticated, redirect to sign in with return path
-      resolver.redirectUntil(
-        SignInRoute(returnTo: resolver.route.path, signOut: true),
-      );
-      return;
-    } else {
-      // User state is loading, wait for authentication to complete
-      // This will be handled by the UserBloc listener
-      resolver.next();
+    switch (userState) {
+      case UserReady():
+        // User is authenticated and active, proceed with navigation
+        resolver.next();
+        break;
+      case UserPasswordRequired():
+        resolver.redirectUntil(
+          PasswordSetupRoute(returnTo: resolver.route.path),
+        );
+      case UserWaitlisted():
+        resolver.redirectUntil(InvitationRoute());
+      case UserSignedOut():
+        resolver.redirectUntil(
+          SignInRoute(returnTo: resolver.route.path, signOut: true),
+        );
+      case UserLoading():
+        break;
     }
   }
 }
@@ -299,6 +268,10 @@ class RouteLogger extends AutoRouterObserver {
       return 'priorities_list';
     } else if (snakeCase == 'sign_in') {
       return 'sign_in';
+    } else if (snakeCase == 'email_sign_in') {
+      return 'email_sign_in';
+    } else if (snakeCase == 'password_setup') {
+      return 'password_setup';
     } else if (snakeCase == 'invitation') {
       return 'invitation';
     } else if (snakeCase == 'new_activity') {

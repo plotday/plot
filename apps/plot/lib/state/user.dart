@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/store/store.dart';
 import 'logging.dart';
@@ -15,9 +16,15 @@ class UserBloc extends Cubit<UserState> {
       if (user == null) {
         if (state is UserSignedOut) return;
         log.info('User signed out');
+        await _clearPasswordSetupRequired();
         await Store.stop();
         emit(const UserSignedOut());
         log.info('Sign out state emitted');
+        return;
+      } else if (_passwordSetupRequired) {
+        if (state is UserPasswordRequired) return;
+        log.info('User requires password setup: ${user.primaryEmail}');
+        emit(UserPasswordRequired(user));
         return;
       } else if (!user.isActive) {
         if (state is UserWaitlisted) return;
@@ -42,6 +49,52 @@ class UserBloc extends Cubit<UserState> {
   }
 
   late final StreamSubscription<User?>? _userSubscription;
+  bool _passwordSetupRequired = false;
+
+  static const String _kPasswordSetupRequiredKey = 'password_setup_required';
+
+  /// Sets whether password setup is required and updates state accordingly
+  Future<void> setPasswordSetupRequired(bool required) async {
+    _passwordSetupRequired = required;
+    final prefs = await SharedPreferences.getInstance();
+    if (required) {
+      await prefs.setBool(_kPasswordSetupRequiredKey, true);
+    } else {
+      await prefs.remove(_kPasswordSetupRequiredKey);
+    }
+
+    // Re-emit state based on current user and new flag
+    final currentUser = await Base.user.first;
+    if (currentUser != null) {
+      if (!currentUser.isActive) {
+        emit(UserWaitlisted(currentUser));
+      } else if (_passwordSetupRequired) {
+        emit(UserPasswordRequired(currentUser));
+      } else {
+        // Password setup complete, initialize store if not already ready
+        if (state is! UserReady) {
+          try {
+            await Store.start(currentUser);
+            emit(UserReady(currentUser));
+          } catch (e, stackTrace) {
+            log.warning('User init failed', e, stackTrace);
+            emit(const UserSignedOut());
+          }
+        }
+      }
+    }
+  }
+
+  /// Clears the password setup required flag (called on sign-out or non-OTP sign-in)
+  Future<void> clearPasswordSetupRequired() async {
+    await _clearPasswordSetupRequired();
+  }
+
+  Future<void> _clearPasswordSetupRequired() async {
+    _passwordSetupRequired = false;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kPasswordSetupRequiredKey);
+  }
 
   @override
   Future<void> close() async {

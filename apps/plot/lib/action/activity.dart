@@ -6,7 +6,6 @@ import 'package:plot/analytics/analytics.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
-import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'logging.dart';
@@ -64,18 +63,23 @@ class ChangeCurrentActivity extends ActivityAction {
 
   @override
   Future<ActionReturn> run(BuildContext context) async {
-    // HACK: We need to make the panel visible before navigating to it
-    context.read<LayoutBloc>().setRightPanelVisible(true);
     // Update PriorityBloc to track current activity for navigation
-    context.read<PriorityBloc>().setActivity(activity!);
-    return ActionRoute(
-      PriorityRoute(
-        priorityIdString: activity!.priority.id.toShortString(),
-        children: [
-          ActivityRoute(activityIdString: activity!.id.toShortString()),
-        ],
-      ),
+    context.read<PriorityBloc>().setActivity(activity);
+
+    if (activity == null) {
+      // Navigate to just the PriorityRoute without ActivityRoute
+      final priority = context.read<PriorityBloc>().state.context;
+      return ActionRoute(
+        PriorityRoute(priorityIdString: priority.id.toShortString()),
+      );
+    }
+
+    final route = PriorityRoute(
+      priorityIdString: activity!.priority.id.toShortString(),
+      children: [ActivityRoute(activityIdString: activity!.id.toShortString())],
     );
+
+    return ActionRoute(route);
   }
 }
 
@@ -91,7 +95,6 @@ class NewActivity extends Action {
 
   @override
   Future<ActionReturn> run(BuildContext context) async {
-    context.read<LayoutBloc>().setRightPanelVisible(true);
     final nowBloc = context.read<NowBloc>();
     final priorityId = nowBloc.loadedState.priority.id;
     return ActionRoute(

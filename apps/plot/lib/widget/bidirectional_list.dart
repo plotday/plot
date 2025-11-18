@@ -16,48 +16,85 @@ class BidirectionalListController extends ChangeNotifier {
     int initialMax = 0,
   }) : _min = initialMin,
        _max = initialMax,
-       _selected = initialSelected;
+       _keyboardPosition = initialSelected;
 
-  int? _selected;
+  int? _keyboardPosition;
+  int? _hoveredIndex;
+  bool _keyboardActive = false;
   int _min;
   int _max;
 
-  int? get selected => _selected;
+  int? get hoveredIndex => _hoveredIndex;
 
-  set selected(int? value) {
+  /// Returns the index that should be highlighted.
+  /// Only shows highlight during active interaction (keyboard or mouse).
+  /// Prioritizes hover (mouse) over keyboard selection.
+  int? get highlighted =>
+      _hoveredIndex ?? (_keyboardActive ? _keyboardPosition : null);
+
+  void _setKeyboardPosition(int? value) {
     if (value != null && value < _min) {
       value = _min;
     }
     if (value != null && value > _max) {
       value = _max;
     }
-    if (_selected != value) {
-      _selected = value;
+    if (_keyboardPosition != value) {
+      _keyboardPosition = value;
       notifyListeners();
     }
+  }
+
+  void setSelected(int? value) {
+    _setKeyboardPosition(value);
   }
 
   void clamp(int min, int max) {
     _min = min;
     _max = max;
-    if (_selected != null && _selected! < _min) {
-      selected = _min;
+    if (_keyboardPosition != null && _keyboardPosition! < _min) {
+      _setKeyboardPosition(_min);
     }
-    if (_selected != null && _selected! > _max) {
-      selected = _max;
+    if (_keyboardPosition != null && _keyboardPosition! > _max) {
+      _setKeyboardPosition(_max);
     }
   }
 
   void move(int offset) {
-    if (selected == null) {
-      selected = 0;
+    // Clear hover when using keyboard navigation
+    _hoveredIndex = null;
+
+    // If keyboard not yet active, just activate and show current position
+    if (!_keyboardActive) {
+      _keyboardActive = true;
+      // Initialize keyboard position if null
+      _keyboardPosition ??= 0;
+      // Don't move - just show highlight on current item
+      notifyListeners();
+      return;
+    }
+
+    // Keyboard already active - navigate normally
+    if (_keyboardPosition == null) {
+      _setKeyboardPosition(0);
     } else {
-      selected = selected! + offset;
+      _setKeyboardPosition(_keyboardPosition! + offset);
+    }
+  }
+
+  void setHovered(int? index) {
+    if (_hoveredIndex != index) {
+      _hoveredIndex = index;
+      // Clear keyboard active mode when mouse interaction starts
+      if (index != null) {
+        _keyboardActive = false;
+      }
+      notifyListeners();
     }
   }
 
   void clear() {
-    selected = null;
+    _setKeyboardPosition(null);
   }
 }
 
@@ -80,6 +117,8 @@ class BidirectionalListSelector extends StatefulWidget {
   final ValueChanged<int?>? onSelectionChanged;
   final void Function(int)? onActivate;
   final bool reverse;
+  final bool autoActivateKeyboard;
+  final int? initialHighlight;
 
   const BidirectionalListSelector({
     super.key,
@@ -87,6 +126,8 @@ class BidirectionalListSelector extends StatefulWidget {
     this.onSelectionChanged,
     this.onActivate,
     this.reverse = false,
+    this.autoActivateKeyboard = false,
+    this.initialHighlight,
   });
 
   @override
@@ -96,12 +137,36 @@ class BidirectionalListSelector extends StatefulWidget {
 
 class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
   late final BidirectionalListController controller =
-      BidirectionalListController(initialSelected: 0);
+      BidirectionalListController(initialSelected: widget.initialHighlight);
 
   @override
   void initState() {
     super.initState();
     controller.addListener(_handleSelectionChange);
+
+    // Auto-activate keyboard mode if requested or if there's an initial selection
+    if (widget.autoActivateKeyboard || widget.initialHighlight != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        controller.move(0);
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant BidirectionalListSelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Update selection if initialSelected changed
+    if (widget.initialHighlight != oldWidget.initialHighlight) {
+      controller.setSelected(widget.initialHighlight);
+    }
+
+    // Reset to first item when widget rebuilds (e.g., filter changes)
+    if (widget.autoActivateKeyboard) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        controller.move(0);
+      });
+    }
   }
 
   @override
@@ -117,10 +182,10 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
         ActivateListSelectionIntent:
             CallbackAction<ActivateListSelectionIntent>(
               onInvoke: (intent) {
-                if (controller.selected == null) {
+                if (controller.highlighted == null) {
                   return KeyEventResult.ignored;
                 }
-                widget.onActivate?.call(controller.selected!);
+                widget.onActivate?.call(controller.highlighted!);
                 return KeyEventResult.handled;
               },
             ),
@@ -136,7 +201,7 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
   }
 
   void _handleSelectionChange() {
-    widget.onSelectionChanged?.call(controller.selected);
+    widget.onSelectionChanged?.call(controller.highlighted);
   }
 }
 
@@ -363,14 +428,24 @@ class BidirectionalListState extends State<BidirectionalList> {
         if (itemIndex == null) {
           return SizedBox(key: ValueKey('empty_$index'), height: 0);
         }
-        final isSelected = itemIndex == widget.controller.selected;
-        final child = widget.builder(context, itemIndex, isSelected);
+        final isHighlighted = itemIndex == widget.controller.highlighted;
+        var child = widget.builder(context, itemIndex, isHighlighted);
 
         if (child == null) {
           return SizedBox(key: ValueKey('empty_$itemIndex'), height: 0);
         }
 
         final onReorder = widget.onReorder?.call(itemIndex);
+
+        // Wrap with MouseRegion to track hover state
+        // Key is required by SliverReorderableList on the outermost widget
+        child = MouseRegion(
+          key: onReorder == null ? ValueKey('item_$itemIndex') : null,
+          onEnter: (_) => widget.controller.setHovered(itemIndex),
+          onExit: (_) => widget.controller.setHovered(null),
+          child: child,
+        );
+
         if (onReorder != null) {
           return ReorderableDragStartListener(
             index: index,
@@ -477,8 +552,8 @@ class SelectionActionScopeState extends State<SelectionActionScope> {
       listenable: widget.listController,
       builder: (context, child) => ActionScope(
         actions: [
-          if (widget.listController.selected != null)
-            ...widget.actionBuilder(widget.listController.selected!),
+          if (widget.listController.highlighted != null)
+            ...widget.actionBuilder(widget.listController.highlighted!),
         ],
         child: widget.child,
       ),

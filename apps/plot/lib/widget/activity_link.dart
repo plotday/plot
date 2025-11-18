@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/api/api.dart' as api;
+import 'logging.dart';
 
 /// Widget that displays a single activity link with appropriate styling based on type
 class ActivityLinkWidget extends StatelessWidget {
@@ -73,9 +74,9 @@ class _CallbackLinkButtonState extends State<CallbackLinkButton> {
         body: widget.link.toJson(),
       );
 
-      debugPrint('Callback executed successfully for: ${widget.link.title}');
+      log.info('Callback executed successfully for: ${widget.link.title}');
     } catch (e) {
-      debugPrint('Failed to execute callback for ${widget.link.title}: $e');
+      log.warning('Failed to execute callback for ${widget.link.title}: $e');
       // TODO: Show user-friendly error message
     } finally {
       if (mounted) {
@@ -103,8 +104,8 @@ class ExternalLinkButton extends StatelessWidget {
     try {
       final uri = Uri.parse(url);
       launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('Failed to launch URL: $url - Error: $e');
+    } catch (e, t) {
+      log.warning('Failed to launch URL: $url', e, t);
     }
   }
 }
@@ -125,11 +126,11 @@ class ConferencingLinkButton extends StatelessWidget {
       case ConferencingProvider.googleMeet:
         return 'Join Google Meet';
       case ConferencingProvider.zoom:
-        return 'Join Zoom Meeting';
+        return 'Join on Zoom';
       case ConferencingProvider.microsoftTeams:
-        return 'Join Teams Meeting';
+        return 'Join on Teams';
       case ConferencingProvider.webex:
-        return 'Join Webex Meeting';
+        return 'Join Webex';
       case ConferencingProvider.other:
         return 'Join Meeting';
     }
@@ -140,8 +141,8 @@ class ConferencingLinkButton extends StatelessWidget {
     try {
       final uri = Uri.parse(url);
       launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('Failed to launch URL: $url - Error: $e');
+    } catch (e, t) {
+      log.warning('Failed to launch URL: $url', e, t);
     }
   }
 }

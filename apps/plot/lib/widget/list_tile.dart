@@ -26,7 +26,18 @@ class ListTile extends StatefulWidget {
 
     this.style = ListTileStyle.item,
 
+    /// Whether this tile should show a highlight (for hover or keyboard selection).
+    this.highlighted = false,
+
+    /// Whether this tile is selected (shows left border and primary color).
     this.selected = false,
+
+    /// Indentation level for nested items.
+    this.indentLevel = 0,
+
+    /// Disable internal hover highlighting (for external hover management).
+    this.disableInternalHover = false,
+
     this.onHover,
 
     /// Override the action title
@@ -41,7 +52,10 @@ class ListTile extends StatefulWidget {
   }) : title = title ?? action?.title ?? '';
 
   final ListTileStyle style;
+  final bool highlighted;
   final bool selected;
+  final int indentLevel;
+  final bool disableInternalHover;
   final Widget? details;
   final Action? action;
   final Action? doubleTapAction;
@@ -118,12 +132,24 @@ class _ListTileState extends State<ListTile> {
           onShowFocusHighlight: (focused) => widget.onHover?.call(focused),
           onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
           child: Container(
-            color: widget.selected
-                ? context.colour.accentBackground
-                : _isHovered
-                ? context.colour.highlight
-                : null,
-            padding: widgetPaddingSm,
+            decoration: BoxDecoration(
+              color: widget.highlighted ||
+                     (!widget.disableInternalHover && _isHovered) ||
+                     _focusNode.hasFocus
+                  ? context.colour.highlight
+                  : null,
+              border: widget.selected
+                  ? Border(
+                      left: BorderSide(
+                        color: context.colour.accent,
+                        width: 3,
+                      ),
+                    )
+                  : null,
+            ),
+            padding: widgetPaddingSm.copyWith(
+              left: widgetPaddingSm.left + (widget.indentLevel * 16.0) - (widget.selected ? 3.0 : 0.0),
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               spacing: 10,
@@ -151,10 +177,11 @@ class _ListTileState extends State<ListTile> {
                                         : widget.title,
                                     overflow: TextOverflow.ellipsis,
                                     style: context.theme.typography.sm.copyWith(
-                                      color:
-                                          widget.style == ListTileStyle.header
-                                          ? context.colour.muted
-                                          : context.colour.foreground,
+                                      color: widget.selected
+                                          ? context.colour.accent
+                                          : widget.style == ListTileStyle.header
+                                              ? context.colour.muted
+                                              : context.colour.foreground,
                                     ),
                                   ),
                                 ),

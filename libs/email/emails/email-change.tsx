@@ -1,8 +1,5 @@
-import React from "react";
+import { Heading, Text } from "@react-email/components";
 
-import { Heading, Hr, Text } from "@react-email/components";
-
-import EmailButton from "./components/email-button";
 import EmailLayout from "./components/email-layout";
 
 export default function EmailChange() {
@@ -11,18 +8,15 @@ export default function EmailChange() {
       <Heading style={h1}>Confirm email change</Heading>
       <Text style={text}>
         You recently requested to change the email address for your Plot
-        account. Click the button below to confirm this change.
+        account. Enter this code in the app to confirm this change:
       </Text>
-      <EmailButton href="{{ .ConfirmationURL }}">Confirm new email</EmailButton>
-      <Hr style={divider} />
-      <Text style={otpLabel}>Or enter this code in the app:</Text>
       <Text style={otpCode}>{"{{ .Token }}"}</Text>
       <Text style={hint}>
         If you didn't request this change, please ignore this email and your
         email address will remain unchanged.
       </Text>
       <Text style={hint}>
-        This link will expire in one hour for security reasons.
+        This code will expire in one hour for your security.
       </Text>
     </EmailLayout>
   );
@@ -41,19 +35,6 @@ const text = {
   fontSize: "16px",
   lineHeight: "24px",
   margin: "0 0 24px",
-};
-
-const divider = {
-  borderColor: "#e5e7eb",
-  margin: "32px 0 24px",
-};
-
-const otpLabel = {
-  color: "#6b7280",
-  fontSize: "14px",
-  lineHeight: "20px",
-  margin: "0 0 12px",
-  textAlign: "center" as const,
 };
 
 const otpCode = {

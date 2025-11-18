@@ -14,20 +14,31 @@ void main() {
         initialMax: 10,
       );
 
-      expect(controller.selected, equals(5));
+      // Initially no highlight shown (keyboard not active)
+      expect(controller.highlighted, isNull);
+
+      // After first move, should show highlight at initial position
+      controller.move(0);
+      expect(controller.highlighted, equals(5));
     });
 
-    test('should clamp selected value to min/max bounds', () {
+    test('should clamp highlighted value to min/max bounds', () {
       final controller = BidirectionalListController(
+        initialSelected: 5,
         initialMin: 0,
         initialMax: 10,
       );
 
-      controller.selected = 15;
-      expect(controller.selected, equals(10));
+      // Activate keyboard mode
+      controller.move(0);
 
-      controller.selected = -5;
-      expect(controller.selected, equals(0));
+      // Try to move beyond max
+      controller.move(10); // Should clamp to 10
+      expect(controller.highlighted, equals(10));
+
+      // Try to move beyond min
+      controller.move(-15); // Should clamp to 0
+      expect(controller.highlighted, equals(0));
     });
 
     test('should move selection correctly', () {
@@ -37,11 +48,16 @@ void main() {
         initialMax: 10,
       );
 
+      // First move activates and shows current position
+      controller.move(0);
+      expect(controller.highlighted, equals(5));
+
+      // Subsequent moves navigate
       controller.move(2);
-      expect(controller.selected, equals(7));
+      expect(controller.highlighted, equals(7));
 
       controller.move(-3);
-      expect(controller.selected, equals(4));
+      expect(controller.highlighted, equals(4));
     });
 
     test('should notify listeners on selection change', () {
@@ -52,7 +68,7 @@ void main() {
         notified = true;
       });
 
-      controller.selected = 5;
+      controller.move(0);
       expect(notified, isTrue);
     });
   });
@@ -639,9 +655,12 @@ void main() {
 
       await tester.pumpAndSettle();
 
+      // Activate keyboard to see highlighted value
+      controller.move(0);
+
       // Controller should be clamped to valid range
-      expect(controller.selected, lessThanOrEqualTo(4));
-      expect(controller.selected, greaterThanOrEqualTo(0));
+      expect(controller.highlighted, lessThanOrEqualTo(4));
+      expect(controller.highlighted, greaterThanOrEqualTo(0));
     });
 
     testWidgets('should handle controller bounds change during widget lifecycle', (
@@ -675,14 +694,16 @@ void main() {
       await tester.pumpWidget(buildList(10));
       await tester.pumpAndSettle();
 
-      expect(controller.selected, equals(5));
+      // Activate keyboard to see highlighted value
+      controller.move(0);
+      expect(controller.highlighted, equals(5));
 
       // Reduce count below selected index
       await tester.pumpWidget(buildList(3));
       await tester.pumpAndSettle();
 
       // Selection should be adjusted
-      expect(controller.selected, lessThanOrEqualTo(2));
+      expect(controller.highlighted, lessThanOrEqualTo(2));
     });
   });
 
@@ -1048,7 +1069,9 @@ void main() {
       // Verify BidirectionalListSelector integrates properly
       expect(find.byType(BidirectionalList), findsOneWidget);
       expect(capturedController, isNotNull);
-      expect(capturedController?.selected, equals(0));
+
+      // Controller starts with no highlight (keyboard not active)
+      expect(capturedController?.highlighted, isNull);
     });
 
     testWidgets('should handle direct controller manipulation', (
@@ -1086,20 +1109,24 @@ void main() {
       // Wait for the widget to apply its bounds
       await tester.pump();
 
-      // Verify initial selection
-      expect(controller.selected, equals(0));
+      // Initially no highlight (keyboard not active)
+      expect(controller.highlighted, isNull);
 
       // Test direct controller manipulation
+      // First move activates and shows current position
+      controller.move(0);
+      await tester.pumpAndSettle();
+      expect(controller.highlighted, equals(0));
+
+      // Subsequent move navigates
       controller.move(1);
       await tester.pumpAndSettle();
-
-      expect(controller.selected, equals(1));
+      expect(controller.highlighted, equals(1));
 
       // Test moving back
       controller.move(-1);
       await tester.pumpAndSettle();
-
-      expect(controller.selected, equals(0));
+      expect(controller.highlighted, equals(0));
     });
   });
 }

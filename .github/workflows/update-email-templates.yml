@@ -50,8 +50,20 @@ jobs:
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{
-              \"mailer_subjects_confirmation\": \"Confirm your email address for Plot\",
+              \"mailer_subjects_confirmation\": \"Activate your Plot account\",
               \"mailer_templates_confirmation_content\": $CONTENT
+            }"
+
+      - name: Update magic link template
+        run: |
+          CONTENT=$(cat libs/email/dist/email-confirmation.html | jq -Rs .)
+          curl -X PATCH \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/config/auth" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"mailer_subjects_magic_link\": \"Activate your Plot account\",
+              \"mailer_templates_magic_link_content\": $CONTENT
             }"
 
       - name: Update password reset template

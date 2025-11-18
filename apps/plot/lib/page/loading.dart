@@ -8,15 +8,13 @@ class LoadingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      center: true,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           spacing: 16,
-          children: [
-            Spinner(),
-            if (message != null) Text(message!),
-          ],
+          children: [Spinner(), if (message != null) Text(message!)],
         ),
       ),
     );

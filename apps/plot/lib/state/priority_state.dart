@@ -156,7 +156,7 @@ class PriorityState extends Equatable {
 
   PriorityState copyWith({
     Priority? context,
-    Activity? activity,
+    Value<Activity?> activity = const Value.absent(),
     Activity? draft,
     Map<Date, ScheduledDay>? schedule,
     int? first,
@@ -172,7 +172,7 @@ class PriorityState extends Equatable {
   }) {
     return PriorityState(
       context: context ?? this.context,
-      activity: activity ?? this.activity,
+      activity: activity.or(this.activity),
       draft: draft ?? this.draft,
       schedule: schedule != null
           ? (schedule.isNotEmpty ? Map.unmodifiable(schedule) : schedule)

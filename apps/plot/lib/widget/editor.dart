@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
 import 'package:super_editor_markdown/super_editor_markdown.dart';
@@ -818,13 +819,11 @@ ExecutionInstruction _bubbleSpecialKeys({
     return ExecutionInstruction.blocked;
   }
 
-  // Check if this is Cmd+Arrow (meta key on macOS, ctrl on Windows/Linux)
+  // Bubble up meta key combos
   final isMetaPressed =
       HardwareKeyboard.instance.isMetaPressed ||
       HardwareKeyboard.instance.isControlPressed;
-  if (isMetaPressed &&
-      (keyEvent.logicalKey == LogicalKeyboardKey.arrowUp ||
-          keyEvent.logicalKey == LogicalKeyboardKey.arrowDown)) {
+  if (isMetaPressed) {
     return ExecutionInstruction.blocked;
   }
 

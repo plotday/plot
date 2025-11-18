@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:url_launcher/link.dart' as url_launcher;
 import 'link.dart';
 
 class HoverableLink extends StatefulWidget {
@@ -6,12 +7,14 @@ class HoverableLink extends StatefulWidget {
     required this.text,
     required this.uri,
     this.color = const Color(0xFF6B7280),
+    this.target,
     super.key,
   });
 
   final String text;
   final Uri uri;
   final Color color;
+  final url_launcher.LinkTarget? target;
 
   @override
   State<HoverableLink> createState() => _HoverableLinkState();
@@ -27,6 +30,7 @@ class _HoverableLinkState extends State<HoverableLink> {
       onExit: (_) => setState(() => _isHovered = false),
       child: Link(
         uri: widget.uri,
+        target: widget.target,
         child: Text(
           widget.text,
           style: TextStyle(

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/action/global.dart';
+import 'package:plot/page/loading.dart';
 import 'global_menu.dart';
 import 'dialog.dart';
 
@@ -12,7 +13,11 @@ class AppShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DialogProvider(
-      child: GlobalMenu(child: GlobalShortcuts(child: const AutoRouter())),
+      child: GlobalMenu(
+        child: GlobalShortcuts(
+          child: AutoRouter(placeholder: (context) => const LoadingPage()),
+        ),
+      ),
     );
   }
 }

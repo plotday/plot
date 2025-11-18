@@ -8,12 +8,14 @@ class ActivityWidget extends StatelessWidget {
     required this.activity,
     this.context,
     this.selected = false,
+    this.highlighted = false,
     this.onHover,
     super.key,
   });
 
   final Activity activity;
   final Priority? context;
+  final bool highlighted;
   final bool selected;
   final void Function(bool hovered)? onHover;
 
@@ -33,7 +35,12 @@ class ActivityWidget extends StatelessWidget {
                 child: Text.rich(
                   TextSpan(
                     children: [
-                      TextSpan(text: activity.displayTitle),
+                      TextSpan(
+                        text: activity.displayTitle,
+                        style: selected
+                            ? TextStyle(color: buildContext.colour.accent)
+                            : null,
+                      ),
                       if (activity.note != null &&
                           activity.note!.isNotEmpty &&
                           activity.noteText != activity.displayTitle)
@@ -59,6 +66,7 @@ class ActivityWidget extends StatelessWidget {
           ],
         ],
       ),
+      highlighted: highlighted,
       selected: selected,
       onHover: onHover,
     );
@@ -127,7 +135,7 @@ class ActivityDetailWidget extends StatelessWidget {
           ),
         ],
       ),
-      selected: selected,
+      highlighted: selected,
       onHover: onHover,
     );
   }

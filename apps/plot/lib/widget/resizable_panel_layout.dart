@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/state/layout.dart';
+import 'package:plot/page/loading.dart';
 import 'header.dart';
 
 class ResizablePanelLayout extends StatefulWidget {
@@ -30,26 +31,30 @@ class ResizablePanelLayout extends StatefulWidget {
 
 class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   double _leftPanelWidth = 280.0;
-  double _rightPanelRatio = 0.5;
+  double _middlePanelRatio = 0.5;
+  late final Future<void> _loadPreferencesFuture;
 
   @override
   void initState() {
     super.initState();
-    _loadFromPreferences();
+    _loadPreferencesFuture = _loadFromPreferences();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 
   /// Load panel dimensions from shared preferences
   Future<void> _loadFromPreferences() async {
     final prefs = await SharedPreferences.getInstance();
-    final leftPanelWidth = prefs.getDouble('layout_left_panel_width') ?? 280.0;
-    final rightPanelRatio = prefs.getDouble('layout_right_panel_ratio') ?? 0.5;
-
-    if (mounted) {
-      setState(() {
-        _leftPanelWidth = leftPanelWidth;
-        _rightPanelRatio = rightPanelRatio;
-      });
-    }
+    _leftPanelWidth = prefs.getDouble('layout_left_panel_width') ?? 280.0;
+    _middlePanelRatio = prefs.getDouble('layout_middle_panel_ratio') ?? 0.5;
   }
 
   /// Calculate effective left panel width
@@ -59,167 +64,168 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     }
 
     // Determine minimum space needed for other panels
-    final minSpaceForOthers = layoutState.rightPanelVisible
-        ? LayoutState.centerPanelMinWidth + LayoutState.rightPanelMinWidth
-        : LayoutState.centerPanelMinWidth;
+    final minSpaceForOthers = layoutState.middlePanelVisible
+        ? LayoutState.middlePanelMinWidth + LayoutState.rightPanelMinWidth
+        : LayoutState.middlePanelMinWidth;
 
     // Clamp left panel width to fit within available space
-    final maxLeftWidth = totalWidth - minSpaceForOthers;
-    return _leftPanelWidth.clamp(
-      LayoutState.leftPanelMinWidth,
-      maxLeftWidth.clamp(LayoutState.leftPanelMinWidth, double.infinity),
+    final maxLeftWidth = (totalWidth - minSpaceForOthers).clamp(
+      0.0,
+      double.infinity,
     );
+    return _leftPanelWidth.clamp(0.0, maxLeftWidth);
   }
 
-  /// Calculate center panel width based on available space
-  double _getCenterPanelWidth(double totalWidth, LayoutState layoutState) {
-    final leftWidth = _getLeftPanelWidth(totalWidth, layoutState);
-    final remainingWidth = totalWidth - leftWidth;
-
-    if (!layoutState.multiPanel || !layoutState.rightPanelVisible) {
-      // Single panel or right panel not visible, center gets all remaining width
-      return remainingWidth.clamp(
-        LayoutState.centerPanelMinWidth,
-        double.infinity,
-      );
-    }
-
-    // Calculate based on ratio, ensuring minimum widths
-    final desiredRightWidth = remainingWidth * _rightPanelRatio;
-    final desiredCenterWidth = remainingWidth * (1.0 - _rightPanelRatio);
-
-    // Ensure minimum widths are respected
-    if (desiredCenterWidth < LayoutState.centerPanelMinWidth) {
-      return LayoutState.centerPanelMinWidth;
-    }
-    if (desiredRightWidth < LayoutState.rightPanelMinWidth) {
-      return (remainingWidth - LayoutState.rightPanelMinWidth).clamp(
-        LayoutState.centerPanelMinWidth,
-        double.infinity,
-      );
-    }
-
-    return desiredCenterWidth;
-  }
-
-  /// Calculate right panel width based on available space
-  double _getRightPanelWidth(double totalWidth, LayoutState layoutState) {
-    if (!layoutState.multiPanel || !layoutState.rightPanelVisible) {
+  /// Calculate middle panel width based on available space
+  double _getMiddlePanelWidth(double totalWidth, LayoutState layoutState) {
+    if (!layoutState.multiPanel || !layoutState.middlePanelVisible) {
       return 0.0;
     }
 
     final leftWidth = _getLeftPanelWidth(totalWidth, layoutState);
-    final centerWidth = _getCenterPanelWidth(totalWidth, layoutState);
+    final remainingWidth = totalWidth - leftWidth;
+
+    // Calculate based on ratio, ensuring minimum widths
+    final desiredCenterWidth = remainingWidth * _middlePanelRatio;
+    final maxMiddleWidth = (remainingWidth - LayoutState.rightPanelMinWidth)
+        .clamp(0.0, double.infinity);
+    return desiredCenterWidth.clamp(0.0, maxMiddleWidth);
+  }
+
+  /// Calculate right panel width based on available space
+  double _getRightPanelWidth(double totalWidth, LayoutState layoutState) {
+    if (!layoutState.multiPanel ||
+        (!layoutState.leftPanelVisible && !layoutState.middlePanelVisible)) {
+      return totalWidth;
+    }
+
+    final leftWidth = _getLeftPanelWidth(totalWidth, layoutState);
+    final middleWidth = _getMiddlePanelWidth(totalWidth, layoutState);
 
     // Calculate right panel as remainder to avoid rounding errors
-    final rightWidth = totalWidth - leftWidth - centerWidth;
-
-    return rightWidth.clamp(
-      LayoutState.rightPanelMinWidth,
-      double.infinity,
-    );
+    return (totalWidth - leftWidth - middleWidth).clamp(0.0, double.infinity);
   }
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return BlocBuilder<LayoutBloc, LayoutState>(
-          builder: (context, layoutState) {
-            if (!layoutState.multiPanel) {
-              return widget.child;
-            }
+    return FutureBuilder<void>(
+      future: _loadPreferencesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const LoadingPage();
+        }
 
-            final totalWidth = constraints.maxWidth;
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            return BlocBuilder<LayoutBloc, LayoutState>(
+              buildWhen: (previous, current) =>
+                  // Only rebuild when layout-related state actually changes
+                  previous.multiPanel != current.multiPanel ||
+                  previous.leftPanelVisible != current.leftPanelVisible ||
+                  previous.middlePanelVisible != current.middlePanelVisible,
+              builder: (context, layoutState) {
+                final totalWidth = constraints.maxWidth;
+                final leftWidth = _getLeftPanelWidth(totalWidth, layoutState);
+                final middleWidth = _getMiddlePanelWidth(
+                  totalWidth,
+                  layoutState,
+                );
+                final rightWidth = _getRightPanelWidth(totalWidth, layoutState);
 
-            final leftWidth = _getLeftPanelWidth(totalWidth, layoutState);
-            final centerWidth = _getCenterPanelWidth(totalWidth, layoutState);
-            final rightWidth = _getRightPanelWidth(totalWidth, layoutState);
+                // Helper to calculate minExtent ensuring it's strictly less than initialExtent
+                double calculateMinExtent(
+                  double initialWidth,
+                  double idealMin,
+                ) {
+                  if (initialWidth <= idealMin) {
+                    // When constrained, leave 1px gap for resizability requirement
+                    return (initialWidth - 1).clamp(0.0, double.infinity);
+                  }
+                  return idealMin;
+                }
 
-            List<FResizableRegion> regions = [
-              if (layoutState.leftPanelVisible)
-                FResizableRegion(
-                  initialExtent: leftWidth,
-                  minExtent: LayoutState.leftPanelMinWidth,
-                  builder: (context, data, _) => PanelPositionProvider(
-                    position: HeaderPosition.left,
-                    child: widget.left,
+                List<FResizableRegion> regions = [
+                  if (layoutState.leftPanelVisible)
+                    FResizableRegion(
+                      key: const ValueKey('LeftPanel'),
+                      initialExtent: leftWidth,
+                      minExtent: calculateMinExtent(
+                        leftWidth,
+                        LayoutState.leftPanelMinWidth,
+                      ),
+                      builder: (context, data, _) => PanelPositionProvider(
+                        key: ValueKey('LeftPanelPositionProvider'),
+                        position: HeaderPosition.left,
+                        child: widget.left,
+                      ),
+                    ),
+                  if (layoutState.middlePanelVisible)
+                    FResizableRegion(
+                      key: const ValueKey('MiddlePanel'),
+                      initialExtent: middleWidth,
+                      minExtent: calculateMinExtent(
+                        middleWidth,
+                        LayoutState.middlePanelMinWidth,
+                      ),
+                      builder: (context, data, _) => PanelPositionProvider(
+                        key: ValueKey('MiddlePanelPositionProvider'),
+                        position: HeaderPosition.middle,
+                        child: widget.middle,
+                      ),
+                    ),
+                  FResizableRegion(
+                    key: const ValueKey('RightPanel'),
+                    initialExtent: rightWidth,
+                    minExtent: calculateMinExtent(
+                      rightWidth,
+                      LayoutState.rightPanelMinWidth,
+                    ),
+                    builder: (context, data, _) => PanelPositionProvider(
+                      key: ValueKey('RightPanelPositionProvider'),
+                      position: HeaderPosition.right,
+                      child: widget.child,
+                    ),
                   ),
-                ),
-              if (layoutState.rightPanelPossible)
-                FResizableRegion(
-                  initialExtent: centerWidth,
-                  minExtent: LayoutState.centerPanelMinWidth,
-                  builder: (context, data, _) => PanelPositionProvider(
-                    position: HeaderPosition.middle,
-                    child: widget.middle,
-                  ),
-                ),
-              if (layoutState.rightPanelVisible ||
-                  !layoutState.rightPanelPossible)
-                FResizableRegion(
-                  initialExtent: layoutState.rightPanelVisible
-                      ? rightWidth
-                      : centerWidth,
-                  minExtent: layoutState.rightPanelVisible
-                      ? LayoutState.rightPanelMinWidth
-                      : LayoutState.centerPanelMinWidth,
-                  builder: (context, data, _) => PanelPositionProvider(
-                    position: layoutState.rightPanelPossible
-                        ? HeaderPosition.right
-                        : HeaderPosition.middle,
-                    child: widget.child,
-                  ),
-                ),
-            ];
+                ];
 
-            return Column(
-              mainAxisSize: MainAxisSize.max,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: FResizable(
-                    axis: Axis.horizontal,
-                    divider: FResizableDivider.divider,
-                    children: regions,
-                  ),
-                ),
-                // if (!layoutState.rightPanelVisible &&
-                //     layoutState.rightPanelPossible)
-                //   Visibility(
-                //     visible: false,
-                //     maintainState: true,
-                //     maintainAnimation: true,
-                //     maintainSize: true,
-                //     child: widget.child,
-                //   ),
-              ],
+                return Column(
+                  mainAxisSize: MainAxisSize.max,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: FResizable(
+                        axis: Axis.horizontal,
+                        divider: FResizableDivider.divider,
+                        onChange: (regions) async {
+                          final prefs = await SharedPreferences.getInstance();
+                          if (layoutState.leftPanelVisible &&
+                              regions[0].index == 0) {
+                            prefs.setDouble(
+                              'layout_left_panel_width',
+                              regions[0].extent.current,
+                            );
+                            regions = regions.sublist(1);
+                          }
+                          if (layoutState.middlePanelVisible &&
+                              regions.length == 2) {
+                            prefs.setDouble(
+                              'layout_middle_panel_ratio',
+                              regions[0].extent.current /
+                                  (regions[0].extent.current +
+                                      regions[1].extent.current),
+                            );
+                          }
+                        },
+                        children: regions,
+                      ),
+                    ),
+                  ],
+                );
+              },
             );
           },
         );
       },
-    );
-  }
-}
-
-/// Collapsible wrapper for panels that can be hidden
-class CollapsiblePanel extends StatelessWidget {
-  const CollapsiblePanel({
-    required this.isVisible,
-    required this.child,
-    super.key,
-  });
-
-  final bool isVisible;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
-      width: isVisible ? null : 0,
-      child: isVisible ? child : const SizedBox.shrink(),
     );
   }
 }

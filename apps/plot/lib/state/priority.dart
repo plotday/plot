@@ -160,11 +160,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     _loadPriority();
   }
 
-  void setActivity(Activity activity) {
+  void setActivity(Activity? activity) {
     if (state.activity == activity) {
       return;
     }
-    emit(state.copyWith(activity: activity));
+    emit(state.copyWith(activity: Value(activity)));
   }
 
   /// Gets an agenda item relative to the current activity by offset.
@@ -280,6 +280,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       log.info(
         'Loaded ${twists.length} twists for priority ${state.context.title}',
       );
+      if (isClosed) return;
       emit(state.copyWith(twists: twists));
     } catch (e, t) {
       log.warning('Failed to load twists for priority', e, t);
@@ -296,7 +297,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _subscriptions.add(
       Activity.watchOne(activity.id).listen((watchedActivity) {
         log.fine('Activity updated');
-        emit(state.copyWith(activity: watchedActivity));
+        emit(state.copyWith(activity: Value(watchedActivity)));
       }),
     );
   }

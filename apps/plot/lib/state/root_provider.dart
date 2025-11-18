@@ -65,6 +65,7 @@ class RootProviderState extends State<RootProvider> {
             return switch (state) {
               UserLoading _ => const LoadingPage(),
               UserWaitlisted _ => widget.builder(routerConfig),
+              UserPasswordRequired _ => widget.builder(routerConfig),
               UserSignedOut _ => widget.builder(routerConfig),
               UserReady _ => BlocBuilder<NowBloc, NowState>(
                 builder: (context, state) {

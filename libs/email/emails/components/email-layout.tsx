@@ -25,7 +25,7 @@ export default function EmailLayout({ preview, children }: EmailLayoutProps) {
         <Container style={container}>
           <Section style={header}>
             <Img
-              src="https://plot.day/assets/favicon.png"
+              src="https://plot.day/assets/p.png"
               alt="Plot"
               width="32"
               height="32"
@@ -34,7 +34,12 @@ export default function EmailLayout({ preview, children }: EmailLayoutProps) {
           </Section>
           <Section style={content}>{children}</Section>
           <Section style={footer}>
-            <Text style={footerText}>© 2025 Plot</Text>
+            <Text style={footerText}>
+              © 2025{" "}
+              <a href="https://plot.day" style={footerText}>
+                Plot
+              </a>
+            </Text>
           </Section>
         </Container>
       </Body>
@@ -56,8 +61,10 @@ const container = {
 };
 
 const header = {
-  padding: "32px 0",
+  padding: "12px 0",
+  margin: "0 0 24px 0",
   textAlign: "center" as const,
+  backgroundColor: "#23986f",
 };
 
 const logo = {

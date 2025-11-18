@@ -1,0 +1,53 @@
+import 'package:url_launcher/link.dart' as url_launcher;
+import 'package:plot/widget/widget.dart';
+
+/// Terms of Service and Privacy Policy agreement text
+class TermsAgreement extends StatelessWidget {
+  const TermsAgreement({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTextStyle(
+      style: const TextStyle(
+        fontSize: 12,
+        height: 1.5,
+        color: Color(0xFF6B7280),
+      ),
+      child: Text.rich(
+        TextSpan(
+          style: const TextStyle(height: 1.5),
+          children: [
+            const TextSpan(
+              text: 'By signing in, you agree to our\n',
+            ),
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: HoverableLink(
+                text: 'Terms of Service',
+                uri: Uri.parse('https://plot.day/terms'),
+                target: url_launcher.LinkTarget.blank,
+              ),
+            ),
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: Text(' and '),
+            ),
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: HoverableLink(
+                text: 'Privacy Policy',
+                uri: Uri.parse('https://plot.day/privacy'),
+                target: url_launcher.LinkTarget.blank,
+              ),
+            ),
+            const TextSpan(text: '.'),
+          ],
+        ),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+}

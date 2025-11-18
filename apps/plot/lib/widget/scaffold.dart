@@ -13,6 +13,7 @@ class Scaffold extends StatelessWidget {
     this.sidebar,
     this.translucent = false,
     this.scrollable = true,
+    this.center = false,
     super.key,
   });
 
@@ -21,8 +22,24 @@ class Scaffold extends StatelessWidget {
   final Widget? sidebar;
   final bool translucent;
   final bool scrollable;
+  final bool center;
 
   Widget _buildBody(BuildContext context) {
+    // Center mode: wrap in scrollable centered layout
+    if (center) {
+      return SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: MediaQuery.of(context).size.height,
+          ),
+          child: Center(
+            child: body,
+          ),
+        ),
+      );
+    }
+
+    // Default scrollable mode
     if (!scrollable) {
       return body;
     }

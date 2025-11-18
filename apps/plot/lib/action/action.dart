@@ -2,6 +2,7 @@ export 'base.dart';
 export 'event.dart';
 export 'filter.dart';
 export 'global.dart';
+export 'navigation.dart';
 export 'priority.dart';
 export 'activity.dart';
 export 'twist.dart';

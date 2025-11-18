@@ -31,7 +31,7 @@ class PriorityWidget extends StatelessWidget {
           : null,
       trailingActions: [ShowPriorityActions(priority)],
       body: PriorityLabel(priority: priority),
-      selected: selected,
+      highlighted: selected,
       onHover: onHover,
     );
   }
@@ -61,6 +61,7 @@ class PriorityLabel extends StatelessWidget {
         final isLast = i == ancestors.length - 1;
         return [
           Flexible(
+            key: ValueKey('ancestor_${ancestor.id}'),
             child: DefaultTextStyle(
               style: DefaultTextStyle.of(context).style.copyWith(
                 color: context.theme.colors.mutedForeground,
@@ -86,6 +87,7 @@ class PriorityLabel extends StatelessWidget {
           ),
           if (!isLast || priority != null)
             DefaultTextStyle(
+              key: ValueKey('separator_${ancestor.id}'),
               style: DefaultTextStyle.of(context).style.copyWith(
                 color: context.theme.colors.mutedForeground,
                 fontSize: context.theme.typography.sm.fontSize,

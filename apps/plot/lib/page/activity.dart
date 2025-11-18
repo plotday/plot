@@ -6,14 +6,13 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
+import 'package:plot/state/layout.dart';
 import 'package:plot/action/action.dart';
 
 @RoutePage(name: "ActivityRoute")
-class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
-  ActivityWrapper({
-    @PathParam("activityId") required String activityIdString,
-    super.key,
-  }) : activityId = ActivityId.fromShortString(activityIdString);
+class ActivityPage implements AutoRouteWrapper {
+  ActivityPage({@PathParam("activityId") required String activityIdString})
+    : activityId = ActivityId.fromShortString(activityIdString);
 
   final ActivityId activityId;
 
@@ -26,22 +25,43 @@ class ActivityWrapper extends AutoRouter implements AutoRouteWrapper {
         listener: (context, state) {
           context.read<PriorityBloc>().setActivity(state.activity);
         },
+        listenWhen: (previous, current) =>
+            previous.activity.id != current.activity.id,
         builder: (context, state) {
-          return this;
+          return _ActivityPageContent();
         },
       ),
     );
   }
 }
 
-@RoutePage(name: "ActivityMainRoute")
-class ActivityPage extends StatelessWidget {
-  const ActivityPage({super.key});
+class _ActivityPageContent extends StatelessWidget {
+  const _ActivityPageContent();
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ActivityBloc, ActivityState>(
       builder: (context, state) {
+        return _buildContent(context, state);
+      },
+    );
+  }
+
+  Widget _buildContent(BuildContext context, ActivityState state) {
+    return BlocBuilder<LayoutBloc, LayoutState>(
+      builder: (context, layoutState) {
+        final prefixActions = <Action>[];
+
+        // Add back button when middle panel is not visible
+        if (!layoutState.middlePanelVisible) {
+          prefixActions.add(
+            ActionWrapper(
+              ChangeCurrentActivity(null),
+              icon: Value(PlotIcon.back),
+            ),
+          );
+        }
+
         return ActionScope(
           actions: [
             StaticActionGroup(
@@ -51,26 +71,25 @@ class ActivityPage extends StatelessWidget {
           ],
           child: BidirectionalListSelector(
             reverse: true,
-            onActivate: (index) {
-              final activity = _getActivityAtIndex(state, index);
-              if (activity != null) {
-                context.run(ChangeCurrentActivity(activity));
-              }
-            },
+            // onActivate: (index) {
+            //   final activity = _getActivityAtIndex(state, index);
+            //   if (activity != null) {
+            //     context.run(ChangeCurrentActivity(activity));
+            //   }
+            // },
             builder: (context, listController) => SelectionActionScope(
               actionBuilder: (index) {
                 final activity = _getActivityAtIndex(state, index);
-                return activity != null
-                    ? [
-                        StaticActionGroup(
-                          title: activity.displayTitle,
-                          actions: [
-                            ChangeCurrentActivity(activity),
-                            ...activityActions(activity),
-                          ],
-                        ),
-                      ]
-                    : <StaticActionGroup>[];
+                // Skip if this is the root activity (already added by outer ActionScope)
+                if (activity == null || activity.id == state.activity.id) {
+                  return <StaticActionGroup>[];
+                }
+                return [
+                  StaticActionGroup(
+                    title: activity.displayTitle,
+                    actions: activityActions(activity),
+                  ),
+                ];
               },
               listController: listController,
               child: Scaffold(
@@ -78,6 +97,7 @@ class ActivityPage extends StatelessWidget {
                 translucent: true,
                 header: Header(
                   title: state.activity.displayTitle,
+                  prefixActions: prefixActions,
                   onSearchChanged: (search) =>
                       context.read<ActivityBloc>().updateSearch(search),
                   actions: [
@@ -114,9 +134,6 @@ class ActivityPage extends StatelessWidget {
     int currentIndex = 0;
 
     for (final group in state.activityGroups) {
-      // Skip date header
-      currentIndex++;
-
       // Check activities in this group
       for (final activity in group.activities) {
         if (currentIndex == index) {
@@ -124,6 +141,9 @@ class ActivityPage extends StatelessWidget {
         }
         currentIndex++;
       }
+
+      // Skip date header
+      currentIndex++;
     }
 
     return null;
@@ -174,7 +194,7 @@ class ActivityPage extends StatelessWidget {
         return DayHeader(
           date: group.date,
           now: group.date == Date.today(),
-          selected: selected,
+          highlighted: selected,
           key: ValueKey('date_${group.date.hashCode}'),
         );
       }
