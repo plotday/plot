@@ -147,7 +147,7 @@ jobs:
           # Deploy secrets via wrangler secret bulk
           if [ -n "$SECRETS_JSON" ] && [ "$SECRETS_JSON" != "{}" ]; then
             echo "Deploying secrets..."
-            echo "$SECRETS_JSON" | wrangler secret bulk --env production
+            echo "$SECRETS_JSON" | pnpm wrangler secret bulk --env production
           else
             echo "No secrets to deploy"
           fi
