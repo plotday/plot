@@ -14,7 +14,7 @@ import {
 } from "@mantine/core";
 
 import { getUser } from "../lib/supabase.server";
-import type { Route } from "./+types/delete-account";
+import type { Route } from "./+types/account.delete";
 
 export function meta(_: Route.MetaArgs) {
   return [
@@ -168,7 +168,7 @@ export default function DeleteAccount({ loaderData }: Route.ComponentProps) {
         {!loaderData.isAuthenticated ? (
           <Button
             component="a"
-            href="/signin?returnTo=/delete-account"
+            href="/signin?returnTo=/account/delete"
             color="red"
           >
             Sign in to continue
