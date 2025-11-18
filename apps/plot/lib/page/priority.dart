@@ -33,13 +33,25 @@ class PriorityWrapper implements AutoRouteWrapper {
 
     return PriorityBlocProvider(
       priorityId: priorityId,
-      child: ResizablePanelLayout(
-        left: PrioritiesPage(),
-        middle: PriorityPage(priorityId: priorityId),
-        child: AutoRouter(
-          key: routerKey,
-          placeholder: (context) => const LoadingPage(),
-        ),
+      child: BlocBuilder<PriorityBloc, PriorityState>(
+        builder: (context, state) {
+          return ActionScope(
+            actions: [
+              StaticActionGroup(
+                title: state.context.title,
+                actions: currentPriorityActions(state.context),
+              ),
+            ],
+            child: ResizablePanelLayout(
+              left: PrioritiesPage(),
+              middle: PriorityPage(priorityId: priorityId),
+              child: AutoRouter(
+                key: routerKey,
+                placeholder: (context) => const LoadingPage(),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -73,17 +85,9 @@ class PriorityPage extends StatelessWidget {
           }
         }
 
-        return ActionScope(
-          actions: [
-            StaticActionGroup(
-              title: state.context.title,
-              actions: currentPriorityActions(state.context),
-            ),
-          ],
-          child:
-              (state.agendaItems.isEmpty && !(state.doneStart && state.doneEnd))
-              ? const Center(child: Spinner())
-              : BidirectionalListSelector(
+        return (state.agendaItems.isEmpty && !(state.doneStart && state.doneEnd))
+            ? const Center(child: Spinner())
+            : BidirectionalListSelector(
                   onActivate: (index) {
                     final item =
                         index >= state.first &&
@@ -255,8 +259,7 @@ class PriorityPage extends StatelessWidget {
                       ),
                     ),
                   ),
-                ),
-        );
+                );
       },
     );
   }
