@@ -16,13 +16,13 @@ The app uses a responsive layout system that adapts between **single-panel** (mo
 
 - Bottom navigation bar with 2 tab routers:
   - **Tab 0 (Priorities):** Shows `PrioritiesPage` - list of all priorities
-  - **Tab 1 (Activities):** Shows activity content (NewActivityPage or ActivityPage)
+  - **Tab 1 (Activities):** Shows activity content (PriorityPage or ActivityPage)
   - Tab 2 (More): Opens the menu modal (no real routing)
 - **Default tab:** Activities (index 1)
 - Activities tab shows:
-  - `NewActivityPage` by default (initial route)
+  - `PriorityPage` by default (via `PriorityOnlyRoute` initial route)
   - `ActivityPage` when an activity is selected (full-screen)
-- Back navigation pops from ActivityPage → NewActivityPage
+- Back navigation pops from ActivityPage → PriorityPage
 
 **Widget Tree (Single-Panel):**
 
@@ -33,7 +33,8 @@ AutoTabsRouter (in PrioritiesShell)
            └─ PriorityWrapper
               └─ ResizablePanelLayout
                  └─ Right panel: AutoRouter renders:
-                    - NewActivityRoute → NewActivityPage (initial route at /new)
+                    - PriorityOnlyRoute → PriorityOnlyPage → PriorityPage (initial route at '')
+                    - NewActivityRoute → NewActivityPage (at /new)
                     - ActivityRoute → ActivityPage (at /:activityId)
 ```
 
@@ -49,7 +50,9 @@ AutoTabsRouter (in PrioritiesShell)
   - **Middle panel:** `PriorityPage` (toggleable, preserves state)
   - **Right panel:** `NewActivityPage` or `ActivityPage` (always visible)
 - Right panel **always** has content in multi-panel mode
-- If no activity is selected, right panel shows `NewActivityPage`
+- When no activity is selected:
+  - If middle panel is visible, `PriorityOnlyPage` detects this and automatically navigates to `NewActivityRoute`, showing `NewActivityPage` in the right panel
+  - If middle panel is not visible, `PriorityOnlyPage` shows `PriorityPage` in the right panel
 - Panels can be toggled independently without affecting content
 - Panel visibility is tracked in `LayoutBloc` state
 
@@ -62,9 +65,12 @@ AutoTabsRouter (in PrioritiesShell) - no visible tabs
       └─ ResizablePanelLayout
          ├─ Left: PrioritiesPage (if leftPanelVisible)
          ├─ Middle: PriorityPage (if middlePanelVisible)
-         └─ Right: AutoRouter → Always shows:
-            └─ NewActivityRoute → NewActivityPage (initial route)
-            └─ Or ActivityRoute → ActivityPage (when navigated)
+         └─ Right: AutoRouter → Shows:
+            ├─ PriorityOnlyRoute → PriorityOnlyPage (initial route)
+            │  └─ If middlePanelVisible: LoadingPage + navigates to NewActivityRoute
+            │  └─ If !middlePanelVisible: PriorityPage
+            ├─ NewActivityRoute → NewActivityPage (after auto-navigation or manual)
+            └─ ActivityRoute → ActivityPage (when activity selected)
 ```
 
 ## Route Hierarchy
@@ -82,14 +88,19 @@ AppShellRoute
                ├─ Left panel: PrioritiesPage
                ├─ Middle panel: PriorityPage
                └─ Right panel (AutoRouter):
-                  ├─ NewActivityRoute (initial route, at 'new') → NewActivityPage
+                  ├─ PriorityOnlyRoute (initial route, at '') → PriorityOnlyPage
+                  │  └─ Layout-aware: shows PriorityPage or navigates to NewActivityRoute
+                  ├─ NewActivityRoute (at 'new') → NewActivityPage
                   └─ ActivityRoute (at ':activityId') → ActivityPage
 ```
 
 **Key Points:**
 
 - `PriorityRoute` wraps an `AutoRouter` that manages child routes in the right panel
-- `NewActivityRoute` is the initial/default route under `PriorityRoute`
+- `PriorityOnlyRoute` is the initial/default route under `PriorityRoute`
+- `PriorityOnlyPage` is **layout-aware**: it uses `BlocConsumer<LayoutBloc, LayoutState>` to:
+  - Show `PriorityPage` when `middlePanelVisible` is false (single-panel mode or middle panel hidden)
+  - Navigate to `NewActivityRoute` when `middlePanelVisible` is true (multi-panel mode with middle panel shown)
 - `ResizablePanelLayout` always renders all three panel widgets (left, middle, right)
 - Panel visibility is controlled by `LayoutBloc` state
 - In single-panel mode, only the right panel (AutoRouter content) is shown
@@ -130,7 +141,7 @@ AutoTabsRouter(
 **Single → Multi:**
 
 - If viewing an activity: Activity stays in right panel
-- If on `NewActivityPage`: `NewActivityPage` remains in right panel, and middle panel appears showing `PriorityPage`
+- If on `PriorityOnlyRoute` (showing `PriorityPage`): `PriorityOnlyPage` detects `middlePanelVisible` becoming true and automatically navigates to `NewActivityRoute`, moving the priority content to the middle panel and showing `NewActivityPage` in the right panel
 - Tabs become invisible but router stays on tab 1
 - Left and/or middle panels become visible based on `LayoutBloc` state
 
@@ -140,8 +151,11 @@ AutoTabsRouter(
 - Tabs become visible
 - User is on Activities tab (tab 1)
 
-**Panel Toggling:**
+**Panel Toggling (Multi-Panel Mode):**
 
+- If middle panel is hidden while on `NewActivityRoute`: Nothing changes, `NewActivityPage` remains in right panel
+- If middle panel is shown while on `PriorityOnlyRoute`: `PriorityOnlyPage` detects the change and automatically navigates to `NewActivityRoute`
+- If middle panel is hidden while on `PriorityOnlyRoute`: `PriorityOnlyPage` shows `PriorityPage` in the right panel
 - Panels preserve their state when hidden/shown
 - Content doesn't reload when panels are toggled
 - State is maintained in respective Blocs
@@ -206,26 +220,30 @@ class PriorityWrapper implements AutoRouteWrapper {
 
 ## Layout Behavior
 
-The current layout implementation uses a simpler approach:
+The layout system adapts based on `LayoutState.middlePanelVisible`:
 
 **Single-Panel Mode:**
 
-- The `AutoRouter` in the right panel displays either `NewActivityPage` (initial route) or `ActivityPage` (when navigated)
-- When the user taps an activity, navigation occurs to `ActivityRoute`
-- Back navigation returns to `NewActivityPage` (the initial route)
+- The `AutoRouter` in the right panel displays `PriorityOnlyRoute` by default (showing `PriorityPage`)
+- When the user taps an activity, navigation occurs to `ActivityRoute` (showing `ActivityPage`)
+- Back navigation returns to `PriorityOnlyRoute`
 
 **Multi-Panel Mode:**
 
 - Left and middle panels become visible alongside the right panel
 - The `AutoRouter` continues to manage routing in the right panel
-- `NewActivityPage` remains the default when no activity is selected
+- **Initial state:** `PriorityOnlyRoute` is active, but `PriorityOnlyPage` detects `middlePanelVisible=true` and automatically navigates to `NewActivityRoute`, resulting in:
+  - Middle panel: `PriorityPage` (from `ResizablePanelLayout`)
+  - Right panel: `NewActivityPage` (from `NewActivityRoute`)
 - When the user clicks an activity, the right panel navigates to `ActivityRoute`
+- If the middle panel is toggled off while on `NewActivityRoute`, nothing changes (the route remains)
+- If the user manually navigates back to `PriorityOnlyRoute` while middle panel is hidden, `PriorityPage` appears in the right panel
 
 ## Navigation Actions
 
 ### ChangeCurrentActivity
 
-**Purpose:** Navigate to a specific activity or back to the default new activity view
+**Purpose:** Navigate to a specific activity or back to the default view
 
 **Location:** `lib/action/activity.dart`
 
@@ -233,8 +251,9 @@ The current layout implementation uses a simpler approach:
 
 ```dart
 if (activity == null) {
-  // Navigate to PriorityRoute base (initial route)
-  // Shows NewActivityPage (initial route) in both single and multi-panel modes
+  // Navigate to PriorityRoute base (initial route is PriorityOnlyRoute)
+  // In single-panel mode: Shows PriorityPage
+  // In multi-panel mode: PriorityOnlyPage auto-navigates to NewActivityRoute
   return ActionRoute(PriorityRoute(...));
 } else {
   // Navigate to ActivityRoute
@@ -252,7 +271,7 @@ if (activity == null) {
 
 **Purpose:** Navigate to new activity creation
 
-**Returns:** `PriorityRoute` which defaults to `NewActivityRoute` (the initial route)
+**Returns:** `PriorityRoute` with `NewActivityRoute` as a child
 
 ## Common Pitfalls & Solutions
 
@@ -308,6 +327,63 @@ class LayoutState {
 
 **Storage:** Panel widths and ratios are persisted in SharedPreferences
 
+## PriorityOnlyPage: Layout-Aware Routing
+
+**Purpose:** `PriorityOnlyPage` is a layout-aware wrapper that prevents duplicate content by adapting to panel visibility.
+
+**Location:** `lib/page/priority.dart`
+
+**Problem it solves:**
+
+- Without it, `PriorityPage` would appear in both the middle panel AND the right panel when in multi-panel mode
+- It ensures the right panel always shows unique content (either `PriorityPage` OR `NewActivityPage`, never duplicating what's in the middle)
+
+**Implementation:**
+
+```dart
+class PriorityOnlyPage extends StatefulWidget implements AutoRouteWrapper {
+  // StatefulWidget to track navigation state
+}
+
+class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
+  bool _hasNavigated = false; // Prevents navigation loops
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<LayoutBloc, LayoutState>(
+      listener: (context, layoutState) {
+        // Navigate when middle panel becomes visible
+        if (layoutState.middlePanelVisible && !_hasNavigated) {
+          _hasNavigated = true;
+          context.router.navigate(NewActivityRoute());
+        }
+      },
+      builder: (context, layoutState) {
+        if (layoutState.middlePanelVisible) {
+          return const LoadingPage(); // Show during navigation
+        }
+        return PriorityPage(priorityId: widget.priorityId);
+      },
+    );
+  }
+}
+```
+
+**Behavior:**
+
+- **Listener:** Detects when `middlePanelVisible` becomes true and automatically navigates to `NewActivityRoute`
+- **Builder:** Shows different content based on layout state:
+  - `middlePanelVisible == false`: Shows `PriorityPage` (single-panel mode or middle panel hidden)
+  - `middlePanelVisible == true`: Shows `LoadingPage` during navigation transition
+- **State flag:** `_hasNavigated` prevents repeated navigation in the same widget instance
+
+**Key characteristics:**
+
+- Used as the **initial route** under `PriorityRoute` (at path `''`)
+- Reacts to layout changes in real-time (not just initial navigation)
+- Ensures seamless transitions between single and multi-panel modes
+- Prevents content duplication by navigating away when the middle panel appears
+
 ## Testing Checklist
 
 When making changes to layout/routing, verify:
@@ -341,9 +417,17 @@ When making changes to layout/routing, verify:
 **Transitions:**
 
 - [ ] Single → Multi while viewing activity: Activity stays visible in right panel
-- [ ] Single → Multi while on PriorityPage: NewActivityPage appears in right panel
+- [ ] Single → Multi while on PriorityOnlyRoute: PriorityOnlyPage detects middlePanelVisible=true and automatically navigates to NewActivityRoute
 - [ ] Multi → Single: Last viewed content appears
 - [ ] No flashing/blank screens during transitions
+
+**PriorityOnlyPage Behavior:**
+
+- [ ] In single-panel mode: Shows PriorityPage content
+- [ ] In multi-panel mode with middle panel visible: Auto-navigates to NewActivityRoute
+- [ ] When toggling middle panel on: PriorityOnlyPage navigates to NewActivityRoute
+- [ ] When toggling middle panel off while on NewActivityRoute: No change (stays on NewActivityRoute)
+- [ ] No duplicate content between middle and right panels
 
 ## File Locations
 
@@ -397,8 +481,9 @@ When making changes to layout/routing, verify:
 2. **State Preservation:** Keep routers and Blocs alive during layout changes
 3. **Single Source of Truth:** LayoutBloc owns panel visibility state; NowBloc owns current priority
 4. **Separation of Concerns:** ResizablePanelLayout handles panel visibility; AutoRouter handles navigation
-5. **Initial Routes:** Use AutoRoute's `initial: true` for default routes rather than complex navigation logic
-6. **Responsive First:** All features must work in both single and multi-panel modes
+5. **Layout-Aware Routing:** Use `BlocConsumer<LayoutBloc, LayoutState>` in route pages to adapt behavior based on layout state (see `PriorityOnlyPage`)
+6. **Prevent Content Duplication:** Routes should check layout state to avoid showing the same content in multiple panels
+7. **Responsive First:** All features must work in both single and multi-panel modes
 
 ## Debugging Tips
 

@@ -8,6 +8,7 @@ import 'package:logging/logging.dart';
 import 'state/now.dart';
 import 'state/user.dart';
 import 'state/priority.dart';
+import 'state/layout.dart';
 import 'page/page.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
@@ -83,9 +84,11 @@ class AppRouter extends RootStackRouter {
                   page: PriorityRoute.page,
                   path: ':priorityId',
                   children: [
+                    // This route redirects to NewActivityRoute when the middle panel is
+                    // already showing PriorityPage.
+                    AutoRoute(page: PriorityOnlyRoute.page, path: ''),
                     AutoRoute(
                       page: NewActivityRoute.page,
-                      initial: true,
                       guards: [
                         AutoRouteGuardCallback((resolver, router) async {
                           resolver.context.read<PriorityBloc>().setActivity(
