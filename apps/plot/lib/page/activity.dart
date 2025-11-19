@@ -5,7 +5,6 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
-import 'package:plot/widget/logging.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/state/layout.dart';

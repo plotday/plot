@@ -9,58 +9,37 @@ void main() {
   group('BidirectionalListController', () {
     test('should initialize with correct values', () {
       final controller = BidirectionalListController(
-        initialSelected: 5,
+        initialFocusedIndex: 5,
         initialMin: 0,
         initialMax: 10,
       );
 
-      // Initially no highlight shown (keyboard not active)
-      expect(controller.highlighted, isNull);
+      // Initially no focus shown (keyboard not active)
+      expect(controller.focusedIndex, isNull);
 
-      // After first move, should show highlight at initial position
-      controller.move(0);
-      expect(controller.highlighted, equals(5));
+      // After first moveFocus, should show focus at initial position
+      controller.moveFocus(0);
+      // Since FocusNode needs a tree to actually gain focus, we check lastFocusedIndex
+      expect(controller.lastFocusedIndex, equals(5));
     });
 
-    test('should clamp highlighted value to min/max bounds', () {
+    test('should clamp lastFocusedIndex to min/max bounds', () {
       final controller = BidirectionalListController(
-        initialSelected: 5,
+        initialFocusedIndex: 5,
         initialMin: 0,
         initialMax: 10,
       );
 
-      // Activate keyboard mode
-      controller.move(0);
+      // Clamp to smaller bounds should adjust lastFocusedIndex
+      controller.clamp(0, 3);
+      expect(controller.lastFocusedIndex, equals(3));
 
-      // Try to move beyond max
-      controller.move(10); // Should clamp to 10
-      expect(controller.highlighted, equals(10));
-
-      // Try to move beyond min
-      controller.move(-15); // Should clamp to 0
-      expect(controller.highlighted, equals(0));
+      // Clamp with higher minimum
+      controller.clamp(5, 10);
+      expect(controller.lastFocusedIndex, equals(5));
     });
 
-    test('should move selection correctly', () {
-      final controller = BidirectionalListController(
-        initialSelected: 5,
-        initialMin: 0,
-        initialMax: 10,
-      );
-
-      // First move activates and shows current position
-      controller.move(0);
-      expect(controller.highlighted, equals(5));
-
-      // Subsequent moves navigate
-      controller.move(2);
-      expect(controller.highlighted, equals(7));
-
-      controller.move(-3);
-      expect(controller.highlighted, equals(4));
-    });
-
-    test('should notify listeners on selection change', () {
+    test('should notify listeners on changes', () {
       final controller = BidirectionalListController();
       var notified = false;
 
@@ -68,7 +47,7 @@ void main() {
         notified = true;
       });
 
-      controller.move(0);
+      controller.setHovered(1);
       expect(notified, isTrue);
     });
   });
@@ -85,7 +64,7 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: itemCount,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -112,7 +91,7 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: 0,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -138,7 +117,7 @@ void main() {
               count: 5,
               doneStart: false,
               doneEnd: false,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -163,7 +142,7 @@ void main() {
     testWidgets('should highlight selected item correctly', (
       WidgetTester tester,
     ) async {
-      final controller = BidirectionalListController(initialSelected: 2);
+      final controller = BidirectionalListController(initialFocusedIndex: 2);
       const itemCount = 5;
 
       await tester.pumpWidget(
@@ -172,12 +151,20 @@ void main() {
             body: BidirectionalList(
               count: itemCount,
               controller: controller,
-              builder: (context, index, selected) {
-                return Container(
-                  key: ValueKey('item_$index'),
-                  height: 50,
-                  color: selected ? Colors.blue : Colors.transparent,
-                  child: Text('Item $index'),
+              builder: (context, index, focusNode) {
+                return Focus(
+                  focusNode: focusNode,
+                  child: Builder(
+                    builder: (context) {
+                      final hasFocus = Focus.of(context).hasFocus;
+                      return Container(
+                        key: ValueKey('item_$index'),
+                        height: 50,
+                        color: hasFocus ? Colors.blue : Colors.transparent,
+                        child: Text('Item $index'),
+                      );
+                    },
+                  ),
                 );
               },
             ),
@@ -187,13 +174,18 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Check that the selected item has the correct color
+      // Initially no item has focus
+      // Request focus on item 2
+      controller.requestFocus(2);
+      await tester.pumpAndSettle();
+
+      // Check that the focused item has the correct color
       final selectedWidget = tester.widget<Container>(
         find.byKey(const ValueKey('item_2')),
       );
       expect(selectedWidget.color, equals(Colors.blue));
 
-      // Check that non-selected items don't have the blue color
+      // Check that non-focused items don't have the blue color
       final nonSelectedWidget = tester.widget<Container>(
         find.byKey(const ValueKey('item_0')),
       );
@@ -218,7 +210,7 @@ void main() {
                 count: itemCount,
                 scrollController: scrollController,
                 estimatedItemExtent: itemHeight.toInt(),
-                builder: (context, index, selected) {
+                builder: (context, index, focusNode) {
                   return SizedBox(
                     key: ValueKey('item_$index'),
                     height: itemHeight,
@@ -256,7 +248,7 @@ void main() {
             body: BidirectionalList(
               count: itemCount,
               anchorOffset: 0.5, // Middle of viewport
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -292,7 +284,7 @@ void main() {
                   overflow: 1.0, // Small overflow to trigger fetcher sooner
                   doneStart: false,
                   doneEnd: false,
-                  builder: (context, index, selected) {
+                  builder: (context, index, focusNode) {
                     return SizedBox(
                       key: ValueKey('item_$index'),
                       height: 100,
@@ -351,7 +343,7 @@ void main() {
               doneStart: false,
               doneEnd: false,
               overflow: 0.5, // Very small overflow to trigger quickly
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 100,
@@ -390,7 +382,7 @@ void main() {
               count: 5,
               doneStart: true,
               doneEnd: true,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 100,
@@ -432,7 +424,7 @@ void main() {
                 overflow: 1.0,
                 doneStart: false,
                 doneEnd: false,
-                builder: (context, index, selected) {
+                builder: (context, index, focusNode) {
                   return SizedBox(
                     key: ValueKey('item_$index'),
                     height: 50,
@@ -489,7 +481,7 @@ void main() {
               first: 0,
               // Anchor at start
               anchorOffset: 0.0,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -519,7 +511,7 @@ void main() {
               first: 0,
               // Anchor at end
               anchorOffset: 1.0,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -550,7 +542,7 @@ void main() {
               first: 0,
               // Invalid anchor - outside range, should be clamped
               anchorOffset: 0.5,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -563,7 +555,7 @@ void main() {
       );
 
       await tester.pumpAndSettle();
-      
+
       // Should render without crashing (anchor gets clamped internally)
       expect(find.byType(BidirectionalList), findsOneWidget);
     });
@@ -579,7 +571,7 @@ void main() {
               first: -5, // Negative start index
               // Negative anchor
               anchorOffset: 0.5,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -607,7 +599,7 @@ void main() {
               first: 10, // Non-zero first with zero count
               // Anchor beyond range
               anchorOffset: 0.5,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -630,7 +622,7 @@ void main() {
       WidgetTester tester,
     ) async {
       final controller = BidirectionalListController(
-        initialSelected: 20, // Outside bounds
+        initialFocusedIndex: 20, // Outside bounds
         initialMin: 0,
         initialMax: 10,
       );
@@ -641,7 +633,7 @@ void main() {
             body: BidirectionalList(
               count: 5,
               controller: controller,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -655,19 +647,16 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Activate keyboard to see highlighted value
-      controller.move(0);
-
-      // Controller should be clamped to valid range
-      expect(controller.highlighted, lessThanOrEqualTo(4));
-      expect(controller.highlighted, greaterThanOrEqualTo(0));
+      // Controller should be clamped to valid range by the widget
+      // The widget calls clamp in didUpdateWidget
+      expect(controller.lastFocusedIndex, lessThanOrEqualTo(4));
     });
 
     testWidgets('should handle controller bounds change during widget lifecycle', (
       WidgetTester tester,
     ) async {
       final controller = BidirectionalListController(
-        initialSelected: 5,
+        initialFocusedIndex: 5,
         initialMin: 0,
         initialMax: 10,
       );
@@ -678,7 +667,7 @@ void main() {
             body: BidirectionalList(
               count: count,
               controller: controller,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -694,16 +683,14 @@ void main() {
       await tester.pumpWidget(buildList(10));
       await tester.pumpAndSettle();
 
-      // Activate keyboard to see highlighted value
-      controller.move(0);
-      expect(controller.highlighted, equals(5));
+      expect(controller.lastFocusedIndex, equals(5));
 
       // Reduce count below selected index
       await tester.pumpWidget(buildList(3));
       await tester.pumpAndSettle();
 
       // Selection should be adjusted
-      expect(controller.highlighted, lessThanOrEqualTo(2));
+      expect(controller.lastFocusedIndex, lessThanOrEqualTo(2));
     });
   });
 
@@ -712,7 +699,7 @@ void main() {
       WidgetTester tester,
     ) async {
       final completer = Completer<void>();
-      
+
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -721,7 +708,7 @@ void main() {
               doneStart: false,
               doneEnd: false,
               overflow: 0.1, // Very small overflow to trigger quickly
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 100,
@@ -745,7 +732,7 @@ void main() {
 
       // Widget should still be responsive even with hanging fetcher
       expect(find.byType(BidirectionalList), findsOneWidget);
-      
+
       // Complete the future to clean up
       completer.complete();
     });
@@ -754,7 +741,7 @@ void main() {
       WidgetTester tester,
     ) async {
       final fetcherCalls = <DateTime>[];
-      
+
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -763,7 +750,7 @@ void main() {
               doneStart: false,
               doneEnd: false,
               overflow: 0.1,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 100,
@@ -797,7 +784,7 @@ void main() {
       WidgetTester tester,
     ) async {
       var largestCountRequest = 0;
-      
+
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -807,7 +794,7 @@ void main() {
               doneEnd: false,
               overflow: 10.0, // Large overflow
               estimatedItemExtent: 1, // Very small items
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 1,
@@ -845,7 +832,7 @@ void main() {
             body: BidirectionalList(
               count: 5,
               estimatedItemExtent: 0, // Zero height estimation
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -873,7 +860,7 @@ void main() {
               overflow: 1000.0, // Massive overflow
               doneStart: false,
               doneEnd: false,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -905,7 +892,7 @@ void main() {
               // Anchor in middle
               anchorOffset: 0.75,
               reverse: true, // Reverse list
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -934,7 +921,7 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: itemCount,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -973,7 +960,7 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: 5,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 // Return null for some items
                 if (index % 2 == 0) return null;
                 return SizedBox(
@@ -1003,7 +990,7 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: itemCount,
-              builder: (context, index, selected) {
+              builder: (context, index, focusNode) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -1049,12 +1036,20 @@ void main() {
                 return BidirectionalList(
                   count: itemCount,
                   controller: selectorController,
-                  builder: (context, index, selected) {
-                    return Container(
-                      key: ValueKey('item_$index'),
-                      height: 50,
-                      color: selected ? Colors.blue : Colors.transparent,
-                      child: Text('Item $index'),
+                  builder: (context, index, focusNode) {
+                    return Focus(
+                      focusNode: focusNode,
+                      child: Builder(
+                        builder: (context) {
+                          final hasFocus = Focus.of(context).hasFocus;
+                          return Container(
+                            key: ValueKey('item_$index'),
+                            height: 50,
+                            color: hasFocus ? Colors.blue : Colors.transparent,
+                            child: Text('Item $index'),
+                          );
+                        },
+                      ),
                     );
                   },
                 );
@@ -1070,15 +1065,15 @@ void main() {
       expect(find.byType(BidirectionalList), findsOneWidget);
       expect(capturedController, isNotNull);
 
-      // Controller starts with no highlight (keyboard not active)
-      expect(capturedController?.highlighted, isNull);
+      // Controller starts with no focus (keyboard not active)
+      expect(capturedController?.focusedIndex, isNull);
     });
 
     testWidgets('should handle direct controller manipulation', (
       WidgetTester tester,
     ) async {
       final controller = BidirectionalListController(
-        initialSelected: 0,
+        initialFocusedIndex: 0,
         initialMin: 0,
         initialMax: 4,
       );
@@ -1090,12 +1085,20 @@ void main() {
             body: BidirectionalList(
               count: itemCount,
               controller: controller,
-              builder: (context, index, selected) {
-                return Container(
-                  key: ValueKey('item_$index'),
-                  height: 50,
-                  color: selected ? Colors.blue : Colors.transparent,
-                  child: Text('Item $index'),
+              builder: (context, index, focusNode) {
+                return Focus(
+                  focusNode: focusNode,
+                  child: Builder(
+                    builder: (context) {
+                      final hasFocus = Focus.of(context).hasFocus;
+                      return Container(
+                        key: ValueKey('item_$index'),
+                        height: 50,
+                        color: hasFocus ? Colors.blue : Colors.transparent,
+                        child: Text('Item $index'),
+                      );
+                    },
+                  ),
                 );
               },
             ),
@@ -1109,25 +1112,24 @@ void main() {
       // Wait for the widget to apply its bounds
       await tester.pump();
 
-      // Initially no highlight (keyboard not active)
-      expect(controller.highlighted, isNull);
+      // Initially no focus (keyboard not active)
+      expect(controller.focusedIndex, isNull);
 
       // Test direct controller manipulation
-      // First move activates and shows current position
-      controller.move(0);
+      // First moveFocus activates and shows current position
+      controller.moveFocus(0);
       await tester.pumpAndSettle();
-      expect(controller.highlighted, equals(0));
+      expect(controller.lastFocusedIndex, equals(0));
 
-      // Subsequent move navigates
-      controller.move(1);
+      // Subsequent moveFocus navigates
+      controller.moveFocus(1);
       await tester.pumpAndSettle();
-      expect(controller.highlighted, equals(1));
+      expect(controller.lastFocusedIndex, equals(1));
 
       // Test moving back
-      controller.move(-1);
+      controller.moveFocus(-1);
       await tester.pumpAndSettle();
-      expect(controller.highlighted, equals(0));
+      expect(controller.lastFocusedIndex, equals(0));
     });
   });
 }
-

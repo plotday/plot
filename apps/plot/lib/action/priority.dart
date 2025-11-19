@@ -6,17 +6,18 @@ import 'package:plot/analytics/analytics.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
-import 'package:plot/page/edit_priority.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/priorities.dart';
 
 abstract class PriorityAction extends Action {
   PriorityAction(
     this.priority, {
     required super.eventObject,
     required super.eventAction,
+    bool ancestry = true,
   }) : super(
          title: priority?.title ?? 'None',
-         subtitle: priority?.ancestorsLabel(),
+         subtitle: ancestry ? priority?.ancestorsLabel() : null,
        );
 
   final Priority? priority;
@@ -57,7 +58,7 @@ abstract class PriorityAction extends Action {
 }
 
 class ChangeCurrentPriority extends PriorityAction {
-  ChangeCurrentPriority(Priority super.priority)
+  ChangeCurrentPriority(Priority super.priority, {super.ancestry = true})
     : super(eventObject: EventObject.priority, eventAction: EventAction.viewed);
 
   @override
@@ -149,9 +150,9 @@ class AddPriority extends Action {
   @override
   Future<ActionReturn> run(BuildContext context) async {
     final priority = await _priority;
-    await priority.save();
+    final savedPriority = await priority.save();
     return ActionRoute(
-      PriorityRoute(priorityIdString: priority.id.toShortString()),
+      PriorityRoute(priorityIdString: savedPriority.id.toShortString()),
       replace: true,
     );
   }
@@ -200,21 +201,103 @@ class ArchivePriority extends Action {
   }
 }
 
-class NewPriority extends ShowPage {
+class NewPriority extends ShowForm {
   NewPriority({Priority? parent})
     : super(
         title: parent == null ? 'Add a Priority' : 'Add a Sub-priority',
         icon: PlotIcon.add,
-        builder: (context) => EditPriorityPage(parent: parent),
+        form: (context) async {
+          // Get default parent for the dummy action (only used for display)
+          final prioritiesBloc = context.read<PrioritiesBloc>();
+          final defaultParent =
+              parent ??
+              prioritiesBloc.state.root ??
+              await Priority.getDefault();
+
+          return FormData(
+            title: parent == null ? 'Add a Priority' : 'Add a Sub-priority',
+            groups: [
+              StaticFormGroup(
+                items: [
+                  FormTextInput(
+                    key: 'title',
+                    label: 'Priority Name',
+                    required: true,
+                    autofocus: true,
+                  ),
+                  FormButton(
+                    key: 'create',
+                    action: AddPriority(
+                      Future.value(
+                        Priority(title: '', parent: defaultParent, draft: true),
+                      ),
+                    ),
+                    onSubmit: (context, values) async {
+                      final title = values['title'] as String;
+                      final prioritiesBloc = context.read<PrioritiesBloc>();
+                      final effectiveParent =
+                          parent ??
+                          prioritiesBloc.state.root ??
+                          await Priority.getDefault();
+                      final action = AddPriority(
+                        Future.value(
+                          Priority(
+                            title: title,
+                            parent: effectiveParent,
+                            draft: true,
+                          ),
+                        ),
+                      );
+                      if (!context.mounted) {
+                        return const ActionSkipped();
+                      }
+                      return await action.run(context);
+                    },
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
       );
 }
 
-class EditPriorityAction extends ShowPage {
+class EditPriorityAction extends ShowForm {
   EditPriorityAction(Priority priority)
     : super(
         title: 'Edit',
         icon: PlotIcon.settings,
-        builder: (context) => EditPriorityPage(priority: priority),
+        form: (context) => Future.value(
+          FormData(
+            title: 'Edit Priority',
+            groups: [
+              StaticFormGroup(
+                items: [
+                  FormTextInput(
+                    key: 'title',
+                    label: 'Priority Name',
+                    initialValue: priority.title,
+                    required: true,
+                    autofocus: true,
+                  ),
+                  FormButton(
+                    key: 'save',
+                    action: EditPriority(
+                      Future.value(priority.copyWith(title: '')),
+                    ),
+                    onSubmit: (context, values) async {
+                      final title = values['title'] as String;
+                      final action = EditPriority(
+                        Future.value(priority.copyWith(title: title)),
+                      );
+                      return await action.run(context);
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       );
 }
 

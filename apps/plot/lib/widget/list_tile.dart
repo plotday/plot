@@ -35,6 +35,9 @@ class ListTile extends StatefulWidget {
     /// Whether this tile is selected (shows left border and primary color).
     this.selected = false,
 
+    /// Whether to show the border when selected (default: true).
+    this.selectedBorder = true,
+
     /// Indentation level for nested items.
     this.indentLevel = 0,
 
@@ -56,12 +59,16 @@ class ListTile extends StatefulWidget {
     this.header,
     this.icon,
 
+    /// Whether to center the title text.
+    this.centered = false,
+
     super.key,
   }) : title = title ?? action?.title ?? '';
 
   final ListTileStyle style;
   final bool highlighted;
   final bool selected;
+  final bool selectedBorder;
   final int indentLevel;
   final bool disableInternalHover;
   final Widget? details;
@@ -73,6 +80,7 @@ class ListTile extends StatefulWidget {
   final Widget? header;
 
   final IconData? icon;
+  final bool centered;
 
   final void Function(bool hovered)? onHover;
   final FocusNode? focusNode;
@@ -166,7 +174,7 @@ class _ListTileState extends State<ListTile> {
                      widget.highlighted
                   ? context.colour.highlight
                   : null,
-              border: widget.selected
+              border: widget.selected && widget.selectedBorder
                   ? Border(
                       left: BorderSide(
                         color: context.colour.accent,
@@ -176,7 +184,7 @@ class _ListTileState extends State<ListTile> {
                   : null,
             ),
             padding: widgetPaddingSm.copyWith(
-              left: widgetPaddingSm.left + (widget.indentLevel * 16.0) - (widget.selected ? 3.0 : 0.0),
+              left: widgetPaddingSm.left + (widget.indentLevel * 16.0) - (widget.selected && widget.selectedBorder ? 3.0 : 0.0),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -190,13 +198,18 @@ class _ListTileState extends State<ListTile> {
                   ),
                 Expanded(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: widget.centered
+                        ? CrossAxisAlignment.center
+                        : CrossAxisAlignment.start,
                     spacing: 2,
                     children: [
                       if (widget.header != null) widget.header!,
                       widget.body != null
                           ? Row(children: [Expanded(child: widget.body!)])
                           : Row(
+                              mainAxisAlignment: widget.centered
+                                  ? MainAxisAlignment.center
+                                  : MainAxisAlignment.start,
                               children: [
                                 Flexible(
                                   child: Text(
@@ -204,6 +217,9 @@ class _ListTileState extends State<ListTile> {
                                         ? widget.title.toUpperCase()
                                         : widget.title,
                                     overflow: TextOverflow.ellipsis,
+                                    textAlign: widget.centered
+                                        ? TextAlign.center
+                                        : TextAlign.start,
                                     style: context.theme.typography.sm.copyWith(
                                       color: widget.selected
                                           ? context.colour.accent

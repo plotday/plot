@@ -1,10 +1,11 @@
 import 'package:flutter/widgets.dart' hide Action, Actions;
-import 'package:flutter/widgets.dart' as flutter_widgets show Actions, CallbackAction, KeyEventResult;
+import 'package:flutter/widgets.dart'
+    as flutter_widgets
+    show Actions, CallbackAction, KeyEventResult;
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/action/action.dart';
-import 'package:plot/util/platform.dart';
 import 'package:plot/widget/bidirectional_list.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
@@ -173,125 +174,132 @@ class ActionBarState extends State<_ActionBar> {
       onActivate: (index) => _executeAction(_getActionAtIndex(index)),
       builder: (context, listController) => Shortcuts(
         shortcuts: const {
-          SingleActivator(LogicalKeyboardKey.arrowUp): MoveListSelectionIntent(-1),
-          SingleActivator(LogicalKeyboardKey.arrowDown): MoveListSelectionIntent(1),
-          SingleActivator(LogicalKeyboardKey.enter): ActivateListSelectionIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowUp): MoveListSelectionIntent(
+            -1,
+          ),
+          SingleActivator(LogicalKeyboardKey.arrowDown):
+              MoveListSelectionIntent(1),
+          SingleActivator(LogicalKeyboardKey.enter):
+              ActivateListSelectionIntent(),
         },
         child: flutter_widgets.Actions(
           actions: {
-            MoveListSelectionIntent: flutter_widgets.CallbackAction<MoveListSelectionIntent>(
-              onInvoke: (intent) {
-                _moveHighlight(intent.offset);
-                return flutter_widgets.KeyEventResult.handled;
-              },
-            ),
-            ActivateListSelectionIntent: flutter_widgets.CallbackAction<ActivateListSelectionIntent>(
-              onInvoke: (intent) {
-                if (_allActionsCount() > 0) {
-                  _executeAction(_getActionAtIndex(_highlightedIndex));
-                  return flutter_widgets.KeyEventResult.handled;
-                }
-                return flutter_widgets.KeyEventResult.ignored;
-              },
-            ),
+            MoveListSelectionIntent:
+                flutter_widgets.CallbackAction<MoveListSelectionIntent>(
+                  onInvoke: (intent) {
+                    _moveHighlight(intent.offset);
+                    return flutter_widgets.KeyEventResult.handled;
+                  },
+                ),
+            ActivateListSelectionIntent:
+                flutter_widgets.CallbackAction<ActivateListSelectionIntent>(
+                  onInvoke: (intent) {
+                    if (_allActionsCount() > 0) {
+                      _executeAction(_getActionAtIndex(_highlightedIndex));
+                      return flutter_widgets.KeyEventResult.handled;
+                    }
+                    return flutter_widgets.KeyEventResult.ignored;
+                  },
+                ),
           },
           child: _child != null
-            ? _child!
-            : SizedBox.expand(
-                child: Column(
-                  children: [
-                    EditableArea(
-                      position: EditableAreaPosition.top,
-                      padding: false,
-                      builder: (context, focusNode) => Row(
-                        children: [
-                          Expanded(
-                            child: Padding(
-                              padding: widgetPadding,
-                              child: TextField(
-                                maxLines: 1,
-                                style: TextFieldStyle.ghost,
-                                controller: _controller,
-                                autofocus: true,
-                                label: "${widget.actions.prompt}…",
-                                focusNode: focusNode,
-                              ),
-                            ),
-                          ),
-                          if (secondaryAction != null)
-                            Button.icon(
-                              ActionWrapper(
-                                secondaryAction,
-                                run: (_, _) => _executeAction(secondaryAction),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (errorBox != null) errorBox,
-                    Expanded(
-                      child: BidirectionalList(
-                        // shrinkWrap: true,
-                        controller: listController,
-                        count: totalActionCount,
-                        builder: (context, index, focusNode) {
-                          final group = _getGroupAtIndex(index);
-                          final action = _getActionAtIndex(index);
-                          final body = action.buildBody(context);
-                          Widget? header;
-                          Widget? info;
-                          if (group.title != null &&
-                              (index == 0 ||
-                                  group != _getGroupAtIndex(index - 1))) {
-                            header = Padding(
-                              padding: widgetPaddingSm,
-                              child: Text(
-                                group.title!,
-
-                                style: TextStyle(
-                                  color: context.theme.colors.mutedForeground,
-                                  fontSize:
-                                      context.theme.typography.xs.fontSize,
+              ? _child!
+              : SizedBox.expand(
+                  child: Column(
+                    children: [
+                      EditableArea(
+                        position: EditableAreaPosition.top,
+                        padding: false,
+                        builder: (context, focusNode) => Row(
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: widgetPadding,
+                                child: TextField(
+                                  maxLines: 1,
+                                  style: TextFieldStyle.ghost,
+                                  controller: _controller,
+                                  autofocus: true,
+                                  label: "${widget.actions.prompt}…",
+                                  focusNode: focusNode,
                                 ),
                               ),
-                            );
-                          }
-                          // Render info widget if provided
-                          if (group.infoBuilder != null) {
-                            info = Container(
-                              padding: const EdgeInsets.all(0),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(
-                                    color: context.theme.colors.border,
-                                    width: 1,
+                            ),
+                            if (secondaryAction != null)
+                              Button.icon(
+                                ActionWrapper(
+                                  secondaryAction,
+                                  run: (_, _) =>
+                                      _executeAction(secondaryAction),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (errorBox != null) errorBox,
+                      Expanded(
+                        child: BidirectionalList(
+                          // shrinkWrap: true,
+                          controller: listController,
+                          count: totalActionCount,
+                          builder: (context, index, focusNode) {
+                            final group = _getGroupAtIndex(index);
+                            final action = _getActionAtIndex(index);
+                            final body = action.buildBody(context);
+                            Widget? header;
+                            Widget? info;
+                            if (group.title != null &&
+                                (index == 0 ||
+                                    group != _getGroupAtIndex(index - 1))) {
+                              header = Padding(
+                                padding: widgetPaddingSm,
+                                child: Text(
+                                  group.title!,
+
+                                  style: TextStyle(
+                                    color: context.theme.colors.mutedForeground,
+                                    fontSize:
+                                        context.theme.typography.xs.fontSize,
                                   ),
                                 ),
-                              ),
-                              child: group.infoBuilder!(context),
+                              );
+                            }
+                            // Render info widget if provided
+                            if (group.infoBuilder != null) {
+                              info = Container(
+                                padding: const EdgeInsets.all(0),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: context.theme.colors.border,
+                                      width: 1,
+                                    ),
+                                  ),
+                                ),
+                                child: group.infoBuilder!(context),
+                              );
+                            }
+                            return Column(
+                              key: ValueKey(index),
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (header != null) header,
+                                if (info != null) info,
+                                ListTile(
+                                  action: action,
+                                  body: body,
+                                  highlighted: index == _highlightedIndex,
+                                ),
+                              ],
                             );
-                          }
-                          return Column(
-                            key: ValueKey(index),
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (header != null) header,
-                              if (info != null) info,
-                              ListTile(
-                                action: action,
-                                body: body,
-                                highlighted: index == _highlightedIndex,
-                              ),
-                            ],
-                          );
-                        },
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-          ),
         ),
+      ),
     );
   }
 

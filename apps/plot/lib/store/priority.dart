@@ -342,6 +342,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.topOrder,
     super.pomodoro = const Duration(minutes: 25),
     super.color = const ThemeColor.defaultColor(),
+    this.draft = false,
   }) : children = [],
        _ancestors =
            parent!._ancestors +
@@ -356,7 +357,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          root: false,
          unread: false,
        ) {
-    parent!._addChild(this);
+    if (!draft) {
+      parent!._addChild(this);
+    }
   }
 
   Priority.fromStore(
@@ -364,6 +367,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     this.parent,
     List<Priority>? children,
     PriorityAncestryData? ancestry,
+    this.draft = false,
   }) : children = children ?? [],
        _ancestors = ancestry == null
            ? parent == null
@@ -385,7 +389,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdBy: row.createdBy,
          unread: row.unread,
        ) {
-    parent?._addChild(this);
+    if (!draft) {
+      parent?._addChild(this);
+    }
   }
 
   static const separator = ' › ';
@@ -430,6 +436,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   List<Priority> children;
   final List<PriorityAncestor> _ancestors;
 
+  /// Whether this priority is a draft (not added to parent's children list).
+  /// This is an in-memory property only, not persisted to the database.
+  final bool draft;
+
   List<Priority> descendants() {
     List<Priority> result = [];
 
@@ -446,7 +456,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return result;
   }
 
-  Future<void> delete() => copyWith(archivedAt: Value(DateTime.now())).save();
+  Future<void> delete() async {
+    await copyWith(archivedAt: Value(DateTime.now())).save();
+  }
 
   @override
   Priority copyWith({
@@ -464,7 +476,20 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Priority? parent,
     Value<int?> pending = const Value.absent(),
     bool? unread,
+    bool? draft,
   }) {
+    final newDraft = draft ?? this.draft;
+    final currentParent = parent ?? this.parent;
+
+    // Handle draft transitions
+    if (draft != null && draft != this.draft && currentParent != null) {
+      if (draft == true && !this.draft) {
+        // Transitioning from non-draft to draft: remove from parent's children
+        _removeFromParent(currentParent);
+      }
+      // Transitioning from draft to non-draft is handled by fromStore constructor
+    }
+
     return Priority.fromStore(
       super.copyWith(
         id: id,
@@ -482,9 +507,14 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         color: color,
         root: root ?? this.root,
       ),
-      parent: parent ?? this.parent,
+      parent: currentParent,
       children: children,
+      draft: newDraft,
     );
+  }
+
+  void _removeFromParent(Priority parent) {
+    parent.children = parent.children.where((child) => child.id != id).toList();
   }
 
   void _addChild(Priority child) {
@@ -496,8 +526,18 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   bool isParent(Priority other) => path.isParent(other.path);
   List<Priority> get peers => parent?.children ?? [];
 
-  Future<void> save() =>
-      Store.get.save(table, toCompanion(false), PrioritiesBase());
+  Future<Priority> save() async {
+    if (draft) {
+      // If this is a draft, create a non-draft copy and save it
+      final nonDraft = copyWith(draft: false);
+      await Store.get.save(table, nonDraft.toCompanion(false), PrioritiesBase());
+      return nonDraft;
+    } else {
+      // Not a draft, save normally
+      await Store.get.save(table, toCompanion(false), PrioritiesBase());
+      return this;
+    }
+  }
 
   @override
   int compareTo(Priority other) {

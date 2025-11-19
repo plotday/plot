@@ -21,6 +21,7 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
     ),
   );
   theme = theme.copyWith(
+    // ignore: unused_result
     headerStyles: theme.headerStyles.copyWith(
       // ignore: unused_result
       rootStyle: theme.headerStyles.rootStyle.copyWith(
@@ -31,12 +32,14 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
         ),
       ),
     ),
+    // ignore: unused_result
     textFieldStyle: theme.textFieldStyle.copyWith(
       cursorColor: colourScheme.accent,
       contentTextStyle: theme.textFieldStyle.contentTextStyle.map(
         (style) => style.copyWith(color: colourScheme.foreground),
       ),
     ),
+    // ignore: unused_result
     buttonStyles: theme.buttonStyles.copyWith(
       // ignore: unused_result
       primary: theme.buttonStyles.primary.copyWith(
@@ -86,6 +89,7 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
         ),
       ),
     ),
+    // ignore: unused_result
     sidebarStyle: theme.sidebarStyle.copyWith(
       groupStyle: (groupStyle) => groupStyle.copyWith(
         childrenPadding: EdgeInsets.zero,
@@ -107,6 +111,7 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
         ),
       ),
     ),
+    // ignore: unused_result
     tileStyle: theme.tileStyle.copyWith(
       backgroundColor: FWidgetStateMap({
         WidgetState.selected | WidgetState.hovered | WidgetState.pressed:

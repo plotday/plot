@@ -249,6 +249,7 @@ class _EditorMentionPopoverState extends State<EditorMentionPopover> {
           title: Text(twist.name),
           selected: isSelected,
           onPress: () => widget.onAgentSelected(twist),
+          // ignore: unused_result
           style: context.theme.tileStyle.copyWith(
             decoration: FWidgetStateMap({
               WidgetState.any: BoxDecoration(

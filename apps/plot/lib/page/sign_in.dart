@@ -58,131 +58,135 @@ class _SignInPageState extends State<SignInPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                  Center(
-                    child: SvgPicture.asset(
-                      "assets/p.svg",
-                      width: 120,
-                      height: 120,
-                    ),
+                Center(
+                  child: SvgPicture.asset(
+                    "assets/p.svg",
+                    width: 120,
+                    height: 120,
                   ),
-                  const Text(
-                    'Sign in to make progress on your priorities',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
+                ),
+                const Text(
+                  'Sign in to make progress on your priorities',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
 
-                  // OAuth buttons
-                  AuthButton.authenticate(
-                    provider: AuthProvider.google,
-                    autoSignIn: false,
-                    onAuth: ({required idToken, accessToken}) async {
-                      if (mounted) {
-                        setState(() {
-                          _errorMessage = null;
-                        });
-                      }
+                // OAuth buttons
+                AuthButton.authenticate(
+                  provider: AuthProvider.google,
+                  autoSignIn: false,
+                  onAuth: ({required idToken, accessToken}) async {
+                    if (mounted) {
+                      setState(() {
+                        _errorMessage = null;
+                      });
+                    }
 
-                      try {
-                        await Base.client.auth.signInWithIdToken(
-                          provider: OAuthProvider.google,
-                          idToken: idToken,
-                          accessToken: accessToken,
-                        );
-
-                        // Clear password setup flag for OAuth sign-ins
-                        // (they already have a password via OAuth provider)
-                        if (mounted) {
-                          await context.read<UserBloc>().clearPasswordSetupRequired();
-                        }
-                      } on AuthException catch (e, t) {
-                        log.warning('Error signing into Google', e, t);
-                        if (!mounted) return;
-                        setState(() {
-                          _errorMessage = e.message;
-                        });
-                      }
-                    },
-                    onError: (error) {
-                      if (mounted) {
-                        setState(() {
-                          _errorMessage = error;
-                        });
-                      }
-                    },
-                  ),
-
-                  AuthButton.authenticate(
-                    provider: AuthProvider.apple,
-                    autoSignIn: false,
-                    onAuth: ({required idToken, accessToken}) async {
-                      if (mounted) {
-                        setState(() {
-                          _errorMessage = null;
-                        });
-                      }
-
-                      try {
-                        await Base.client.auth.signInWithIdToken(
-                          provider: OAuthProvider.apple,
-                          idToken: idToken,
-                          accessToken: accessToken,
-                        );
-
-                        // Clear password setup flag for OAuth sign-ins
-                        // (they already have a password via OAuth provider)
-                        if (mounted) {
-                          await context.read<UserBloc>().clearPasswordSetupRequired();
-                        }
-                      } on AuthException catch (e, t) {
-                        log.warning('Error signing into Apple', e, t);
-                        if (!mounted) return;
-                        setState(() {
-                          _errorMessage = e.message;
-                        });
-                      }
-                    },
-                    onError: (error) {
-                      if (mounted) {
-                        setState(() {
-                          _errorMessage = error;
-                        });
-                      }
-                    },
-                  ),
-
-                  // Continue with email button
-                  FButton(
-                    onPress: () {
-                      context.router.navigate(
-                        EmailSignInRoute(returnTo: widget.returnTo),
+                    try {
+                      await Base.client.auth.signInWithIdToken(
+                        provider: OAuthProvider.google,
+                        idToken: idToken,
+                        accessToken: accessToken,
                       );
-                    },
-                    style: FButtonStyle.secondary(),
-                    child: const Text('Continue with email'),
-                  ),
 
-                  // Error message
-                  if (_errorMessage != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEF4444).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: const Color(0xFFEF4444).withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Text(
-                        _errorMessage!,
-                        style: const TextStyle(color: Color(0xFFEF4444)),
-                        textAlign: TextAlign.center,
+                      // Clear password setup flag for OAuth sign-ins
+                      // (they already have a password via OAuth provider)
+                      if (context.mounted) {
+                        await context
+                            .read<UserBloc>()
+                            .clearPasswordSetupRequired();
+                      }
+                    } on AuthException catch (e, t) {
+                      log.warning('Error signing into Google', e, t);
+                      if (!mounted) return;
+                      setState(() {
+                        _errorMessage = e.message;
+                      });
+                    }
+                  },
+                  onError: (error) {
+                    if (mounted) {
+                      setState(() {
+                        _errorMessage = error;
+                      });
+                    }
+                  },
+                ),
+
+                AuthButton.authenticate(
+                  provider: AuthProvider.apple,
+                  autoSignIn: false,
+                  onAuth: ({required idToken, accessToken}) async {
+                    if (mounted) {
+                      setState(() {
+                        _errorMessage = null;
+                      });
+                    }
+
+                    try {
+                      await Base.client.auth.signInWithIdToken(
+                        provider: OAuthProvider.apple,
+                        idToken: idToken,
+                        accessToken: accessToken,
+                      );
+
+                      // Clear password setup flag for OAuth sign-ins
+                      // (they already have a password via OAuth provider)
+                      if (context.mounted) {
+                        await context
+                            .read<UserBloc>()
+                            .clearPasswordSetupRequired();
+                      }
+                    } on AuthException catch (e, t) {
+                      log.warning('Error signing into Apple', e, t);
+                      if (!mounted) return;
+                      setState(() {
+                        _errorMessage = e.message;
+                      });
+                    }
+                  },
+                  onError: (error) {
+                    if (mounted) {
+                      setState(() {
+                        _errorMessage = error;
+                      });
+                    }
+                  },
+                ),
+
+                // Continue with email button
+                FButton(
+                  onPress: () {
+                    context.router.navigate(
+                      EmailSignInRoute(returnTo: widget.returnTo),
+                    );
+                  },
+                  style: FButtonStyle.secondary(),
+                  child: const Text('Continue with email'),
+                ),
+
+                // Error message
+                if (_errorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.3),
                       ),
                     ),
-                  ],
-
-                  const SizedBox(height: 16),
-                  const TermsAgreement(),
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Color(0xFFEF4444)),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ],
+
+                const SizedBox(height: 16),
+                const TermsAgreement(),
+              ],
             ),
           ),
         ),

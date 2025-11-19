@@ -8,7 +8,6 @@ import 'package:logging/logging.dart';
 import 'state/now.dart';
 import 'state/user.dart';
 import 'state/priority.dart';
-import 'state/layout.dart';
 import 'page/page.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
@@ -91,7 +90,8 @@ class AppRouter extends RootStackRouter {
                       page: NewActivityRoute.page,
                       guards: [
                         AutoRouteGuardCallback((resolver, router) async {
-                          final priorityBloc = resolver.context.read<PriorityBloc>();
+                          final priorityBloc = resolver.context
+                              .read<PriorityBloc>();
                           priorityBloc.setActivity(null);
                           // Reset draft to ensure a fresh activity each time
                           priorityBloc.resetDraft();

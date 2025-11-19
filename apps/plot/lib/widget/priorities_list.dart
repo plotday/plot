@@ -28,41 +28,44 @@ class PrioritiesList extends StatelessWidget {
 
         // Second group: Top Priorities
         if (topPriorities.isNotEmpty) ...[
-          ListTile(
-            title: 'Top Priorities',
-            style: ListTileStyle.header,
+          ListTile(title: 'Top Priorities', style: ListTileStyle.header),
+          ...topPriorities.expand(
+            (priority) =>
+                _buildPriorityItems(context, priority, topSection: true),
           ),
-          ...topPriorities
-              .expand((priority) => _buildPriorityItems(context, priority, 0, 'top')),
         ],
 
         // Third group: All Priorities
-        ListTile(
-          title: 'All Priorities',
-          style: ListTileStyle.header,
+        ListTile(title: 'All Priorities', style: ListTileStyle.header),
+        ...root.children.expand(
+          (priority) => _buildPriorityItems(context, priority),
         ),
-        ...root.children
-            .expand((priority) => _buildPriorityItems(context, priority, 0, 'all')),
       ],
     );
   }
 
   List<Widget> _buildPriorityItems(
     BuildContext context,
-    Priority priority,
-    int indentLevel,
-    String section,
-  ) {
+    Priority priority, {
+    int indentLevel = 0,
+    bool topSection = false,
+  }) {
     return [
       ListTile(
-        key: ValueKey('$section-${priority.id}'),
+        key: ValueKey('${topSection ? 'top' : 'all'}-${priority.id}'),
         title: priority.title,
-        action: ChangeCurrentPriority(priority),
+        action: ChangeCurrentPriority(priority, ancestry: topSection),
         selected: selected?.id == priority.id,
+        selectedBorder: topSection || priority.topOrder == null,
         indentLevel: indentLevel,
       ),
       ...priority.children.expand(
-        (child) => _buildPriorityItems(context, child, indentLevel + 1, section),
+        (child) => _buildPriorityItems(
+          context,
+          child,
+          indentLevel: indentLevel + 1,
+          topSection: topSection,
+        ),
       ),
     ];
   }
