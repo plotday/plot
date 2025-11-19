@@ -12,7 +12,6 @@ import 'package:follow_the_leader/follow_the_leader.dart';
 import 'package:plot/api/twist_api.dart';
 import 'sliver.dart';
 import 'colour_scheme.dart';
-import 'bidirectional_list.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';
 import 'editor_mention_popover.dart';
@@ -202,7 +201,9 @@ class EditorState extends State<Editor> {
       overlayChildBuilder: _buildEditorMentionPopover,
       child: Shortcuts(
         shortcuts: _isEmpty
-            ? BidirectionalList.shortcuts
+            ? const <ShortcutActivator, Intent>{
+                // When empty, shortcuts are handled at the page level
+              }
             : {
                 const SingleActivator(LogicalKeyboardKey.enter): SubmitIntent(),
                 const SingleActivator(LogicalKeyboardKey.enter, meta: true):

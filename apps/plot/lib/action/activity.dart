@@ -6,6 +6,7 @@ import 'package:plot/analytics/analytics.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
+import 'package:plot/state/activity.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'logging.dart';
@@ -15,8 +16,10 @@ abstract class ActivityAction extends Action {
     this.activity, {
     required super.eventObject,
     required super.eventAction,
+    super.icon,
+    String? title,
   }) : super(
-         title: activity?.displayTitle ?? 'None',
+         title: title ?? activity?.displayTitle ?? 'None',
          subtitle: activity?.parent?.displayTitle ?? '',
        );
 
@@ -45,7 +48,7 @@ abstract class ActivityAction extends Action {
         ],
         Flexible(
           child: Text(
-            activity?.displayTitle ?? 'None',
+            title,
             overflow: TextOverflow.ellipsis,
             style: context.theme.typography.sm.copyWith(
               color: context.colour.foreground,
@@ -59,7 +62,12 @@ abstract class ActivityAction extends Action {
 
 class ChangeCurrentActivity extends ActivityAction {
   ChangeCurrentActivity(super.activity)
-    : super(eventObject: EventObject.activity, eventAction: EventAction.viewed);
+    : super(
+        eventObject: EventObject.activity,
+        eventAction: activity == null ? EventAction.closed : EventAction.opened,
+        title: 'Open ${activity?.displayTitle}',
+        icon: PlotIcon.open,
+      );
 
   @override
   Future<ActionReturn> run(BuildContext context) async {
@@ -113,7 +121,7 @@ class NextActivityThread extends Action {
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
         shortcut: const SingleActivator(
-          LogicalKeyboardKey.arrowDown,
+          LogicalKeyboardKey.arrowRight,
           meta: true,
         ),
         icon: PlotIcon.next,
@@ -154,7 +162,10 @@ class PreviousActivityThread extends Action {
         title: 'Previous Activity Thread',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
-        shortcut: const SingleActivator(LogicalKeyboardKey.arrowUp, meta: true),
+        shortcut: const SingleActivator(
+          LogicalKeyboardKey.arrowLeft,
+          meta: true,
+        ),
         icon: PlotIcon.previous,
       );
 
@@ -187,33 +198,6 @@ class PreviousActivityThread extends Action {
   }
 }
 
-class OpenActivity extends Action {
-  OpenActivity(Activity activity)
-    // ignore: prefer_initializing_formals
-    : activity = activity,
-      super(
-        title: "Open",
-        eventObject: EventObject.activity,
-        eventAction: EventAction.opened,
-        icon: PlotIcon.open,
-      );
-
-  final Activity activity;
-
-  @override
-  Future<ActionReturn> run(BuildContext context) async {
-    return ActionRoute(
-      PriorityRoute(
-        priorityIdString: activity.priority.id.toShortString(),
-        children: [
-          ActivityRoute(activityIdString: activity.id.toShortString()),
-        ],
-      ),
-      replace: true,
-    );
-  }
-}
-
 class AddActivity extends Action {
   AddActivity(this._activity, {this.navigate = true})
     : super(
@@ -228,11 +212,36 @@ class AddActivity extends Action {
 
   @override
   Future<ActionReturn> run(BuildContext context) async {
+    // Try to get ActivityBloc from context before any async operations
+    ActivityBloc? activityBloc;
+    try {
+      activityBloc = context.read<ActivityBloc>();
+    } catch (e) {
+      // No ActivityBloc in context
+      activityBloc = null;
+    }
+
+    // Get PriorityBloc before async operations
+    final priorityBloc = context.read<PriorityBloc>();
+
     final activity = await _activity;
-    await activity.copyWith(draft: false).save();
-    if (!navigate) {
+
+    // Use ActivityBloc.add() if available (resets the draft), otherwise save directly
+    if (activityBloc != null) {
+      await activityBloc.add(activity);
+    } else {
+      await activity.copyWith(draft: false).save();
+    }
+
+    // Only navigate if we're not already in an ActivityPage thread context
+    // If activityBloc exists, we're adding a child to an existing thread - stay in place
+    if (!navigate || activityBloc != null) {
       return const ActionDone();
     }
+
+    // Update PriorityBloc to track the new activity
+    priorityBloc.setActivity(activity);
+
     return ActionRoute(
       PriorityRoute(
         priorityIdString: activity.priority.id.toShortString(),
@@ -240,7 +249,6 @@ class AddActivity extends Action {
           ActivityRoute(activityIdString: activity.id.toShortString()),
         ],
       ),
-      replace: true,
     );
   }
 }
@@ -517,12 +525,13 @@ class MoveActivityToPriority extends ShowActions {
 }
 
 class ShowActivityActions extends ShowActions {
-  ShowActivityActions(Activity activity)
+  ShowActivityActions(Activity activity, {bool open = true})
     : super(
         title: 'More Actions',
         icon: PlotIcon.menu,
-        actions: (context) =>
-            Future.value(Actions(groups: activityActionGroups(activity))),
+        actions: (context) => Future.value(
+          Actions(groups: activityActionGroups(activity, open: open)),
+        ),
       );
 }
 
@@ -539,11 +548,135 @@ List<Action> activitySecondaryActions(Activity activity) => [
   ArchiveActivity(activity),
 ];
 
-List<ActionGroup> activityActionGroups(Activity activity) {
+// Focus navigation intents and actions for list items
+
+class MoveFocusUpIntent extends Intent {
+  const MoveFocusUpIntent();
+}
+
+class MoveFocusDownIntent extends Intent {
+  const MoveFocusDownIntent();
+}
+
+class OpenFocusedItemActionsIntent extends Intent {
+  const OpenFocusedItemActionsIntent();
+}
+
+class ClearItemFocusIntent extends Intent {
+  const ClearItemFocusIntent();
+}
+
+class MoveFocusUp extends Action {
+  MoveFocusUp(this.controller)
+    : super(
+        title: 'Move Focus Up',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.viewed,
+        icon: PlotIcon.up,
+      );
+
+  final BidirectionalListController controller;
+
+  @override
+  Future<ActionReturn> run(BuildContext context) async {
+    controller.moveFocus(-1);
+    return const ActionSkipped();
+  }
+}
+
+class MoveFocusDown extends Action {
+  MoveFocusDown(this.controller)
+    : super(
+        title: 'Move Focus Down',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.viewed,
+        icon: PlotIcon.down,
+      );
+
+  final BidirectionalListController controller;
+
+  @override
+  Future<ActionReturn> run(BuildContext context) async {
+    controller.moveFocus(1);
+    return const ActionSkipped();
+  }
+}
+
+class ClearItemFocus extends Action {
+  ClearItemFocus(this.controller, {this.onCleared})
+    : super(
+        title: 'Clear Item Focus',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.viewed,
+      );
+
+  final BidirectionalListController controller;
+  final VoidCallback? onCleared;
+
+  @override
+  Future<ActionReturn> run(BuildContext context) async {
+    controller.clearFocus();
+    // Call optional callback (e.g., to focus ActivityEditor)
+    onCleared?.call();
+    return const ActionSkipped();
+  }
+}
+
+class OpenFocusedItemActions extends ShowActions {
+  OpenFocusedItemActions(
+    BidirectionalListController controller,
+    List<StaticActionGroup> Function(int index) actionBuilder,
+  ) : _controller = controller,
+      super(
+        title: 'Open Actions for Focused Item',
+        actions: (context) async {
+          final focusedIndex = controller.focusedIndex;
+          if (focusedIndex == null) {
+            return Actions(groups: []);
+          }
+          return Actions(groups: actionBuilder(focusedIndex));
+        },
+      );
+
+  final BidirectionalListController _controller;
+
+  @override
+  Future<ActionReturn> run(BuildContext context) async {
+    // Get currently focused index
+    final focusedIndex = _controller.focusedIndex;
+
+    if (focusedIndex == null) {
+      return const ActionSkipped();
+    }
+
+    // Store the focused node for restoration after menu closes
+    final focusedNode = _controller.getFocusNode(focusedIndex);
+
+    // Call parent to show actions
+    final result = await super.run(context);
+
+    // Restore focus after menu closes
+    if (context.mounted) {
+      focusedNode.requestFocus();
+    }
+
+    return result;
+  }
+}
+
+List<StaticActionGroup> activityActionGroups(
+  Activity activity, {
+  bool open = true,
+}) {
   final tags = Tag.getAll()
+      .where(
+        (tag) =>
+            activity.type != ActivityType.event ||
+            [Tag.now, Tag.later].contains(tag),
+      )
       .map((tag) => ToggleActivityTag(activity, tag))
       .toList();
-  final actions = activityActions(activity);
+  final actions = activityActions(activity, open: open);
   final remove = tags
       .where(
         (cmd) => cmd.tag.type != TagType.compute && activity.hasTag(cmd.tag),
@@ -563,10 +696,14 @@ List<ActionGroup> activityActionGroups(Activity activity) {
   ];
 }
 
-List<Action> activityActions(Activity activity) {
+List<Action> activityActions(Activity activity, {bool open = true}) {
   final actions = Tag.getAll()
       .where((tag) => tag.type == TagType.compute)
       .map((tag) => ToggleActivityTag(activity, tag))
       .toList();
-  return [OpenActivity(activity), MoveActivityToPriority(activity), ...actions];
+  return [
+    if (open) ChangeCurrentActivity(activity),
+    MoveActivityToPriority(activity),
+    ...actions,
+  ];
 }

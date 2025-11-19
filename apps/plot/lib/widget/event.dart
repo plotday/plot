@@ -7,12 +7,14 @@ class DayHeader extends StatelessWidget {
     this.date,
     this.now = false,
     this.highlighted = false,
+    this.focusNode,
     super.key,
   });
 
   final Date? date;
   final bool now;
   final bool highlighted;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +30,7 @@ class DayHeader extends StatelessWidget {
           ),
         ),
       ),
-      highlighted: highlighted,
+      focusNode: focusNode,
     );
   }
 }
@@ -40,6 +42,7 @@ class AgendaHeader extends StatelessWidget {
     this.activity,
     this.now = false,
     this.highlighted = false,
+    this.focusNode,
     super.key,
   });
 
@@ -49,6 +52,7 @@ class AgendaHeader extends StatelessWidget {
   final Priority? context;
 
   final bool highlighted;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +74,7 @@ class AgendaHeader extends StatelessWidget {
               icon: Value(null),
             )
           : null,
-      highlighted: highlighted,
+      focusNode: focusNode,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         spacing: 8.0,

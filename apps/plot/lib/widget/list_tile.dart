@@ -29,6 +29,7 @@ class ListTile extends StatefulWidget {
     this.style = ListTileStyle.item,
 
     /// Whether this tile should show a highlight (for hover or keyboard selection).
+    /// Deprecated: Use focusNode instead for keyboard navigation.
     this.highlighted = false,
 
     /// Whether this tile is selected (shows left border and primary color).
@@ -41,6 +42,11 @@ class ListTile extends StatefulWidget {
     this.disableInternalHover = false,
 
     this.onHover,
+
+    /// Optional external FocusNode for managing keyboard focus.
+    /// If provided, this node will be used for focus management.
+    /// If null, an internal FocusNode will be created.
+    this.focusNode,
 
     /// Override the action title
     String? title,
@@ -69,19 +75,39 @@ class ListTile extends StatefulWidget {
   final IconData? icon;
 
   final void Function(bool hovered)? onHover;
+  final FocusNode? focusNode;
 
   @override
   State<ListTile> createState() => _ListTileState();
 }
 
 class _ListTileState extends State<ListTile> {
-  final _focusNode = FocusNode();
+  FocusNode? _internalFocusNode;
   Offset? lastMousePosition;
   bool _isHovered = false;
 
+  FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode!;
+
+  @override
+  void initState() {
+    super.initState();
+    // Create internal focus node only if external one not provided
+    if (widget.focusNode == null) {
+      _internalFocusNode = FocusNode();
+    }
+    // Add listener to rebuild when focus changes
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    setState(() {}); // Rebuild when focus changes
+  }
+
   @override
   void dispose() {
-    _focusNode.dispose();
+    _focusNode.removeListener(_onFocusChange);
+    // Only dispose internal focus node
+    _internalFocusNode?.dispose();
     super.dispose();
   }
 
@@ -135,9 +161,9 @@ class _ListTileState extends State<ListTile> {
           onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
           child: Container(
             decoration: BoxDecoration(
-              color: widget.highlighted ||
+              color: _focusNode.hasFocus ||
                      (!widget.disableInternalHover && _isHovered) ||
-                     _focusNode.hasFocus
+                     widget.highlighted
                   ? context.colour.highlight
                   : null,
               border: widget.selected

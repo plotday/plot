@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/widgets.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/action/base.dart' hide Action, Actions;
@@ -11,90 +9,138 @@ import 'logging.dart';
 
 class BidirectionalListController extends ChangeNotifier {
   BidirectionalListController({
-    int? initialSelected,
+    int? initialFocusedIndex,
     int initialMin = 0,
     int initialMax = 0,
   }) : _min = initialMin,
        _max = initialMax,
-       _keyboardPosition = initialSelected;
+       _lastFocusedIndex = initialFocusedIndex;
 
-  int? _keyboardPosition;
+  // Map of FocusNodes by item index
+  final Map<int, FocusNode> _focusNodes = {};
+
   int? _hoveredIndex;
-  bool _keyboardActive = false;
+  int? _lastFocusedIndex;
   int _min;
   int _max;
 
   int? get hoveredIndex => _hoveredIndex;
+  int? get lastFocusedIndex => _lastFocusedIndex;
 
-  /// Returns the index that should be highlighted.
-  /// Only shows highlight during active interaction (keyboard or mouse).
-  /// Prioritizes hover (mouse) over keyboard selection.
-  int? get highlighted =>
-      _hoveredIndex ?? (_keyboardActive ? _keyboardPosition : null);
-
-  void _setKeyboardPosition(int? value) {
-    if (value != null && value < _min) {
-      value = _min;
+  /// Get the currently focused index, or null if no item has focus.
+  int? get focusedIndex {
+    for (final entry in _focusNodes.entries) {
+      if (entry.value.hasFocus) {
+        return entry.key;
+      }
     }
-    if (value != null && value > _max) {
-      value = _max;
-    }
-    if (_keyboardPosition != value) {
-      _keyboardPosition = value;
-      notifyListeners();
-    }
+    return null;
   }
 
-  void setSelected(int? value) {
-    _setKeyboardPosition(value);
+  /// Get or create a FocusNode for the given index.
+  FocusNode getFocusNode(int index) {
+    if (!_focusNodes.containsKey(index)) {
+      final node = FocusNode();
+      node.addListener(() {
+        if (node.hasFocus) {
+          _lastFocusedIndex = index;
+          // Clear hover when an item gains focus via keyboard
+          if (_hoveredIndex != null) {
+            _hoveredIndex = null;
+            notifyListeners();
+          }
+        }
+      });
+      _focusNodes[index] = node;
+    }
+    return _focusNodes[index]!;
   }
 
   void clamp(int min, int max) {
     _min = min;
     _max = max;
-    if (_keyboardPosition != null && _keyboardPosition! < _min) {
-      _setKeyboardPosition(_min);
+    // Clamp last focused index
+    if (_lastFocusedIndex != null && _lastFocusedIndex! < _min) {
+      _lastFocusedIndex = _min;
     }
-    if (_keyboardPosition != null && _keyboardPosition! > _max) {
-      _setKeyboardPosition(_max);
-    }
-  }
-
-  void move(int offset) {
-    // Clear hover when using keyboard navigation
-    _hoveredIndex = null;
-
-    // If keyboard not yet active, just activate and show current position
-    if (!_keyboardActive) {
-      _keyboardActive = true;
-      // Initialize keyboard position if null
-      _keyboardPosition ??= 0;
-      // Don't move - just show highlight on current item
-      notifyListeners();
-      return;
-    }
-
-    // Keyboard already active - navigate normally
-    if (_keyboardPosition == null) {
-      _setKeyboardPosition(0);
-    } else {
-      _setKeyboardPosition(_keyboardPosition! + offset);
+    if (_lastFocusedIndex != null && _lastFocusedIndex! > _max) {
+      _lastFocusedIndex = _max;
     }
   }
 
   void setHovered(int? index) {
     if (_hoveredIndex != index) {
       _hoveredIndex = index;
-      // Clear keyboard active mode when mouse interaction starts
+      // Clear focus when hovering (as per requirements)
       if (index != null) {
-        _keyboardActive = false;
+        // Unfocus any currently focused node
+        for (final node in _focusNodes.values) {
+          if (node.hasFocus) {
+            node.unfocus();
+          }
+        }
       }
       notifyListeners();
     }
   }
 
-  void clear() {
-    _setKeyboardPosition(null);
+  void clearFocus() {
+    // Unfocus all nodes
+    for (final node in _focusNodes.values) {
+      if (node.hasFocus) {
+        node.unfocus();
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Request focus on a specific index.
+  void requestFocus(int index) {
+    if (index >= _min && index <= _max) {
+      getFocusNode(index).requestFocus();
+    }
+  }
+
+  /// Move focus by an offset (e.g., +1 for down, -1 for up).
+  void moveFocus(int offset) {
+    // Clear hover when using keyboard navigation
+    _hoveredIndex = null;
+
+    // Find currently focused index
+    int? currentIndex;
+    for (final entry in _focusNodes.entries) {
+      if (entry.value.hasFocus) {
+        currentIndex = entry.key;
+        break;
+      }
+    }
+
+    // If nothing is currently focused, show highlight at last position (or min) without moving
+    if (currentIndex == null) {
+      final startIndex = _lastFocusedIndex ?? _min;
+      requestFocus(startIndex);
+      return;
+    }
+
+    // Calculate new index
+    int newIndex = currentIndex + offset;
+
+    // Clamp to valid range
+    if (newIndex < _min) newIndex = _min;
+    if (newIndex > _max) newIndex = _max;
+
+    // Request focus on new index
+    requestFocus(newIndex);
+  }
+
+  @override
+  void dispose() {
+    // Dispose all focus nodes
+    for (final node in _focusNodes.values) {
+      node.dispose();
+    }
+    _focusNodes.clear();
+    super.dispose();
   }
 }
 
@@ -118,7 +164,7 @@ class BidirectionalListSelector extends StatefulWidget {
   final void Function(int)? onActivate;
   final bool reverse;
   final bool autoActivateKeyboard;
-  final int? initialHighlight;
+  final int? initialFocusedIndex;
 
   const BidirectionalListSelector({
     super.key,
@@ -127,7 +173,7 @@ class BidirectionalListSelector extends StatefulWidget {
     this.onActivate,
     this.reverse = false,
     this.autoActivateKeyboard = false,
-    this.initialHighlight,
+    this.initialFocusedIndex,
   });
 
   @override
@@ -137,17 +183,17 @@ class BidirectionalListSelector extends StatefulWidget {
 
 class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
   late final BidirectionalListController controller =
-      BidirectionalListController(initialSelected: widget.initialHighlight);
+      BidirectionalListController(initialFocusedIndex: widget.initialFocusedIndex);
 
   @override
   void initState() {
     super.initState();
-    controller.addListener(_handleSelectionChange);
+    controller.addListener(_handleFocusChange);
 
-    // Auto-activate keyboard mode if requested or if there's an initial selection
-    if (widget.autoActivateKeyboard || widget.initialHighlight != null) {
+    // Auto-focus first item if requested
+    if (widget.autoActivateKeyboard && widget.initialFocusedIndex != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        controller.move(0);
+        controller.requestFocus(widget.initialFocusedIndex!);
       });
     }
   }
@@ -156,66 +202,48 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
   void didUpdateWidget(covariant BidirectionalListSelector oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Update selection if initialSelected changed
-    if (widget.initialHighlight != oldWidget.initialHighlight) {
-      controller.setSelected(widget.initialHighlight);
+    // Update focus if initialFocusedIndex changed
+    if (widget.initialFocusedIndex != oldWidget.initialFocusedIndex &&
+        widget.initialFocusedIndex != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        controller.requestFocus(widget.initialFocusedIndex!);
+      });
     }
 
     // Reset to first item when widget rebuilds (e.g., filter changes)
-    if (widget.autoActivateKeyboard) {
+    if (widget.autoActivateKeyboard && widget.initialFocusedIndex != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        controller.move(0);
+        controller.requestFocus(widget.initialFocusedIndex!);
       });
     }
   }
 
   @override
   void dispose() {
-    controller.removeListener(_handleSelectionChange);
+    controller.removeListener(_handleFocusChange);
+    controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Actions(
-      actions: <Type, Action<Intent>>{
-        ActivateListSelectionIntent:
-            CallbackAction<ActivateListSelectionIntent>(
-              onInvoke: (intent) {
-                if (controller.highlighted == null) {
-                  return KeyEventResult.ignored;
-                }
-                widget.onActivate?.call(controller.highlighted!);
-                return KeyEventResult.handled;
-              },
-            ),
-        MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
-          onInvoke: (intent) {
-            controller.move((widget.reverse ? 1 : -1) * intent.offset);
-            return KeyEventResult.handled;
-          },
-        ),
-      },
-      child: widget.builder(context, controller),
-    );
+    // Note: Actions for focus movement will be registered at the page level
+    // This widget no longer handles keyboard shortcuts directly
+    return widget.builder(context, controller);
   }
 
-  void _handleSelectionChange() {
-    widget.onSelectionChanged?.call(controller.highlighted);
+  void _handleFocusChange() {
+    widget.onSelectionChanged?.call(controller.lastFocusedIndex);
   }
 }
 
 typedef ItemBuilder =
-    Widget? Function(BuildContext context, int index, bool selected);
+    Widget? Function(BuildContext context, int index, FocusNode focusNode);
 typedef ItemFetcher = Future<void> Function(int first, int count);
 
 class BidirectionalList extends StatefulWidget {
-  static const Map<ShortcutActivator, Intent> shortcuts = {
-    SingleActivator(LogicalKeyboardKey.enter, shift: false):
-        ActivateListSelectionIntent(),
-    SingleActivator(LogicalKeyboardKey.arrowUp): MoveListSelectionIntent(1),
-    SingleActivator(LogicalKeyboardKey.arrowDown): MoveListSelectionIntent(-1),
-  };
+  // Note: Shortcuts are now handled at the page level via Actions
+  // This allows for conditional shortcut registration based on panel visibility
 
   final ItemBuilder builder;
   final ItemFetcher? fetcher;
@@ -428,8 +456,10 @@ class BidirectionalListState extends State<BidirectionalList> {
         if (itemIndex == null) {
           return SizedBox(key: ValueKey('empty_$index'), height: 0);
         }
-        final isHighlighted = itemIndex == widget.controller.highlighted;
-        var child = widget.builder(context, itemIndex, isHighlighted);
+
+        // Get or create FocusNode for this item
+        final focusNode = widget.controller.getFocusNode(itemIndex);
+        var child = widget.builder(context, itemIndex, focusNode);
 
         if (child == null) {
           return SizedBox(key: ValueKey('empty_$itemIndex'), height: 0);
@@ -552,8 +582,10 @@ class SelectionActionScopeState extends State<SelectionActionScope> {
       listenable: widget.listController,
       builder: (context, child) => ActionScope(
         actions: [
-          if (widget.listController.highlighted != null)
-            ...widget.actionBuilder(widget.listController.highlighted!),
+          // Note: ActionScope is based on selection, not focus/highlight
+          // This should be updated to track actual selection, not focus
+          if (widget.listController.lastFocusedIndex != null)
+            ...widget.actionBuilder(widget.listController.lastFocusedIndex!),
         ],
         child: widget.child,
       ),

@@ -9,6 +9,7 @@ class ActivityWidget extends StatelessWidget {
     this.context,
     this.selected = false,
     this.highlighted = false,
+    this.focusNode,
     this.onHover,
     super.key,
   });
@@ -17,6 +18,7 @@ class ActivityWidget extends StatelessWidget {
   final Priority? context;
   final bool highlighted;
   final bool selected;
+  final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
 
   @override
@@ -24,7 +26,7 @@ class ActivityWidget extends StatelessWidget {
     final hasVisibleLinks = activity.links.isNotEmpty;
 
     return ListTile(
-      action: ChangeCurrentActivity(activity),
+      action: ActionWrapper(ChangeCurrentActivity(activity), icon: Value(null)),
       title: activity.displayTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -66,8 +68,8 @@ class ActivityWidget extends StatelessWidget {
           ],
         ],
       ),
-      highlighted: highlighted,
       selected: selected,
+      focusNode: focusNode,
       onHover: onHover,
     );
   }
@@ -103,6 +105,7 @@ class ActivityDetailWidget extends StatelessWidget {
     required this.activity,
     this.context,
     this.selected = false,
+    this.focusNode,
     this.onHover,
     super.key,
   });
@@ -110,6 +113,7 @@ class ActivityDetailWidget extends StatelessWidget {
   final Activity activity;
   final Activity? context;
   final bool selected;
+  final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
 
   @override
@@ -130,12 +134,13 @@ class ActivityDetailWidget extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               ActivityTags(activity: activity),
-              Button.icon(ShowActivityActions(activity)),
+              Button.icon(ShowActivityActions(activity, open: false)),
             ],
           ),
         ],
       ),
-      highlighted: selected,
+      selected: selected,
+      focusNode: focusNode,
       onHover: onHover,
     );
   }

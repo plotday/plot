@@ -6,10 +6,43 @@ import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/action/action.dart';
+import 'package:plot/page/priority.dart'
+    show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 
 @RoutePage()
-class NewActivityPage extends StatelessWidget {
+class NewActivityPage extends StatefulWidget {
   const NewActivityPage({super.key});
+
+  @override
+  State<NewActivityPage> createState() => _NewActivityPageState();
+}
+
+class _NewActivityPageState extends State<NewActivityPage> {
+  final GlobalKey<ActivityEditorState> _activityEditorKey =
+      GlobalKey<ActivityEditorState>();
+
+  // Save reference to provider to avoid looking it up in dispose()
+  PriorityShortcutsProviderState? _provider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Save the provider reference
+    _provider = ActivityPanelControllerProvider.maybeOf(context);
+    // Register ActivityEditor with the focus coordination provider
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _provider?.registerActivityPanel(
+        editorFocusCallback: () => _activityEditorKey.currentState?.focus(),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    // Unregister from the focus coordination provider using saved reference
+    _provider?.unregisterActivityPanel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +64,11 @@ class NewActivityPage extends StatelessWidget {
                         ),
                       ],
                     ),
-              body: ActivityEditor(draft: state.draft, expand: true),
+              body: ActivityEditor(
+                key: _activityEditorKey,
+                draft: state.draft,
+                expand: true,
+              ),
             );
           },
         );

@@ -1,3 +1,7 @@
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart'
+    as flutter_widgets
+    show Actions, CallbackAction;
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/store/store.dart';
@@ -43,12 +47,15 @@ class PriorityWrapper implements AutoRouteWrapper {
                 actions: currentPriorityActions(state.context),
               ),
             ],
-            child: ResizablePanelLayout(
-              left: PrioritiesPage(),
-              middle: PriorityPage(priorityId: priorityId),
-              child: AutoRouter(
-                key: routerKey,
-                placeholder: (context) => const LoadingPage(),
+            child: _PriorityShortcutsProvider(
+              priorityId: priorityId,
+              child: ResizablePanelLayout(
+                left: PrioritiesPage(),
+                middle: PriorityPage(priorityId: priorityId),
+                child: AutoRouter(
+                  key: routerKey,
+                  placeholder: (context) => const LoadingPage(),
+                ),
               ),
             ),
           );
@@ -58,8 +65,160 @@ class PriorityWrapper implements AutoRouteWrapper {
   }
 }
 
+/// Provides global keyboard shortcuts (Cmd-Up/Down) for PriorityPage list navigation
+/// that work even when focus is in ActivityPage (e.g., ActivityEditor).
+class _PriorityShortcutsProvider extends StatefulWidget {
+  const _PriorityShortcutsProvider({
+    required this.priorityId,
+    required this.child,
+  });
+
+  final PriorityId priorityId;
+  final Widget child;
+
+  @override
+  State<_PriorityShortcutsProvider> createState() =>
+      PriorityShortcutsProviderState();
+}
+
+class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
+  BidirectionalListController? _priorityListController;
+  BidirectionalListController? _activityListController;
+  VoidCallback? _activityEditorFocusCallback;
+
+  void registerController(BidirectionalListController controller) {
+    _priorityListController = controller;
+  }
+
+  void registerActivityPanel({
+    BidirectionalListController? listController,
+    VoidCallback? editorFocusCallback,
+  }) {
+    setState(() {
+      _activityListController = listController;
+      _activityEditorFocusCallback = editorFocusCallback;
+    });
+  }
+
+  void unregisterActivityPanel() {
+    // Just update the variables directly without setState
+    // No need to rebuild when unregistering during disposal
+    _activityListController = null;
+    _activityEditorFocusCallback = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _PriorityListControllerProvider(
+      state: this,
+      child: ActivityPanelControllerProvider(
+        state: this,
+        child: BlocBuilder<LayoutBloc, LayoutState>(
+          builder: (context, layoutState) {
+            // Always register Cmd-Up/Down for Priority list navigation
+            // These should take priority over ActivityPage shortcuts
+            return flutter_widgets.Actions(
+              actions: {
+                MoveFocusUpIntent:
+                    flutter_widgets.CallbackAction<MoveFocusUpIntent>(
+                      onInvoke: (_) {
+                        // Only handle if we have a controller (meaning PriorityPage is visible)
+                        if (_priorityListController != null) {
+                          _priorityListController!.moveFocus(-1);
+                        }
+                        return null;
+                      },
+                    ),
+                MoveFocusDownIntent:
+                    flutter_widgets.CallbackAction<MoveFocusDownIntent>(
+                      onInvoke: (_) {
+                        if (_priorityListController != null) {
+                          _priorityListController!.moveFocus(1);
+                        }
+                        return null;
+                      },
+                    ),
+                ClearItemFocusIntent:
+                    flutter_widgets.CallbackAction<ClearItemFocusIntent>(
+                      onInvoke: (_) {
+                        // When ActivityPage or NewActivityPage is open, Escape should focus ActivityEditor
+                        _activityEditorFocusCallback?.call();
+                        return null;
+                      },
+                    ),
+              },
+              child: Shortcuts(
+                shortcuts: <ShortcutActivator, Intent>{
+                  const SingleActivator(LogicalKeyboardKey.arrowUp, meta: true):
+                      const MoveFocusUpIntent(),
+                  const SingleActivator(
+                    LogicalKeyboardKey.arrowDown,
+                    meta: true,
+                  ): const MoveFocusDownIntent(),
+                  // Global Escape handler - focus ActivityEditor when ActivityPage is open
+                  if (_activityEditorFocusCallback != null)
+                    const SingleActivator(LogicalKeyboardKey.escape):
+                        const ClearItemFocusIntent(),
+                  // When middle panel is hidden, also handle plain Up/Down at global level
+                  if (!layoutState
+                      .middlePanelVisible) ...<ShortcutActivator, Intent>{
+                    const SingleActivator(LogicalKeyboardKey.arrowUp):
+                        const MoveFocusUpIntent(),
+                    const SingleActivator(LogicalKeyboardKey.arrowDown):
+                        const MoveFocusDownIntent(),
+                  },
+                },
+                child: widget.child,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// InheritedWidget to provide access to the shortcuts provider state
+class _PriorityListControllerProvider extends InheritedWidget {
+  const _PriorityListControllerProvider({
+    required this.state,
+    required super.child,
+  });
+
+  final PriorityShortcutsProviderState state;
+
+  static PriorityShortcutsProviderState? maybeOf(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<_PriorityListControllerProvider>()
+        ?.state;
+  }
+
+  @override
+  bool updateShouldNotify(_PriorityListControllerProvider oldWidget) => false;
+}
+
+/// InheritedWidget to provide access to ActivityPage panel state for focus coordination
+class ActivityPanelControllerProvider extends InheritedWidget {
+  const ActivityPanelControllerProvider({
+    required this.state,
+    required super.child,
+    super.key,
+  });
+
+  final PriorityShortcutsProviderState state;
+
+  static PriorityShortcutsProviderState? maybeOf(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<ActivityPanelControllerProvider>()
+        ?.state;
+  }
+
+  @override
+  bool updateShouldNotify(ActivityPanelControllerProvider oldWidget) => false;
+}
+
 @RoutePage(name: "PriorityOnlyRoute")
-class PriorityOnlyPage extends StatefulWidget implements AutoRouteWrapper {
+class PriorityOnlyPage extends StatefulWidget {
   PriorityOnlyPage({
     @PathParam.inherit("priorityId") required String priorityIdString,
     super.key,
@@ -69,25 +228,32 @@ class PriorityOnlyPage extends StatefulWidget implements AutoRouteWrapper {
 
   @override
   State<PriorityOnlyPage> createState() => _PriorityOnlyPageState();
-
-  @override
-  Widget wrappedRoute(BuildContext context) {
-    return this;
-  }
 }
 
 class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
-  bool _hasNavigated = false;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final layoutState = context.read<LayoutBloc>().state;
+      if (layoutState.middlePanelVisible) {
+        context.router.navigate(NewActivityRoute());
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(PriorityOnlyPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final layoutState = context.read<LayoutBloc>().state;
+    if (layoutState.middlePanelVisible) {
+      context.router.navigate(NewActivityRoute());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return BlocConsumer<LayoutBloc, LayoutState>(
-      listener: (context, layoutState) {
-        if (layoutState.middlePanelVisible && !_hasNavigated) {
-          _hasNavigated = true;
-          context.router.navigate(NewActivityRoute());
-        }
-      },
+    return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
         if (layoutState.middlePanelVisible) {
           return const LoadingPage();
@@ -129,174 +295,351 @@ class PriorityPage extends StatelessWidget {
         return (state.agendaItems.isEmpty &&
                 !(state.doneStart && state.doneEnd))
             ? const Center(child: Spinner())
-            : BidirectionalListSelector(
-                onActivate: (index) {
-                  final item =
-                      index >= state.first &&
-                          index - state.first < state.agendaItems.length
-                      ? state.agendaItems[index - state.first]
-                      : null;
-                  item?.iff(
-                    activity: (activity) =>
-                        context.run(ChangeCurrentActivity(activity)),
-                  );
-                },
-                builder: (context, listController) => SelectionActionScope(
-                  actionBuilder: (index) {
-                    final item =
-                        index >= state.first &&
-                            index - state.first < state.agendaItems.length
-                        ? state.agendaItems[index - state.first]
-                        : null;
-                    return item?.iff(
-                          activity: (activity) => [
-                            StaticActionGroup(
-                              title: activity.displayTitle,
-                              actions: [
-                                OpenActivity(activity),
-                                ...activityActions(activity),
-                              ],
-                            ),
-                          ],
-                          priority: (priority) {
-                            // Skip if this is the context priority (already added by outer ActionScope)
-                            if (priority.id == state.context.id) {
-                              return <StaticActionGroup>[];
-                            }
-                            return [
-                              StaticActionGroup(
-                                title: priority.title,
-                                actions: priorityActions(priority),
-                              ),
-                            ];
-                          },
-                        ) ??
-                        <StaticActionGroup>[];
-                  },
-                  listController: listController,
-                  child: Scaffold(
-                    scrollable: false,
-                    translucent: true,
-                    header: Header(
-                      title: state.context.title,
-                      main: PrioritySelector(
-                        selected: state.context,
-                        onSelect: (p) => context.run(ChangeCurrentPriority(p)),
-                      ),
-                      onSearchChanged: (search) =>
-                          context.read<PriorityBloc>().updateSearch(search),
-                      actions: [
-                        PickFilterAction(),
-                        NewActivity(),
-                        ShowPriorityActions(state.context, current: true),
-                      ],
-                    ),
-                    body: BidirectionalList(
-                      controller: listController,
-                      scrollController: ScrollControllerContext.of(context),
-                      first: state.first,
-                      count: state.agendaItems.length,
-                      doneStart: state.doneStart,
-                      doneEnd: state.doneEnd,
-                      fetcher: (first, count) => context
-                          .read<PriorityBloc>()
-                          .fetchMoreAgendaItems(first, count),
-                      builder: (context, index, highlighted) {
-                        final current = state.agendaItems[index - state.first];
-                        log.fine('Building $index: $current');
+            : BlocBuilder<LayoutBloc, LayoutState>(
+                builder: (context, layoutState) {
+                  // Build shortcuts map conditionally based on panel visibility
+                  final shortcuts = <ShortcutActivator, Intent>{
+                    const SingleActivator(
+                      LogicalKeyboardKey.arrowUp,
+                      meta: true,
+                    ): const MoveFocusUpIntent(),
+                    const SingleActivator(
+                      LogicalKeyboardKey.arrowDown,
+                      meta: true,
+                    ): const MoveFocusDownIntent(),
+                    const SingleActivator(LogicalKeyboardKey.enter):
+                        const OpenFocusedItemActionsIntent(),
+                    const SingleActivator(LogicalKeyboardKey.escape):
+                        const ClearItemFocusIntent(),
+                    // Always register plain Up/Down to handle focus transfer to ActivityPage
+                    const SingleActivator(LogicalKeyboardKey.arrowUp):
+                        const MoveFocusUpIntent(),
+                    const SingleActivator(LogicalKeyboardKey.arrowDown):
+                        const MoveFocusDownIntent(),
+                  };
 
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          key: ValueKey(
-                            current.when(
-                              date: (d) => 'date_${d.toString()}',
-                              priority: (p) => 'priority_${p.id}',
-                              activity: (a) => a.id,
+                  // Get activity panel provider to check if ActivityPage is open
+                  final activityProvider =
+                      ActivityPanelControllerProvider.maybeOf(context);
+
+                  return Focus(
+                    onKeyEvent: (node, event) {
+                      // Only handle key down events for plain Up/Down (no modifiers)
+                      if (event is! KeyDownEvent) {
+                        return KeyEventResult.ignored;
+                      }
+
+                      // Check if this is plain Up/Down with no modifiers
+                      final hasModifiers =
+                          HardwareKeyboard.instance.isMetaPressed ||
+                          HardwareKeyboard.instance.isControlPressed ||
+                          HardwareKeyboard.instance.isShiftPressed ||
+                          HardwareKeyboard.instance.isAltPressed;
+                      final isPlainUp =
+                          event.logicalKey == LogicalKeyboardKey.arrowUp &&
+                          !hasModifiers;
+                      final isPlainDown =
+                          event.logicalKey == LogicalKeyboardKey.arrowDown &&
+                          !hasModifiers;
+
+                      if ((isPlainUp || isPlainDown) &&
+                          activityProvider?._activityListController != null) {
+                        // Transfer focus to ActivityPage list
+                        activityProvider!._activityListController!.moveFocus(
+                          isPlainUp ? -1 : 1,
+                        );
+                        return KeyEventResult.handled;
+                      }
+
+                      // Let other keys (including Cmd-Up/Down) propagate to shortcuts
+                      return KeyEventResult.ignored;
+                    },
+                    child: BidirectionalListSelector(
+                      onActivate: (index) {
+                        final item =
+                            index >= state.first &&
+                                index - state.first < state.agendaItems.length
+                            ? state.agendaItems[index - state.first]
+                            : null;
+                        item?.iff(
+                          activity: (activity) =>
+                              context.run(ChangeCurrentActivity(activity)),
+                        );
+                      },
+                      builder: (context, listController) {
+                        // Register this controller with the global shortcuts provider
+                        final provider =
+                            _PriorityListControllerProvider.maybeOf(context);
+                        provider?.registerController(listController);
+
+                        return Shortcuts(
+                          shortcuts: shortcuts,
+                          child: flutter_widgets.Actions(
+                            actions: {
+                              MoveFocusUpIntent:
+                                  flutter_widgets.CallbackAction<
+                                    MoveFocusUpIntent
+                                  >(
+                                    onInvoke: (intent) {
+                                      // For Cmd-Up/Down: always move focus in PriorityPage
+                                      // This is triggered by global shortcuts for Cmd-Up/Down
+                                      listController.moveFocus(-1);
+                                      return null;
+                                    },
+                                  ),
+                              MoveFocusDownIntent:
+                                  flutter_widgets.CallbackAction<
+                                    MoveFocusDownIntent
+                                  >(
+                                    onInvoke: (intent) {
+                                      // For Cmd-Down: always move focus in PriorityPage
+                                      // This is triggered by global shortcuts for Cmd-Up/Down
+                                      listController.moveFocus(1);
+                                      return null;
+                                    },
+                                  ),
+                              OpenFocusedItemActionsIntent:
+                                  flutter_widgets.CallbackAction<
+                                    OpenFocusedItemActionsIntent
+                                  >(
+                                    onInvoke: (_) {
+                                      final focusedIndex =
+                                          listController.focusedIndex;
+                                      if (focusedIndex != null &&
+                                          focusedIndex >= state.first &&
+                                          focusedIndex - state.first <
+                                              state.agendaItems.length) {
+                                        context.run(
+                                          OpenFocusedItemActions(
+                                            listController,
+                                            (index) {
+                                              final item =
+                                                  index >= state.first &&
+                                                      index - state.first <
+                                                          state
+                                                              .agendaItems
+                                                              .length
+                                                  ? state.agendaItems[index -
+                                                        state.first]
+                                                  : null;
+                                              return item?.iff(
+                                                    activity: (activity) =>
+                                                        activityActionGroups(
+                                                          activity,
+                                                        ),
+                                                    priority: (priority) {
+                                                      if (priority.id ==
+                                                          state.context.id) {
+                                                        return <
+                                                          StaticActionGroup
+                                                        >[];
+                                                      }
+                                                      return [
+                                                        StaticActionGroup(
+                                                          title: priority.title,
+                                                          actions:
+                                                              priorityActions(
+                                                                priority,
+                                                              ),
+                                                        ),
+                                                      ];
+                                                    },
+                                                  ) ??
+                                                  <StaticActionGroup>[];
+                                            },
+                                          ),
+                                        );
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                              ClearItemFocusIntent:
+                                  flutter_widgets.CallbackAction<
+                                    ClearItemFocusIntent
+                                  >(
+                                    onInvoke: (_) {
+                                      listController.clearFocus();
+                                      // When ActivityPage is open, also focus ActivityEditor
+                                      activityProvider
+                                          ?._activityEditorFocusCallback
+                                          ?.call();
+                                      return null;
+                                    },
+                                  ),
+                            },
+                            child: SelectionActionScope(
+                              actionBuilder: (index) {
+                                final item =
+                                    index >= state.first &&
+                                        index - state.first <
+                                            state.agendaItems.length
+                                    ? state.agendaItems[index - state.first]
+                                    : null;
+                                return item?.iff(
+                                      activity: (activity) =>
+                                          activityActionGroups(activity),
+                                      priority: (priority) {
+                                        // Skip if this is the context priority (already added by outer ActionScope)
+                                        if (priority.id == state.context.id) {
+                                          return <StaticActionGroup>[];
+                                        }
+                                        return [
+                                          StaticActionGroup(
+                                            title: priority.title,
+                                            actions: priorityActions(priority),
+                                          ),
+                                        ];
+                                      },
+                                    ) ??
+                                    <StaticActionGroup>[];
+                              },
+                              listController: listController,
+                              child: Scaffold(
+                                scrollable: false,
+                                translucent: true,
+                                header: Header(
+                                  title: state.context.title,
+                                  main: PrioritySelector(
+                                    selected: state.context,
+                                    onSelect: (p) =>
+                                        context.run(ChangeCurrentPriority(p)),
+                                  ),
+                                  onSearchChanged: (search) => context
+                                      .read<PriorityBloc>()
+                                      .updateSearch(search),
+                                  actions: [
+                                    PickFilterAction(),
+                                    NewActivity(),
+                                    ShowPriorityActions(
+                                      state.context,
+                                      current: true,
+                                    ),
+                                  ],
+                                ),
+                                body: BidirectionalList(
+                                  controller: listController,
+                                  scrollController: ScrollControllerContext.of(
+                                    context,
+                                  ),
+                                  first: state.first,
+                                  count: state.agendaItems.length,
+                                  doneStart: state.doneStart,
+                                  doneEnd: state.doneEnd,
+                                  fetcher: (first, count) => context
+                                      .read<PriorityBloc>()
+                                      .fetchMoreAgendaItems(first, count),
+                                  builder: (context, index, focusNode) {
+                                    final current =
+                                        state.agendaItems[index - state.first];
+                                    log.fine('Building $index: $current');
+
+                                    return Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      key: ValueKey(
+                                        current.when(
+                                          date: (d) => 'date_${d.toString()}',
+                                          priority: (p) => 'priority_${p.id}',
+                                          activity: (a) => a.id,
+                                        ),
+                                      ),
+                                      children: [
+                                        ...current.when(
+                                          date: (date) => [
+                                            DayHeader(
+                                              key: ValueKey(
+                                                'dayheader_${date.toString()}',
+                                              ),
+                                              date: date,
+                                              now: date == Date.today(),
+                                              focusNode: focusNode,
+                                            ),
+                                          ],
+                                          priority: (priority) => [
+                                            AgendaHeader(
+                                              key: ValueKey(
+                                                'agendaheader_priority_${priority.id}',
+                                              ),
+                                              priority: priority,
+                                              context: state.context,
+                                              focusNode: focusNode,
+                                            ),
+                                          ],
+                                          activity: (activity) => [
+                                            if (activity.type ==
+                                                ActivityType.event)
+                                              AgendaHeader(
+                                                key: ValueKey(
+                                                  'agendaheader_activity_${activity.id}',
+                                                ),
+                                                activity: activity,
+                                                context: state.context,
+                                                focusNode: focusNode,
+                                              ),
+                                            if (activity.type !=
+                                                ActivityType.event)
+                                              ActivityWidget(
+                                                key: ValueKey(
+                                                  'activitywidget_${activity.id}',
+                                                ),
+                                                activity: activity,
+                                                selected: selected == index,
+                                                focusNode: focusNode,
+                                                context: state.context,
+                                              ),
+                                          ],
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                  onReorder: (index) {
+                                    final item =
+                                        state.agendaItems[index - state.first];
+                                    final activity = item.iff(
+                                      activity: (activity) => activity,
+                                    );
+                                    if (activity == null) {
+                                      return null;
+                                    }
+                                    return (int newIndex) {
+                                      final oldListIndex = index - state.first;
+                                      final newListIndex =
+                                          newIndex - state.first;
+
+                                      // Update state immediately to prevent jank
+                                      context
+                                          .read<PriorityBloc>()
+                                          .moveAgendaItem(
+                                            oldListIndex,
+                                            newListIndex,
+                                          );
+
+                                      // Then update the database asynchronously
+                                      var prevIndex =
+                                          newListIndex -
+                                          1 +
+                                          (oldListIndex < newListIndex ? 1 : 0);
+                                      var nextIndex = prevIndex + 1;
+                                      AgendaItem? prev;
+                                      if (prevIndex >= 0) {
+                                        prev = state.agendaItems[prevIndex];
+                                      }
+                                      AgendaItem? next;
+                                      if (nextIndex <
+                                          state.agendaItems.length) {
+                                        next = state.agendaItems[nextIndex];
+                                      }
+                                      onReorderActivity(activity, prev, next);
+                                    };
+                                  },
+                                ),
+                              ),
                             ),
                           ),
-                          children: [
-                            ...current.when(
-                              date: (date) => [
-                                DayHeader(
-                                  key: ValueKey('dayheader_${date.toString()}'),
-                                  date: date,
-                                  now: date == Date.today(),
-                                  highlighted: highlighted,
-                                ),
-                              ],
-                              priority: (priority) => [
-                                AgendaHeader(
-                                  key: ValueKey(
-                                    'agendaheader_priority_${priority.id}',
-                                  ),
-                                  priority: priority,
-                                  context: state.context,
-                                  highlighted: highlighted,
-                                ),
-                              ],
-                              activity: (activity) => [
-                                if (activity.type == ActivityType.event)
-                                  AgendaHeader(
-                                    key: ValueKey(
-                                      'agendaheader_activity_${activity.id}',
-                                    ),
-                                    activity: activity,
-                                    context: state.context,
-                                    highlighted: highlighted,
-                                  ),
-                                if (activity.type != ActivityType.event)
-                                  ActivityWidget(
-                                    key: ValueKey(
-                                      'activitywidget_${activity.id}',
-                                    ),
-                                    activity: activity,
-                                    highlighted: highlighted,
-                                    selected: selected == index,
-                                    context: state.context,
-                                  ),
-                              ],
-                            ),
-                          ],
                         );
-                      },
-                      onReorder: (index) {
-                        final item = state.agendaItems[index - state.first];
-                        final activity = item.iff(
-                          activity: (activity) => activity,
-                        );
-                        if (activity == null) {
-                          return null;
-                        }
-                        return (int newIndex) {
-                          final oldListIndex = index - state.first;
-                          final newListIndex = newIndex - state.first;
-
-                          // Update state immediately to prevent jank
-                          context.read<PriorityBloc>().moveAgendaItem(
-                            oldListIndex,
-                            newListIndex,
-                          );
-
-                          // Then update the database asynchronously
-                          var prevIndex =
-                              newListIndex -
-                              1 +
-                              (oldListIndex < newListIndex ? 1 : 0);
-                          var nextIndex = prevIndex + 1;
-                          AgendaItem? prev;
-                          if (prevIndex >= 0) {
-                            prev = state.agendaItems[prevIndex];
-                          }
-                          AgendaItem? next;
-                          if (nextIndex < state.agendaItems.length) {
-                            next = state.agendaItems[nextIndex];
-                          }
-                          onReorderActivity(activity, prev, next);
-                        };
                       },
                     ),
-                  ),
-                ),
+                  );
+                },
               );
       },
     );

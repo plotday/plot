@@ -1,13 +1,17 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
+import 'package:plot/widget/logging.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/action/action.dart';
+import 'package:plot/page/priority.dart'
+    show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 
 @RoutePage(name: "ActivityRoute")
 class ActivityPage implements AutoRouteWrapper {
@@ -35,25 +39,62 @@ class ActivityPage implements AutoRouteWrapper {
   }
 }
 
-class _ActivityPageContent extends StatelessWidget {
+class _ActivityPageContent extends StatefulWidget {
   const _ActivityPageContent();
 
   @override
+  State<_ActivityPageContent> createState() => _ActivityPageContentState();
+}
+
+class _ActivityPageContentState extends State<_ActivityPageContent> {
+  final GlobalKey<ActivityEditorState> _activityEditorKey =
+      GlobalKey<ActivityEditorState>();
+
+  // Store reference to provider to avoid unsafe ancestor lookup in dispose()
+  PriorityShortcutsProviderState? _provider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Save reference during a safe lifecycle method
+    _provider = ActivityPanelControllerProvider.maybeOf(context);
+  }
+
+  @override
+  void dispose() {
+    // Unregister from the focus coordination provider
+    // Use saved reference instead of looking up during dispose()
+    _provider?.unregisterActivityPanel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ActivityBloc, ActivityState>(
-      builder: (context, state) {
-        return _buildContent(context, state);
+    return BlocListener<ActivityBloc, ActivityState>(
+      listener: (context, state) {
+        // Focus ActivityEditor when activity thread changes
+        // (BidirectionalListSelector is keyed by activity.id, so it creates a fresh controller)
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _activityEditorKey.currentState?.focus();
+        });
       },
+      listenWhen: (previous, current) =>
+          previous.activity.id != current.activity.id,
+      child: BlocBuilder<ActivityBloc, ActivityState>(
+        builder: (context, state) {
+          return _buildContent(context, state);
+        },
+      ),
     );
   }
 
   Widget _buildContent(BuildContext context, ActivityState state) {
     return BlocBuilder<LayoutBloc, LayoutState>(
-      builder: (context, layoutState) {
+      builder: (context, layoutStateForPanels) {
         final prefixActions = <Action>[];
 
         // Add back button when middle panel is not visible
-        if (!layoutState.middlePanelVisible) {
+        if (!layoutStateForPanels.middlePanelVisible) {
           prefixActions.add(
             ActionWrapper(
               ChangeCurrentActivity(null),
@@ -62,62 +103,116 @@ class _ActivityPageContent extends StatelessWidget {
           );
         }
 
-        return ActionScope(
-          actions: [
-            StaticActionGroup(
-              title: state.activity.displayTitle,
-              actions: activityActions(state.activity),
-            ),
-          ],
-          child: BidirectionalListSelector(
-            reverse: true,
-            // onActivate: (index) {
-            //   final activity = _getActivityAtIndex(state, index);
-            //   if (activity != null) {
-            //     context.run(ChangeCurrentActivity(activity));
-            //   }
-            // },
-            builder: (context, listController) => SelectionActionScope(
-              actionBuilder: (index) {
-                final activity = _getActivityAtIndex(state, index);
-                // Skip if this is the root activity (already added by outer ActionScope)
-                if (activity == null || activity.id == state.activity.id) {
-                  return <StaticActionGroup>[];
+        return BidirectionalListSelector(
+          key: ValueKey('activity_list_${state.activity.id}'),
+          reverse: true,
+          builder: (context, listController) {
+            // Register this ActivityPage with the global focus coordination provider
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final provider = ActivityPanelControllerProvider.maybeOf(context);
+              provider?.registerActivityPanel(
+                listController: listController,
+                editorFocusCallback: () =>
+                    _activityEditorKey.currentState?.focus(),
+              );
+            });
+
+            // Use Focus with onKeyEvent instead of Shortcuts to allow Cmd-Up/Down to bubble
+            return Focus(
+              onKeyEvent: (node, event) {
+                // Only handle key down and repeat events
+                if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+                  return KeyEventResult.ignored;
                 }
-                return [
-                  StaticActionGroup(
-                    title: activity.displayTitle,
-                    actions: activityActions(activity),
-                  ),
-                ];
+
+                // Check if any modifier keys are pressed
+                final hasModifiers =
+                    HardwareKeyboard.instance.isMetaPressed ||
+                    HardwareKeyboard.instance.isControlPressed ||
+                    HardwareKeyboard.instance.isShiftPressed ||
+                    HardwareKeyboard.instance.isAltPressed;
+
+                // Only handle plain arrow keys/enter/escape (no modifiers)
+                // Cmd-Up/Down should bubble up to global PriorityPage handler
+                if (!hasModifiers) {
+                  if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                    // Reversed list: moving up visually means higher index
+                    listController.moveFocus(1);
+                    return KeyEventResult.handled;
+                  }
+                  if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                    // Reversed list: moving down visually means lower index
+                    listController.moveFocus(-1);
+                    return KeyEventResult.handled;
+                  }
+                  if (event.logicalKey == LogicalKeyboardKey.enter) {
+                    final focusedIndex = listController.focusedIndex;
+                    if (focusedIndex != null) {
+                      final activity = _getActivityAtIndex(state, focusedIndex);
+                      if (activity != null) {
+                        context.run(
+                          OpenFocusedItemActions(listController, (index) {
+                            final activity = _getActivityAtIndex(state, index);
+                            if (activity == null) return [];
+                            return activityActionGroups(activity, open: false);
+                          }),
+                        );
+                        return KeyEventResult.handled;
+                      }
+                    }
+                  }
+                  if (event.logicalKey == LogicalKeyboardKey.escape) {
+                    listController.clearFocus();
+                    // Focus ActivityEditor after clearing item focus
+                    _activityEditorKey.currentState?.focus();
+                    return KeyEventResult.handled;
+                  }
+                }
+
+                // Let all other events (including Cmd-Up/Down) bubble up
+                return KeyEventResult.ignored;
               },
-              listController: listController,
-              child: Scaffold(
-                scrollable: false,
-                translucent: true,
-                header: Header(
-                  title: state.activity.displayTitle,
-                  prefixActions: prefixActions,
-                  onSearchChanged: (search) =>
-                      context.read<ActivityBloc>().updateSearch(search),
-                  actions: [
-                    PickFilterAction(),
-                    ShowActivityActions(state.activity),
-                  ],
-                ),
-                body: Column(
-                  children: [
-                    Flexible(
-                      flex: 1,
-                      fit: FlexFit.tight,
-                      child: _buildActivityList(state, listController, context),
-                    ),
-                    ActivityEditor(draft: state.draft),
-                  ],
+              child: ActionScope(
+                actions: [
+                  StaticActionGroup(
+                    title: state.activity.displayTitle,
+                    actions: activityActions(state.activity),
+                  ),
+                ],
+                child: Scaffold(
+                  scrollable: false,
+                  translucent: true,
+                  header: Header(
+                    title: state.activity.displayTitle,
+                    prefixActions: prefixActions,
+                    onSearchChanged: (search) =>
+                        context.read<ActivityBloc>().updateSearch(search),
+                    actions: [
+                      PickFilterAction(),
+                      ShowActivityActions(state.activity),
+                    ],
+                  ),
+                  body: Column(
+                    children: [
+                      Flexible(
+                        flex: 1,
+                        fit: FlexFit.tight,
+                        child: _buildActivityList(
+                          state,
+                          listController,
+                          context,
+                        ),
+                      ),
+                      ActivityEditor(
+                        key: _activityEditorKey,
+                        draft: state.draft,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -166,13 +261,17 @@ class _ActivityPageContent extends StatelessWidget {
       doneEnd: true,
       fetcher: (first, count) =>
           Future<void>.value(), // No pagination needed for ActivityPage
-      builder: (context, index, selected) {
-        return _buildItemAtIndex(state, index, selected);
+      builder: (context, index, focusNode) {
+        return _buildItemAtIndex(state, index, focusNode);
       },
     );
   }
 
-  Widget _buildItemAtIndex(ActivityState state, int index, bool selected) {
+  Widget _buildItemAtIndex(
+    ActivityState state,
+    int index,
+    FocusNode focusNode,
+  ) {
     int currentIndex = 0;
 
     for (final group in state.activityGroups) {
@@ -182,7 +281,8 @@ class _ActivityPageContent extends StatelessWidget {
           return ActivityDetailWidget(
             activity: activity,
             context: null,
-            selected: selected,
+            selected: false, // No selection on ActivityPage
+            focusNode: focusNode,
             key: ValueKey(activity.id),
           );
         }
@@ -194,7 +294,7 @@ class _ActivityPageContent extends StatelessWidget {
         return DayHeader(
           date: group.date,
           now: group.date == Date.today(),
-          highlighted: selected,
+          focusNode: focusNode,
           key: ValueKey('date_${group.date.hashCode}'),
         );
       }

@@ -167,6 +167,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     emit(state.copyWith(activity: Value(activity)));
   }
 
+  /// Resets the draft to a new empty activity for the current priority.
+  /// This should be called when navigating to create a new activity.
+  void resetDraft() {
+    emit(
+      state.copyWith(
+        draft: Activity(priority: state.context, draft: true),
+      ),
+    );
+  }
+
   /// Gets an agenda item relative to the current activity by offset.
   ///
   /// [offset] - Positive for forward, negative for backward (e.g., +1 = next, -1 = previous)

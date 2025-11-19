@@ -91,9 +91,10 @@ class AppRouter extends RootStackRouter {
                       page: NewActivityRoute.page,
                       guards: [
                         AutoRouteGuardCallback((resolver, router) async {
-                          resolver.context.read<PriorityBloc>().setActivity(
-                            null,
-                          );
+                          final priorityBloc = resolver.context.read<PriorityBloc>();
+                          priorityBloc.setActivity(null);
+                          // Reset draft to ensure a fresh activity each time
+                          priorityBloc.resetDraft();
                           resolver.next();
                         }),
                       ],

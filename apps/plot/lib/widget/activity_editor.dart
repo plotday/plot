@@ -13,17 +13,24 @@ class ActivityEditor extends StatefulWidget {
   final bool expand;
 
   @override
-  State<ActivityEditor> createState() => _ActivityEditorState();
+  State<ActivityEditor> createState() => ActivityEditorState();
 }
 
-class _ActivityEditorState extends State<ActivityEditor> {
+class ActivityEditorState extends State<ActivityEditor> {
   final GlobalKey<EditorState> _editorKey = GlobalKey<EditorState>();
+  final GlobalKey<EditableAreaState> _editableAreaKey = GlobalKey<EditableAreaState>();
+
+  /// Request focus on the editor
+  void focus() {
+    _editableAreaKey.currentState?.focus();
+  }
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
         return EditableArea(
+          key: _editableAreaKey,
           position: EditableAreaPosition.bottom,
           builder: (context, focusNode) {
             return Column(
@@ -42,10 +49,8 @@ class _ActivityEditorState extends State<ActivityEditor> {
                       twists: state.twists,
                       shrinkWrap: false,
                       onSubmitted: (body, {bool alt = false}) async {
-                        await context.run(StartActivity(widget.draft));
-                        if (!context.mounted) return;
                         await context.run(
-                          AddActivity(finalizeDraft(body, twists: state.twists)),
+                          AddActivity(finalizeDraft(body, twists: state.twists, alt: alt)),
                         );
                       },
                     ),
@@ -58,10 +63,8 @@ class _ActivityEditorState extends State<ActivityEditor> {
                     focusNode: focusNode,
                     twists: state.twists,
                     onSubmitted: (body, {bool alt = false}) async {
-                      await context.run(StartActivity(widget.draft));
-                      if (!context.mounted) return;
                       await context.run(
-                        AddActivity(finalizeDraft(body, twists: state.twists)),
+                        AddActivity(finalizeDraft(body, twists: state.twists, alt: alt)),
                       );
                     },
                   ),
@@ -99,14 +102,32 @@ class _ActivityEditorState extends State<ActivityEditor> {
   Future<Activity> finalizeDraft(
     String body, {
     required List<PriorityTwist> twists,
+    required bool alt,
   }) async {
     // Parse mentions from the note (stored as [#@ID])
     final mentions = Activity.parseMentionsFromNote(body, twists);
+
+    // Apply "Do Now" scheduling only if Cmd-Enter (alt) was used
+    final shouldSchedule = alt;
+    final hasDateTime = widget.draft.at != null;
 
     return widget.draft.copyWith(
       note: Value(body),
       draft: false,
       mentions: Value(mentions.isEmpty ? null : mentions),
+      // Create task with scheduling only if Cmd-Enter was used
+      type: shouldSchedule ? ActivityType.task : null,
+      on: shouldSchedule && !hasDateTime
+          ? Value(CustomDateRange(Date.today(), null))
+          : const Value.absent(),
+      at: shouldSchedule && hasDateTime
+          ? Value(
+              DateTimeRange(
+                DateTime.now(),
+                DateTime.now().add(Duration(hours: 1)),
+              ),
+            )
+          : const Value.absent(),
     );
   }
 }

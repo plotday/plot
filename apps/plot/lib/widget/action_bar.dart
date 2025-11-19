@@ -1,4 +1,6 @@
 import 'package:flutter/widgets.dart' hide Action, Actions;
+import 'package:flutter/widgets.dart' as flutter_widgets show Actions, CallbackAction, KeyEventResult;
+import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/action/action.dart';
@@ -55,6 +57,7 @@ class ActionBarState extends State<_ActionBar> {
   Widget? _child;
   String? _error;
   bool _isDisposed = false;
+  int _highlightedIndex = 0; // Track highlighted item for keyboard navigation
 
   @override
   void initState() {
@@ -86,8 +89,8 @@ class ActionBarState extends State<_ActionBar> {
           _error = 'No matches';
         }
         _filteredActionGroups = actionsList;
-        // Reset selection when actions change
-        // _selectionController.reset();
+        // Reset highlight to first item when actions change
+        _highlightedIndex = 0;
       });
     } catch (e, t) {
       log.warning('Error initializing actions', e, t);
@@ -104,6 +107,15 @@ class ActionBarState extends State<_ActionBar> {
       0,
       (total, group) => total + group.actions.length,
     );
+  }
+
+  void _moveHighlight(int offset) {
+    setState(() {
+      final totalCount = _allActionsCount();
+      if (totalCount == 0) return;
+
+      _highlightedIndex = (_highlightedIndex + offset).clamp(0, totalCount - 1);
+    });
   }
 
   Future<ActionReturn> _executeAction(Action action) async {
@@ -158,11 +170,32 @@ class ActionBarState extends State<_ActionBar> {
 
     return BidirectionalListSelector(
       key: ValueKey(totalActionCount),
-      autoActivateKeyboard: hasPhysicalKeyboard(),
       onActivate: (index) => _executeAction(_getActionAtIndex(index)),
       builder: (context, listController) => Shortcuts(
-        shortcuts: BidirectionalList.shortcuts,
-        child: _child != null
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.arrowUp): MoveListSelectionIntent(-1),
+          SingleActivator(LogicalKeyboardKey.arrowDown): MoveListSelectionIntent(1),
+          SingleActivator(LogicalKeyboardKey.enter): ActivateListSelectionIntent(),
+        },
+        child: flutter_widgets.Actions(
+          actions: {
+            MoveListSelectionIntent: flutter_widgets.CallbackAction<MoveListSelectionIntent>(
+              onInvoke: (intent) {
+                _moveHighlight(intent.offset);
+                return flutter_widgets.KeyEventResult.handled;
+              },
+            ),
+            ActivateListSelectionIntent: flutter_widgets.CallbackAction<ActivateListSelectionIntent>(
+              onInvoke: (intent) {
+                if (_allActionsCount() > 0) {
+                  _executeAction(_getActionAtIndex(_highlightedIndex));
+                  return flutter_widgets.KeyEventResult.handled;
+                }
+                return flutter_widgets.KeyEventResult.ignored;
+              },
+            ),
+          },
+          child: _child != null
             ? _child!
             : SizedBox.expand(
                 child: Column(
@@ -201,7 +234,7 @@ class ActionBarState extends State<_ActionBar> {
                         // shrinkWrap: true,
                         controller: listController,
                         count: totalActionCount,
-                        builder: (context, index, selected) {
+                        builder: (context, index, focusNode) {
                           final group = _getGroupAtIndex(index);
                           final action = _getActionAtIndex(index);
                           final body = action.buildBody(context);
@@ -247,7 +280,7 @@ class ActionBarState extends State<_ActionBar> {
                               ListTile(
                                 action: action,
                                 body: body,
-                                highlighted: listController.highlighted == index,
+                                highlighted: index == _highlightedIndex,
                               ),
                             ],
                           );
@@ -257,7 +290,8 @@ class ActionBarState extends State<_ActionBar> {
                   ],
                 ),
               ),
-      ),
+          ),
+        ),
     );
   }
 

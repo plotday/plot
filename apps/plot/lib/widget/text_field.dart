@@ -152,6 +152,11 @@ class EditableArea extends StatefulWidget {
 class EditableAreaState extends State<EditableArea> {
   final FocusNode _focusNode = FocusNode();
 
+  /// Request focus on this editable area
+  void focus() {
+    _focusNode.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(

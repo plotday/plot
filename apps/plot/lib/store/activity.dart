@@ -810,12 +810,14 @@ class Activity extends Equatable implements Comparable<Activity> {
       final words = search!
           .split(RegExp(r'\s+'))
           .where((word) => word.isNotEmpty)
-          .map((word) => word
-              .replaceAll("'", "''") // Escape single quotes for SQL
-              .replaceAll('"', '""') // Escape double quotes for FTS5
-              .replaceAll('*', '') // Remove asterisks
-              .replaceAll('(', '') // Remove parentheses
-              .replaceAll(')', ''))
+          .map(
+            (word) => word
+                .replaceAll("'", "''") // Escape single quotes for SQL
+                .replaceAll('"', '""') // Escape double quotes for FTS5
+                .replaceAll('*', '') // Remove asterisks
+                .replaceAll('(', '') // Remove parentheses
+                .replaceAll(')', ''),
+          )
           .where((word) => word.isNotEmpty)
           .map((word) => '$word*') // Add prefix matching to each word
           .join(' '); // AND multiple words together
@@ -1424,6 +1426,7 @@ class Activity extends Equatable implements Comparable<Activity> {
             on: const Value(null),
             at: const Value(null),
             doneAt: const Value(null),
+            type: ActivityType.note,
           );
         } else {
           // Adding doNow - preserve existing scheduling type or default to date-based
