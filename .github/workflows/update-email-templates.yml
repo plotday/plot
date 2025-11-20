@@ -33,23 +33,14 @@ jobs:
       - name: Build email templates
         run: pnpm --filter=@plotday/email build
 
-      - name: Load secrets from .env
-        uses: 1password/load-secrets-action@564bf5b01fef43a94b74742a38636197d3336379
+      - name: Load secrets
+        uses: 1password/load-secrets-action@v3
         with:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: .env
-          ENV: Production
-
-      - name: Load secrets from .env.production
-        uses: 1password/load-secrets-action@564bf5b01fef43a94b74742a38636197d3336379
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: .env.production
-          ENV: Production
+          SUPABASE_PROJECT_ID: op://Production/Supabase/project id
+          SUPABASE_ACCESS_TOKEN: op://Production/Supabase/Admin/access token
 
       - name: Update email confirmation template
         run: |

@@ -45,23 +45,22 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Load secrets from .env
-        uses: 1password/load-secrets-action@564bf5b01fef43a94b74742a38636197d3336379
+      - name: Load secrets
+        uses: 1password/load-secrets-action@v3
         with:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          ENV: Production
-          OP_ENV_FILE: .env
-
-      - name: Load secrets from .env.production
-        uses: 1password/load-secrets-action@564bf5b01fef43a94b74742a38636197d3336379
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          ENV: Production
-          OP_ENV_FILE: .env.production
+          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
+          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
+          R2_ACCESS_KEY_ID: op://Production/cloudflare/build uploads/r2 access key id
+          R2_SECRET_ACCESS_KEY: op://Production/cloudflare/build uploads/r2 secret access key
+          R2_BUCKET_NAME: op://Production/cloudflare/build uploads/r2 bucket name
+          APPLE_ID: op://Production/Apple/Signing/apple id
+          APPLE_TEAM_ID: op://Production/Apple/Signing/team id
+          APPLE_APP_SPECIFIC_PASSWORD: op://Production/Apple/Signing/app specific password
+          MACOS_CERTIFICATE_BASE64: op://Production/Apple/Signing/p12
+          MACOS_CERTIFICATE_PASSWORD: op://Production/Apple/Signing/password
 
       - name: Get version from pubspec.yaml
         id: version
