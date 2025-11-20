@@ -31,8 +31,8 @@ export function fromDbActivity(
   // Map database activity_type to ActivityType enum
   let activityType: number;
   switch (dbActivity.type) {
-    case "task":
-      activityType = ActivityType.Task;
+    case "action":
+      activityType = ActivityType.Action;
       break;
     case "event":
       activityType = ActivityType.Event;

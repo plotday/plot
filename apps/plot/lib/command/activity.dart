@@ -324,7 +324,7 @@ class StartActivity extends _UpdateActivityCommand {
 
       await onUpdate(
         activity.copyWith(
-          type: ActivityType.task,
+          type: ActivityType.action,
           // If already has datetime scheduling, use current time; otherwise use date-based
           at: hasDateTime
               ? Value(
@@ -383,7 +383,7 @@ class ScheduleActivity extends _UpdateActivityCommand {
   Future<CommandReturn> run(BuildContext context) async {
     await onUpdate(
       activity.copyWith(
-        type: ActivityType.task,
+        type: ActivityType.action,
         on: Value(CustomDateRange(when, null)),
         at: const Value(null), // Clear any existing datetime scheduling
       ),

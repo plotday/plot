@@ -68,9 +68,7 @@ WHERE
 -- To filter on a date range, use both the `range_at` and `range_on` columns.
 -- They're separate because combining timestamps and dates requires knowing
 -- the user's timezone, which is client-specific.
-CREATE OR REPLACE VIEW "public"."user_activity" WITH ( security_invoker = TRUE)
---
-AS
+CREATE OR REPLACE VIEW "public"."user_activity" AS
 SELECT
     up.user_id,
     a.id,
@@ -84,14 +82,14 @@ SELECT
     p.path AS priority_path,
     a.type,
     a.path,
-    a.order,
+    a."order",
     a.draft,
     a.private,
     a.title,
     a.note,
     a.links,
     a.at,
-    a.on,
+    a."on",
     a.duration,
     a.done_at,
     a.recurrence_rule,
@@ -99,33 +97,31 @@ SELECT
     a.recurrence_dates,
     a.meta,
     a.mentions,
-    CASE WHEN a.done_at IS NOT NULL THEN
-        tstzrange(a.done_at, a.done_at, '[]')
-    WHEN a.at IS NOT NULL THEN
+    CASE WHEN (a.done_at IS NOT NULL) THEN
+        tstzrange(a.done_at, a.done_at, '[]'::text)
+    WHEN (a.at IS NOT NULL) THEN
         a.at
-    WHEN a.on IS NOT NULL THEN
-        NULL
+    WHEN (a."on" IS NOT NULL) THEN
+        NULL::tstzrange
     ELSE
-        tstzrange(a.created_at, a.created_at, '[]')
+        tstzrange(a.created_at, a.created_at, '[]'::text)
     END AS range_at,
-    CASE WHEN a.done_at IS NOT NULL THEN
-        NULL
-    WHEN a.at IS NOT NULL THEN
-        NULL
-    WHEN a.on IS NOT NULL THEN
-        a.on
+    CASE WHEN (a.done_at IS NOT NULL) THEN
+        NULL::daterange
+    WHEN (a.at IS NOT NULL) THEN
+        NULL::daterange
+    WHEN (a."on" IS NOT NULL) THEN
+        a."on"
     ELSE
-        NULL
+        NULL::daterange
     END AS range_on,
     COALESCE(uau.unread, FALSE) AS unread
-FROM
-    activity a
-    JOIN priority p ON p.id = a.priority_id
-    JOIN user_priority up ON a.priority_id = up.id
-    LEFT JOIN user_activity_unread uau ON uau.user_id = up.user_id
-        AND uau.activity_id = a.id
-WHERE
-    up.archived_at IS NULL;
+FROM (((activity a
+            JOIN priority p ON (p.id = a.priority_id))
+        JOIN user_priority up ON (a.priority_id = up.id))
+    LEFT JOIN user_activity_unread uau ON (((uau.user_id = up.user_id)
+                AND (uau.activity_id = a.id))))
+WHERE (up.archived_at IS NULL);
 
 CREATE OR REPLACE VIEW "public"."user_activity_exception" WITH ( security_invoker = TRUE)
 --

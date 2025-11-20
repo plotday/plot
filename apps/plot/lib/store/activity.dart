@@ -772,7 +772,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (doNow) {
       final now = DateTime.now();
       query.where(
-        a.type.equalsValue(ActivityType.task) &
+        a.type.equalsValue(ActivityType.action) &
             a.doneAt.isNull() &
             (
             // Date-based scheduling: startOn <= today
@@ -787,7 +787,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (doLater) {
       final now = DateTime.now();
       query.where(
-        a.type.equalsValue(ActivityType.task) &
+        a.type.equalsValue(ActivityType.action) &
             a.doneAt.isNull() &
             (
             // Date-based scheduling: startOn > today
@@ -1232,7 +1232,7 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   bool get doNow => todo && at?.includes(DateTime.now()) == true;
   bool get doLater => todo && at?.start?.isAfter(DateTime.now()) == true;
-  bool get todo => type == ActivityType.task && !done;
+  bool get todo => type == ActivityType.action && !done;
   bool get scheduled => at != null || on != null;
   bool get done => doneAt != null;
 
@@ -1432,7 +1432,7 @@ class Activity extends Equatable implements Comparable<Activity> {
           // Adding doNow - preserve existing scheduling type or default to date-based
           final hasDateTime = at != null;
           return copyWith(
-            type: ActivityType.task,
+            type: ActivityType.action,
             at: hasDateTime
                 ? Value(
                     DateTimeRange(
@@ -1455,7 +1455,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         );
       case Tag.later:
         return copyWith(
-          type: ActivityType.task,
+          type: ActivityType.action,
           on: Value(
             todo ? null : CustomDateRange(Date.today().addDays(1), null),
           ),

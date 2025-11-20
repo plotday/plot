@@ -189,14 +189,14 @@ export async function createActivity(
   await plot.validateActivityCreateAccess(activity);
 
   // Map ActivityType enum to database activity_type
-  let dbActivityType: "note" | "task" | "event" = "note";
+  let dbActivityType: "note" | "action" | "event" = "note";
   if (activity.type !== undefined) {
     switch (activity.type) {
       case ActivityType.Note:
         dbActivityType = "note";
         break;
-      case ActivityType.Task:
-        dbActivityType = "task";
+      case ActivityType.Action:
+        dbActivityType = "action";
         break;
       case ActivityType.Event:
         dbActivityType = "event";
@@ -864,14 +864,14 @@ export async function createActivities(
     await plot.validatePriorityAccess(targetPriorityId);
 
     // Map ActivityType enum to database activity_type
-    let dbActivityType: "note" | "task" | "event" = "note";
+    let dbActivityType: "note" | "action" | "event" = "note";
     if (activity.type !== undefined) {
       switch (activity.type) {
         case ActivityType.Note:
           dbActivityType = "note";
           break;
-        case ActivityType.Task:
-          dbActivityType = "task";
+        case ActivityType.Action:
+          dbActivityType = "action";
           break;
         case ActivityType.Event:
           dbActivityType = "event";

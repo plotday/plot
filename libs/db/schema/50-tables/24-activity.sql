@@ -1,5 +1,5 @@
 CREATE TYPE "public"."activity_type" AS enum (
-    'task', -- doesn't block time; incomplete until done_at is set
+    'action', -- doesn't block time; incomplete until done_at is set
     'event', -- blocks time
     'note'
 );
@@ -74,7 +74,7 @@ ALTER TABLE "public"."activity"
     ADD CONSTRAINT activity_recurrence_on_or_at CHECK (recurrence_rule IS NULL OR at IS NOT NULL OR "on" IS NOT NULL);
 
 ALTER TABLE "public"."activity"
-    ADD CONSTRAINT activity_scheduled CHECK ((recurrence_rule IS NULL AND TYPE NOT IN ('task', 'event')) OR at IS NOT NULL OR "on" IS NOT NULL);
+    ADD CONSTRAINT activity_scheduled CHECK ((recurrence_rule IS NULL AND TYPE NOT IN ('action', 'event')) OR at IS NOT NULL OR "on" IS NOT NULL);
 
 ALTER TABLE "public"."activity"
     ADD CONSTRAINT activity_no_complete_recurrence CHECK (recurrence_rule IS NULL OR "done_at" IS NULL);

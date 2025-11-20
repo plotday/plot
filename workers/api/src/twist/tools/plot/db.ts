@@ -128,8 +128,8 @@ export function buildActivityFromDbRecord(
   // Convert string activity type to ActivityType enum
   let activityType: ActivityType;
   switch (activityRecord.type) {
-    case "task":
-      activityType = ActivityType.Task;
+    case "action":
+      activityType = ActivityType.Action;
       break;
     case "event":
       activityType = ActivityType.Event;

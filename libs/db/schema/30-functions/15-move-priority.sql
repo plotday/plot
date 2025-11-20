@@ -1,10 +1,8 @@
 -- Function to move a priority to a new parent, updating all descendant paths
-CREATE OR REPLACE FUNCTION move_priority (
-    p_priority_id uuid,
-    p_new_parent_path ltree
-)
+CREATE OR REPLACE FUNCTION public.move_priority (p_priority_id uuid, p_new_parent_path ltree)
     RETURNS void
-    AS $$
+    LANGUAGE plpgsql
+    AS $function$
 DECLARE
     v_old_path ltree;
     v_new_path ltree;
@@ -26,7 +24,7 @@ BEGIN
         RAISE EXCEPTION 'Cannot move priority to be a descendant of itself';
     END IF;
     -- Extract the last label from the current path (the priority's own identifier)
-    v_priority_label := ltree2text (subpath (v_old_path, - 1));
+    v_priority_label := ltree2text (subpath (v_old_path, -1));
     -- Calculate the new path
     IF p_new_parent_path IS NULL THEN
         -- Moving to root level
@@ -41,17 +39,16 @@ BEGIN
         public.priority
     SET
         path = CASE
-            -- For the priority itself, use the new path directly
-            WHEN path = v_old_path THEN
-                v_new_path
+        -- For the priority itself, use the new path directly
+        WHEN path = v_old_path THEN
+            v_new_path
             -- For descendants, replace the old path prefix with the new path
-            ELSE
-                text2ltree (ltree2text (v_new_path) || ltree2text (subpath (path, nlevel (v_old_path))))
-            END
+        ELSE
+            text2ltree (ltree2text (v_new_path) || ltree2text (subpath (path, nlevel (v_old_path))))
+        END
     WHERE
         path <@ v_old_path
         OR path = v_old_path;
 END;
-$$
-LANGUAGE plpgsql;
+$function$;
 

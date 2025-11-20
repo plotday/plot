@@ -11,7 +11,7 @@ const BaseActivityItemSchema = z.object({
   updated_by: z.number(),
   archived_at: z.string().nullable(),
   priority_id: z.string(),
-  type: z.enum(["task", "event", "note"]),
+  type: z.enum(["action", "event", "note"]),
   path: z.string(),
   order: z.number(),
   draft: z.boolean(),

@@ -116,7 +116,7 @@ class ActivityEditorState extends State<ActivityEditor> {
       draft: false,
       mentions: Value(mentions.isEmpty ? null : mentions),
       // Create task with scheduling only if Cmd-Enter was used
-      type: shouldSchedule ? ActivityType.task : null,
+      type: shouldSchedule ? ActivityType.action : null,
       on: shouldSchedule && !hasDateTime
           ? Value(CustomDateRange(Date.today(), null))
           : const Value.absent(),

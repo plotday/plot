@@ -54,7 +54,7 @@ export const mockActivity: Activity = {
   priority_id: "priority-1",
   title: "Test Activity",
   note: "A test activity",
-  type: "task",
+  type: "action",
   status: "todo",
   start: new Date().toISOString(),
   end: null,

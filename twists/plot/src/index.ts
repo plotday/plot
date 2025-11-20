@@ -42,7 +42,7 @@ class PlotTwist extends Twist<PlotTwist> {
       title: "Create your initial Priorities",
       note: "Priorities are contexts for focus and often correspond to roles (like VP Marketing and Parent) and goals (like Launch New Product and Run a Marathon). Nesting priorities is also helpful, so you can, for example, see everything related to work or zoom right in to a specific work project.",
       priority: onboardingPriority,
-      type: ActivityType.Task,
+      type: ActivityType.Action,
       start: new Date(),
     });
   }

@@ -49,7 +49,7 @@ class ActivityList extends StatelessWidget {
                 DateTimeRange? inheritedAt;
 
                 // Check previous task for scheduling to inherit
-                if (previous?.type == ActivityType.task) {
+                if (previous?.type == ActivityType.action) {
                   if (previous?.on != null) {
                     inheritedOn = previous?.on;
                   } else if (previous?.at != null) {
@@ -60,7 +60,7 @@ class ActivityList extends StatelessWidget {
                 // If previous didn't have scheduling, check next task
                 if (inheritedOn == null &&
                     inheritedAt == null &&
-                    next?.type == ActivityType.task) {
+                    next?.type == ActivityType.action) {
                   if (next?.on != null) {
                     inheritedOn = next?.on;
                   } else if (next?.at != null) {
