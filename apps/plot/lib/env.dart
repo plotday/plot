@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -8,22 +10,22 @@ abstract class Env {
     inAndroidEmulator = await _inAndroidEmuilator();
     await dotenv.load(fileName: ".env");
 
-    posthogApiKey = dotenv.env['POSTHOG_API_KEY']!;
-    posthogHost = dotenv.env['POSTHOG_HOST']!;
+    posthogApiKey = getEnvOrThrow('POSTHOG_API_KEY');
+    posthogHost = getEnvOrThrow('POSTHOG_HOST');
 
-    supabaseUrl = _translateUrl(dotenv.env['SUPABASE_URL']!);
-    supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
+    supabaseUrl = _translateUrl(getEnvOrThrow('SUPABASE_URL'));
+    supabaseAnonKey = getEnvOrThrow('SUPABASE_ANON_KEY');
 
-    apiRoot = _translateUrl('${dotenv.env['API_ROOT']!}/app');
-    authServerCallbackUrl = dotenv.env['AUTH_GOOGLE_URI']!;
+    apiRoot = _translateUrl('${getEnvOrThrow('API_ROOT')}/app');
+    authServerCallbackUrl = getEnvOrThrow('AUTH_GOOGLE_URI');
     authCallbackUrl = kIsWeb
         ? Uri.base.resolve('/auth.html').toString()
         : "plot-auth://callback";
 
-    googleClientId = dotenv.env['AUTH_GOOGLE_ID']!;
-    googleIosClientId = dotenv.env['AUTH_GOOGLE_IOS_ID']!;
-    googleAndroidClientId = dotenv.env['AUTH_GOOGLE_ANDROID_ID']!;
-    appleClientId = dotenv.env['AUTH_APPLE_CLIENT_ID']!;
+    googleClientId = getEnvOrThrow('AUTH_GOOGLE_ID');
+    googleIosClientId = getEnvOrThrow('AUTH_GOOGLE_IOS_ID');
+    googleAndroidClientId = getEnvOrThrow('AUTH_GOOGLE_ANDROID_ID');
+    appleClientId = getEnvOrThrow('AUTH_APPLE_CLIENT_ID');
   }
 
   static late final bool inAndroidEmulator;
@@ -56,4 +58,12 @@ abstract class Env {
   static late final String googleIosClientId;
   static late final String googleAndroidClientId;
   static late final String appleClientId;
+
+  static String getEnvOrThrow(String name) {
+    final value = dotenv.maybeGet(name);
+    if (value == null) {
+      throw Exception('Missing environment variable: $name');
+    }
+    return value;
+  }
 }
