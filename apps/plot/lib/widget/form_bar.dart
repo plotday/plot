@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/action/action.dart';
-import 'package:plot/widget/bidirectional_list.dart';
+import 'package:plot/widget/list_view_selector.dart';
 import 'dialog.dart';
 import 'theme.dart';
 import 'logging.dart';
@@ -44,6 +44,7 @@ class _FormBar extends StatefulWidget {
 
 class FormBarState extends State<_FormBar> {
   List<StaticFormGroup> _formGroups = [];
+  List<FocusNode> _focusNodes = [];
   String? _error;
   bool _isDisposed = false;
   int _highlightedIndex = 0; // Track highlighted item for keyboard navigation
@@ -57,14 +58,20 @@ class FormBarState extends State<_FormBar> {
   @override
   void dispose() {
     _isDisposed = true;
-    // Remove listeners and dispose all form text input controllers
+    // Remove listeners from text input controllers
+    // Note: We don't dispose the controllers here because the FormItem instances
+    // might be reused if another dialog (like SelectBar) was on top and closes.
+    // The FormItems are owned by the FormData, not by FormBarState.
     for (var group in _formGroups) {
       for (var item in group.items) {
         if (item is FormTextInput) {
           item.controller.removeListener(_onFormChanged);
-          item.dispose();
         }
       }
+    }
+    // Dispose focus nodes
+    for (var node in _focusNodes) {
+      node.dispose();
     }
     super.dispose();
   }
@@ -80,8 +87,22 @@ class FormBarState extends State<_FormBar> {
 
       setState(() {
         _formGroups = formGroups;
-        // Auto-focus first item
+
+        // Create focus nodes for each item
+        for (var node in _focusNodes) {
+          node.dispose();
+        }
+        final totalCount = formGroups.fold(0, (total, group) => total + group.items.length);
+        _focusNodes = List.generate(totalCount, (_) => FocusNode());
+
+        // Find first enabled item for initial focus
         _highlightedIndex = 0;
+        for (int i = 0; i < totalCount; i++) {
+          if (_isItemEnabled(i)) {
+            _highlightedIndex = i;
+            break;
+          }
+        }
       });
 
       // Add listeners to all text input controllers to rebuild on changes
@@ -92,6 +113,13 @@ class FormBarState extends State<_FormBar> {
           }
         }
       }
+
+      // Request focus on first item after build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_focusNodes.isNotEmpty && mounted) {
+          _focusNodes[0].requestFocus();
+        }
+      });
     } catch (e, t) {
       log.warning('Error initializing form', e, t);
       if (!_isDisposed) {
@@ -106,6 +134,32 @@ class FormBarState extends State<_FormBar> {
     if (mounted) {
       setState(() {
         // Rebuild to update button enabled state
+        // If the currently highlighted item is now disabled, move to the nearest enabled item
+        if (!_isItemEnabled(_highlightedIndex)) {
+          final totalCount = _allItemsCount();
+
+          // Try moving down first
+          int candidate = _highlightedIndex + 1;
+          while (candidate < totalCount && !_isItemEnabled(candidate)) {
+            candidate++;
+          }
+
+          // If no enabled item below, try moving up
+          if (candidate >= totalCount) {
+            candidate = _highlightedIndex - 1;
+            while (candidate >= 0 && !_isItemEnabled(candidate)) {
+              candidate--;
+            }
+          }
+
+          // Update highlight if we found an enabled item
+          if (candidate >= 0 && candidate < totalCount) {
+            _highlightedIndex = candidate;
+            if (_highlightedIndex < _focusNodes.length) {
+              _focusNodes[_highlightedIndex].requestFocus();
+            }
+          }
+        }
       });
     }
   }
@@ -117,13 +171,51 @@ class FormBarState extends State<_FormBar> {
     );
   }
 
+  bool _isItemEnabled(int index) {
+    final item = _getItemAtIndex(index);
+    if (item is FormButton) {
+      return _isFormValid();
+    }
+    if (item is FormSelect) {
+      return item.enabled;
+    }
+    return true;
+  }
+
   void _moveHighlight(int offset) {
     setState(() {
       final totalCount = _allItemsCount();
       if (totalCount == 0) return;
 
-      _highlightedIndex = (_highlightedIndex + offset).clamp(0, totalCount - 1);
+      int newIndex = _highlightedIndex;
+      final step = offset > 0 ? 1 : -1;
+
+      // Move by offset, skipping disabled items
+      for (int i = 0; i < offset.abs(); i++) {
+        int candidate = newIndex + step;
+
+        // Keep moving in the same direction until we find an enabled item
+        while (candidate >= 0 && candidate < totalCount) {
+          if (_isItemEnabled(candidate)) {
+            newIndex = candidate;
+            break;
+          }
+          candidate += step;
+        }
+
+        // If we couldn't find an enabled item, stop here
+        if (candidate < 0 || candidate >= totalCount) {
+          break;
+        }
+      }
+
+      _highlightedIndex = newIndex;
     });
+
+    // Request focus on the new highlighted item
+    if (_highlightedIndex < _focusNodes.length) {
+      _focusNodes[_highlightedIndex].requestFocus();
+    }
   }
 
   FormItem _getItemAtIndex(int index) {
@@ -307,7 +399,7 @@ class FormBarState extends State<_FormBar> {
 
     final totalItemCount = _allItemsCount();
 
-    return BidirectionalListSelector(
+    return ListViewSelector(
       key: ValueKey(totalItemCount),
       onActivate: (index) async {
         final item = _getItemAtIndex(index);
@@ -318,109 +410,125 @@ class FormBarState extends State<_FormBar> {
           await _submitForm();
         }
       },
-      builder: (context, listController) => Shortcuts(
-        shortcuts: const {
-          SingleActivator(LogicalKeyboardKey.arrowUp): MoveListSelectionIntent(-1),
-          SingleActivator(LogicalKeyboardKey.arrowDown): MoveListSelectionIntent(1),
-          SingleActivator(LogicalKeyboardKey.enter): ActivateListSelectionIntent(),
-        },
-        child: flutter_widgets.Actions(
-          actions: {
-            MoveListSelectionIntent: flutter_widgets.CallbackAction<MoveListSelectionIntent>(
-              onInvoke: (intent) {
-                _moveHighlight(intent.offset);
-                return flutter_widgets.KeyEventResult.handled;
-              },
-            ),
-            ActivateListSelectionIntent: flutter_widgets.CallbackAction<ActivateListSelectionIntent>(
-              onInvoke: (intent) {
-                if (_allItemsCount() > 0) {
-                  final item = _getItemAtIndex(_highlightedIndex);
-                  if (item is FormButton) {
-                    if (_isFormValid()) {
-                      _executeButton(item);
-                    }
-                  } else if (item is FormTextInput) {
-                    _submitForm();
-                  }
-                  return flutter_widgets.KeyEventResult.handled;
-                }
-                return flutter_widgets.KeyEventResult.ignored;
-              },
-            ),
+      builder: (context, listController) {
+        // Set bounds for the controller
+        listController.clamp(0, totalItemCount - 1);
+
+        return Shortcuts(
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.arrowUp): MoveListSelectionIntent(-1),
+            SingleActivator(LogicalKeyboardKey.arrowDown): MoveListSelectionIntent(1),
+            SingleActivator(LogicalKeyboardKey.enter): ActivateListSelectionIntent(),
           },
-          child: SizedBox.expand(
-            child: Column(
-              children: [
-                // Title header
-                Container(
-                  padding: widgetPadding,
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: context.theme.colors.border,
-                        width: 1,
-                      ),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.form.title,
-                          style: context.theme.typography.base.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+          child: flutter_widgets.Actions(
+            actions: {
+              MoveListSelectionIntent: flutter_widgets.CallbackAction<MoveListSelectionIntent>(
+                onInvoke: (intent) {
+                  _moveHighlight(intent.offset);
+                  return flutter_widgets.KeyEventResult.handled;
+                },
+              ),
+              ActivateListSelectionIntent: flutter_widgets.CallbackAction<ActivateListSelectionIntent>(
+                onInvoke: (intent) {
+                  if (_allItemsCount() > 0) {
+                    final item = _getItemAtIndex(_highlightedIndex);
+                    if (item is FormButton) {
+                      if (_isFormValid()) {
+                        _executeButton(item);
+                      }
+                    } else if (item is FormTextInput) {
+                      _submitForm();
+                    } else if (item is FormSelect) {
+                      item.activate(widget.rootContext);
+                    }
+                    return flutter_widgets.KeyEventResult.handled;
+                  }
+                  return flutter_widgets.KeyEventResult.ignored;
+                },
+              ),
+            },
+            child: LayoutBuilder(
+              builder: (context, constraints) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Title header
+                  Container(
+                    padding: widgetPadding,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: context.theme.colors.border,
+                          width: 1,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                if (errorBox != null) errorBox,
-                Expanded(
-                  child: BidirectionalList(
-                    controller: listController,
-                    count: totalItemCount,
-                    builder: (context, index, focusNode) {
-                      final group = _getGroupAtIndex(index);
-                      final item = _getItemAtIndex(index);
-                      Widget? header;
-
-                      if (group.title != null &&
-                          (index == 0 ||
-                              group != _getGroupAtIndex(index - 1))) {
-                        header = Padding(
-                          padding: widgetPaddingSm,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
                           child: Text(
-                            group.title!,
-                            style: TextStyle(
-                              color: context.theme.colors.mutedForeground,
-                              fontSize: context.theme.typography.xs.fontSize,
+                            widget.form.title,
+                            style: context.theme.typography.base.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        );
-                      }
-
-                      return Column(
-                        key: ValueKey(index),
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (header != null) header,
-                          item.build(
-                            context,
-                            index == _highlightedIndex,
-                            enabled: item is FormButton ? _isFormValid() : true,
-                          ),
-                        ],
-                      );
-                    },
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  if (errorBox != null) errorBox,
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: constraints.maxHeight - 100,
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: totalItemCount,
+                      itemBuilder: (context, index) {
+                        final group = _getGroupAtIndex(index);
+                        final item = _getItemAtIndex(index);
+                        Widget? header;
+
+                        if (group.title != null &&
+                            (index == 0 ||
+                                group != _getGroupAtIndex(index - 1))) {
+                          header = Padding(
+                            padding: widgetPaddingSm,
+                            child: Text(
+                              group.title!,
+                              style: TextStyle(
+                                color: context.theme.colors.mutedForeground,
+                                fontSize: context.theme.typography.xs.fontSize,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return MouseRegion(
+                          onEnter: (_) => listController.setHovered(index),
+                          onExit: (_) => listController.setHovered(null),
+                          child: Column(
+                            key: ValueKey(index),
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (header != null) header,
+                              item.build(
+                                context,
+                                index == _highlightedIndex,
+                                enabled: item is FormButton ? _isFormValid() : true,
+                                focusNode: index < _focusNodes.length ? _focusNodes[index] : null,
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

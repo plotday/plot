@@ -36,6 +36,24 @@ extension type Path(String value) {
   bool isParent(Path other) => other.value.startsWith("$value.");
   bool isChild(Path? other) =>
       other == null || value.startsWith("${other.value}.");
+
+  /// Replace the prefix of this path with a new prefix.
+  /// Used when moving a priority and all its descendants to a new parent.
+  Path replacePrefix(Path oldPrefix, Path newPrefix) {
+    if (!value.startsWith("${oldPrefix.value}.") && value != oldPrefix.value) {
+      // This path doesn't start with the old prefix
+      return this;
+    }
+
+    if (value == oldPrefix.value) {
+      // This is the exact path being replaced
+      return newPrefix;
+    }
+
+    // Replace the prefix
+    final suffix = value.substring(oldPrefix.value.length);
+    return Path('${newPrefix.value}$suffix');
+  }
 }
 
 class PathConverter extends TypeConverter<Path, String> {

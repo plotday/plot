@@ -6,6 +6,11 @@ import 'package:plot/widget/colour_scheme.dart';
 const widgetPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 12);
 const widgetPaddingSm = EdgeInsets.symmetric(horizontal: 12, vertical: 8);
 
+// Form tile layout constants
+const formTileLabelWidth = 80.0;
+const formTileSpacer = 10.0;
+const formTileSplitPoint = formTileLabelWidth + 12.0 + formTileSpacer; // 102px (label + padding + spacer)
+
 FThemeData buildTheme(ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();
   var theme = FThemeData(

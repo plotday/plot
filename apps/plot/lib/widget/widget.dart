@@ -13,6 +13,7 @@ export 'dropdown.dart';
 export 'editor.dart';
 export 'event.dart';
 export 'form_bar.dart';
+export 'form_tile_layout.dart';
 export 'header.dart';
 export 'hoverable_link.dart';
 export 'icon.dart';

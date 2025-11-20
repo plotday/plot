@@ -347,6 +347,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
        _ancestors =
            parent!._ancestors +
            [PriorityAncestor(id: parent.id, title: parent.title)],
+       _originalPath = null,
        super(
          id: Uuid.generate(),
          createdBy: Base.userId,
@@ -368,6 +369,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     List<Priority>? children,
     PriorityAncestryData? ancestry,
     this.draft = false,
+    Path? originalPath,
   }) : children = children ?? [],
        _ancestors = ancestry == null
            ? parent == null
@@ -375,6 +377,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                  : parent._ancestors +
                        [PriorityAncestor(id: parent.id, title: parent.title)]
            : PriorityAncestor.fromStore(ancestry),
+       _originalPath = originalPath ?? row.path,
        super(
          id: row.id,
          createdAt: row.createdAt,
@@ -435,6 +438,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   PriorityId? get parentId => parent?.id ?? _ancestors.lastOrNull?.id;
   List<Priority> children;
   final List<PriorityAncestor> _ancestors;
+
+  /// The original path from the database, used to detect parent changes.
+  /// Null for newly created priorities that haven't been saved yet.
+  final Path? _originalPath;
 
   /// Whether this priority is a draft (not added to parent's children list).
   /// This is an in-memory property only, not persisted to the database.
@@ -510,6 +517,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       parent: currentParent,
       children: children,
       draft: newDraft,
+      originalPath: _originalPath,
     );
   }
 
@@ -526,6 +534,81 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   bool isParent(Priority other) => path.isParent(other.path);
   List<Priority> get peers => parent?.children ?? [];
 
+  /// Compute what the path should be based on the current parent.
+  /// Preserves the priority's own label (last segment of path).
+  Path _computePathFromParent() {
+    // Extract this priority's label (last segment of path)
+    final segments = path.value.split('.');
+    final label = segments.last;
+
+    // Compute new path based on parent
+    if (parent == null) {
+      // Moving to root - just use the label
+      return Path(label);
+    } else {
+      // Moving to a parent - combine parent path + label
+      return Path('${parent!.path.value}.$label');
+    }
+  }
+
+  /// Check if the parent has changed since the priority was loaded from the database.
+  bool _hasParentChanged() {
+    // New priorities don't have an original path yet
+    if (_originalPath == null) return false;
+
+    // Compare original path with what the path should be based on current parent
+    final computedPath = _computePathFromParent();
+    return _originalPath!.value != computedPath.value;
+  }
+
+  /// Validate that moving to the new parent won't create a circular reference.
+  /// Throws an exception if the new parent is a descendant of this priority.
+  void _validateNoCircularReference(Path newPath) {
+    if (_originalPath == null) return; // New priorities can't have circular refs
+
+    // Check if the new path would make this priority its own descendant
+    // This happens if the new parent path starts with the original path
+    if (parent != null && _originalPath!.isParent(parent!.path)) {
+      throw ArgumentError(
+        'Cannot move priority to be its own descendant. '
+        'Original path: ${_originalPath!.value}, '
+        'New parent path: ${parent!.path.value}'
+      );
+    }
+  }
+
+  /// Find all descendants of a priority with the given path.
+  /// Returns all priorities whose path starts with the given path (excluding the priority itself).
+  Future<List<Priority>> _findDescendants(Path ancestorPath) async {
+    final query = Store.get.select(table)
+      ..where((t) => t.path.like('${ancestorPath.value}.%'));
+    return query.map(Priority.fromStore).get();
+  }
+
+  /// Update paths when a priority is moved to a new parent.
+  /// This handles updating both this priority and all its descendants.
+  Future<void> _updatePathsForMove() async {
+    final oldPath = _originalPath!;
+    final newPath = _computePathFromParent();
+
+    // Validate no circular reference
+    _validateNoCircularReference(newPath);
+
+    // Find all descendants
+    final descendants = await _findDescendants(oldPath);
+
+    // Update all descendant paths
+    for (final descendant in descendants) {
+      final updatedPath = descendant.path.replacePrefix(oldPath, newPath);
+      final updatedDescendant = descendant.copyWith(path: updatedPath);
+      await Store.get.save(table, updatedDescendant.toCompanion(false), PrioritiesBase());
+    }
+
+    // Update this priority's path
+    final updatedPriority = copyWith(path: newPath);
+    await Store.get.save(table, updatedPriority.toCompanion(false), PrioritiesBase());
+  }
+
   Future<Priority> save() async {
     if (draft) {
       // If this is a draft, create a non-draft copy and save it
@@ -533,9 +616,16 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       await Store.get.save(table, nonDraft.toCompanion(false), PrioritiesBase());
       return nonDraft;
     } else {
-      // Not a draft, save normally
-      await Store.get.save(table, toCompanion(false), PrioritiesBase());
-      return this;
+      // Check if parent has changed and update paths if needed
+      if (_hasParentChanged()) {
+        await _updatePathsForMove();
+        // Return updated priority with new path
+        return copyWith(path: _computePathFromParent());
+      } else {
+        // No parent change, save normally
+        await Store.get.save(table, toCompanion(false), PrioritiesBase());
+        return this;
+      }
     }
   }
 

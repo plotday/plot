@@ -6,7 +6,14 @@ class GlobalShortcuts extends StatelessWidget {
   GlobalShortcuts({required this.child, super.key});
 
   final Widget child;
-  final List<StaticActionGroup> actions = [settingsActions, accountActions];
+  final List<StaticActionGroup> actions = [
+    StaticActionGroup(
+      title: 'Priorities',
+      actions: [PickCurrentPriority(), NewPriority()],
+    ),
+    settingsActions,
+    accountActions,
+  ];
 
   @override
   Widget build(BuildContext context) {

@@ -1,9 +1,8 @@
 import 'package:flutter/widgets.dart' hide Action, Actions;
-import 'package:forui/forui.dart';
 
-import 'theme.dart';
 import 'text_field.dart';
 import 'colour_scheme.dart';
+import 'form_tile_layout.dart';
 
 class InputTile extends StatefulWidget {
   const InputTile({
@@ -48,7 +47,6 @@ class InputTile extends StatefulWidget {
 
 class _InputTileState extends State<InputTile> {
   FocusNode? _internalFocusNode;
-  bool _isHovered = false;
 
   FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode!;
 
@@ -77,54 +75,21 @@ class _InputTileState extends State<InputTile> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) {
-        setState(() {
-          _isHovered = true;
-        });
-      },
-      onExit: (_) {
-        setState(() {
-          _isHovered = false;
-        });
-      },
-      child: FocusableActionDetector(
+    final isActive = _focusNode.hasFocus || widget.highlighted;
+
+    return FormTileLayout(
+      label: widget.label,
+      rightBackgroundColor: context.colour.editableBackground,
+      isActive: isActive,
+      content: TextField(
+        controller: widget.controller,
+        label: widget.placeholder ?? '',
+        style: TextFieldStyle.ghost,
+        maxLines: 1,
+        onChanged: widget.onChanged,
+        onSubmitted: widget.onSubmitted,
+        autofocus: widget.autofocus,
         focusNode: _focusNode,
-        child: Container(
-          decoration: BoxDecoration(
-            color: _focusNode.hasFocus || _isHovered || widget.highlighted
-                ? context.colour.highlight
-                : null,
-          ),
-          padding: widgetPaddingSm,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: 80,
-                child: Text(
-                  widget.label,
-                  textAlign: TextAlign.end,
-                  style: context.theme.typography.sm.copyWith(
-                    color: context.colour.muted,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: widget.controller,
-                  label: widget.placeholder ?? '',
-                  style: TextFieldStyle.ghost,
-                  maxLines: 1,
-                  onChanged: widget.onChanged,
-                  onSubmitted: widget.onSubmitted,
-                  autofocus: widget.autofocus,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

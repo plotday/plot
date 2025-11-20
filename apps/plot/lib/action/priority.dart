@@ -225,6 +225,17 @@ class NewPriority extends ShowForm {
                     required: true,
                     autofocus: true,
                   ),
+                  FormSelect<Priority>(
+                    key: 'parent',
+                    label: 'Parent',
+                    initialValue: defaultParent,
+                    items: (search) => Priority.get(
+                      order: PriorityOrder.nested,
+                      search: search,
+                    ),
+                    labelBuilder: (p) => p.title,
+                    subtitleBuilder: (p) => p.ancestorsLabel(),
+                  ),
                   FormButton(
                     key: 'create',
                     action: AddPriority(
@@ -234,16 +245,12 @@ class NewPriority extends ShowForm {
                     ),
                     onSubmit: (context, values) async {
                       final title = values['title'] as String;
-                      final prioritiesBloc = context.read<PrioritiesBloc>();
-                      final effectiveParent =
-                          parent ??
-                          prioritiesBloc.state.root ??
-                          await Priority.getDefault();
+                      final selectedParent = values['parent'] as Priority;
                       final action = AddPriority(
                         Future.value(
                           Priority(
                             title: title,
-                            parent: effectiveParent,
+                            parent: selectedParent,
                             draft: true,
                           ),
                         ),
@@ -267,8 +274,16 @@ class EditPriorityAction extends ShowForm {
     : super(
         title: 'Edit',
         icon: PlotIcon.settings,
-        form: (context) => Future.value(
-          FormData(
+        form: (context) async {
+          final isRoot = priority.root;
+
+          // Load parent if not already loaded (parent might be null even when priority has ancestors)
+          Priority? parent = priority.parent;
+          if (parent == null && priority.parentId != null) {
+            parent = await Priority.getOne(priority.parentId!);
+          }
+
+          return FormData(
             title: 'Edit Priority',
             groups: [
               StaticFormGroup(
@@ -280,6 +295,29 @@ class EditPriorityAction extends ShowForm {
                     required: true,
                     autofocus: true,
                   ),
+                  FormSelect<Priority>(
+                    key: 'parent',
+                    label: 'Parent',
+                    initialValue: parent,
+                    enabled: !isRoot,
+                    placeholder: 'None',
+                    items: (search) async {
+                      final priorities = await Priority.get(
+                        order: PriorityOrder.nested,
+                        search: search,
+                      );
+                      // Filter out the priority itself and its descendants
+                      return priorities
+                          .where(
+                            (p) =>
+                                p.id != priority.id &&
+                                !priority.path.isParent(p.path),
+                          )
+                          .toList();
+                    },
+                    labelBuilder: (p) => p.title,
+                    subtitleBuilder: (p) => p.ancestorsLabel(),
+                  ),
                   FormButton(
                     key: 'save',
                     action: EditPriority(
@@ -287,8 +325,11 @@ class EditPriorityAction extends ShowForm {
                     ),
                     onSubmit: (context, values) async {
                       final title = values['title'] as String;
+                      final newParent = values['parent'] as Priority?;
                       final action = EditPriority(
-                        Future.value(priority.copyWith(title: title)),
+                        Future.value(
+                          priority.copyWith(title: title, parent: newParent),
+                        ),
                       );
                       return await action.run(context);
                     },
@@ -296,8 +337,8 @@ class EditPriorityAction extends ShowForm {
                 ],
               ),
             ],
-          ),
-        ),
+          );
+        },
       );
 }
 
@@ -326,7 +367,6 @@ List<Action> prioritySecondaryActions(Priority priority) => [
   ManageTwists(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.root) ArchivePriority(Future.value(priority)),
-  NewPriority(parent: priority),
 ];
 
 List<Action> priorityActions(Priority priority) => [
@@ -339,7 +379,6 @@ List<Action> currentPriorityActions(Priority priority) => [
   NewActivity(),
   NextActivityThread(),
   PreviousActivityThread(),
-  PickCurrentPriority(),
 ];
 
 class SetTopPriority extends Action {
