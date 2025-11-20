@@ -63,7 +63,7 @@ jobs:
           echo "Deploying version: $CURRENT_VERSION"
 
       - name: Load secrets from .env
-        uses: 1password/load-secrets-action@latest
+        uses: 1password/load-secrets-action@564bf5b01fef43a94b74742a38636197d3336379
         with:
           export-env: true
         env:
@@ -72,7 +72,7 @@ jobs:
           ENV: Production
 
       - name: Load secrets from .env.production
-        uses: 1password/load-secrets-action@latest
+        uses: 1password/load-secrets-action@564bf5b01fef43a94b74742a38636197d3336379
         with:
           export-env: true
         env:
