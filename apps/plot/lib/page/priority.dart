@@ -483,24 +483,39 @@ class PriorityPage extends StatelessWidget {
                               child: Scaffold(
                                 scrollable: false,
                                 translucent: true,
-                                header: Header(
-                                  title: state.context.title,
-                                  main: PrioritySelector(
-                                    selected: state.context,
-                                    onSelect: (p) =>
-                                        context.run(ChangeCurrentPriority(p)),
+                                header: StreamBuilder<List<(Tag, int)>>(
+                                  stream: Activity.watchTagsForPriority(
+                                    state.context.path,
                                   ),
-                                  onSearchChanged: (search) => context
-                                      .read<PriorityBloc>()
-                                      .updateSearch(search),
-                                  commands: [
-                                    PickFilterCommand(),
-                                    NewActivity(),
-                                    ShowPriorityCommands(
-                                      state.context,
-                                      current: true,
-                                    ),
-                                  ],
+                                  builder: (context, snapshot) {
+                                    final tagCommands = snapshot.data
+                                            ?.map((tagData) => ToggleActivityFilter(
+                                                  tagData.$1,
+                                                  context: context,
+                                                ))
+                                            .toList() ??
+                                        [];
+
+                                    return Header(
+                                      title: state.context.title,
+                                      main: PrioritySelector(
+                                        selected: state.context,
+                                        onSelect: (p) => context
+                                            .run(ChangeCurrentPriority(p)),
+                                      ),
+                                      onSearchChanged: (search) => context
+                                          .read<PriorityBloc>()
+                                          .updateSearch(search),
+                                      commands: [
+                                        ...tagCommands,
+                                        NewActivity(),
+                                        ShowPriorityCommands(
+                                          state.context,
+                                          current: true,
+                                        ),
+                                      ],
+                                    );
+                                  },
                                 ),
                                 body: BidirectionalList(
                                   controller: listController,

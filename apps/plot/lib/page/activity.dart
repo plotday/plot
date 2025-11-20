@@ -181,15 +181,31 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                 child: Scaffold(
                   scrollable: false,
                   translucent: true,
-                  header: Header(
-                    title: state.activity.displayTitle,
-                    prefixCommands: prefixActions,
-                    onSearchChanged: (search) =>
-                        context.read<ActivityBloc>().updateSearch(search),
-                    commands: [
-                      PickFilterCommand(),
-                      ShowActivityCommands(state.activity),
-                    ],
+                  header: StreamBuilder<List<(Tag, int)>>(
+                    stream: Activity.watchTagsForActivityThread(
+                      state.activity.path,
+                    ),
+                    builder: (context, snapshot) {
+                      final tagCommands = snapshot.data
+                              ?.map((tagData) => ToggleActivityFilter(
+                                    tagData.$1,
+                                    context: context,
+                                  ))
+                              .toList() ??
+                          [];
+
+                      return Header(
+                        title: state.activity.displayTitle,
+                        prefixCommands: prefixActions,
+                        onSearchChanged: (search) => context
+                            .read<ActivityBloc>()
+                            .updateSearch(search),
+                        commands: [
+                          ...tagCommands,
+                          ShowActivityCommands(state.activity),
+                        ],
+                      );
+                    },
                   ),
                   body: Column(
                     children: [

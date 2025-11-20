@@ -599,6 +599,91 @@ class Activity extends Equatable implements Comparable<Activity> {
     });
   }
 
+  /// Watch all tags present in activities within a priority and its descendants.
+  /// Returns a stream of (Tag, count) tuples sorted by occurrence count descending.
+  static Stream<List<(Tag, int)>> watchTagsForPriority(Path priorityPath) {
+    final at = Store.get.activityTags;
+    final a = Store.get.activities;
+    final p = Store.get.priorities;
+
+    final query = Store.get.select(at).join([
+      innerJoin(a, a.id.equalsExp(at.id)),
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant('$priorityPath%'))),
+      ),
+    ]);
+
+    query.where(a.archivedAt.isNull());
+
+    return query.watch().map((rows) {
+      final Map<Tag, Set<ActivityId>> tagCounts = {};
+
+      for (final row in rows) {
+        final activityTagsRow = row.readTable(at);
+        final activityId = activityTagsRow.id;
+        final tags = activityTagsRow.tags;
+
+        if (tags != null) {
+          for (final tag in tags.keys) {
+            tagCounts.putIfAbsent(tag, () => {}).add(activityId);
+          }
+        }
+      }
+
+      // Convert to list of (Tag, count) and sort by count descending
+      final result = tagCounts.entries
+          .map((e) => (e.key, e.value.length))
+          .toList()
+        ..sort((a, b) => b.$2.compareTo(a.$2));
+
+      return result;
+    });
+  }
+
+  /// Watch all tags present in activities within an activity thread (root + descendants).
+  /// Returns a stream of (Tag, count) tuples sorted by occurrence count descending.
+  static Stream<List<(Tag, int)>> watchTagsForActivityThread(Path activityPath) {
+    final at = Store.get.activityTags;
+    final a = Store.get.activities;
+
+    final query = Store.get.select(at).join([
+      innerJoin(a, a.id.equalsExp(at.id)),
+    ]);
+
+    query.where(
+      a.archivedAt.isNull() &
+          (a.path.equalsValue(activityPath) |
+              a.path.likeExp(Constant('$activityPath.%'))),
+    );
+
+    return query.watch().map((rows) {
+      final Map<Tag, Set<ActivityId>> tagCounts = {};
+
+      for (final row in rows) {
+        final activityTagsRow = row.readTable(at);
+        final activityId = activityTagsRow.id;
+        final tags = activityTagsRow.tags;
+
+        if (tags != null) {
+          for (final tag in tags.keys) {
+            tagCounts.putIfAbsent(tag, () => {}).add(activityId);
+          }
+        }
+      }
+
+      // Convert to list of (Tag, count) and sort by count descending
+      final result = tagCounts.entries
+          .map((e) => (e.key, e.value.length))
+          .toList()
+        ..sort((a, b) => b.$2.compareTo(a.$2));
+
+      return result;
+    });
+  }
+
   static Future<List<Activity>> _get({
     DateRange? range,
     bool strictRange = false,
@@ -754,19 +839,6 @@ class Activity extends Equatable implements Comparable<Activity> {
       query.where(
         a.path.equalsValue(path) | a.path.likeExp(Constant('$path.%')),
       );
-    }
-
-    // Add tag filtering if filter list is provided
-    if (mutableFilter != null && mutableFilter.isNotEmpty) {
-      // For each tag in the filter, we need to check if the tag exists in the JSON tags field
-      // Use JSON operators to check if each tag ID exists as a key in the tags JSON object
-      for (final tag in mutableFilter) {
-        query.where(
-          CustomExpression<bool>(
-            'JSON_EXTRACT(a.tags, \'\$.${tag.id}\') IS NOT NULL',
-          ),
-        );
-      }
     }
 
     if (doNow) {
@@ -964,6 +1036,18 @@ class Activity extends Equatable implements Comparable<Activity> {
                 (tags.occurrence.isNull() & exceptions.occurrence.isNull())),
       ),
     ]);
+
+    // Add tag filtering if filter list is provided
+    // This must happen AFTER the tags table is joined
+    if (mutableFilter != null && mutableFilter.isNotEmpty) {
+      for (final tag in mutableFilter) {
+        query.where(
+          CustomExpression<bool>(
+            'JSON_EXTRACT(tags.tags, \'\$.${tag.id}\') IS NOT NULL',
+          ),
+        );
+      }
+    }
 
     return query;
   }

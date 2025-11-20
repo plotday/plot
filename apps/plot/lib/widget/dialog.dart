@@ -140,10 +140,7 @@ class _DialogProviderState extends State<DialogProvider> {
                 pop(context, Value<T>.absent());
               },
             },
-            child: _InnerDialogProvider(
-              provider,
-              child: provider,
-            ),
+            child: _InnerDialogProvider(provider, child: provider),
           );
         },
       );
@@ -185,10 +182,7 @@ class _DialogProviderState extends State<DialogProvider> {
       dialogStack: _dialogStack,
       dialogStackNotifier: _dialogStackNotifier,
       state: this,
-      child: Container(
-        key: _rootContextKey,
-        child: widget.child,
-      ),
+      child: Container(key: _rootContextKey, child: widget.child),
     );
   }
 
