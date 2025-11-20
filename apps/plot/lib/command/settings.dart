@@ -1,6 +1,6 @@
-import 'package:flutter/widgets.dart' hide Action, Actions;
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/material.dart' hide Action, Actions;
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -9,51 +9,51 @@ import 'package:plot/analytics/analytics.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/theme.dart';
-import 'action.dart';
+import 'command.dart';
 import 'logging.dart';
 
-final appearanceActions = StaticActionGroup(
+final appearanceCommands = StaticCommandGroup(
   title: 'Appearance',
-  actions: [
+  commands: [
     ChangeTheme(AppThemeMode.system),
     ChangeTheme(AppThemeMode.light),
     ChangeTheme(AppThemeMode.dark),
   ],
 );
 
-final settingsActions = StaticActionGroup(
+final settingsCommands = StaticCommandGroup(
   title: 'Settings',
-  actions: [ChangeAppearance()],
+  commands: [ChangeAppearance()],
 );
 
-final accountActions = StaticActionGroup(
+final accountCommands = StaticCommandGroup(
   title: 'Account',
-  actions: [SignOut()],
+  commands: [SignOut()],
 );
 
-class ShowSettings extends ShowActions {
+class ShowSettings extends ShowCommands {
   ShowSettings()
     : super(
         title: 'Settings',
         icon: PlotIcon.settings,
-        actions: (context) => Future.value(
-          Actions(groups: [settingsActions], prompt: 'Settings'),
+        commands: (context) => Future.value(
+          Commands(groups: [settingsCommands], prompt: 'Settings'),
         ),
         shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
       );
 }
 
-class ChangeAppearance extends ShowActions {
+class ChangeAppearance extends ShowCommands {
   ChangeAppearance()
     : super(
         title: 'Change Light/Dark Mode',
         icon: FontAwesomeIcons.sun,
-        actions: (context) =>
-            Future.value(Actions(groups: [appearanceActions])),
+        commands: (context) =>
+            Future.value(Commands(groups: [appearanceCommands])),
       );
 }
 
-class SignOut extends Action {
+class SignOut extends Command {
   SignOut()
     : super(
         title: 'Sign Out',
@@ -63,17 +63,17 @@ class SignOut extends Action {
       );
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     try {
-      return ActionRoute(SignInRoute(signOut: true));
+      return CommandRoute(SignInRoute(signOut: true));
     } on supa.AuthException catch (e, t) {
       log.warning("Sign out failed", e, t);
-      return ActionMessage('Sign out failed: ${e.message}', isError: true);
+      return CommandMessage('Sign out failed: ${e.message}', isError: true);
     }
   }
 }
 
-class ChangeTheme extends Action {
+class ChangeTheme extends Command {
   ChangeTheme(this.themeMode)
     : super(
         title: _getTitle(themeMode),
@@ -110,13 +110,13 @@ class ChangeTheme extends Action {
   }
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     try {
       context.read<ThemeBloc>().setThemeMode(themeMode);
-      return const ActionDone();
+      return const CommandDone();
     } catch (e, t) {
       log.warning("Change theme failed", e, t);
-      return ActionMessage('Failed to change theme', isError: true);
+      return CommandMessage('Failed to change theme', isError: true);
     }
   }
 }

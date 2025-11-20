@@ -2,7 +2,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart' hide Scaffold;
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/widget/priorities_list.dart';
@@ -17,7 +17,7 @@ class PrioritiesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       scrollable: false,
-      header: Header(title: 'Priorities', actions: [NewPriority()]),
+      header: Header(title: 'Priorities', commands: [NewPriority()]),
       body: BlocBuilder<PrioritiesBloc, PrioritiesState>(
         builder: (builderContext, state) {
           return BlocBuilder<NowBloc, NowState>(

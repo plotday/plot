@@ -5,7 +5,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/layout.dart';
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 
@@ -57,8 +57,8 @@ class _NewActivityPageState extends State<NewActivityPage> {
                   ? null
                   : Header(
                       title: 'New Activity',
-                      prefixActions: [
-                        ActionWrapper(
+                      prefixCommands: [
+                        CommandWrapper(
                           ChangeCurrentActivity(null),
                           icon: Value(PlotIcon.back),
                         ),

@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'action.dart';
+import 'command.dart';
 import 'package:plot/analytics/analytics.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
@@ -9,8 +9,8 @@ import 'package:plot/router.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
 
-abstract class PriorityAction extends Action {
-  PriorityAction(
+abstract class PriorityCommand extends Command {
+  PriorityCommand(
     this.priority, {
     required super.eventObject,
     required super.eventAction,
@@ -57,35 +57,35 @@ abstract class PriorityAction extends Action {
   }
 }
 
-class ChangeCurrentPriority extends PriorityAction {
+class ChangeCurrentPriority extends PriorityCommand {
   ChangeCurrentPriority(Priority super.priority, {super.ancestry = true})
     : super(eventObject: EventObject.priority, eventAction: EventAction.viewed);
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
-    return ActionRoute(
+  Future<CommandReturn> run(BuildContext context) async {
+    return CommandRoute(
       PriorityRoute(priorityIdString: priority!.id.toShortString()),
     );
   }
 }
 
-class PriorityGroup extends ActionGroup {
+class PriorityGroup extends CommandGroup {
   PriorityGroup({required super.title, required this.builder});
 
-  final Action Function(Priority? priority) builder;
+  final Command Function(Priority? priority) builder;
 
   @override
-  Future<List<Action>> list({String? search}) async {
+  Future<List<Command>> list({String? search}) async {
     final all = (await Priority.get(
       order: PriorityOrder.recent,
       search: search,
     )).map((priority) => builder(priority)).toList();
-    return ActionGroup.filter(all, search);
+    return CommandGroup.filter(all, search);
   }
 }
 
-class ChangeCurrentPriorityActions extends Actions {
-  ChangeCurrentPriorityActions({
+class ChangeCurrentPriorityCommands extends Commands {
+  ChangeCurrentPriorityCommands({
     super.prompt = 'Change Current Priority',
     Priority? initialPriority,
   }) : super(
@@ -95,11 +95,11 @@ class ChangeCurrentPriorityActions extends Actions {
              builder: (priority) => ChangeCurrentPriority(priority!),
            ),
          ],
-         secondaryAction: (prompt) => NewPriority(parent: initialPriority),
+         secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
        );
 }
 
-class OpenPriority extends Action {
+class OpenPriority extends Command {
   OpenPriority(Priority priority)
     : priorityId = priority.id,
       super(
@@ -120,24 +120,24 @@ class OpenPriority extends Action {
   final PriorityId priorityId;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
-    return ActionRoute(
+  Future<CommandReturn> run(BuildContext context) async {
+    return CommandRoute(
       PriorityRoute(priorityIdString: priorityId.toShortString()),
     );
   }
 }
 
-class PickCurrentPriority extends ShowActions {
+class PickCurrentPriority extends ShowCommands {
   PickCurrentPriority()
     : super(
         title: 'Switch Priorities',
         icon: PlotIcon.priority,
         shortcut: const SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
-        actions: (context) => Future.value(ChangeCurrentPriorityActions()),
+        commands: (context) => Future.value(ChangeCurrentPriorityCommands()),
       );
 }
 
-class AddPriority extends Action {
+class AddPriority extends Command {
   AddPriority(this._priority)
     : super(
         title: 'Add',
@@ -148,17 +148,17 @@ class AddPriority extends Action {
   final Future<Priority> _priority;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
     final savedPriority = await priority.save();
-    return ActionRoute(
+    return CommandRoute(
       PriorityRoute(priorityIdString: savedPriority.id.toShortString()),
       replace: true,
     );
   }
 }
 
-class EditPriority extends Action {
+class EditPriority extends Command {
   EditPriority(this._priority)
     : super(
         title: 'Save',
@@ -169,14 +169,14 @@ class EditPriority extends Action {
   final Future<Priority> _priority;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
     await priority.save();
-    return const ActionDone();
+    return const CommandDone();
   }
 }
 
-class ArchivePriority extends Action {
+class ArchivePriority extends Command {
   ArchivePriority(this._priority)
     : super(
         title: 'Archive',
@@ -188,16 +188,16 @@ class ArchivePriority extends Action {
   final Future<Priority> _priority;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
     if (priority.root) {
-      return ActionMessage(
+      return CommandMessage(
         "The default priority can't be archived",
         isError: true,
       );
     }
     await priority.delete();
-    return const ActionDone();
+    return const CommandDone();
   }
 }
 
@@ -238,7 +238,7 @@ class NewPriority extends ShowForm {
                   ),
                   FormButton(
                     key: 'create',
-                    action: AddPriority(
+                    command: AddPriority(
                       Future.value(
                         Priority(title: '', parent: defaultParent, draft: true),
                       ),
@@ -246,7 +246,7 @@ class NewPriority extends ShowForm {
                     onSubmit: (context, values) async {
                       final title = values['title'] as String;
                       final selectedParent = values['parent'] as Priority;
-                      final action = AddPriority(
+                      final command = AddPriority(
                         Future.value(
                           Priority(
                             title: title,
@@ -256,9 +256,9 @@ class NewPriority extends ShowForm {
                         ),
                       );
                       if (!context.mounted) {
-                        return const ActionSkipped();
+                        return const CommandSkipped();
                       }
-                      return await action.run(context);
+                      return await command.run(context);
                     },
                   ),
                 ],
@@ -269,8 +269,8 @@ class NewPriority extends ShowForm {
       );
 }
 
-class EditPriorityAction extends ShowForm {
-  EditPriorityAction(Priority priority)
+class EditPriorityCommand extends ShowForm {
+  EditPriorityCommand(Priority priority)
     : super(
         title: 'Edit',
         icon: PlotIcon.settings,
@@ -320,18 +320,18 @@ class EditPriorityAction extends ShowForm {
                   ),
                   FormButton(
                     key: 'save',
-                    action: EditPriority(
+                    command: EditPriority(
                       Future.value(priority.copyWith(title: '')),
                     ),
                     onSubmit: (context, values) async {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
-                      final action = EditPriority(
+                      final command = EditPriority(
                         Future.value(
                           priority.copyWith(title: title, parent: newParent),
                         ),
                       );
-                      return await action.run(context);
+                      return await command.run(context);
                     },
                   ),
                 ],
@@ -342,19 +342,19 @@ class EditPriorityAction extends ShowForm {
       );
 }
 
-class ShowPriorityActions extends ShowActions {
-  ShowPriorityActions(Priority priority, {bool current = false})
+class ShowPriorityCommands extends ShowCommands {
+  ShowPriorityCommands(Priority priority, {bool current = false})
     : super(
-        title: 'More Actions',
+        title: 'More Commands',
         icon: PlotIcon.menu,
-        actions: (context) => Future.value(
-          Actions(
+        commands: (context) => Future.value(
+          Commands(
             groups: [
-              StaticActionGroup(
+              StaticCommandGroup(
                 title: priority.title,
-                actions: current
-                    ? currentPriorityActions(priority)
-                    : priorityActions(priority),
+                commands: current
+                    ? currentPriorityCommands(priority)
+                    : priorityCommands(priority),
               ),
             ],
           ),
@@ -362,26 +362,26 @@ class ShowPriorityActions extends ShowActions {
       );
 }
 
-List<Action> prioritySecondaryActions(Priority priority) => [
-  EditPriorityAction(priority),
+List<Command> prioritySecondaryCommands(Priority priority) => [
+  EditPriorityCommand(priority),
   ManageTwists(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.root) ArchivePriority(Future.value(priority)),
 ];
 
-List<Action> priorityActions(Priority priority) => [
+List<Command> priorityCommands(Priority priority) => [
   OpenPriority(priority),
-  ...prioritySecondaryActions(priority),
+  ...prioritySecondaryCommands(priority),
 ];
 
-List<Action> currentPriorityActions(Priority priority) => [
-  ...prioritySecondaryActions(priority),
+List<Command> currentPriorityCommands(Priority priority) => [
+  ...prioritySecondaryCommands(priority),
   NewActivity(),
   NextActivityThread(),
   PreviousActivityThread(),
 ];
 
-class SetTopPriority extends Action {
+class SetTopPriority extends Command {
   SetTopPriority(this.priority, this.add)
     : super(
         title: add ? 'Add to Top Priorities' : 'Remove From Top Priorities',
@@ -394,15 +394,15 @@ class SetTopPriority extends Action {
   final bool add;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await priority
         .copyWith(topOrder: add ? Value(Order.first()) : const Value(null))
         .save();
-    return const ActionDone();
+    return const CommandDone();
   }
 }
 
-class ToggleShowArchived extends Action {
+class ToggleShowArchived extends Command {
   ToggleShowArchived({required this.showArchived})
     : super(
         title: showArchived ? 'Show Active Items' : 'Show Archived Items',
@@ -415,8 +415,8 @@ class ToggleShowArchived extends Action {
   final bool showArchived;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     context.read<PriorityBloc>().toggleShowArchived();
-    return const ActionDone();
+    return const CommandDone();
   }
 }

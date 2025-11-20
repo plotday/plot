@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart' hide Action, Actions;
+import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
 import 'button.dart';
 import 'window.dart';
@@ -36,8 +36,8 @@ class Header extends StatefulWidget {
   const Header({
     this.main,
     this.title,
-    this.prefixActions = const [],
-    this.actions = const [],
+    this.prefixCommands = const [],
+    this.commands = const [],
     this.onSearchChanged,
     this.modal = false,
     this.position,
@@ -46,8 +46,8 @@ class Header extends StatefulWidget {
 
   final Widget? main;
   final String? title;
-  final List<Action> prefixActions;
-  final List<Action> actions;
+  final List<Command> prefixCommands;
+  final List<Command> commands;
   final void Function(String)? onSearchChanged;
   final bool modal;
   final HeaderPosition? position;
@@ -113,7 +113,7 @@ class _HeaderState extends State<Header> {
               !layoutState.middlePanelVisible &&
               layoutState.multiPanel)
             Button.icon(
-              ToggleMiddleSidebarAction(
+              ToggleMiddleSidebarCommand(
                 isVisible: layoutState.middlePanelVisible,
               ),
             ),
@@ -122,10 +122,10 @@ class _HeaderState extends State<Header> {
               position == HeaderPosition.middle &&
               !layoutState.leftPanelVisible)
             Button.icon(
-              ToggleLeftSidebarAction(isVisible: layoutState.leftPanelVisible),
+              ToggleLeftSidebarCommand(isVisible: layoutState.leftPanelVisible),
             ),
           // Prefix actions provided by the page
-          ...widget.prefixActions.asMap().entries.map((entry) {
+          ...widget.prefixCommands.asMap().entries.map((entry) {
             final key = ValueKey(Object.hash(entry.value.hashCode, entry.key));
             return Button.icon(entry.value, key: key);
           }),
@@ -175,7 +175,7 @@ class _HeaderState extends State<Header> {
           // Add search button/close button if onSearchChanged is provided
           if (widget.onSearchChanged != null)
             Button.icon(
-              ToggleSearchAction(
+              ToggleSearchCommand(
                 searchExpanded: _searchExpanded,
                 onToggle: () {
                   setState(() {
@@ -194,19 +194,19 @@ class _HeaderState extends State<Header> {
                 },
               ),
             ),
-          ...widget.actions.asMap().entries.map((entry) {
+          ...widget.commands.asMap().entries.map((entry) {
             final key = ValueKey(Object.hash(entry.value.hashCode, entry.key));
             return Button.icon(entry.value, key: key);
           }),
           // Left sidebar toggle for left position
           if (position == HeaderPosition.left)
             Button.icon(
-              ToggleLeftSidebarAction(isVisible: layoutState.leftPanelVisible),
+              ToggleLeftSidebarCommand(isVisible: layoutState.leftPanelVisible),
             ),
           // Right sidebar show button for middle position when right panel is hidden
           if (position == HeaderPosition.middle)
             Button.icon(
-              ToggleMiddleSidebarAction(
+              ToggleMiddleSidebarCommand(
                 isVisible: layoutState.middlePanelVisible,
               ),
             ),

@@ -1,41 +1,43 @@
-import 'package:flutter/widgets.dart' hide Action, Actions;
-import 'package:flutter/widgets.dart' as flutter_widgets show Actions, CallbackAction, KeyEventResult;
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'dialog.dart';
 import 'theme.dart';
 import 'logging.dart';
 
 class FormBar extends Dialog {
-  FormBar(
+  factory FormBar(
     FormData form, {
+    required List<StaticFormGroup> groups,
     required BuildContext rootContext,
-  }) : super(
-         padding: const EdgeInsets.all(0),
-         builder: (_) => _FormBar(
-           form,
-           rootContext: rootContext,
-         ),
-         key: ObjectKey(form),
-       );
+  }) {
+    // Cache the _FormBar widget so it's not recreated on dialog rebuilds
+    final formBar = _FormBar(form, groups: groups, rootContext: rootContext);
+    return FormBar._(formBar, form);
+  }
 
-  Future<ActionReturn> run(BuildContext context) {
+  FormBar._(Widget formBar, FormData form)
+    : super(
+        padding: const EdgeInsets.all(0),
+        builder: (_) => formBar,
+        key: ObjectKey(form),
+      );
+
+  Future<CommandReturn> run(BuildContext context) {
     return super
-        .show<ActionReturn>(context)
-        .then((value) => value.present ? value.value : const ActionSkipped());
+        .show<CommandReturn>(context)
+        .then((value) => value.present ? value.value : const CommandSkipped());
   }
 }
 
 class _FormBar extends StatefulWidget {
-  const _FormBar(
-    this.form, {
-    required this.rootContext,
-  });
+  const _FormBar(this.form, {required this.groups, required this.rootContext});
 
   final FormData form;
+  final List<StaticFormGroup> groups;
   final BuildContext rootContext;
 
   @override
@@ -46,7 +48,6 @@ class FormBarState extends State<_FormBar> {
   List<StaticFormGroup> _formGroups = [];
   List<FocusNode> _focusNodes = [];
   String? _error;
-  bool _isDisposed = false;
   int _highlightedIndex = 0; // Track highlighted item for keyboard navigation
 
   @override
@@ -57,7 +58,6 @@ class FormBarState extends State<_FormBar> {
 
   @override
   void dispose() {
-    _isDisposed = true;
     // Remove listeners from text input controllers
     // Note: We don't dispose the controllers here because the FormItem instances
     // might be reused if another dialog (like SelectBar) was on top and closes.
@@ -76,58 +76,41 @@ class FormBarState extends State<_FormBar> {
     super.dispose();
   }
 
-  void _initForm() async {
-    try {
-      setState(() {
-        _error = null;
-      });
-      final formGroups = await widget.form.list();
+  void _initForm() {
+    _formGroups = widget.groups;
 
-      if (_isDisposed) return;
+    // Create focus nodes for each item
+    final totalCount = _formGroups.fold(
+      0,
+      (total, group) => total + group.items.length,
+    );
+    _focusNodes = List.generate(totalCount, (_) => FocusNode());
 
-      setState(() {
-        _formGroups = formGroups;
-
-        // Create focus nodes for each item
-        for (var node in _focusNodes) {
-          node.dispose();
-        }
-        final totalCount = formGroups.fold(0, (total, group) => total + group.items.length);
-        _focusNodes = List.generate(totalCount, (_) => FocusNode());
-
-        // Find first enabled item for initial focus
-        _highlightedIndex = 0;
-        for (int i = 0; i < totalCount; i++) {
-          if (_isItemEnabled(i)) {
-            _highlightedIndex = i;
-            break;
-          }
-        }
-      });
-
-      // Add listeners to all text input controllers to rebuild on changes
-      for (var group in _formGroups) {
-        for (var item in group.items) {
-          if (item is FormTextInput) {
-            item.controller.addListener(_onFormChanged);
-          }
-        }
-      }
-
-      // Request focus on first item after build
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_focusNodes.isNotEmpty && mounted) {
-          _focusNodes[0].requestFocus();
-        }
-      });
-    } catch (e, t) {
-      log.warning('Error initializing form', e, t);
-      if (!_isDisposed) {
-        setState(() {
-          _error = 'Form initialization failed.';
-        });
+    // Find first enabled item for initial focus
+    _highlightedIndex = 0;
+    for (int i = 0; i < totalCount; i++) {
+      if (_isItemEnabled(i)) {
+        _highlightedIndex = i;
+        break;
       }
     }
+
+    // Add listeners to all text input controllers to rebuild on changes
+    for (var group in _formGroups) {
+      for (var item in group.items) {
+        if (item is FormTextInput) {
+          item.controller.addListener(_onFormChanged);
+        }
+      }
+    }
+
+    // Request focus on first item after build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_focusNodes.isNotEmpty && mounted) {
+        log.info('Initial focus request on first item (index 0)');
+        _focusNodes[0].requestFocus();
+      }
+    });
   }
 
   void _onFormChanged() {
@@ -165,10 +148,7 @@ class FormBarState extends State<_FormBar> {
   }
 
   int _allItemsCount() {
-    return _formGroups.fold(
-      0,
-      (total, group) => total + group.items.length,
-    );
+    return _formGroups.fold(0, (total, group) => total + group.items.length);
   }
 
   bool _isItemEnabled(int index) {
@@ -305,7 +285,7 @@ class FormBarState extends State<_FormBar> {
 
       if (!mounted) return;
 
-      if (result is ActionMessage && result.isError) {
+      if (result is CommandMessage && result.isError) {
         setState(() {
           _error = result.message;
         });
@@ -313,7 +293,7 @@ class FormBarState extends State<_FormBar> {
       }
 
       Dialog.popAll(context);
-      if (context.mounted && result is ActionRoute) {
+      if (context.mounted && result is CommandRoute) {
         result.go(widget.rootContext);
       }
     } catch (e, stackTrace) {
@@ -327,12 +307,12 @@ class FormBarState extends State<_FormBar> {
   }
 
   /// Execute a specific button action
-  Future<ActionReturn> _executeButton(FormButton button) async {
+  Future<CommandReturn> _executeButton(FormButton button) async {
     if (!_isFormValid()) {
       setState(() {
         _error = 'Please fill in all required fields';
       });
-      return const ActionDone();
+      return const CommandDone();
     }
 
     setState(() {
@@ -344,34 +324,34 @@ class FormBarState extends State<_FormBar> {
         final values = _collectFormValues();
         final result = await button.onSubmit!(widget.rootContext, values);
 
-        if (!mounted) return const ActionSkipped();
+        if (!mounted) return const CommandSkipped();
 
-        if (result is ActionMessage && result.isError) {
+        if (result is CommandMessage && result.isError) {
           setState(() {
             _error = result.message;
           });
-          return const ActionDone();
+          return const CommandDone();
         }
 
         Dialog.popAll(context);
-        if (context.mounted && result is ActionRoute) {
+        if (context.mounted && result is CommandRoute) {
           result.go(widget.rootContext);
         }
         return result;
       } else {
         // Fallback to action's run method
-        final result = await button.action.run(widget.rootContext);
-        if (!mounted) return const ActionSkipped();
+        final result = await button.command.run(widget.rootContext);
+        if (!mounted) return const CommandSkipped();
 
-        if (result is ActionMessage && result.isError) {
+        if (result is CommandMessage && result.isError) {
           setState(() {
             _error = result.message;
           });
-          return const ActionDone();
+          return const CommandDone();
         }
 
         Dialog.popAll(context);
-        if (context.mounted && result is ActionRoute) {
+        if (context.mounted && result is CommandRoute) {
           result.go(widget.rootContext);
         }
         return result;
@@ -384,7 +364,7 @@ class FormBarState extends State<_FormBar> {
         });
       }
     }
-    return const ActionDone();
+    return const CommandDone();
   }
 
   @override
@@ -416,19 +396,22 @@ class FormBarState extends State<_FormBar> {
 
         return Shortcuts(
           shortcuts: const {
-            SingleActivator(LogicalKeyboardKey.arrowUp): MoveListSelectionIntent(-1),
-            SingleActivator(LogicalKeyboardKey.arrowDown): MoveListSelectionIntent(1),
-            SingleActivator(LogicalKeyboardKey.enter): ActivateListSelectionIntent(),
+            SingleActivator(LogicalKeyboardKey.arrowUp):
+                MoveListSelectionIntent(-1),
+            SingleActivator(LogicalKeyboardKey.arrowDown):
+                MoveListSelectionIntent(1),
+            SingleActivator(LogicalKeyboardKey.enter):
+                ActivateListSelectionIntent(),
           },
-          child: flutter_widgets.Actions(
+          child: Actions(
             actions: {
-              MoveListSelectionIntent: flutter_widgets.CallbackAction<MoveListSelectionIntent>(
+              MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
                 onInvoke: (intent) {
                   _moveHighlight(intent.offset);
-                  return flutter_widgets.KeyEventResult.handled;
+                  return KeyEventResult.handled;
                 },
               ),
-              ActivateListSelectionIntent: flutter_widgets.CallbackAction<ActivateListSelectionIntent>(
+              ActivateListSelectionIntent: CallbackAction<ActivateListSelectionIntent>(
                 onInvoke: (intent) {
                   if (_allItemsCount() > 0) {
                     final item = _getItemAtIndex(_highlightedIndex);
@@ -439,11 +422,34 @@ class FormBarState extends State<_FormBar> {
                     } else if (item is FormTextInput) {
                       _submitForm();
                     } else if (item is FormSelect) {
-                      item.activate(widget.rootContext);
+                      final indexToRestore = _highlightedIndex;
+                      log.info(
+                        'FormSelect activated, will restore to index $indexToRestore',
+                      );
+                      item.activate(context).then((_) {
+                        log.info(
+                          'FormSelect.activate returned, scheduling focus restore',
+                        );
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          log.info(
+                            'Post-frame callback: mounted=$mounted, indexToRestore=$indexToRestore, focusNodes.length=${_focusNodes.length}',
+                          );
+                          if (mounted && indexToRestore < _focusNodes.length) {
+                            final node = _focusNodes[indexToRestore];
+                            log.info(
+                              'Requesting focus on node: hasFocus=${node.hasFocus}, canRequestFocus=${node.canRequestFocus}',
+                            );
+                            node.requestFocus();
+                            log.info(
+                              'After requestFocus: hasFocus=${node.hasFocus}',
+                            );
+                          }
+                        });
+                      });
                     }
-                    return flutter_widgets.KeyEventResult.handled;
+                    return KeyEventResult.handled;
                   }
-                  return flutter_widgets.KeyEventResult.ignored;
+                  return KeyEventResult.ignored;
                 },
               ),
             },
@@ -514,8 +520,12 @@ class FormBarState extends State<_FormBar> {
                               item.build(
                                 context,
                                 index == _highlightedIndex,
-                                enabled: item is FormButton ? _isFormValid() : true,
-                                focusNode: index < _focusNodes.length ? _focusNodes[index] : null,
+                                enabled: item is FormButton
+                                    ? _isFormValid()
+                                    : true,
+                                focusNode: index < _focusNodes.length
+                                    ? _focusNodes[index]
+                                    : null,
                               ),
                             ],
                           ),
@@ -523,6 +533,7 @@ class FormBarState extends State<_FormBar> {
                       },
                     ),
                   ),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),

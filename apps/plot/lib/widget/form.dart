@@ -1,12 +1,12 @@
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/select_tile.dart';
 import 'package:plot/widget/select_bar.dart';
-import 'package:plot/action/base.dart';
-import 'package:plot/action/logging.dart';
+import 'package:plot/command/base.dart';
+import 'package:plot/command/logging.dart';
 import 'package:plot/analytics/analytics.dart';
 
 /// A action for showing a form
-class ShowForm extends Action {
+class ShowForm extends Command {
   ShowForm({
     required super.title,
     super.description,
@@ -23,15 +23,22 @@ class ShowForm extends Action {
   final Future<FormData> Function(BuildContext context) form;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     try {
       final formInstance = await form(context);
       if (!context.mounted) {
         log.info('Context no longer mounted, skipping FormBar for "$title"');
-        return const ActionSkipped();
+        return const CommandSkipped();
+      }
+      // Pre-load form groups to avoid jank when dialog opens
+      final groups = await formInstance.list();
+      if (!context.mounted) {
+        log.info('Context no longer mounted, skipping FormBar for "$title"');
+        return const CommandSkipped();
       }
       return await FormBar(
         formInstance,
+        groups: groups,
         rootContext: context,
       ).run(context);
     } on Error catch (e, t) {
@@ -211,12 +218,12 @@ class FormSelect<T> extends FormItem {
 class FormButton extends FormItem {
   FormButton({
     required super.key,
-    required this.action,
+    required this.command,
     this.onSubmit,
   }) : super(required: false, autofocus: false);
 
-  final Action action;
-  final Future<ActionReturn> Function(BuildContext context, Map<String, dynamic> values)? onSubmit;
+  final Command command;
+  final Future<CommandReturn> Function(BuildContext context, Map<String, dynamic> values)? onSubmit;
 
   @override
   dynamic getValue() => null;
@@ -232,7 +239,7 @@ class FormButton extends FormItem {
   @override
   Widget build(BuildContext context, bool highlighted, {bool enabled = true, FocusNode? focusNode}) {
     return _FormButtonWidget(
-      action: action,
+      command: command,
       highlighted: highlighted,
       enabled: enabled,
       focusNode: focusNode,
@@ -242,13 +249,13 @@ class FormButton extends FormItem {
 
 class _FormButtonWidget extends StatefulWidget {
   const _FormButtonWidget({
-    required this.action,
+    required this.command,
     required this.highlighted,
     required this.enabled,
     this.focusNode,
   });
 
-  final Action action;
+  final Command command;
   final bool highlighted;
   final bool enabled;
   final FocusNode? focusNode;
@@ -280,7 +287,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
-                  widget.action.title,
+                  widget.command.title,
                   style: context.theme.typography.sm.copyWith(
                     fontWeight: FontWeight.bold,
                     color: context.colour.foreground,

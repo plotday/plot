@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:flutter/rendering.dart';
 
 import 'package:plot/widget/widget.dart';
-import 'package:plot/action/base.dart' hide Action, Actions;
+import 'package:plot/command/base.dart';
 import 'logging.dart';
 
 class BidirectionalListController extends ChangeNotifier {
@@ -559,30 +559,30 @@ class BidirectionalListState extends State<BidirectionalList> {
   }
 }
 
-class SelectionActionScope extends StatefulWidget {
-  const SelectionActionScope({
+class SelectionCommandScope extends StatefulWidget {
+  const SelectionCommandScope({
     required this.actionBuilder,
     required this.listController,
     required this.child,
     super.key,
   });
 
-  final List<StaticActionGroup> Function(int index) actionBuilder;
+  final List<StaticCommandGroup> Function(int index) actionBuilder;
   final BidirectionalListController listController;
   final Widget child;
 
   @override
-  SelectionActionScopeState createState() => SelectionActionScopeState();
+  SelectionCommandScopeState createState() => SelectionCommandScopeState();
 }
 
-class SelectionActionScopeState extends State<SelectionActionScope> {
+class SelectionCommandScopeState extends State<SelectionCommandScope> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: widget.listController,
-      builder: (context, child) => ActionScope(
-        actions: [
-          // Note: ActionScope is based on selection, not focus/highlight
+      builder: (context, child) => CommandScope(
+        commands: [
+          // Note: CommandScope is based on selection, not focus/highlight
           // This should be updated to track actual selection, not focus
           if (widget.listController.lastFocusedIndex != null)
             ...widget.actionBuilder(widget.listController.lastFocusedIndex!),

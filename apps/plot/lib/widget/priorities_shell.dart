@@ -1,10 +1,10 @@
-import 'package:flutter/widgets.dart' hide Actions;
+import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/router.dart';
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/widget/bottom_navigation_provider.dart';
 
 @RoutePage(name: "PrioritiesShellRoute")
@@ -44,9 +44,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
                         onChange: (index) {
                           if (index == 2) {
                             // Show command palette (same as Cmd-K)
-                            Actions(
-                              prompt: 'Run an action',
-                              groups: ActionRegistry.of(context).actions,
+                            Commands(
+                              prompt: 'Run a command',
+                              groups: CommandRegistry.of(context).commands,
                             ).show(context);
                           } else {
                             tabsRouter.setActiveIndex(index);

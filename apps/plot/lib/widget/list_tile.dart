@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart' hide Action, Actions;
+import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/platform.dart';
 import 'theme.dart';
@@ -15,13 +15,13 @@ enum ListTileStyle { item, header }
 class ListTile extends StatefulWidget {
   ListTile({
     /// The primary action run when the tile is tapped.
-    this.action,
+    this.command,
 
     /// The action to run when the tile is double-tapped.
-    this.doubleTapAction,
+    this.doubleTapCommand,
 
     /// Secondary actions visible on the right.
-    this.trailingActions = const [],
+    this.trailingCommands = const [],
 
     /// Extra details shown below the title.
     this.details,
@@ -63,7 +63,7 @@ class ListTile extends StatefulWidget {
     this.centered = false,
 
     super.key,
-  }) : title = title ?? action?.title ?? '';
+  }) : title = title ?? command?.title ?? '';
 
   final ListTileStyle style;
   final bool highlighted;
@@ -72,9 +72,9 @@ class ListTile extends StatefulWidget {
   final int indentLevel;
   final bool disableInternalHover;
   final Widget? details;
-  final Action? action;
-  final Action? doubleTapAction;
-  final List<Action> trailingActions;
+  final Command? command;
+  final Command? doubleTapCommand;
+  final List<Command> trailingCommands;
   final String title;
   final Widget? body;
   final Widget? header;
@@ -122,23 +122,23 @@ class _ListTileState extends State<ListTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.action != null
+      onTap: widget.command != null
           ? () {
-              log.info("Running action: ${widget.action?.title}");
+              log.info("Running command: ${widget.command?.title}");
               try {
-                context.run(widget.action!);
+                context.run(widget.command!);
               } catch (e, t) {
-                log.warning("Action ${widget.action?.title} failed", e, t);
+                log.warning("Action ${widget.command?.title} failed", e, t);
               }
             }
           : null,
-      onDoubleTap: widget.doubleTapAction != null
+      onDoubleTap: widget.doubleTapCommand != null
           ? () {
               try {
-                context.run(widget.doubleTapAction!);
+                context.run(widget.doubleTapCommand!);
               } catch (e, t) {
                 log.warning(
-                  "Action ${widget.doubleTapAction?.title} failed",
+                  "Action ${widget.doubleTapCommand?.title} failed",
                   e,
                   t,
                 );
@@ -190,9 +190,9 @@ class _ListTileState extends State<ListTile> {
               crossAxisAlignment: CrossAxisAlignment.center,
               spacing: 10,
               children: [
-                if (widget.icon != null || widget.action?.icon != null)
+                if (widget.icon != null || widget.command?.icon != null)
                   Icon(
-                    widget.icon ?? widget.action?.icon,
+                    widget.icon ?? widget.command?.icon,
                     size: 16,
                     color: context.colour.muted,
                   ),
@@ -229,10 +229,10 @@ class _ListTileState extends State<ListTile> {
                                     ),
                                   ),
                                 ),
-                                if (widget.action?.subtitle != null)
+                                if (widget.command?.subtitle != null)
                                   Flexible(
                                     child: Text(
-                                      '  ${widget.action!.subtitle!}',
+                                      '  ${widget.command!.subtitle!}',
                                       overflow: TextOverflow.ellipsis,
                                       style: context.theme.typography.sm
                                           .copyWith(
@@ -242,23 +242,23 @@ class _ListTileState extends State<ListTile> {
                                   ),
                               ],
                             ),
-                      if (widget.action?.description != null)
-                        Text(widget.action!.description!),
+                      if (widget.command?.description != null)
+                        Text(widget.command!.description!),
                       if (widget.details != null) widget.details!,
                     ],
                   ),
                 ),
-                if (widget.action?.shortcut != null && hasPhysicalKeyboard())
+                if (widget.command?.shortcut != null && hasPhysicalKeyboard())
                   Padding(
                     padding: const EdgeInsets.only(left: 8.0),
                     child: Text(
-                      formatShortcut(widget.action?.shortcut),
+                      formatShortcut(widget.command?.shortcut),
                       style: context.theme.typography.sm.copyWith(
                         color: context.colour.muted,
                       ),
                     ),
                   ),
-                ...widget.trailingActions.asMap().entries.map((entry) {
+                ...widget.trailingCommands.asMap().entries.map((entry) {
                   final key = ValueKey(
                     Object.hash(entry.value.hashCode, entry.key),
                   );

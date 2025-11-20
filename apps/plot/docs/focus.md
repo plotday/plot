@@ -269,14 +269,14 @@ BlocBuilder<LayoutBloc, LayoutState>(
 **Changes:**
 
 - ItemBuilder receives FocusNode instead of bool
-- Uses Flutter's `Actions` widget (imported as `flutter_widgets.Actions`)
+- Uses Flutter's `Actions` widget (imported as `Actions`)
 - Handles Enter key via `ActivateListSelectionIntent`
 - Checks `listController.focusedIndex ?? listController.lastFocusedIndex`
 
 **Note**: Uses prefixed import to avoid naming conflicts:
 
 ```dart
-import 'package:flutter/widgets.dart' as flutter_widgets show Actions, CallbackAction, KeyEventResult;
+import 'package:flutter/widgets.dart'  show Actions, CallbackAction, KeyEventResult;
 ```
 
 ## State Management
@@ -369,14 +369,14 @@ Both Flutter and Plot define `Action` and `Actions` classes. To resolve:
 **In pages** (activity.dart, priority.dart):
 
 ```dart
-import 'package:flutter/widgets.dart' as flutter_widgets show Actions, CallbackAction;
+import 'package:flutter/widgets.dart'  show Actions, CallbackAction;
 ```
 
 **In action_bar.dart**:
 
 ```dart
 import 'package:flutter/widgets.dart' hide Action, Actions;
-import 'package:flutter/widgets.dart' as flutter_widgets show Actions, CallbackAction, KeyEventResult;
+import 'package:flutter/widgets.dart'  show Actions, CallbackAction, KeyEventResult;
 ```
 
 ### Reverse Lists

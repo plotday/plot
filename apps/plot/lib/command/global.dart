@@ -1,22 +1,22 @@
 import 'package:flutter/widgets.dart';
 
-import 'action.dart';
+import 'command.dart';
 
 class GlobalShortcuts extends StatelessWidget {
   GlobalShortcuts({required this.child, super.key});
 
   final Widget child;
-  final List<StaticActionGroup> actions = [
-    StaticActionGroup(
+  final List<StaticCommandGroup> commands = [
+    StaticCommandGroup(
       title: 'Priorities',
-      actions: [PickCurrentPriority(), NewPriority()],
+      commands: [PickCurrentPriority(), NewPriority()],
     ),
-    settingsActions,
-    accountActions,
+    settingsCommands,
+    accountCommands,
   ];
 
   @override
   Widget build(BuildContext context) {
-    return ActionScope(actions: actions, child: child);
+    return CommandScope(commands: commands, child: child);
   }
 }

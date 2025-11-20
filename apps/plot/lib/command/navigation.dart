@@ -1,15 +1,15 @@
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart' hide Action, Actions;
+import 'package:flutter/widgets.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/analytics/analytics.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/state/layout.dart';
-import 'action.dart';
+import 'command.dart';
 
-class CloseModalAction extends Action {
-  CloseModalAction()
+class CloseModalCommand extends Command {
+  CloseModalCommand()
     : super(
         title: 'Close',
         eventObject: EventObject.navigation,
@@ -18,14 +18,14 @@ class CloseModalAction extends Action {
       );
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     await context.router.maybePop();
-    return const ActionDone();
+    return const CommandDone();
   }
 }
 
-class ToggleLeftSidebarAction extends Action {
-  ToggleLeftSidebarAction({required this.isVisible})
+class ToggleLeftSidebarCommand extends Command {
+  ToggleLeftSidebarCommand({required this.isVisible})
     : super(
         title: isVisible ? 'Close Left Sidebar' : 'Open Left Sidebar',
         eventObject: EventObject.navigation,
@@ -36,16 +36,16 @@ class ToggleLeftSidebarAction extends Action {
   final bool isVisible;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final layoutBloc = context.read<LayoutBloc>();
     final currentState = layoutBloc.state;
     layoutBloc.setLeftPanelVisible(!currentState.leftPanelVisible);
-    return const ActionDone();
+    return const CommandDone();
   }
 }
 
-class ToggleMiddleSidebarAction extends Action {
-  ToggleMiddleSidebarAction({required this.isVisible})
+class ToggleMiddleSidebarCommand extends Command {
+  ToggleMiddleSidebarCommand({required this.isVisible})
     : super(
         title: isVisible ? 'Close Middle Sidebar' : 'Open Middle Sidebar',
         eventObject: EventObject.navigation,
@@ -56,16 +56,16 @@ class ToggleMiddleSidebarAction extends Action {
   final bool isVisible;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     final layoutBloc = context.read<LayoutBloc>();
     final currentState = layoutBloc.state;
     layoutBloc.setMiddlePanelVisible(!currentState.middlePanelVisible);
-    return const ActionDone();
+    return const CommandDone();
   }
 }
 
-class ToggleSearchAction extends Action {
-  ToggleSearchAction({required this.searchExpanded, required this.onToggle})
+class ToggleSearchCommand extends Command {
+  ToggleSearchCommand({required this.searchExpanded, required this.onToggle})
     : super(
         title: searchExpanded ? 'Close Search' : 'Search',
         eventObject: EventObject.navigation,
@@ -78,8 +78,8 @@ class ToggleSearchAction extends Action {
   final VoidCallback onToggle;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     onToggle();
-    return const ActionDone();
+    return const CommandDone();
   }
 }

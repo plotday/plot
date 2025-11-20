@@ -3,7 +3,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/store/store.dart' hide Link;
-import 'package:plot/action/settings.dart';
+import 'package:plot/command/settings.dart';
 import 'logging.dart';
 
 @RoutePage()

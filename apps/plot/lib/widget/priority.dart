@@ -1,6 +1,6 @@
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 
 class PriorityWidget extends StatelessWidget {
   const PriorityWidget({
@@ -26,10 +26,10 @@ class PriorityWidget extends StatelessWidget {
     bool isContext = priority == this.context;
     // bool contextChild = priority.parentId == this.context?.id;
     return ListTile(
-      action: !isContext
-          ? ActionWrapper(ChangeCurrentPriority(priority), icon: Value(null))
+      command: !isContext
+          ? CommandWrapper(ChangeCurrentPriority(priority), icon: Value(null))
           : null,
-      trailingActions: [ShowPriorityActions(priority)],
+      trailingCommands: [ShowPriorityCommands(priority)],
       body: PriorityLabel(priority: priority),
       highlighted: selected,
       onHover: onHover,

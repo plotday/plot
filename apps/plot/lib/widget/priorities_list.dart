@@ -1,5 +1,5 @@
 import 'package:plot/store/store.dart';
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/widget/widget.dart';
 
 class PrioritiesList extends StatelessWidget {
@@ -22,7 +22,7 @@ class PrioritiesList extends StatelessWidget {
         // First group: Everything root priority
         ListTile(
           title: root.title,
-          action: ChangeCurrentPriority(root),
+          command: ChangeCurrentPriority(root),
           selected: selected?.id == root.id,
         ),
 
@@ -54,7 +54,7 @@ class PrioritiesList extends StatelessWidget {
       ListTile(
         key: ValueKey('${topSection ? 'top' : 'all'}-${priority.id}'),
         title: priority.title,
-        action: ChangeCurrentPriority(priority, ancestry: topSection),
+        command: ChangeCurrentPriority(priority, ancestry: topSection),
         selected: selected?.id == priority.id,
         selectedBorder: topSection || priority.topOrder == null,
         indentLevel: indentLevel,

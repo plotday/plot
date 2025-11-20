@@ -1,7 +1,4 @@
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart'
-    as flutter_widgets
-    show Actions, CallbackAction;
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/store/store.dart';
@@ -10,7 +7,7 @@ import 'package:plot/widget/resizable_panel_layout.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/router.dart';
 import 'priorities.dart';
 import 'loading.dart';
@@ -40,11 +37,11 @@ class PriorityWrapper implements AutoRouteWrapper {
       priorityId: priorityId,
       child: BlocBuilder<PriorityBloc, PriorityState>(
         builder: (context, state) {
-          return ActionScope(
-            actions: [
-              StaticActionGroup(
+          return CommandScope(
+            commands: [
+              StaticCommandGroup(
                 title: state.context.title,
-                actions: currentPriorityActions(state.context),
+                commands: currentPriorityCommands(state.context),
               ),
             ],
             child: _PriorityShortcutsProvider(
@@ -117,35 +114,32 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
           builder: (context, layoutState) {
             // Always register Cmd-Up/Down for Priority list navigation
             // These should take priority over ActivityPage shortcuts
-            return flutter_widgets.Actions(
+            return Actions(
               actions: {
-                MoveFocusUpIntent:
-                    flutter_widgets.CallbackAction<MoveFocusUpIntent>(
-                      onInvoke: (_) {
-                        // Only handle if we have a controller (meaning PriorityPage is visible)
-                        if (_priorityListController != null) {
-                          _priorityListController!.moveFocus(-1);
-                        }
-                        return null;
-                      },
-                    ),
-                MoveFocusDownIntent:
-                    flutter_widgets.CallbackAction<MoveFocusDownIntent>(
-                      onInvoke: (_) {
-                        if (_priorityListController != null) {
-                          _priorityListController!.moveFocus(1);
-                        }
-                        return null;
-                      },
-                    ),
-                ClearItemFocusIntent:
-                    flutter_widgets.CallbackAction<ClearItemFocusIntent>(
-                      onInvoke: (_) {
-                        // When ActivityPage or NewActivityPage is open, Escape should focus ActivityEditor
-                        _activityEditorFocusCallback?.call();
-                        return null;
-                      },
-                    ),
+                MoveFocusUpIntent: CallbackAction<MoveFocusUpIntent>(
+                  onInvoke: (_) {
+                    // Only handle if we have a controller (meaning PriorityPage is visible)
+                    if (_priorityListController != null) {
+                      _priorityListController!.moveFocus(-1);
+                    }
+                    return null;
+                  },
+                ),
+                MoveFocusDownIntent: CallbackAction<MoveFocusDownIntent>(
+                  onInvoke: (_) {
+                    if (_priorityListController != null) {
+                      _priorityListController!.moveFocus(1);
+                    }
+                    return null;
+                  },
+                ),
+                ClearItemFocusIntent: CallbackAction<ClearItemFocusIntent>(
+                  onInvoke: (_) {
+                    // When ActivityPage or NewActivityPage is open, Escape should focus ActivityEditor
+                    _activityEditorFocusCallback?.call();
+                    return null;
+                  },
+                ),
               },
               child: Shortcuts(
                 shortcuts: <ShortcutActivator, Intent>{
@@ -374,34 +368,26 @@ class PriorityPage extends StatelessWidget {
 
                         return Shortcuts(
                           shortcuts: shortcuts,
-                          child: flutter_widgets.Actions(
+                          child: Actions(
                             actions: {
-                              MoveFocusUpIntent:
-                                  flutter_widgets.CallbackAction<
-                                    MoveFocusUpIntent
-                                  >(
-                                    onInvoke: (intent) {
-                                      // For Cmd-Up/Down: always move focus in PriorityPage
-                                      // This is triggered by global shortcuts for Cmd-Up/Down
-                                      listController.moveFocus(-1);
-                                      return null;
-                                    },
-                                  ),
-                              MoveFocusDownIntent:
-                                  flutter_widgets.CallbackAction<
-                                    MoveFocusDownIntent
-                                  >(
-                                    onInvoke: (intent) {
-                                      // For Cmd-Down: always move focus in PriorityPage
-                                      // This is triggered by global shortcuts for Cmd-Up/Down
-                                      listController.moveFocus(1);
-                                      return null;
-                                    },
-                                  ),
+                              MoveFocusUpIntent: CallbackAction<MoveFocusUpIntent>(
+                                onInvoke: (intent) {
+                                  // For Cmd-Up/Down: always move focus in PriorityPage
+                                  // This is triggered by global shortcuts for Cmd-Up/Down
+                                  listController.moveFocus(-1);
+                                  return null;
+                                },
+                              ),
+                              MoveFocusDownIntent: CallbackAction<MoveFocusDownIntent>(
+                                onInvoke: (intent) {
+                                  // For Cmd-Down: always move focus in PriorityPage
+                                  // This is triggered by global shortcuts for Cmd-Up/Down
+                                  listController.moveFocus(1);
+                                  return null;
+                                },
+                              ),
                               OpenFocusedItemActionsIntent:
-                                  flutter_widgets.CallbackAction<
-                                    OpenFocusedItemActionsIntent
-                                  >(
+                                  CallbackAction<OpenFocusedItemActionsIntent>(
                                     onInvoke: (_) {
                                       final focusedIndex =
                                           listController.focusedIndex;
@@ -424,28 +410,28 @@ class PriorityPage extends StatelessWidget {
                                                   : null;
                                               return item?.iff(
                                                     activity: (activity) =>
-                                                        activityActionGroups(
+                                                        activityCommandGroups(
                                                           activity,
                                                         ),
                                                     priority: (priority) {
                                                       if (priority.id ==
                                                           state.context.id) {
                                                         return <
-                                                          StaticActionGroup
+                                                          StaticCommandGroup
                                                         >[];
                                                       }
                                                       return [
-                                                        StaticActionGroup(
+                                                        StaticCommandGroup(
                                                           title: priority.title,
-                                                          actions:
-                                                              priorityActions(
+                                                          commands:
+                                                              priorityCommands(
                                                                 priority,
                                                               ),
                                                         ),
                                                       ];
                                                     },
                                                   ) ??
-                                                  <StaticActionGroup>[];
+                                                  <StaticCommandGroup>[];
                                             },
                                           ),
                                         );
@@ -454,9 +440,7 @@ class PriorityPage extends StatelessWidget {
                                     },
                                   ),
                               ClearItemFocusIntent:
-                                  flutter_widgets.CallbackAction<
-                                    ClearItemFocusIntent
-                                  >(
+                                  CallbackAction<ClearItemFocusIntent>(
                                     onInvoke: (_) {
                                       listController.clearFocus();
                                       // When ActivityPage is open, also focus ActivityEditor
@@ -467,7 +451,7 @@ class PriorityPage extends StatelessWidget {
                                     },
                                   ),
                             },
-                            child: SelectionActionScope(
+                            child: SelectionCommandScope(
                               actionBuilder: (index) {
                                 final item =
                                     index >= state.first &&
@@ -477,21 +461,23 @@ class PriorityPage extends StatelessWidget {
                                     : null;
                                 return item?.iff(
                                       activity: (activity) =>
-                                          activityActionGroups(activity),
+                                          activityCommandGroups(activity),
                                       priority: (priority) {
-                                        // Skip if this is the context priority (already added by outer ActionScope)
+                                        // Skip if this is the context priority (already added by outer CommandScope)
                                         if (priority.id == state.context.id) {
-                                          return <StaticActionGroup>[];
+                                          return <StaticCommandGroup>[];
                                         }
                                         return [
-                                          StaticActionGroup(
+                                          StaticCommandGroup(
                                             title: priority.title,
-                                            actions: priorityActions(priority),
+                                            commands: priorityCommands(
+                                              priority,
+                                            ),
                                           ),
                                         ];
                                       },
                                     ) ??
-                                    <StaticActionGroup>[];
+                                    <StaticCommandGroup>[];
                               },
                               listController: listController,
                               child: Scaffold(
@@ -507,10 +493,10 @@ class PriorityPage extends StatelessWidget {
                                   onSearchChanged: (search) => context
                                       .read<PriorityBloc>()
                                       .updateSearch(search),
-                                  actions: [
-                                    PickFilterAction(),
+                                  commands: [
+                                    PickFilterCommand(),
                                     NewActivity(),
-                                    ShowPriorityActions(
+                                    ShowPriorityCommands(
                                       state.context,
                                       current: true,
                                     ),

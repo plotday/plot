@@ -1,6 +1,6 @@
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 
 class DayHeader extends StatelessWidget {
   const DayHeader({
@@ -66,10 +66,10 @@ class AgendaHeader extends StatelessWidget {
     );
 
     return ListTile(
-      action: activity?.draft == false
+      command: activity?.draft == false
           ? ChangeCurrentActivity(activity!)
           : priorityAncestry?.isNotEmpty == true
-          ? ActionWrapper(
+          ? CommandWrapper(
               OpenPriority.byId(priorityAncestry!.last.id),
               icon: Value(null),
             )

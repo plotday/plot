@@ -8,7 +8,7 @@ import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'widget/window.dart';
 import 'widget/widget.dart';
-import 'action/action.dart';
+import 'command/command.dart';
 
 class App extends StatefulWidget {
   const App({super.key});
@@ -27,7 +27,7 @@ class AppState extends State<App> {
         child: ColourScheme(
           child: Builder(
             builder: (context) => Window(
-              child: ActionProvider(
+              child: CommandProvider(
                 child: FTheme(
                   data: buildTheme(context.colour),
                   child: RootProvider(

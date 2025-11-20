@@ -1,11 +1,8 @@
-import 'package:flutter/widgets.dart' hide Action, Actions;
-import 'package:flutter/widgets.dart'
-    as flutter_widgets
-    show Actions, CallbackAction, KeyEventResult;
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 
 import 'package:plot/widget/list_view_selector.dart';
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/analytics/analytics.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
@@ -15,7 +12,7 @@ import 'logging.dart';
 
 /// A generic selection bar dialog for selecting items from a list.
 ///
-/// Similar to ActionBar but for item selection instead of action execution.
+/// Similar to CommandBar but for item selection instead of action execution.
 class SelectBar<T> extends Dialog {
   SelectBar({
     required this.items,
@@ -131,7 +128,8 @@ class _SelectBarState<T> extends State<_SelectBar<T>> {
         // Find the selected item's index to highlight it
         if (widget.selectedValue != null && _controller.text.isEmpty) {
           final selectedIndex = itemsList.indexWhere((item) {
-            return widget.labelBuilder(item) == widget.labelBuilder(widget.selectedValue as T);
+            return widget.labelBuilder(item) ==
+                widget.labelBuilder(widget.selectedValue as T);
           });
           if (selectedIndex >= 0) {
             _highlightedIndex = selectedIndex;
@@ -194,37 +192,38 @@ class _SelectBarState<T> extends State<_SelectBar<T>> {
 
         return Shortcuts(
           shortcuts: const {
-            SingleActivator(LogicalKeyboardKey.arrowUp): MoveListSelectionIntent(-1),
-            SingleActivator(LogicalKeyboardKey.arrowDown): MoveListSelectionIntent(1),
-            SingleActivator(LogicalKeyboardKey.enter): ActivateListSelectionIntent(),
+            SingleActivator(LogicalKeyboardKey.arrowUp):
+                MoveListSelectionIntent(-1),
+            SingleActivator(LogicalKeyboardKey.arrowDown):
+                MoveListSelectionIntent(1),
+            SingleActivator(LogicalKeyboardKey.enter):
+                ActivateListSelectionIntent(),
             SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
           },
-          child: flutter_widgets.Actions(
+          child: Actions(
             actions: {
-              MoveListSelectionIntent:
-                  flutter_widgets.CallbackAction<MoveListSelectionIntent>(
-                    onInvoke: (intent) {
-                      _moveHighlight(intent.offset);
-                      return flutter_widgets.KeyEventResult.handled;
-                    },
-                  ),
+              MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
+                onInvoke: (intent) {
+                  _moveHighlight(intent.offset);
+                  return KeyEventResult.handled;
+                },
+              ),
               ActivateListSelectionIntent:
-                  flutter_widgets.CallbackAction<ActivateListSelectionIntent>(
+                  CallbackAction<ActivateListSelectionIntent>(
                     onInvoke: (intent) {
                       if (_filteredItems.isNotEmpty) {
                         _selectItem(_filteredItems[_highlightedIndex]);
-                        return flutter_widgets.KeyEventResult.handled;
+                        return KeyEventResult.handled;
                       }
-                      return flutter_widgets.KeyEventResult.ignored;
+                      return KeyEventResult.ignored;
                     },
                   ),
-              DismissIntent:
-                  flutter_widgets.CallbackAction<DismissIntent>(
-                    onInvoke: (intent) {
-                      _cancel();
-                      return flutter_widgets.KeyEventResult.handled;
-                    },
-                  ),
+              DismissIntent: CallbackAction<DismissIntent>(
+                onInvoke: (intent) {
+                  _cancel();
+                  return KeyEventResult.handled;
+                },
+              ),
             },
             child: LayoutBuilder(
               builder: (context, constraints) => Column(
@@ -263,7 +262,7 @@ class _SelectBarState<T> extends State<_SelectBar<T>> {
                         final subtitle = widget.subtitleBuilder?.call(item);
 
                         // Create a simple action for the ListTile
-                        final action = _SelectItemAction<T>(
+                        final action = _SelectItemCommand<T>(
                           title: label,
                           subtitle: subtitle,
                           onSelect: () => _selectItem(item),
@@ -273,13 +272,14 @@ class _SelectBarState<T> extends State<_SelectBar<T>> {
                           onEnter: (_) => listController.setHovered(index),
                           onExit: (_) => listController.setHovered(null),
                           child: ListTile(
-                            action: action,
+                            command: action,
                             highlighted: index == _highlightedIndex,
                           ),
                         );
                       },
                     ),
                   ),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),
@@ -290,9 +290,9 @@ class _SelectBarState<T> extends State<_SelectBar<T>> {
   }
 }
 
-/// Simple action for selecting an item in SelectBar
-class _SelectItemAction<T> extends Action {
-  _SelectItemAction({
+/// Simple command for selecting an item in SelectBar
+class _SelectItemCommand<T> extends Command {
+  _SelectItemCommand({
     required super.title,
     super.subtitle,
     required this.onSelect,
@@ -304,8 +304,8 @@ class _SelectItemAction<T> extends Action {
   final VoidCallback onSelect;
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     onSelect();
-    return const ActionDone();
+    return const CommandDone();
   }
 }

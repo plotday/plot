@@ -3,7 +3,7 @@
 /// Format: Category:Object:Action
 ///
 /// Categories:
-/// - action: User-initiated actions (actions, CRUD operations)
+/// - command: User-initiated actions (actions, CRUD operations)
 /// - navigation: Screen/route changes
 /// - error: Errors and failures
 /// - performance: Performance monitoring events

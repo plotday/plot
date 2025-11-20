@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/api/twist_api.dart';
 
 class ActivityEditor extends StatefulWidget {
@@ -80,11 +80,11 @@ class ActivityEditorState extends State<ActivityEditor> {
                     const Spacer(),
                     // Right side: Save button
                     Button.icon(
-                      ActionWrapper(
+                      CommandWrapper(
                         AddActivity(Future.value(widget.draft)),
                         run: (action, context) async {
                           _editorKey.currentState?.submit(false);
-                          return const ActionDone();
+                          return const CommandDone();
                         },
                       ),
                       expand: false,

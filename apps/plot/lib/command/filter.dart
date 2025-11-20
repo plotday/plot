@@ -1,15 +1,15 @@
-import 'package:flutter/widgets.dart' hide Action, Actions;
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 
-import 'action.dart';
+import 'command.dart';
 import 'package:plot/analytics/analytics.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/widget/icon.dart';
 
-class SetActivityFilters extends Action {
+class SetActivityFilters extends Command {
   SetActivityFilters({required this.filters, String? title})
     : super(
         title: title ?? _generateTitle(filters),
@@ -42,7 +42,7 @@ class SetActivityFilters extends Action {
   }
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     // Try to find PriorityBloc in scope
     try {
       final priorityBloc = context.read<PriorityBloc>();
@@ -59,11 +59,11 @@ class SetActivityFilters extends Action {
       // ActivityBloc not in scope, continue
     }
 
-    return const ActionDone();
+    return const CommandDone();
   }
 }
 
-class ToggleActivityFilter extends Action {
+class ToggleActivityFilter extends Command {
   ToggleActivityFilter._({required this.tag, super.on})
     : super(
         title: tag.name,
@@ -97,7 +97,7 @@ class ToggleActivityFilter extends Action {
   }
 
   @override
-  Future<ActionReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) async {
     // Try to find ActivityBloc in scope
     try {
       final activityBloc = context.read<ActivityBloc>();
@@ -134,29 +134,29 @@ class ToggleActivityFilter extends Action {
       // PriorityBloc not in scope, continue
     }
 
-    return const ActionDone();
+    return const CommandDone();
   }
 }
 
-class PickFilterAction extends ShowActions {
-  PickFilterAction()
+class PickFilterCommand extends ShowCommands {
+  PickFilterCommand()
     : super(
         title: 'Pick Filter',
         icon: PlotIcon.filter,
         description: 'Select tags to filter activities',
-        actions: (context) async {
+        commands: (context) async {
           final tags = Tag.getAll();
-          final actions = tags
+          final commands = tags
               .map((tag) => ToggleActivityFilter(tag, context: context))
               .toList();
-          final remove = actions.where((cmd) => cmd.on == true).toList();
-          final add = actions.where((cmd) => cmd.on != true).toList();
+          final remove = commands.where((cmd) => cmd.on == true).toList();
+          final add = commands.where((cmd) => cmd.on != true).toList();
 
-          return Actions(
+          return Commands(
             prompt: 'Pick filters',
             groups: [
-              StaticActionGroup(title: 'Remove Filter', actions: remove),
-              StaticActionGroup(title: 'Add Filter', actions: add),
+              StaticCommandGroup(title: 'Remove Filter', commands: remove),
+              StaticCommandGroup(title: 'Add Filter', commands: add),
             ],
           );
         },

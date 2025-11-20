@@ -1,4 +1,4 @@
-// class PickEventResponse extends ShowActions {
+// class PickEventResponse extends ShowCommands {
 //   PickEventResponse(Event event)
 //     : super(
 //         title: 'Change Response',
@@ -7,9 +7,9 @@
 //           Actions(
 //             prompt: 'Select response',
 //             groups: [
-//               StaticActionGroup(
+//               StaticCommandGroup(
 //                 title: 'Response Options',
-//                 actions: [
+//                 commands: [
 //                   ChangeEventResponse(
 //                     event,
 //                     EventResponse.accepted,
@@ -39,7 +39,7 @@
 //       );
 // }
 //
-// class ChangeEventResponse extends Action {
+// class ChangeEventResponse extends Command {
 //   ChangeEventResponse(
 //     this.event,
 //     this.response, {
@@ -51,7 +51,7 @@
 //   final EventResponse response;
 //
 //   @override
-//   Future<ActionReturn> run(BuildContext context) async {
+//   Future<CommandReturn> run(BuildContext context) async {
 //     await event
 //         .copyWith(
 //           response: Value(response),
@@ -60,6 +60,6 @@
 //               : Value(null),
 //         )
 //         .save();
-//     return const ActionDone();
+//     return const CommandDone();
 //   }
 // }

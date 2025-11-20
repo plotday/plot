@@ -1,7 +1,7 @@
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_link.dart';
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 
 class ActivityWidget extends StatelessWidget {
   const ActivityWidget({
@@ -26,7 +26,7 @@ class ActivityWidget extends StatelessWidget {
     final hasVisibleLinks = activity.links.isNotEmpty;
 
     return ListTile(
-      action: ActionWrapper(ChangeCurrentActivity(activity), icon: Value(null)),
+      command: CommandWrapper(ChangeCurrentActivity(activity), icon: Value(null)),
       title: activity.displayTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -59,7 +59,7 @@ class ActivityWidget extends StatelessWidget {
                 ),
               ),
               ActivityTags(activity: activity),
-              Button.icon(ShowActivityActions(activity)),
+              Button.icon(ShowActivityCommands(activity)),
             ],
           ),
           if (hasVisibleLinks) ...[
@@ -134,7 +134,7 @@ class ActivityDetailWidget extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               ActivityTags(activity: activity),
-              Button.icon(ShowActivityActions(activity, open: false)),
+              Button.icon(ShowActivityCommands(activity, open: false)),
             ],
           ),
         ],

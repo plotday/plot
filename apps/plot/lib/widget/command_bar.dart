@@ -1,11 +1,8 @@
-import 'package:flutter/widgets.dart' hide Action, Actions;
-import 'package:flutter/widgets.dart'
-    as flutter_widgets
-    show Actions, CallbackAction, KeyEventResult;
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/widget/bidirectional_list.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
@@ -14,47 +11,47 @@ import 'button.dart';
 import 'theme.dart';
 import 'logging.dart';
 
-class ActionBar extends Dialog {
-  ActionBar(
-    Actions actions, {
-    Action? Function(String promptValue)? secondaryAction,
+class CommandBar extends Dialog {
+  CommandBar(
+    Commands commands, {
+    Command? Function(String promptValue)? secondaryCommand,
     required BuildContext rootContext,
   }) : super(
          padding: const EdgeInsets.all(0),
-         builder: (_) => _ActionBar(
-           actions,
-           secondaryAction: secondaryAction,
+         builder: (_) => _CommandBar(
+           commands,
+           secondaryCommand: secondaryCommand,
            rootContext: rootContext,
          ),
-         key: ObjectKey(actions),
+         key: ObjectKey(commands),
        );
 
-  Future<ActionReturn> run(BuildContext context) {
+  Future<CommandReturn> run(BuildContext context) {
     return super
-        .show<ActionReturn>(context)
-        .then((value) => value.present ? value.value : const ActionSkipped());
+        .show<CommandReturn>(context)
+        .then((value) => value.present ? value.value : const CommandSkipped());
   }
 }
 
-class _ActionBar extends StatefulWidget {
-  const _ActionBar(
-    this.actions, {
-    this.secondaryAction,
+class _CommandBar extends StatefulWidget {
+  const _CommandBar(
+    this.commands, {
+    this.secondaryCommand,
     required this.rootContext,
   });
 
-  final Actions actions;
-  final Action? Function(String promptValue)? secondaryAction;
+  final Commands commands;
+  final Command? Function(String promptValue)? secondaryCommand;
   final BuildContext rootContext;
 
   @override
-  ActionBarState createState() => ActionBarState();
+  CommandBarState createState() => CommandBarState();
 }
 
-class ActionBarState extends State<_ActionBar> {
+class CommandBarState extends State<_CommandBar> {
   final TextEditingController _controller = TextEditingController();
-  List<StaticActionGroup> _filteredActionGroups = [];
-  late Actions actions = widget.actions;
+  List<StaticCommandGroup> _filteredCommandGroups = [];
+  late Commands commands = widget.commands;
   Widget? _child;
   String? _error;
   bool _isDisposed = false;
@@ -64,37 +61,37 @@ class ActionBarState extends State<_ActionBar> {
   void initState() {
     super.initState();
 
-    _initActions();
-    _controller.addListener(_initActions);
+    _initCommands();
+    _controller.addListener(_initCommands);
   }
 
   @override
   void dispose() {
     _isDisposed = true;
-    _controller.removeListener(_initActions);
+    _controller.removeListener(_initCommands);
     super.dispose();
   }
 
-  void _initActions() async {
+  void _initCommands() async {
     try {
       setState(() {
         _error = null;
       });
       final searchText = _controller.text;
-      final actionsList = await actions.list(search: searchText);
+      final commandsList = await commands.list(search: searchText);
 
       if (_isDisposed) return;
 
       setState(() {
-        if (actionsList.isEmpty) {
+        if (commandsList.isEmpty) {
           _error = 'No matches';
         }
-        _filteredActionGroups = actionsList;
-        // Reset highlight to first item when actions change
+        _filteredCommandGroups = commandsList;
+        // Reset highlight to first item when commands change
         _highlightedIndex = 0;
       });
     } catch (e, t) {
-      log.warning('Error initializing actions', e, t);
+      log.warning('Error initializing commands', e, t);
       if (!_isDisposed) {
         setState(() {
           _error = 'Search failed.';
@@ -103,53 +100,53 @@ class ActionBarState extends State<_ActionBar> {
     }
   }
 
-  int _allActionsCount() {
-    return _filteredActionGroups.fold(
+  int _allCommandsCount() {
+    return _filteredCommandGroups.fold(
       0,
-      (total, group) => total + group.actions.length,
+      (total, group) => total + group.commands.length,
     );
   }
 
   void _moveHighlight(int offset) {
     setState(() {
-      final totalCount = _allActionsCount();
+      final totalCount = _allCommandsCount();
       if (totalCount == 0) return;
 
       _highlightedIndex = (_highlightedIndex + offset).clamp(0, totalCount - 1);
     });
   }
 
-  Future<ActionReturn> _executeAction(Action action) async {
+  Future<CommandReturn> _executeCommand(Command command) async {
     setState(() {
       _error = null;
     });
     try {
       // Use rootContext which has access to providers
-      final result = await action.run(widget.rootContext);
-      if (!mounted) return const ActionSkipped();
-      if (result is ActionSkipped) {
+      final result = await command.run(widget.rootContext);
+      if (!mounted) return const CommandSkipped();
+      if (result is CommandSkipped) {
         return result;
-      } else if (result is ActionMessage) {
+      } else if (result is CommandMessage) {
         if (result.isError) {
           setState(() {
             _error = result.message;
           });
-          return const ActionDone();
+          return const CommandDone();
         } else {
           // TODO: Show success message in a non-intrusive way
         }
       }
       Dialog.popAll(context);
-      if (context.mounted && result is ActionRoute) {
+      if (context.mounted && result is CommandRoute) {
         result.go(widget.rootContext);
       }
     } catch (e, stackTrace) {
-      log.warning('Error executing action', e, stackTrace);
+      log.warning('Error executing command', e, stackTrace);
       setState(() {
         _error = 'Something went wrong';
       });
     }
-    return const ActionDone();
+    return const CommandDone();
   }
 
   @override
@@ -166,12 +163,12 @@ class ActionBarState extends State<_ActionBar> {
       );
     }
 
-    final secondaryAction = widget.secondaryAction?.call(_controller.text);
-    final totalActionCount = _allActionsCount();
+    final secondaryCommand = widget.secondaryCommand?.call(_controller.text);
+    final totalCommandCount = _allCommandsCount();
 
     return BidirectionalListSelector(
-      key: ValueKey(totalActionCount),
-      onActivate: (index) => _executeAction(_getActionAtIndex(index)),
+      key: ValueKey(totalCommandCount),
+      onActivate: (index) => _executeCommand(_getCommandAtIndex(index)),
       builder: (context, listController) => Shortcuts(
         shortcuts: const {
           SingleActivator(LogicalKeyboardKey.arrowUp): MoveListSelectionIntent(
@@ -182,23 +179,22 @@ class ActionBarState extends State<_ActionBar> {
           SingleActivator(LogicalKeyboardKey.enter):
               ActivateListSelectionIntent(),
         },
-        child: flutter_widgets.Actions(
+        child: Actions(
           actions: {
-            MoveListSelectionIntent:
-                flutter_widgets.CallbackAction<MoveListSelectionIntent>(
-                  onInvoke: (intent) {
-                    _moveHighlight(intent.offset);
-                    return flutter_widgets.KeyEventResult.handled;
-                  },
-                ),
+            MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
+              onInvoke: (intent) {
+                _moveHighlight(intent.offset);
+                return KeyEventResult.handled;
+              },
+            ),
             ActivateListSelectionIntent:
-                flutter_widgets.CallbackAction<ActivateListSelectionIntent>(
+                CallbackAction<ActivateListSelectionIntent>(
                   onInvoke: (intent) {
-                    if (_allActionsCount() > 0) {
-                      _executeAction(_getActionAtIndex(_highlightedIndex));
-                      return flutter_widgets.KeyEventResult.handled;
+                    if (_allCommandsCount() > 0) {
+                      _executeCommand(_getCommandAtIndex(_highlightedIndex));
+                      return KeyEventResult.handled;
                     }
-                    return flutter_widgets.KeyEventResult.ignored;
+                    return KeyEventResult.ignored;
                   },
                 ),
           },
@@ -220,17 +216,17 @@ class ActionBarState extends State<_ActionBar> {
                                   style: TextFieldStyle.ghost,
                                   controller: _controller,
                                   autofocus: true,
-                                  label: "${widget.actions.prompt}…",
+                                  label: "${widget.commands.prompt}…",
                                   focusNode: focusNode,
                                 ),
                               ),
                             ),
-                            if (secondaryAction != null)
+                            if (secondaryCommand != null)
                               Button.icon(
-                                ActionWrapper(
-                                  secondaryAction,
+                                CommandWrapper(
+                                  secondaryCommand,
                                   run: (_, _) =>
-                                      _executeAction(secondaryAction),
+                                      _executeCommand(secondaryCommand),
                                 ),
                               ),
                           ],
@@ -241,11 +237,11 @@ class ActionBarState extends State<_ActionBar> {
                         child: BidirectionalList(
                           // shrinkWrap: true,
                           controller: listController,
-                          count: totalActionCount,
+                          count: totalCommandCount,
                           builder: (context, index, focusNode) {
                             final group = _getGroupAtIndex(index);
-                            final action = _getActionAtIndex(index);
-                            final body = action.buildBody(context);
+                            final command = _getCommandAtIndex(index);
+                            final body = command.buildBody(context);
                             Widget? header;
                             Widget? info;
                             if (group.title != null &&
@@ -286,7 +282,7 @@ class ActionBarState extends State<_ActionBar> {
                                 if (header != null) header,
                                 if (info != null) info,
                                 ListTile(
-                                  action: action,
+                                  command: command,
                                   body: body,
                                   highlighted: index == _highlightedIndex,
                                 ),
@@ -303,23 +299,26 @@ class ActionBarState extends State<_ActionBar> {
     );
   }
 
-  StaticActionGroup _getGroupAtIndex(int index) {
+  StaticCommandGroup _getGroupAtIndex(int index) {
     int currentIndex = 0;
-    for (final group in _filteredActionGroups) {
-      if (index < currentIndex + group.actions.length) {
+    for (final group in _filteredCommandGroups) {
+      if (index < currentIndex + group.commands.length) {
         return group;
       }
-      currentIndex += group.actions.length;
+      currentIndex += group.commands.length;
     }
     throw Exception('Action index out of range');
   }
 
-  Action _getActionAtIndex(int index) {
+  Command _getCommandAtIndex(int index) {
     int currentIndex = 0;
-    for (final group in _filteredActionGroups) {
-      for (final action in group.actions) {
+    for (final group in _filteredCommandGroups) {
+      for (final command in group.commands) {
         if (currentIndex == index) {
-          return ActionWrapper(action, run: (_, _) => _executeAction(action));
+          return CommandWrapper(
+            command,
+            run: (_, _) => _executeCommand(command),
+          );
         }
         currentIndex++;
       }

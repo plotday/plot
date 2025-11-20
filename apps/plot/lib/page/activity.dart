@@ -8,7 +8,7 @@ import 'package:plot/widget/activity_editor.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/activity.dart';
 import 'package:plot/state/layout.dart';
-import 'package:plot/action/action.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 
@@ -90,12 +90,12 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
   Widget _buildContent(BuildContext context, ActivityState state) {
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutStateForPanels) {
-        final prefixActions = <Action>[];
+        final prefixActions = <Command>[];
 
         // Add back button when middle panel is not visible
         if (!layoutStateForPanels.middlePanelVisible) {
           prefixActions.add(
-            ActionWrapper(
+            CommandWrapper(
               ChangeCurrentActivity(null),
               icon: Value(PlotIcon.back),
             ),
@@ -153,7 +153,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                           OpenFocusedItemActions(listController, (index) {
                             final activity = _getActivityAtIndex(state, index);
                             if (activity == null) return [];
-                            return activityActionGroups(activity, open: false);
+                            return activityCommandGroups(activity, open: false);
                           }),
                         );
                         return KeyEventResult.handled;
@@ -171,11 +171,11 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                 // Let all other events (including Cmd-Up/Down) bubble up
                 return KeyEventResult.ignored;
               },
-              child: ActionScope(
-                actions: [
-                  StaticActionGroup(
+              child: CommandScope(
+                commands: [
+                  StaticCommandGroup(
                     title: state.activity.displayTitle,
-                    actions: activityActions(state.activity),
+                    commands: activityCommands(state.activity),
                   ),
                 ],
                 child: Scaffold(
@@ -183,12 +183,12 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                   translucent: true,
                   header: Header(
                     title: state.activity.displayTitle,
-                    prefixActions: prefixActions,
+                    prefixCommands: prefixActions,
                     onSearchChanged: (search) =>
                         context.read<ActivityBloc>().updateSearch(search),
-                    actions: [
-                      PickFilterAction(),
-                      ShowActivityActions(state.activity),
+                    commands: [
+                      PickFilterCommand(),
+                      ShowActivityCommands(state.activity),
                     ],
                   ),
                   body: Column(
