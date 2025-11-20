@@ -88,17 +88,19 @@ jobs:
         with:
           submodules: true
 
-      - name: Load secrets
-        uses: 1password/load-secrets-action@v2
-        with:
-          export-env: true
+      - name: Load secrets from .env
+        uses: 1password/load-secrets-action@v3
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
-          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
-          POSTHOG_HOST: op://Production/PostHog/hostname
-          POSTHOG_PROJECT: op://Production/PostHog/username
-          POSTHOG_CLI_KEY: op://Production/PostHog/sourcemaps/credential
+          OP_ENV_FILE: .env
+          ENV: Production
+
+      - name: Load secrets from .env.production
+        uses: 1password/load-secrets-action@v3
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENV_FILE: .env.production
+          ENV: Production
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4

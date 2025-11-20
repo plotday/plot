@@ -45,36 +45,19 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v2
-        with:
-          export-env: true
+      - name: Load secrets from .env
+        uses: 1password/load-secrets-action@v3
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ENV: Production
+          OP_ENV_FILE: .env
 
-          SUPABASE_URL: op://Production/Supabase/API/url
-          SUPABASE_ANON_KEY: op://Production/Supabase/API/public key
-          POSTHOG_HOST: op://Production/PostHog/hostname
-          POSTHOG_PROJECT: op://Production/PostHog/username
-          POSTHOG_CLI_KEY: op://Production/PostHog/sourcemaps/credential
-          POSTHOG_API_KEY: op://Production/PostHog/credential
-          GOOGLE_URL: op://Production/Google OAuth/url
-          GOOGLE_CLIENT_ID: op://Production/Google OAuth/username
-          GOOGLE_IOS_CLIENT_ID: op://Production/Google OAuth/iOS/client ID
-          GOOGLE_ANDROID_CLIENT_ID: op://Production/Google OAuth/Android/client ID
-          MICROSOFT_CLIENT_ID: op://Production/Microsoft OAuth/username
-
-          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
-          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
-          R2_ACCESS_KEY_ID: op://Production/cloudflare/build uploads/r2 access key id
-          R2_SECRET_ACCESS_KEY: op://Production/cloudflare/build uploads/r2 secret access key
-          R2_BUCKET_NAME: op://Production/cloudflare/build uploads/r2 bucket name
-
-          APPLE_ID: op://Production/Apple/Signing/apple id
-          APPLE_TEAM_ID: op://Production/Apple/Signing/team id
-          APPLE_APP_SPECIFIC_PASSWORD: op://Production/Apple/Signing/app specific password
-          MACOS_CERTIFICATE_BASE64: op://Production/Apple/Signing/p12
-          MACOS_CERTIFICATE_PASSWORD: op://Production/Apple/Signing/password
+      - name: Load secrets from .env.production
+        uses: 1password/load-secrets-action@v3
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ENV: Production
+          OP_ENV_FILE: .env.production
 
       - name: Get version from pubspec.yaml
         id: version
@@ -99,22 +82,12 @@ jobs:
           channel: "stable"
           cache: true
 
-      - name: Create .env file
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Write .env file
         run: |
-          cd apps/plot
-          cat > .env << EOF
-          SUPABASE_URL=$SUPABASE_URL
-          SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
-          API_ROOT=https://api.plot.day
-          POSTHOG_API_KEY=${{ env.POSTHOG_API_KEY }}
-          POSTHOG_HOST=${{ env.POSTHOG_HOST }}
-          AUTH_GOOGLE_URI=${{ env.GOOGLE_URL }}
-          AUTH_GOOGLE_ID=${{ env.GOOGLE_CLIENT_ID }}
-          AUTH_GOOGLE_IOS_ID=${{ env.GOOGLE_IOS_CLIENT_ID }}
-          AUTH_GOOGLE_ANDROID_ID=${{ env.GOOGLE_ANDROID_CLIENT_ID }}
-          AUTH_MICROSOFT_ID=${{ env.MICROSOFT_CLIENT_ID }}
-          AUTH_CALLBACK_URL=https://app.plot.day/auth.html
-          EOF
+          pnpm run env --filter @plotday/plot
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4

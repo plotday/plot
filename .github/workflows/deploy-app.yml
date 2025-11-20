@@ -62,41 +62,26 @@ jobs:
 
           echo "Deploying version: $CURRENT_VERSION"
 
-      - name: Load secrets and create .env file
-        uses: 1password/load-secrets-action@v2
-        id: secrets
-        with:
-          export-env: true
+      - name: Load secrets from .env
+        uses: 1password/load-secrets-action@v3
         env:
-          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
-          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
-          SUPABASE_URL: op://Production/Supabase/API/url
-          SUPABASE_ANON_KEY: op://Production/Supabase/API/public key
-          POSTHOG_HOST: op://Production/PostHog/hostname
-          POSTHOG_PROJECT: op://Production/PostHog/username
-          POSTHOG_CLI_KEY: op://Production/PostHog/sourcemaps/credential
-          POSTHOG_API_KEY: op://Production/PostHog/credential
-          GOOGLE_URL: op://Production/Google OAuth/url
-          GOOGLE_CLIENT_ID: op://Production/Google OAuth/username
-          GOOGLE_IOS_CLIENT_ID: op://Production/Google OAuth/iOS/client ID
-          GOOGLE_ANDROID_CLIENT_ID: op://Production/Google OAuth/Android/client ID
-          MICROSOFT_CLIENT_ID: op://Production/Microsoft OAuth/username
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENV_FILE: .env
+          ENV: Production
+
+      - name: Load secrets from .env.production
+        uses: 1password/load-secrets-action@v3
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENV_FILE: .env.production
+          ENV: Production
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Write .env file
         run: |
-          cat > apps/plot/.env << EOF
-          SUPABASE_URL=${{ env.SUPABASE_URL }}
-          SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }}
-          API_ROOT=https://api.plot.day
-          POSTHOG_API_KEY=${{ env.POSTHOG_API_KEY }}
-          POSTHOG_HOST=${{ env.POSTHOG_HOST }}
-          AUTH_GOOGLE_URI=${{ env.GOOGLE_URL }}
-          AUTH_GOOGLE_ID=${{ env.GOOGLE_CLIENT_ID }}
-          AUTH_GOOGLE_IOS_ID=${{ env.GOOGLE_IOS_CLIENT_ID }}
-          AUTH_GOOGLE_ANDROID_ID=${{ env.GOOGLE_ANDROID_CLIENT_ID }}
-          AUTH_MICROSOFT_ID=${{ env.MICROSOFT_CLIENT_ID }}
-          AUTH_CALLBACK_URL=https://app.plot.day/auth.html
-          EOF
+          pnpm run env --filter @plotday/plot
 
       - uses: subosito/flutter-action@v2
         with:
