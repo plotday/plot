@@ -29,7 +29,7 @@ class ColourSchemeData extends Equatable {
       ? base.withLightness(0.98).withAlpha(0.9).toColor()
       : base.withSaturation(0.2).withLightness(0.08).toColor();
   Color get modalBackground => brightness == Brightness.light
-      ? base.withLightness(0.9).withAlpha(0.9).toColor()
+      ? base.withLightness(0.95).withAlpha(0.9).toColor()
       : base.withSaturation(0.3).withLightness(0.12).toColor();
   Color get editableBackground => brightness == Brightness.light
       ? base.withLightness(1).toColor()
