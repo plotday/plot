@@ -89,7 +89,7 @@ jobs:
           submodules: true
 
       - name: Load secrets from .env
-        uses: 1password/load-secrets-action@v3
+        uses: 1password/load-secrets-action@latest
         with:
           export-env: true
         env:
@@ -98,7 +98,7 @@ jobs:
           ENV: Production
 
       - name: Load secrets from .env.production
-        uses: 1password/load-secrets-action@v3
+        uses: 1password/load-secrets-action@latest
         with:
           export-env: true
         env:
