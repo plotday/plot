@@ -81,7 +81,7 @@ jobs:
 
       - name: Write .env file
         run: |
-          cd apps/plot && pnpm run env
+          cd apps/plot && pnpm run env:prod
 
       - uses: subosito/flutter-action@v2
         with:
