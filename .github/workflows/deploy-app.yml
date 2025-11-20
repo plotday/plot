@@ -111,7 +111,7 @@ jobs:
         run: pnpm install -w wrangler
 
       - name: Deploy
-        uses: cloudflare/wrangler-action@latest
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
