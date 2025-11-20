@@ -12,7 +12,11 @@ class PrioritiesList extends StatelessWidget {
     required this.root,
     required List<Priority> priorities,
     this.selected,
-  }) : topPriorities = priorities.where((p) => p.topOrder != null).toList();
+  }) : topPriorities = priorities
+            .where((p) => p.topOrder != null)
+            .toList()
+          ..sort((a, b) => (b.topOrder?.value ?? 0)
+              .compareTo(a.topOrder?.value ?? 0));
 
   @override
   Widget build(BuildContext context) {
@@ -29,9 +33,36 @@ class PrioritiesList extends StatelessWidget {
         // Second group: Top Priorities
         if (topPriorities.isNotEmpty) ...[
           ListTile(title: 'Top Priorities', style: ListTileStyle.header),
-          ...topPriorities.expand(
-            (priority) =>
-                _buildPriorityItems(context, priority, topSection: true),
+          ReorderableListView<Priority>(
+            list: topPriorities,
+            shrinkWrap: true,
+            itemBuilder: (context, priority) => Column(
+              key: ValueKey('top-${priority.id}'),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: _buildPriorityItems(context, priority, topSection: true),
+            ),
+            onReorder: (int oldIndex, int newIndex) async {
+              var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+              var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+
+              final currentPriority = topPriorities[oldIndex];
+              Priority? previous;
+              if (previousIndex >= 0) {
+                previous = topPriorities[previousIndex];
+              }
+              Priority? next;
+              if (nextIndex < topPriorities.length) {
+                next = topPriorities[nextIndex];
+              }
+
+              await currentPriority
+                  .copyWith(
+                    topOrder: Value(
+                      Order.between(previous?.topOrder, next?.topOrder),
+                    ),
+                  )
+                  .save();
+            },
           ),
         ],
 

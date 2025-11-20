@@ -512,7 +512,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         topOrder: topOrder,
         pomodoro: pomodoro,
         color: color,
-        root: root ?? this.root,
       ),
       parent: currentParent,
       children: children,
@@ -543,8 +542,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     // Compute new path based on parent
     if (parent == null) {
-      // Moving to root - just use the label
-      return Path(label);
+      // Moving to root is never allowed. If parent is null, it means the
+      // in-memory parent field isn't populated, so keep the original path.
+      return _originalPath ?? path;
     } else {
       // Moving to a parent - combine parent path + label
       return Path('${parent!.path.value}.$label');
@@ -564,7 +564,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Validate that moving to the new parent won't create a circular reference.
   /// Throws an exception if the new parent is a descendant of this priority.
   void _validateNoCircularReference(Path newPath) {
-    if (_originalPath == null) return; // New priorities can't have circular refs
+    if (_originalPath == null) {
+      return; // New priorities can't have circular refs
+    }
 
     // Check if the new path would make this priority its own descendant
     // This happens if the new parent path starts with the original path
@@ -572,7 +574,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       throw ArgumentError(
         'Cannot move priority to be its own descendant. '
         'Original path: ${_originalPath!.value}, '
-        'New parent path: ${parent!.path.value}'
+        'New parent path: ${parent!.path.value}',
       );
     }
   }
@@ -591,6 +593,15 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     final oldPath = _originalPath!;
     final newPath = _computePathFromParent();
 
+    // Validate that non-root priorities cannot be moved to root level
+    if (!root && newPath.isRoot) {
+      throw ArgumentError(
+        'Cannot move priority to root level. '
+        'Only the priority created with root=true can have a root-level path. '
+        'Attempted to change path from "${oldPath.value}" to "${newPath.value}".',
+      );
+    }
+
     // Validate no circular reference
     _validateNoCircularReference(newPath);
 
@@ -601,19 +612,31 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     for (final descendant in descendants) {
       final updatedPath = descendant.path.replacePrefix(oldPath, newPath);
       final updatedDescendant = descendant.copyWith(path: updatedPath);
-      await Store.get.save(table, updatedDescendant.toCompanion(false), PrioritiesBase());
+      await Store.get.save(
+        table,
+        updatedDescendant.toCompanion(false),
+        PrioritiesBase(),
+      );
     }
 
     // Update this priority's path
     final updatedPriority = copyWith(path: newPath);
-    await Store.get.save(table, updatedPriority.toCompanion(false), PrioritiesBase());
+    await Store.get.save(
+      table,
+      updatedPriority.toCompanion(false),
+      PrioritiesBase(),
+    );
   }
 
   Future<Priority> save() async {
     if (draft) {
       // If this is a draft, create a non-draft copy and save it
       final nonDraft = copyWith(draft: false);
-      await Store.get.save(table, nonDraft.toCompanion(false), PrioritiesBase());
+      await Store.get.save(
+        table,
+        nonDraft.toCompanion(false),
+        PrioritiesBase(),
+      );
       return nonDraft;
     } else {
       // Check if parent has changed and update paths if needed
