@@ -15,8 +15,8 @@ class PrioritiesList extends StatelessWidget {
   }) : topPriorities = priorities
             .where((p) => p.topOrder != null)
             .toList()
-          ..sort((a, b) => (b.topOrder?.value ?? 0)
-              .compareTo(a.topOrder?.value ?? 0));
+          ..sort((a, b) => (a.topOrder?.value ?? 0)
+              .compareTo(b.topOrder?.value ?? 0));
 
   @override
   Widget build(BuildContext context) {
