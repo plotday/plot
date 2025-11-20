@@ -68,7 +68,7 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: .env
+          OP_ENV_FILE: ./.env
           ENV: Production
 
       - name: Load secrets from .env.production
@@ -77,7 +77,7 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: .env.production
+          OP_ENV_FILE: ./.env.production
           ENV: Production
 
       - name: Install pnpm
