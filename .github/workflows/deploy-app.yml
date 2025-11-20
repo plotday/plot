@@ -81,7 +81,7 @@ jobs:
 
       - name: Write .env file
         run: |
-          pnpm run env --filter @plotday/plot
+          cd apps/plot && pnpm run env
 
       - uses: subosito/flutter-action@v2
         with:
