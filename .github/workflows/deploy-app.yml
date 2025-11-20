@@ -64,6 +64,8 @@ jobs:
 
       - name: Load secrets from .env
         uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           OP_ENV_FILE: .env
@@ -71,6 +73,8 @@ jobs:
 
       - name: Load secrets from .env.production
         uses: 1password/load-secrets-action@v3
+        with:
+          export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           OP_ENV_FILE: .env.production
