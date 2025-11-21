@@ -225,7 +225,6 @@ class _HeaderState extends State<Header> {
             );
           },
           title: Row(
-            mainAxisSize: MainAxisSize.min,
             spacing: 8,
             children: titleChildren,
           ),
