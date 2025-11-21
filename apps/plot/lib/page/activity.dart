@@ -200,8 +200,11 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                         onSearchChanged: (search) => context
                             .read<ActivityBloc>()
                             .updateSearch(search),
+                        onSearchClosed: () => context
+                            .read<ActivityBloc>()
+                            .updateFilter([]),
+                        filterCommands: tagCommands,
                         commands: [
-                          ...tagCommands,
                           ShowActivityCommands(state.activity),
                         ],
                       );

@@ -7,7 +7,7 @@ class PlotIcon {
   static const up = FontAwesomeIcons.caretUp;
   static const down = FontAwesomeIcons.caretDown;
   static const verticalExpand = FontAwesomeIcons.anglesUpDown;
-  static const addActivity = FontAwesomeIcons.circleArrowUp;
+  static const addActivity = FontAwesomeIcons.arrowUp;
   static const pipe = FontAwesomeIcons.pipe;
   static const today = FontAwesomeIcons.calendar;
   static const add = FontAwesomeIcons.plusLarge;

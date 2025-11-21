@@ -506,8 +506,11 @@ class PriorityPage extends StatelessWidget {
                                       onSearchChanged: (search) => context
                                           .read<PriorityBloc>()
                                           .updateSearch(search),
+                                      onSearchClosed: () => context
+                                          .read<PriorityBloc>()
+                                          .updateFilter([]),
+                                      filterCommands: tagCommands,
                                       commands: [
-                                        ...tagCommands,
                                         NewActivity(),
                                         ShowPriorityCommands(
                                           state.context,

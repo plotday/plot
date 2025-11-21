@@ -37,8 +37,10 @@ class Header extends StatefulWidget {
     this.main,
     this.title,
     this.prefixCommands = const [],
+    this.filterCommands = const [],
     this.commands = const [],
     this.onSearchChanged,
+    this.onSearchClosed,
     this.modal = false,
     this.position,
     super.key,
@@ -47,8 +49,10 @@ class Header extends StatefulWidget {
   final Widget? main;
   final String? title;
   final List<Command> prefixCommands;
+  final List<Command> filterCommands;
   final List<Command> commands;
   final void Function(String)? onSearchChanged;
+  final void Function()? onSearchClosed;
   final bool modal;
   final HeaderPosition? position;
 
@@ -140,6 +144,7 @@ class _HeaderState extends State<Header> {
                       _searchExpanded = false;
                     });
                     widget.onSearchChanged!('');
+                    widget.onSearchClosed?.call();
                     return KeyEventResult.handled;
                   }
                   return KeyEventResult.ignored;
@@ -172,6 +177,13 @@ class _HeaderState extends State<Header> {
 
         // Build suffixes with position-specific right buttons
         final suffixes = <Widget>[
+          // Filter commands (only shown when search is expanded)
+          if (_searchExpanded && widget.onSearchChanged != null)
+            ...widget.filterCommands.asMap().entries.map((entry) {
+              final key =
+                  ValueKey(Object.hash(entry.value.hashCode, entry.key));
+              return Button.icon(entry.value, key: key);
+            }),
           // Add search button/close button if onSearchChanged is provided
           if (widget.onSearchChanged != null)
             Button.icon(
@@ -189,6 +201,7 @@ class _HeaderState extends State<Header> {
                       // Clear search when collapsing
                       _searchController.clear();
                       widget.onSearchChanged!('');
+                      widget.onSearchClosed?.call();
                     }
                   });
                 },
