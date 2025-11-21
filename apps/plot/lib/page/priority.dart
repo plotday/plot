@@ -488,11 +488,14 @@ class PriorityPage extends StatelessWidget {
                                     state.context.path,
                                   ),
                                   builder: (context, snapshot) {
-                                    final tagCommands = snapshot.data
-                                            ?.map((tagData) => ToggleActivityFilter(
-                                                  tagData.$1,
-                                                  context: context,
-                                                ))
+                                    final tagCommands =
+                                        snapshot.data
+                                            ?.map(
+                                              (tagData) => ToggleActivityFilter(
+                                                tagData.$1,
+                                                context: context,
+                                              ),
+                                            )
                                             .toList() ??
                                         [];
 
@@ -500,8 +503,9 @@ class PriorityPage extends StatelessWidget {
                                       title: state.context.title,
                                       main: PrioritySelector(
                                         selected: state.context,
-                                        onSelect: (p) => context
-                                            .run(ChangeCurrentPriority(p)),
+                                        onSelect: (p) => context.run(
+                                          ChangeCurrentPriority(p),
+                                        ),
                                       ),
                                       onSearchChanged: (search) => context
                                           .read<PriorityBloc>()
@@ -521,6 +525,7 @@ class PriorityPage extends StatelessWidget {
                                   },
                                 ),
                                 body: BidirectionalList(
+                                  anchorOffset: 0.5,
                                   controller: listController,
                                   scrollController: ScrollControllerContext.of(
                                     context,
