@@ -118,7 +118,7 @@ async activate(_priority: Pick<Priority, "id">) {
   );
 
   await this.tools.plot.createActivity({
-    type: ActivityType.Task,
+    type: ActivityType.Action,
     title: "Connect your account",
     links: [authLink],
   });
@@ -129,7 +129,7 @@ async activate(_priority: Pick<Priority, "id">) {
 
 ```typescript
 const activity = await this.tools.plot.createActivity({
-  type: ActivityType.Task,
+  type: ActivityType.Action,
   title: "Setup",
 });
 
@@ -182,7 +182,7 @@ const callbackLink: ActivityLink = {
 
 // Add to activity
 await this.tools.plot.createActivity({
-  type: ActivityType.Task,
+  type: ActivityType.Action,
   title: "Task with links",
   links: [urlLink, callbackLink],
 });
@@ -202,7 +202,7 @@ async activate(_priority: Pick<Priority, "id">) {
 
   // Create activity with auth link
   const activity = await this.tools.plot.createActivity({
-    type: ActivityType.Task,
+    type: ActivityType.Action,
     title: "Connect Google account",
     links: [authLink],
   });

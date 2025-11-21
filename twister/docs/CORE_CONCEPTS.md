@@ -219,7 +219,7 @@ await this.tools.plot.createActivity({
 
 // Task
 await this.tools.plot.createActivity({
-  type: ActivityType.Task,
+  type: ActivityType.Action,
   title: "Review pull request",
   doneAt: null, // null = not done
 });
@@ -258,7 +258,7 @@ Links enable user interaction with activities:
 import { ActivityLinkType } from "@plotday/twister";
 
 await this.tools.plot.createActivity({
-  type: ActivityType.Task,
+  type: ActivityType.Action,
   title: "Fix bug #123",
   links: [
     {
@@ -472,13 +472,13 @@ Make activity titles clear and actionable:
 ```typescript
 // ❌ Vague
 await this.tools.plot.createActivity({
-  type: ActivityType.Task,
+  type: ActivityType.Action,
   title: "Thing",
 });
 
 // ✅ Clear
 await this.tools.plot.createActivity({
-  type: ActivityType.Task,
+  type: ActivityType.Action,
   title: "Review pull request #123 for authentication fix",
 });
 ```

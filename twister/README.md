@@ -130,7 +130,7 @@ The core data type representing tasks, events, and notes.
 
 ```typescript
 await this.tools.plot.createActivity({
-  type: ActivityType.Task,
+  type: ActivityType.Action,
   title: "Review pull request",
   links: [
     {

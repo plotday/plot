@@ -49,7 +49,7 @@ await this.tools.plot.createActivity({
 
 // Create a task
 await this.tools.plot.createActivity({
-  type: ActivityType.Task,
+  type: ActivityType.Action,
   title: "Review pull request #123",
   links: [
     {
@@ -117,7 +117,7 @@ Use meta fields to store custom data and link external resources:
 
 ```typescript
 await this.tools.plot.createActivity({
-  type: ActivityType.Task,
+  type: ActivityType.Action,
   title: "Review PR",
   meta: {
     github_pr_id: "123",
@@ -778,7 +778,7 @@ async triageEmail(emailContent: string) {
   // Create activity based on triage
   if (response.output.category === "urgent") {
     await this.tools.plot.createActivity({
-      type: ActivityType.Task,
+      type: ActivityType.Action,
       title: `URGENT: ${response.output.summary}`,
       note: `Actions:\n${response.output.suggestedActions.join("\n")}`
     });

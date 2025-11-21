@@ -75,7 +75,7 @@ import {
  *     const authLink = await this.slack.requestAuth(this.onSlackAuth);
  *
  *     await this.plot.createActivity({
- *       type: ActivityType.Task,
+ *       type: ActivityType.Action,
  *       title: "Connect Slack",
  *       links: [authLink]
  *     });

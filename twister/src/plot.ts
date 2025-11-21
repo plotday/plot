@@ -45,7 +45,7 @@ export enum ActivityType {
   /** A note or piece of information without actionable requirements */
   Note,
   /** An actionable item that can be completed */
-  Task,
+  Action,
   /** A scheduled occurrence with start and optional end time */
   Event,
 }
@@ -209,9 +209,9 @@ export type ActivityMeta = {
  *   // ... other fields
  * };
  *
- * // Simple task
- * const task: Activity = {
- *   type: ActivityType.Task,
+ * // Simple action
+ * const action: Activity = {
+ *   type: ActivityType.Action,
  *   title: "Review budget proposal",
  *   author: { id: "user-1", name: "John Doe", type: ActorType.User },
  *   end: null,
@@ -351,7 +351,7 @@ export type PickPriorityConfig = {
  * ```typescript
  * // Explicit priority (disables automatic matching)
  * const newTask: NewActivity = {
- *   type: ActivityType.Task,
+ *   type: ActivityType.Action,
  *   title: "Review pull request",
  *   priority: { id: "work-project-123" }
  * };

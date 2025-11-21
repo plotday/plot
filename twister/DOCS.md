@@ -147,7 +147,7 @@ When adding new public APIs:
  * @example
  * ```typescript
  * const activity = await this.tools.plot.createActivity({
- *   type: ActivityType.Task,
+ *   type: ActivityType.Action,
  *   title: "Review pull request",
  *   links: [{
  *     type: ActivityLinkType.external,

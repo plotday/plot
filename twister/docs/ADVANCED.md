@@ -571,7 +571,7 @@ async syncAllItems(items: Item[]) {
   // ✅ FAST - Bulk create
   await this.tools.plot.createActivities(
     items.map(item => ({
-      type: ActivityType.Task,
+      type: ActivityType.Action,
       title: item.title,
       note: item.description
     }))

@@ -95,7 +95,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
 
     // Create activity with both auth links
     const connectActivity = await this.tools.plot.createActivity({
-      type: ActivityType.Task,
+      type: ActivityType.Action,
       title: "Connect your calendar",
       start: new Date(),
       end: null,
@@ -248,7 +248,7 @@ export default class CalendarSyncTwist extends Twist<CalendarSyncTwist> {
 
     // Create the calendar selection activity
     await this.tools.plot.createActivity({
-      type: ActivityType.Task,
+      type: ActivityType.Action,
       title: `Which calendars would you like to connect?`,
       start: new Date(),
       links,

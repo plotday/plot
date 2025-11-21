@@ -343,7 +343,7 @@ export function transformGmailThread(thread: GmailThread): NewActivity[] {
 
   // Create parent activity
   const parentActivity: NewActivity = {
-    type: ActivityType.Task,
+    type: ActivityType.Action,
     title: subject || parentMessage.snippet || "Email",
     note: body || parentMessage.snippet,
     noteType: "text",
@@ -389,7 +389,7 @@ export function transformGmailThread(thread: GmailThread): NewActivity[] {
     const replyBody = extractBody(message.payload);
 
     const replyActivity: NewActivity = {
-      type: ActivityType.Task,
+      type: ActivityType.Action,
       title: `Re: ${subject || "Email"}`,
       note: replyBody || message.snippet,
       noteType: "text",

@@ -424,7 +424,7 @@ Batch operations where possible:
 // ❌ SLOW - Multiple round trips
 for (const item of items) {
   await this.tools.plot.createActivity({
-    type: ActivityType.Task,
+    type: ActivityType.Action,
     title: item.title,
   });
 }
@@ -432,7 +432,7 @@ for (const item of items) {
 // ✅ FAST - Batch create
 await this.tools.plot.createActivities(
   items.map((item) => ({
-    type: ActivityType.Task,
+    type: ActivityType.Action,
     title: item.title,
   }))
 );

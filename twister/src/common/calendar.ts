@@ -68,7 +68,7 @@ export interface SyncOptions {
  *     // Step 1: Request authorization
  *     const authLink = await this.googleCalendar.requestAuth("onAuthComplete");
  *     await this.plot.createActivity({
- *       type: ActivityType.Task,
+ *       type: ActivityType.Action,
  *       title: "Connect Google Calendar",
  *       links: [authLink],
  *     });

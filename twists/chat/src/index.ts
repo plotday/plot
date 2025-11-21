@@ -114,7 +114,7 @@ You can also create tasks, but should only do so when the user explicitly asks y
           note: item.note,
           parent: activity,
           priority: activity.priority,
-          type: ActivityType.Task,
+          type: ActivityType.Action,
           start: new Date(),
         })
       ) ?? []),

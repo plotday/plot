@@ -415,7 +415,7 @@ export class GitHubTool extends Tool<GitHubTool> {
 
     for (const issue of issues) {
       await this.tools.plot.createActivity({
-        type: ActivityType.Task,
+        type: ActivityType.Action,
         title: issue.title,
         note: issue.body,
         meta: {
@@ -442,7 +442,7 @@ export class GitHubTool extends Tool<GitHubTool> {
     if (action === "opened") {
       // Create new activity for new issue
       await this.tools.plot.createActivity({
-        type: ActivityType.Task,
+        type: ActivityType.Action,
         title: issue.title,
         meta: {
           github_issue_id: issue.id.toString(),

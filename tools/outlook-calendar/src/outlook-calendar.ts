@@ -101,7 +101,7 @@ type WatchState = {
  *     });
  *
  *     await this.plot.createActivity({
- *       type: ActivityType.Task,
+ *       type: ActivityType.Action,
  *       title: "Connect Outlook Calendar",
  *       links: [authLink]
  *     });

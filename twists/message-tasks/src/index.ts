@@ -165,7 +165,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
     // Create onboarding activity with auth link
     const connectActivity = await this.tools.plot.createActivity({
-      type: ActivityType.Task,
+      type: ActivityType.Action,
       title: "Connect messaging to create tasks",
       note: "I'll analyze your message threads and create tasks when action is needed.",
       start: new Date(),
@@ -256,7 +256,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
 
     // Create the channel selection activity
     await this.tools.plot.createActivity({
-      type: ActivityType.Task,
+      type: ActivityType.Action,
       title: `Which ${provider} channels should I monitor?`,
       note: "Select channels where you want tasks created from actionable messages.",
       start: new Date(),
@@ -488,7 +488,7 @@ If a task is needed, create a clear, actionable title that describes what the us
 
     // Create task activity
     const task = await this.tools.plot.createActivity({
-      type: ActivityType.Task,
+      type: ActivityType.Action,
       title:
         analysis.taskTitle || rootMessage.title || "Action needed from message",
       note: analysis.taskNote

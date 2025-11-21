@@ -222,7 +222,7 @@ export function transformSlackThread(
 
   // Create parent activity
   const parentActivity: NewActivity = {
-    type: ActivityType.Task,
+    type: ActivityType.Action,
     title: formatSlackText(parentMessage.text).substring(0, 100) || "Slack message",
     note: formatSlackText(parentMessage.text),
     noteType: "markdown",
@@ -249,7 +249,7 @@ export function transformSlackThread(
   for (let i = 1; i < messages.length; i++) {
     const reply = messages[i];
     const replyActivity: NewActivity = {
-      type: ActivityType.Task,
+      type: ActivityType.Action,
       title: formatSlackText(reply.text).substring(0, 100) || "Reply",
       note: formatSlackText(reply.text),
       noteType: "markdown",

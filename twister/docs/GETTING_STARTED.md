@@ -217,7 +217,7 @@ Now that you have a basic twist running, explore:
 
 ```typescript
 await this.tools.plot.createActivity({
-  type: ActivityType.Task,
+  type: ActivityType.Action,
   title: "Review pull request",
   note: "Check the new authentication flow",
   links: [

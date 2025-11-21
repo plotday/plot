@@ -98,7 +98,7 @@ build(build: ToolBuilder) {
 Plot supports three activity types:
 
 - **ActivityType.Note**: Information without actionable requirements
-- **ActivityType.Task**: Actionable items that can be completed
+- **ActivityType.Action**: Actionable items that can be completed
 - **ActivityType.Event**: Scheduled occurrences with start/end times
 
 ### State Management
