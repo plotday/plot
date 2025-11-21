@@ -1,5 +1,13 @@
 # @plotday/tool-google-calendar
 
+## 0.3.1
+
+### Changed
+
+- Update to ActivityType.Action ([`dd13fed`](https://github.com/plotday/plot/commit/dd13fed684fb1499d92355f168a733b73738f1b6))
+- Updated dependencies:
+- @plotday/twister@0.21.0
+
 ## 0.3.0
 
 ### Added
