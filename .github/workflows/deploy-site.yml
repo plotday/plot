@@ -44,6 +44,7 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SUPABASE_URL: op://Production/Supabase/API/url
           SUPABASE_ANON_KEY: op://Production/Supabase/API/public key
+          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
           CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
 
       - name: Deploy secrets and variables for site
