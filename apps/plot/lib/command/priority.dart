@@ -245,6 +245,17 @@ class NewPriority extends ShowForm {
                     labelBuilder: (p) => p.title,
                     subtitleBuilder: (p) => p.ancestorsLabel(),
                   ),
+                  FormSelect<ThemeColor?>(
+                    key: 'color',
+                    label: 'Color',
+                    initialValue: null,
+                    hasInitialValue: true,
+                    items: (_) async => [null, ...ThemeColor.options],
+                    labelBuilder: (c) => c?.label ?? 'Inherit',
+                    leadingBuilder: (c) => ColorDot(
+                      color: c?.toColor() ?? defaultParent.displayColor.toColor(),
+                    ),
+                  ),
                   FormButton(
                     key: 'create',
                     command: AddPriority(
@@ -255,11 +266,13 @@ class NewPriority extends ShowForm {
                     onSubmit: (context, values) async {
                       final title = values['title'] as String;
                       final selectedParent = values['parent'] as Priority;
+                      final color = values['color'] as ThemeColor?;
                       final command = AddPriority(
                         Future.value(
                           Priority(
                             title: title,
                             parent: selectedParent,
+                            color: color,
                             draft: true,
                           ),
                         ),
@@ -333,12 +346,15 @@ class EditPriorityCommand extends ShowForm {
                     initialValue: isRoot
                         ? (priority.color ?? const ThemeColor.defaultColor())
                         : priority.color,
+                    hasInitialValue: !isRoot,
                     items: (_) async => isRoot
                         ? ThemeColor.options
                         : [null, ...ThemeColor.options],
                     labelBuilder: (c) => c?.label ?? 'Inherit',
                     leadingBuilder: (c) => ColorDot(
-                      color: c?.toColor() ?? const Color(0xFF9E9E9E),
+                      color: c?.toColor() ??
+                          (parent?.displayColor ?? const ThemeColor.defaultColor())
+                              .toColor(),
                     ),
                   ),
                   FormButton(

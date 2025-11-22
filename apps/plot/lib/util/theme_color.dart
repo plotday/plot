@@ -27,18 +27,27 @@ extension type ThemeColor(int index) {
     _ => 'Unknown',
   };
 
-  Color toColor() {
+  /// Returns the hue value (0-360) for this theme color
+  double toHue() {
     return switch (index) {
-      0 => const Color(0xFFE57373), // Catalyst - red
-      1 => const Color(0xFF81C784), // Call to Adventure - green
-      2 => const Color(0xFF64B5F6), // Rising Action - blue
-      3 => const Color(0xFFFFB74D), // Momentum - orange
-      4 => const Color(0xFFBA68C8), // Turning Point - purple
-      5 => const Color(0xFF4DB6AC), // Breakthrough - teal
-      6 => const Color(0xFFFF8A65), // Climax - coral
-      7 => const Color(0xFF9575CD), // Resolution - violet
-      _ => const Color(0xFF9E9E9E), // Unknown - gray
+      0 => 164.18, // Catalyst - green
+      1 => 0, // Call to Adventure - red
+      2 => 210.0, // Rising Action - blue
+      3 => 35.0, // Momentum - orange
+      4 => 290.0, // Turning Point - purple
+      5 => 174.0, // Breakthrough - teal
+      6 => 15.0, // Climax - coral
+      7 => 260.0, // Resolution - violet
+      _ => 0.0, // Unknown - default to red
     };
+  }
+
+  /// Returns a Color generated from this theme color's hue
+  Color toColor() {
+    if (index < 0 || index > 7) {
+      return const Color(0xFF9E9E9E); // Unknown - gray
+    }
+    return HSLColor.fromAHSL(1.0, toHue(), 0.6, 0.65).toColor();
   }
 }
 

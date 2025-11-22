@@ -151,7 +151,9 @@ class FormSelect<T> extends FormItem {
     this.enabled = true,
     T? initialValue,
     this.onChanged,
-  }) : _value = initialValue;
+    bool hasInitialValue = false,
+  })  : _value = initialValue,
+        _hasValue = hasInitialValue || initialValue != null;
 
   /// Function to fetch items, optionally filtered by search text.
   final Future<List<T>> Function(String? search) items;
@@ -175,6 +177,7 @@ class FormSelect<T> extends FormItem {
   final VoidCallback? onChanged;
 
   T? _value;
+  bool _hasValue;
 
   @override
   T? getValue() => _value;
@@ -183,6 +186,7 @@ class FormSelect<T> extends FormItem {
   void setValue(dynamic value) {
     if (value is T?) {
       _value = value;
+      _hasValue = true;
       onChanged?.call();
     }
   }
@@ -209,6 +213,7 @@ class FormSelect<T> extends FormItem {
     );
     if (result != null) {
       _value = result;
+      _hasValue = true;
       onChanged?.call();
     }
   }
@@ -223,8 +228,8 @@ class FormSelect<T> extends FormItem {
     final isEnabled = this.enabled && enabled;
     return SelectTile(
       label: label ?? key,
-      value: _value != null ? labelBuilder(_value as T) : null,
-      leading: _value != null && leadingBuilder != null
+      value: _hasValue ? labelBuilder(_value as T) : null,
+      leading: _hasValue && leadingBuilder != null
           ? leadingBuilder!(_value as T)
           : null,
       placeholder: placeholder,

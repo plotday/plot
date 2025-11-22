@@ -12,6 +12,17 @@ class ColourSchemeData extends Equatable {
   final HSLColor pureForeground;
   final Brightness brightness;
 
+  /// Create a color scheme from a hue value (0-360)
+  ColourSchemeData.fromHue(double hue, this.brightness)
+    : base = HSLColor.fromAHSL(1.0, hue, 0.6, 0.5),
+      pureBackground = brightness == Brightness.light
+          ? HSLColor.fromColor(Color(0xFFFFFFFF))
+          : HSLColor.fromColor(Color(0xFF000000)),
+      pureForeground = brightness == Brightness.light
+          ? HSLColor.fromColor(Color(0xFF000000))
+          : HSLColor.fromColor(Color(0xFFFFFFFF));
+
+  /// Legacy constructor for backward compatibility
   ColourSchemeData(Color base, this.brightness)
     : base = HSLColor.fromColor(base).withAlpha(1),
       pureBackground = brightness == Brightness.light
@@ -108,12 +119,12 @@ class ColourSchemeData extends Equatable {
 }
 
 class ColourScheme extends StatefulWidget {
-  static const Color brand = Color.fromARGB(255, 35, 152, 112);
+  /// Default brand hue (teal/green ~160 degrees)
+  static const double defaultHue = 160.0;
 
   final Widget child;
-  final Color base;
 
-  const ColourScheme({this.base = brand, required this.child, super.key});
+  const ColourScheme({required this.child, super.key});
 
   @override
   State<ColourScheme> createState() => _ColourSchemeState();
@@ -154,7 +165,7 @@ class _ColourSchemeState extends State<ColourScheme>
       builder: (context, themeState) {
         final brightness = _getEffectiveBrightness(context, themeState.mode);
         return ProxyProvider0(
-          update: (_, _) => ColourSchemeData(widget.base, brightness),
+          update: (_, _) => ColourSchemeData.fromHue(themeState.priorityHue, brightness),
           child: widget.child,
         );
       },

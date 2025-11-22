@@ -81,9 +81,10 @@ class CommandWrapper extends Command {
     this.command, {
     Future<CommandReturn> Function(Command command, BuildContext context)? run,
     Value<IconData?> icon = const Value<IconData?>.absent(),
+    String? title,
   }) : _run = run,
        super(
-         title: command.title,
+         title: title ?? command.title,
          eventObject: command.eventObject,
          eventAction: command.eventAction,
          subtitle: command.subtitle,

@@ -9,6 +9,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/api/twist_api.dart';
+import 'package:plot/state/theme.dart';
 import 'logging.dart';
 
 part 'priority_state.dart';
@@ -475,6 +476,12 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
                     'Either priorityId or activityId must be provided',
                   ))
             .then((priority) {
+              // Update theme hue when priority is first loaded
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  context.read<ThemeBloc>().setPriorityHue(priority.displayColor.toHue());
+                }
+              });
               return PriorityBloc(priority: priority);
             });
   }
@@ -484,16 +491,22 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     super.didUpdateWidget(oldWidget);
 
     if (widget.priority != null && widget.priority != oldWidget.priority) {
+      final themeBloc = context.read<ThemeBloc>();
       _bloc.then((bloc) {
         final priority = widget.priority;
         if (priority == null) return;
         bloc.setPriority(priority);
+        // Update theme hue when priority changes
+        themeBloc.setPriorityHue(priority.displayColor.toHue());
       });
     } else if (widget.priorityId != null &&
         widget.priorityId != oldWidget.priorityId) {
+      final themeBloc = context.read<ThemeBloc>();
       _bloc.then((bloc) async {
         final priority = await Priority.getOne(widget.priorityId!);
         bloc.setPriority(priority);
+        // Update theme hue when priority changes
+        themeBloc.setPriorityHue(priority.displayColor.toHue());
       });
     }
   }

@@ -55,7 +55,7 @@ class ListTile extends StatefulWidget {
     this.focusNode,
 
     /// Override the action title
-    String? title,
+    this.title,
 
     /// Display beside the title
     String? subtitle,
@@ -72,8 +72,7 @@ class ListTile extends StatefulWidget {
     this.padding,
 
     super.key,
-  }) : title = title ?? command?.title ?? '',
-       subtitle = subtitle ?? command?.subtitle;
+  }) : subtitle = subtitle ?? command?.subtitle;
 
   final ListTileStyle style;
   final bool highlighted;
@@ -86,7 +85,7 @@ class ListTile extends StatefulWidget {
   final Command? doubleTapCommand;
   final List<Command> trailingCommands;
   final Widget? trailing;
-  final String title;
+  final String? title;
   final String? subtitle;
   final Widget? body;
   final Widget? header;
@@ -186,14 +185,16 @@ class _ListTileState extends State<ListTile> {
               color: widget.selected
                   ? context.theme.colors.primary
                   : _focusNode.hasFocus ||
-                      (!widget.disableInternalHover && _isHovered) ||
-                      widget.highlighted
+                        (!widget.disableInternalHover && _isHovered) ||
+                        widget.highlighted
                   ? context.theme.plotColors.highlight
                   : null,
             ),
-            padding: widget.padding ?? widgetPaddingSm.copyWith(
-              left: widgetPaddingSm.left + (widget.indentLevel * 16.0),
-            ),
+            padding:
+                widget.padding ??
+                widgetPaddingSm.copyWith(
+                  left: widgetPaddingSm.left + (widget.indentLevel * 16.0),
+                ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               spacing: 10,
@@ -214,7 +215,11 @@ class _ListTileState extends State<ListTile> {
                       if (widget.header != null) widget.header!,
                       Builder(
                         builder: (context) {
-                          final commandBody = widget.body ?? widget.command?.buildBody(context);
+                          final commandBody =
+                              widget.body ??
+                              (widget.title == null
+                                  ? widget.command?.buildBody(context)
+                                  : null);
                           return commandBody != null
                               ? Row(children: [Expanded(child: commandBody)])
                               : Row(
@@ -223,27 +228,40 @@ class _ListTileState extends State<ListTile> {
                                       : MainAxisAlignment.start,
                                   children: [
                                     Text(
-                                      widget.title,
+                                      widget.title ??
+                                          widget.command?.title ??
+                                          'Untitled',
                                       overflow: TextOverflow.ellipsis,
                                       textAlign: widget.centered
                                           ? TextAlign.center
                                           : TextAlign.start,
-                                      style: context.theme.typography.base.copyWith(
-                                        color: widget.selected
-                                            ? context.theme.colors.primaryForeground
-                                            : widget.style == ListTileStyle.header
-                                            ? context.theme.plotColors.muted
-                                            : context.theme.colors.foreground,
-                                      ),
+                                      style: context.theme.typography.base
+                                          .copyWith(
+                                            color: widget.selected
+                                                ? context
+                                                      .theme
+                                                      .colors
+                                                      .primaryForeground
+                                                : widget.style ==
+                                                      ListTileStyle.header
+                                                ? context.theme.plotColors.muted
+                                                : context
+                                                      .theme
+                                                      .colors
+                                                      .foreground,
+                                          ),
                                     ),
                                     if (widget.subtitle != null)
                                       Expanded(
                                         child: Text(
-                                          '  ${widget.subtitle!}',
+                                          widget.subtitle!,
                                           overflow: TextOverflow.ellipsis,
                                           style: context.theme.typography.base
                                               .copyWith(
-                                                color: context.theme.plotColors.muted,
+                                                color: context
+                                                    .theme
+                                                    .plotColors
+                                                    .muted,
                                               ),
                                         ),
                                       ),

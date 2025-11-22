@@ -24,6 +24,12 @@ class ThemeBloc extends Cubit<ThemeState> {
     _persistState();
   }
 
+  /// Set the priority hue for the color scheme
+  void setPriorityHue(double hue) {
+    emit(state.copyWith(priorityHue: hue));
+    _persistState();
+  }
+
   /// Load state from shared preferences
   Future<void> _loadFromPreferences() async {
     final prefs = await SharedPreferences.getInstance();
@@ -32,12 +38,14 @@ class ThemeBloc extends Cubit<ThemeState> {
       (m) => m.name == modeString,
       orElse: () => AppThemeMode.system,
     );
-    emit(state.copyWith(mode: mode));
+    final priorityHue = prefs.getDouble('priority_hue') ?? 160.0;
+    emit(state.copyWith(mode: mode, priorityHue: priorityHue));
   }
 
   /// Persist state to shared preferences
   Future<void> _persistState() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('theme_mode', state.mode.name);
+    await prefs.setDouble('priority_hue', state.priorityHue);
   }
 }
