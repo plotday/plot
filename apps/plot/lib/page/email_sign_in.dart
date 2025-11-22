@@ -254,8 +254,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                         _mode == _AuthMode.signUp
                             ? 'Create your account'
                             : 'Sign in to your account',
-                        style: const TextStyle(
-                          fontSize: 24,
+                        style: context.theme.typography.lg.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                         textAlign: TextAlign.center,
@@ -296,9 +295,9 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
 
                         const SizedBox(height: 8),
 
-                        const Text(
+                        Text(
                           'Enter the 6-digit code from your email:',
-                          style: TextStyle(fontSize: 14),
+                          style: context.theme.typography.base,
                           textAlign: TextAlign.center,
                         ),
 

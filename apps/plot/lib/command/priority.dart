@@ -3,11 +3,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'command.dart';
 import 'package:plot/analytics/analytics.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/color_dot.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
+import 'package:plot/state/now.dart';
+import 'package:plot/util/theme_color.dart';
 
 abstract class PriorityCommand extends Command {
   PriorityCommand(
@@ -32,14 +36,14 @@ abstract class PriorityCommand extends Command {
               priority!.ancestorsLabel(),
               overflow: TextOverflow.ellipsis,
               style: context.theme.typography.base.copyWith(
-                color: context.colour.muted,
+                color: context.theme.plotColors.muted,
               ),
             ),
           ),
           Text(
             Priority.separator,
             style: context.theme.typography.base.copyWith(
-              color: context.colour.muted,
+              color: context.theme.plotColors.muted,
             ),
           ),
         ],
@@ -48,7 +52,7 @@ abstract class PriorityCommand extends Command {
             priority?.title ?? 'None',
             overflow: TextOverflow.ellipsis,
             style: context.theme.typography.base.copyWith(
-              color: context.colour.foreground,
+              color: context.theme.colors.foreground,
             ),
           ),
         ),
@@ -209,8 +213,13 @@ class NewPriority extends ShowForm {
         form: (context) async {
           // Get default parent for the dummy action (only used for display)
           final prioritiesBloc = context.read<PrioritiesBloc>();
+          final nowBloc = context.read<NowBloc>();
+          final currentPriority = nowBloc.state is NowLoaded
+              ? (nowBloc.state as NowLoaded).priority
+              : null;
           final defaultParent =
               parent ??
+              currentPriority ??
               prioritiesBloc.state.root ??
               await Priority.getDefault();
 
@@ -318,6 +327,20 @@ class EditPriorityCommand extends ShowForm {
                     labelBuilder: (p) => p.title,
                     subtitleBuilder: (p) => p.ancestorsLabel(),
                   ),
+                  FormSelect<ThemeColor?>(
+                    key: 'color',
+                    label: 'Color',
+                    initialValue: isRoot
+                        ? (priority.color ?? const ThemeColor.defaultColor())
+                        : priority.color,
+                    items: (_) async => isRoot
+                        ? ThemeColor.options
+                        : [null, ...ThemeColor.options],
+                    labelBuilder: (c) => c?.label ?? 'Inherit',
+                    leadingBuilder: (c) => ColorDot(
+                      color: c?.toColor() ?? const Color(0xFF9E9E9E),
+                    ),
+                  ),
                   FormButton(
                     key: 'save',
                     command: EditPriority(
@@ -326,9 +349,14 @@ class EditPriorityCommand extends ShowForm {
                     onSubmit: (context, values) async {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
+                      final color = values['color'] as ThemeColor?;
                       final command = EditPriority(
                         Future.value(
-                          priority.copyWith(title: title, parent: newParent),
+                          priority.copyWith(
+                            title: title,
+                            parent: newParent,
+                            color: Value(color),
+                          ),
                         ),
                       );
                       return await command.run(context);

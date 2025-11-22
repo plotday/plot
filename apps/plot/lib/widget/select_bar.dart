@@ -18,6 +18,7 @@ class SelectBar<T> extends Dialog {
     required this.items,
     required this.labelBuilder,
     this.subtitleBuilder,
+    this.leadingBuilder,
     this.selectedValue,
     this.prompt = 'Search',
     super.key,
@@ -27,6 +28,7 @@ class SelectBar<T> extends Dialog {
            items: items,
            labelBuilder: labelBuilder,
            subtitleBuilder: subtitleBuilder,
+           leadingBuilder: leadingBuilder,
            selectedValue: selectedValue,
            prompt: prompt,
          ),
@@ -41,6 +43,9 @@ class SelectBar<T> extends Dialog {
   /// Optional function to build a subtitle for an item.
   final String Function(T)? subtitleBuilder;
 
+  /// Optional function to build a leading widget for an item.
+  final Widget Function(T)? leadingBuilder;
+
   /// The currently selected value (will be highlighted in the list).
   final T? selectedValue;
 
@@ -53,6 +58,7 @@ class SelectBar<T> extends Dialog {
     required Future<List<T>> Function(String? search) items,
     required String Function(T) labelBuilder,
     String Function(T)? subtitleBuilder,
+    Widget Function(T)? leadingBuilder,
     T? selectedValue,
     String prompt = 'Search',
   }) async {
@@ -60,6 +66,7 @@ class SelectBar<T> extends Dialog {
       items: items,
       labelBuilder: labelBuilder,
       subtitleBuilder: subtitleBuilder,
+      leadingBuilder: leadingBuilder,
       selectedValue: selectedValue,
       prompt: prompt,
     ).show<T>(context);
@@ -73,6 +80,7 @@ class _SelectBar<T> extends StatefulWidget {
     required this.items,
     required this.labelBuilder,
     this.subtitleBuilder,
+    this.leadingBuilder,
     this.selectedValue,
     required this.prompt,
   });
@@ -80,6 +88,7 @@ class _SelectBar<T> extends StatefulWidget {
   final Future<List<T>> Function(String? search) items;
   final String Function(T) labelBuilder;
   final String Function(T)? subtitleBuilder;
+  final Widget Function(T)? leadingBuilder;
   final T? selectedValue;
   final String prompt;
 
@@ -260,11 +269,13 @@ class _SelectBarState<T> extends State<_SelectBar<T>> {
                         final item = _filteredItems[index];
                         final label = widget.labelBuilder(item);
                         final subtitle = widget.subtitleBuilder?.call(item);
+                        final leading = widget.leadingBuilder?.call(item);
 
                         // Create a simple action for the ListTile
                         final action = _SelectItemCommand<T>(
                           title: label,
                           subtitle: subtitle,
+                          leading: leading,
                           onSelect: () => _selectItem(item),
                         );
 
@@ -295,13 +306,34 @@ class _SelectItemCommand<T> extends Command {
   _SelectItemCommand({
     required super.title,
     super.subtitle,
+    this.leading,
     required this.onSelect,
   }) : super(
          eventObject: EventObject.dialog,
          eventAction: EventAction.selected,
        );
 
+  final Widget? leading;
   final VoidCallback onSelect;
+
+  @override
+  Widget? buildBody(BuildContext context) {
+    if (leading != null) {
+      return Row(
+        children: [
+          leading!,
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      );
+    }
+    return null;
+  }
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

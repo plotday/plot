@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/layout.dart';
-import 'package:plot/style/colors.dart';
+import 'package:plot/style/plot_colors.dart';
 
 /// Shared layout component for form tiles (FormTextField, FormSelect, FormButton).
 ///
@@ -62,7 +62,7 @@ class FormTileLayout extends StatelessWidget {
                   label,
                   textAlign: TextAlign.end,
                   style: context.theme.typography.sm.copyWith(
-                    color: isActive ? context.colour.foreground : context.colour.muted,
+                    color: isActive ? context.theme.colors.foreground : context.theme.plotColors.muted,
                   ),
                 ),
               ),

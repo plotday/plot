@@ -45,7 +45,7 @@ class ColourSchemeData extends Equatable {
       ? base.withLightness(0.99).toColor()
       : _background.withLightness(0.16).toColor();
   Color get accent => brightness == Brightness.light
-      ? base.withSaturation(0.8).withLightness(0.3).toColor()
+      ? base.withSaturation(0.8).withLightness(0.25).toColor()
       : base.withSaturation(0.4).withLightness(0.55).toColor();
   Color get accentBackground => brightness == Brightness.light
       ? base

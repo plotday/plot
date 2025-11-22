@@ -1,6 +1,7 @@
 import 'package:plot/store/store.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/color_dot.dart';
 
 class PrioritiesList extends StatelessWidget {
   final List<Priority> topPriorities;
@@ -27,6 +28,7 @@ class PrioritiesList extends StatelessWidget {
           title: root.title,
           command: ChangeCurrentPriority(root),
           selected: selected?.id == root.id,
+          trailing: ColorDot(color: root.displayColor.toColor()),
         ),
 
         // Second group: Top Priorities
@@ -92,6 +94,7 @@ class PrioritiesList extends StatelessWidget {
         selected: selected?.id == priority.id,
         selectedBorder: topSection || priority.topOrder == null,
         indentLevel: indentLevel,
+        trailing: ColorDot(color: priority.displayColor.toColor()),
       ),
       ...priority.children.expand(
         (child) => _buildPriorityItems(

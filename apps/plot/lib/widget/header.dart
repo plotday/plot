@@ -170,7 +170,7 @@ class _HeaderState extends State<Header> {
                   Text(
                     widget.title!,
                     overflow: TextOverflow.ellipsis,
-                    style: context.theme.typography.sm,
+                    style: context.theme.typography.base,
                   ),
             ),
         ];

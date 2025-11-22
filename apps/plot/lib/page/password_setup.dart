@@ -135,9 +135,11 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Title
-                const Text(
+                Text(
                   'Set your password',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  style: context.theme.typography.lg.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                   textAlign: TextAlign.center,
                 ),
 

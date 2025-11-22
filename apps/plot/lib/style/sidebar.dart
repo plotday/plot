@@ -15,7 +15,7 @@ FSidebarStyle buildSidebarStyle(
       childrenPadding: EdgeInsets.zero,
       padding: EdgeInsets.only(bottom: 16),
       headerSpacing: 0,
-      labelStyle: typography.xs.copyWith(
+      labelStyle: typography.sm.copyWith(
         color: colourScheme.foreground.withValues(alpha: 0.6),
         fontWeight: FontWeight.w600,
       ),
@@ -26,7 +26,7 @@ FSidebarStyle buildSidebarStyle(
         borderRadius: BorderRadius.zero,
         padding: widgetPaddingSm,
         textStyle: itemStyle.textStyle.map(
-          (textStyle) => typography.sm,
+          (textStyle) => typography.base,
         ),
       ),
     ),

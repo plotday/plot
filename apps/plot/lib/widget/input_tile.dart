@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:plot/style/colors.dart';
+import 'package:forui/forui.dart';
+
+import 'package:plot/style/plot_colors.dart';
 import 'text_field.dart';
 import 'form_tile_layout.dart';
 
@@ -79,7 +81,7 @@ class _InputTileState extends State<InputTile> {
 
     return FormTileLayout(
       label: widget.label,
-      rightBackgroundColor: context.colour.editableBackground,
+      rightBackgroundColor: context.theme.plotColors.editableBackground,
       isActive: isActive,
       content: TextField(
         controller: widget.controller,

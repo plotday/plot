@@ -21,7 +21,6 @@ import 'package:plot/util/path.dart';
 import 'package:plot/util/order.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/util/async.dart';
-import 'package:plot/util/string.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/broadcast.dart';
@@ -903,7 +902,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 148;
+  int get schemaVersion => 149;
 
   @override
   MigrationStrategy get migration {

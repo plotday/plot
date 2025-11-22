@@ -5,7 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/now.dart';
-import 'package:plot/style/layout.dart';
 import 'package:plot/widget/priorities_list.dart';
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/header.dart';

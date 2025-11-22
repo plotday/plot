@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 
-import 'package:plot/style/colors.dart';
+import 'package:forui/forui.dart';
 
 class Badge extends StatelessWidget {
   const Badge({required this.count, super.key});
@@ -12,7 +12,7 @@ class Badge extends StatelessWidget {
   Widget build(BuildContext context) {
     return material.Badge.count(
       count: count,
-      backgroundColor: context.colour.accentBackground,
+      backgroundColor: context.theme.colors.primary,
     );
   }
 }

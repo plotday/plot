@@ -121,7 +121,7 @@ class _InvitationPageState extends State<InvitationPage> {
                       uri: Uri.parse('https://plot.day/start'),
                       child: Text(
                         "Don't have an invitation yet? Join the waitlist.",
-                        style: TextStyle(color: context.colour.accent),
+                        style: TextStyle(color: context.theme.colors.primaryForeground),
                         textAlign: TextAlign.center,
                       ),
                     ),

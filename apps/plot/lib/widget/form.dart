@@ -146,6 +146,7 @@ class FormSelect<T> extends FormItem {
     required this.items,
     required this.labelBuilder,
     this.subtitleBuilder,
+    this.leadingBuilder,
     this.placeholder,
     this.enabled = true,
     T? initialValue,
@@ -160,6 +161,9 @@ class FormSelect<T> extends FormItem {
 
   /// Optional function to build a subtitle for an item.
   final String Function(T)? subtitleBuilder;
+
+  /// Optional function to build a leading widget for an item.
+  final Widget Function(T)? leadingBuilder;
 
   /// Placeholder text when no value is selected.
   final String? placeholder;
@@ -199,6 +203,7 @@ class FormSelect<T> extends FormItem {
       items: items,
       labelBuilder: labelBuilder,
       subtitleBuilder: subtitleBuilder,
+      leadingBuilder: leadingBuilder,
       selectedValue: _value,
       prompt: label ?? key,
     );
@@ -219,6 +224,9 @@ class FormSelect<T> extends FormItem {
     return SelectTile(
       label: label ?? key,
       value: _value != null ? labelBuilder(_value as T) : null,
+      leading: _value != null && leadingBuilder != null
+          ? leadingBuilder!(_value as T)
+          : null,
       placeholder: placeholder,
       autofocus: autofocus,
       highlighted: highlighted,
@@ -302,7 +310,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
             label:
                 '', // FormButton doesn't have a label, just empty space on left
             rightBackgroundColor: isHighlighted
-                ? context.colour.accentBackground
+                ? context.theme.colors.primary
                 : null,
             isActive: isHighlighted,
             content: MouseRegion(
@@ -314,7 +322,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
                   widget.command.title,
                   style: context.theme.typography.sm.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: context.colour.foreground,
+                    color: context.theme.colors.foreground,
                   ),
                 ),
               ),

@@ -8,10 +8,9 @@ class TermsAgreement extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTextStyle(
-      style: const TextStyle(
-        fontSize: 12,
+      style: context.theme.typography.base.copyWith(
         height: 1.5,
-        color: Color(0xFF6B7280),
+        color: const Color(0xFF6B7280),
       ),
       child: Text.rich(
         TextSpan(

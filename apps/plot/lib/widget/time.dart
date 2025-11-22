@@ -73,7 +73,7 @@ class DurationWidget extends StatelessWidget {
             width: 4,
             height: 4,
             decoration: BoxDecoration(
-              color: context.colour.foreground,
+              color: context.theme.colors.foreground,
               shape: BoxShape.circle,
             ),
           );

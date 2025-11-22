@@ -1,6 +1,7 @@
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/widget/color_dot.dart';
 
 class PriorityWidget extends StatelessWidget {
   const PriorityWidget({
@@ -43,6 +44,7 @@ class PriorityLabel extends StatelessWidget {
     this.priority,
     Priority? context,
     this.onSelect,
+    this.showDot = true,
     super.key,
   }) : ancestors =
            ancestors ?? priority?.ancestors(context: context) ?? const [];
@@ -50,6 +52,7 @@ class PriorityLabel extends StatelessWidget {
   final List<PriorityAncestor> ancestors;
   final Priority? priority;
   final void Function(PriorityId)? onSelect;
+  final bool showDot;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -109,6 +112,10 @@ class PriorityLabel extends StatelessWidget {
             ),
           ),
         ),
+      if (priority != null && showDot) ...[
+        const SizedBox(width: 8),
+        ColorDot(color: priority!.displayColor.toColor()),
+      ],
     ],
   );
 }

@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
-import 'package:plot/style/colors.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/command/command.dart';
 import 'spinner.dart';
 
@@ -71,10 +71,10 @@ class Button extends StatelessWidget {
           // ignore: unused_result
           contentStyle: selectedStyle.contentStyle.copyWith(
             textStyle: selectedStyle.contentStyle.textStyle.map(
-              (style) => style.copyWith(color: context.colour.accent),
+              (style) => style.copyWith(color: context.theme.colors.primaryForeground),
             ),
             iconStyle: selectedStyle.iconContentStyle.iconStyle.map(
-              (style) => style.copyWith(color: context.colour.accent),
+              (style) => style.copyWith(color: context.theme.colors.primaryForeground),
             ),
           ),
         );
@@ -96,11 +96,10 @@ class Button extends StatelessWidget {
                 style: fStyle,
                 onPress: onPress,
                 child: icon != null
-                    ? Icon(icon, size: 12, color: context.colour.muted)
+                    ? Icon(icon, size: 12, color: context.theme.plotColors.muted)
                     : Text(
                         command.title,
-                        style: context.theme.typography.xs.copyWith(
-                          fontSize: 12,
+                        style: context.theme.typography.base.copyWith(
                           height: 1,
                           textBaseline: TextBaseline.ideographic,
                         ),
@@ -110,7 +109,7 @@ class Button extends StatelessWidget {
                 style: fStyle,
                 onPress: onPress,
                 prefix: icon != null
-                    ? Icon(icon, size: 12, color: context.colour.muted)
+                    ? Icon(icon, size: 12, color: context.theme.plotColors.muted)
                     : null,
                 child: Text(command.title),
               );

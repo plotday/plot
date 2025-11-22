@@ -41,7 +41,8 @@ WITH RECURSIVE ancestors (
 SELECT
     priority_id,
     json_group_array (a.title) AS titles,
-    json_group_array (lower(substr(hex (a.id), 1, 8) || '-' || substr(hex (a.id), 9, 4) || '-' || substr(hex (a.id), 13, 4) || '-' || substr(hex (a.id), 17, 4) || '-' || substr(hex (a.id), 21, 12))) AS ancestors
+    json_group_array (lower(substr(hex (a.id), 1, 8) || '-' || substr(hex (a.id), 9, 4) || '-' || substr(hex (a.id), 13, 4) || '-' || substr(hex (a.id), 17, 4) || '-' || substr(hex (a.id), 21, 12))) AS ancestors,
+    json_group_array (a.color) AS colors
 FROM
     ancestors an
     LEFT JOIN priorities a ON a.path = an.ancestor_path

@@ -20,7 +20,7 @@ class ActivityList extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(width: 1.0, color: context.colour.border),
+          bottom: BorderSide(width: 1.0, color: context.theme.colors.border),
         ),
       ),
       child: Column(

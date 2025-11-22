@@ -4,7 +4,7 @@ import 'package:platform_builder/platform_builder.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/layout.dart';
-import 'package:plot/style/colors.dart';
+import 'package:plot/style/plot_colors.dart';
 
 enum TextFieldStyle { outline, ghost }
 
@@ -166,7 +166,7 @@ class EditableAreaState extends State<EditableArea> {
       child: Container(
         padding: widget.padding ? widgetPadding : EdgeInsets.zero,
         decoration: BoxDecoration(
-          color: context.colour.editableBackground,
+          color: context.theme.plotColors.editableBackground,
           borderRadius: widget.position == EditableAreaPosition.top
               ? null
               : editorBorderRadius,
@@ -174,12 +174,12 @@ class EditableAreaState extends State<EditableArea> {
               ? Border(
                   bottom: BorderSide(
                     width: 1.0,
-                    color: context.colour.border,
+                    color: context.theme.colors.border,
                   ),
                 )
               : Border.all(
                   width: 1.0,
-                  color: context.colour.border,
+                  color: context.theme.colors.border,
                 ),
         ),
         child: widget.builder(context, _focusNode),

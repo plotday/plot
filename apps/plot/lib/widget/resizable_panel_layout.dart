@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/state/layout.dart';
+import 'package:plot/style/theme.dart';
 import 'package:plot/page/loading.dart';
 import 'header.dart';
 
@@ -156,7 +157,10 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                       builder: (context, data, _) => PanelPositionProvider(
                         key: ValueKey('LeftPanelPositionProvider'),
                         position: HeaderPosition.left,
-                        child: widget.left,
+                        child: FAnimatedTheme(
+                          data: darkenTheme(context.theme),
+                          child: widget.left,
+                        ),
                       ),
                     ),
                   if (layoutState.middlePanelVisible)

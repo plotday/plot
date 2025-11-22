@@ -460,6 +460,7 @@ class FormBarState extends State<_FormBar> {
                   // Title header
                   Container(
                     padding: widgetPadding,
+                    margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
                       border: Border(
                         bottom: BorderSide(
@@ -503,31 +504,48 @@ class FormBarState extends State<_FormBar> {
                               group.title!,
                               style: TextStyle(
                                 color: context.theme.colors.mutedForeground,
-                                fontSize: context.theme.typography.xs.fontSize,
+                                fontSize: context.theme.typography.sm.fontSize,
                               ),
                             ),
                           );
                         }
 
-                        return MouseRegion(
-                          onEnter: (_) => listController.setHovered(index),
-                          onExit: (_) => listController.setHovered(null),
-                          child: Column(
-                            key: ValueKey(index),
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (header != null) header,
-                              item.build(
-                                context,
-                                index == _highlightedIndex,
-                                enabled: item is FormButton
-                                    ? _isFormValid()
-                                    : true,
-                                focusNode: index < _focusNodes.length
-                                    ? _focusNodes[index]
-                                    : null,
-                              ),
-                            ],
+                        return GestureDetector(
+                          onTap: () async {
+                            final item = _getItemAtIndex(index);
+                            if (item is FormButton) {
+                              if (_isFormValid()) {
+                                await _executeButton(item);
+                              }
+                            } else if (item is FormSelect) {
+                              if (item.enabled) {
+                                await item.activate(context);
+                              }
+                            }
+                          },
+                          child: MouseRegion(
+                            cursor: item is FormButton || item is FormSelect
+                                ? SystemMouseCursors.click
+                                : SystemMouseCursors.basic,
+                            onEnter: (_) => listController.setHovered(index),
+                            onExit: (_) => listController.setHovered(null),
+                            child: Column(
+                              key: ValueKey(index),
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (header != null) header,
+                                item.build(
+                                  context,
+                                  index == _highlightedIndex,
+                                  enabled: item is FormButton
+                                      ? _isFormValid()
+                                      : true,
+                                  focusNode: index < _focusNodes.length
+                                      ? _focusNodes[index]
+                                      : null,
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       },

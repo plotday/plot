@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'command.dart';
 import 'package:plot/analytics/analytics.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
@@ -35,14 +36,14 @@ abstract class ActivityCommand extends Command {
               activity!.parent?.displayTitle ?? '',
               overflow: TextOverflow.ellipsis,
               style: context.theme.typography.sm.copyWith(
-                color: context.colour.muted,
+                color: context.theme.plotColors.muted,
               ),
             ),
           ),
           Text(
             Activity.separator,
             style: context.theme.typography.sm.copyWith(
-              color: context.colour.muted,
+              color: context.theme.plotColors.muted,
             ),
           ),
         ],
@@ -51,7 +52,7 @@ abstract class ActivityCommand extends Command {
             title,
             overflow: TextOverflow.ellipsis,
             style: context.theme.typography.sm.copyWith(
-              color: context.colour.foreground,
+              color: context.theme.colors.foreground,
             ),
           ),
         ),

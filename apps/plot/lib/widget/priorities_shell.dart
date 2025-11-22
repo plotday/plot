@@ -57,7 +57,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
                             icon: Icon(FIcons.list),
                             label: Builder(
                               builder: (context) => DefaultTextStyle(
-                                style: context.theme.typography.sm,
+                                style: context.theme.typography.base,
                                 child: const Text('Priorities'),
                               ),
                             ),
@@ -66,7 +66,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
                             icon: Icon(FIcons.calendar),
                             label: Builder(
                               builder: (context) => DefaultTextStyle(
-                                style: context.theme.typography.sm,
+                                style: context.theme.typography.base,
                                 child: const Text('Activities'),
                               ),
                             ),
@@ -75,7 +75,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
                             icon: Icon(FIcons.command),
                             label: Builder(
                               builder: (context) => DefaultTextStyle(
-                                style: context.theme.typography.sm,
+                                style: context.theme.typography.base,
                                 child: const Text('More'),
                               ),
                             ),

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart' as material;
 import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
-import 'package:plot/style/colors.dart';
 import 'bottom_navigation_provider.dart';
 
 class Scaffold extends StatelessWidget {
@@ -76,7 +75,7 @@ class Scaffold extends StatelessWidget {
       builder: (_) => Directionality(
         textDirection: TextDirection.ltr,
         child: Container(
-          color: translucent ? null : context.colour.background,
+          color: translucent ? null : context.theme.colors.background,
           child: scaffold,
         ),
       ),

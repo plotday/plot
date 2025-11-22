@@ -377,8 +377,7 @@ class _AuthButtonState extends State<AuthButton> {
             SizedBox(width: config.spacing),
             Text(
               config.buttonText,
-              style: TextStyle(
-                fontSize: config.fontSize,
+              style: context.theme.typography.base.copyWith(
                 fontWeight: config.fontWeight,
                 fontFamily: config.fontFamily,
                 color: _isLoading ? config.disabledTextColor : config.textColor,
@@ -435,8 +434,7 @@ class _AuthButtonState extends State<AuthButton> {
           vertical: 0,
         ),
         textStyle: FWidgetStateMap.all(
-          TextStyle(
-            fontSize: config.fontSize,
+          context.theme.typography.base.copyWith(
             fontWeight: config.fontWeight,
             fontFamily: config.fontFamily,
           ),

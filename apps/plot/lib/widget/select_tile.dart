@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/style/colors.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'icon.dart';
 import 'form_tile_layout.dart';
 
@@ -10,6 +10,7 @@ class SelectTile extends StatefulWidget {
     required this.label,
     required this.onSelect,
     this.value,
+    this.leading,
     this.placeholder,
     this.autofocus = false,
     this.focusNode,
@@ -23,6 +24,9 @@ class SelectTile extends StatefulWidget {
 
   /// The current selected value to display.
   final String? value;
+
+  /// Optional leading widget (e.g., a color dot).
+  final Widget? leading;
 
   /// Optional placeholder text when no value is selected.
   final String? placeholder;
@@ -102,7 +106,7 @@ class _SelectTileState extends State<SelectTile> {
       child: FormTileLayout(
         label: widget.label,
         rightBackgroundColor: isHighlighted
-            ? context.colour.accentBackground
+            ? context.theme.colors.primary
             : null,
         isActive: isHighlighted,
         content: GestureDetector(
@@ -127,6 +131,10 @@ class _SelectTileState extends State<SelectTile> {
                 : null,
             child: Row(
               children: [
+                if (widget.leading != null) ...[
+                  widget.leading!,
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -135,9 +143,9 @@ class _SelectTileState extends State<SelectTile> {
                       style: context.theme.typography.sm.copyWith(
                         color: widget.enabled
                             ? (hasValue
-                                  ? context.colour.foreground
-                                  : context.colour.muted)
-                            : context.colour.muted,
+                                  ? context.theme.colors.foreground
+                                  : context.theme.plotColors.muted)
+                            : context.theme.plotColors.muted,
                       ),
                     ),
                   ),
@@ -145,7 +153,7 @@ class _SelectTileState extends State<SelectTile> {
                 Icon(
                   PlotIcon.verticalExpand,
                   size: 12,
-                  color: context.colour.muted,
+                  color: context.theme.plotColors.muted,
                 ),
               ],
             ),

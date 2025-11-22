@@ -5,8 +5,6 @@ import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:drift/drift.dart' show Value;
 
-import 'package:plot/style/colors.dart';
-
 class Dialog extends StatelessWidget {
   const Dialog({
     required this.builder,
@@ -58,8 +56,8 @@ class Dialog extends StatelessWidget {
         // ignore: unused_result
         style: context.theme.dialogStyle.copyWith(
           decoration: BoxDecoration(
-            color: context.colour.modalBackground,
-            border: Border.all(color: context.colour.border),
+            color: context.theme.colors.background,
+            border: Border.all(color: context.theme.colors.border),
             borderRadius: BorderRadius.circular(8),
           ),
         ),

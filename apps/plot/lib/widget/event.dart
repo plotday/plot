@@ -1,4 +1,5 @@
 import 'package:plot/store/store.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 
@@ -26,7 +27,7 @@ class DayHeader extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(
             color: context.theme.colors.mutedForeground,
-            fontSize: context.theme.typography.sm.fontSize,
+            fontSize: context.theme.typography.base.fontSize,
           ),
         ),
       ),
@@ -92,7 +93,7 @@ class AgendaHeader extends StatelessWidget {
                   textAlign: TextAlign.end,
                   style: TextStyle(
                     color: context.theme.colors.mutedForeground,
-                    fontSize: context.theme.typography.sm.fontSize,
+                    fontSize: context.theme.typography.base.fontSize,
                   ),
                 ),
                 if (activity!.duration?.inSeconds != null &&
@@ -104,7 +105,7 @@ class AgendaHeader extends StatelessWidget {
                     activity!.duration!.format(),
                     style: TextStyle(
                       color: context.theme.colors.mutedForeground,
-                      fontSize: context.theme.typography.sm.fontSize,
+                      fontSize: context.theme.typography.base.fontSize,
                     ),
                   ),
               ],
@@ -114,7 +115,7 @@ class AgendaHeader extends StatelessWidget {
                         'Other',
                         style: DefaultTextStyle.of(context).style.copyWith(
                           color: context.theme.colors.mutedForeground,
-                          fontSize: context.theme.typography.sm.fontSize,
+                          fontSize: context.theme.typography.base.fontSize,
                         ),
                       )
                     : PriorityLabel(ancestors: priorityAncestry),
@@ -125,13 +126,13 @@ class AgendaHeader extends StatelessWidget {
             Row(
               spacing: 4.0,
               children: [
-                Icon(PlotIcon.event, size: 12, color: context.colour.muted),
+                Icon(PlotIcon.event, size: 12, color: context.theme.plotColors.muted),
                 Text(
                   activity!.title ?? 'Untitled Activity',
                   textAlign: TextAlign.start,
                   style: DefaultTextStyle.of(context).style.copyWith(
                     color: context.theme.colors.foreground,
-                    fontSize: context.theme.typography.sm.fontSize,
+                    fontSize: context.theme.typography.base.fontSize,
                   ),
                 ),
               ],

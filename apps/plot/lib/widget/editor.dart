@@ -12,7 +12,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/state/theme.dart';
-import 'package:plot/style/colors.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'sliver.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';
@@ -242,7 +242,7 @@ class EditorState extends State<Editor> {
                 ] else ...[
                   DefaultCaretOverlayBuilder(
                     caretStyle: CaretStyle().copyWith(
-                      color: context.colour.accent,
+                      color: context.theme.colors.primaryForeground,
                     ),
                   ),
                 ],
@@ -251,7 +251,7 @@ class EditorState extends State<Editor> {
               ],
               stylesheet: _buildStylesheet(context, isDark),
               selectionStyle: SelectionStyles(
-                selectionColor: context.colour.accentBackground,
+                selectionColor: context.theme.colors.primary,
               ),
               componentBuilders: [
                 if (widget.hint != null)
@@ -259,7 +259,7 @@ class EditorState extends State<Editor> {
                     widget.hint!,
                     (context) => _baseTextStyle(
                       context,
-                    ).copyWith(color: context.colour.muted),
+                    ).copyWith(color: context.theme.plotColors.muted),
                   ),
                 TaskComponentBuilder(_editor),
                 ...defaultComponentBuilders,
@@ -654,7 +654,7 @@ class ViewerState extends State<Viewer> {
         // selection: _selection,
         selectionLayerLinks: _selectionLayerLinks,
         selectionStyle: SelectionStyles(
-          selectionColor: context.colour.accentBackground,
+          selectionColor: context.theme.colors.primary,
         ),
         // contentTapDelegateFactory: (context) =>
         //     ViewerTapHandler(context.document, onTap: widget.onTap),
@@ -700,7 +700,7 @@ TextStyle _inlineTextStyler(
   if (isDark &&
       !attributions.contains(editorMentionComposingAttribution) &&
       !attributions.whereType<CommittedEditorMentionAttribution>().isNotEmpty) {
-    style = style.copyWith(color: context.colour.foreground);
+    style = style.copyWith(color: context.theme.colors.foreground);
   }
 
   return style;
@@ -709,7 +709,7 @@ TextStyle _inlineTextStyler(
 Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
   final baseStyle = _baseTextStyle(
     context,
-  ).copyWith(color: isDark ? context.colour.foreground : null);
+  ).copyWith(color: isDark ? context.theme.colors.foreground : null);
 
   return Stylesheet(
     rules: [

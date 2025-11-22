@@ -255,7 +255,7 @@ class CommandBarState extends State<_CommandBar> {
                                   style: TextStyle(
                                     color: context.theme.colors.mutedForeground,
                                     fontSize:
-                                        context.theme.typography.xs.fontSize,
+                                        context.theme.typography.sm.fontSize,
                                   ),
                                 ),
                               );

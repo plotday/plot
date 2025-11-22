@@ -15,7 +15,6 @@ class Priorities extends Table
       .map(const DurationConverter())();
   IntColumn get color => integer()
       .nullable()
-      .withDefault(const Constant(0))
       .map(const ThemeColorConverter())();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
@@ -54,16 +53,28 @@ class PriorityAncestor {
     final titles = (jsonDecode(row.titles) as List)
         .map((e) => e as String)
         .toList();
+    final colors = (jsonDecode(row.colors) as List)
+        .map((e) => e as int?)
+        .toList();
     return List.generate(
       ids.length,
-      (index) => PriorityAncestor(id: ids[index], title: titles[index]),
+      (index) => PriorityAncestor(
+        id: ids[index],
+        title: titles[index],
+        color: colors[index],
+      ),
     );
   }
 
-  const PriorityAncestor({required this.id, required this.title});
+  const PriorityAncestor({
+    required this.id,
+    required this.title,
+    required this.color,
+  });
 
   final PriorityId id;
   final String title;
+  final int? color;
 }
 
 class Priority extends PriorityRow implements Comparable<Priority> {
@@ -341,12 +352,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     required super.title,
     super.topOrder,
     super.pomodoro = const Duration(minutes: 25),
-    super.color = const ThemeColor.defaultColor(),
+    super.color,
     this.draft = false,
   }) : children = [],
        _ancestors =
            parent!._ancestors +
-           [PriorityAncestor(id: parent.id, title: parent.title)],
+           [PriorityAncestor(id: parent.id, title: parent.title, color: parent.color?.index)],
+       displayColor = color ?? parent.displayColor,
        _originalPath = null,
        super(
          id: Uuid.generate(),
@@ -375,9 +387,14 @@ class Priority extends PriorityRow implements Comparable<Priority> {
            ? parent == null
                  ? const []
                  : parent._ancestors +
-                       [PriorityAncestor(id: parent.id, title: parent.title)]
+                       [PriorityAncestor(id: parent.id, title: parent.title, color: parent.color?.index)]
            : PriorityAncestor.fromStore(ancestry),
        _originalPath = originalPath ?? row.path,
+       displayColor = row.color ?? _computeDisplayColor(
+         ancestry: ancestry,
+         parent: parent,
+         isRoot: row.root,
+       ),
        super(
          id: row.id,
          createdAt: row.createdAt,
@@ -397,6 +414,30 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     }
   }
 
+  static ThemeColor _computeDisplayColor({
+    PriorityAncestryData? ancestry,
+    Priority? parent,
+    required bool isRoot,
+  }) {
+    // If we have ancestry data, walk from last (parent) to first (root)
+    if (ancestry != null) {
+      final colors = (jsonDecode(ancestry.colors) as List)
+          .map((e) => e as int?)
+          .toList();
+      // Walk from parent (last) to root (first)
+      for (int i = colors.length - 1; i >= 0; i--) {
+        if (colors[i] != null) {
+          return ThemeColor(colors[i]!);
+        }
+      }
+    } else if (parent != null) {
+      // Use parent's displayColor
+      return parent.displayColor;
+    }
+    // Default to first color (index 0)
+    return const ThemeColor.defaultColor();
+  }
+
   static const separator = ' › ';
 
   List<PriorityAncestor> ancestors({
@@ -405,7 +446,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }) {
     final ancestors = [
       ..._ancestors,
-      if (includeSelf) PriorityAncestor(id: id, title: title),
+      if (includeSelf) PriorityAncestor(id: id, title: title, color: color?.index),
     ];
     if (context != null) {
       int startIndex = ancestors.indexWhere((a) => a.id == context.id);
@@ -438,6 +479,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   PriorityId? get parentId => parent?.id ?? _ancestors.lastOrNull?.id;
   List<Priority> children;
   final List<PriorityAncestor> _ancestors;
+  final ThemeColor displayColor;
 
   /// The original path from the database, used to detect parent changes.
   /// Null for newly created priorities that haven't been saved yet.
