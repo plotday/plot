@@ -31,14 +31,14 @@ abstract class PriorityCommand extends Command {
             child: Text(
               priority!.ancestorsLabel(),
               overflow: TextOverflow.ellipsis,
-              style: context.theme.typography.sm.copyWith(
+              style: context.theme.typography.base.copyWith(
                 color: context.colour.muted,
               ),
             ),
           ),
           Text(
             Priority.separator,
-            style: context.theme.typography.sm.copyWith(
+            style: context.theme.typography.base.copyWith(
               color: context.colour.muted,
             ),
           ),
@@ -47,7 +47,7 @@ abstract class PriorityCommand extends Command {
           child: Text(
             priority?.title ?? 'None',
             overflow: TextOverflow.ellipsis,
-            style: context.theme.typography.sm.copyWith(
+            style: context.theme.typography.base.copyWith(
               color: context.colour.foreground,
             ),
           ),

@@ -5,13 +5,15 @@ import 'package:flutter/foundation.dart'
 import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
 import 'package:super_editor_markdown/super_editor_markdown.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:flutter_debouncer/flutter_debouncer.dart';
 import 'package:follow_the_leader/follow_the_leader.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/api/twist_api.dart';
+import 'package:plot/state/theme.dart';
+import 'package:plot/style/colors.dart';
 import 'sliver.dart';
-import 'colour_scheme.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';
 import 'editor_mention_popover.dart';
@@ -193,8 +195,7 @@ class EditorState extends State<Editor> {
 
   @override
   Widget build(BuildContext context) {
-    bool isDark =
-        MediaQuery.of(context).platformBrightness == material.Brightness.dark;
+    bool isDark = context.read<ThemeBloc>().isDarkMode(context);
 
     return OverlayPortal(
       controller: _mentionOverlayController,
@@ -248,7 +249,7 @@ class EditorState extends State<Editor> {
                 // Position leader at caret for mention popover
                 _buildMentionLeaderOverlay,
               ],
-              stylesheet: isDark ? _darkStyles : _styles,
+              stylesheet: _buildStylesheet(context, isDark),
               selectionStyle: SelectionStyles(
                 selectionColor: context.colour.accentBackground,
               ),
@@ -256,14 +257,14 @@ class EditorState extends State<Editor> {
                 if (widget.hint != null)
                   HintComponentBuilder(
                     widget.hint!,
-                    (context) =>
-                        baseTextStyle.copyWith(color: context.colour.muted),
+                    (context) => _baseTextStyle(
+                      context,
+                    ).copyWith(color: context.colour.muted),
                   ),
                 TaskComponentBuilder(_editor),
                 ...defaultComponentBuilders,
               ],
               keyboardActions: [
-                _bubbleSpecialKeys,
                 if (_isEmpty) _bubbleArrowKeys,
                 _shiftEnterToInsertBlockNewline,
                 _handlePunctuationAfterMention,
@@ -272,6 +273,7 @@ class EditorState extends State<Editor> {
                 ...(_inputSource == TextInputSource.ime
                     ? defaultImeKeyboardActions
                     : defaultKeyboardActions),
+                _bubbleSpecialKeys,
               ],
             ),
           ),
@@ -644,12 +646,11 @@ class ViewerState extends State<Viewer> {
 
   @override
   Widget build(BuildContext context) {
-    bool isDark =
-        MediaQuery.of(context).platformBrightness == material.Brightness.dark;
+    bool isDark = context.read<ThemeBloc>().isDarkMode(context);
     return BoxToSliverAdapter(
       child: SuperReader(
         editor: _editor,
-        stylesheet: isDark ? _darkStyles : _styles,
+        stylesheet: _buildStylesheet(context, isDark),
         // selection: _selection,
         selectionLayerLinks: _selectionLayerLinks,
         selectionStyle: SelectionStyles(
@@ -662,16 +663,16 @@ class ViewerState extends State<Viewer> {
   }
 }
 
-const baseTextStyle = TextStyle(
-  color: Color(0xFF000000),
-  fontSize: 12,
-  height: 1.4,
-);
+TextStyle _baseTextStyle(BuildContext context) {
+  return context.theme.typography.base.copyWith(height: 1.4);
+}
 
 /// Custom inline text styler that applies styling to user mentions
 TextStyle _inlineTextStyler(
   Set<Attribution> attributions,
   TextStyle existingStyle,
+  BuildContext context,
+  bool isDark,
 ) {
   TextStyle style = defaultInlineTextStyler(attributions, existingStyle);
 
@@ -695,49 +696,41 @@ TextStyle _inlineTextStyler(
     );
   }
 
+  // Apply dark theme base color if no specific attribution styling is applied
+  if (isDark &&
+      !attributions.contains(editorMentionComposingAttribution) &&
+      !attributions.whereType<CommittedEditorMentionAttribution>().isNotEmpty) {
+    style = style.copyWith(color: context.colour.foreground);
+  }
+
   return style;
 }
 
-final _styles = Stylesheet(
-  rules: [
-    StyleRule(BlockSelector.all, (doc, docNode) {
-      return {
-        Styles.textStyle: baseTextStyle,
-        Styles.padding: const CascadingPadding.only(bottom: 14),
-      };
-    }),
-    StyleRule(BlockSelector.all.last(), (doc, docNode) {
-      return {Styles.padding: const CascadingPadding.only(bottom: 0)};
-    }),
-    StyleRule(const BlockSelector("listItem"), (doc, docNode) {
-      return {Styles.padding: const CascadingPadding.only(bottom: 0)};
-    }),
-  ],
-  inlineTextStyler: _inlineTextStyler,
-  inlineWidgetBuilders: defaultInlineWidgetBuilderChain,
-);
+Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
+  final baseStyle = _baseTextStyle(
+    context,
+  ).copyWith(color: isDark ? context.colour.foreground : null);
 
-final _darkStyles = _styles.copyWith(
-  addRulesAfter: [
-    StyleRule(BlockSelector.all, (doc, docNode) {
-      return {Styles.textStyle: const TextStyle(color: Color(0xFFFFFFFF))};
-    }),
-  ],
-  inlineTextStyler: (attributions, existingStyle) {
-    // First apply the custom mention styling
-    TextStyle style = _inlineTextStyler(attributions, existingStyle);
-
-    // Then apply dark theme base styling if no specific attribution styling is applied
-    if (!attributions.contains(editorMentionComposingAttribution) &&
-        !attributions
-            .whereType<CommittedEditorMentionAttribution>()
-            .isNotEmpty) {
-      style = style.copyWith(color: const Color(0xFFFFFFFF));
-    }
-
-    return style;
-  },
-);
+  return Stylesheet(
+    rules: [
+      StyleRule(BlockSelector.all, (doc, docNode) {
+        return {
+          Styles.textStyle: baseStyle,
+          Styles.padding: const CascadingPadding.only(bottom: 14),
+        };
+      }),
+      StyleRule(BlockSelector.all.last(), (doc, docNode) {
+        return {Styles.padding: const CascadingPadding.only(bottom: 0)};
+      }),
+      StyleRule(const BlockSelector("listItem"), (doc, docNode) {
+        return {Styles.padding: const CascadingPadding.only(bottom: 0)};
+      }),
+    ],
+    inlineTextStyler: (attributions, existingStyle) =>
+        _inlineTextStyler(attributions, existingStyle, context, isDark),
+    inlineWidgetBuilders: defaultInlineWidgetBuilderChain,
+  );
+}
 
 class SubmitIntent extends Intent {
   const SubmitIntent({this.alt = false});

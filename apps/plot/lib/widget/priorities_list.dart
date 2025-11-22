@@ -12,11 +12,10 @@ class PrioritiesList extends StatelessWidget {
     required this.root,
     required List<Priority> priorities,
     this.selected,
-  }) : topPriorities = priorities
-            .where((p) => p.topOrder != null)
-            .toList()
-          ..sort((a, b) => (a.topOrder?.value ?? 0)
-              .compareTo(b.topOrder?.value ?? 0));
+  }) : topPriorities = priorities.where((p) => p.topOrder != null).toList()
+         ..sort(
+           (a, b) => (a.topOrder?.value ?? 0).compareTo(b.topOrder?.value ?? 0),
+         );
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +38,11 @@ class PrioritiesList extends StatelessWidget {
             itemBuilder: (context, priority) => Column(
               key: ValueKey('top-${priority.id}'),
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: _buildPriorityItems(context, priority, topSection: true),
+              children: _buildPriorityItems(
+                context,
+                priority,
+                topSection: true,
+              ),
             ),
             onReorder: (int oldIndex, int newIndex) async {
               var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);

@@ -1,8 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
-import 'theme.dart';
-import 'colour_scheme.dart';
+import 'package:plot/style/layout.dart';
+import 'package:plot/style/colors.dart';
 
 /// Shared layout component for form tiles (FormTextField, FormSelect, FormButton).
 ///

@@ -141,7 +141,13 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                   }
                   if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
                     // Reversed list: moving down visually means lower index
-                    listController.moveFocus(-1);
+                    // If already at first item (index 0), focus the ActivityEditor
+                    if (listController.focusedIndex == 0) {
+                      listController.clearFocus();
+                      _activityEditorKey.currentState?.focus();
+                    } else {
+                      listController.moveFocus(-1);
+                    }
                     return KeyEventResult.handled;
                   }
                   if (event.logicalKey == LogicalKeyboardKey.enter) {
@@ -186,27 +192,26 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
                       state.activity.path,
                     ),
                     builder: (context, snapshot) {
-                      final tagCommands = snapshot.data
-                              ?.map((tagData) => ToggleActivityFilter(
-                                    tagData.$1,
-                                    context: context,
-                                  ))
+                      final tagCommands =
+                          snapshot.data
+                              ?.map(
+                                (tagData) => ToggleActivityFilter(
+                                  tagData.$1,
+                                  context: context,
+                                ),
+                              )
                               .toList() ??
                           [];
 
                       return Header(
                         title: state.activity.displayTitle,
                         prefixCommands: prefixActions,
-                        onSearchChanged: (search) => context
-                            .read<ActivityBloc>()
-                            .updateSearch(search),
-                        onSearchClosed: () => context
-                            .read<ActivityBloc>()
-                            .updateFilter([]),
+                        onSearchChanged: (search) =>
+                            context.read<ActivityBloc>().updateSearch(search),
+                        onSearchClosed: () =>
+                            context.read<ActivityBloc>().updateFilter([]),
                         filterCommands: tagCommands,
-                        commands: [
-                          ShowActivityCommands(state.activity),
-                        ],
+                        commands: [ShowActivityCommands(state.activity)],
                       );
                     },
                   ),

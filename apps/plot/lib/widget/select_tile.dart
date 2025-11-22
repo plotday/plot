@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
-import 'colour_scheme.dart';
+import 'package:plot/style/colors.dart';
 import 'icon.dart';
 import 'form_tile_layout.dart';
 
@@ -101,12 +101,16 @@ class _SelectTileState extends State<SelectTile> {
       enabled: widget.enabled,
       child: FormTileLayout(
         label: widget.label,
-        rightBackgroundColor: isHighlighted ? context.colour.highlight : null,
+        rightBackgroundColor: isHighlighted
+            ? context.colour.accentBackground
+            : null,
         isActive: isHighlighted,
         content: GestureDetector(
           onTap: widget.enabled ? _handleActivate : null,
           child: MouseRegion(
-            cursor: widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+            cursor: widget.enabled
+                ? SystemMouseCursors.click
+                : SystemMouseCursors.basic,
             onEnter: widget.enabled
                 ? (_) {
                     setState(() {

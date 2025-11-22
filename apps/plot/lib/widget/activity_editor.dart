@@ -18,7 +18,9 @@ class ActivityEditor extends StatefulWidget {
 
 class ActivityEditorState extends State<ActivityEditor> {
   final GlobalKey<EditorState> _editorKey = GlobalKey<EditorState>();
-  final GlobalKey<EditableAreaState> _editableAreaKey = GlobalKey<EditableAreaState>();
+  final GlobalKey<EditableAreaState> _editableAreaKey =
+      GlobalKey<EditableAreaState>();
+  bool _isEmpty = true;
 
   /// Request focus on the editor
   void focus() {
@@ -48,9 +50,16 @@ class ActivityEditorState extends State<ActivityEditor> {
                       focusNode: focusNode,
                       twists: state.twists,
                       shrinkWrap: false,
+                      onChange: (value) {
+                        setState(() {
+                          _isEmpty = value.trim().isEmpty;
+                        });
+                      },
                       onSubmitted: (body, {bool alt = false}) async {
                         await context.run(
-                          AddActivity(finalizeDraft(body, twists: state.twists, alt: alt)),
+                          AddActivity(
+                            finalizeDraft(body, twists: state.twists, alt: alt),
+                          ),
                         );
                       },
                     ),
@@ -62,9 +71,16 @@ class ActivityEditorState extends State<ActivityEditor> {
                     autofocus: true,
                     focusNode: focusNode,
                     twists: state.twists,
+                    onChange: (value) {
+                      setState(() {
+                        _isEmpty = value.trim().isEmpty;
+                      });
+                    },
                     onSubmitted: (body, {bool alt = false}) async {
                       await context.run(
-                        AddActivity(finalizeDraft(body, twists: state.twists, alt: alt)),
+                        AddActivity(
+                          finalizeDraft(body, twists: state.twists, alt: alt),
+                        ),
                       );
                     },
                   ),
@@ -87,6 +103,8 @@ class ActivityEditorState extends State<ActivityEditor> {
                           return const CommandDone();
                         },
                       ),
+                      style: ButtonStyle.primary,
+                      enabled: !_isEmpty,
                       expand: false,
                     ),
                   ],

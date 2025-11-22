@@ -26,8 +26,14 @@ class ActivityWidget extends StatelessWidget {
     final hasVisibleLinks = activity.links.isNotEmpty;
 
     return ListTile(
-      command: CommandWrapper(ChangeCurrentActivity(activity), icon: Value(null)),
+      command: CommandWrapper(
+        ChangeCurrentActivity(activity),
+        icon: Value(null),
+      ),
       title: activity.displayTitle,
+      subtitle: activity.note != null && activity.note!.isNotEmpty
+          ? activity.noteText
+          : null,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

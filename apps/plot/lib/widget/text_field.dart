@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:forui/forui.dart';
 
-import 'theme.dart';
-import 'colour_scheme.dart';
+import 'package:plot/style/layout.dart';
+import 'package:plot/style/colors.dart';
 
 enum TextFieldStyle { outline, ghost }
 
@@ -167,16 +167,20 @@ class EditableAreaState extends State<EditableArea> {
         padding: widget.padding ? widgetPadding : EdgeInsets.zero,
         decoration: BoxDecoration(
           color: context.colour.editableBackground,
-          border: Border(
-            top:
-                widget.position != EditableAreaPosition.top
-                    ? BorderSide(width: 1.0, color: context.colour.border)
-                    : BorderSide.none,
-            bottom:
-                widget.position != EditableAreaPosition.bottom
-                    ? BorderSide(width: 1.0, color: context.colour.border)
-                    : BorderSide.none,
-          ),
+          borderRadius: widget.position == EditableAreaPosition.top
+              ? null
+              : editorBorderRadius,
+          border: widget.position == EditableAreaPosition.top
+              ? Border(
+                  bottom: BorderSide(
+                    width: 1.0,
+                    color: context.colour.border,
+                  ),
+                )
+              : Border.all(
+                  width: 1.0,
+                  color: context.colour.border,
+                ),
         ),
         child: widget.builder(context, _focusNode),
       ),

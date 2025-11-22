@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 
-import 'package:plot/widget/colour_scheme.dart';
+import 'package:plot/style/colors.dart';
 
 class Badge extends StatelessWidget {
   const Badge({required this.count, super.key});

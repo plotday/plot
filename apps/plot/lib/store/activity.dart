@@ -634,10 +634,9 @@ class Activity extends Equatable implements Comparable<Activity> {
       }
 
       // Convert to list of (Tag, count) and sort by count descending
-      final result = tagCounts.entries
-          .map((e) => (e.key, e.value.length))
-          .toList()
-        ..sort((a, b) => b.$2.compareTo(a.$2));
+      final result =
+          tagCounts.entries.map((e) => (e.key, e.value.length)).toList()
+            ..sort((a, b) => b.$2.compareTo(a.$2));
 
       return result;
     });
@@ -645,7 +644,9 @@ class Activity extends Equatable implements Comparable<Activity> {
 
   /// Watch all tags present in activities within an activity thread (root + descendants).
   /// Returns a stream of (Tag, count) tuples sorted by occurrence count descending.
-  static Stream<List<(Tag, int)>> watchTagsForActivityThread(Path activityPath) {
+  static Stream<List<(Tag, int)>> watchTagsForActivityThread(
+    Path activityPath,
+  ) {
     final at = Store.get.activityTags;
     final a = Store.get.activities;
 
@@ -675,10 +676,9 @@ class Activity extends Equatable implements Comparable<Activity> {
       }
 
       // Convert to list of (Tag, count) and sort by count descending
-      final result = tagCounts.entries
-          .map((e) => (e.key, e.value.length))
-          .toList()
-        ..sort((a, b) => b.$2.compareTo(a.$2));
+      final result =
+          tagCounts.entries.map((e) => (e.key, e.value.length)).toList()
+            ..sort((a, b) => b.$2.compareTo(a.$2));
 
       return result;
     });
@@ -1281,9 +1281,7 @@ class Activity extends Equatable implements Comparable<Activity> {
     if (title != null) return title!;
     final noteFirstLine = note?.split("\n").first;
     if (noteFirstLine == null) return draft ? '🤷' : 'Untitled';
-    return _replaceMentionsForDisplay(
-      noteFirstLine,
-    ).removeMarkdown().trim().truncate(50);
+    return _replaceMentionsForDisplay(noteFirstLine).removeMarkdown().trim();
   }
 
   DateTimeRange? get at =>

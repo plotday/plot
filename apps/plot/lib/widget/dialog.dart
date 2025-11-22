@@ -5,7 +5,7 @@ import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:drift/drift.dart' show Value;
 
-import 'colour_scheme.dart';
+import 'package:plot/style/colors.dart';
 
 class Dialog extends StatelessWidget {
   const Dialog({

@@ -6,7 +6,6 @@ export 'alert.dart';
 export 'badge.dart';
 export 'bidirectional_list.dart';
 export 'button.dart';
-export 'colour_scheme.dart';
 export 'command_bar.dart';
 export 'dialog.dart';
 export 'dropdown.dart';
@@ -36,7 +35,11 @@ export 'switch.dart';
 export 'tapable.dart';
 export 'terms_agreement.dart';
 export 'text_field.dart';
-export 'theme.dart';
 export 'time_picker.dart';
 export 'time.dart';
 export 'toggle.dart';
+
+// Style exports
+export 'package:plot/style/colors.dart';
+export 'package:plot/style/layout.dart';
+export 'package:plot/style/theme.dart';

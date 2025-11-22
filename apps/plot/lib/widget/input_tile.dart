@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import 'package:plot/style/colors.dart';
 import 'text_field.dart';
-import 'colour_scheme.dart';
 import 'form_tile_layout.dart';
 
 class InputTile extends StatefulWidget {

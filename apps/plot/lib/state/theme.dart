@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,12 +8,15 @@ part 'theme_state.dart';
 
 /// Theme bloc (cubit) for managing theme/appearance state
 class ThemeBloc extends Cubit<ThemeState> {
-  ThemeBloc()
-      : super(
-          const ThemeState(mode: AppThemeMode.system),
-        ) {
+  ThemeBloc() : super(const ThemeState(mode: AppThemeMode.system)) {
     _loadFromPreferences();
   }
+
+  bool isDarkMode(BuildContext context) =>
+      state.mode == AppThemeMode.dark ||
+      (state.mode == AppThemeMode.system &&
+          MediaQuery.of(context).platformBrightness ==
+              material.Brightness.dark);
 
   /// Set the theme mode
   void setThemeMode(AppThemeMode mode) {

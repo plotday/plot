@@ -5,10 +5,10 @@ import 'package:forui/forui.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/bidirectional_list.dart';
 import 'list_tile.dart';
+import 'package:plot/style/layout.dart';
 import 'text_field.dart';
 import 'dialog.dart';
 import 'button.dart';
-import 'theme.dart';
 import 'logging.dart';
 
 class CommandBar extends Dialog {
@@ -284,7 +284,7 @@ class CommandBarState extends State<_CommandBar> {
                                 ListTile(
                                   command: command,
                                   body: body,
-                                  highlighted: index == _highlightedIndex,
+                                  selected: index == _highlightedIndex,
                                 ),
                               ],
                             );

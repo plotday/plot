@@ -64,10 +64,17 @@ class _NewActivityPageState extends State<NewActivityPage> {
                         ),
                       ],
                     ),
-              body: ActivityEditor(
-                key: _activityEditorKey,
-                draft: state.draft,
-                expand: true,
+              body: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: ActivityEditor(
+                      key: _activityEditorKey,
+                      draft: state.draft,
+                      expand: false,
+                    ),
+                  ),
+                ],
               ),
             );
           },

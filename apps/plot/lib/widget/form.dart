@@ -72,7 +72,12 @@ abstract class FormItem {
   bool isValid();
 
   /// Build the widget for this form item
-  Widget build(BuildContext context, bool highlighted, {bool enabled = true, FocusNode? focusNode});
+  Widget build(
+    BuildContext context,
+    bool highlighted, {
+    bool enabled = true,
+    FocusNode? focusNode,
+  });
 }
 
 /// Text input form item
@@ -110,7 +115,12 @@ class FormTextInput extends FormItem {
   }
 
   @override
-  Widget build(BuildContext context, bool highlighted, {bool enabled = true, FocusNode? focusNode}) {
+  Widget build(
+    BuildContext context,
+    bool highlighted, {
+    bool enabled = true,
+    FocusNode? focusNode,
+  }) {
     return InputTile(
       label: label ?? key,
       controller: controller,
@@ -199,7 +209,12 @@ class FormSelect<T> extends FormItem {
   }
 
   @override
-  Widget build(BuildContext context, bool highlighted, {bool enabled = true, FocusNode? focusNode}) {
+  Widget build(
+    BuildContext context,
+    bool highlighted, {
+    bool enabled = true,
+    FocusNode? focusNode,
+  }) {
     final isEnabled = this.enabled && enabled;
     return SelectTile(
       label: label ?? key,
@@ -216,14 +231,15 @@ class FormSelect<T> extends FormItem {
 
 /// Button form item
 class FormButton extends FormItem {
-  FormButton({
-    required super.key,
-    required this.command,
-    this.onSubmit,
-  }) : super(required: false, autofocus: false);
+  FormButton({required super.key, required this.command, this.onSubmit})
+    : super(required: false, autofocus: false);
 
   final Command command;
-  final Future<CommandReturn> Function(BuildContext context, Map<String, dynamic> values)? onSubmit;
+  final Future<CommandReturn> Function(
+    BuildContext context,
+    Map<String, dynamic> values,
+  )?
+  onSubmit;
 
   @override
   dynamic getValue() => null;
@@ -237,7 +253,12 @@ class FormButton extends FormItem {
   bool isValid() => true; // Buttons are always valid
 
   @override
-  Widget build(BuildContext context, bool highlighted, {bool enabled = true, FocusNode? focusNode}) {
+  Widget build(
+    BuildContext context,
+    bool highlighted, {
+    bool enabled = true,
+    FocusNode? focusNode,
+  }) {
     return _FormButtonWidget(
       command: command,
       highlighted: highlighted,
@@ -278,8 +299,11 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
         child: FocusableActionDetector(
           focusNode: widget.enabled ? widget.focusNode : null,
           child: FormTileLayout(
-            label: '', // FormButton doesn't have a label, just empty space on left
-            rightBackgroundColor: isHighlighted ? context.colour.highlight : null,
+            label:
+                '', // FormButton doesn't have a label, just empty space on left
+            rightBackgroundColor: isHighlighted
+                ? context.colour.accentBackground
+                : null,
             isActive: isHighlighted,
             content: MouseRegion(
               onEnter: (_) => setState(() => _isHovered = true),
@@ -314,11 +338,7 @@ abstract class FormGroup {
 
 /// Static form group
 class StaticFormGroup extends FormGroup {
-  StaticFormGroup({
-    super.title,
-    super.subtitle,
-    required this.items,
-  });
+  StaticFormGroup({super.title, super.subtitle, required this.items});
 
   final List<FormItem> items;
 
@@ -330,10 +350,7 @@ class StaticFormGroup extends FormGroup {
 
 /// Form data structure
 class FormData {
-  const FormData({
-    required this.title,
-    required this.groups,
-  });
+  const FormData({required this.title, required this.groups});
 
   final String title;
   final List<FormGroup> groups;

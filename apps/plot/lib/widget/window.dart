@@ -8,7 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 
-import 'package:plot/widget/colour_scheme.dart';
+import 'package:plot/style/colors.dart';
 import 'logging.dart';
 
 class Window extends StatefulWidget {
@@ -190,7 +190,7 @@ class WindowState extends State<Window> with WindowListener {
         // those artifacts, the TransparentMacOSBottomBar widget adds a large
         // negative margin to the visual effect subview.
         padding: const EdgeInsets.all(-2000.0),
-        child: Container(color: context.colour.canvas, child: widget.child),
+        child: Container(color: context.colour.background, child: widget.child),
       ),
       builder: (_) => widget.child,
     );

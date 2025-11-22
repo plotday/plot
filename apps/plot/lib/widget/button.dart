@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
-import 'package:plot/widget/colour_scheme.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/command/command.dart';
 import 'spinner.dart';
 
@@ -41,13 +41,13 @@ class Button extends StatelessWidget {
 
   const Button.icon(
     this.command, {
+    this.style = ButtonStyle.ghost,
     this.loading = false,
     this.enabled = true,
     this.selected = false,
     this.expand = true,
     super.key,
-  }) : style = ButtonStyle.ghost,
-       iconOnly = true;
+  }) : iconOnly = true;
 
   final ButtonStyle style;
   final bool loading;

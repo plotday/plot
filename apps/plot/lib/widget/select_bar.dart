@@ -4,10 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/analytics/analytics.dart';
+import 'package:plot/style/layout.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
 import 'dialog.dart';
-import 'theme.dart';
 import 'logging.dart';
 
 /// A generic selection bar dialog for selecting items from a list.
@@ -273,7 +273,7 @@ class _SelectBarState<T> extends State<_SelectBar<T>> {
                           onExit: (_) => listController.setHovered(null),
                           child: ListTile(
                             command: action,
-                            highlighted: index == _highlightedIndex,
+                            selected: index == _highlightedIndex,
                           ),
                         );
                       },

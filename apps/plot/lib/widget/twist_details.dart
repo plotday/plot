@@ -3,7 +3,7 @@ import 'package:forui/forui.dart';
 import 'package:intl/intl.dart';
 
 import 'package:plot/api/twist_api.dart';
-import 'package:plot/widget/theme.dart';
+import 'package:plot/style/layout.dart';
 
 class TwistDetails extends StatelessWidget {
   const TwistDetails({required this.twist, super.key});

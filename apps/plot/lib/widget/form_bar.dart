@@ -4,8 +4,8 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/list_view_selector.dart';
+import 'package:plot/style/layout.dart';
 import 'dialog.dart';
-import 'theme.dart';
 import 'logging.dart';
 
 class FormBar extends Dialog {

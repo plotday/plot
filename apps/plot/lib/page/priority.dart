@@ -525,7 +525,7 @@ class PriorityPage extends StatelessWidget {
                                   },
                                 ),
                                 body: BidirectionalList(
-                                  anchorOffset: 0.5,
+                                  anchorOffset: 0.35,
                                   controller: listController,
                                   scrollController: ScrollControllerContext.of(
                                     context,

@@ -21,36 +21,55 @@ class ColourSchemeData extends Equatable {
           ? HSLColor.fromColor(Color(0xFF000000))
           : HSLColor.fromColor(Color(0xFFFFFFFF));
 
-  Color get barrier => pureBackground.withAlpha(0.6).toColor();
-  Color get canvas => brightness == Brightness.light
-      ? base.withLightness(0.98).withAlpha(0.9).toColor()
-      : base.withLightness(0.15).withAlpha(0.25).toColor();
-  Color get background => brightness == Brightness.light
-      ? base.withLightness(0.98).withAlpha(0.9).toColor()
-      : base.withSaturation(0.2).withLightness(0.08).toColor();
+  Color get barrier => HSLColor.fromColor(
+    Color(0xFF000000),
+  ).withAlpha(brightness == Brightness.light ? 0.3 : 0.6).toColor();
+  Color get background => _background.toColor();
+  HSLColor get _background => brightness == Brightness.light
+      ? base
+            .withHue((base.hue - 100) % 360)
+            .withSaturation(0.2)
+            .withLightness(0.95)
+      : base
+            .withHue((base.hue - 100) % 360)
+            .withSaturation(0.05)
+            .withLightness(0.12);
   Color get modalBackground => brightness == Brightness.light
-      ? base.withLightness(0.95).withAlpha(0.9).toColor()
-      : base.withSaturation(0.3).withLightness(0.12).toColor();
+      ? base
+            .withHue((base.hue - 100) % 360)
+            .withSaturation(0.2)
+            .withLightness(0.985)
+            .toColor()
+      : base.withSaturation(0.15).withLightness(0.12).toColor();
   Color get editableBackground => brightness == Brightness.light
-      ? base.withLightness(1).toColor()
-      : base.withSaturation(0.1).withLightness(0.12).toColor();
+      ? base.withLightness(0.99).toColor()
+      : _background.withLightness(0.16).toColor();
   Color get accent => brightness == Brightness.light
-      ? base.withLightness(0.3).toColor()
-      : base.withLightness(0.5).toColor();
+      ? base.withSaturation(0.8).withLightness(0.3).toColor()
+      : base.withSaturation(0.4).withLightness(0.55).toColor();
   Color get accentBackground => brightness == Brightness.light
-      ? base.withLightness(0.85).toColor()
-      : base.withLightness(0.15).toColor();
+      ? base
+            .withHue((base.hue - 35) % 360)
+            .withSaturation(0.3)
+            .withLightness(0.94)
+            .toColor()
+      : base
+            .withHue((base.hue - 35) % 360)
+            .withSaturation(0.1)
+            .withLightness(0.10)
+            .toColor();
   Color get highlight => brightness == Brightness.light
-      ? base.withLightness(0.9).toColor()
-      : base.withLightness(0.2).withAlpha(0.2).toColor();
+      ? _background.withLightness(0.91).toColor()
+      : _background.withLightness(0.095).toColor();
   Color get border => brightness == Brightness.light
-      ? pureForeground.withAlpha(0.2).toColor()
+      ? pureForeground.withAlpha(0.1).toColor()
       : pureForeground.withAlpha(0.1).toColor();
-  Color get foreground =>
-      brightness == Brightness.light ? Color(0xFF000000) : Color(0xFFFFFFFF);
+  Color get foreground => brightness == Brightness.light
+      ? base.withSaturation(0.1).withLightness(0.1).toColor()
+      : Color(0xFFFFFFFF);
   Color get muted => brightness == Brightness.light
-      ? base.withSaturation(0.2).withLightness(0.2).toColor()
-      : base.withSaturation(0.2).withLightness(0.7).toColor();
+      ? base.withSaturation(0.1).withLightness(0.35).toColor()
+      : base.withSaturation(0.07).withLightness(0.7).toColor();
 
   FColors toFColorScheme() {
     return FColors(
@@ -58,8 +77,8 @@ class ColourSchemeData extends Equatable {
       barrier: barrier,
       background: background,
       foreground: foreground,
-      primary: accent,
-      primaryForeground: foreground,
+      primary: accentBackground,
+      primaryForeground: accent,
       secondary: highlight,
       secondaryForeground: foreground,
       muted: Color(0x00FFFFFF),

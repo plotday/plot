@@ -5,9 +5,9 @@ import 'package:forui/forui.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/platform.dart';
-import 'theme.dart';
+import 'package:plot/style/layout.dart';
+import 'package:plot/style/colors.dart';
 import 'button.dart';
-import 'colour_scheme.dart';
 import 'logging.dart';
 
 enum ListTileStyle { item, header }
@@ -32,7 +32,7 @@ class ListTile extends StatefulWidget {
     /// Deprecated: Use focusNode instead for keyboard navigation.
     this.highlighted = false,
 
-    /// Whether this tile is selected (shows left border and primary color).
+    /// Whether this tile is selected (shows accent background).
     this.selected = false,
 
     /// Whether to show the border when selected (default: true).
@@ -54,6 +54,9 @@ class ListTile extends StatefulWidget {
     /// Override the action title
     String? title,
 
+    /// Display beside the title
+    String? subtitle,
+
     /// Override the body
     this.body,
     this.header,
@@ -63,7 +66,8 @@ class ListTile extends StatefulWidget {
     this.centered = false,
 
     super.key,
-  }) : title = title ?? command?.title ?? '';
+  }) : title = title ?? command?.title ?? '',
+       subtitle = subtitle ?? command?.subtitle;
 
   final ListTileStyle style;
   final bool highlighted;
@@ -76,6 +80,7 @@ class ListTile extends StatefulWidget {
   final Command? doubleTapCommand;
   final List<Command> trailingCommands;
   final String title;
+  final String? subtitle;
   final Widget? body;
   final Widget? header;
 
@@ -169,22 +174,17 @@ class _ListTileState extends State<ListTile> {
           onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
           child: Container(
             decoration: BoxDecoration(
-              color: _focusNode.hasFocus ||
-                     (!widget.disableInternalHover && _isHovered) ||
-                     widget.highlighted
+              borderRadius: tileBorderRadius,
+              color: widget.selected
+                  ? context.colour.accentBackground
+                  : _focusNode.hasFocus ||
+                      (!widget.disableInternalHover && _isHovered) ||
+                      widget.highlighted
                   ? context.colour.highlight
-                  : null,
-              border: widget.selected && widget.selectedBorder
-                  ? Border(
-                      left: BorderSide(
-                        color: context.colour.accent,
-                        width: 3,
-                      ),
-                    )
                   : null,
             ),
             padding: widgetPaddingSm.copyWith(
-              left: widgetPaddingSm.left + (widget.indentLevel * 16.0) - (widget.selected && widget.selectedBorder ? 3.0 : 0.0),
+              left: widgetPaddingSm.left + (widget.indentLevel * 16.0),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -211,28 +211,24 @@ class _ListTileState extends State<ListTile> {
                                   ? MainAxisAlignment.center
                                   : MainAxisAlignment.start,
                               children: [
-                                Flexible(
-                                  child: Text(
-                                    widget.style == ListTileStyle.header
-                                        ? widget.title.toUpperCase()
-                                        : widget.title,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: widget.centered
-                                        ? TextAlign.center
-                                        : TextAlign.start,
-                                    style: context.theme.typography.sm.copyWith(
-                                      color: widget.selected
-                                          ? context.colour.accent
-                                          : widget.style == ListTileStyle.header
-                                              ? context.colour.muted
-                                              : context.colour.foreground,
-                                    ),
+                                Text(
+                                  widget.title,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: widget.centered
+                                      ? TextAlign.center
+                                      : TextAlign.start,
+                                  style: context.theme.typography.sm.copyWith(
+                                    color: widget.selected
+                                        ? context.colour.accent
+                                        : widget.style == ListTileStyle.header
+                                        ? context.colour.muted
+                                        : context.colour.foreground,
                                   ),
                                 ),
-                                if (widget.command?.subtitle != null)
-                                  Flexible(
+                                if (widget.subtitle != null)
+                                  Expanded(
                                     child: Text(
-                                      '  ${widget.command!.subtitle!}',
+                                      '  ${widget.subtitle!}',
                                       overflow: TextOverflow.ellipsis,
                                       style: context.theme.typography.sm
                                           .copyWith(

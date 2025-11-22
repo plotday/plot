@@ -180,8 +180,9 @@ class _HeaderState extends State<Header> {
           // Filter commands (only shown when search is expanded)
           if (_searchExpanded && widget.onSearchChanged != null)
             ...widget.filterCommands.asMap().entries.map((entry) {
-              final key =
-                  ValueKey(Object.hash(entry.value.hashCode, entry.key));
+              final key = ValueKey(
+                Object.hash(entry.value.hashCode, entry.key),
+              );
               return Button.icon(entry.value, key: key);
             }),
           // Add search button/close button if onSearchChanged is provided
@@ -237,10 +238,7 @@ class _HeaderState extends State<Header> {
               ),
             );
           },
-          title: Row(
-            spacing: 8,
-            children: titleChildren,
-          ),
+          title: Row(spacing: 8, children: titleChildren),
           suffixes: suffixes,
         );
       },

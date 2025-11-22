@@ -3,7 +3,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
-import 'colour_scheme.dart';
+import 'package:plot/style/colors.dart';
 import 'bottom_navigation_provider.dart';
 
 class Scaffold extends StatelessWidget {
@@ -32,9 +32,7 @@ class Scaffold extends StatelessWidget {
           constraints: BoxConstraints(
             minHeight: MediaQuery.of(context).size.height,
           ),
-          child: Center(
-            child: body,
-          ),
+          child: Center(child: body),
         ),
       );
     }
@@ -68,7 +66,7 @@ class Scaffold extends StatelessWidget {
       header: header,
       sidebar: sidebar,
       footer: footer,
-      childPad: false,
+      childPad: true,
       child: wrappedBody,
     );
 
