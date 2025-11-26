@@ -16,23 +16,29 @@ enum AppThemeMode {
 class ThemeState extends Equatable {
   const ThemeState({
     required this.mode,
-    this.priorityHue = 160.0, // Default brand hue (teal/green)
+    this.priorityColor = const ThemeColor.defaultColor(),
   });
 
   /// Current theme mode preference
   final AppThemeMode mode;
 
-  /// Current priority hue value (0-360)
-  final double priorityHue;
+  /// Current priority color
+  final ThemeColor priorityColor;
+
+  /// Get the hue value from the priority color
+  double get priorityHue => priorityColor.toHue();
+
+  /// Get the chroma factor from the priority color
+  double get priorityChromaFactor => priorityColor.chromaFactor;
 
   /// Create a copy with updated properties
-  ThemeState copyWith({AppThemeMode? mode, double? priorityHue}) {
+  ThemeState copyWith({AppThemeMode? mode, ThemeColor? priorityColor}) {
     return ThemeState(
       mode: mode ?? this.mode,
-      priorityHue: priorityHue ?? this.priorityHue,
+      priorityColor: priorityColor ?? this.priorityColor,
     );
   }
 
   @override
-  List<Object?> get props => [mode, priorityHue];
+  List<Object?> get props => [mode, priorityColor];
 }

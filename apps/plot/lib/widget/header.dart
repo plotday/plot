@@ -136,27 +136,30 @@ class _HeaderState extends State<Header> {
           // If search is expanded, show the search field here
           if (_searchExpanded && widget.onSearchChanged != null)
             Expanded(
-              child: Focus(
-                onKeyEvent: (node, event) {
-                  if (event is KeyDownEvent &&
-                      event.logicalKey == LogicalKeyboardKey.escape) {
-                    setState(() {
-                      _searchExpanded = false;
-                    });
-                    widget.onSearchChanged!('');
-                    widget.onSearchClosed?.call();
-                    return KeyEventResult.handled;
-                  }
-                  return KeyEventResult.ignored;
-                },
-                child: FTextField(
-                  controller: _searchController,
-                  focusNode: _searchFocusNode,
-                  hint: 'Search...',
-                  style: (style) => style.copyWith(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Focus(
+                  onKeyEvent: (node, event) {
+                    if (event is KeyDownEvent &&
+                        event.logicalKey == LogicalKeyboardKey.escape) {
+                      setState(() {
+                        _searchExpanded = false;
+                      });
+                      widget.onSearchChanged!('');
+                      widget.onSearchClosed?.call();
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
+                  },
+                  child: FTextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    hint: 'Search...',
+                    style: (style) => style.copyWith(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                     ),
                   ),
                 ),

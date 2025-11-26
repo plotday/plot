@@ -94,39 +94,35 @@ class TextFieldState extends State<TextField> {
       //   inputFormatters: widget.inputFormatters,
       //   autofocus: widget.autofocus,
       // ),
-      builder:
-          (_) => KeyboardListener(
-            focusNode: FocusNode(),
-            onKeyEvent: (KeyEvent event) {
-              if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.enter) {
-                widget.onSubmitted?.call(_controller.text);
-              }
-            },
-            child: FTextField(
-              controller: _controller,
-              style:
-                  widget.style == TextFieldStyle.outline
-                      ? null
-                      : (style) => style.copyWith(
-                        contentPadding: EdgeInsets.all(0),
-                        border: style.border.map(
-                          (borderStyle) => borderStyle.copyWith(
-                            borderSide: BorderSide(
-                              width: 0,
-                              style: BorderStyle.none,
-                            ),
-                          ),
-                        ),
-                      ),
-              hint: widget.label,
-              autocorrect: widget.autocorrect,
-              maxLines: widget.maxLines,
-              textAlign: widget.textAlign,
-              focusNode: widget.focusNode,
-              inputFormatters: widget.inputFormatters,
-              autofocus: widget.autofocus,
-            ),
-          ),
+      builder: (_) => KeyboardListener(
+        focusNode: FocusNode(),
+        onKeyEvent: (KeyEvent event) {
+          if (event is KeyDownEvent &&
+              event.logicalKey == LogicalKeyboardKey.enter) {
+            widget.onSubmitted?.call(_controller.text);
+          }
+        },
+        child: FTextField(
+          controller: _controller,
+          style: widget.style == TextFieldStyle.outline
+              ? null
+              : (style) => style.copyWith(
+                  contentPadding: EdgeInsets.all(0),
+                  border: style.border.map(
+                    (borderStyle) => borderStyle.copyWith(
+                      borderSide: BorderSide(width: 0, style: BorderStyle.none),
+                    ),
+                  ),
+                ),
+          hint: widget.label,
+          autocorrect: widget.autocorrect,
+          maxLines: widget.maxLines,
+          textAlign: widget.textAlign,
+          focusNode: widget.focusNode,
+          inputFormatters: widget.inputFormatters,
+          autofocus: widget.autofocus,
+        ),
+      ),
     );
   }
 }
@@ -177,10 +173,7 @@ class EditableAreaState extends State<EditableArea> {
                     color: context.theme.colors.border,
                   ),
                 )
-              : Border.all(
-                  width: 1.0,
-                  color: context.theme.colors.border,
-                ),
+              : Border.all(width: 1.0, color: context.theme.colors.border),
         ),
         child: widget.builder(context, _focusNode),
       ),

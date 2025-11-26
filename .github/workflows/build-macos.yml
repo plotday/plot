@@ -1,18 +1,7 @@
 name: Build macOS App
 
 on:
-  workflow_run:
-    workflows: ["Version Bump"]
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
-    inputs:
-      skip_notarization:
-        description: "Skip notarization (for testing)"
-        required: false
-        default: "false"
 
 concurrency:
   group: build-macos-${{ github.ref }}
@@ -21,7 +10,6 @@ concurrency:
 jobs:
   build-macos:
     runs-on: macos-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - name: Generate GitHub App Token
@@ -51,11 +39,6 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
-          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
-          R2_ACCESS_KEY_ID: op://Production/cloudflare/build uploads/r2 access key id
-          R2_SECRET_ACCESS_KEY: op://Production/cloudflare/build uploads/r2 secret access key
-          R2_BUCKET_NAME: op://Production/cloudflare/build uploads/r2 bucket name
           APPLE_ID: op://Production/Apple/Signing/apple id
           APPLE_TEAM_ID: op://Production/Apple/Signing/team id
           APPLE_APP_SPECIFIC_PASSWORD: op://Production/Apple/Signing/app specific password
@@ -78,10 +61,49 @@ jobs:
 
           echo "Building version: $CURRENT_VERSION"
 
+      - name: Detect branch and set build metadata
+        id: build_type
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          GIT_HASH=$(git rev-parse --short HEAD)
+          IS_MAIN=$([[ "$BRANCH_NAME" == "main" ]] && echo "true" || echo "false")
+
+          if [ "$IS_MAIN" == "true" ]; then
+            # Main branch: standard release
+            TAG_SUFFIX=""
+            FILE_SUFFIX=""
+            RELEASE_TYPE="latest"
+            RELEASE_TITLE_PREFIX=""
+            SKIP_NOTARIZATION="false"
+          else
+            # Feature branch: prerelease with branch name and git hash
+            TAG_SUFFIX="-${BRANCH_NAME}-${GIT_HASH}"
+            FILE_SUFFIX="-${BRANCH_NAME}-${GIT_HASH}"
+            RELEASE_TYPE="prerelease"
+            RELEASE_TITLE_PREFIX="[${BRANCH_NAME}] "
+            SKIP_NOTARIZATION="true"
+          fi
+
+          {
+            echo "is_main=$IS_MAIN"
+            echo "branch_name=$BRANCH_NAME"
+            echo "git_hash=$GIT_HASH"
+            echo "tag_suffix=$TAG_SUFFIX"
+            echo "file_suffix=$FILE_SUFFIX"
+            echo "release_type=$RELEASE_TYPE"
+            echo "release_title_prefix=$RELEASE_TITLE_PREFIX"
+            echo "skip_notarization=$SKIP_NOTARIZATION"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Branch: $BRANCH_NAME"
+          echo "Git Hash: $GIT_HASH"
+          echo "Is Main: $IS_MAIN"
+          echo "Skip Notarization: $SKIP_NOTARIZATION"
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.35.5"
+          flutter-version-file: apps/plot/pubspec.yaml
           channel: "stable"
           cache: true
 
@@ -193,6 +215,8 @@ jobs:
         run: |
           cd apps/plot/build/macos/Build/Products/Release
 
+          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}${{ steps.build_type.outputs.file_suffix }}.dmg"
+
           # Install create-dmg if not available
           brew install create-dmg || true
 
@@ -206,16 +230,16 @@ jobs:
             --icon "Plot.app" 200 190 \
             --hide-extension "Plot.app" \
             --app-drop-link 600 185 \
-            "Plot-${{ steps.version.outputs.new_version }}.dmg" \
+            "$DMG_FILE" \
             "Plot.app" || true
 
           # Fallback: If create-dmg fails, create simple DMG
-          if [ ! -f "Plot-${{ steps.version.outputs.new_version }}.dmg" ]; then
+          if [ ! -f "$DMG_FILE" ]; then
             echo "create-dmg failed, using hdiutil fallback"
-            hdiutil create -volname "Plot" -srcfolder "Plot.app" -ov -format UDZO "Plot-${{ steps.version.outputs.new_version }}.dmg"
+            hdiutil create -volname "Plot" -srcfolder "Plot.app" -ov -format UDZO "$DMG_FILE"
           fi
 
-          ls -lh "Plot-${{ steps.version.outputs.new_version }}.dmg"
+          ls -lh "$DMG_FILE"
 
       - name: Code sign DMG
         run: |
@@ -229,7 +253,7 @@ jobs:
             exit 1
           fi
 
-          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}.dmg"
+          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}${{ steps.build_type.outputs.file_suffix }}.dmg"
           echo "Signing DMG with identity: $IDENTITY"
 
           # Sign the DMG
@@ -240,11 +264,11 @@ jobs:
           codesign --verify --verbose "$DMG_FILE"
 
       - name: Notarize DMG with Apple
-        if: github.event.inputs.skip_notarization != 'true'
+        if: steps.build_type.outputs.skip_notarization != 'true'
         run: |
           cd apps/plot/build/macos/Build/Products/Release
 
-          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}.dmg"
+          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}${{ steps.build_type.outputs.file_suffix }}.dmg"
 
           echo "Submitting $DMG_FILE for notarization..."
           xcrun notarytool submit "$DMG_FILE" \
@@ -259,60 +283,6 @@ jobs:
           echo "Verifying notarization..."
           spctl -a -vv -t install "$DMG_FILE"
 
-      - name: Install wrangler
-        run: npm install -g wrangler
-
-      - name: Upload DMG to R2
-        run: |
-          cd apps/plot/build/macos/Build/Products/Release
-
-          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}.dmg"
-          R2_PATH="releases/${{ steps.version.outputs.new_version }}/macos/$DMG_FILE"
-
-          # Configure wrangler with R2 credentials
-          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
-          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
-
-          echo "Uploading $DMG_FILE to R2 at $R2_PATH"
-          wrangler r2 object put "${R2_BUCKET_NAME}/${R2_PATH}" --file="$DMG_FILE" --remote
-
-          echo "DMG uploaded successfully!"
-          echo "Download URL: https://downloads.plot.day/${R2_PATH}"
-
-      - name: Create and upload version manifest
-        run: |
-          cd apps/plot/build/macos/Build/Products/Release
-
-          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}.dmg"
-          FILE_SIZE=$(stat -f%z "$DMG_FILE")
-          FILE_HASH=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')
-
-          # Create manifest JSON
-          cat > latest-macos.json << EOF
-          {
-            "version": "${{ steps.version.outputs.new_version }}",
-            "versionName": "${{ steps.version.outputs.version_name }}",
-            "buildNumber": ${{ steps.version.outputs.build_number }},
-            "platform": "macos",
-            "url": "https://downloads.plot.day/releases/${{ steps.version.outputs.new_version }}/macos/$DMG_FILE",
-            "size": $FILE_SIZE,
-            "sha256": "$FILE_HASH",
-            "releaseDate": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "minOSVersion": "10.14"
-          }
-          EOF
-
-          cat latest-macos.json
-
-          # Upload manifest
-          export CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID
-          export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
-
-          wrangler r2 object put "${R2_BUCKET_NAME}/latest-macos.json" --file="latest-macos.json" --remote
-
-          echo "Manifest uploaded successfully!"
-          echo "Manifest URL: https://downloads.plot.day/latest-macos.json"
-
       - name: Clean up keychain
         if: always()
         run: |
@@ -324,10 +294,8 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-build-${{ steps.version.outputs.new_version }}
-          path: |
-            apps/plot/build/macos/Build/Products/Release/Plot-${{ steps.version.outputs.new_version }}.dmg
-            apps/plot/build/macos/Build/Products/Release/latest-macos.json
+          name: macos-build-${{ steps.version.outputs.new_version }}${{ steps.build_type.outputs.file_suffix }}
+          path: apps/plot/build/macos/Build/Products/Release/Plot-${{ steps.version.outputs.new_version }}${{ steps.build_type.outputs.file_suffix }}.dmg
           retention-days: 30
 
       - name: Create GitHub Release
@@ -336,45 +304,60 @@ jobs:
         run: |
           cd apps/plot/build/macos/Build/Products/Release
 
-          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}.dmg"
-          TAG_NAME="macos@${{ steps.version.outputs.new_version }}"
-          RELEASE_TITLE="Plot macOS ${{ steps.version.outputs.new_version }}"
+          DMG_FILE="Plot-${{ steps.version.outputs.new_version }}${{ steps.build_type.outputs.file_suffix }}.dmg"
+          TAG_NAME="macos@${{ steps.version.outputs.new_version }}${{ steps.build_type.outputs.tag_suffix }}"
+          RELEASE_TITLE="${{ steps.build_type.outputs.release_title_prefix }}Plot macOS ${{ steps.version.outputs.new_version }}"
 
-          # Read manifest for file metadata
-          FILE_SIZE=$(cat latest-macos.json | grep '"size"' | sed 's/.*: \([0-9]*\).*/\1/')
-          FILE_HASH=$(cat latest-macos.json | grep '"sha256"' | sed 's/.*: "\(.*\)".*/\1/')
-          RELEASE_DATE=$(cat latest-macos.json | grep '"releaseDate"' | sed 's/.*: "\(.*\)".*/\1/')
+          # Calculate file metadata
+          FILE_SIZE=$(stat -f%z "$DMG_FILE")
+          FILE_HASH=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')
+          RELEASE_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           # Create release notes
           cat > release-notes.md << EOF
-          ## Plot macOS ${{ steps.version.outputs.new_version }}
+          ## ${{ steps.build_type.outputs.release_title_prefix }}Plot macOS ${{ steps.version.outputs.new_version }}
 
           **Version:** ${{ steps.version.outputs.version_name }}
           **Build Number:** ${{ steps.version.outputs.build_number }}
           **Platform:** macOS
+          **Branch:** ${{ steps.build_type.outputs.branch_name }}
+          **Git Hash:** ${{ steps.build_type.outputs.git_hash }}
           **Release Date:** ${RELEASE_DATE}
 
           ### Download
 
-          - **DMG**: [Plot-${{ steps.version.outputs.new_version }}.dmg](https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/macos/Plot-${{ steps.version.outputs.new_version }}.dmg)
           - **Size**: ${FILE_SIZE} bytes
           - **SHA256**: \`${FILE_HASH}\`
 
           ### Requirements
 
           - **Minimum macOS Version:** 10.14 (Mojave)
-
-          ### Auto-Update
-
-          For auto-update systems, see the [manifest JSON](https://download.plot.day/latest-macos.json).
           EOF
 
-          # Create release
-          gh release create "$TAG_NAME" \
-            --title "$RELEASE_TITLE" \
-            --notes-file release-notes.md \
-            --latest \
-            "$DMG_FILE"
+          # Add prerelease warning if not main
+          if [ "${{ steps.build_type.outputs.is_main }}" != "true" ]; then
+            echo "" >> release-notes.md
+            echo "---" >> release-notes.md
+            echo "" >> release-notes.md
+            echo "⚠️ **This is a branch build and may be unstable.**" >> release-notes.md
+            echo "" >> release-notes.md
+            echo "This build was created from the \`${{ steps.build_type.outputs.branch_name }}\` branch at commit \`${{ steps.build_type.outputs.git_hash }}\`. It has not been notarized and is intended for testing purposes only." >> release-notes.md
+          fi
+
+          # Create release (with or without --latest/--prerelease)
+          if [ "${{ steps.build_type.outputs.is_main }}" == "true" ]; then
+            gh release create "$TAG_NAME" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release-notes.md \
+              --latest \
+              "$DMG_FILE"
+          else
+            gh release create "$TAG_NAME" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release-notes.md \
+              --prerelease \
+              "$DMG_FILE"
+          fi
 
           echo "Release created: $TAG_NAME"
 
@@ -384,10 +367,15 @@ jobs:
             echo "## ✅ macOS Build Complete"
             echo ""
             echo "**Version:** ${{ steps.version.outputs.new_version }}"
+            echo "**Branch:** ${{ steps.build_type.outputs.branch_name }}"
+            echo "**Git Hash:** ${{ steps.build_type.outputs.git_hash }}"
+            echo "**Build Type:** ${{ steps.build_type.outputs.is_main == 'true' && 'Production (Main)' || 'Branch Build' }}"
             echo "**Platform:** macOS"
-            echo "**File:** Plot-${{ steps.version.outputs.new_version }}.dmg"
+            echo "**File:** Plot-${{ steps.version.outputs.new_version }}${{ steps.build_type.outputs.file_suffix }}.dmg"
+            echo "**Notarized:** ${{ steps.build_type.outputs.skip_notarization == 'true' && 'No (branch build)' || 'Yes' }}"
             echo ""
-            echo "### Download URLs"
-            echo "- DMG: https://download.plot.day/releases/${{ steps.version.outputs.new_version }}/macos/Plot-${{ steps.version.outputs.new_version }}.dmg"
-            echo "- Manifest: https://download.plot.day/latest-macos.json"
+            echo "### GitHub Release"
+            echo "- **Tag:** macos@${{ steps.version.outputs.new_version }}${{ steps.build_type.outputs.tag_suffix }}"
+            echo "- **Type:** ${{ steps.build_type.outputs.release_type }}"
+            echo "- **Status:** Created"
           } >> "$GITHUB_STEP_SUMMARY"

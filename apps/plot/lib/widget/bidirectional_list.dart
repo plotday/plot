@@ -183,7 +183,9 @@ class BidirectionalListSelector extends StatefulWidget {
 
 class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
   late final BidirectionalListController controller =
-      BidirectionalListController(initialFocusedIndex: widget.initialFocusedIndex);
+      BidirectionalListController(
+        initialFocusedIndex: widget.initialFocusedIndex,
+      );
 
   @override
   void initState() {
@@ -237,8 +239,12 @@ class BidirectionalListSelectorState extends State<BidirectionalListSelector> {
   }
 }
 
-typedef ItemBuilder =
-    Widget? Function(BuildContext context, int index, FocusNode focusNode);
+typedef ItemBuilder = Widget? Function(
+  BuildContext context,
+  int index,
+  FocusNode focusNode, {
+  int? reorderableIndex,
+});
 typedef ItemFetcher = Future<void> Function(int first, int count);
 
 class BidirectionalList extends StatefulWidget {
@@ -263,6 +269,12 @@ class BidirectionalList extends StatefulWidget {
   final ScrollController? scrollController;
   final BidirectionalListController controller;
   final bool reverse;
+
+  /// Callback to enable reordering of items. Returns a callback that will be
+  /// invoked when the item is reordered with the new index as parameter.
+  ///
+  /// Note: Reordering is only enabled for items at index 0 and above.
+  /// Items below index 0 (in the reverse/up list) cannot be reordered.
   final void Function(int newIndex)? Function(int index)? onReorder;
 
   BidirectionalList({
@@ -447,6 +459,7 @@ class BidirectionalListState extends State<BidirectionalList> {
     required GlobalKey key,
     required int itemCount,
     required int? Function(int index) itemIndexCalculator,
+    required bool enableReordering,
   }) {
     return SliverReorderableList(
       key: key,
@@ -459,31 +472,28 @@ class BidirectionalListState extends State<BidirectionalList> {
 
         // Get or create FocusNode for this item
         final focusNode = widget.controller.getFocusNode(itemIndex);
-        var child = widget.builder(context, itemIndex, focusNode);
+        final onReorder = enableReordering ? widget.onReorder?.call(itemIndex) : null;
+
+        // Pass reorderableIndex to builder if reordering is enabled
+        var child = widget.builder(
+          context,
+          itemIndex,
+          focusNode,
+          reorderableIndex: onReorder != null ? index : null,
+        );
 
         if (child == null) {
           return SizedBox(key: ValueKey('empty_$itemIndex'), height: 0);
         }
 
-        final onReorder = widget.onReorder?.call(itemIndex);
-
         // Wrap with MouseRegion to track hover state
         // Key is required by SliverReorderableList on the outermost widget
-        child = MouseRegion(
-          key: onReorder == null ? ValueKey('item_$itemIndex') : null,
+        return MouseRegion(
+          key: ValueKey('item_$itemIndex'),
           onEnter: (_) => widget.controller.setHovered(itemIndex),
           onExit: (_) => widget.controller.setHovered(null),
           child: child,
         );
-
-        if (onReorder != null) {
-          return ReorderableDragStartListener(
-            index: index,
-            key: ValueKey('item_$itemIndex'),
-            child: child,
-          );
-        }
-        return child;
       },
       onReorder: (oldIndex, newIndex) {
         final onReorder = widget.onReorder?.call(
@@ -539,6 +549,7 @@ class BidirectionalListState extends State<BidirectionalList> {
                 }
                 return null;
               },
+              enableReordering: false,
             ),
             _buildSliverList(
               key: _downListKey,
@@ -550,6 +561,7 @@ class BidirectionalListState extends State<BidirectionalList> {
                 }
                 return null;
               },
+              enableReordering: true,
             ),
             if (!widget.doneEnd) spinner,
           ],

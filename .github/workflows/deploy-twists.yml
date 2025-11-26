@@ -115,7 +115,7 @@ jobs:
       - name: Install dependencies for ${{ matrix.twist }}
         run: |
           cd twists/${{ matrix.twist }}
-          pnpm install --filter="."
+          pnpm install --frozen-lockfile --filter="."
 
       - name: Deploy ${{ matrix.twist }} twist
         run: |

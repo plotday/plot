@@ -52,8 +52,9 @@ class SelectBar<T> extends Dialog {
   /// The placeholder text for the search input.
   final String prompt;
 
-  /// Show the select bar and return the selected value, or null if cancelled.
-  static Future<T?> open<T>(
+  /// Show the select bar and return the selected value wrapped in Value,
+  /// or Value.absent() if cancelled.
+  static Future<Value<T>> open<T>(
     BuildContext context, {
     required Future<List<T>> Function(String? search) items,
     required String Function(T) labelBuilder,
@@ -71,7 +72,7 @@ class SelectBar<T> extends Dialog {
       prompt: prompt,
     ).show<T>(context);
 
-    return result.present ? result.value : null;
+    return result;
   }
 }
 

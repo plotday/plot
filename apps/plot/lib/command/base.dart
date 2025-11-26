@@ -51,7 +51,6 @@ abstract class Command {
     required this.eventObject,
     required this.eventAction,
     this.subtitle,
-    this.description,
     this.icon,
     this.shortcut,
     this.on,
@@ -61,7 +60,6 @@ abstract class Command {
   final EventObject eventObject;
   final EventAction eventAction;
   final String? subtitle;
-  final String? description;
   final IconData? icon;
   final ShortcutActivator? shortcut;
   // state for toggle actions
@@ -88,7 +86,6 @@ class CommandWrapper extends Command {
          eventObject: command.eventObject,
          eventAction: command.eventAction,
          subtitle: command.subtitle,
-         description: command.description,
          icon: icon.or(command.icon),
          shortcut: command.shortcut,
        );
@@ -109,7 +106,6 @@ class CommandWrapper extends Command {
 class ShowCommands extends Command {
   ShowCommands({
     required super.title,
-    super.description,
     super.icon,
     super.shortcut,
     required this.commands,
@@ -145,7 +141,6 @@ class ShowCommands extends Command {
 class ShowPage extends Command {
   ShowPage({
     required super.title,
-    super.description,
     super.icon,
     super.shortcut,
     required this.builder,
@@ -263,8 +258,7 @@ abstract class CommandGroup {
         .where(
           (command) =>
               match(command.title) ||
-              match(command.subtitle) ||
-              match(command.description),
+              match(command.subtitle),
         )
         .toList()
       ..sort((a, b) {

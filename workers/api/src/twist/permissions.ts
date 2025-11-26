@@ -1,7 +1,7 @@
 import { type TwistPermissions } from "@plotday/twister/tools/twists";
 
 // Re-export TwistPermissions from SDK as TwistPermissions for backwards compatibility
-export type { TwistPermissions as TwistPermissions };
+export type { TwistPermissions };
 
 /**
  * Permission flags that can be combined for a given domain/entity.

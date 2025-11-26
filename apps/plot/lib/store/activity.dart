@@ -1033,7 +1033,7 @@ class Activity extends Equatable implements Comparable<Activity> {
         tags,
         (tags.id.equalsExp(a.id) | (tags.id.isNull() & a.id.isNull())) &
             (tags.occurrence.equalsExp(exceptions.occurrence) |
-                (tags.occurrence.isNull() & exceptions.occurrence.isNull())),
+                (tags.occurrence.equals('') & exceptions.occurrence.isNull())),
       ),
     ]);
 
@@ -1100,12 +1100,13 @@ class Activity extends Equatable implements Comparable<Activity> {
       }
 
       // Create base activity
+      final tagsRow = activityRow.recurrenceRule == null
+          ? group.first.readTableOrNull(tags)
+          : null;
       final baseActivity = Activity._fromStore(
         activity: activityRow,
         priority: priority,
-        tags: activityRow.recurrenceRule == null
-            ? group.first.readTableOrNull(tags)
-            : null,
+        tags: tagsRow,
       );
 
       if (!baseActivity.recurring) {
@@ -1191,7 +1192,6 @@ class Activity extends Equatable implements Comparable<Activity> {
          assigneeId: assigneeId,
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
-         pending: ActivityPendingSync.full.value,
          priorityId: priority.id,
          draft: draft,
          private: private,
@@ -1443,7 +1443,6 @@ class Activity extends Equatable implements Comparable<Activity> {
         mentions: mentions,
         createdAt: draft == false && _activity.draft ? now : null,
         updatedAt: now,
-        pending: Value(ActivityPendingSync.full.value),
         startAt: rootStartAt,
         endAt: rootEndAt,
         startOn: rootStartOn,
@@ -1591,27 +1590,30 @@ class Activity extends Equatable implements Comparable<Activity> {
     final currentTagUpdates = Map<int, bool>.from(_tags?.tagsUpdated ?? {});
     currentTagUpdates[tag.id] = isAdding;
     log.info(
-      "Toggling tag ${tag.name} (${tag.type}) to $isAdding ($currentTags)",
+      "Toggling tag ${tag.name} (${tag.type}) to $isAdding ($currentTags, $currentTagUpdates)",
     );
 
-    return Activity._fromStore(
+    final newActivity = Activity._fromStore(
       activity: _activity,
       exception: _exception,
       tags:
           _tags?.copyWith(
             updatedAt: DateTime.now(),
-            tags: Value(currentTags.isEmpty ? null : currentTags),
+            tags: Value(currentTags),
             tagsUpdated: Value(currentTagUpdates),
           ) ??
           ActivityTagsRow(
             id: id,
+            occurrence:
+                _exception?.occurrence ?? '', // Empty string for base activity
             updatedAt: DateTime.now(),
-            tags: currentTags.isEmpty ? null : currentTags,
+            tags: currentTags,
             tagsUpdated: currentTagUpdates.isEmpty ? null : currentTagUpdates,
           ),
       priority: priority,
       parent: parent,
     );
+    return newActivity;
   }
 
   Future<void> save() async {
@@ -1869,10 +1871,24 @@ class Activity extends Equatable implements Comparable<Activity> {
       return -1;
     }
 
-    // Otherwise, compare doneAt ?? createdAt
+    // For non-scheduled activities, sort by order (manual ordering)
+    // For scheduled activities, sort by time, then order
+    final thisScheduled = scheduled;
+    final otherScheduled = other.scheduled;
+
+    if (!thisScheduled && !otherScheduled && !done && !other.done) {
+      // Both are non-scheduled, non-done: sort by order for manual reordering
+      return order.compareTo(other.order);
+    }
+
+    // Otherwise, compare doneAt ?? createdAt, then by order
     final thisTime = doneAt ?? createdAt;
     final otherTime = other.doneAt ?? other.createdAt;
-    return thisTime.compareTo(otherTime);
+    final timeComparison = thisTime.compareTo(otherTime);
+    if (timeComparison != 0) {
+      return timeComparison;
+    }
+    return order.compareTo(other.order);
   }
 
   @override

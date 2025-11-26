@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/state/layout.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/page/loading.dart';
 import 'header.dart';
@@ -158,7 +159,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                         key: ValueKey('LeftPanelPositionProvider'),
                         position: HeaderPosition.left,
                         child: FAnimatedTheme(
-                          data: darkenTheme(context.theme),
+                          data: darkenTheme(context.theme, context.colour),
                           child: widget.left,
                         ),
                       ),
@@ -216,7 +217,8 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                           }
                           if (layoutState.middlePanelVisible &&
                               regions.length == 2) {
-                            newMiddleRatio = regions[0].extent.current /
+                            newMiddleRatio =
+                                regions[0].extent.current /
                                 (regions[0].extent.current +
                                     regions[1].extent.current);
                             prefs.setDouble(

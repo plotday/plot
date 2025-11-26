@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
-import 'package:plot/style/plot_colors.dart';
 import 'package:plot/command/command.dart';
 import 'spinner.dart';
 
@@ -71,10 +70,19 @@ class Button extends StatelessWidget {
           // ignore: unused_result
           contentStyle: selectedStyle.contentStyle.copyWith(
             textStyle: selectedStyle.contentStyle.textStyle.map(
-              (style) => style.copyWith(color: context.theme.colors.primaryForeground),
+              (style) =>
+                  style.copyWith(color: context.theme.colors.primaryForeground),
             ),
             iconStyle: selectedStyle.iconContentStyle.iconStyle.map(
-              (style) => style.copyWith(color: context.theme.colors.primaryForeground),
+              (style) =>
+                  style.copyWith(color: context.theme.colors.primaryForeground),
+            ),
+          ),
+          // ignore: unused_result
+          iconContentStyle: selectedStyle.iconContentStyle.copyWith(
+            iconStyle: selectedStyle.iconContentStyle.iconStyle.map(
+              (style) =>
+                  style.copyWith(color: context.theme.colors.primaryForeground),
             ),
           ),
         );
@@ -96,7 +104,7 @@ class Button extends StatelessWidget {
                 style: fStyle,
                 onPress: onPress,
                 child: icon != null
-                    ? Icon(icon, size: 12, color: context.theme.plotColors.muted)
+                    ? Icon(icon, size: 12)
                     : Text(
                         command.title,
                         style: context.theme.typography.base.copyWith(
@@ -108,9 +116,7 @@ class Button extends StatelessWidget {
             : FButton(
                 style: fStyle,
                 onPress: onPress,
-                prefix: icon != null
-                    ? Icon(icon, size: 12, color: context.theme.plotColors.muted)
-                    : null,
+                prefix: icon != null ? Icon(icon, size: 12) : null,
                 child: Text(command.title),
               );
       },
@@ -126,18 +132,30 @@ class Button extends StatelessWidget {
 
     Widget result = stack;
 
-    if (command.subtitle != null && command.subtitle!.isNotEmpty) {
-      result = FTooltip(
-        tipBuilder: (context, controller) => Text(command.subtitle!),
-        child: result,
-      );
-    }
+    result = FTooltip(
+      tipBuilder: (context, controller) {
+        if (command.subtitle != null && command.subtitle!.isNotEmpty) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(command.title),
+              Text(
+                command.subtitle!,
+                style: context.theme.typography.sm.copyWith(
+                  color: context.theme.colors.mutedForeground,
+                ),
+              ),
+            ],
+          );
+        }
+        return Text(command.title);
+      },
+      child: result,
+    );
 
     if (!expand) {
-      result = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [result],
-      );
+      result = Row(mainAxisSize: MainAxisSize.min, children: [result]);
     }
 
     return result;

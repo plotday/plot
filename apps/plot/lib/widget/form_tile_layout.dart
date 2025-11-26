@@ -42,11 +42,7 @@ class FormTileLayout extends StatelessWidget {
               // Left side: label area without highlight
               Container(width: formTileSplitPoint),
               // Right side: content area with optional background color
-              Expanded(
-                child: Container(
-                  color: rightBackgroundColor,
-                ),
-              ),
+              Expanded(child: Container(color: rightBackgroundColor)),
             ],
           ),
         ),
@@ -62,7 +58,9 @@ class FormTileLayout extends StatelessWidget {
                   label,
                   textAlign: TextAlign.end,
                   style: context.theme.typography.sm.copyWith(
-                    color: isActive ? context.theme.colors.foreground : context.theme.plotColors.muted,
+                    color: isActive
+                        ? context.theme.colors.foreground
+                        : context.theme.plotColors.muted,
                   ),
                 ),
               ),

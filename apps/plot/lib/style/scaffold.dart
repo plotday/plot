@@ -8,7 +8,7 @@ FScaffoldStyle scaffoldStyle({
   systemOverlayStyle: colors.systemOverlayStyle,
   backgroundColor: colors.background,
   sidebarBackgroundColor: colors.background,
-  childPadding: style.pagePadding.copyWith(top: 0),
+  childPadding: style.pagePadding.copyWith(top: 0, bottom: 16),
   footerDecoration: BoxDecoration(
     border: Border(
       top: BorderSide(color: colors.border, width: style.borderWidth),

@@ -8,14 +8,22 @@ FTypography buildTypography(FColors colorScheme) {
     xs: FTypography.inherit(
       colors: colorScheme,
       defaultFontFamily: 'Figtree',
-    ).base.copyWith(fontSize: 9),
+    ).base.copyWith(fontSize: 11),
     sm: FTypography.inherit(
       colors: colorScheme,
       defaultFontFamily: 'Figtree',
-    ).base.copyWith(fontSize: 10.5),
+    ).base.copyWith(fontSize: 13),
     base: FTypography.inherit(
       colors: colorScheme,
       defaultFontFamily: 'Figtree',
-    ).base.copyWith(fontSize: 12),
+    ).base.copyWith(fontSize: 15),
+    lg: FTypography.inherit(
+      colors: colorScheme,
+      defaultFontFamily: 'Figtree',
+    ).base.copyWith(fontSize: 18),
+    xl: FTypography.inherit(
+      colors: colorScheme,
+      defaultFontFamily: 'Figtree',
+    ).base.copyWith(fontSize: 22),
   );
 }

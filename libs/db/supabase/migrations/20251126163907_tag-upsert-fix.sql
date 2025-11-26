@@ -1,3 +1,5 @@
+SET check_function_bodies = OFF;
+
 CREATE OR REPLACE FUNCTION public.update_activity_tags (p_activity_id uuid, p_user_id uuid, p_client_id integer, p_tag_updates jsonb)
     RETURNS void
     LANGUAGE plpgsql
@@ -62,4 +64,27 @@ BEGIN
 END;
 $function$;
 
+ALTER VIEW "public"."activity_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."activity_children" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity_unread" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity_exception" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_activity_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_tags" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_child" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_settings_inherited" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."user_priority" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."actor" SET (security_invoker = TRUE);
+
+ALTER VIEW "public"."priority_child_twist" SET (security_invoker = TRUE);
 

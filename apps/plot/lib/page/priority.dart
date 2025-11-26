@@ -11,7 +11,6 @@ import 'package:plot/command/command.dart';
 import 'package:plot/router.dart';
 import 'priorities.dart';
 import 'loading.dart';
-import 'logging.dart';
 
 @RoutePage(name: "PriorityRoute")
 class PriorityWrapper implements AutoRouteWrapper {
@@ -537,11 +536,9 @@ class PriorityPage extends StatelessWidget {
                                   fetcher: (first, count) => context
                                       .read<PriorityBloc>()
                                       .fetchMoreAgendaItems(first, count),
-                                  builder: (context, index, focusNode) {
+                                  builder: (context, index, focusNode, {reorderableIndex}) {
                                     final current =
                                         state.agendaItems[index - state.first];
-                                    log.fine('Building $index: $current');
-
                                     return Column(
                                       mainAxisSize: MainAxisSize.min,
                                       key: ValueKey(
@@ -594,6 +591,8 @@ class PriorityPage extends StatelessWidget {
                                                 selected: selected == index,
                                                 focusNode: focusNode,
                                                 context: state.context,
+                                                reorderableIndex:
+                                                    reorderableIndex,
                                               ),
                                           ],
                                         ),
@@ -614,6 +613,27 @@ class PriorityPage extends StatelessWidget {
                                       final newListIndex =
                                           newIndex - state.first;
 
+                                      // Calculate prev/next BEFORE modifying state
+                                      // so we get the correct adjacent items
+                                      var prevIndex = newListIndex - 1;
+                                      var nextIndex = newListIndex;
+                                      // Adjust for the item being removed from oldListIndex
+                                      if (oldListIndex < newListIndex) {
+                                        prevIndex++;
+                                        nextIndex++;
+                                      }
+                                      AgendaItem? prev;
+                                      if (prevIndex >= 0 &&
+                                          prevIndex <
+                                              state.agendaItems.length) {
+                                        prev = state.agendaItems[prevIndex];
+                                      }
+                                      AgendaItem? next;
+                                      if (nextIndex <
+                                          state.agendaItems.length) {
+                                        next = state.agendaItems[nextIndex];
+                                      }
+
                                       // Update state immediately to prevent jank
                                       context
                                           .read<PriorityBloc>()
@@ -622,21 +642,7 @@ class PriorityPage extends StatelessWidget {
                                             newListIndex,
                                           );
 
-                                      // Then update the database asynchronously
-                                      var prevIndex =
-                                          newListIndex -
-                                          1 +
-                                          (oldListIndex < newListIndex ? 1 : 0);
-                                      var nextIndex = prevIndex + 1;
-                                      AgendaItem? prev;
-                                      if (prevIndex >= 0) {
-                                        prev = state.agendaItems[prevIndex];
-                                      }
-                                      AgendaItem? next;
-                                      if (nextIndex <
-                                          state.agendaItems.length) {
-                                        next = state.agendaItems[nextIndex];
-                                      }
+                                      // Then update the database asynchronously with correct prev/next
                                       onReorderActivity(activity, prev, next);
                                     };
                                   },
@@ -673,10 +679,6 @@ class PriorityPage extends StatelessWidget {
       date: (Date date) => null,
       priority: (Priority priority) => priority,
       activity: (Activity a) => a.priority,
-    );
-    log.info(
-      'Reordering ${activity.displayTitle} between '
-      '${prevActivity?.displayTitle} and ${nextActivity?.displayTitle} (${priority?.title})',
     );
     activity
         .copyWith(

@@ -244,7 +244,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
   int _getTotalItemCount(ActivityState state) {
     return state.activityGroups.fold(
       0,
-      (count, group) => count + 1 + group.activities.length,
+      (count, group) => count + group.activities.length,
     );
   }
 
@@ -259,9 +259,6 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
         }
         currentIndex++;
       }
-
-      // Skip date header
-      currentIndex++;
     }
 
     return null;
@@ -284,8 +281,8 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
       doneEnd: true,
       fetcher: (first, count) =>
           Future<void>.value(), // No pagination needed for ActivityPage
-      builder: (context, index, focusNode) {
-        return _buildItemAtIndex(state, index, focusNode);
+      builder: (context, index, focusNode, {reorderableIndex}) {
+        return _buildItemAtIndex(state, index, focusNode, reorderableIndex: reorderableIndex);
       },
     );
   }
@@ -293,8 +290,9 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
   Widget _buildItemAtIndex(
     ActivityState state,
     int index,
-    FocusNode focusNode,
-  ) {
+    FocusNode focusNode, {
+    int? reorderableIndex,
+  }) {
     int currentIndex = 0;
 
     for (final group in state.activityGroups) {
@@ -307,21 +305,11 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
             selected: false, // No selection on ActivityPage
             focusNode: focusNode,
             key: ValueKey(activity.id),
+            reorderableIndex: reorderableIndex,
           );
         }
         currentIndex++;
       }
-
-      // Check if this is the date header
-      if (currentIndex == index) {
-        return DayHeader(
-          date: group.date,
-          now: group.date == Date.today(),
-          focusNode: focusNode,
-          key: ValueKey('date_${group.date.hashCode}'),
-        );
-      }
-      currentIndex++;
     }
 
     // Fallback - should not happen

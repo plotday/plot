@@ -365,7 +365,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdBy: Base.userId,
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
-         pending: PriorityPendingSync.full.value,
          path: Path.generate(parent: parent.path),
          root: false,
          unread: false,
@@ -399,6 +398,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          id: row.id,
          createdAt: row.createdAt,
          updatedAt: row.updatedAt,
+         pending: row.pending,
          archivedAt: row.archivedAt,
          title: row.title,
          topOrder: row.topOrder,
@@ -434,8 +434,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       // Use parent's displayColor
       return parent.displayColor;
     }
-    // Default to first color (index 0)
-    return const ThemeColor.defaultColor();
+    // Default color: Resolution (7) for root priorities, Catalyst (0) for others
+    return isRoot ? ThemeColor(7) : const ThemeColor.defaultColor();
   }
 
   static const separator = ' › ';
@@ -545,9 +545,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         createdBy: createdBy,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: DateTime.now(),
-        pending: pending.present
-            ? pending
-            : Value(PriorityPendingSync.full.value),
+        pending: pending,
         archivedAt: archivedAt,
         title: title ?? this.title,
         path: path ?? this.path,

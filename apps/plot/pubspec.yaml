@@ -17,7 +17,7 @@ publish_to: "none"
 version: 1.0.0+170
 
 environment:
-  sdk: ">=3.8.0 <4.0.0"
+  sdk: ">=3.10.0 <4.0.0"
   flutter: 3.38.2
 
 # Dependencies specify other packages that your package needs in order to work.
@@ -31,6 +31,7 @@ dependencies:
     sdk: flutter
   flutter_web_plugins:
     sdk: flutter
+  web: ^1.1.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -54,8 +55,8 @@ dependencies:
   platform_builder: ^3.0.0
   uuid: ^4.4.2
   meta: ^1.12.0
-  drift: ^2.26.0
-  drift_flutter: ^0.2.4
+  drift: ^2.29.0
+  drift_flutter: ^0.2.7
   device_info_plus: ^12.1.0
   flutter_resizable_container: ^4.2.0
   macos_window_utils: ^1.6.1
@@ -92,9 +93,11 @@ dependencies:
   web_socket_channel: ^3.0.1
   follow_the_leader: ^0.5.1
   synchronized: ^3.3.0+3
+  prism: ^2.1.0
+  prism_flutter: ^2.1.0
 
 dev_dependencies:
-  analyzer: ^7.5.7
+  analyzer: ^8.4.1
   flutter_test:
     sdk: flutter
 
@@ -108,7 +111,7 @@ dev_dependencies:
   build_runner: ^2.4.14
   build_verify: ^3.1.0
   test: ^1.25.2
-  drift_dev: ^2.26.0
+  drift_dev: ^2.29.0
   auto_route_generator: ^10.0.1
   msix: ^3.16.7
 
@@ -140,7 +143,6 @@ flutter:
           style: italic
 
 scripts:
-  env: ../../scripts/gen-env development SUPABASE_URL SUPABASE_ANON_KEY API_ROOT POSTHOG_API_KEY POSTHOG_HOST AUTH_GOOGLE_ID AUTH_GOOGLE_URI AUTH_GOOGLE_IOS_ID AUTH_GOOGLE_ANDROID_ID AUTH_MICROSOFT_ID AUTH_APPLE_CLIENT_ID > .env
   build:
     watch: flutter pub run build_runner watch
     build: flutter pub run build_runner build

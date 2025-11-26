@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -8,15 +7,20 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/base.dart';
 import 'package:plot/state/user.dart';
-import 'package:plot/router.dart' show InvitationRoute, EmailSignInRoute;
+import 'package:plot/router.dart' show EmailSignInRoute;
+import 'package:logging/logging.dart';
 import 'logging.dart';
 
 @RoutePage()
 class SignInPage extends StatefulWidget {
-  const SignInPage({this.returnTo, this.signOut = false, super.key});
+  const SignInPage({
+    this.returnTo,
+    this.onSignIn,
+    super.key,
+  });
 
   final String? returnTo;
-  final bool signOut;
+  final void Function()? onSignIn;
 
   @override
   State<SignInPage> createState() => _SignInPageState();
@@ -26,25 +30,12 @@ class _SignInPageState extends State<SignInPage> {
   String? _errorMessage;
 
   @override
-  void initState() {
-    if (widget.signOut) {
-      Future.microtask(() async {
-        await Base.client.auth.signOut();
-      });
-    }
-    super.initState();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return BlocListener<UserBloc, UserState>(
       listener: (context, state) {
-        // Navigate when user is ready (Store.init has completed)
-        if (state is UserReady) {
-          context.router.navigatePath(widget.returnTo ?? '/');
-        } else if (state is UserWaitlisted) {
-          // Navigate to invitation page for waitlisted users
-          context.router.navigate(const InvitationRoute());
+        if (state is UserReady && widget.onSignIn != null) {
+          Logger('plot.route').info('SignInPage: UserReady detected, calling onSignIn callback');
+          widget.onSignIn!();
         }
       },
       child: Scaffold(

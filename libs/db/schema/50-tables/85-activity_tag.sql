@@ -6,7 +6,7 @@ CREATE TABLE "public"."activity_tag" (
     "occurrence" text,
     "tag_id" integer NOT NULL,
     "updated_by" integer NOT NULL DEFAULT 0,
-    UNIQUE ("actor_id", "activity_id", "tag_id")
+    UNIQUE NULLS NOT DISTINCT ("actor_id", "activity_id", "occurrence", "tag_id")
 );
 
 COMMENT ON COLUMN "public"."activity_tag"."occurrence" IS 'Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM';

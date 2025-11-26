@@ -1,7 +1,7 @@
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
-import 'package:plot/widget/color_dot.dart';
+import 'package:plot/util/theme_color.dart';
 
 class PriorityWidget extends StatelessWidget {
   const PriorityWidget({
@@ -44,7 +44,7 @@ class PriorityLabel extends StatelessWidget {
     this.priority,
     Priority? context,
     this.onSelect,
-    this.showDot = true,
+    this.fontSize,
     super.key,
   }) : ancestors =
            ancestors ?? priority?.ancestors(context: context) ?? const [];
@@ -52,70 +52,87 @@ class PriorityLabel extends StatelessWidget {
   final List<PriorityAncestor> ancestors;
   final Priority? priority;
   final void Function(PriorityId)? onSelect;
-  final bool showDot;
+  final double? fontSize;
 
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      ...ancestors.indexed.expand((entry) {
-        final i = entry.$1;
-        final ancestor = entry.$2;
-        final isLast = i == ancestors.length - 1;
-        return [
-          Flexible(
-            key: ValueKey('ancestor_${ancestor.id}'),
-            child: DefaultTextStyle(
-              style: DefaultTextStyle.of(context).style.copyWith(
-                color: context.theme.colors.mutedForeground,
-                fontSize: context.theme.typography.base.fontSize,
-              ),
-              child: Tapable(
-                onTap: () async {
-                  if (onSelect != null) {
-                    onSelect?.call(ancestor.id);
-                  } else {
-                    final priority = await Priority.getOne(ancestor.id);
-                    if (!context.mounted) return;
-                    context.run(ChangeCurrentPriority(priority));
-                  }
-                },
-                child: Text(
-                  ancestor.title,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
+  Widget build(BuildContext context) {
+    // Compute display colors for each ancestor (with inheritance)
+    ThemeColor currentColor = const ThemeColor.defaultColor();
+    final displayColors = <ThemeColor>[];
+    for (final ancestor in ancestors) {
+      if (ancestor.color != null) {
+        currentColor = ThemeColor(ancestor.color!);
+      }
+      displayColors.add(currentColor);
+    }
+
+    // Update current color with priority's color if present
+    if (priority?.color != null) {
+      currentColor = priority!.color!;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ...ancestors.indexed.expand((entry) {
+          final i = entry.$1;
+          final ancestor = entry.$2;
+          final isLast = i == ancestors.length - 1;
+          final ancestorColor = context.colour.colours.fromTheme(
+            displayColors[i],
+          );
+          return [
+            Flexible(
+              key: ValueKey('ancestor_${ancestor.id}'),
+              child: DefaultTextStyle(
+                style: DefaultTextStyle.of(context).style.copyWith(
+                  color: ancestorColor,
+                  fontSize: fontSize ?? context.theme.typography.base.fontSize,
+                ),
+                child: Tapable(
+                  onTap: () async {
+                    if (onSelect != null) {
+                      onSelect?.call(ancestor.id);
+                    } else {
+                      final priority = await Priority.getOne(ancestor.id);
+                      if (!context.mounted) return;
+                      context.run(ChangeCurrentPriority(priority));
+                    }
+                  },
+                  child: Text(
+                    ancestor.title,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
                 ),
               ),
             ),
-          ),
-          if (!isLast || priority != null)
-            DefaultTextStyle(
-              key: ValueKey('separator_${ancestor.id}'),
-              style: DefaultTextStyle.of(context).style.copyWith(
-                color: context.theme.colors.mutedForeground,
-                fontSize: context.theme.typography.base.fontSize,
+            if (!isLast || priority != null)
+              DefaultTextStyle(
+                key: ValueKey('separator_${ancestor.id}'),
+                style: DefaultTextStyle.of(context).style.copyWith(
+                  color: context.theme.colors.mutedForeground,
+                  fontSize: fontSize ?? context.theme.typography.base.fontSize,
+                ),
+                child: Text(Priority.separator),
               ),
-              child: Text(Priority.separator),
-            ),
-        ];
-      }),
-      if (priority != null)
-        Flexible(
-          child: DefaultTextStyle(
-            style: DefaultTextStyle.of(
-              context,
-            ).style.copyWith(fontSize: context.theme.typography.base.fontSize),
-            child: Text(
-              priority!.title,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
+          ];
+        }),
+        if (priority != null)
+          Flexible(
+            child: DefaultTextStyle(
+              style: DefaultTextStyle.of(context).style.copyWith(
+                color: context.colour.colours.fromTheme(currentColor),
+                fontSize: fontSize ?? context.theme.typography.base.fontSize,
+              ),
+              child: Text(
+                priority!.title,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
             ),
           ),
-        ),
-      if (priority != null && showDot) ...[
-        const SizedBox(width: 8),
-        ColorDot(color: priority!.displayColor.toColor()),
       ],
-    ],
-  );
+    );
+  }
 }

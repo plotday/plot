@@ -17,6 +17,7 @@ FHeaderStyles buildHeaderStyles(
         fontWeight: FontWeight.w600,
         height: 1,
       ),
+      actionSpacing: 0,
     ),
   );
 }

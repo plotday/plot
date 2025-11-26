@@ -1,86 +1,187 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 import 'package:equatable/equatable.dart';
 import 'package:forui/forui.dart';
-import '../state/theme.dart';
+import 'package:prism_flutter/prism_flutter.dart';
+
+import 'package:plot/util/theme_color.dart';
+import 'package:plot/state/theme.dart';
+
+/// OKLCH color representation for the color scheme
+class OklchColours {
+  final RayOklch background;
+  final RayOklch editableBackground;
+  final RayOklch accent;
+  final RayOklch accentBackground;
+  final RayOklch highlight;
+  final RayOklch foreground;
+  final RayOklch muted;
+  final RayOklch border;
+  final RayOklch barrier;
+  final RayOklch pureBackground;
+  final RayOklch pureForeground;
+
+  /// Base accent chroma before chromaFactor is applied, used by fromTheme
+  final double baseAccentChroma;
+
+  const OklchColours({
+    required this.background,
+    required this.editableBackground,
+    required this.accent,
+    required this.accentBackground,
+    required this.highlight,
+    required this.foreground,
+    required this.muted,
+    required this.border,
+    required this.barrier,
+    required this.pureBackground,
+    required this.pureForeground,
+    required this.baseAccentChroma,
+  });
+
+  /// Calculate accent lightness for a ThemeColor based on brightness
+  /// ThemeColor 7 (gray) uses special lightness values for better contrast
+  static double _getAccentLightness(ThemeColor themeColor, Brightness brightness) {
+    if (themeColor.index == 7) {
+      return brightness == Brightness.light ? 0.15 : 0.9;
+    }
+    return brightness == Brightness.light ? 0.45 : 0.7;
+  }
+
+  /// Create OKLCH colors from a ThemeColor
+  factory OklchColours.fromThemeColor({
+    required ThemeColor themeColor,
+    required Brightness brightness,
+    double darken = 1.0,
+    double saturate = 1.0,
+  }) {
+    final hue = themeColor.toHue();
+    final chromaFactor = themeColor.chromaFactor;
+
+    RayOklch lch(double l, double c, [double? h, double? o]) {
+      return RayOklch.fromComponents(
+        (l / darken).clamp(0.0, 1.0),
+        c * saturate * chromaFactor,
+        h ?? hue,
+        o ?? 1.0,
+      );
+    }
+
+    // Pure white and black
+    final pureBackground = brightness == .light
+        ? RayOklch.fromComponents(1.0, 0.0, 0.0)
+        : RayOklch.fromComponents(0.0, 0.0, 0.0);
+    final pureForeground = brightness == .light
+        ? RayOklch.fromComponents(0.0, 0.0, 0.0)
+        : RayOklch.fromComponents(1.0, 0.0, 0.0);
+
+    if (brightness == Brightness.light) {
+      const baseChroma = 0.4;
+      final accentLightness = _getAccentLightness(themeColor, brightness);
+      return OklchColours(
+        pureBackground: pureBackground,
+        pureForeground: pureForeground,
+        background: lch(0.965, 0.004),
+        editableBackground: pureBackground,
+        accent: lch(accentLightness, baseChroma),
+        accentBackground: lch(0.95, 0.035),
+        highlight: lch(0.85, 0.02, hue, 0.25),
+        foreground: lch(0.15, 0.01),
+        muted: lch(0.5, 0.005),
+        border: lch(0.0, 0.0, 0.0, 0.2),
+        barrier: lch(0.0, 0.0, 0.0, 0.3),
+        baseAccentChroma: baseChroma * saturate,
+      );
+    } else {
+      const baseChroma = 0.06;
+      final accentLightness = _getAccentLightness(themeColor, brightness);
+      return OklchColours(
+        pureBackground: pureBackground,
+        pureForeground: pureForeground,
+        background: lch(0.25, 0.005),
+        editableBackground: lch(0.3, 0.005),
+        accent: lch(accentLightness, baseChroma),
+        accentBackground: lch(0.22, 0.02),
+        highlight: lch(0.11, 0.005, hue, 0.25),
+        foreground: lch(0.85, 0.0),
+        muted: lch(0.65, 0.01),
+        border: lch(1.0, 0.0, 0.0, 0.1),
+        barrier: lch(0.0, 0.0, 0.0, 0.6),
+        baseAccentChroma: baseChroma * saturate,
+      );
+    }
+  }
+
+  Color fromTheme(ThemeColor? color, {double? lightness}) {
+    double effectiveLightness;
+
+    if (lightness != null) {
+      effectiveLightness = lightness;
+    } else if (color != null) {
+      // Determine mode based on accent lightness
+      final isLightMode = accent.lightness < 0.6;
+      final brightness = isLightMode ? Brightness.light : Brightness.dark;
+      effectiveLightness = _getAccentLightness(color, brightness);
+    } else {
+      effectiveLightness = accent.lightness;
+    }
+
+    return accent
+        .withChroma(baseAccentChroma * (color?.chromaFactor ?? 1.0))
+        .withHue((color ?? const ThemeColor.defaultColor()).toHue())
+        .withLightness(effectiveLightness)
+        .toColor();
+  }
+}
 
 class ColourSchemeData extends Equatable {
-  final HSLColor base;
-  final HSLColor pureBackground;
-  final HSLColor pureForeground;
+  final ThemeColor themeColor;
   final Brightness brightness;
+  final double darken;
+  final double saturate;
+  final OklchColours _colours;
 
-  /// Create a color scheme from a hue value (0-360)
-  ColourSchemeData.fromHue(double hue, this.brightness)
-    : base = HSLColor.fromAHSL(1.0, hue, 0.6, 0.5),
-      pureBackground = brightness == Brightness.light
-          ? HSLColor.fromColor(Color(0xFFFFFFFF))
-          : HSLColor.fromColor(Color(0xFF000000)),
-      pureForeground = brightness == Brightness.light
-          ? HSLColor.fromColor(Color(0xFF000000))
-          : HSLColor.fromColor(Color(0xFFFFFFFF));
+  /// Get the OKLCH colours
+  OklchColours get colours => _colours;
 
-  /// Legacy constructor for backward compatibility
-  ColourSchemeData(Color base, this.brightness)
-    : base = HSLColor.fromColor(base).withAlpha(1),
-      pureBackground = brightness == Brightness.light
-          ? HSLColor.fromColor(Color(0xFFFFFFFF))
-          : HSLColor.fromColor(Color(0xFF000000)),
-      pureForeground = brightness == Brightness.light
-          ? HSLColor.fromColor(Color(0xFF000000))
-          : HSLColor.fromColor(Color(0xFFFFFFFF));
+  /// Create a color scheme from a ThemeColor
+  ColourSchemeData({
+    required this.themeColor,
+    required this.brightness,
+    this.darken = 1.0,
+    this.saturate = 1.0,
+  }) : _colours = OklchColours.fromThemeColor(
+         themeColor: themeColor,
+         brightness: brightness,
+         darken: darken,
+         saturate: saturate,
+       );
 
-  Color get barrier => HSLColor.fromColor(
-    Color(0xFF000000),
-  ).withAlpha(brightness == Brightness.light ? 0.3 : 0.6).toColor();
-  Color get background => _background.toColor();
-  HSLColor get _background => brightness == Brightness.light
-      ? base
-            .withHue((base.hue - 100) % 360)
-            .withSaturation(0.2)
-            .withLightness(0.95)
-      : base
-            .withHue((base.hue - 100) % 360)
-            .withSaturation(0.05)
-            .withLightness(0.12);
-  Color get modalBackground => brightness == Brightness.light
-      ? base
-            .withHue((base.hue - 100) % 360)
-            .withSaturation(0.2)
-            .withLightness(0.985)
-            .toColor()
-      : base.withSaturation(0.15).withLightness(0.12).toColor();
-  Color get editableBackground => brightness == Brightness.light
-      ? base.withLightness(0.99).toColor()
-      : _background.withLightness(0.16).toColor();
-  Color get accent => brightness == Brightness.light
-      ? base.withSaturation(0.8).withLightness(0.25).toColor()
-      : base.withSaturation(0.4).withLightness(0.55).toColor();
-  Color get accentBackground => brightness == Brightness.light
-      ? base
-            .withHue((base.hue - 35) % 360)
-            .withSaturation(0.3)
-            .withLightness(0.94)
-            .toColor()
-      : base
-            .withHue((base.hue - 35) % 360)
-            .withSaturation(0.1)
-            .withLightness(0.10)
-            .toColor();
-  Color get highlight => brightness == Brightness.light
-      ? _background.withLightness(0.91).toColor()
-      : _background.withLightness(0.095).toColor();
-  Color get border => brightness == Brightness.light
-      ? pureForeground.withAlpha(0.1).toColor()
-      : pureForeground.withAlpha(0.1).toColor();
-  Color get foreground => brightness == Brightness.light
-      ? base.withSaturation(0.1).withLightness(0.1).toColor()
-      : Color(0xFFFFFFFF);
-  Color get muted => brightness == Brightness.light
-      ? base.withSaturation(0.1).withLightness(0.35).toColor()
-      : base.withSaturation(0.07).withLightness(0.7).toColor();
+  ColourSchemeData copyWith({
+    ThemeColor? themeColor,
+    Brightness? brightness,
+    double? darken,
+    double? saturate,
+  }) {
+    return ColourSchemeData(
+      themeColor: themeColor ?? this.themeColor,
+      brightness: brightness ?? this.brightness,
+      darken: darken != null ? darken * this.darken : this.darken,
+      saturate: saturate != null ? saturate * this.saturate : this.saturate,
+    );
+  }
+
+  Color get barrier => _colours.barrier.toColor();
+  Color get background => _colours.background.toColor();
+  Color get editableBackground => _colours.editableBackground.toColor();
+  Color get accent => _colours.accent.toColor();
+  Color get accentBackground => _colours.accentBackground.toColor();
+  Color get highlight => _colours.highlight.toColor();
+  Color get foreground => _colours.foreground.toColor();
+  Color get muted => _colours.muted.toColor();
+  Color get border => _colours.border.toColor();
 
   FColors toFColorScheme() {
     return FColors(
@@ -92,20 +193,20 @@ class ColourSchemeData extends Equatable {
       primaryForeground: accent,
       secondary: highlight,
       secondaryForeground: foreground,
-      muted: Color(0x00FFFFFF),
+      muted: const Color(0x00FFFFFF),
       mutedForeground: muted,
       destructive: brightness == Brightness.light
-          ? Color(0xFFEF4444)
-          : Color(0xFF7F1D1D),
+          ? const Color(0xFFEF4444)
+          : const Color(0xFF7F1D1D),
       destructiveForeground: brightness == Brightness.light
-          ? Color(0xFFFAFAFA)
-          : Color(0xFFFAFAFA),
+          ? const Color(0xFFFAFAFA)
+          : const Color(0xFFFAFAFA),
       error: brightness == Brightness.light
-          ? Color(0xFFEF4444)
-          : Color(0xFF7F1D1D),
+          ? const Color(0xFFEF4444)
+          : const Color(0xFF7F1D1D),
       errorForeground: brightness == Brightness.light
-          ? Color(0xFFFAFAFA)
-          : Color(0xFFFAFAFA),
+          ? const Color(0xFFFAFAFA)
+          : const Color(0xFFFAFAFA),
       border: border,
       disabledOpacity: 0.5,
       systemOverlayStyle: brightness == Brightness.light
@@ -115,7 +216,7 @@ class ColourSchemeData extends Equatable {
   }
 
   @override
-  List<Object?> get props => [base, brightness];
+  List<Object?> get props => [themeColor, brightness, darken, saturate];
 }
 
 class ColourScheme extends StatefulWidget {
@@ -151,21 +252,16 @@ class _ColourSchemeState extends State<ColourScheme>
     setState(() {});
   }
 
-  Brightness _getEffectiveBrightness(BuildContext context, AppThemeMode mode) {
-    return switch (mode) {
-      AppThemeMode.light => Brightness.light,
-      AppThemeMode.dark => Brightness.dark,
-      AppThemeMode.system => MediaQuery.platformBrightnessOf(context),
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ThemeBloc, ThemeState>(
       builder: (context, themeState) {
-        final brightness = _getEffectiveBrightness(context, themeState.mode);
+        final brightness = context.read<ThemeBloc>().getBrightness(context);
         return ProxyProvider0(
-          update: (_, _) => ColourSchemeData.fromHue(themeState.priorityHue, brightness),
+          update: (_, _) => ColourSchemeData(
+            themeColor: themeState.priorityColor,
+            brightness: brightness,
+          ),
           child: widget.child,
         );
       },

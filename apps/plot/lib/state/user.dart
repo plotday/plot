@@ -17,7 +17,6 @@ class UserBloc extends Cubit<UserState> {
         if (state is UserSignedOut) return;
         log.info('User signed out');
         await _clearPasswordSetupRequired();
-        await Store.stop();
         emit(const UserSignedOut());
         log.info('Sign out state emitted');
         return;

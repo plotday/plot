@@ -111,7 +111,7 @@ jobs:
           pnpm build
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Deploy secrets and variables for ${{ matrix.worker }}
         working-directory: workers/${{ matrix.worker }}

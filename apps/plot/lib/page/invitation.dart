@@ -1,14 +1,19 @@
 import 'package:auto_route/auto_route.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/store/store.dart' hide Link;
 import 'package:plot/command/settings.dart';
+import 'package:plot/state/user.dart';
+import 'package:logging/logging.dart';
 import 'logging.dart';
 
 @RoutePage()
 class InvitationPage extends StatefulWidget {
-  const InvitationPage({super.key});
+  const InvitationPage({this.onInvited, super.key});
+
+  final void Function()? onInvited;
 
   @override
   State<InvitationPage> createState() => _InvitationPageState();
@@ -60,7 +65,14 @@ class _InvitationPageState extends State<InvitationPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return BlocListener<UserBloc, UserState>(
+      listener: (context, state) {
+        if (state is UserReady && widget.onInvited != null) {
+          Logger('plot.route').info('InvitationPage: UserReady detected, calling onInvited callback');
+          widget.onInvited!();
+        }
+      },
+      child: Scaffold(
       scrollable: false,
       body: Column(
         children: [
@@ -131,6 +143,7 @@ class _InvitationPageState extends State<InvitationPage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

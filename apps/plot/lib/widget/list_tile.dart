@@ -7,7 +7,7 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
-import 'button.dart';
+import 'animated_command_row.dart';
 import 'logging.dart';
 
 enum ListTileStyle { item, header }
@@ -23,7 +23,11 @@ class ListTile extends StatefulWidget {
     /// Secondary actions visible on the right.
     this.trailingCommands = const [],
 
-    /// Optional widget displayed at the far right (before trailingCommands).
+    /// Whether to animate reveal of trailing commands on hover/focus.
+    /// When true, commands are hidden by default and slide in on hover/focus.
+    this.revealTrailingCommands = false,
+
+    /// Optional widget displayed at the far right (after trailingCommands).
     this.trailing,
 
     /// Extra details shown below the title.
@@ -71,6 +75,13 @@ class ListTile extends StatefulWidget {
     /// Custom padding for the tile.
     this.padding,
 
+    /// Optional text style override for the title.
+    /// If not provided, uses sm for headers and base for items.
+    this.textStyle,
+
+    /// Index for reorderable list. If provided, enables drag on left portion only.
+    this.reorderableIndex,
+
     super.key,
   }) : subtitle = subtitle ?? command?.subtitle;
 
@@ -84,6 +95,7 @@ class ListTile extends StatefulWidget {
   final Command? command;
   final Command? doubleTapCommand;
   final List<Command> trailingCommands;
+  final bool revealTrailingCommands;
   final Widget? trailing;
   final String? title;
   final String? subtitle;
@@ -93,9 +105,11 @@ class ListTile extends StatefulWidget {
   final IconData? icon;
   final bool centered;
   final EdgeInsetsGeometry? padding;
+  final TextStyle? textStyle;
 
   final void Function(bool hovered)? onHover;
   final FocusNode? focusNode;
+  final int? reorderableIndex;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -184,123 +198,159 @@ class _ListTileState extends State<ListTile> {
               borderRadius: tileBorderRadius,
               color: widget.selected
                   ? context.theme.colors.primary
-                  : _focusNode.hasFocus ||
-                        (!widget.disableInternalHover && _isHovered) ||
-                        widget.highlighted
+                  : widget.command != null &&
+                        (_focusNode.hasFocus ||
+                            (!widget.disableInternalHover && _isHovered) ||
+                            widget.highlighted)
                   ? context.theme.plotColors.highlight
                   : null,
             ),
             padding:
-                widget.padding ??
-                widgetPaddingSm.copyWith(
-                  left: widgetPaddingSm.left + (widget.indentLevel * 16.0),
-                ),
+                (widget.padding?.resolve(null) ?? widgetPaddingSm).copyWith(
+                  top: 0,
+                  bottom: 0,
+                ) +
+                EdgeInsets.only(left: widget.indentLevel * 16),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
-              spacing: 10,
+              spacing: 8,
               children: [
-                if (widget.icon != null || widget.command?.icon != null)
-                  Icon(
-                    widget.icon ?? widget.command?.icon,
-                    size: 16,
-                    color: context.theme.plotColors.muted,
-                  ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: widget.centered
-                        ? CrossAxisAlignment.center
-                        : CrossAxisAlignment.start,
-                    spacing: 2,
-                    children: [
-                      if (widget.header != null) widget.header!,
-                      Builder(
-                        builder: (context) {
-                          final commandBody =
-                              widget.body ??
-                              (widget.title == null
-                                  ? widget.command?.buildBody(context)
-                                  : null);
-                          return commandBody != null
-                              ? Row(children: [Expanded(child: commandBody)])
-                              : Row(
-                                  mainAxisAlignment: widget.centered
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      widget.title ??
-                                          widget.command?.title ??
-                                          'Untitled',
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: widget.centered
-                                          ? TextAlign.center
-                                          : TextAlign.start,
-                                      style: context.theme.typography.base
-                                          .copyWith(
-                                            color: widget.selected
-                                                ? context
-                                                      .theme
-                                                      .colors
-                                                      .primaryForeground
-                                                : widget.style ==
-                                                      ListTileStyle.header
-                                                ? context.theme.plotColors.muted
-                                                : context
-                                                      .theme
-                                                      .colors
-                                                      .foreground,
-                                          ),
-                                    ),
-                                    if (widget.subtitle != null)
-                                      Expanded(
-                                        child: Text(
-                                          widget.subtitle!,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: context.theme.typography.base
-                                              .copyWith(
-                                                color: context
-                                                    .theme
-                                                    .plotColors
-                                                    .muted,
-                                              ),
-                                        ),
-                                      ),
-                                  ],
-                                );
-                        },
-                      ),
-                      if (widget.command?.description != null)
-                        Text(widget.command!.description!),
-                      if (widget.details != null) widget.details!,
-                    ],
-                  ),
-                ),
+                // Draggable portion (icon + content)
+                ..._buildDraggableContent(context),
+                // Non-draggable portion (shortcuts + commands + trailing)
                 if (widget.command?.shortcut != null && hasPhysicalKeyboard())
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8.0),
-                    child: Text(
-                      formatShortcut(widget.command?.shortcut),
-                      style: context.theme.typography.base.copyWith(
-                        color: context.theme.plotColors.muted,
-                      ),
+                  Text(
+                    formatShortcut(widget.command?.shortcut),
+                    style: context.theme.typography.base.copyWith(
+                      color: context.theme.plotColors.muted,
                     ),
                   ),
-                if (widget.trailing != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8.0),
-                    child: widget.trailing!,
+                if (widget.trailingCommands.isNotEmpty)
+                  AnimatedCommandRow(
+                    show:
+                        !widget.revealTrailingCommands ||
+                        _isHovered ||
+                        _focusNode.hasFocus,
+                    commands: widget.trailingCommands,
                   ),
-                ...widget.trailingCommands.asMap().entries.map((entry) {
-                  final key = ValueKey(
-                    Object.hash(entry.value.hashCode, entry.key),
-                  );
-                  return Button.icon(entry.value, key: key);
-                }),
+                if (widget.trailing != null) widget.trailing!,
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  List<Widget> _buildDraggableContent(BuildContext context) {
+    final content = [
+      if (widget.icon != null || widget.command?.icon != null)
+        Icon(
+          widget.icon ?? widget.command?.icon,
+          size: 16,
+          color: context.theme.plotColors.muted,
+        ),
+      Expanded(
+        child: Padding(
+          padding: (widget.padding?.resolve(null) ?? widgetPaddingSm)
+              .copyWith(left: 0, right: 0),
+          child: Column(
+            crossAxisAlignment: widget.centered
+                ? CrossAxisAlignment.center
+                : CrossAxisAlignment.start,
+            spacing: 2,
+            children: [
+              if (widget.header != null) widget.header!,
+              Builder(
+                builder: (context) {
+                  final commandBody =
+                      widget.body ??
+                      (widget.title == null
+                          ? widget.command?.buildBody(context)
+                          : null);
+                  return commandBody != null
+                      ? Row(children: [Expanded(child: commandBody)])
+                      : Row(
+                          mainAxisAlignment: widget.centered
+                              ? MainAxisAlignment.center
+                              : MainAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.title ??
+                                  widget.command?.title ??
+                                  'Untitled',
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: widget.centered
+                                  ? TextAlign.center
+                                  : TextAlign.start,
+                              style:
+                                  (widget.textStyle ??
+                                          (widget.style ==
+                                                  ListTileStyle.header
+                                              ? context
+                                                    .theme
+                                                    .typography
+                                                    .sm
+                                              : context
+                                                    .theme
+                                                    .typography
+                                                    .base))
+                                      .copyWith(
+                                        color: widget.selected
+                                            ? context
+                                                  .theme
+                                                  .colors
+                                                  .primaryForeground
+                                            : widget.style ==
+                                                  ListTileStyle.header
+                                            ? context
+                                                  .theme
+                                                  .plotColors
+                                                  .muted
+                                            : null,
+                                      ),
+                            ),
+                            if (widget.subtitle != null)
+                              Expanded(
+                                child: Text(
+                                  widget.subtitle!,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.theme.typography.base
+                                      .copyWith(
+                                        color: context
+                                            .theme
+                                            .plotColors
+                                            .muted,
+                                      ),
+                                ),
+                              ),
+                          ],
+                        );
+                },
+              ),
+              if (widget.details != null) widget.details!,
+            ],
+          ),
+        ),
+      ),
+    ];
+
+    // If reorderable, wrap content in ReorderableDragStartListener
+    if (widget.reorderableIndex != null) {
+      return [
+        Expanded(
+          child: ReorderableDragStartListener(
+            index: widget.reorderableIndex!,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              spacing: 8,
+              children: content,
+            ),
+          ),
+        ),
+      ];
+    }
+
+    return content;
   }
 }

@@ -122,7 +122,8 @@ class PriorityState extends Equatable {
       List<Activity>? otherActivities;
       bool otherPriorities = false;
       for (final entry in prioritzedActivities.entries) {
-        if (entry.key.id == (activity.priority.id ?? context.id)) {
+        if (entry.key.id == context.id ||
+            entry.key.id == activity.priority.id) {
           otherActivities = entry.value;
           continue;
         }

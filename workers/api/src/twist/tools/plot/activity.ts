@@ -394,8 +394,8 @@ export async function updateActivity(
       case ActivityType.Note:
         dbUpdate.type = "note";
         break;
-      case ActivityType.Task:
-        dbUpdate.type = "task";
+      case ActivityType.Action:
+        dbUpdate.type = "action";
         break;
       case ActivityType.Event:
         dbUpdate.type = "event";

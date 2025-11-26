@@ -12,6 +12,21 @@ jobs:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
     steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -35,10 +50,23 @@ jobs:
           pnpm build
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Install Perl
         uses: shogo82148/actions-setup-perl@v1
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: apps/plot/pubspec.yaml
+          channel: "stable"
+          cache: true
+
+      - name: Fake Flutter .env
+        run: echo "FOO=bar" >> apps/plot/.env
+
+      - name: Generate Flutter code
+        run: cd apps/plot && flutter pub run build_runner build
 
       - name: Install pg_format
         run: |

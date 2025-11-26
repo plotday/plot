@@ -121,8 +121,11 @@ class CommandBarState extends State<_CommandBar> {
       _error = null;
     });
     try {
-      // Use rootContext which has access to providers
-      final result = await command.run(widget.rootContext);
+      // Use rootContext if mounted, otherwise fall back to current context
+      final commandContext = widget.rootContext.mounted
+          ? widget.rootContext
+          : context;
+      final result = await command.run(commandContext);
       if (!mounted) return const CommandSkipped();
       if (result is CommandSkipped) {
         return result;
@@ -138,7 +141,10 @@ class CommandBarState extends State<_CommandBar> {
       }
       Dialog.popAll(context);
       if (context.mounted && result is CommandRoute) {
-        result.go(widget.rootContext);
+        final routeContext = widget.rootContext.mounted
+            ? widget.rootContext
+            : context;
+        result.go(routeContext);
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
@@ -238,7 +244,7 @@ class CommandBarState extends State<_CommandBar> {
                           // shrinkWrap: true,
                           controller: listController,
                           count: totalCommandCount,
-                          builder: (context, index, focusNode) {
+                          builder: (context, index, focusNode, {reorderableIndex}) {
                             final group = _getGroupAtIndex(index);
                             final command = _getCommandAtIndex(index);
                             final body = command.buildBody(context);

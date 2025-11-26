@@ -9,7 +9,6 @@ import 'package:plot/analytics/analytics.dart';
 class ShowForm extends Command {
   ShowForm({
     required super.title,
-    super.description,
     super.icon,
     super.shortcut,
     required this.form,
@@ -211,8 +210,8 @@ class FormSelect<T> extends FormItem {
       selectedValue: _value,
       prompt: label ?? key,
     );
-    if (result != null) {
-      _value = result;
+    if (result.present) {
+      _value = result.value;
       _hasValue = true;
       onChanged?.call();
     }

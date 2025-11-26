@@ -2,7 +2,8 @@ part of 'store.dart';
 
 @DataClassName('ActivityTagsRow')
 class ActivityTags extends Table with SyncableTable, UuidTable {
-  TextColumn get occurrence => text().nullable()();
+  // Empty string means no occurrence (NULL in PostgreSQL)
+  TextColumn get occurrence => text().withDefault(const Constant(''))();
   TextColumn get tags => text().nullable().map(const ActivityTagsConverter())();
   TextColumn get tagsUpdated =>
       text().nullable().map(const TagUpdatesConverter())();
@@ -56,6 +57,11 @@ class ActivityTagsBase extends BaseTable {
     json.remove('updated_by');
     json.remove('user_id'); // Remove user_id from function result
 
+    // Convert NULL occurrence from PostgreSQL to empty string for SQLite
+    if (json['occurrence'] == null) {
+      json['occurrence'] = '';
+    }
+
     // Handle the 'at' field from user_activity_exception_tz function
     final at = json['at'] != null
         ? DateTimeRange.fromString(json['at'] as String)
@@ -77,6 +83,11 @@ class ActivityTagsBase extends BaseTable {
 
     // Keep tags_updated for the put method - don't remove it like other base implementations
     // The put method specifically needs this field to know which tags to update
+
+    // Convert empty string occurrence back to NULL for PostgreSQL
+    if (json['occurrence'] == '') {
+      json['occurrence'] = null;
+    }
 
     // Convert 'at' field back to database format
     if (json['at'] != null) {

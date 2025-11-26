@@ -42,9 +42,21 @@ class AppRouter extends RootStackRouter {
       page: AppShellRoute.page,
       path: '/',
       children: [
-        AutoRoute(page: SignInRoute.page, path: 'login'),
-        AutoRoute(page: EmailSignInRoute.page, path: 'login/email'),
-        AutoRoute(page: PasswordSetupRoute.page, path: 'account/password'),
+        AutoRoute(
+          page: SignInRoute.page,
+          path: 'login',
+          guards: [SignInGuard()],
+        ),
+        AutoRoute(
+          page: EmailSignInRoute.page,
+          path: 'login/email',
+          guards: [SignInGuard()],
+        ),
+        AutoRoute(
+          page: PasswordSetupRoute.page,
+          path: 'account/password',
+          guards: [SignInGuard()],
+        ),
         AutoRoute(
           page: InvitationRoute.page,
           path: 'invitation',
@@ -168,16 +180,71 @@ class AuthGuard extends AutoRouteGuard {
         resolver.next();
         break;
       case UserPasswordRequired():
+        _logger.info('AuthGuard: Redirecting to PasswordSetupRoute with callback');
         resolver.redirectUntil(
-          PasswordSetupRoute(returnTo: resolver.route.path),
+          PasswordSetupRoute(
+            onPasswordSet: () {
+              _logger.info('AuthGuard: onPasswordSet callback called, calling resolver.next()');
+              resolver.next();
+            },
+          ),
         );
       case UserWaitlisted():
-        resolver.redirectUntil(InvitationRoute());
+        if (resolver.route.name == InvitationRoute.page.name) {
+          // Already heading to InvitationRoute, just proceed
+          resolver.next();
+        } else {
+          _logger.info('AuthGuard: Redirecting to InvitationRoute with callback');
+          resolver.redirectUntil(
+            InvitationRoute(
+              onInvited: () {
+                _logger.info('AuthGuard: onInvited callback called, calling resolver.next()');
+                resolver.next();
+              },
+            ),
+          );
+        }
       case UserSignedOut():
+        _logger.info('AuthGuard: Redirecting to SignInRoute with callback');
         resolver.redirectUntil(
-          SignInRoute(returnTo: resolver.route.path, signOut: true),
+          SignInRoute(
+            onSignIn: () {
+              _logger.info('AuthGuard: onSignIn callback called, calling resolver.next()');
+              resolver.next();
+            },
+          ),
         );
       case UserLoading():
+        break;
+    }
+  }
+}
+
+class SignInGuard extends AutoRouteGuard {
+  SignInGuard();
+
+  @override
+  void onNavigation(NavigationResolver resolver, StackRouter router) {
+    final userState = resolver.context.read<UserBloc>().state;
+    _logger.info(
+      'SignInGuard.onNavigation called - userState: $userState, route: ${resolver.route.name}, path: ${resolver.route.path}',
+    );
+
+    switch (userState) {
+      case UserReady():
+        // User is authenticated, redirect away from sign-in page to root
+        _logger.info('SignInGuard: User is UserReady, redirecting to /');
+        router.navigatePath('/');
+        break;
+      case UserPasswordRequired():
+      case UserWaitlisted():
+      case UserSignedOut():
+      case UserLoading():
+        // User needs to sign in, allow sign-in page to show
+        _logger.info(
+          'SignInGuard: User not ready ($userState), allowing sign-in page',
+        );
+        resolver.next();
         break;
     }
   }

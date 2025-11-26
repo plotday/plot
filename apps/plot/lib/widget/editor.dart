@@ -242,7 +242,7 @@ class EditorState extends State<Editor> {
                 ] else ...[
                   DefaultCaretOverlayBuilder(
                     caretStyle: CaretStyle().copyWith(
-                      color: context.theme.colors.primaryForeground,
+                      color: context.theme.colors.mutedForeground,
                     ),
                   ),
                 ],

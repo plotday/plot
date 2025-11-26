@@ -72,19 +72,29 @@ class ChangeCurrentActivity extends ActivityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    // Get the currently viewed priority before making any changes
+    final currentPriority = context.read<PriorityBloc>().state.context;
+
     // Update PriorityBloc to track current activity for navigation
     context.read<PriorityBloc>().setActivity(activity);
 
     if (activity == null) {
+      // Update NowBloc to match the current priority being viewed
+      context.read<NowBloc>().setPriority(currentPriority);
+
       // Navigate to just the PriorityRoute without ActivityRoute
-      final priority = context.read<PriorityBloc>().state.context;
       return CommandRoute(
-        PriorityRoute(priorityIdString: priority.id.toShortString()),
+        PriorityRoute(priorityIdString: currentPriority.id.toShortString()),
       );
     }
 
+    // Update NowBloc to the activity's priority (what user is working on)
+    context.read<NowBloc>().setPriority(activity!.priority);
+
+    // Navigate using the CURRENT priority (not activity's priority)
+    // This keeps PriorityPage showing the parent priority
     final route = PriorityRoute(
-      priorityIdString: activity!.priority.id.toShortString(),
+      priorityIdString: currentPriority.id.toShortString(),
       children: [ActivityRoute(activityIdString: activity!.id.toShortString())],
     );
 
@@ -104,8 +114,8 @@ class NewActivity extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final nowBloc = context.read<NowBloc>();
-    final priorityId = nowBloc.loadedState.priority.id;
+    final priorityBloc = context.read<PriorityBloc>();
+    final priorityId = priorityBloc.state.context.id;
     return CommandRoute(
       PriorityRoute(
         priorityIdString: priorityId.toShortString(),
@@ -494,11 +504,46 @@ class MoveToPriority extends PriorityCommand {
   }
 }
 
+class MoveToNewThread extends Command {
+  MoveToNewThread(this.activity)
+    : super(
+        title: 'Move to New Thread',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.moved,
+        icon: PlotIcon.move,
+      );
+
+  final Activity activity;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Get PriorityBloc before async operations
+    final priorityBloc = context.read<PriorityBloc>();
+
+    // Move to new thread by generating a new root-level path
+    final updatedActivity = activity.copyWith(path: Path.generate());
+    await updatedActivity.save();
+
+    // Update PriorityBloc to track the new thread as current
+    priorityBloc.setActivity(updatedActivity);
+
+    return CommandRoute(
+      PriorityRoute(
+        priorityIdString: updatedActivity.priority.id.toShortString(),
+        children: [
+          ActivityRoute(activityIdString: updatedActivity.id.toShortString()),
+        ],
+      ),
+    );
+  }
+}
+
 class MoveActivityToPriority extends ShowCommands {
   MoveActivityToPriority(this.activity)
     : super(
-        title: 'Move',
+        title: 'Move to Another Priority',
         icon: PlotIcon.move,
+        shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
         commands: (context) => _getMoveCommands(activity),
       );
 
@@ -704,7 +749,8 @@ List<Command> activityCommands(Activity activity, {bool open = true}) {
       .toList();
   return [
     if (open) ChangeCurrentActivity(activity),
-    MoveActivityToPriority(activity),
+    if (!activity.path.isRoot) MoveToNewThread(activity),
+    if (activity.path.isRoot) MoveActivityToPriority(activity),
     ...commands,
   ];
 }

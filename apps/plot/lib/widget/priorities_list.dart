@@ -1,7 +1,6 @@
 import 'package:plot/store/store.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/widget.dart';
-import 'package:plot/widget/color_dot.dart';
 
 class PrioritiesList extends StatelessWidget {
   final List<Priority> topPriorities;
@@ -20,6 +19,15 @@ class PrioritiesList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isLeftPanel =
+        PanelPositionProvider.of(context) == HeaderPosition.left;
+    final headerStyle = isLeftPanel
+        ? context.theme.typography.xs
+        : context.theme.typography.sm;
+    final itemStyle = isLeftPanel
+        ? context.theme.typography.sm
+        : context.theme.typography.base;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -28,12 +36,20 @@ class PrioritiesList extends StatelessWidget {
           title: root.title,
           command: ChangeCurrentPriority(root),
           selected: selected?.id == root.id,
-          trailing: ColorDot(color: root.displayColor.toColor()),
+          textStyle: itemStyle.copyWith(
+            color: context.colour.colours.fromTheme(root.displayColor),
+          ),
+          trailingCommands: [ShowPriorityCommands(root)],
+          revealTrailingCommands: true,
         ),
 
         // Second group: Top Priorities
         if (topPriorities.isNotEmpty) ...[
-          ListTile(title: 'Top Priorities', style: ListTileStyle.header),
+          ListTile(
+            title: 'Top Priorities',
+            style: ListTileStyle.header,
+            textStyle: headerStyle,
+          ),
           ReorderableListView<Priority>(
             list: topPriorities,
             shrinkWrap: true,
@@ -44,6 +60,11 @@ class PrioritiesList extends StatelessWidget {
                 context,
                 priority,
                 topSection: true,
+                textStyle: itemStyle.copyWith(
+                  color: context.colour.colours.fromTheme(
+                    priority.displayColor,
+                  ),
+                ),
               ),
             ),
             onReorder: (int oldIndex, int newIndex) async {
@@ -72,9 +93,19 @@ class PrioritiesList extends StatelessWidget {
         ],
 
         // Third group: All Priorities
-        ListTile(title: 'All Priorities', style: ListTileStyle.header),
+        ListTile(
+          title: 'All Priorities',
+          style: ListTileStyle.header,
+          textStyle: headerStyle,
+        ),
         ...root.children.expand(
-          (priority) => _buildPriorityItems(context, priority),
+          (priority) => _buildPriorityItems(
+            context,
+            priority,
+            textStyle: itemStyle.copyWith(
+              color: context.colour.colours.fromTheme(priority.displayColor),
+            ),
+          ),
         ),
       ],
     );
@@ -85,6 +116,7 @@ class PrioritiesList extends StatelessWidget {
     Priority priority, {
     int indentLevel = 0,
     bool topSection = false,
+    required TextStyle textStyle,
   }) {
     return [
       ListTile(
@@ -94,7 +126,9 @@ class PrioritiesList extends StatelessWidget {
         selected: selected?.id == priority.id,
         selectedBorder: topSection || priority.topOrder == null,
         indentLevel: indentLevel,
-        trailing: ColorDot(color: priority.displayColor.toColor()),
+        textStyle: textStyle,
+        trailingCommands: [ShowPriorityCommands(priority)],
+        revealTrailingCommands: true,
       ),
       ...priority.children.expand(
         (child) => _buildPriorityItems(
@@ -102,6 +136,9 @@ class PrioritiesList extends StatelessWidget {
           child,
           indentLevel: indentLevel + 1,
           topSection: topSection,
+          textStyle: textStyle.copyWith(
+            color: context.colour.colours.fromTheme(child.displayColor),
+          ),
         ),
       ),
     ];

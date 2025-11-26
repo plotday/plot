@@ -479,7 +479,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
               // Update theme hue when priority is first loaded
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
-                  context.read<ThemeBloc>().setPriorityHue(priority.displayColor.toHue());
+                  context.read<ThemeBloc>().setPriorityColor(priority.displayColor);
                 }
               });
               return PriorityBloc(priority: priority);
@@ -497,7 +497,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         if (priority == null) return;
         bloc.setPriority(priority);
         // Update theme hue when priority changes
-        themeBloc.setPriorityHue(priority.displayColor.toHue());
+        themeBloc.setPriorityColor(priority.displayColor);
       });
     } else if (widget.priorityId != null &&
         widget.priorityId != oldWidget.priorityId) {
@@ -505,8 +505,8 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
       _bloc.then((bloc) async {
         final priority = await Priority.getOne(widget.priorityId!);
         bloc.setPriority(priority);
-        // Update theme hue when priority changes
-        themeBloc.setPriorityHue(priority.displayColor.toHue());
+        // Update theme color when priority changes
+        themeBloc.setPriorityColor(priority.displayColor);
       });
     }
   }

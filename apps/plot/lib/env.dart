@@ -25,7 +25,10 @@ abstract class Env {
     googleClientId = getEnvOrThrow('AUTH_GOOGLE_ID');
     googleIosClientId = getEnvOrThrow('AUTH_GOOGLE_IOS_ID');
     googleAndroidClientId = getEnvOrThrow('AUTH_GOOGLE_ANDROID_ID');
-    appleClientId = getEnvOrThrow('AUTH_APPLE_CLIENT_ID');
+    // Use web service ID for web, native bundle ID for iOS/macOS/Android
+    appleClientId = kIsWeb
+        ? getEnvOrThrow('AUTH_APPLE_WEB_CLIENT_ID')
+        : getEnvOrThrow('AUTH_APPLE_NATIVE_CLIENT_ID');
   }
 
   static late final bool inAndroidEmulator;

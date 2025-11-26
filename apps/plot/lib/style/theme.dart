@@ -1,4 +1,3 @@
-import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/colors.dart';
@@ -34,8 +33,18 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
       typography,
       colourScheme,
     ),
-    textFieldStyle: buildTextFieldStyle(theme.textFieldStyle, colourScheme),
-    buttonStyles: buildButtonStyles(theme.buttonStyles),
+    textFieldStyle: buildTextFieldStyle(
+      theme.textFieldStyle,
+      colourScheme,
+      theme.style.borderRadius,
+      theme.style.borderWidth,
+    ),
+    buttonStyles: buildButtonStyles(
+      theme.buttonStyles,
+      colourScheme,
+      theme.style.borderRadius,
+      typography,
+    ),
     sidebarStyle: buildSidebarStyle(
       theme.sidebarStyle,
       typography,
@@ -48,48 +57,10 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
   return theme;
 }
 
-/// Creates a darker variant of the theme for use in the first panel
-FThemeData darkenTheme(FThemeData theme) {
-  final colors = theme.colors;
-  final plotColors = theme.plotColors;
-
-  // Helper to darken a color by reducing lightness
-  Color darken(Color color, [double factor = 0.92]) {
-    final hsl = HSLColor.fromColor(color);
-    return hsl
-        .withLightness((hsl.lightness * factor).clamp(0.0, 1.0))
-        .toColor();
-  }
-
-  final darkerColors = colors.copyWith(
-    background: darken(colors.background),
-    foreground: darken(colors.foreground),
-    primary: darken(colors.primary),
-    primaryForeground: darken(colors.primaryForeground),
-    secondary: darken(colors.secondary),
-    secondaryForeground: darken(colors.secondaryForeground),
-    muted: darken(colors.muted),
-    mutedForeground: darken(colors.mutedForeground),
-    border: darken(colors.border),
-    // Keep destructive/error colors unchanged for visibility
-  );
-
-  final darkerPlotColors = plotColors.copyWith(
-    barrier: darken(plotColors.barrier),
-    muted: darken(plotColors.muted),
-    highlight: darken(plotColors.highlight),
-    editableBackground: darken(plotColors.editableBackground),
-  );
-
-  // Recreate scaffoldStyle with darkened colors
-  final darkerScaffoldStyle = scaffoldStyle(
-    colors: darkerColors,
-    style: theme.style,
-  );
-
-  return theme.copyWith(
-    colors: darkerColors,
-    extensions: [darkerPlotColors],
-    scaffoldStyle: darkerScaffoldStyle,
+FThemeData darkenTheme(FThemeData theme, ColourSchemeData colourScheme) {
+  return buildTheme(
+    colourScheme.copyWith(
+      darken: colourScheme.brightness == .light ? 1.02 : 1.1,
+    ),
   );
 }

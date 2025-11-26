@@ -64,7 +64,7 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: itemCount,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -91,7 +91,7 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: 0,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -117,7 +117,7 @@ void main() {
               count: 5,
               doneStart: false,
               doneEnd: false,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -151,7 +151,7 @@ void main() {
             body: BidirectionalList(
               count: itemCount,
               controller: controller,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return Focus(
                   focusNode: focusNode,
                   child: Builder(
@@ -210,7 +210,7 @@ void main() {
                 count: itemCount,
                 scrollController: scrollController,
                 estimatedItemExtent: itemHeight.toInt(),
-                builder: (context, index, focusNode) {
+                builder: (context, index, focusNode, {reorderableIndex}) {
                   return SizedBox(
                     key: ValueKey('item_$index'),
                     height: itemHeight,
@@ -248,7 +248,7 @@ void main() {
             body: BidirectionalList(
               count: itemCount,
               anchorOffset: 0.5, // Middle of viewport
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -284,7 +284,7 @@ void main() {
                   overflow: 1.0, // Small overflow to trigger fetcher sooner
                   doneStart: false,
                   doneEnd: false,
-                  builder: (context, index, focusNode) {
+                  builder: (context, index, focusNode, {reorderableIndex}) {
                     return SizedBox(
                       key: ValueKey('item_$index'),
                       height: 100,
@@ -343,7 +343,7 @@ void main() {
               doneStart: false,
               doneEnd: false,
               overflow: 0.5, // Very small overflow to trigger quickly
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 100,
@@ -382,7 +382,7 @@ void main() {
               count: 5,
               doneStart: true,
               doneEnd: true,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 100,
@@ -424,7 +424,7 @@ void main() {
                 overflow: 1.0,
                 doneStart: false,
                 doneEnd: false,
-                builder: (context, index, focusNode) {
+                builder: (context, index, focusNode, {reorderableIndex}) {
                   return SizedBox(
                     key: ValueKey('item_$index'),
                     height: 50,
@@ -481,7 +481,7 @@ void main() {
               first: 0,
               // Anchor at start
               anchorOffset: 0.0,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -511,7 +511,7 @@ void main() {
               first: 0,
               // Anchor at end
               anchorOffset: 1.0,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -542,7 +542,7 @@ void main() {
               first: 0,
               // Invalid anchor - outside range, should be clamped
               anchorOffset: 0.5,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -571,7 +571,7 @@ void main() {
               first: -5, // Negative start index
               // Negative anchor
               anchorOffset: 0.5,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -599,7 +599,7 @@ void main() {
               first: 10, // Non-zero first with zero count
               // Anchor beyond range
               anchorOffset: 0.5,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -633,7 +633,7 @@ void main() {
             body: BidirectionalList(
               count: 5,
               controller: controller,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -667,7 +667,7 @@ void main() {
             body: BidirectionalList(
               count: count,
               controller: controller,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -708,7 +708,7 @@ void main() {
               doneStart: false,
               doneEnd: false,
               overflow: 0.1, // Very small overflow to trigger quickly
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 100,
@@ -750,7 +750,7 @@ void main() {
               doneStart: false,
               doneEnd: false,
               overflow: 0.1,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 100,
@@ -794,7 +794,7 @@ void main() {
               doneEnd: false,
               overflow: 10.0, // Large overflow
               estimatedItemExtent: 1, // Very small items
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 1,
@@ -832,7 +832,7 @@ void main() {
             body: BidirectionalList(
               count: 5,
               estimatedItemExtent: 0, // Zero height estimation
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -860,7 +860,7 @@ void main() {
               overflow: 1000.0, // Massive overflow
               doneStart: false,
               doneEnd: false,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -892,7 +892,7 @@ void main() {
               // Anchor in middle
               anchorOffset: 0.75,
               reverse: true, // Reverse list
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -921,7 +921,7 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: itemCount,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -960,7 +960,7 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: 5,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 // Return null for some items
                 if (index % 2 == 0) return null;
                 return SizedBox(
@@ -990,7 +990,7 @@ void main() {
           home: Scaffold(
             body: BidirectionalList(
               count: itemCount,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return SizedBox(
                   key: ValueKey('item_$index'),
                   height: 50,
@@ -1036,7 +1036,7 @@ void main() {
                 return BidirectionalList(
                   count: itemCount,
                   controller: selectorController,
-                  builder: (context, index, focusNode) {
+                  builder: (context, index, focusNode, {reorderableIndex}) {
                     return Focus(
                       focusNode: focusNode,
                       child: Builder(
@@ -1085,7 +1085,7 @@ void main() {
             body: BidirectionalList(
               count: itemCount,
               controller: controller,
-              builder: (context, index, focusNode) {
+              builder: (context, index, focusNode, {reorderableIndex}) {
                 return Focus(
                   focusNode: focusNode,
                   child: Builder(

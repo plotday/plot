@@ -21,13 +21,12 @@ class PlotColors extends ThemeExtension<PlotColors> {
     Color? muted,
     Color? highlight,
     Color? editableBackground,
-  }) =>
-      PlotColors(
-        barrier: barrier ?? this.barrier,
-        muted: muted ?? this.muted,
-        highlight: highlight ?? this.highlight,
-        editableBackground: editableBackground ?? this.editableBackground,
-      );
+  }) => PlotColors(
+    barrier: barrier ?? this.barrier,
+    muted: muted ?? this.muted,
+    highlight: highlight ?? this.highlight,
+    editableBackground: editableBackground ?? this.editableBackground,
+  );
 
   @override
   PlotColors lerp(PlotColors? other, double t) {
@@ -39,8 +38,11 @@ class PlotColors extends ThemeExtension<PlotColors> {
       barrier: Color.lerp(barrier, other.barrier, t)!,
       muted: Color.lerp(muted, other.muted, t)!,
       highlight: Color.lerp(highlight, other.highlight, t)!,
-      editableBackground:
-          Color.lerp(editableBackground, other.editableBackground, t)!,
+      editableBackground: Color.lerp(
+        editableBackground,
+        other.editableBackground,
+        t,
+      )!,
     );
   }
 }

@@ -1831,6 +1831,10 @@ export type Database = {
       is_finite: { Args: { test: unknown }; Returns: boolean }
       is_lower: { Args: { "": string }; Returns: boolean }
       migrate_existing_users_to_contacts: { Args: never; Returns: undefined }
+      move_priority: {
+        Args: { p_new_parent_path: unknown; p_priority_id: string }
+        Returns: undefined
+      }
       order_first: { Args: never; Returns: number }
       organization: {
         Args: { "": Database["public"]["Tables"]["contact"]["Row"] }
@@ -1925,7 +1929,7 @@ export type Database = {
       week_from_date: { Args: { d: string }; Returns: unknown }
     }
     Enums: {
-      activity_type: "task" | "event" | "note"
+      activity_type: "action" | "event" | "note"
       subscription_plan: "free"
       subscription_status:
         | "active"
@@ -2583,7 +2587,7 @@ export const Constants = {
   },
   public: {
     Enums: {
-      activity_type: ["task", "event", "note"],
+      activity_type: ["action", "event", "note"],
       subscription_plan: ["free"],
       subscription_status: [
         "active",

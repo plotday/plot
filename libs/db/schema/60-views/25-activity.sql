@@ -68,7 +68,9 @@ WHERE
 -- To filter on a date range, use both the `range_at` and `range_on` columns.
 -- They're separate because combining timestamps and dates requires knowing
 -- the user's timezone, which is client-specific.
-CREATE OR REPLACE VIEW "public"."user_activity" AS
+CREATE OR REPLACE VIEW "public"."user_activity" WITH ( security_invoker = TRUE)
+--
+AS
 SELECT
     up.user_id,
     a.id,

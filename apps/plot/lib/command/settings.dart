@@ -7,8 +7,8 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/analytics/analytics.dart';
 import 'package:plot/widget/icon.dart';
-import 'package:plot/router.dart';
 import 'package:plot/state/theme.dart';
+import 'package:plot/base.dart';
 import 'command.dart';
 import 'logging.dart';
 
@@ -65,7 +65,8 @@ class SignOut extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      return CommandRoute(SignInRoute(signOut: true));
+      await Base.client.auth.signOut();
+      return CommandDone();
     } on supa.AuthException catch (e, t) {
       log.warning("Sign out failed", e, t);
       return CommandMessage('Sign out failed: ${e.message}', isError: true);

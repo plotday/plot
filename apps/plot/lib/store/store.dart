@@ -56,6 +56,7 @@ mixin SyncableTable on Table {
   DateTimeColumn get updatedAt => dateTime()
       .withDefault(currentDateAndTime)
       .map(const LocalDateTimeConverter())();
+  // >= 2 indicates pending sync; use bitmask for multiple states
   IntColumn get pending => integer().nullable()();
 }
 
@@ -290,9 +291,26 @@ class Store extends _$Store {
     Insertable<DATA> data,
   ) async {
     try {
+      Insertable<DATA> finalData = data;
+
+      // Auto-set pending to 2 if it's absent or null
+      try {
+        final dynamic companion = data;
+        final pendingValue = companion.pending;
+
+        if (pendingValue is Value) {
+          // If pending is absent or explicitly null, set it to 2
+          if (!pendingValue.present || pendingValue.value == null) {
+            finalData = companion.copyWith(pending: const Value(2)) as Insertable<DATA>;
+          }
+        }
+      } catch (_) {
+        // If the companion doesn't have a pending field, that's fine
+      }
+
       return await Store.get
           .into(table)
-          .insertReturning(data, onConflict: DoUpdate((old) => data));
+          .insertReturning(finalData, onConflict: DoUpdate((old) => finalData));
     } catch (e, t) {
       log.warning("Error saving ${toString()}", e, t);
       rethrow;
@@ -304,8 +322,26 @@ class Store extends _$Store {
     Iterable<Insertable<DATA>> data,
   ) async {
     try {
+      // Auto-set pending to 2 for any items where it's absent or null
+      final processedData = data.map((item) {
+        try {
+          final dynamic companion = item;
+          final pendingValue = companion.pending;
+
+          if (pendingValue is Value) {
+            // If pending is absent or explicitly null, set it to 2
+            if (!pendingValue.present || pendingValue.value == null) {
+              return companion.copyWith(pending: const Value(2)) as Insertable<DATA>;
+            }
+          }
+        } catch (_) {
+          // If the companion doesn't have a pending field, that's fine
+        }
+        return item;
+      }).toList();
+
       await batch((batch) {
-        batch.insertAllOnConflictUpdate(table, data);
+        batch.insertAllOnConflictUpdate(table, processedData);
       });
     } catch (e, t) {
       log.warning("Error saving ${toString()}", e, t);
@@ -902,7 +938,7 @@ class Store extends _$Store {
       );
 
   @override
-  int get schemaVersion => 149;
+  int get schemaVersion => 152;
 
   @override
   MigrationStrategy get migration {

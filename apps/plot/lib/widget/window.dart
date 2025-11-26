@@ -70,9 +70,10 @@ class Window extends StatefulWidget {
       double width = savedWidth ?? 1200;
       double height = savedHeight ?? 800;
 
-      // Validate and adjust size based on current screen
-      final maxWidth = primaryDisplay.size.width * 0.9;
-      final maxHeight = primaryDisplay.size.height * 0.9;
+      // Validate and adjust size based on current screen's visible area
+      // Use visibleSize to properly handle full-height tiled windows
+      final maxWidth = primaryDisplay.visibleSize!.width;
+      final maxHeight = primaryDisplay.visibleSize!.height;
       width = width.clamp(400, maxWidth);
       height = height.clamp(300, maxHeight);
 

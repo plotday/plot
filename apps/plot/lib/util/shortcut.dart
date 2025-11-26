@@ -1,6 +1,8 @@
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'shortcut_platform_stub.dart'
+    if (dart.library.html) 'shortcut_platform_web.dart';
 
 /// Formats a ShortcutActivator into a human-readable string for display
 String formatShortcut(ShortcutActivator? shortcut) {
@@ -36,20 +38,27 @@ String _formatSingleActivator(SingleActivator activator) {
   return parts.join('');
 }
 
+bool _isMacOS() {
+  if (kIsWeb) {
+    return isMacOSWeb();
+  }
+  return defaultTargetPlatform == TargetPlatform.macOS;
+}
+
 String _controlSymbol() {
-  return Platform.isMacOS ? '⌃' : 'Ctrl';
+  return _isMacOS() ? '⌃' : 'Ctrl+';
 }
 
 String _altSymbol() {
-  return Platform.isMacOS ? '⌥' : 'Alt';
+  return _isMacOS() ? '⌥' : 'Alt+';
 }
 
 String _shiftSymbol() {
-  return Platform.isMacOS ? '⇧' : 'Shift';
+  return _isMacOS() ? '⇧' : 'Shift+';
 }
 
 String _metaSymbol() {
-  return Platform.isMacOS ? '⌘' : 'Win';
+  return _isMacOS() ? '⌘' : 'Win+';
 }
 
 String _formatKey(LogicalKeyboardKey key) {
@@ -68,7 +77,8 @@ String _formatKey(LogicalKeyboardKey key) {
   if (key == LogicalKeyboardKey.space) return 'Space';
 
   // Letter keys (A-Z)
-  if (key.keyLabel.length == 1 && RegExp(r'[a-z]', caseSensitive: false).hasMatch(key.keyLabel)) {
+  if (key.keyLabel.length == 1 &&
+      RegExp(r'[a-z]', caseSensitive: false).hasMatch(key.keyLabel)) {
     return key.keyLabel.toUpperCase();
   }
 

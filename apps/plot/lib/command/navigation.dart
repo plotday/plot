@@ -27,7 +27,7 @@ class CloseModalCommand extends Command {
 class ToggleLeftSidebarCommand extends Command {
   ToggleLeftSidebarCommand({required this.isVisible})
     : super(
-        title: isVisible ? 'Close Left Sidebar' : 'Open Left Sidebar',
+        title: isVisible ? 'Close Priorities' : 'Open Priorities',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.sidebarOpen,
@@ -47,7 +47,7 @@ class ToggleLeftSidebarCommand extends Command {
 class ToggleMiddleSidebarCommand extends Command {
   ToggleMiddleSidebarCommand({required this.isVisible})
     : super(
-        title: isVisible ? 'Close Middle Sidebar' : 'Open Middle Sidebar',
+        title: isVisible ? 'Close Activities' : 'Open Activities',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.sidebarOpen,

@@ -143,7 +143,6 @@ class PickFilterCommand extends ShowCommands {
     : super(
         title: 'Pick Filter',
         icon: PlotIcon.filter,
-        description: 'Select tags to filter activities',
         commands: (context) async {
           final tags = Tag.getAll();
           final commands = tags

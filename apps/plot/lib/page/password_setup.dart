@@ -6,14 +6,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
 import 'package:plot/state/user.dart';
-import 'package:plot/router.dart' show InvitationRoute;
+import 'package:logging/logging.dart';
 import 'logging.dart';
 
 @RoutePage()
 class PasswordSetupPage extends StatefulWidget {
-  const PasswordSetupPage({this.returnTo, super.key});
+  const PasswordSetupPage({this.returnTo, this.onPasswordSet, super.key});
 
   final String? returnTo;
+  final void Function()? onPasswordSet;
 
   @override
   State<PasswordSetupPage> createState() => _PasswordSetupPageState();
@@ -111,17 +112,10 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
   Widget build(BuildContext context) {
     return BlocListener<UserBloc, UserState>(
       listener: (context, state) {
-        // Only navigate after password has been successfully set
-        if (_successMessage != null) {
-          if (state is UserReady) {
-            // Navigate to the main app when user is ready
-            context.router.navigatePath(widget.returnTo ?? '/');
-          } else if (state is UserWaitlisted) {
-            // Navigate to invitation page for waitlisted users
-            context.router.navigate(const InvitationRoute());
-          }
+        if (state is UserReady && widget.onPasswordSet != null) {
+          Logger('plot.route').info('PasswordSetupPage: UserReady detected, calling onPasswordSet callback');
+          widget.onPasswordSet!();
         }
-        // If UserPasswordRequired, stay on this page (user hasn't set password yet)
       },
       child: Scaffold(
         center: true,

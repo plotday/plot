@@ -1,5 +1,4 @@
 import 'package:drift/drift.dart';
-import 'package:flutter/widgets.dart';
 
 extension type ThemeColor(int index) {
   const ThemeColor.defaultColor() : index = 0;
@@ -31,24 +30,18 @@ extension type ThemeColor(int index) {
   double toHue() {
     return switch (index) {
       0 => 164.18, // Catalyst - green
-      1 => 0, // Call to Adventure - red
-      2 => 210.0, // Rising Action - blue
-      3 => 35.0, // Momentum - orange
-      4 => 290.0, // Turning Point - purple
-      5 => 174.0, // Breakthrough - teal
-      6 => 15.0, // Climax - coral
-      7 => 260.0, // Resolution - violet
+      1 => 225.0, // Call to Adventure - blue
+      2 => 275.0, // Rising Action - blue, too
+      3 => 310.0, // Momentum - puple
+      4 => 20.0, // Turning Point - pink
+      5 => 54.0, // Breakthrough - orange
+      6 => 108.0, // Climax - olive
+      7 => 0.0, // Resolution - gray
       _ => 0.0, // Unknown - default to red
     };
   }
 
-  /// Returns a Color generated from this theme color's hue
-  Color toColor() {
-    if (index < 0 || index > 7) {
-      return const Color(0xFF9E9E9E); // Unknown - gray
-    }
-    return HSLColor.fromAHSL(1.0, toHue(), 0.6, 0.65).toColor();
-  }
+  double get chromaFactor => index == 7 ? 0.0 : 1.0;
 }
 
 class ThemeColorConverter extends TypeConverter<ThemeColor, int> {

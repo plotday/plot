@@ -4,6 +4,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:plot/util/theme_color.dart';
+
 part 'theme_state.dart';
 
 /// Theme bloc (cubit) for managing theme/appearance state
@@ -18,15 +20,18 @@ class ThemeBloc extends Cubit<ThemeState> {
           MediaQuery.of(context).platformBrightness ==
               material.Brightness.dark);
 
+  Brightness getBrightness(BuildContext context) =>
+      isDarkMode(context) ? Brightness.dark : Brightness.light;
+
   /// Set the theme mode
   void setThemeMode(AppThemeMode mode) {
     emit(state.copyWith(mode: mode));
     _persistState();
   }
 
-  /// Set the priority hue for the color scheme
-  void setPriorityHue(double hue) {
-    emit(state.copyWith(priorityHue: hue));
+  /// Set the priority color for the color scheme
+  void setPriorityColor(ThemeColor color) {
+    emit(state.copyWith(priorityColor: color));
     _persistState();
   }
 
@@ -38,14 +43,14 @@ class ThemeBloc extends Cubit<ThemeState> {
       (m) => m.name == modeString,
       orElse: () => AppThemeMode.system,
     );
-    final priorityHue = prefs.getDouble('priority_hue') ?? 160.0;
-    emit(state.copyWith(mode: mode, priorityHue: priorityHue));
+    final colorIndex = prefs.getInt('priority_color') ?? 0;
+    emit(state.copyWith(mode: mode, priorityColor: ThemeColor(colorIndex)));
   }
 
   /// Persist state to shared preferences
   Future<void> _persistState() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('theme_mode', state.mode.name);
-    await prefs.setDouble('priority_hue', state.priorityHue);
+    await prefs.setInt('priority_color', state.priorityColor.index);
   }
 }

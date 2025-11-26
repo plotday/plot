@@ -11,6 +11,7 @@ class ActivityWidget extends StatefulWidget {
     this.highlighted = false,
     this.focusNode,
     this.onHover,
+    this.reorderableIndex,
     super.key,
   });
 
@@ -20,49 +21,14 @@ class ActivityWidget extends StatefulWidget {
   final bool selected;
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
+  final int? reorderableIndex;
 
   @override
   State<ActivityWidget> createState() => _ActivityWidgetState();
 }
 
 class _ActivityWidgetState extends State<ActivityWidget> {
-  bool _isHovered = false;
   double _dragOffset = 0;
-
-  bool get _showCommands => _isHovered || (widget.focusNode?.hasFocus ?? false);
-
-  @override
-  void initState() {
-    super.initState();
-    widget.focusNode?.addListener(_onFocusChange);
-  }
-
-  @override
-  void didUpdateWidget(ActivityWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.focusNode != widget.focusNode) {
-      oldWidget.focusNode?.removeListener(_onFocusChange);
-      widget.focusNode?.addListener(_onFocusChange);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.focusNode?.removeListener(_onFocusChange);
-    super.dispose();
-  }
-
-  void _onFocusChange() {
-    setState(() {});
-  }
-
-  void _setHovered(bool hovered) {
-    if (_isHovered != hovered) {
-      setState(() {
-        _isHovered = hovered;
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext buildContext) {
@@ -90,70 +56,42 @@ class _ActivityWidgetState extends State<ActivityWidget> {
             onHorizontalDragEnd: (details) {
               if (_dragOffset < -50) {
                 // Swiped left - show commands
-                _setHovered(true);
+                widget.onHover?.call(true);
               } else if (_dragOffset > 50) {
                 // Swiped right - hide commands
-                _setHovered(false);
+                widget.onHover?.call(false);
               }
               setState(() {
                 _dragOffset = 0;
               });
             },
-            child: MouseRegion(
-              onEnter: (_) => _setHovered(true),
-              onExit: (_) => _setHovered(false),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text: widget.activity.displayTitle,
-                              style: widget.selected
-                                  ? TextStyle(color: buildContext.colour.accent)
-                                  : null,
-                            ),
-                            if (widget.activity.note != null &&
-                                widget.activity.note!.isNotEmpty &&
-                                widget.activity.noteText !=
-                                    widget.activity.displayTitle)
-                              TextSpan(
-                                text: ' ${widget.activity.noteText}',
-                                style: TextStyle(
-                                  color: buildContext.colour.muted,
-                                ),
-                              ),
-                          ],
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        style: buildContext.theme.typography.base.copyWith(
-                          color: buildContext.colour.foreground,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: widget.activity.displayTitle,
+                      style: widget.selected
+                          ? TextStyle(color: buildContext.colour.accent)
+                          : null,
+                    ),
+                    if (widget.activity.note != null &&
+                        widget.activity.note!.isNotEmpty &&
+                        widget.activity.noteText !=
+                            widget.activity.displayTitle)
+                      TextSpan(
+                        text: ' ${widget.activity.noteText}',
+                        style: TextStyle(
+                          color: buildContext.colour.muted,
                         ),
                       ),
-                    ),
-                  ),
-                  ActivityTags(activity: widget.activity),
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeInOut,
-                    child: _showCommands
-                        ? Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ...activitySecondaryCommands(
-                                widget.activity,
-                              ).take(3).map((cmd) => Button.icon(cmd)),
-                              Button.icon(
-                                ShowActivityCommands(widget.activity),
-                              ),
-                            ],
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                ],
+                  ],
+                ),
+                overflow: TextOverflow.ellipsis,
+                style: buildContext.theme.typography.base.copyWith(
+                  color: buildContext.colour.foreground,
+                ),
               ),
             ),
           ),
@@ -163,9 +101,16 @@ class _ActivityWidgetState extends State<ActivityWidget> {
           ],
         ],
       ),
+      trailing: ActivityTags(activity: widget.activity),
+      trailingCommands: [
+        ...activitySecondaryCommands(widget.activity).take(3),
+        ShowActivityCommands(widget.activity),
+      ],
+      revealTrailingCommands: true,
       selected: widget.selected,
       focusNode: widget.focusNode,
       onHover: widget.onHover,
+      reorderableIndex: widget.reorderableIndex,
     );
   }
 }
@@ -195,13 +140,14 @@ class ActivityTags extends StatelessWidget {
   }
 }
 
-class ActivityDetailWidget extends StatelessWidget {
+class ActivityDetailWidget extends StatefulWidget {
   const ActivityDetailWidget({
     required this.activity,
     this.context,
     this.selected = false,
     this.focusNode,
     this.onHover,
+    this.reorderableIndex,
     super.key,
   });
 
@@ -210,33 +156,113 @@ class ActivityDetailWidget extends StatelessWidget {
   final bool selected;
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
+  final int? reorderableIndex;
+
+  @override
+  State<ActivityDetailWidget> createState() => _ActivityDetailWidgetState();
+}
+
+class _ActivityDetailWidgetState extends State<ActivityDetailWidget> {
+  bool _isHovered = false;
+
+  bool get _showCommands => _isHovered || (widget.focusNode?.hasFocus ?? false);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focusNode?.addListener(_onFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(ActivityDetailWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focusNode != widget.focusNode) {
+      oldWidget.focusNode?.removeListener(_onFocusChange);
+      widget.focusNode?.addListener(_onFocusChange);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.focusNode?.removeListener(_onFocusChange);
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    setState(() {});
+  }
+
+  void _setHovered(bool hovered) {
+    if (_isHovered != hovered) {
+      setState(() {
+        _isHovered = hovered;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final hasVisibleLinks = activity.links.isNotEmpty;
+    final hasVisibleLinks = widget.activity.links.isNotEmpty;
+    final activityTime = widget.activity.doneAt ?? widget.activity.createdAt;
 
-    return ListTile(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Viewer(markdown: activity.note ?? activity.displayTitle),
-          if (hasVisibleLinks) ...[
-            const SizedBox(height: 8),
-            ActivityLinksList(activity: activity),
-          ],
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              ActivityTags(activity: activity),
-              Button.icon(ShowActivityCommands(activity, open: false)),
+    return MouseRegion(
+      onEnter: (_) => _setHovered(true),
+      onExit: (_) => _setHovered(false),
+      child: ListTile(
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Viewer(
+              markdown: widget.activity.note ?? widget.activity.displayTitle,
+            ),
+            if (hasVisibleLinks) ...[
+              const SizedBox(height: 8),
+              ActivityLinksList(activity: widget.activity),
             ],
-          ),
-        ],
+            Stack(
+              children: [
+                // Base layer - tags and timestamp
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    ActivityTags(activity: widget.activity),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 4),
+                      child: Text(
+                        activityTime.toTimeAgo(),
+                        style: context.theme.typography.xs.copyWith(
+                          color: context.colour.muted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                // Overlay layer - commands that cover timestamp
+                Row(
+                  children: [
+                    // Invisible spacer same width as tags
+                    Opacity(
+                      opacity: 0,
+                      child: ActivityTags(activity: widget.activity),
+                    ),
+                    AnimatedCommandRow(
+                      show: _showCommands,
+                      commands: [
+                        ...activitySecondaryCommands(widget.activity).take(3),
+                        ShowActivityCommands(widget.activity, open: false),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+        selected: widget.selected,
+        focusNode: widget.focusNode,
+        onHover: widget.onHover,
+        reorderableIndex: widget.reorderableIndex,
       ),
-      selected: selected,
-      focusNode: focusNode,
-      onHover: onHover,
     );
   }
 }

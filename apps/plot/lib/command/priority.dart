@@ -11,6 +11,7 @@ import 'package:plot/router.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/state/theme.dart';
 import 'package:plot/util/theme_color.dart';
 
 abstract class PriorityCommand extends Command {
@@ -174,8 +175,10 @@ class EditPriority extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    final themeBloc = context.read<ThemeBloc>();
     final priority = await _priority;
     await priority.save();
+    themeBloc.setPriorityColor(priority.displayColor);
     return const CommandDone();
   }
 }
@@ -252,9 +255,8 @@ class NewPriority extends ShowForm {
                     hasInitialValue: true,
                     items: (_) async => [null, ...ThemeColor.options],
                     labelBuilder: (c) => c?.label ?? 'Inherit',
-                    leadingBuilder: (c) => ColorDot(
-                      color: c?.toColor() ?? defaultParent.displayColor.toColor(),
-                    ),
+                    leadingBuilder: (c) =>
+                        ColorDot(color: c ?? defaultParent.displayColor),
                   ),
                   FormButton(
                     key: 'create',
@@ -298,6 +300,8 @@ class EditPriorityCommand extends ShowForm {
         icon: PlotIcon.settings,
         form: (context) async {
           final isRoot = priority.root;
+          // Capture ThemeBloc while context is still valid (before form submission deactivates widget)
+          final themeBloc = context.read<ThemeBloc>();
 
           // Load parent if not already loaded (parent might be null even when priority has ancestors)
           Priority? parent = priority.parent;
@@ -346,15 +350,16 @@ class EditPriorityCommand extends ShowForm {
                     initialValue: isRoot
                         ? (priority.color ?? const ThemeColor.defaultColor())
                         : priority.color,
-                    hasInitialValue: !isRoot,
+                    hasInitialValue: true,
                     items: (_) async => isRoot
                         ? ThemeColor.options
                         : [null, ...ThemeColor.options],
                     labelBuilder: (c) => c?.label ?? 'Inherit',
                     leadingBuilder: (c) => ColorDot(
-                      color: c?.toColor() ??
-                          (parent?.displayColor ?? const ThemeColor.defaultColor())
-                              .toColor(),
+                      color:
+                          c ??
+                          parent?.displayColor ??
+                          const ThemeColor.defaultColor(),
                     ),
                   ),
                   FormButton(
@@ -366,16 +371,14 @@ class EditPriorityCommand extends ShowForm {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
                       final color = values['color'] as ThemeColor?;
-                      final command = EditPriority(
-                        Future.value(
-                          priority.copyWith(
-                            title: title,
-                            parent: newParent,
-                            color: Value(color),
-                          ),
-                        ),
+                      final updatedPriority = priority.copyWith(
+                        title: title,
+                        parent: newParent,
+                        color: Value(color),
                       );
-                      return await command.run(context);
+                      await updatedPriority.save();
+                      themeBloc.setPriorityColor(updatedPriority.displayColor);
+                      return const CommandDone();
                     },
                   ),
                 ],

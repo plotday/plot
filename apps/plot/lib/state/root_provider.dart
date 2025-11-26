@@ -4,8 +4,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
+import 'package:plot/state/theme.dart';
+import 'package:plot/util/theme_color.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/router.dart';
+import 'package:plot/store/store.dart';
 import 'logging.dart';
 
 class RootProvider extends StatefulWidget {
@@ -24,6 +27,8 @@ class RootProviderState extends State<RootProvider> {
   final AppRouter router = AppRouter();
   late final RouterConfig<UrlState> routerConfig;
 
+  void Function()? _nowBlocListener;
+
   @override
   void initState() {
     Bloc.observer = BlocLogger();
@@ -33,7 +38,22 @@ class RootProviderState extends State<RootProvider> {
 
   @override
   void dispose() {
+    _nowBlocListener?.call();
     super.dispose();
+  }
+
+  void _setupNowBlocListener(ThemeBloc themeBloc) {
+    _nowBlocListener?.call();
+    _nowBlocListener = nowBloc.stream.listen((state) {
+      if (state is NowLoaded) {
+        themeBloc.setPriorityColor(state.priority.displayColor);
+      }
+    }).cancel;
+  }
+
+  void _teardownNowBlocListener() {
+    _nowBlocListener?.call();
+    _nowBlocListener = null;
   }
 
   @override
@@ -46,15 +66,50 @@ class RootProviderState extends State<RootProvider> {
       ],
       child: BlocListener<UserBloc, UserState>(
         listener: (context, state) async {
+          final themeBloc = context.read<ThemeBloc>();
+
           switch (state) {
+            case UserWaitlisted _:
+              await router.replaceAll([InvitationRoute()]);
+              break;
             case UserReady _:
               await prioritiesBloc.start();
               await nowBloc.start();
+              _setupNowBlocListener(themeBloc);
+              // Set initial theme color from current priority
+              if (nowBloc.state is NowLoaded) {
+                themeBloc.setPriorityColor(
+                  (nowBloc.state as NowLoaded).priority.displayColor,
+                );
+              }
+              // Navigate away from auth pages after successful sign-in
+              final currentPath = router.currentPath;
+              if (currentPath.startsWith('/login') ||
+                  currentPath.startsWith('/account/password') ||
+                  currentPath.startsWith('/invitation')) {
+                // Wait for NowBloc to load, then navigate to current priority
+                if (nowBloc.state is NowLoaded) {
+                  final priorityId = (nowBloc.state as NowLoaded).priority.id;
+                  await router.navigate(
+                    PriorityRoute(priorityIdString: priorityId.toShortString()),
+                  );
+                } else {
+                  log.warning(
+                    'RootProvider: NowBloc not loaded, cannot navigate to priority',
+                  );
+                }
+              }
               break;
             case UserSignedOut _:
+              _teardownNowBlocListener();
               prioritiesBloc.stop();
               nowBloc.stop();
+              // Set theme to Catalyst when signed out
+              themeBloc.setPriorityColor(ThemeColor(0));
               await router.replaceAll([SignInRoute()]);
+              // Wait for widget tree to update and dispose old widgets before removing Store
+              await WidgetsBinding.instance.endOfFrame;
+              await Store.stop();
               break;
             default:
               break;
