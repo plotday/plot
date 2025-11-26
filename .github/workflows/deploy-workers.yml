@@ -94,6 +94,8 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
+          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
