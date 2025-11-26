@@ -1,0 +1,438 @@
+# Plot Seed Data - Screenshot Example
+#
+# This example demonstrates realistic project data for app screenshots.
+# Scenario: A software development team working on mobile app and API projects.
+
+config:
+  baseDate: "2025-01-15"
+  userId: "a1b2c3d4-e5f6-4789-a012-b3c4d5e6f7a8"
+
+contacts:
+  - ref: alice
+    email: alice.johnson@company.com
+    name: Alice Johnson
+    avatar_url: https://i.pravatar.cc/150?u=alice
+
+  - ref: bob
+    email: bob.smith@company.com
+    name: Bob Smith
+    avatar_url: https://i.pravatar.cc/150?u=bob
+
+  - ref: carol
+    email: carol.martinez@company.com
+    name: Carol Martinez
+    avatar_url: https://i.pravatar.cc/150?u=carol
+
+  - ref: david
+    email: david.lee@company.com
+    name: David Lee
+    avatar_url: https://i.pravatar.cc/150?u=david
+
+priorities:
+  - ref: work
+    title: Work
+    root: true
+    settings:
+      color: "#3B82F6"
+    children:
+      - ref: mobile-app
+        title: Mobile App Redesign
+        settings:
+          color: "#10B981"
+        children:
+          - ref: sprint-5
+            title: Sprint 5
+            settings:
+              pomodoro_duration: 25
+
+          - ref: sprint-6
+            title: Sprint 6 (Current)
+            settings:
+              pomodoro_duration: 25
+
+      - ref: api-migration
+        title: API v2 Migration
+        settings:
+          color: "#F59E0B"
+        children:
+          - ref: planning
+            title: Planning
+
+          - ref: implementation
+            title: Implementation
+
+      - ref: team
+        title: Team & Admin
+        settings:
+          color: "#8B5CF6"
+
+  - ref: personal
+    title: Personal
+    root: false
+    settings:
+      color: "#EC4899"
+
+activities:
+  # ============================================================================
+  # Team Activities
+  # ============================================================================
+
+  - ref: daily-standup
+    title: Daily Standup
+    type: event
+    priority_ref: team
+    at: "+0d 09:00 / +0d 09:30"
+    recurrence_rule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
+    note: "Quick sync on progress and blockers"
+    tags:
+      pinned: [user]
+    children:
+      - title: "Yesterday: Completed login flow redesign"
+        type: note
+        author_ref: alice
+        note: "New design is looking great! Ready for review."
+        tags:
+          yes: [user, bob]
+
+      - title: "Today: Working on profile page"
+        type: note
+        author_ref: alice
+
+      - title: "Blocked on API endpoint"
+        type: note
+        author_ref: bob
+        note: "Need the new user profile endpoint before I can proceed with frontend work"
+        tags:
+          blocked: [bob]
+          urgent: [user]
+
+  - title: Sprint Planning - Sprint 6
+    type: event
+    priority_ref: sprint-6
+    at: "-2d 14:00 / -2d 16:00"
+    note: |
+      ## Sprint Goal
+      Complete user profile redesign and start onboarding flow
+
+      ## Capacity
+      - Alice: 30 points
+      - Bob: 25 points
+      - Carol: 28 points
+    tags:
+      done: [user]
+    links:
+      - url: https://miro.com/sprint-6-board
+        title: Sprint Planning Board
+        description: Sprint 6 planning board on Miro
+
+  - title: Team Retrospective
+    type: event
+    priority_ref: team
+    at: "+4d 15:00 / +4d 16:00"
+    note: "Looking back at Sprint 5"
+    tags:
+      todo: [user]
+
+  # ============================================================================
+  # Mobile App - Sprint 6 (Current)
+  # ============================================================================
+
+  - title: Implement new profile page UI
+    type: action
+    priority_ref: sprint-6
+    on: "+0d / +3d"
+    assignee_ref: alice
+    note: |
+      Implement the new profile page design from Figma.
+
+      **Requirements:**
+      - Use new design system components
+      - Support dark mode
+      - Add avatar upload
+      - Profile editing inline
+    links:
+      - url: https://figma.com/profile-page-v2
+        title: Profile Page Design
+        description: Figma mockups for new profile page
+    tags:
+      todo: [user]
+      urgent: [user]
+    children:
+      - title: "Which component library should we use for the avatar picker?"
+        type: note
+        author_ref: alice
+        tags:
+          question: [alice]
+
+      - title: "Let's use react-avatar-editor, it's well maintained"
+        type: note
+        author_ref: bob
+        tags:
+          yes: [alice, user]
+
+  - title: Add profile photo upload
+    type: action
+    priority_ref: sprint-6
+    on: "+1d / +4d"
+    assignee_ref: alice
+    note: "Allow users to upload and crop profile photos"
+    tags:
+      todo: [user]
+      blocked: [alice]
+
+  - title: Refactor authentication flow
+    type: action
+    priority_ref: sprint-6
+    on: "+0d / +5d"
+    assignee_ref: bob
+    note: |
+      Clean up the authentication code and add proper error handling.
+
+      - [x] Add retry logic
+      - [x] Improve error messages
+      - [ ] Add loading states
+      - [ ] Add tests
+    tags:
+      todo: [user]
+
+  - title: Design new onboarding flow
+    type: action
+    priority_ref: sprint-6
+    on: "+2d / +7d"
+    assignee_ref: carol
+    note: "Create mockups for new user onboarding experience"
+    tags:
+      idea: [user, carol]
+      goal: [user]
+
+  # ============================================================================
+  # Mobile App - Sprint 5 (Completed)
+  # ============================================================================
+
+  - title: Implement new login screen
+    type: action
+    priority_ref: sprint-5
+    done_at: "-3d 17:00"
+    assignee_ref: alice
+    note: "New login screen with social auth options"
+    links:
+      - url: https://github.com/company/mobile-app/pull/234
+        title: "PR #234: New login screen"
+    tags:
+      done: [user]
+      tada: [user, bob, carol]
+
+  - title: Add password reset flow
+    type: action
+    priority_ref: sprint-5
+    done_at: "-2d 14:30"
+    assignee_ref: bob
+    tags:
+      done: [user]
+
+  - title: Update app icons and splash screen
+    type: action
+    priority_ref: sprint-5
+    done_at: "-1d 11:00"
+    assignee_ref: carol
+    tags:
+      done: [user]
+
+  # ============================================================================
+  # API Migration
+  # ============================================================================
+
+  - title: API v2 Architecture Planning
+    type: note
+    priority_ref: planning
+    note: |
+      ## Goals
+      - Improve performance
+      - Better error handling
+      - GraphQL support
+      - Real-time subscriptions
+
+      ## Timeline
+      - Planning: 2 weeks
+      - Implementation: 8 weeks
+      - Migration: 4 weeks
+    tags:
+      goal: [user]
+      pinned: [user]
+    children:
+      - title: "Should we consider gRPC instead of REST?"
+        type: note
+        author_ref: david
+        tags:
+          question: [david]
+
+      - title: "Let's stick with REST + GraphQL for now, easier migration path"
+        type: note
+        author_ref: user
+        tags:
+          decision: [user]
+
+      - title: "Agreed, we can evaluate gRPC for v3"
+        type: note
+        author_ref: david
+        tags:
+          yes: [bob, alice]
+
+  - title: Set up new API infrastructure
+    type: action
+    priority_ref: implementation
+    on: "+0d / +10d"
+    assignee_ref: david
+    note: |
+      Set up the infrastructure for API v2:
+      - Kubernetes cluster
+      - Load balancers
+      - Database replicas
+      - Redis cache
+    tags:
+      todo: [user]
+      urgent: [user]
+
+  - title: Implement GraphQL schema
+    type: action
+    priority_ref: implementation
+    on: "+5d / +12d"
+    assignee_ref: bob
+    note: "Define GraphQL schema for user and activity resources"
+    tags:
+      todo: [user]
+      waiting: [bob]
+
+  - title: Migrate user authentication
+    type: action
+    priority_ref: implementation
+    on: "+7d / +14d"
+    assignee_ref: david
+    note: "Migrate auth system to new API"
+    tags:
+      todo: [user]
+
+  # ============================================================================
+  # Meetings & Events
+  # ============================================================================
+
+  - title: Design Review
+    type: event
+    priority_ref: mobile-app
+    at: "+1d 14:00 / +1d 15:00"
+    note: "Review profile page designs with the team"
+    mentions: [alice, carol]
+    tags:
+      pinned: [user]
+
+  - title: Architecture Discussion - API v2
+    type: event
+    priority_ref: api-migration
+    at: "+2d 10:00 / +2d 11:30"
+    note: "Deep dive into API v2 architecture decisions"
+    mentions: [david, bob]
+    tags:
+      pinned: [user]
+
+  - title: 1:1 with Alice
+    type: event
+    priority_ref: team
+    at: "+3d 13:00 / +3d 13:30"
+    recurrence_rule: "FREQ=WEEKLY"
+    private: true
+    tags:
+      pinned: [user]
+
+  - title: All Hands Meeting
+    type: event
+    priority_ref: team
+    at: "+4d 16:00 / +4d 17:00"
+    recurrence_rule: "FREQ=MONTHLY;BYMONTHDAY=19"
+    note: "Monthly company all hands"
+    tags:
+      pinned: [user]
+
+  # ============================================================================
+  # Personal
+  # ============================================================================
+
+  - title: Dentist Appointment
+    type: event
+    priority_ref: personal
+    at: "+2d 16:00 / +2d 17:00"
+    private: true
+    note: "Annual checkup"
+    tags:
+      pinned: [user]
+
+  - title: Plan vacation
+    type: action
+    priority_ref: personal
+    on: "+5d"
+    note: "Book flights and hotel for summer vacation"
+    tags:
+      todo: [user]
+
+  - title: Read 'Team Topologies'
+    type: action
+    priority_ref: personal
+    on: "+0d / +30d"
+    note: "Book recommended by David"
+    links:
+      - url: https://teamtopologies.com/
+        title: Team Topologies
+    tags:
+      goal: [user]
+
+  # ============================================================================
+  # General Work Items
+  # ============================================================================
+
+  - title: Update team documentation
+    type: action
+    priority_ref: team
+    on: "+1d"
+    note: "Update onboarding docs with new tooling"
+    tags:
+      todo: [user]
+      star: [user]
+
+  - title: Review pull requests
+    type: action
+    priority_ref: team
+    on: "+0d"
+    note: |
+      PRs to review:
+      - #234 - Login screen
+      - #235 - Password reset
+      - #236 - Avatar upload
+    tags:
+      todo: [user]
+      urgent: [user]
+
+  - title: Performance optimization ideas
+    type: note
+    priority_ref: mobile-app
+    note: |
+      ## Ideas for improving app performance
+
+      - Lazy load images
+      - Implement virtual scrolling for long lists
+      - Use React.memo for expensive components
+      - Add service worker for offline support
+      - Optimize bundle size
+    tags:
+      idea: [user]
+      star: [user]
+    children:
+      - title: "Virtual scrolling gave us 10x improvement on the feed!"
+        type: note
+        author_ref: alice
+        tags:
+          tada: [user, bob, carol]
+
+      - title: "Let's prioritize service worker next"
+        type: note
+        author_ref: bob
+        tags:
+          yes: [alice, user]

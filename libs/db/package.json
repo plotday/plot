@@ -38,11 +38,14 @@
     "test:lint": "supabase db lint",
     "test:run": "supabase db test",
     "supabase": "export $(pnpm --silent fake-env) && supabase",
-    "migrate": "export $(pnpm --silent fake-env) && supabase db push"
+    "migrate": "export $(pnpm --silent fake-env) && supabase db push",
+    "gen-seed": "tsx seeds/generate-seed.ts"
   },
   "devDependencies": {
     "@plotday/tsconfig": "workspace:^",
-    "supabase": "^2.62.10"
+    "supabase": "^2.62.10",
+    "tsx": "^4.19.2",
+    "yaml": "^2.6.1"
   },
   "dependencies": {
     "@plotday/tz": "workspace:^",

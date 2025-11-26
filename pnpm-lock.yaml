@@ -156,6 +156,12 @@ importers:
       supabase:
         specifier: ^2.62.10
         version: 2.62.10
+      tsx:
+        specifier: ^4.19.2
+        version: 4.20.6
+      yaml:
+        specifier: ^2.6.1
+        version: 2.8.1
 
   libs/email:
     dependencies:
@@ -7480,11 +7486,6 @@ packages:
     resolution: {integrity: sha512-r3vXyErRCYJ7wg28yvBY5VSoAF8ZvlcW9/BwUzEtUsjvX/DKs24dIkuwjtuprwJJHsbyUbLApepYTR1BN4uHrg==}
     engines: {node: '>= 6'}
 
-  yaml@2.7.0:
-    resolution: {integrity: sha512-+hSoy/QHluxmC9kCIJyL/uyFmLmc+e5CFR5Wa+bpIhIj85LVb9ZH2nVnqrHoSvKogwODv0ClqZkmiSSaIH5LTA==}
-    engines: {node: '>= 14'}
-    hasBin: true
-
   yaml@2.8.1:
     resolution: {integrity: sha512-lcYcMxX2PO9XMGvAJkJ3OsNMw+/7FKes7/hgerGUYWIoWu5j/+YQqcZr5JnPZWzOsEBgMbSbiSTn/dv/69Mkpw==}
     engines: {node: '>= 14.6'}
@@ -13242,7 +13243,7 @@ snapshots:
       tmp: 0.2.1
       tsconfig-paths: 4.2.0
       tslib: 2.6.3
-      yaml: 2.7.0
+      yaml: 2.8.1
       yargs: 17.7.2
       yargs-parser: 21.1.1
     optionalDependencies:
@@ -15150,8 +15151,6 @@ snapshots:
   yallist@5.0.0: {}
 
   yaml@1.10.2: {}
-
-  yaml@2.7.0: {}
 
   yaml@2.8.1: {}
 
