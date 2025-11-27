@@ -49,7 +49,19 @@ class NowBloc extends Cubit<NowState> {
     _subscription?.cancel();
   }
 
-  void setPriority(Priority? priority) async {
+  /// Context is the priority being displayed, which may
+  /// be more general than the focus.
+  void setContext(Priority? priority) async {
+    if (loadedState.context?.id == priority?.id) return;
+    emit(loadedState.copyWith(context: priority));
+  }
+
+  /// Focus is the priority of the current activity, which may
+  /// be more specific than the context.
+  void setFocus(Priority? priority) async {
+    if (loadedState.context == null) {
+      setContext(priority);
+    }
     if (loadedState.session?.priority?.id == priority?.id) return;
     await loadedState.session?.copyWith(end: DateTime.now()).save();
     await Session.resume(

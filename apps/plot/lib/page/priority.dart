@@ -266,7 +266,7 @@ class PriorityPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocConsumer<PriorityBloc, PriorityState>(
       listener: (context, state) {
-        context.read<NowBloc>().setPriority(state.context);
+        context.read<NowBloc>().setFocus(state.context);
       },
       listenWhen: (previous, current) =>
           previous.context.id != current.context.id,

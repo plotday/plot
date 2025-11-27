@@ -16,6 +16,7 @@ final class NowLoaded extends NowState {
     required this.defaultPriority,
     required ScheduledDay day,
     this.session,
+    this.context,
   }) : now = DateTime.now(),
        _day = day;
 
@@ -23,6 +24,7 @@ final class NowLoaded extends NowState {
   final Session? session;
   final ScheduledDay _day;
   final Priority defaultPriority;
+  final Priority? context;
 
   List<Activity> get scheduled =>
       _day.events.where((event) => event.at!.includes(now)).toList();
@@ -78,7 +80,10 @@ final class NowLoaded extends NowState {
   List<Object?> get props => [session, scheduled, next, previous];
 
   Priority get priority =>
-      session?.priority ?? scheduled.firstOrNull?.priority ?? defaultPriority;
+      context ??
+      session?.priority ??
+      scheduled.firstOrNull?.priority ??
+      defaultPriority;
   Activity get current =>
       scheduled.firstOrNull ??
       Activity(
@@ -140,11 +145,13 @@ final class NowLoaded extends NowState {
     Session? session,
     ScheduledDay? day,
     Priority? defaultPriority,
+    Priority? context,
   }) {
     return NowLoaded(
       session: session ?? this.session,
       day: day ?? _day,
       defaultPriority: defaultPriority ?? this.defaultPriority,
+      context: context ?? this.context,
     );
   }
 }

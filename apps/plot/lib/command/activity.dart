@@ -80,7 +80,7 @@ class ChangeCurrentActivity extends ActivityCommand {
 
     if (activity == null) {
       // Update NowBloc to match the current priority being viewed
-      context.read<NowBloc>().setPriority(currentPriority);
+      context.read<NowBloc>().setFocus(currentPriority);
 
       // Navigate to just the PriorityRoute without ActivityRoute
       return CommandRoute(
@@ -89,7 +89,7 @@ class ChangeCurrentActivity extends ActivityCommand {
     }
 
     // Update NowBloc to the activity's priority (what user is working on)
-    context.read<NowBloc>().setPriority(activity!.priority);
+    context.read<NowBloc>().setFocus(activity!.priority);
 
     // Navigate using the CURRENT priority (not activity's priority)
     // This keeps PriorityPage showing the parent priority

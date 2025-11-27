@@ -4,7 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/state/priorities.dart';
-import 'package:plot/state/priority.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/widget/priorities_list.dart';
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/header.dart';
@@ -20,12 +20,14 @@ class PrioritiesPage extends StatelessWidget {
       header: Header(title: 'Priorities', commands: [NewPriority()]),
       body: BlocBuilder<PrioritiesBloc, PrioritiesState>(
         builder: (builderContext, state) {
-          return BlocBuilder<PriorityBloc, PriorityState>(
+          return BlocBuilder<NowBloc, NowState>(
             builder: (builderContext, priorityState) {
               return PrioritiesList(
                 root: state.root!,
                 priorities: state.priorities,
-                selected: priorityState.context,
+                selected: priorityState is NowLoaded
+                    ? priorityState.context
+                    : null,
               );
             },
           );
