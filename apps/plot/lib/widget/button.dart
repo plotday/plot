@@ -44,9 +44,9 @@ class Button extends StatelessWidget {
     this.loading = false,
     this.enabled = true,
     this.selected = false,
-    this.expand = true,
     super.key,
-  }) : iconOnly = true;
+  }) : iconOnly = true,
+       expand = false;
 
   final ButtonStyle style;
   final bool loading;

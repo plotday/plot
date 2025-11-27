@@ -91,7 +91,6 @@ class ActivityEditorState extends State<ActivityEditor> {
                     Button.icon(
                       StartActivity(widget.draft),
                       selected: widget.draft.doNow,
-                      expand: false,
                     ),
                     const Spacer(),
                     // Right side: Save button
@@ -105,7 +104,6 @@ class ActivityEditorState extends State<ActivityEditor> {
                       ),
                       style: ButtonStyle.primary,
                       enabled: !_isEmpty,
-                      expand: false,
                     ),
                   ],
                 ),

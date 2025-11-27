@@ -186,7 +186,11 @@ class _HeaderState extends State<Header> {
               final key = ValueKey(
                 Object.hash(entry.value.hashCode, entry.key),
               );
-              return Button.icon(entry.value, key: key);
+              return Button.icon(
+                entry.value,
+                key: key,
+                selected: entry.value.on == true,
+              );
             }),
           // Add search button/close button if onSearchChanged is provided
           if (widget.onSearchChanged != null)
