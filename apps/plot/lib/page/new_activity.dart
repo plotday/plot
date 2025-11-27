@@ -53,7 +53,7 @@ class _NewActivityPageState extends State<NewActivityPage> {
             return Scaffold(
               translucent: true,
               scrollable: false,
-              header: layoutState.middlePanelVisible
+              header: layoutState.middlePanelVisible || !layoutState.multiPanel
                   ? null
                   : Header(
                       title: 'New Activity',

@@ -514,7 +514,7 @@ class PriorityPage extends StatelessWidget {
                                           .updateFilter([]),
                                       filterCommands: tagCommands,
                                       commands: [
-                                        NewActivity(),
+                                        if (layoutState.multiPanel) NewActivity(),
                                         ShowPriorityCommands(
                                           state.context,
                                           current: true,
