@@ -6,7 +6,7 @@ CREATE TABLE "public"."contact" (
     "email" text NOT NULL CHECK (is_lower (email)),
     "name" text,
     "avatar_url" text,
-    "user_id" uuid REFERENCES "auth"."users" ("id") ON DELETE SET NULL,
+    "user_id" uuid REFERENCES "auth"."users" ("id") ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
     CONSTRAINT contact_user_email_unique UNIQUE (email),
     CONSTRAINT contact_user_id_unique UNIQUE (user_id)
 );
