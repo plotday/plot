@@ -43,7 +43,10 @@ class OklchColours {
 
   /// Calculate accent lightness for a ThemeColor based on brightness
   /// ThemeColor 7 (gray) uses special lightness values for better contrast
-  static double _getAccentLightness(ThemeColor themeColor, Brightness brightness) {
+  static double _getAccentLightness(
+    ThemeColor themeColor,
+    Brightness brightness,
+  ) {
     if (themeColor.index == 7) {
       return brightness == Brightness.light ? 0.15 : 0.9;
     }
@@ -95,7 +98,7 @@ class OklchColours {
         baseAccentChroma: baseChroma * saturate,
       );
     } else {
-      const baseChroma = 0.06;
+      const baseChroma = 0.1;
       final accentLightness = _getAccentLightness(themeColor, brightness);
       return OklchColours(
         pureBackground: pureBackground,
@@ -195,15 +198,19 @@ class ColourSchemeData extends Equatable {
       secondaryForeground: foreground,
       muted: const Color(0x00FFFFFF),
       mutedForeground: muted,
-      destructive: brightness == Brightness.light
-          ? const Color(0xFFEF4444)
-          : const Color(0xFF7F1D1D),
+      destructive: RayOklch.fromComponents(
+        brightness == Brightness.light ? 0.2 : 0.65,
+        brightness == Brightness.light ? 0.8 : 0.15,
+        25.72,
+      ).toColor(),
       destructiveForeground: brightness == Brightness.light
           ? const Color(0xFFFAFAFA)
           : const Color(0xFFFAFAFA),
-      error: brightness == Brightness.light
-          ? const Color(0xFFEF4444)
-          : const Color(0xFF7F1D1D),
+      error: RayOklch.fromComponents(
+        brightness == Brightness.light ? 0.2 : 0.65,
+        brightness == Brightness.light ? 0.8 : 0.2,
+        25.72,
+      ).toColor(),
       errorForeground: brightness == Brightness.light
           ? const Color(0xFFFAFAFA)
           : const Color(0xFFFAFAFA),

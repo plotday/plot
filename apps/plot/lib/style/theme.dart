@@ -9,6 +9,7 @@ import 'package:plot/style/button.dart';
 import 'package:plot/style/sidebar.dart';
 import 'package:plot/style/tile.dart';
 import 'package:plot/style/scaffold.dart';
+import 'package:plot/style/bottom_navigation_bar.dart';
 
 FThemeData buildTheme(ColourSchemeData colourScheme) {
   final colorScheme = colourScheme.toFColorScheme();
@@ -52,6 +53,10 @@ FThemeData buildTheme(ColourSchemeData colourScheme) {
     ),
     tileStyle: buildTileStyle(theme.tileStyle, theme.colors),
     scaffoldStyle: scaffoldStyle(style: theme.style, colors: theme.colors),
+    bottomNavigationBarStyle: buildBottomNavigationBarStyle(
+      theme.bottomNavigationBarStyle,
+      colourScheme,
+    ),
   );
 
   return theme;
