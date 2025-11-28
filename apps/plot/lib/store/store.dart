@@ -255,30 +255,49 @@ class Store extends _$Store {
     return _clientId!;
   }
 
+  // Lock to prevent concurrent Store.start() calls
+  static final Lock _startLock = Lock();
+  // Track the current user to avoid unnecessary Store recreation
+  static String? _currentUserId;
+
   static Future<void> stop() async {
     if (Injector.appInstance.exists<Store>()) {
       await get.close();
     }
     Injector.appInstance.removeByKey<Store>();
+    _currentUserId = null;
   }
 
   static Future<void> start(User user) async {
-    driftRuntimeOptions.defaultSerializer = const CustomSerializer();
-    if (Injector.appInstance.exists<Store>()) {
-      await get.close();
-    }
-    final inst = Store._(user);
-    Injector.appInstance.registerSingleton<Store>(() => inst, override: true);
+    return _startLock.synchronized(() async {
+      driftRuntimeOptions.defaultSerializer = const CustomSerializer();
 
-    if (await Priority.hasDefault()) {
-      // User has existing local data, start sync in background (non-blocking)
-      inst._setupConnectivityListener();
-    } else {
-      // New user or no local data - need to sync before app can be used
-      await inst._waitForNetworkConnectivity();
-      await inst._startSync();
-      assert(await Priority.hasDefault(), "No default priority");
-    }
+      // Skip if already initialized for this user
+      if (Injector.appInstance.exists<Store>() && _currentUserId == user.id) {
+        return;
+      }
+
+      // Update current user ID
+      _currentUserId = user.id;
+
+      // Close existing store if it exists
+      if (Injector.appInstance.exists<Store>()) {
+        await get.close();
+      }
+
+      final inst = Store._(user);
+      Injector.appInstance.registerSingleton<Store>(() => inst, override: true);
+
+      if (await Priority.hasDefault()) {
+        // User has existing local data, start sync in background (non-blocking)
+        inst._setupConnectivityListener();
+      } else {
+        // New user or no local data - need to sync before app can be used
+        await inst._waitForNetworkConnectivity();
+        await inst._startSync();
+        assert(await Priority.hasDefault(), "No default priority");
+      }
+    });
   }
 
   BroadcastClient? _broadcastClient;
