@@ -4,6 +4,8 @@ import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
 import 'bottom_navigation_provider.dart';
+import 'modal.dart';
+import 'package:plot/state/layout.dart';
 
 class Scaffold extends StatelessWidget {
   const Scaffold({
@@ -59,7 +61,14 @@ class Scaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wrappedBody = _buildBody(context);
+    var wrappedBody = _buildBody(context);
+
+    // On mobile (non-multiPanel), wrap in ModalProvider so modals are within FScaffold context
+    // This allows bottom sheets to use useSafeArea properly
+    if (!context.isMultiPanel) {
+      wrappedBody = ModalProvider(child: wrappedBody);
+    }
+
     final footer = _buildFooter(context);
     final scaffold = FScaffold(
       header: header,

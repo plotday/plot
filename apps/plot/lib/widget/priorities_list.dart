@@ -28,86 +28,88 @@ class PrioritiesList extends StatelessWidget {
         ? context.theme.typography.sm
         : context.theme.typography.base;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // First group: Everything root priority
-        ListTile(
-          title: root.title,
-          command: ChangeCurrentPriority(root),
-          selected: selected?.id == root.id,
-          textStyle: itemStyle.copyWith(
-            color: context.colour.colours.fromTheme(root.displayColor),
-          ),
-          trailingCommands: [ShowPriorityCommands(root)],
-          revealTrailingCommands: true,
-        ),
-
-        // Second group: Top Priorities
-        if (topPriorities.isNotEmpty) ...[
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // First group: Everything root priority
           ListTile(
-            title: 'Top Priorities',
-            style: ListTileStyle.header,
-            textStyle: headerStyle,
+            title: root.title,
+            command: ChangeCurrentPriority(root),
+            selected: selected?.id == root.id,
+            textStyle: itemStyle.copyWith(
+              color: context.colour.colours.fromTheme(root.displayColor),
+            ),
+            trailingCommands: [ShowPriorityCommands(root)],
+            revealTrailingCommands: true,
           ),
-          ReorderableListView<Priority>(
-            list: topPriorities,
-            shrinkWrap: true,
-            itemBuilder: (context, priority) => Column(
-              key: ValueKey('top-${priority.id}'),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: _buildPriorityItems(
-                context,
-                priority,
-                topSection: true,
-                textStyle: itemStyle.copyWith(
-                  color: context.colour.colours.fromTheme(
-                    priority.displayColor,
+
+          // Second group: Top Priorities
+          if (topPriorities.isNotEmpty) ...[
+            ListTile(
+              title: 'Top Priorities',
+              style: ListTileStyle.header,
+              textStyle: headerStyle,
+            ),
+            ReorderableListView<Priority>(
+              list: topPriorities,
+              shrinkWrap: true,
+              itemBuilder: (context, priority) => Column(
+                key: ValueKey('top-${priority.id}'),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _buildPriorityItems(
+                  context,
+                  priority,
+                  topSection: true,
+                  textStyle: itemStyle.copyWith(
+                    color: context.colour.colours.fromTheme(
+                      priority.displayColor,
+                    ),
                   ),
                 ),
               ),
+              onReorder: (int oldIndex, int newIndex) async {
+                var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+                var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+
+                final currentPriority = topPriorities[oldIndex];
+                Priority? previous;
+                if (previousIndex >= 0) {
+                  previous = topPriorities[previousIndex];
+                }
+                Priority? next;
+                if (nextIndex < topPriorities.length) {
+                  next = topPriorities[nextIndex];
+                }
+
+                await currentPriority
+                    .copyWith(
+                      topOrder: Value(
+                        Order.between(previous?.topOrder, next?.topOrder),
+                      ),
+                    )
+                    .save();
+              },
             ),
-            onReorder: (int oldIndex, int newIndex) async {
-              var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-              var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+          ],
 
-              final currentPriority = topPriorities[oldIndex];
-              Priority? previous;
-              if (previousIndex >= 0) {
-                previous = topPriorities[previousIndex];
-              }
-              Priority? next;
-              if (nextIndex < topPriorities.length) {
-                next = topPriorities[nextIndex];
-              }
-
-              await currentPriority
-                  .copyWith(
-                    topOrder: Value(
-                      Order.between(previous?.topOrder, next?.topOrder),
-                    ),
-                  )
-                  .save();
-            },
+          // Third group: All Priorities
+          ListTile(
+            title: 'All Priorities',
+            style: ListTileStyle.header,
+            textStyle: headerStyle,
+          ),
+          ...root.children.expand(
+            (priority) => _buildPriorityItems(
+              context,
+              priority,
+              textStyle: itemStyle.copyWith(
+                color: context.colour.colours.fromTheme(priority.displayColor),
+              ),
+            ),
           ),
         ],
-
-        // Third group: All Priorities
-        ListTile(
-          title: 'All Priorities',
-          style: ListTileStyle.header,
-          textStyle: headerStyle,
-        ),
-        ...root.children.expand(
-          (priority) => _buildPriorityItems(
-            context,
-            priority,
-            textStyle: itemStyle.copyWith(
-              color: context.colour.colours.fromTheme(priority.displayColor),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 

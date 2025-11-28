@@ -252,8 +252,10 @@ class _ListTileState extends State<ListTile> {
         ),
       Expanded(
         child: Padding(
-          padding: (widget.padding?.resolve(null) ?? widgetPaddingSm)
-              .copyWith(left: 0, right: 0),
+          padding: (widget.padding?.resolve(null) ?? widgetPaddingSm).copyWith(
+            left: 0,
+            right: 0,
+          ),
           child: Column(
             crossAxisAlignment: widget.centered
                 ? CrossAxisAlignment.center
@@ -274,6 +276,7 @@ class _ListTileState extends State<ListTile> {
                           mainAxisAlignment: widget.centered
                               ? MainAxisAlignment.center
                               : MainAxisAlignment.start,
+                          spacing: 4,
                           children: [
                             Text(
                               widget.title ??
@@ -285,16 +288,9 @@ class _ListTileState extends State<ListTile> {
                                   : TextAlign.start,
                               style:
                                   (widget.textStyle ??
-                                          (widget.style ==
-                                                  ListTileStyle.header
-                                              ? context
-                                                    .theme
-                                                    .typography
-                                                    .sm
-                                              : context
-                                                    .theme
-                                                    .typography
-                                                    .base))
+                                          (widget.style == ListTileStyle.header
+                                              ? context.theme.typography.sm
+                                              : context.theme.typography.base))
                                       .copyWith(
                                         color: widget.selected
                                             ? context
@@ -303,10 +299,7 @@ class _ListTileState extends State<ListTile> {
                                                   .primaryForeground
                                             : widget.style ==
                                                   ListTileStyle.header
-                                            ? context
-                                                  .theme
-                                                  .plotColors
-                                                  .muted
+                                            ? context.theme.plotColors.muted
                                             : null,
                                       ),
                             ),
@@ -315,13 +308,9 @@ class _ListTileState extends State<ListTile> {
                                 child: Text(
                                   widget.subtitle!,
                                   overflow: TextOverflow.ellipsis,
-                                  style: context.theme.typography.base
-                                      .copyWith(
-                                        color: context
-                                            .theme
-                                            .plotColors
-                                            .muted,
-                                      ),
+                                  style: context.theme.typography.base.copyWith(
+                                    color: context.theme.plotColors.muted,
+                                  ),
                                 ),
                               ),
                           ],
@@ -337,18 +326,28 @@ class _ListTileState extends State<ListTile> {
 
     // If reorderable, wrap content in ReorderableDragStartListener
     if (widget.reorderableIndex != null) {
-      return [
-        Expanded(
-          child: ReorderableDragStartListener(
-            index: widget.reorderableIndex!,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              spacing: 8,
-              children: content,
-            ),
-          ),
-        ),
-      ];
+      final draggableChild = Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        spacing: 8,
+        children: content,
+      );
+
+      Widget reorderableWidget = ReorderableDragStartListener(
+        index: widget.reorderableIndex!,
+        child: draggableChild,
+      );
+
+      // On touch devices, add haptic feedback for long-press drag
+      if (!hasPhysicalKeyboard()) {
+        reorderableWidget = GestureDetector(
+          onLongPressStart: (_) {
+            HapticFeedback.mediumImpact();
+          },
+          child: reorderableWidget,
+        );
+      }
+
+      return [Expanded(child: reorderableWidget)];
     }
 
     return content;

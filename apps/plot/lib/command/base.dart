@@ -45,6 +45,12 @@ class CommandRoute extends CommandReturn {
   }
 }
 
+// Command wants to show a nested page within CommandModal
+class CommandPage extends CommandReturn {
+  const CommandPage(this.builder);
+  final Widget Function(BuildContext) builder;
+}
+
 abstract class Command {
   const Command({
     required this.title,
@@ -123,10 +129,10 @@ class ShowCommands extends Command {
     try {
       final commandsInstance = await commands(context);
       if (!context.mounted) {
-        log.info('Context no longer mounted, skipping CommandBar for "$title"');
+        log.info('Context no longer mounted, skipping CommandModal for "$title"');
         return const CommandSkipped();
       }
-      return await CommandBar(
+      return await CommandModal(
         commandsInstance,
         rootContext: context,
       ).run(context);
@@ -155,7 +161,7 @@ class ShowPage extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final actionReturn = await Dialog(
+    final actionReturn = await Modal(
       builder: builder,
     ).show<CommandReturn>(context);
     return actionReturn.present ? actionReturn.value : const CommandSkipped();
@@ -303,7 +309,7 @@ class Commands {
 
   Future<CommandReturn> show(BuildContext context) async {
     try {
-      return await CommandBar(
+      return await CommandModal(
         this,
         secondaryCommand: secondaryCommand,
         rootContext: context,
@@ -337,7 +343,7 @@ class Commands {
   }
 }
 
-/// Activate new commands in the given widget scope. This adds a new scope for the CommandBar,
+/// Activate new commands in the given widget scope. This adds a new scope for the CommandModal,
 /// along with activating shortcuts for the commands.
 class CommandScope extends StatefulWidget {
   const CommandScope({required this.commands, required this.child, super.key});

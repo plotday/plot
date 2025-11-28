@@ -102,10 +102,17 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
           );
         }
 
-        return BidirectionalListSelector(
-          key: ValueKey('activity_list_${state.activity.id}'),
-          reverse: true,
-          builder: (context, listController) {
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            if (!didPop && !layoutStateForPanels.multiPanel) {
+              context.run(ChangeCurrentActivity(null));
+            }
+          },
+          child: BidirectionalListSelector(
+            key: ValueKey('activity_list_${state.activity.id}'),
+            reverse: true,
+            builder: (context, listController) {
             // Register this ActivityPage with the global focus coordination provider
             WidgetsBinding.instance.addPostFrameCallback((_) {
               final provider = ActivityPanelControllerProvider.maybeOf(context);
@@ -236,6 +243,7 @@ class _ActivityPageContentState extends State<_ActivityPageContent> {
               ),
             );
           },
+        ),
         );
       },
     );

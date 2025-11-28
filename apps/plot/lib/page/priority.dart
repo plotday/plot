@@ -15,23 +15,16 @@ import 'loading.dart';
 @RoutePage(name: "PriorityRoute")
 class PriorityWrapper implements AutoRouteWrapper {
   PriorityWrapper({@PathParam("priorityId") required String priorityIdString})
-    : priorityId = PriorityId.fromShortString(priorityIdString);
+    : priorityId = PriorityId.fromShortString(priorityIdString),
+      _routerKey = GlobalKey(
+        debugLabel: 'PriorityWrapper_${PriorityId.fromShortString(priorityIdString).toShortString()}',
+      );
 
   final PriorityId priorityId;
-  static final Map<PriorityId, GlobalKey> _routerKeys = {};
-  static GlobalKey _getRouterKey(PriorityId priorityId) {
-    return _routerKeys.putIfAbsent(
-      priorityId,
-      () => GlobalKey(
-        debugLabel: 'PriorityWrapper_${priorityId.toShortString()}',
-      ),
-    );
-  }
+  final GlobalKey _routerKey;
 
   @override
   Widget wrappedRoute(BuildContext context) {
-    final routerKey = _getRouterKey(priorityId);
-
     return PriorityBlocProvider(
       priorityId: priorityId,
       child: BlocBuilder<PriorityBloc, PriorityState>(
@@ -49,7 +42,7 @@ class PriorityWrapper implements AutoRouteWrapper {
                 left: PrioritiesPage(),
                 middle: PriorityPage(priorityId: priorityId),
                 child: AutoRouter(
-                  key: routerKey,
+                  key: _routerKey,
                   placeholder: (context) => const LoadingPage(),
                 ),
               ),

@@ -5,24 +5,28 @@ import 'package:forui/forui.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/style/layout.dart';
-import 'dialog.dart';
+import 'modal.dart';
 import 'logging.dart';
 
-class FormBar extends Dialog {
-  factory FormBar(
+class FormModal extends Modal {
+  factory FormModal(
     FormData form, {
     required List<StaticFormGroup> groups,
     required BuildContext rootContext,
   }) {
-    // Cache the _FormBar widget so it's not recreated on dialog rebuilds
-    final formBar = _FormBar(form, groups: groups, rootContext: rootContext);
-    return FormBar._(formBar, form);
+    // Cache the _FormModal widget so it's not recreated on modal rebuilds
+    final formModal = _FormModal(
+      form,
+      groups: groups,
+      rootContext: rootContext,
+    );
+    return FormModal._(formModal, form);
   }
 
-  FormBar._(Widget formBar, FormData form)
+  FormModal._(Widget formModal, FormData form)
     : super(
         padding: const EdgeInsets.all(0),
-        builder: (_) => formBar,
+        builder: (_) => formModal,
         key: ObjectKey(form),
       );
 
@@ -33,18 +37,22 @@ class FormBar extends Dialog {
   }
 }
 
-class _FormBar extends StatefulWidget {
-  const _FormBar(this.form, {required this.groups, required this.rootContext});
+class _FormModal extends StatefulWidget {
+  const _FormModal(
+    this.form, {
+    required this.groups,
+    required this.rootContext,
+  });
 
   final FormData form;
   final List<StaticFormGroup> groups;
   final BuildContext rootContext;
 
   @override
-  FormBarState createState() => FormBarState();
+  FormModalState createState() => FormModalState();
 }
 
-class FormBarState extends State<_FormBar> {
+class FormModalState extends State<_FormModal> {
   List<StaticFormGroup> _formGroups = [];
   List<FocusNode> _focusNodes = [];
   String? _error;
@@ -292,7 +300,7 @@ class FormBarState extends State<_FormBar> {
         return;
       }
 
-      Dialog.popAll(context);
+      Modal.popAll(context);
       if (context.mounted && result is CommandRoute) {
         result.go(widget.rootContext);
       }
@@ -333,7 +341,7 @@ class FormBarState extends State<_FormBar> {
           return const CommandDone();
         }
 
-        Dialog.popAll(context);
+        Modal.popAll(context);
         if (context.mounted && result is CommandRoute) {
           result.go(widget.rootContext);
         }
@@ -350,7 +358,7 @@ class FormBarState extends State<_FormBar> {
           return const CommandDone();
         }
 
-        Dialog.popAll(context);
+        Modal.popAll(context);
         if (context.mounted && result is CommandRoute) {
           result.go(widget.rootContext);
         }
@@ -483,73 +491,68 @@ class FormBarState extends State<_FormBar> {
                     ),
                   ),
                   if (errorBox != null) errorBox,
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: constraints.maxHeight - 100,
-                    ),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: totalItemCount,
-                      itemBuilder: (context, index) {
-                        final group = _getGroupAtIndex(index);
-                        final item = _getItemAtIndex(index);
-                        Widget? header;
+                  ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: totalItemCount,
+                    itemBuilder: (context, index) {
+                      final group = _getGroupAtIndex(index);
+                      final item = _getItemAtIndex(index);
+                      Widget? header;
 
-                        if (group.title != null &&
-                            (index == 0 ||
-                                group != _getGroupAtIndex(index - 1))) {
-                          header = Padding(
-                            padding: widgetPaddingSm,
-                            child: Text(
-                              group.title!,
-                              style: TextStyle(
-                                color: context.theme.colors.mutedForeground,
-                                fontSize: context.theme.typography.sm.fontSize,
-                              ),
-                            ),
-                          );
-                        }
-
-                        return GestureDetector(
-                          onTap: () async {
-                            final item = _getItemAtIndex(index);
-                            if (item is FormButton) {
-                              if (_isFormValid()) {
-                                await _executeButton(item);
-                              }
-                            } else if (item is FormSelect) {
-                              if (item.enabled) {
-                                await item.activate(context);
-                              }
-                            }
-                          },
-                          child: MouseRegion(
-                            cursor: item is FormButton || item is FormSelect
-                                ? SystemMouseCursors.click
-                                : SystemMouseCursors.basic,
-                            onEnter: (_) => listController.setHovered(index),
-                            onExit: (_) => listController.setHovered(null),
-                            child: Column(
-                              key: ValueKey(index),
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (header != null) header,
-                                item.build(
-                                  context,
-                                  index == _highlightedIndex,
-                                  enabled: item is FormButton
-                                      ? _isFormValid()
-                                      : true,
-                                  focusNode: index < _focusNodes.length
-                                      ? _focusNodes[index]
-                                      : null,
-                                ),
-                              ],
+                      if (group.title != null &&
+                          (index == 0 ||
+                              group != _getGroupAtIndex(index - 1))) {
+                        header = Padding(
+                          padding: widgetPaddingSm,
+                          child: Text(
+                            group.title!,
+                            style: TextStyle(
+                              color: context.theme.colors.mutedForeground,
+                              fontSize: context.theme.typography.sm.fontSize,
                             ),
                           ),
                         );
-                      },
-                    ),
+                      }
+
+                      return GestureDetector(
+                        onTap: () async {
+                          final item = _getItemAtIndex(index);
+                          if (item is FormButton) {
+                            if (_isFormValid()) {
+                              await _executeButton(item);
+                            }
+                          } else if (item is FormSelect) {
+                            if (item.enabled) {
+                              await item.activate(context);
+                            }
+                          }
+                        },
+                        child: MouseRegion(
+                          cursor: item is FormButton || item is FormSelect
+                              ? SystemMouseCursors.click
+                              : SystemMouseCursors.basic,
+                          onEnter: (_) => listController.setHovered(index),
+                          onExit: (_) => listController.setHovered(null),
+                          child: Column(
+                            key: ValueKey(index),
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (header != null) header,
+                              item.build(
+                                context,
+                                index == _highlightedIndex,
+                                enabled: item is FormButton
+                                    ? _isFormValid()
+                                    : true,
+                                focusNode: index < _focusNodes.length
+                                    ? _focusNodes[index]
+                                    : null,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 8),
                 ],

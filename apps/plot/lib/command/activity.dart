@@ -416,7 +416,7 @@ class PickScheduleActivity extends ShowPage {
               when: date.toDate(),
             ).run(context);
             if (!context.mounted) return;
-            Dialog.pop(context, Value(actionReturn));
+            Modal.pop(context, Value(actionReturn));
           },
         ),
       );

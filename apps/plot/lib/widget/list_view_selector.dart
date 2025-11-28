@@ -9,12 +9,20 @@ class ListViewSelectorController extends ChangeNotifier {
     int? initialFocusedIndex,
     int initialMin = 0,
     int initialMax = 0,
+    this.scrollController,
+    this.estimatedItemHeight = 50.0,
   }) : _min = initialMin,
        _max = initialMax,
        _lastFocusedIndex = initialFocusedIndex;
 
   // Map of FocusNodes by item index
   final Map<int, FocusNode> _focusNodes = {};
+
+  /// Optional ScrollController for auto-scrolling to focused items
+  final ScrollController? scrollController;
+
+  /// Estimated height of each item for scroll calculations (default: 50.0)
+  final double estimatedItemHeight;
 
   int? _hoveredIndex;
   int? _lastFocusedIndex;
@@ -95,7 +103,56 @@ class ListViewSelectorController extends ChangeNotifier {
   void requestFocus(int index) {
     if (index >= _min && index <= _max) {
       getFocusNode(index).requestFocus();
+      _scrollToIndex(index);
     }
+  }
+
+  /// Scrolls to ensure the item at the given index is visible.
+  /// Only scrolls if the item is outside or near the viewport edges.
+  /// When scrolling down, ensures the next item is also visible for better UX.
+  void _scrollToIndex(int index) {
+    if (scrollController == null || !scrollController!.hasClients) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (scrollController == null || !scrollController!.hasClients) return;
+
+      // Special case: scroll to top for first item to show headers/info
+      if (index == 0) {
+        scrollController!.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+        return;
+      }
+
+      final estimatedOffset = index * estimatedItemHeight;
+      final viewportHeight = scrollController!.position.viewportDimension;
+      final currentScroll = scrollController!.offset;
+      final maxScroll = scrollController!.position.maxScrollExtent;
+
+      // Check if item is above visible area
+      if (estimatedOffset < currentScroll) {
+        scrollController!.animateTo(
+          estimatedOffset,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+      // Check if item (+ next item for look-ahead) is below visible area
+      else if (estimatedOffset + (estimatedItemHeight * 2) >
+          currentScroll + viewportHeight) {
+        // Scroll to show current item + next item
+        final targetScroll = (estimatedOffset + (estimatedItemHeight * 2) - viewportHeight)
+            .clamp(0.0, maxScroll);
+        scrollController!.animateTo(
+          targetScroll,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+      // Item is already visible, don't scroll
+    });
   }
 
   /// Move focus by an offset (e.g., +1 for down, -1 for up).
@@ -166,6 +223,8 @@ class ListViewSelector extends StatefulWidget {
   final void Function(int)? onActivate;
   final bool autoActivateKeyboard;
   final int? initialFocusedIndex;
+  final ScrollController? scrollController;
+  final double estimatedItemHeight;
 
   const ListViewSelector({
     super.key,
@@ -174,6 +233,8 @@ class ListViewSelector extends StatefulWidget {
     this.onActivate,
     this.autoActivateKeyboard = false,
     this.initialFocusedIndex,
+    this.scrollController,
+    this.estimatedItemHeight = 50.0,
   });
 
   @override
@@ -182,7 +243,11 @@ class ListViewSelector extends StatefulWidget {
 
 class ListViewSelectorState extends State<ListViewSelector> {
   late final ListViewSelectorController controller =
-      ListViewSelectorController(initialFocusedIndex: widget.initialFocusedIndex);
+      ListViewSelectorController(
+        initialFocusedIndex: widget.initialFocusedIndex,
+        scrollController: widget.scrollController,
+        estimatedItemHeight: widget.estimatedItemHeight,
+      );
 
   @override
   void initState() {

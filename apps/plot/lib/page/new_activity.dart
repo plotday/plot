@@ -50,31 +50,39 @@ class _NewActivityPageState extends State<NewActivityPage> {
       builder: (context, layoutState) {
         return BlocBuilder<PriorityBloc, PriorityState>(
           builder: (context, state) {
-            return Scaffold(
-              translucent: true,
-              scrollable: false,
-              header: layoutState.middlePanelVisible || !layoutState.multiPanel
-                  ? null
-                  : Header(
-                      title: 'New Activity',
-                      prefixCommands: [
-                        CommandWrapper(
-                          ChangeCurrentActivity(null),
-                          icon: Value(PlotIcon.back),
-                        ),
-                      ],
+            return PopScope(
+              canPop: false,
+              onPopInvokedWithResult: (didPop, result) {
+                if (!didPop && !layoutState.multiPanel) {
+                  context.run(ChangeCurrentActivity(null));
+                }
+              },
+              child: Scaffold(
+                translucent: true,
+                scrollable: false,
+                header: layoutState.middlePanelVisible || !layoutState.multiPanel
+                    ? null
+                    : Header(
+                        title: 'New Activity',
+                        prefixCommands: [
+                          CommandWrapper(
+                            ChangeCurrentActivity(null),
+                            icon: Value(PlotIcon.back),
+                          ),
+                        ],
+                      ),
+                body: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: ActivityEditor(
+                        key: _activityEditorKey,
+                        draft: state.draft,
+                        expand: false,
+                      ),
                     ),
-              body: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Flexible(
-                    child: ActivityEditor(
-                      key: _activityEditorKey,
-                      draft: state.draft,
-                      expand: false,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },

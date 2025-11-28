@@ -2,19 +2,20 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 
 import 'package:plot/widget/list_view_selector.dart';
+import 'package:plot/util/platform.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/analytics/analytics.dart';
 import 'package:plot/style/layout.dart';
 import 'list_tile.dart';
 import 'text_field.dart';
-import 'dialog.dart';
+import 'modal.dart';
 import 'logging.dart';
 
-/// A generic selection bar dialog for selecting items from a list.
+/// A generic selection modal for selecting items from a list.
 ///
-/// Similar to CommandBar but for item selection instead of action execution.
-class SelectBar<T> extends Dialog {
-  SelectBar({
+/// Similar to CommandModal but for item selection instead of action execution.
+class SelectModal<T> extends Modal {
+  SelectModal({
     required this.items,
     required this.labelBuilder,
     this.subtitleBuilder,
@@ -24,7 +25,7 @@ class SelectBar<T> extends Dialog {
     super.key,
   }) : super(
          padding: const EdgeInsets.all(0),
-         builder: (_) => _SelectBar<T>(
+         builder: (_) => _SelectModal<T>(
            items: items,
            labelBuilder: labelBuilder,
            subtitleBuilder: subtitleBuilder,
@@ -52,7 +53,7 @@ class SelectBar<T> extends Dialog {
   /// The placeholder text for the search input.
   final String prompt;
 
-  /// Show the select bar and return the selected value wrapped in Value,
+  /// Show the select modal and return the selected value wrapped in Value,
   /// or Value.absent() if cancelled.
   static Future<Value<T>> open<T>(
     BuildContext context, {
@@ -63,7 +64,7 @@ class SelectBar<T> extends Dialog {
     T? selectedValue,
     String prompt = 'Search',
   }) async {
-    final result = await SelectBar<T>(
+    final result = await SelectModal<T>(
       items: items,
       labelBuilder: labelBuilder,
       subtitleBuilder: subtitleBuilder,
@@ -76,8 +77,8 @@ class SelectBar<T> extends Dialog {
   }
 }
 
-class _SelectBar<T> extends StatefulWidget {
-  const _SelectBar({
+class _SelectModal<T> extends StatefulWidget {
+  const _SelectModal({
     required this.items,
     required this.labelBuilder,
     this.subtitleBuilder,
@@ -94,10 +95,10 @@ class _SelectBar<T> extends StatefulWidget {
   final String prompt;
 
   @override
-  _SelectBarState<T> createState() => _SelectBarState<T>();
+  _SelectModalState<T> createState() => _SelectModalState<T>();
 }
 
-class _SelectBarState<T> extends State<_SelectBar<T>> {
+class _SelectModalState<T> extends State<_SelectModal<T>> {
   final TextEditingController _controller = TextEditingController();
   List<T> _filteredItems = [];
   String? _error;
@@ -170,11 +171,11 @@ class _SelectBarState<T> extends State<_SelectBar<T>> {
   }
 
   void _selectItem(T item) {
-    Dialog.pop<T>(context, Value(item));
+    Modal.pop<T>(context, Value(item));
   }
 
   void _cancel() {
-    Dialog.pop<T>(context, Value.absent());
+    Modal.pop<T>(context, Value.absent());
   }
 
   @override
@@ -239,26 +240,24 @@ class _SelectBarState<T> extends State<_SelectBar<T>> {
               builder: (context, constraints) => Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  EditableArea(
-                    position: EditableAreaPosition.top,
-                    padding: false,
-                    builder: (context, focusNode) => Padding(
-                      padding: widgetPadding,
-                      child: TextField(
-                        maxLines: 1,
-                        style: TextFieldStyle.ghost,
-                        controller: _controller,
-                        autofocus: true,
-                        label: "${widget.prompt}...",
-                        focusNode: focusNode,
+                  if (hasPhysicalKeyboard())
+                    EditableArea(
+                      position: EditableAreaPosition.top,
+                      padding: false,
+                      builder: (context, focusNode) => Padding(
+                        padding: widgetPadding,
+                        child: TextField(
+                          maxLines: 1,
+                          style: TextFieldStyle.ghost,
+                          controller: _controller,
+                          autofocus: true,
+                          label: "${widget.prompt}...",
+                          focusNode: focusNode,
+                        ),
                       ),
                     ),
-                  ),
                   if (errorBox != null) errorBox,
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: constraints.maxHeight - 100,
-                    ),
+                  Flexible(
                     child: ListView.builder(
                       shrinkWrap: true,
                       itemCount: totalCount,
@@ -302,7 +301,7 @@ class _SelectBarState<T> extends State<_SelectBar<T>> {
   }
 }
 
-/// Simple command for selecting an item in SelectBar
+/// Simple command for selecting an item in SelectModal
 class _SelectItemCommand<T> extends Command {
   _SelectItemCommand({
     required super.title,
@@ -324,12 +323,7 @@ class _SelectItemCommand<T> extends Command {
         children: [
           leading!,
           const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              title,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          Expanded(child: Text(title, overflow: TextOverflow.ellipsis)),
         ],
       );
     }

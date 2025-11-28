@@ -1,7 +1,9 @@
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_link.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/util/platform.dart';
 
 class ActivityWidget extends StatefulWidget {
   const ActivityWidget({
@@ -28,15 +30,26 @@ class ActivityWidget extends StatefulWidget {
 }
 
 class _ActivityWidgetState extends State<ActivityWidget> {
-  double _dragOffset = 0;
+  Command? _getSwipeRightCommand() {
+    if (widget.activity.type == ActivityType.event) return null;
+    return widget.activity.doNow
+        ? FinishActivity(widget.activity)
+        : StartActivity(widget.activity);
+  }
 
-  @override
-  Widget build(BuildContext buildContext) {
+  Command? _getSwipeLeftCommand() {
+    if (widget.activity.type == ActivityType.event) return null;
+    return PickScheduleActivity(widget.activity);
+  }
+
+  Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
     final hasVisibleLinks = widget.activity.links.isNotEmpty;
 
     return ListTile(
       command: CommandWrapper(
-        ChangeCurrentActivity(widget.activity),
+        isTouchDevice
+            ? ShowActivityCommands(widget.activity)
+            : ChangeCurrentActivity(widget.activity),
         icon: Value(null),
       ),
       title: widget.activity.displayTitle,
@@ -47,51 +60,29 @@ class _ActivityWidgetState extends State<ActivityWidget> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onHorizontalDragUpdate: (details) {
-              setState(() {
-                _dragOffset += details.delta.dx;
-              });
-            },
-            onHorizontalDragEnd: (details) {
-              if (_dragOffset < -50) {
-                // Swiped left - show commands
-                widget.onHover?.call(true);
-              } else if (_dragOffset > 50) {
-                // Swiped right - hide commands
-                widget.onHover?.call(false);
-              }
-              setState(() {
-                _dragOffset = 0;
-              });
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text.rich(
-                TextSpan(
-                  children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: widget.activity.displayTitle,
+                    style: widget.selected
+                        ? TextStyle(color: buildContext.colour.accent)
+                        : null,
+                  ),
+                  if (widget.activity.note != null &&
+                      widget.activity.note!.isNotEmpty &&
+                      widget.activity.noteText != widget.activity.displayTitle)
                     TextSpan(
-                      text: widget.activity.displayTitle,
-                      style: widget.selected
-                          ? TextStyle(color: buildContext.colour.accent)
-                          : null,
+                      text: ' ${widget.activity.noteText}',
+                      style: TextStyle(color: buildContext.colour.muted),
                     ),
-                    if (widget.activity.note != null &&
-                        widget.activity.note!.isNotEmpty &&
-                        widget.activity.noteText !=
-                            widget.activity.displayTitle)
-                      TextSpan(
-                        text: ' ${widget.activity.noteText}',
-                        style: TextStyle(
-                          color: buildContext.colour.muted,
-                        ),
-                      ),
-                  ],
-                ),
-                overflow: TextOverflow.ellipsis,
-                style: buildContext.theme.typography.base.copyWith(
-                  color: buildContext.colour.foreground,
-                ),
+                ],
+              ),
+              overflow: TextOverflow.ellipsis,
+              style: buildContext.theme.typography.base.copyWith(
+                color: buildContext.colour.foreground,
               ),
             ),
           ),
@@ -111,6 +102,66 @@ class _ActivityWidgetState extends State<ActivityWidget> {
       focusNode: widget.focusNode,
       onHover: widget.onHover,
       reorderableIndex: widget.reorderableIndex,
+    );
+  }
+
+  @override
+  Widget build(BuildContext buildContext) {
+    final isTouchDevice = !hasPhysicalKeyboard();
+    final listTile = _buildListTile(buildContext, isTouchDevice);
+
+    // Only wrap in Slidable on touch devices
+    if (!isTouchDevice) {
+      return listTile;
+    }
+
+    final swipeRightCommand = _getSwipeRightCommand();
+    final swipeLeftCommand = _getSwipeLeftCommand();
+
+    // If no swipe actions available, just return the list tile
+    if (swipeRightCommand == null && swipeLeftCommand == null) {
+      return listTile;
+    }
+
+    return Slidable(
+      key: ValueKey(widget.activity.id),
+      startActionPane: swipeRightCommand != null
+          ? ActionPane(
+              motion: const ScrollMotion(),
+              openThreshold: 0.2,
+              extentRatio: 0.3,
+              children: [
+                SlidableAction(
+                  onPressed: (context) async {
+                    await swipeRightCommand.run(context);
+                  },
+                  backgroundColor: buildContext.colour.accentBackground,
+                  foregroundColor: const Color(0xFFFFFFFF),
+                  icon: widget.activity.doNow ? PlotIcon.done : PlotIcon.now,
+                  autoClose: true,
+                ),
+              ],
+            )
+          : null,
+      endActionPane: swipeLeftCommand != null
+          ? ActionPane(
+              motion: const ScrollMotion(),
+              openThreshold: 0.2,
+              extentRatio: 0.3,
+              children: [
+                SlidableAction(
+                  onPressed: (context) async {
+                    await swipeLeftCommand.run(context);
+                  },
+                  backgroundColor: buildContext.colour.highlight,
+                  foregroundColor: buildContext.colour.foreground,
+                  icon: PlotIcon.later,
+                  autoClose: true,
+                ),
+              ],
+            )
+          : null,
+      child: listTile,
     );
   }
 }

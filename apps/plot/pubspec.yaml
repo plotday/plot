@@ -88,6 +88,7 @@ dependencies:
   shared_preferences: ^2.5.3
   rrule: ^0.2.17
   change_case: ^2.2.0
+  flutter_slidable: ^3.1.1
   flutter_svg: ^2.2.1
   google_sign_in_web: ^1.0.1
   web_socket_channel: ^3.0.1

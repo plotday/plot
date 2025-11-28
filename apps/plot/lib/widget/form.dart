@@ -1,6 +1,5 @@
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/select_tile.dart';
-import 'package:plot/widget/select_bar.dart';
 import 'package:plot/command/base.dart';
 import 'package:plot/command/logging.dart';
 import 'package:plot/analytics/analytics.dart';
@@ -26,16 +25,16 @@ class ShowForm extends Command {
     try {
       final formInstance = await form(context);
       if (!context.mounted) {
-        log.info('Context no longer mounted, skipping FormBar for "$title"');
+        log.info('Context no longer mounted, skipping FormModal for "$title"');
         return const CommandSkipped();
       }
-      // Pre-load form groups to avoid jank when dialog opens
+      // Pre-load form groups to avoid jank when modal opens
       final groups = await formInstance.list();
       if (!context.mounted) {
-        log.info('Context no longer mounted, skipping FormBar for "$title"');
+        log.info('Context no longer mounted, skipping FormModal for "$title"');
         return const CommandSkipped();
       }
-      return await FormBar(
+      return await FormModal(
         formInstance,
         groups: groups,
         rootContext: context,
@@ -198,10 +197,10 @@ class FormSelect<T> extends FormItem {
     return true;
   }
 
-  /// Activate the select field (open the selection dialog)
+  /// Activate the select field (open the selection modal)
   Future<void> activate(BuildContext context) async {
     if (!enabled) return;
-    final result = await SelectBar.open<T>(
+    final result = await SelectModal.open<T>(
       context,
       items: items,
       labelBuilder: labelBuilder,

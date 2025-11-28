@@ -39,18 +39,44 @@ FButtonStyles buildButtonStyles(
       // ignore: unused_result
       contentStyle: baseStyles.primary.contentStyle.copyWith(
         padding: widgetPadding,
-        textStyle: baseStyles.primary.contentStyle.textStyle.map(
-          (style) => style.copyWith(color: Color(0xFFFFFFFF)),
-        ),
-        iconStyle: FWidgetStateMap.all(
-          IconThemeData(color: Color(0xFFFFFFFF), size: 20),
-        ),
+        textStyle: FWidgetStateMap({
+          WidgetState.disabled: typography.base.copyWith(
+            color: colourScheme.colours.accent
+                .withChroma(0)
+                .withLightness(0.50)
+                .toColor(),
+            fontWeight: FontWeight.w500,
+            height: 1,
+          ),
+          WidgetState.any: typography.base.copyWith(
+            color: Color(0xFFFFFFFF),
+            fontWeight: FontWeight.w500,
+            height: 1,
+          ),
+        }),
+        iconStyle: FWidgetStateMap({
+          WidgetState.disabled: IconThemeData(
+            color: colourScheme.colours.accent
+                .withChroma(0)
+                .withLightness(0.50)
+                .toColor(),
+            size: 20,
+          ),
+          WidgetState.any: IconThemeData(color: Color(0xFFFFFFFF), size: 20),
+        }),
       ),
       // ignore: unused_result
       iconContentStyle: baseStyles.primary.iconContentStyle.copyWith(
-        iconStyle: FWidgetStateMap.all(
-          IconThemeData(color: Color(0xFFFFFFFF), size: 20),
-        ),
+        iconStyle: FWidgetStateMap({
+          WidgetState.disabled: IconThemeData(
+            color: colourScheme.colours.accent
+                .withChroma(0)
+                .withLightness(0.50)
+                .toColor(),
+            size: 20,
+          ),
+          WidgetState.any: IconThemeData(color: Color(0xFFFFFFFF), size: 20),
+        }),
       ),
     ),
     // ignore: unused_result

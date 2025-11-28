@@ -4,7 +4,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/command/global.dart';
 import 'package:plot/page/loading.dart';
 import 'global_menu.dart';
-import 'dialog.dart';
+import 'modal.dart';
 
 @RoutePage(name: 'AppShellRoute')
 class AppShell extends StatelessWidget {
@@ -12,7 +12,7 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DialogProvider(
+    return ModalProvider(
       child: GlobalMenu(
         child: GlobalShortcuts(
           child: AutoRouter(placeholder: (context) => const LoadingPage()),

@@ -234,7 +234,9 @@ class EditorState extends State<Editor> {
               documentOverlayBuilders: [
                 // Platform-specific overlays for mobile
                 if (defaultTargetPlatform == TargetPlatform.android) ...[
-                  SuperEditorAndroidHandlesDocumentLayerBuilder(),
+                  SuperEditorAndroidHandlesDocumentLayerBuilder(
+                    caretColor: context.theme.colors.mutedForeground,
+                  ),
                   SuperEditorAndroidToolbarFocalPointDocumentLayerBuilder(),
                 ] else if (defaultTargetPlatform == TargetPlatform.iOS) ...[
                   SuperEditorIosHandlesDocumentLayerBuilder(),
