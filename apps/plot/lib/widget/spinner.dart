@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:macos_ui/macos_ui.dart' as macos;
+import 'package:forui/forui.dart';
 
 class Spinner extends StatelessWidget {
   const Spinner({this.message, this.size = 16, super.key});
@@ -25,14 +26,11 @@ class Spinner extends StatelessWidget {
         ],
       ),
       builder: (_) => Row(
+        mainAxisSize: MainAxisSize.min,
         spacing: 8,
         children: [
           if (message != null) Text(message!),
-          SizedBox(
-            width: size,
-            height: size,
-            child: const CircularProgressIndicator(strokeWidth: 2),
-          ),
+          SizedBox(width: size, height: size, child: const FCircularProgress()),
         ],
       ),
     );
