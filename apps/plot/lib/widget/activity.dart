@@ -1,4 +1,3 @@
-import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_link.dart';
@@ -47,11 +46,12 @@ class _ActivityWidgetState extends State<ActivityWidget> {
 
     return ListTile(
       command: CommandWrapper(
-        isTouchDevice
-            ? ShowActivityCommands(widget.activity)
-            : ChangeCurrentActivity(widget.activity),
+        ChangeCurrentActivity(widget.activity),
         icon: Value(null),
       ),
+      longPressCommand: isTouchDevice
+          ? ShowActivityCommands(widget.activity)
+          : null,
       title: widget.activity.displayTitle,
       subtitle: widget.activity.note != null && widget.activity.note!.isNotEmpty
           ? widget.activity.noteText
@@ -110,7 +110,7 @@ class _ActivityWidgetState extends State<ActivityWidget> {
     final isTouchDevice = !hasPhysicalKeyboard();
     final listTile = _buildListTile(buildContext, isTouchDevice);
 
-    // Only wrap in Slidable on touch devices
+    // Only wrap in Swipeable on touch devices
     if (!isTouchDevice) {
       return listTile;
     }
@@ -123,44 +123,10 @@ class _ActivityWidgetState extends State<ActivityWidget> {
       return listTile;
     }
 
-    return Slidable(
+    return Swipeable(
       key: ValueKey(widget.activity.id),
-      startActionPane: swipeRightCommand != null
-          ? ActionPane(
-              motion: const ScrollMotion(),
-              openThreshold: 0.2,
-              extentRatio: 0.3,
-              children: [
-                SlidableAction(
-                  onPressed: (context) async {
-                    await swipeRightCommand.run(context);
-                  },
-                  backgroundColor: buildContext.colour.accentBackground,
-                  foregroundColor: const Color(0xFFFFFFFF),
-                  icon: widget.activity.doNow ? PlotIcon.done : PlotIcon.now,
-                  autoClose: true,
-                ),
-              ],
-            )
-          : null,
-      endActionPane: swipeLeftCommand != null
-          ? ActionPane(
-              motion: const ScrollMotion(),
-              openThreshold: 0.2,
-              extentRatio: 0.3,
-              children: [
-                SlidableAction(
-                  onPressed: (context) async {
-                    await swipeLeftCommand.run(context);
-                  },
-                  backgroundColor: buildContext.colour.highlight,
-                  foregroundColor: buildContext.colour.foreground,
-                  icon: PlotIcon.later,
-                  autoClose: true,
-                ),
-              ],
-            )
-          : null,
+      startCommand: swipeRightCommand,
+      endCommand: swipeLeftCommand,
       child: listTile,
     );
   }

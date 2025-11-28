@@ -33,6 +33,7 @@ export 'selectable_text.dart';
 export 'sliver.dart';
 export 'spinner.dart';
 export 'squiggle.dart';
+export 'swipeable.dart';
 export 'switch.dart';
 export 'tapable.dart';
 export 'terms_agreement.dart';

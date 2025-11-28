@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
@@ -19,6 +20,9 @@ class ListTile extends StatefulWidget {
 
     /// The action to run when the tile is double-tapped.
     this.doubleTapCommand,
+
+    /// The action to run when the tile is long-pressed.
+    this.longPressCommand,
 
     /// Secondary actions visible on the right.
     this.trailingCommands = const [],
@@ -94,6 +98,7 @@ class ListTile extends StatefulWidget {
   final Widget? details;
   final Command? command;
   final Command? doubleTapCommand;
+  final Command? longPressCommand;
   final List<Command> trailingCommands;
   final bool revealTrailingCommands;
   final Widget? trailing;
@@ -147,6 +152,7 @@ class _ListTileState extends State<ListTile> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isTouchDevice = !hasPhysicalKeyboard();
     return GestureDetector(
       onTap: widget.command != null
           ? () {
@@ -165,6 +171,19 @@ class _ListTileState extends State<ListTile> {
               } catch (e, t) {
                 log.warning(
                   "Action ${widget.doubleTapCommand?.title} failed",
+                  e,
+                  t,
+                );
+              }
+            }
+          : null,
+      onLongPress: widget.longPressCommand != null
+          ? () {
+              try {
+                context.run(widget.longPressCommand!);
+              } catch (e, t) {
+                log.warning(
+                  "Action ${widget.longPressCommand?.title} failed",
                   e,
                   t,
                 );
@@ -207,13 +226,14 @@ class _ListTileState extends State<ListTile> {
             ),
             padding:
                 (widget.padding?.resolve(null) ?? widgetPaddingSm).copyWith(
+                  left: isTouchDevice ? 0 : null,
                   top: 0,
                   bottom: 0,
                 ) +
                 EdgeInsets.only(left: widget.indentLevel * 16),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
-              spacing: 8,
+              spacing: 4,
               children: [
                 // Draggable portion (icon + content)
                 ..._buildDraggableContent(context),
@@ -243,113 +263,119 @@ class _ListTileState extends State<ListTile> {
   }
 
   List<Widget> _buildDraggableContent(BuildContext context) {
-    final content = [
-      if (widget.icon != null || widget.command?.icon != null)
-        Icon(
-          widget.icon ?? widget.command?.icon,
-          size: 16,
-          color: context.theme.plotColors.muted,
+    final bool isTouchDevice = !hasPhysicalKeyboard();
+
+    // Build the icon widget if present
+    final iconWidget = (widget.icon != null || widget.command?.icon != null)
+        ? Icon(
+            widget.icon ?? widget.command?.icon,
+            size: 16,
+            color: context.theme.plotColors.muted,
+          )
+        : null;
+
+    // Build the main content widget
+    final contentWidget = Expanded(
+      child: Padding(
+        padding: (widget.padding?.resolve(null) ?? widgetPaddingSm).copyWith(
+          left: 0,
+          right: 0,
         ),
-      Expanded(
-        child: Padding(
-          padding: (widget.padding?.resolve(null) ?? widgetPaddingSm).copyWith(
-            left: 0,
-            right: 0,
-          ),
-          child: Column(
-            crossAxisAlignment: widget.centered
-                ? CrossAxisAlignment.center
-                : CrossAxisAlignment.start,
-            spacing: 2,
-            children: [
-              if (widget.header != null) widget.header!,
-              Builder(
-                builder: (context) {
-                  final commandBody =
-                      widget.body ??
-                      (widget.title == null
-                          ? widget.command?.buildBody(context)
-                          : null);
-                  return commandBody != null
-                      ? Row(children: [Expanded(child: commandBody)])
-                      : Row(
-                          mainAxisAlignment: widget.centered
-                              ? MainAxisAlignment.center
-                              : MainAxisAlignment.start,
-                          spacing: 4,
-                          children: [
-                            Text(
-                              widget.title ??
-                                  widget.command?.title ??
-                                  'Untitled',
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: widget.centered
-                                  ? TextAlign.center
-                                  : TextAlign.start,
-                              style:
-                                  (widget.textStyle ??
-                                          (widget.style == ListTileStyle.header
-                                              ? context.theme.typography.sm
-                                              : context.theme.typography.base))
-                                      .copyWith(
-                                        color: widget.selected
-                                            ? context
-                                                  .theme
-                                                  .colors
-                                                  .primaryForeground
-                                            : widget.style ==
-                                                  ListTileStyle.header
-                                            ? context.theme.plotColors.muted
-                                            : null,
-                                      ),
-                            ),
-                            if (widget.subtitle != null)
-                              Expanded(
-                                child: Text(
-                                  widget.subtitle!,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: context.theme.typography.base.copyWith(
-                                    color: context.theme.plotColors.muted,
-                                  ),
+        child: Column(
+          crossAxisAlignment: widget.centered
+              ? CrossAxisAlignment.center
+              : CrossAxisAlignment.start,
+          spacing: 2,
+          children: [
+            if (widget.header != null) widget.header!,
+            Builder(
+              builder: (context) {
+                final commandBody =
+                    widget.body ??
+                    (widget.title == null
+                        ? widget.command?.buildBody(context)
+                        : null);
+                return commandBody != null
+                    ? Row(children: [Expanded(child: commandBody)])
+                    : Row(
+                        mainAxisAlignment: widget.centered
+                            ? MainAxisAlignment.center
+                            : MainAxisAlignment.start,
+                        spacing: 4,
+                        children: [
+                          Text(
+                            widget.title ?? widget.command?.title ?? 'Untitled',
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: widget.centered
+                                ? TextAlign.center
+                                : TextAlign.start,
+                            style:
+                                (widget.textStyle ??
+                                        (widget.style == ListTileStyle.header
+                                            ? context.theme.typography.sm
+                                            : context.theme.typography.base))
+                                    .copyWith(
+                                      color: widget.selected
+                                          ? context
+                                                .theme
+                                                .colors
+                                                .primaryForeground
+                                          : widget.style == ListTileStyle.header
+                                          ? context.theme.plotColors.muted
+                                          : null,
+                                    ),
+                          ),
+                          if (widget.subtitle != null)
+                            Expanded(
+                              child: Text(
+                                widget.subtitle!,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.theme.typography.base.copyWith(
+                                  color: context.theme.plotColors.muted,
                                 ),
                               ),
-                          ],
-                        );
-                },
-              ),
-              if (widget.details != null) widget.details!,
-            ],
-          ),
+                            ),
+                        ],
+                      );
+              },
+            ),
+            if (widget.details != null) widget.details!,
+          ],
         ),
       ),
-    ];
+    );
 
-    // If reorderable, wrap content in ReorderableDragStartListener
-    if (widget.reorderableIndex != null) {
-      final draggableChild = Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        spacing: 8,
-        children: content,
-      );
-
-      Widget reorderableWidget = ReorderableDragStartListener(
-        index: widget.reorderableIndex!,
-        child: draggableChild,
-      );
-
-      // On touch devices, add haptic feedback for long-press drag
-      if (!hasPhysicalKeyboard()) {
-        reorderableWidget = GestureDetector(
-          onLongPressStart: (_) {
-            HapticFeedback.mediumImpact();
-          },
-          child: reorderableWidget,
-        );
-      }
-
-      return [Expanded(child: reorderableWidget)];
+    // If not reorderable, return content as is
+    if (widget.reorderableIndex == null) {
+      return [if (iconWidget != null) iconWidget, contentWidget];
     }
 
-    return content;
+    // For touch devices: show drag handle, only handle is draggable
+    if (isTouchDevice) {
+      final dragHandle = ReorderableDragStartListener(
+        index: widget.reorderableIndex!,
+        child: Icon(
+          FontAwesomeIcons.gripDotsVertical,
+          size: 8,
+          color: context.theme.plotColors.muted,
+        ),
+      );
+
+      return [dragHandle, if (iconWidget != null) iconWidget, contentWidget];
+    }
+
+    // For non-touch devices: entire content is draggable
+    final draggableChild = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      spacing: 8,
+      children: [if (iconWidget != null) iconWidget, contentWidget],
+    );
+
+    final reorderableWidget = ReorderableDragStartListener(
+      index: widget.reorderableIndex!,
+      child: draggableChild,
+    );
+
+    return [Expanded(child: reorderableWidget)];
   }
 }
