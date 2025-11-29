@@ -26,23 +26,25 @@ class _BackCommand extends Command {
   }
 }
 
-class CommandModal {
-  CommandModal(Commands commands, {required BuildContext rootContext})
-    : _commands = commands,
-      _rootContext = rootContext;
+class CommandModal extends Modal {
+  factory CommandModal(Commands commands, {required BuildContext rootContext}) {
+    // Cache the _CommandModalContent widget so it's not recreated on modal rebuilds
+    final content = _CommandModalContent(
+      commands: commands,
+      rootContext: rootContext,
+    );
+    return CommandModal._(content, commands);
+  }
 
-  final Commands _commands;
-  final BuildContext _rootContext;
+  CommandModal._(_CommandModalContent content, Commands commands)
+    : super(
+        padding: const EdgeInsets.all(0),
+        builder: (_) => content,
+        key: ObjectKey(commands),
+      );
 
   Future<CommandReturn> run(BuildContext context) async {
-    // Modal handles multiPanel logic automatically
-    final modal = Modal(
-      padding: const EdgeInsets.all(0),
-      builder: (_) =>
-          _CommandModalContent(commands: _commands, rootContext: _rootContext),
-      key: ObjectKey(_commands),
-    );
-    final value = await modal.show<CommandReturn>(context);
+    final value = await show<CommandReturn>(context);
     return value.present ? value.value : const CommandSkipped();
   }
 }
@@ -63,6 +65,7 @@ class _CommandModalContent extends StatefulWidget {
 class _CommandModalContentState extends State<_CommandModalContent> {
   late Commands commands = widget.commands;
   final List<Widget Function(BuildContext)> _navigationStack = [];
+  bool _isSelectModalOpen = false;
 
   @override
   void initState() {
@@ -74,7 +77,8 @@ class _CommandModalContentState extends State<_CommandModalContent> {
   }
 
   Future<void> _showCommandList() async {
-    if (!mounted) return;
+    if (!mounted || _isSelectModalOpen) return;
+    _isSelectModalOpen = true;
 
     final result = await SelectModal.open<Command>(
       context,
@@ -94,6 +98,8 @@ class _CommandModalContentState extends State<_CommandModalContent> {
       prompt: commands.prompt,
       onSelect: _handleCommandSelection,
     );
+
+    _isSelectModalOpen = false;
 
     // Close the CommandModal in all cases (whether a command was selected or dismissed)
     // Use rootContext instead of local context since it may be unmounted after SelectModal closes

@@ -140,28 +140,64 @@ class _ModalProviderState extends State<ModalProvider> {
 
       final Value<T> result;
       if (multiPanel) {
+        // Calculate dialog positioning for desktop/tablet
+        final mediaQuery = MediaQuery.of(modalContext);
+        final screenHeight = mediaQuery.size.height;
+
+        // Get dialog height from constraints
+        double dialogHeight = 500; // default max height
+        if (stackItem.modal is Modal) {
+          final modalWidget = stackItem.modal as Modal;
+          final safeAreaHeight =
+              screenHeight -
+              mediaQuery.viewPadding.top -
+              mediaQuery.viewPadding.bottom -
+              mediaQuery.viewInsets.bottom;
+
+          final constraints = modalWidget.constraints.enforce(
+            BoxConstraints(
+              maxHeight: safeAreaHeight * modalWidget.maxHeightPercentage,
+              maxWidth: max(
+                mediaQuery.size.width * modalWidget.maxWidthPercentage,
+                min(mediaQuery.size.width, modalWidget.constraints.maxWidth),
+              ),
+            ),
+          );
+          dialogHeight = constraints.maxHeight;
+        }
+
+        // Position between 10% and 25% from top, preferring 25% but never below center
+        final centeredY = (screenHeight - dialogHeight) / 2;
+        final preferredY = screenHeight * 0.25;
+        final anchorY = min(preferredY, centeredY);
+
         // Desktop/tablet: Use FDialog with custom styling
         result =
             await showFDialog<Value<T>>(
               context: modalContext,
-              builder: (dialogContext, _, _) => FDialog.raw(
-                // ignore: unused_result
-                style: dialogContext.theme.dialogStyle.copyWith(
-                  decoration: BoxDecoration(
-                    color: dialogContext.theme.colors.background,
-                    border: Border.all(
-                      color: dialogContext.theme.colors.border,
+              builder: (dialogContext, _, _) => Column(
+                children: [
+                  SizedBox(height: anchorY),
+                  FDialog.raw(
+                    // ignore: unused_result
+                    style: dialogContext.theme.dialogStyle.copyWith(
+                      decoration: BoxDecoration(
+                        color: dialogContext.theme.colors.background,
+                        border: Border.all(
+                          color: dialogContext.theme.colors.border,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
-                    borderRadius: BorderRadius.circular(8),
+                    builder: (context, style) => Padding(
+                      padding: EdgeInsets.all(1),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: buildModalContent(dialogContext),
+                      ),
+                    ),
                   ),
-                ),
-                builder: (context, style) => Padding(
-                  padding: EdgeInsets.all(1),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: buildModalContent(dialogContext),
-                  ),
-                ),
+                ],
               ),
             ) ??
             Value.absent();
@@ -201,22 +237,27 @@ class _ModalProviderState extends State<ModalProvider> {
   }
 
   void pop<T>(BuildContext context, Value<T> result) {
-    if (_modalStack.isNotEmpty) {
-      final stackItem = _modalStack.removeLast();
-      stackItem.completer.complete(result);
-    }
+    if (_modalStack.isEmpty) return;
 
-    if (_modalStack.isEmpty) {
-      // Use the same context that was used to create the dialog
+    final stackItem = _modalStack.removeLast();
+    // Check if this is the last modal BEFORE completing the completer,
+    // because completing may trigger a cascade of pops that empties the stack
+    final shouldCloseDialog = _modalStack.isEmpty;
+
+    // Complete the completer - this may synchronously trigger more pops
+    stackItem.completer.complete(result);
+
+    // Only close dialog if WE are the one that emptied the stack,
+    // not if a cascaded pop already closed it
+    if (shouldCloseDialog) {
       final modalContext = _rootContextKey.currentContext ?? context;
       final navigator = Navigator.of(modalContext);
-      final canPop = navigator.canPop();
-      if (canPop) {
+      if (navigator.canPop()) {
         navigator.pop(result);
       } else {
         log.warning('Cannot pop - navigator says canPop is false');
       }
-    } else {
+    } else if (_modalStack.isNotEmpty) {
       _notifyStackChanged();
     }
   }
@@ -324,7 +365,12 @@ class _ModalStackDisplayState extends State<_ModalStackDisplay> {
     if (widget.modalStack.isEmpty) {
       return const SizedBox.shrink();
     }
-    return widget.modalStack.last.modal;
+    // Use IndexedStack to keep all modal states alive while only showing the top one.
+    // This prevents state loss when modals are pushed on top and then popped.
+    return IndexedStack(
+      index: widget.modalStack.length - 1,
+      children: widget.modalStack.map((item) => item.modal).toList(),
+    );
   }
 }
 
