@@ -134,12 +134,14 @@ class EditableArea extends StatefulWidget {
     required this.builder,
     required this.position,
     this.padding = true,
+    this.autofocus = false,
     super.key,
   });
 
   final Widget Function(BuildContext context, FocusNode focusNode) builder;
   final EditableAreaPosition position;
   final bool padding;
+  final bool autofocus;
 
   @override
   EditableAreaState createState() => EditableAreaState();
@@ -147,6 +149,26 @@ class EditableArea extends StatefulWidget {
 
 class EditableAreaState extends State<EditableArea> {
   final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Request focus after first frame if autofocus is true
+    if (widget.autofocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _focusNode.requestFocus();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   /// Request focus on this editable area
   void focus() {

@@ -253,7 +253,6 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     final totalCount = _getTotalItemCount();
 
     return ListViewSelector(
-      key: ValueKey(totalCount),
       onActivate: (index) {
         if (index >= 0 && index < totalCount) {
           _selectItem(_getItemAtIndexUnsafe(index));
@@ -307,6 +306,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                     EditableArea(
                       position: EditableAreaPosition.top,
                       padding: false,
+                      autofocus: true,
                       builder: (context, focusNode) => Padding(
                         padding: widgetPadding,
                         child: TextField(
