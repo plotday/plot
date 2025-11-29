@@ -202,7 +202,10 @@ class FormSelect<T> extends FormItem {
     if (!enabled) return;
     final result = await SelectModal.open<T>(
       context,
-      items: items,
+      items: (search) async {
+        final itemsList = await items(search);
+        return [SelectGroup(title: null, items: itemsList)];
+      },
       itemBuilder: (item) {
         final label = labelBuilder(item);
         final subtitle = subtitleBuilder?.call(item);

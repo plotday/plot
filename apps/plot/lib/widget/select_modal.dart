@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:drift/drift.dart' show Value;
+import 'package:forui/forui.dart';
 
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
@@ -8,6 +9,17 @@ import 'package:plot/style/layout.dart';
 import 'text_field.dart';
 import 'modal.dart';
 import 'logging.dart';
+
+/// A group of items to display in a SelectModal.
+class SelectGroup<T> {
+  SelectGroup({this.title, required this.items});
+
+  /// The title of the group (displayed as a header).
+  final String? title;
+
+  /// The items in this group.
+  final List<T> items;
+}
 
 /// A generic selection modal for selecting items from a list.
 ///
@@ -29,9 +41,10 @@ class SelectModal<T> extends Modal {
          ),
        );
 
-  /// Function to fetch items, optionally filtered by search text.
+  /// Function to fetch item groups, optionally filtered by search text.
   /// All filtering should happen in this callback.
-  final Future<List<T>> Function(String? search) items;
+  /// Groups with empty items will be automatically skipped.
+  final Future<List<SelectGroup<T>>> Function(String? search) items;
 
   /// Function to build the widget for an item.
   final Widget Function(T) itemBuilder;
@@ -46,7 +59,7 @@ class SelectModal<T> extends Modal {
   /// or Value.absent() if cancelled.
   static Future<Value<T>> open<T>(
     BuildContext context, {
-    required Future<List<T>> Function(String? search) items,
+    required Future<List<SelectGroup<T>>> Function(String? search) items,
     required Widget Function(T) itemBuilder,
     T? selectedValue,
     String prompt = 'Search',
@@ -70,7 +83,7 @@ class _SelectModal<T> extends StatefulWidget {
     required this.prompt,
   });
 
-  final Future<List<T>> Function(String? search) items;
+  final Future<List<SelectGroup<T>>> Function(String? search) items;
   final Widget Function(T) itemBuilder;
   final T? selectedValue;
   final String prompt;
@@ -81,7 +94,7 @@ class _SelectModal<T> extends StatefulWidget {
 
 class _SelectModalState<T> extends State<_SelectModal<T>> {
   final TextEditingController _controller = TextEditingController();
-  List<T> _filteredItems = [];
+  List<SelectGroup<T>> _groups = [];
   String? _error;
   bool _isDisposed = false;
   int _highlightedIndex = 0;
@@ -105,24 +118,42 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         _error = null;
       });
       final searchText = _controller.text.isEmpty ? null : _controller.text;
-      final itemsList = await widget.items(searchText);
+      final groupsList = await widget.items(searchText);
 
       if (_isDisposed) return;
 
       setState(() {
-        if (itemsList.isEmpty) {
+        // Filter out groups with empty items
+        _groups = groupsList.where((group) => group.items.isNotEmpty).toList();
+
+        // Calculate total items across all groups
+        final totalItems = _groups.fold<int>(
+          0,
+          (sum, group) => sum + group.items.length,
+        );
+
+        if (totalItems == 0) {
           _error = 'No matches';
         }
-        _filteredItems = itemsList;
 
         // Find the selected item's index to highlight it
         if (widget.selectedValue != null) {
-          final selectedIndex = itemsList.indexWhere((item) {
-            return item == widget.selectedValue;
-          });
-          if (selectedIndex >= 0) {
-            _highlightedIndex = selectedIndex;
-          } else {
+          int currentIndex = 0;
+          bool found = false;
+
+          for (final group in _groups) {
+            for (final item in group.items) {
+              if (item == widget.selectedValue) {
+                _highlightedIndex = currentIndex;
+                found = true;
+                break;
+              }
+              currentIndex++;
+            }
+            if (found) break;
+          }
+
+          if (!found) {
             _highlightedIndex = 0;
           }
         } else {
@@ -139,9 +170,42 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     }
   }
 
+  /// Get the total count of items across all groups.
+  int _getTotalItemCount() {
+    return _groups.fold<int>(0, (sum, group) => sum + group.items.length);
+  }
+
+  /// Get the group that contains the item at the given flattened index.
+  /// Returns null if index is out of bounds.
+  SelectGroup<T>? _getGroupAtIndex(int index) {
+    if (index < 0) return null;
+
+    int currentIndex = 0;
+    for (final group in _groups) {
+      if (index < currentIndex + group.items.length) {
+        return group;
+      }
+      currentIndex += group.items.length;
+    }
+    return null;
+  }
+
+  /// Get the item at the given flattened index (assumes index is valid).
+  /// This method should only be called after validating the index is in bounds.
+  T _getItemAtIndexUnsafe(int index) {
+    int currentIndex = 0;
+    for (final group in _groups) {
+      if (index < currentIndex + group.items.length) {
+        return group.items[index - currentIndex];
+      }
+      currentIndex += group.items.length;
+    }
+    throw StateError('Index $index out of bounds');
+  }
+
   void _moveHighlight(int offset) {
     setState(() {
-      final totalCount = _filteredItems.length;
+      final totalCount = _getTotalItemCount();
       if (totalCount == 0) return;
 
       _highlightedIndex = (_highlightedIndex + offset).clamp(0, totalCount - 1);
@@ -166,13 +230,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       );
     }
 
-    final totalCount = _filteredItems.length;
+    final totalCount = _getTotalItemCount();
 
     return ListViewSelector(
       key: ValueKey(totalCount),
       onActivate: (index) {
-        if (index >= 0 && index < _filteredItems.length) {
-          _selectItem(_filteredItems[index]);
+        if (index >= 0 && index < totalCount) {
+          _selectItem(_getItemAtIndexUnsafe(index));
         }
       },
       builder: (context, listController) {
@@ -200,8 +264,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
               ActivateListSelectionIntent:
                   CallbackAction<ActivateListSelectionIntent>(
                     onInvoke: (intent) {
-                      if (_filteredItems.isNotEmpty) {
-                        _selectItem(_filteredItems[_highlightedIndex]);
+                      final totalItems = _getTotalItemCount();
+                      if (totalItems > 0 && _highlightedIndex >= 0 && _highlightedIndex < totalItems) {
+                        _selectItem(_getItemAtIndexUnsafe(_highlightedIndex));
                         return KeyEventResult.handled;
                       }
                       return KeyEventResult.ignored;
@@ -241,26 +306,58 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                       shrinkWrap: true,
                       itemCount: totalCount,
                       itemBuilder: (context, index) {
-                        if (index < 0 || index >= _filteredItems.length) {
+                        // Check bounds first (protects against out-of-range access)
+                        if (index < 0 || index >= totalCount) {
                           return const SizedBox.shrink();
                         }
 
-                        final item = _filteredItems[index];
+                        final group = _getGroupAtIndex(index);
+                        // Safety check (should never happen if bounds are correct)
+                        if (group == null) {
+                          return const SizedBox.shrink();
+                        }
 
-                        return MouseRegion(
-                          onEnter: (_) => listController.setHovered(index),
-                          onExit: (_) => listController.setHovered(null),
-                          child: GestureDetector(
-                            onTap: () => _selectItem(item),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: index == _highlightedIndex
-                                    ? const Color(0x10FFFFFF)
-                                    : null,
+                        // Get item (safe to use after bounds check)
+                        final item = _getItemAtIndexUnsafe(index);
+
+                        // Check if we need to show a group header
+                        Widget? header;
+                        if (group.title != null &&
+                            (index == 0 ||
+                                group != _getGroupAtIndex(index - 1))) {
+                          header = Padding(
+                            padding: widgetPaddingSm,
+                            child: Text(
+                              group.title!,
+                              style: TextStyle(
+                                color: context.theme.colors.mutedForeground,
+                                fontSize: context.theme.typography.sm.fontSize,
                               ),
-                              child: widget.itemBuilder(item),
                             ),
-                          ),
+                          );
+                        }
+
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (header != null) header,
+                            MouseRegion(
+                              onEnter: (_) => listController.setHovered(index),
+                              onExit: (_) => listController.setHovered(null),
+                              child: GestureDetector(
+                                onTap: () => _selectItem(item),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: index == _highlightedIndex
+                                        ? const Color(0x10FFFFFF)
+                                        : null,
+                                  ),
+                                  child: widget.itemBuilder(item),
+                                ),
+                              ),
+                            ),
+                          ],
                         );
                       },
                     ),
