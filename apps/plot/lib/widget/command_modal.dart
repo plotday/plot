@@ -1,18 +1,14 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
-import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/analytics/analytics.dart';
-import 'package:plot/util/platform.dart';
 import 'list_tile.dart';
-import 'package:plot/style/layout.dart';
-import 'text_field.dart';
 import 'modal.dart';
 import 'button.dart';
 import 'icon.dart';
 import 'logging.dart';
+import 'select_modal.dart';
 
 // Simple back command for nested navigation in CommandModal
 class _BackCommand extends Command {
@@ -31,27 +27,19 @@ class _BackCommand extends Command {
 }
 
 class CommandModal {
-  CommandModal(
-    Commands commands, {
-    Command? Function(String promptValue)? secondaryCommand,
-    required BuildContext rootContext,
-  }) : _commands = commands,
-       _secondaryCommand = secondaryCommand,
-       _rootContext = rootContext;
+  CommandModal(Commands commands, {required BuildContext rootContext})
+    : _commands = commands,
+      _rootContext = rootContext;
 
   final Commands _commands;
-  final Command? Function(String promptValue)? _secondaryCommand;
   final BuildContext _rootContext;
 
   Future<CommandReturn> run(BuildContext context) async {
     // Modal handles multiPanel logic automatically
     final modal = Modal(
       padding: const EdgeInsets.all(0),
-      builder: (_) => _CommandModalContent(
-        commands: _commands,
-        secondaryCommand: _secondaryCommand,
-        rootContext: _rootContext,
-      ),
+      builder: (_) =>
+          _CommandModalContent(commands: _commands, rootContext: _rootContext),
       key: ObjectKey(_commands),
     );
     final value = await modal.show<CommandReturn>(context);
@@ -62,12 +50,10 @@ class CommandModal {
 class _CommandModalContent extends StatefulWidget {
   const _CommandModalContent({
     required this.commands,
-    this.secondaryCommand,
     required this.rootContext,
   });
 
   final Commands commands;
-  final Command? Function(String promptValue)? secondaryCommand;
   final BuildContext rootContext;
 
   @override
@@ -75,75 +61,56 @@ class _CommandModalContent extends StatefulWidget {
 }
 
 class _CommandModalContentState extends State<_CommandModalContent> {
-  final TextEditingController _controller = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-  List<StaticCommandGroup> _filteredCommandGroups = [];
   late Commands commands = widget.commands;
   final List<Widget Function(BuildContext)> _navigationStack = [];
-  String? _error;
-  bool _isDisposed = false;
-  int _highlightedIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _initCommands();
+    // Open SelectModal after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showCommandList();
+    });
   }
 
-  @override
-  void dispose() {
-    _isDisposed = true;
-    _scrollController.dispose();
-    super.dispose();
-  }
+  Future<void> _showCommandList() async {
+    if (!mounted) return;
 
-  void _initCommands() async {
-    try {
-      setState(() {
-        _error = null;
-      });
-      final searchText = _controller.text;
-      final commandsList = await commands.list(search: searchText);
+    await SelectModal.open<Command>(
+      context,
+      items: (search) async {
+        final commandsList = await commands.list(search: search);
+        return commandsList
+            .map(
+              (cg) => SelectGroup<Command>(
+                title: cg.title,
+                items: cg.commands,
+                infoBuilder: cg.infoBuilder,
+              ),
+            )
+            .toList();
+      },
+      itemBuilder: (command) => ListTile(command: command),
+      prompt: commands.prompt,
+      onSelect: _handleCommandSelection,
+    );
 
-      if (_isDisposed) return;
-
-      setState(() {
-        if (commandsList.isEmpty) {
-          _error = 'No matches';
-        }
-        _filteredCommandGroups = commandsList;
-        _highlightedIndex = 0;
-      });
-    } catch (e, t) {
-      log.warning('Error initializing commands', e, t);
-      if (!_isDisposed) {
-        setState(() {
-          _error = 'Search failed.';
-        });
-      }
+    // If we get here and the modal was closed without pushing a page, close the parent modal
+    if (mounted && _navigationStack.isEmpty) {
+      Modal.pop<CommandReturn>(context, const Value(CommandSkipped()));
     }
   }
 
-  void _moveHighlight(int offset) {
-    setState(() {
-      final totalCount = _allCommandsCount();
-      if (totalCount == 0) return;
+  Future<bool> _handleCommandSelection(
+    BuildContext modalContext,
+    Command command,
+    String searchText,
+  ) async {
+    await _executeCommand(command, modalContext);
 
-      _highlightedIndex = (_highlightedIndex + offset).clamp(0, totalCount - 1);
-    });
-  }
-
-  int _allCommandsCount() {
-    return _filteredCommandGroups.fold(
-      0,
-      (total, group) => total + group.commands.length,
-    );
-  }
-
-  void _pushPage(Widget Function(BuildContext) builder) {
-    setState(() {
-      _navigationStack.add(builder);
-    });
+    // Return true to close SelectModal if we're not showing a nested page
+    // Return false to keep it open if there was an error
+    return _navigationStack.isEmpty;
   }
 
   bool _popPage() {
@@ -158,45 +125,63 @@ class _CommandModalContentState extends State<_CommandModalContent> {
 
   bool get _isShowingNestedPage => _navigationStack.isNotEmpty;
 
-  Future<CommandReturn> _executeCommand(Command command) async {
-    setState(() {
-      _error = null;
-    });
+  Future<CommandReturn> _executeCommand(
+    Command command,
+    BuildContext modalContext,
+  ) async {
     try {
-      // Use rootContext if mounted, otherwise fall back to current context
+      // Use rootContext if mounted, otherwise fall back to modal context
       final commandContext = widget.rootContext.mounted
           ? widget.rootContext
-          : context;
+          : modalContext;
       final result = await command.run(commandContext);
-      if (!mounted) return const CommandSkipped();
+
+      if (!modalContext.mounted) return const CommandSkipped();
+
       if (result is CommandSkipped) {
         return result;
-      } else if (result is CommandPage) {
-        // Push nested page onto navigation stack
-        _pushPage(result.builder);
-        return const CommandDone();
       } else if (result is CommandMessage) {
         if (result.isError) {
-          setState(() {
-            _error = result.message;
-          });
-          return const CommandDone();
+          // Show error toast
+          showFToast(
+            context: modalContext,
+            alignment: FToastAlignment.topEnd,
+            title: const Text('Error'),
+            description: Text(result.message),
+            duration: const Duration(seconds: 3),
+          );
+          return result;
         } else {
-          // TODO: Show success message in a non-intrusive way
+          // Show success toast
+          showFToast(
+            context: modalContext,
+            alignment: FToastAlignment.topEnd,
+            title: Text(result.message),
+            duration: const Duration(seconds: 2),
+          );
         }
       }
-      Modal.popAll(context);
-      if (context.mounted && result is CommandRoute) {
+
+      // Close all modals and navigate if needed
+      Modal.popAll(modalContext);
+      if (modalContext.mounted && result is CommandRoute) {
         final routeContext = widget.rootContext.mounted
             ? widget.rootContext
-            : context;
+            : modalContext;
         result.go(routeContext);
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);
-      setState(() {
-        _error = 'Something went wrong';
-      });
+      if (mounted) {
+        showFToast(
+          context: modalContext,
+          alignment: FToastAlignment.topEnd,
+          title: const Text('Error'),
+          description: const Text('Something went wrong'),
+          duration: const Duration(seconds: 3),
+        );
+      }
+      return const CommandMessage('Something went wrong', isError: true);
     }
     return const CommandDone();
   }
@@ -232,6 +217,10 @@ class _CommandModalContentState extends State<_CommandModalContent> {
                       _BackCommand(),
                       run: (_, _) async {
                         _popPage();
+                        // Re-show the command list after popping
+                        if (_navigationStack.isEmpty) {
+                          _showCommandList();
+                        }
                         return const CommandDone();
                       },
                     ),
@@ -246,187 +235,8 @@ class _CommandModalContentState extends State<_CommandModalContent> {
       );
     }
 
-    Widget? errorBox;
-    if (_error != null) {
-      errorBox = Container(
-        padding: const EdgeInsets.all(8),
-        child: Text(_error!),
-      );
-    }
-
-    final secondaryCommand = widget.secondaryCommand?.call(_controller.text);
-    final totalCommandCount = _allCommandsCount();
-
-    return ListViewSelector(
-      key: ValueKey(totalCommandCount),
-      onActivate: (index) => _executeCommand(_getCommandAtIndex(index)),
-      builder: (context, listController) {
-        // Set bounds for the controller
-        listController.clamp(0, totalCommandCount - 1);
-
-        return Shortcuts(
-          shortcuts: const {
-            SingleActivator(LogicalKeyboardKey.arrowUp):
-                MoveListSelectionIntent(-1),
-            SingleActivator(LogicalKeyboardKey.arrowDown):
-                MoveListSelectionIntent(1),
-            SingleActivator(LogicalKeyboardKey.enter):
-                ActivateListSelectionIntent(),
-          },
-          child: Actions(
-            actions: {
-              MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
-                onInvoke: (intent) {
-                  _moveHighlight(intent.offset);
-                  return KeyEventResult.handled;
-                },
-              ),
-              ActivateListSelectionIntent:
-                  CallbackAction<ActivateListSelectionIntent>(
-                    onInvoke: (intent) {
-                      if (_allCommandsCount() > 0) {
-                        _executeCommand(_getCommandAtIndex(_highlightedIndex));
-                        return KeyEventResult.handled;
-                      }
-                      return KeyEventResult.ignored;
-                    },
-                  ),
-            },
-            child: LayoutBuilder(
-              builder: (context, constraints) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (hasPhysicalKeyboard())
-                    EditableArea(
-                      position: EditableAreaPosition.top,
-                      padding: false,
-                      builder: (context, focusNode) => Row(
-                        children: [
-                          Expanded(
-                            child: Padding(
-                              padding: widgetPadding,
-                              child: TextField(
-                                maxLines: 1,
-                                style: TextFieldStyle.ghost,
-                                controller: _controller,
-                                autofocus: true,
-                                label: "${widget.commands.prompt}…",
-                                focusNode: focusNode,
-                                onChanged: (_) => _initCommands(),
-                              ),
-                            ),
-                          ),
-                          if (secondaryCommand != null)
-                            Button.icon(
-                              CommandWrapper(
-                                secondaryCommand,
-                                run: (_, _) => _executeCommand(secondaryCommand),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  if (errorBox != null) errorBox,
-                  Flexible(
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      shrinkWrap: true,
-                      itemCount: totalCommandCount,
-                      itemBuilder: (context, index) {
-                        if (index < 0 || index >= totalCommandCount) {
-                          return const SizedBox.shrink();
-                        }
-
-                        final group = _getGroupAtIndex(index);
-                        final command = _getCommandAtIndex(index);
-                        final body = command.buildBody(context);
-                        Widget? header;
-                        Widget? info;
-
-                        if (group.title != null &&
-                            (index == 0 ||
-                                group != _getGroupAtIndex(index - 1))) {
-                          header = Padding(
-                            padding: widgetPaddingSm,
-                            child: Text(
-                              group.title!,
-                              style: TextStyle(
-                                color: context.theme.colors.mutedForeground,
-                                fontSize: context.theme.typography.sm.fontSize,
-                              ),
-                            ),
-                          );
-                        }
-
-                        // Render info widget if provided
-                        if (group.infoBuilder != null) {
-                          info = Container(
-                            padding: const EdgeInsets.all(0),
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: context.theme.colors.border,
-                                  width: 1,
-                                ),
-                              ),
-                            ),
-                            child: group.infoBuilder!(context),
-                          );
-                        }
-
-                        return MouseRegion(
-                          onEnter: (_) => listController.setHovered(index),
-                          onExit: (_) => listController.setHovered(null),
-                          child: Column(
-                            key: ValueKey(index),
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (header != null) header,
-                              if (info != null) info,
-                              ListTile(
-                                command: command,
-                                body: body,
-                                selected: index == _highlightedIndex,
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  StaticCommandGroup _getGroupAtIndex(int index) {
-    int currentIndex = 0;
-    for (final group in _filteredCommandGroups) {
-      if (index < currentIndex + group.commands.length) {
-        return group;
-      }
-      currentIndex += group.commands.length;
-    }
-    throw Exception('Action index out of range');
-  }
-
-  Command _getCommandAtIndex(int index) {
-    int currentIndex = 0;
-    for (final group in _filteredCommandGroups) {
-      for (final command in group.commands) {
-        if (currentIndex == index) {
-          return CommandWrapper(
-            command,
-            run: (_, _) => _executeCommand(command),
-          );
-        }
-        currentIndex++;
-      }
-    }
-    throw Exception('Action index out of range');
+    // When not showing nested page, SelectModal is shown as a separate modal
+    // This build method just returns an empty container as placeholder
+    return const SizedBox.shrink();
   }
 }

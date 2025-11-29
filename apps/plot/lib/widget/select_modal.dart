@@ -12,13 +12,16 @@ import 'logging.dart';
 
 /// A group of items to display in a SelectModal.
 class SelectGroup<T> {
-  SelectGroup({this.title, required this.items});
+  SelectGroup({this.title, required this.items, this.infoBuilder});
 
   /// The title of the group (displayed as a header).
   final String? title;
 
   /// The items in this group.
   final List<T> items;
+
+  /// Optional widget to display below the group header.
+  final Widget Function(BuildContext)? infoBuilder;
 }
 
 /// A generic selection modal for selecting items from a list.
@@ -30,6 +33,7 @@ class SelectModal<T> extends Modal {
     required this.itemBuilder,
     this.selectedValue,
     this.prompt = 'Search',
+    this.onSelect,
     super.key,
   }) : super(
          padding: const EdgeInsets.all(0),
@@ -38,6 +42,7 @@ class SelectModal<T> extends Modal {
            itemBuilder: itemBuilder,
            selectedValue: selectedValue,
            prompt: prompt,
+           onSelect: onSelect,
          ),
        );
 
@@ -55,6 +60,11 @@ class SelectModal<T> extends Modal {
   /// The placeholder text for the search input.
   final String prompt;
 
+  /// Optional callback when an item is selected.
+  /// Receives the context, selected item, and current search text.
+  /// Return true to close the modal, false to keep it open.
+  final Future<bool> Function(BuildContext context, T item, String searchText)? onSelect;
+
   /// Show the select modal and return the selected value wrapped in Value,
   /// or Value.absent() if cancelled.
   static Future<Value<T>> open<T>(
@@ -63,12 +73,14 @@ class SelectModal<T> extends Modal {
     required Widget Function(T) itemBuilder,
     T? selectedValue,
     String prompt = 'Search',
+    Future<bool> Function(BuildContext context, T item, String searchText)? onSelect,
   }) async {
     final result = await SelectModal<T>(
       items: items,
       itemBuilder: itemBuilder,
       selectedValue: selectedValue,
       prompt: prompt,
+      onSelect: onSelect,
     ).show<T>(context);
 
     return result;
@@ -81,12 +93,14 @@ class _SelectModal<T> extends StatefulWidget {
     required this.itemBuilder,
     this.selectedValue,
     required this.prompt,
+    this.onSelect,
   });
 
   final Future<List<SelectGroup<T>>> Function(String? search) items;
   final Widget Function(T) itemBuilder;
   final T? selectedValue;
   final String prompt;
+  final Future<bool> Function(BuildContext context, T item, String searchText)? onSelect;
 
   @override
   _SelectModalState<T> createState() => _SelectModalState<T>();
@@ -212,8 +226,14 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     });
   }
 
-  void _selectItem(T item) {
-    Modal.pop<T>(context, Value(item));
+  Future<void> _selectItem(T item) async {
+    if (widget.onSelect != null) {
+      final shouldClose = await widget.onSelect!(context, item, _controller.text);
+      if (!shouldClose) return;
+    }
+    if (mounted) {
+      Modal.pop<T>(context, Value(item));
+    }
   }
 
   void _cancel() {
@@ -322,19 +342,37 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
                         // Check if we need to show a group header
                         Widget? header;
-                        if (group.title != null &&
-                            (index == 0 ||
-                                group != _getGroupAtIndex(index - 1))) {
-                          header = Padding(
-                            padding: widgetPaddingSm,
-                            child: Text(
-                              group.title!,
-                              style: TextStyle(
-                                color: context.theme.colors.mutedForeground,
-                                fontSize: context.theme.typography.sm.fontSize,
+                        Widget? info;
+                        if (index == 0 || group != _getGroupAtIndex(index - 1)) {
+                          // Show group header if it has a title
+                          if (group.title != null) {
+                            header = Padding(
+                              padding: widgetPaddingSm,
+                              child: Text(
+                                group.title!,
+                                style: TextStyle(
+                                  color: context.theme.colors.mutedForeground,
+                                  fontSize: context.theme.typography.sm.fontSize,
+                                ),
                               ),
-                            ),
-                          );
+                            );
+                          }
+
+                          // Show group info if it has an infoBuilder
+                          if (group.infoBuilder != null) {
+                            info = Container(
+                              padding: const EdgeInsets.all(0),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: context.theme.colors.border,
+                                    width: 1,
+                                  ),
+                                ),
+                              ),
+                              child: group.infoBuilder!(context),
+                            );
+                          }
                         }
 
                         return Column(
@@ -342,6 +380,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (header != null) header,
+                            if (info != null) info,
                             MouseRegion(
                               onEnter: (_) => listController.setHovered(index),
                               onExit: (_) => listController.setHovered(null),
