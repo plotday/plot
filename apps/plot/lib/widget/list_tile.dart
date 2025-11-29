@@ -8,7 +8,7 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
-import 'animated_command_row.dart';
+import 'button.dart';
 import 'logging.dart';
 
 enum ListTileStyle { item, header }
@@ -150,9 +150,11 @@ class _ListTileState extends State<ListTile> {
     super.dispose();
   }
 
+  bool get showDragBar =>
+      !hasPhysicalKeyboard() && widget.reorderableIndex != null;
+
   @override
   Widget build(BuildContext context) {
-    final bool isTouchDevice = !hasPhysicalKeyboard();
     return GestureDetector(
       onTap: widget.command != null
           ? () {
@@ -212,170 +214,173 @@ class _ListTileState extends State<ListTile> {
           focusNode: _focusNode,
           onShowFocusHighlight: (focused) => widget.onHover?.call(focused),
           onShowHoverHighlight: (hovered) => widget.onHover?.call(hovered),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: tileBorderRadius,
-              color: widget.selected
-                  ? context.theme.colors.primary
-                  : widget.command != null &&
-                        (_focusNode.hasFocus ||
-                            (!widget.disableInternalHover && _isHovered) ||
-                            widget.highlighted)
-                  ? context.theme.plotColors.highlight
-                  : null,
-            ),
-            padding:
-                (widget.padding?.resolve(null) ?? widgetPaddingSm).copyWith(
-                  left: isTouchDevice ? 0 : null,
-                  top: 0,
-                  bottom: 0,
-                ) +
-                EdgeInsets.only(left: widget.indentLevel * 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              spacing: 4,
-              children: [
-                // Draggable portion (icon + content)
-                ..._buildDraggableContent(context),
-                // Non-draggable portion (shortcuts + commands + trailing)
-                if (widget.command?.shortcut != null && hasPhysicalKeyboard())
-                  Text(
-                    formatShortcut(widget.command?.shortcut),
-                    style: context.theme.typography.base.copyWith(
-                      color: context.theme.plotColors.muted,
+          child: ReorderableDragStartListener(
+            index: widget.reorderableIndex ?? 0,
+            enabled: widget.reorderableIndex != null && !showDragBar,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: tileBorderRadius,
+                color: widget.selected
+                    ? context.theme.colors.primary
+                    : widget.command != null &&
+                          (_focusNode.hasFocus ||
+                              (!widget.disableInternalHover && _isHovered) ||
+                              widget.highlighted)
+                    ? context.theme.plotColors.highlight
+                    : null,
+              ),
+              padding:
+                  (widget.padding?.resolve(null) ?? widgetPaddingSm).copyWith(
+                    top: 0,
+                    bottom: 0,
+                  ) +
+                  EdgeInsets.only(left: widget.indentLevel * 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                spacing: 8,
+                children: [
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      spacing: 8,
+                      children: [
+                        if (widget.icon != null || widget.command?.icon != null)
+                          Icon(
+                            widget.icon ?? widget.command?.icon,
+                            size: 16,
+                            color: context.theme.plotColors.muted,
+                          ),
+                        Expanded(
+                          child: Padding(
+                            padding:
+                                (widget.padding?.resolve(null) ??
+                                        widgetPaddingSm)
+                                    .copyWith(left: 0, right: 0),
+                            child: Column(
+                              crossAxisAlignment: widget.centered
+                                  ? CrossAxisAlignment.center
+                                  : CrossAxisAlignment.start,
+                              spacing: 2,
+                              children: [
+                                if (widget.header != null) widget.header!,
+                                Builder(
+                                  builder: (context) {
+                                    final commandBody =
+                                        widget.body ??
+                                        (widget.title == null
+                                            ? widget.command?.buildBody(context)
+                                            : null);
+                                    return commandBody != null
+                                        ? Row(
+                                            children: [
+                                              Expanded(child: commandBody),
+                                            ],
+                                          )
+                                        : Row(
+                                            mainAxisAlignment: widget.centered
+                                                ? MainAxisAlignment.center
+                                                : MainAxisAlignment.start,
+                                            spacing: 4,
+                                            children: [
+                                              Text(
+                                                widget.title ??
+                                                    widget.command?.title ??
+                                                    'Untitled',
+                                                overflow: TextOverflow.ellipsis,
+                                                textAlign: widget.centered
+                                                    ? TextAlign.center
+                                                    : TextAlign.start,
+                                                style:
+                                                    (widget.textStyle ??
+                                                            (widget.style ==
+                                                                    ListTileStyle
+                                                                        .header
+                                                                ? context
+                                                                      .theme
+                                                                      .typography
+                                                                      .sm
+                                                                : context
+                                                                      .theme
+                                                                      .typography
+                                                                      .base))
+                                                        .copyWith(
+                                                          color: widget.selected
+                                                              ? context
+                                                                    .theme
+                                                                    .colors
+                                                                    .primaryForeground
+                                                              : widget.style ==
+                                                                    ListTileStyle
+                                                                        .header
+                                                              ? context
+                                                                    .theme
+                                                                    .plotColors
+                                                                    .muted
+                                                              : null,
+                                                        ),
+                                              ),
+                                              if (widget.subtitle != null)
+                                                Expanded(
+                                                  child: Text(
+                                                    widget.subtitle!,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: context
+                                                        .theme
+                                                        .typography
+                                                        .base
+                                                        .copyWith(
+                                                          color: context
+                                                              .theme
+                                                              .plotColors
+                                                              .muted,
+                                                        ),
+                                                  ),
+                                                ),
+                                            ],
+                                          );
+                                  },
+                                ),
+                                if (widget.details != null) widget.details!,
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (widget.command?.shortcut != null &&
+                            hasPhysicalKeyboard())
+                          Text(
+                            formatShortcut(widget.command?.shortcut),
+                            style: context.theme.typography.base.copyWith(
+                              color: context.theme.plotColors.muted,
+                            ),
+                          ),
+                        if (_isHovered || _focusNode.hasFocus)
+                          ...widget.trailingCommands.asMap().entries.map(
+                            (entry) => Button.icon(entry.value),
+                          ),
+                        if (widget.trailing != null) widget.trailing!,
+                      ],
                     ),
                   ),
-                if (widget.trailingCommands.isNotEmpty)
-                  AnimatedCommandRow(
-                    show:
-                        !widget.revealTrailingCommands ||
-                        _isHovered ||
-                        _focusNode.hasFocus,
-                    commands: widget.trailingCommands,
-                  ),
-                if (widget.trailing != null) widget.trailing!,
-              ],
+                  // Drag bar at the end (outside main drag listener)
+                  if (showDragBar && widget.reorderableIndex != null)
+                    ReorderableDragStartListener(
+                      index: widget.reorderableIndex!,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Icon(
+                          FontAwesomeIcons.gripDotsVertical,
+                          size: 12,
+                          color: context.theme.plotColors.muted,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
-  }
-
-  List<Widget> _buildDraggableContent(BuildContext context) {
-    final bool isTouchDevice = !hasPhysicalKeyboard();
-
-    // Build the icon widget if present
-    final iconWidget = (widget.icon != null || widget.command?.icon != null)
-        ? Icon(
-            widget.icon ?? widget.command?.icon,
-            size: 16,
-            color: context.theme.plotColors.muted,
-          )
-        : null;
-
-    // Build the main content widget
-    final contentWidget = Expanded(
-      child: Padding(
-        padding: (widget.padding?.resolve(null) ?? widgetPaddingSm).copyWith(
-          left: 0,
-          right: 0,
-        ),
-        child: Column(
-          crossAxisAlignment: widget.centered
-              ? CrossAxisAlignment.center
-              : CrossAxisAlignment.start,
-          spacing: 2,
-          children: [
-            if (widget.header != null) widget.header!,
-            Builder(
-              builder: (context) {
-                final commandBody =
-                    widget.body ??
-                    (widget.title == null
-                        ? widget.command?.buildBody(context)
-                        : null);
-                return commandBody != null
-                    ? Row(children: [Expanded(child: commandBody)])
-                    : Row(
-                        mainAxisAlignment: widget.centered
-                            ? MainAxisAlignment.center
-                            : MainAxisAlignment.start,
-                        spacing: 4,
-                        children: [
-                          Text(
-                            widget.title ?? widget.command?.title ?? 'Untitled',
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: widget.centered
-                                ? TextAlign.center
-                                : TextAlign.start,
-                            style:
-                                (widget.textStyle ??
-                                        (widget.style == ListTileStyle.header
-                                            ? context.theme.typography.sm
-                                            : context.theme.typography.base))
-                                    .copyWith(
-                                      color: widget.selected
-                                          ? context
-                                                .theme
-                                                .colors
-                                                .primaryForeground
-                                          : widget.style == ListTileStyle.header
-                                          ? context.theme.plotColors.muted
-                                          : null,
-                                    ),
-                          ),
-                          if (widget.subtitle != null)
-                            Expanded(
-                              child: Text(
-                                widget.subtitle!,
-                                overflow: TextOverflow.ellipsis,
-                                style: context.theme.typography.base.copyWith(
-                                  color: context.theme.plotColors.muted,
-                                ),
-                              ),
-                            ),
-                        ],
-                      );
-              },
-            ),
-            if (widget.details != null) widget.details!,
-          ],
-        ),
-      ),
-    );
-
-    // If not reorderable, return content as is
-    if (widget.reorderableIndex == null) {
-      return [if (iconWidget != null) iconWidget, contentWidget];
-    }
-
-    // For touch devices: show drag handle, only handle is draggable
-    if (isTouchDevice) {
-      final dragHandle = ReorderableDragStartListener(
-        index: widget.reorderableIndex!,
-        child: Icon(
-          FontAwesomeIcons.gripDotsVertical,
-          size: 8,
-          color: context.theme.plotColors.muted,
-        ),
-      );
-
-      return [dragHandle, if (iconWidget != null) iconWidget, contentWidget];
-    }
-
-    // For non-touch devices: entire content is draggable
-    final draggableChild = Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      spacing: 8,
-      children: [if (iconWidget != null) iconWidget, contentWidget],
-    );
-
-    final reorderableWidget = ReorderableDragStartListener(
-      index: widget.reorderableIndex!,
-      child: draggableChild,
-    );
-
-    return [Expanded(child: reorderableWidget)];
   }
 }

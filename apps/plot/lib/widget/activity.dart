@@ -262,13 +262,13 @@ class _ActivityDetailWidgetState extends State<ActivityDetailWidget> {
                       opacity: 0,
                       child: ActivityTags(activity: widget.activity),
                     ),
-                    AnimatedCommandRow(
-                      show: _showCommands,
-                      commands: [
+                    if (_showCommands)
+                      ...[
                         ...activitySecondaryCommands(widget.activity).take(3),
                         ShowActivityCommands(widget.activity, open: false),
-                      ],
-                    ),
+                      ].asMap().entries.map(
+                        (entry) => Button.icon(entry.value),
+                      ),
                   ],
                 ),
               ],
