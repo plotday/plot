@@ -13,6 +13,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:equatable/equatable.dart';
 import 'package:rrule/rrule.dart';
 import 'package:synchronized/synchronized.dart';
+import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';

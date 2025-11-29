@@ -606,40 +606,144 @@ class Activity extends Equatable implements Comparable<Activity> {
     final a = Store.get.activities;
     final p = Store.get.priorities;
 
-    final query = Store.get.select(at).join([
+    final now = DateTime.now();
+    final today = Date.today().toString();
+    final priorityPathLike = '$priorityPath.%';
+
+    // Query for stored tags from activity_tags table
+    final tagsQuery = Store.get.select(at).join([
       innerJoin(a, a.id.equalsExp(at.id)),
       innerJoin(
         p,
         p.id.equalsExp(a.priorityId) &
             (p.path.equalsValue(priorityPath) |
-                p.path.likeExp(Constant('$priorityPath%'))),
+                p.path.likeExp(Constant(priorityPathLike))),
       ),
     ]);
 
-    query.where(a.archivedAt.isNull());
+    tagsQuery.where(a.archivedAt.isNull());
 
-    return query.watch().map((rows) {
-      final Map<Tag, Set<ActivityId>> tagCounts = {};
+    // COUNT query for Tag.done
+    final doneQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    doneQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+    doneQuery.where(a.archivedAt.isNull() & a.doneAt.isNotNull());
+    final doneCountStream = doneQuery
+        .watch()
+        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
 
-      for (final row in rows) {
-        final activityTagsRow = row.readTable(at);
-        final activityId = activityTagsRow.id;
-        final tags = activityTagsRow.tags;
+    // COUNT query for Tag.now
+    final nowQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    nowQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+    nowQuery.where(
+      a.archivedAt.isNull() &
+          a.type.equalsValue(ActivityType.action) &
+          a.doneAt.isNull() &
+          (
+          // Date-based scheduling: startOn <= today
+          (a.startOn.isSmallerOrEqualValue(today) & a.startAt.isNull()) |
+              // DateTime-based scheduling: startAt <= now AND endAt >= now
+              (a.startAt.isSmallerOrEqualValue(now) &
+                  (a.endAt.isNull() | a.endAt.isBiggerOrEqualValue(now)) &
+                  a.startOn.isNull())),
+    );
+    final nowCountStream =
+        nowQuery.watch().map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
 
-        if (tags != null) {
-          for (final tag in tags.keys) {
-            tagCounts.putIfAbsent(tag, () => {}).add(activityId);
+    // COUNT query for Tag.later
+    final laterQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    laterQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+    laterQuery.where(
+      a.archivedAt.isNull() &
+          a.type.equalsValue(ActivityType.action) &
+          a.doneAt.isNull() &
+          (
+          // Date-based scheduling: startOn > today
+          (a.startOn.isBiggerThanValue(today) & a.startAt.isNull()) |
+              // DateTime-based scheduling: startAt > now
+              (a.startAt.isBiggerThanValue(now) & a.startOn.isNull())),
+    );
+    final laterCountStream = laterQuery
+        .watch()
+        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+
+    // COUNT query for Tag.archived
+    final archivedQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    archivedQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+    archivedQuery.where(a.archivedAt.isNotNull());
+    final archivedCountStream = archivedQuery
+        .watch()
+        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+
+    return Rx.combineLatest5(
+      tagsQuery.watch(),
+      doneCountStream,
+      nowCountStream,
+      laterCountStream,
+      archivedCountStream,
+      (rows, doneCount, nowCount, laterCount, archivedCount) {
+        final Map<Tag, int> tagCounts = {};
+
+        // Count stored tags
+        final Map<Tag, Set<ActivityId>> storedTagCounts = {};
+        for (final row in rows) {
+          final activityTagsRow = row.readTable(at);
+          final activityId = activityTagsRow.id;
+          final tags = activityTagsRow.tags;
+
+          if (tags != null) {
+            for (final tag in tags.keys) {
+              storedTagCounts.putIfAbsent(tag, () => {}).add(activityId);
+            }
           }
         }
-      }
 
-      // Convert to list of (Tag, count) and sort by count descending
-      final result =
-          tagCounts.entries.map((e) => (e.key, e.value.length)).toList()
-            ..sort((a, b) => b.$2.compareTo(a.$2));
+        // Add stored tag counts
+        for (final entry in storedTagCounts.entries) {
+          tagCounts[entry.key] = entry.value.length;
+        }
 
-      return result;
-    });
+        // Add computed tag counts
+        if (doneCount > 0) tagCounts[Tag.done] = doneCount;
+        if (nowCount > 0) tagCounts[Tag.now] = nowCount;
+        if (laterCount > 0) tagCounts[Tag.later] = laterCount;
+        if (archivedCount > 0) tagCounts[Tag.archived] = archivedCount;
+
+        // Convert to list of (Tag, count) and sort by count descending
+        final result =
+            tagCounts.entries.map((e) => (e.key, e.value)).toList()
+              ..sort((a, b) => b.$2.compareTo(a.$2));
+
+        return result;
+      },
+    );
   }
 
   /// Watch all tags present in activities within an activity thread (root + descendants).
@@ -650,38 +754,123 @@ class Activity extends Equatable implements Comparable<Activity> {
     final at = Store.get.activityTags;
     final a = Store.get.activities;
 
-    final query = Store.get.select(at).join([
+    final now = DateTime.now();
+    final today = Date.today().toString();
+    final activityPathLike = '$activityPath.%';
+
+    // Query for stored tags from activity_tags table
+    final tagsQuery = Store.get.select(at).join([
       innerJoin(a, a.id.equalsExp(at.id)),
     ]);
 
-    query.where(
+    tagsQuery.where(
       a.archivedAt.isNull() &
           (a.path.equalsValue(activityPath) |
-              a.path.likeExp(Constant('$activityPath.%'))),
+              a.path.likeExp(Constant(activityPathLike))),
     );
 
-    return query.watch().map((rows) {
-      final Map<Tag, Set<ActivityId>> tagCounts = {};
+    // COUNT query for Tag.done
+    final doneQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    doneQuery.where(
+      a.archivedAt.isNull() &
+          a.doneAt.isNotNull() &
+          (a.path.equalsValue(activityPath) |
+              a.path.likeExp(Constant(activityPathLike))),
+    );
+    final doneCountStream = doneQuery
+        .watch()
+        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
 
-      for (final row in rows) {
-        final activityTagsRow = row.readTable(at);
-        final activityId = activityTagsRow.id;
-        final tags = activityTagsRow.tags;
+    // COUNT query for Tag.now
+    final nowQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    nowQuery.where(
+      a.archivedAt.isNull() &
+          a.type.equalsValue(ActivityType.action) &
+          a.doneAt.isNull() &
+          (a.path.equalsValue(activityPath) |
+              a.path.likeExp(Constant(activityPathLike))) &
+          (
+          // Date-based scheduling: startOn <= today
+          (a.startOn.isSmallerOrEqualValue(today) & a.startAt.isNull()) |
+              // DateTime-based scheduling: startAt <= now AND endAt >= now
+              (a.startAt.isSmallerOrEqualValue(now) &
+                  (a.endAt.isNull() | a.endAt.isBiggerOrEqualValue(now)) &
+                  a.startOn.isNull())),
+    );
+    final nowCountStream =
+        nowQuery.watch().map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
 
-        if (tags != null) {
-          for (final tag in tags.keys) {
-            tagCounts.putIfAbsent(tag, () => {}).add(activityId);
+    // COUNT query for Tag.later
+    final laterQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    laterQuery.where(
+      a.archivedAt.isNull() &
+          a.type.equalsValue(ActivityType.action) &
+          a.doneAt.isNull() &
+          (a.path.equalsValue(activityPath) |
+              a.path.likeExp(Constant(activityPathLike))) &
+          (
+          // Date-based scheduling: startOn > today
+          (a.startOn.isBiggerThanValue(today) & a.startAt.isNull()) |
+              // DateTime-based scheduling: startAt > now
+              (a.startAt.isBiggerThanValue(now) & a.startOn.isNull())),
+    );
+    final laterCountStream = laterQuery
+        .watch()
+        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+
+    // COUNT query for Tag.archived
+    final archivedQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    archivedQuery.where(
+      a.archivedAt.isNotNull() &
+          (a.path.equalsValue(activityPath) |
+              a.path.likeExp(Constant(activityPathLike))),
+    );
+    final archivedCountStream = archivedQuery
+        .watch()
+        .map((rows) => rows.map((r) => r.read(a.id)).toSet().length);
+
+    return Rx.combineLatest5(
+      tagsQuery.watch(),
+      doneCountStream,
+      nowCountStream,
+      laterCountStream,
+      archivedCountStream,
+      (rows, doneCount, nowCount, laterCount, archivedCount) {
+        final Map<Tag, int> tagCounts = {};
+
+        // Count stored tags
+        final Map<Tag, Set<ActivityId>> storedTagCounts = {};
+        for (final row in rows) {
+          final activityTagsRow = row.readTable(at);
+          final activityId = activityTagsRow.id;
+          final tags = activityTagsRow.tags;
+
+          if (tags != null) {
+            for (final tag in tags.keys) {
+              storedTagCounts.putIfAbsent(tag, () => {}).add(activityId);
+            }
           }
         }
-      }
 
-      // Convert to list of (Tag, count) and sort by count descending
-      final result =
-          tagCounts.entries.map((e) => (e.key, e.value.length)).toList()
-            ..sort((a, b) => b.$2.compareTo(a.$2));
+        // Add stored tag counts
+        for (final entry in storedTagCounts.entries) {
+          tagCounts[entry.key] = entry.value.length;
+        }
 
-      return result;
-    });
+        // Add computed tag counts
+        if (doneCount > 0) tagCounts[Tag.done] = doneCount;
+        if (nowCount > 0) tagCounts[Tag.now] = nowCount;
+        if (laterCount > 0) tagCounts[Tag.later] = laterCount;
+        if (archivedCount > 0) tagCounts[Tag.archived] = archivedCount;
+
+        // Convert to list of (Tag, count) and sort by count descending
+        final result =
+            tagCounts.entries.map((e) => (e.key, e.value)).toList()
+              ..sort((a, b) => b.$2.compareTo(a.$2));
+
+        return result;
+      },
+    );
   }
 
   static Future<List<Activity>> _get({
