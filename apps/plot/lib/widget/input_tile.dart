@@ -81,7 +81,7 @@ class _InputTileState extends State<InputTile> {
 
     return FormTileLayout(
       label: widget.label,
-      rightBackgroundColor: context.theme.plotColors.editableBackground,
+      rightBackgroundColor: isActive ? context.theme.plotColors.editableBackground : null,
       isActive: isActive,
       content: TextField(
         controller: widget.controller,

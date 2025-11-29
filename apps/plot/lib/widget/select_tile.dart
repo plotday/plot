@@ -106,7 +106,7 @@ class _SelectTileState extends State<SelectTile> {
       child: FormTileLayout(
         label: widget.label,
         rightBackgroundColor: isHighlighted
-            ? context.theme.colors.primary
+            ? context.theme.colors.secondary
             : null,
         isActive: isHighlighted,
         content: GestureDetector(

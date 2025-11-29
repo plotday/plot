@@ -150,8 +150,8 @@ class FormSelect<T> extends FormItem {
     T? initialValue,
     this.onChanged,
     bool hasInitialValue = false,
-  })  : _value = initialValue,
-        _hasValue = hasInitialValue || initialValue != null;
+  }) : _value = initialValue,
+       _hasValue = hasInitialValue || initialValue != null;
 
   /// Function to fetch items, optionally filtered by search text.
   final Future<List<T>> Function(String? search) items;
@@ -215,19 +215,13 @@ class FormSelect<T> extends FormItem {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
-              if (leading != null) ...[
-                leading,
-                const SizedBox(width: 8),
-              ],
+              if (leading != null) ...[leading, const SizedBox(width: 8)],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      label,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    Text(label, overflow: TextOverflow.ellipsis),
                     if (subtitle != null)
                       Text(
                         subtitle,
@@ -351,7 +345,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
             label:
                 '', // FormButton doesn't have a label, just empty space on left
             rightBackgroundColor: isHighlighted
-                ? context.theme.colors.primary
+                ? context.theme.colors.secondary
                 : null,
             isActive: isHighlighted,
             content: MouseRegion(

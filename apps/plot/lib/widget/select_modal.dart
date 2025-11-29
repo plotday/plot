@@ -63,7 +63,8 @@ class SelectModal<T> extends Modal {
   /// Optional callback when an item is selected.
   /// Receives the context, selected item, and current search text.
   /// Return true to close the modal, false to keep it open.
-  final Future<bool> Function(BuildContext context, T item, String searchText)? onSelect;
+  final Future<bool> Function(BuildContext context, T item, String searchText)?
+  onSelect;
 
   /// Show the select modal and return the selected value wrapped in Value,
   /// or Value.absent() if cancelled.
@@ -73,7 +74,8 @@ class SelectModal<T> extends Modal {
     required Widget Function(T) itemBuilder,
     T? selectedValue,
     String prompt = 'Search',
-    Future<bool> Function(BuildContext context, T item, String searchText)? onSelect,
+    Future<bool> Function(BuildContext context, T item, String searchText)?
+    onSelect,
   }) async {
     final result = await SelectModal<T>(
       items: items,
@@ -100,7 +102,8 @@ class _SelectModal<T> extends StatefulWidget {
   final Widget Function(T) itemBuilder;
   final T? selectedValue;
   final String prompt;
-  final Future<bool> Function(BuildContext context, T item, String searchText)? onSelect;
+  final Future<bool> Function(BuildContext context, T item, String searchText)?
+  onSelect;
 
   @override
   _SelectModalState<T> createState() => _SelectModalState<T>();
@@ -267,8 +270,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       else if (estimatedOffset + (estimatedItemHeight * 2) >
           currentScroll + viewportHeight) {
         // Scroll to show current item + next item
-        final targetScroll = (estimatedOffset + (estimatedItemHeight * 2) - viewportHeight)
-            .clamp(0.0, maxScroll);
+        final targetScroll =
+            (estimatedOffset + (estimatedItemHeight * 2) - viewportHeight)
+                .clamp(0.0, maxScroll);
         _scrollController.animateTo(
           targetScroll,
           duration: const Duration(milliseconds: 200),
@@ -281,7 +285,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
   Future<void> _selectItem(T item) async {
     if (widget.onSelect != null) {
-      final shouldClose = await widget.onSelect!(context, item, _controller.text);
+      final shouldClose = await widget.onSelect!(
+        context,
+        item,
+        _controller.text,
+      );
       if (!shouldClose) {
         return;
       }
@@ -341,7 +349,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                   CallbackAction<ActivateListSelectionIntent>(
                     onInvoke: (intent) {
                       final totalItems = _getTotalItemCount();
-                      if (totalItems > 0 && _highlightedIndex >= 0 && _highlightedIndex < totalItems) {
+                      if (totalItems > 0 &&
+                          _highlightedIndex >= 0 &&
+                          _highlightedIndex < totalItems) {
                         _selectItem(_getItemAtIndexUnsafe(_highlightedIndex));
                         return KeyEventResult.handled;
                       }
@@ -401,7 +411,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         // Check if we need to show a group header
                         Widget? header;
                         Widget? info;
-                        if (index == 0 || group != _getGroupAtIndex(index - 1)) {
+                        if (index == 0 ||
+                            group != _getGroupAtIndex(index - 1)) {
                           // Show group header if it has a title
                           if (group.title != null) {
                             header = Padding(
@@ -410,7 +421,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                 group.title!,
                                 style: TextStyle(
                                   color: context.theme.colors.mutedForeground,
-                                  fontSize: context.theme.typography.sm.fontSize,
+                                  fontSize:
+                                      context.theme.typography.sm.fontSize,
                                 ),
                               ),
                             );
@@ -447,7 +459,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                 child: Container(
                                   decoration: BoxDecoration(
                                     color: index == _highlightedIndex
-                                        ? const Color(0x10FFFFFF)
+                                        ? context.theme.colors.secondary
                                         : null,
                                   ),
                                   child: widget.itemBuilder(item),
