@@ -108,6 +108,7 @@ class _SelectModal<T> extends StatefulWidget {
 
 class _SelectModalState<T> extends State<_SelectModal<T>> {
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   List<SelectGroup<T>> _groups = [];
   String? _error;
   bool _isDisposed = false;
@@ -122,6 +123,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   @override
   void dispose() {
     _isDisposed = true;
+    _scrollController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -224,12 +226,65 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
       _highlightedIndex = (_highlightedIndex + offset).clamp(0, totalCount - 1);
     });
+    _scrollToIndex(_highlightedIndex);
+  }
+
+  /// Scrolls to ensure the item at the given index is visible.
+  /// Only scrolls if the item is outside or near the viewport edges.
+  /// When scrolling down, ensures the next item is also visible for better UX.
+  void _scrollToIndex(int index) {
+    if (!_scrollController.hasClients) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+
+      const estimatedItemHeight = 50.0;
+
+      // Special case: scroll to top for first item to show headers/info
+      if (index == 0) {
+        _scrollController.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+        return;
+      }
+
+      final estimatedOffset = index * estimatedItemHeight;
+      final viewportHeight = _scrollController.position.viewportDimension;
+      final currentScroll = _scrollController.offset;
+      final maxScroll = _scrollController.position.maxScrollExtent;
+
+      // Check if item is above visible area
+      if (estimatedOffset < currentScroll) {
+        _scrollController.animateTo(
+          estimatedOffset,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+      // Check if item (+ next item for look-ahead) is below visible area
+      else if (estimatedOffset + (estimatedItemHeight * 2) >
+          currentScroll + viewportHeight) {
+        // Scroll to show current item + next item
+        final targetScroll = (estimatedOffset + (estimatedItemHeight * 2) - viewportHeight)
+            .clamp(0.0, maxScroll);
+        _scrollController.animateTo(
+          targetScroll,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+      // Item is already visible, don't scroll
+    });
   }
 
   Future<void> _selectItem(T item) async {
     if (widget.onSelect != null) {
       final shouldClose = await widget.onSelect!(context, item, _controller.text);
-      if (!shouldClose) return;
+      if (!shouldClose) {
+        return;
+      }
     }
     if (mounted) {
       Modal.pop<T>(context, Value(item));
@@ -253,6 +308,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     final totalCount = _getTotalItemCount();
 
     return ListViewSelector(
+      scrollController: _scrollController,
+      estimatedItemHeight: 50.0,
       onActivate: (index) {
         if (index >= 0 && index < totalCount) {
           _selectItem(_getItemAtIndexUnsafe(index));
@@ -323,6 +380,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                   if (errorBox != null) errorBox,
                   Flexible(
                     child: ListView.builder(
+                      controller: _scrollController,
                       shrinkWrap: true,
                       itemCount: totalCount,
                       itemBuilder: (context, index) {

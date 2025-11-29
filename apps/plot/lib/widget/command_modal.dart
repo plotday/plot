@@ -76,7 +76,7 @@ class _CommandModalContentState extends State<_CommandModalContent> {
   Future<void> _showCommandList() async {
     if (!mounted) return;
 
-    await SelectModal.open<Command>(
+    final result = await SelectModal.open<Command>(
       context,
       items: (search) async {
         final commandsList = await commands.list(search: search);
@@ -95,9 +95,17 @@ class _CommandModalContentState extends State<_CommandModalContent> {
       onSelect: _handleCommandSelection,
     );
 
-    // If we get here and the modal was closed without pushing a page, close the parent modal
-    if (mounted && _navigationStack.isEmpty) {
-      Modal.pop<CommandReturn>(context, const Value(CommandSkipped()));
+    // Close the CommandModal in all cases (whether a command was selected or dismissed)
+    // Use rootContext instead of local context since it may be unmounted after SelectModal closes
+    if (_navigationStack.isEmpty && widget.rootContext.mounted) {
+      // Pop with the appropriate result type
+      if (result.present) {
+        // A command was executed, pop with CommandDone
+        Modal.pop<CommandReturn>(widget.rootContext, const Value(CommandDone()));
+      } else {
+        // SelectModal was dismissed, pop with absent
+        Modal.pop<CommandReturn>(widget.rootContext, const Value.absent());
+      }
     }
   }
 
@@ -106,10 +114,21 @@ class _CommandModalContentState extends State<_CommandModalContent> {
     Command command,
     String searchText,
   ) async {
-    await _executeCommand(command, modalContext);
+    final result = await _executeCommand(command, modalContext);
 
-    // Return true to close SelectModal if we're not showing a nested page
-    // Return false to keep it open if there was an error
+    // Keep SelectModal open if command was skipped (e.g., nested modal was canceled)
+    // or if there was an error
+    if (result is CommandSkipped || (result is CommandMessage && result.isError)) {
+      return false;
+    }
+
+    // If command returned CommandRoute, modals are already closed by _executeCommand
+    // so keep SelectModal open (it's already closed anyway)
+    if (result is CommandRoute) {
+      return false;
+    }
+
+    // Close SelectModal if command completed successfully and no nested page is showing
     return _navigationStack.isEmpty;
   }
 
@@ -162,13 +181,15 @@ class _CommandModalContentState extends State<_CommandModalContent> {
         }
       }
 
-      // Close all modals and navigate if needed
-      Modal.popAll(modalContext);
-      if (modalContext.mounted && result is CommandRoute) {
-        final routeContext = widget.rootContext.mounted
-            ? widget.rootContext
-            : modalContext;
-        result.go(routeContext);
+      // Only close modals and navigate for CommandRoute
+      if (result is CommandRoute) {
+        Modal.popAll(modalContext);
+        if (modalContext.mounted) {
+          final routeContext = widget.rootContext.mounted
+              ? widget.rootContext
+              : modalContext;
+          result.go(routeContext);
+        }
       }
     } catch (e, stackTrace) {
       log.warning('Error executing command', e, stackTrace);

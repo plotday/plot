@@ -33,8 +33,8 @@ class Modal extends StatelessWidget {
     ModalProvider.of(context).pop<T>(context, result);
   }
 
-  static void popAll(BuildContext context) {
-    ModalProvider.of(context).popAll(context);
+  static Future<void> popAll(BuildContext context) {
+    return ModalProvider.of(context).popAll(context);
   }
 
   @override
@@ -207,7 +207,9 @@ class _ModalProviderState extends State<ModalProvider> {
     }
 
     if (_modalStack.isEmpty) {
-      final navigator = Navigator.of(context);
+      // Use the same context that was used to create the dialog
+      final modalContext = _rootContextKey.currentContext ?? context;
+      final navigator = Navigator.of(modalContext);
       final canPop = navigator.canPop();
       if (canPop) {
         navigator.pop(result);
@@ -219,12 +221,14 @@ class _ModalProviderState extends State<ModalProvider> {
     }
   }
 
-  void popAll(BuildContext context) {
+  Future<void> popAll(BuildContext context) async {
     while (_modalStack.isNotEmpty) {
       final stackItem = _modalStack.removeLast();
       stackItem.completeAbsent();
     }
-    Navigator.of(context).maybePop();
+    // Use the same context that was used to create the dialog
+    final modalContext = _rootContextKey.currentContext ?? context;
+    await Navigator.of(modalContext).maybePop();
   }
 
   void _notifyStackChanged() {
@@ -268,8 +272,8 @@ class _ModalProviderInherited extends InheritedWidget {
     state.pop<T>(context, result);
   }
 
-  void popAll(BuildContext context) {
-    state.popAll(context);
+  Future<void> popAll(BuildContext context) {
+    return state.popAll(context);
   }
 
   @override
