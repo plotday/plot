@@ -188,7 +188,10 @@ class EditorState extends State<Editor> {
     _mentionDetector.removeListener(_updateMentionOverlay);
     _debouncer.cancel();
     _scrollController.dispose();
-    _editorFocusNode.dispose();
+    // Only dispose the FocusNode if we created it
+    if (widget.focusNode == null) {
+      _editorFocusNode.dispose();
+    }
     _mentionDetector.dispose();
     super.dispose();
   }

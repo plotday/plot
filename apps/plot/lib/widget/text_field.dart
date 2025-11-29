@@ -44,11 +44,13 @@ class TextField extends StatefulWidget {
 
 class TextFieldState extends State<TextField> {
   late final TextEditingController _controller;
+  late final FocusNode _keyboardListenerFocusNode;
   VoidCallback? _listener;
 
   @override
   void initState() {
     super.initState();
+    _keyboardListenerFocusNode = FocusNode();
     _controller =
         widget.controller ?? TextEditingController(text: widget.value);
     if (widget.onChanged != null) {
@@ -75,6 +77,7 @@ class TextFieldState extends State<TextField> {
     if (widget.controller == null) {
       _controller.dispose();
     }
+    _keyboardListenerFocusNode.dispose();
     super.dispose();
   }
 
@@ -95,7 +98,7 @@ class TextFieldState extends State<TextField> {
       //   autofocus: widget.autofocus,
       // ),
       builder: (_) => KeyboardListener(
-        focusNode: FocusNode(),
+        focusNode: _keyboardListenerFocusNode,
         onKeyEvent: (KeyEvent event) {
           if (event is KeyDownEvent &&
               event.logicalKey == LogicalKeyboardKey.enter) {
